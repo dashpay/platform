@@ -342,8 +342,18 @@ fn validate_document_type_references_v0(
                         continue;
                     }
                     // Generation 3 admits `creatorRefersTo` only on a document
-                    // type that records creator ids, so a document of such a
-                    // type has one
+                    // type that records creator ids, and only when the type is
+                    // created: adding it by an update is an incompatible
+                    // schema change. So every document of such a type was
+                    // written while its type recorded creator ids, and has
+                    // one, unlike the documents a `$creatorId` key reference
+                    // added by an update meets (see
+                    // `validate_key_id_reference_v0`). The one way around it
+                    // would be a well-formed stray `creatorRefersTo` key on a
+                    // schema admitted by meta-schema v0 (protocol versions 1
+                    // to 11), which generation 3 reads on load; the census of
+                    // mainnet and testnet found none (see
+                    // `try_from_schema_generation_3`)
                     creator_id
                         .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "a creatorRefersTo declaration needs a document type that records \
@@ -1079,9 +1089,11 @@ fn validate_reference_target_v0(
                     // identifiers a document carries outside its data:
                     // `$ownerId`, which follows the document through
                     // transfers, `$creatorId`, set once at creation and
-                    // absent on document types that do not record it, and
-                    // `$id`, the document's own (the pair a list element is
-                    // found by, which holds by construction). Contract
+                    // absent on document types that do not record it and on
+                    // documents written before their type did (an absent
+                    // side, judged below like any other), and `$id`, the
+                    // document's own (the pair a list element is found by,
+                    // which holds by construction). Contract
                     // registration validated that each faces an identifier
                     // property on the referring side, and the key serializer
                     // below already encodes the names as 32-byte identifiers.
@@ -1234,8 +1246,10 @@ fn validate_reference_target_v0(
 /// `$creatorId` the document's creator, `creator_id` (the writer on a create,
 /// the stored creator on a replace), so the key fetch is the only read; for a
 /// property path the identity is read from the document, and a key id set
-/// while that property is not is refused. An unset key id is not validated;
-/// whether it may be absent is the document type's required list.
+/// while that property is not is refused. A key id set on a document that
+/// records no creator, one written before its type recorded creator ids, is
+/// refused the same way. An unset key id is not validated; whether it may be
+/// absent is the document type's required list.
 #[allow(clippy::too_many_arguments)]
 fn validate_key_id_reference_v0(
     path: &str,
@@ -1270,12 +1284,31 @@ fn validate_key_id_reference_v0(
     let identity_id = match identity_property {
         KeyReferenceIdentityProperty::OwnerId => owner_id,
         // Contract registration admits `$creatorId` only on a document type
-        // that records creator ids, so a document of such a type has one
-        KeyReferenceIdentityProperty::CreatorId => {
-            creator_id.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "a $creatorId key reference needs a document type that records creator ids",
-            )))?
-        }
+        // that records creator ids, but a document written before its type
+        // did records none: no type did before protocol version 10, nor one
+        // of a contract whose config was still version 0. A contract update
+        // may add a property carrying this reference to such a type, so a
+        // replace setting the key id of an old document names no identity,
+        // and is refused as a key id set while its identity property is not.
+        // In place in generation 0, which every table selects: its callers,
+        // the document create and replace state validations, reach it from
+        // protocol version 14 only, the only version whose parser produces a
+        // key reference, so no earlier write gets here
+        KeyReferenceIdentityProperty::CreatorId => match creator_id {
+            Some(creator_id) => creator_id,
+            None => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ReferencedKeyIdPropertyInvalidError::new(
+                        path.to_string(),
+                        path.to_string(),
+                        "the document records no $creatorId: it was created before its \
+                         document type recorded creator ids"
+                            .to_string(),
+                    )
+                    .into(),
+                ))
+            }
+        },
         KeyReferenceIdentityProperty::Property(identity_path) => {
             match document_data.get_optional_identifier_at_path(identity_path) {
                 Ok(Some(identity_id)) => Identifier::from(identity_id),

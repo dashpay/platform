@@ -1,0 +1,22 @@
+{
+  "$formatVersion": "1",
+  "id": "HGyuYtHKLGAjozwrLpnNUnz6ZQdeWYsVCXkQj718NyFW",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "message": {
+      "type": "object",
+      "documentsMutable": true,
+      "transferable": 1,
+      "properties": {
+        "note": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}
