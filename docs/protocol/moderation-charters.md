@@ -222,10 +222,7 @@ replaced). The moderation paths of the target read it:
 Every rule above is enforced by the schema's keywords when a document is
 written, except the cap on additions (see above). Two rules of a proposal are
 not expressible there, and `validate_submitted_charter` in `rs-dpp`
-(`packages/rs-dpp/src/moderation_charter/`) checks them without reading state,
-when a `submittedCharter` is filed (the document create's structure
-validation, so the mempool refuses them too). Seating writes nothing, so a
-proposal is judged before it can ever be seated, and a refusal is paid.
+(`packages/rs-dpp/src/moderation_charter/`) checks them without reading state.
 
 | Rule | Error | Code |
 | --- | --- | --- |

@@ -32,9 +32,7 @@
 //! The schema carries almost every rule through its keywords (references, lookups, key
 //! requirements, `distinctFrom`). What it cannot say is here: [`SubmittedCharter`] and
 //! [`ElectedCharter`] read the documents' properties, and [`validate_submitted_charter`] adds
-//! the proposal's two pure-data rules, which a `submittedCharter` create is judged by in the
-//! batch's document create structure validation: seating writes nothing, so a proposal is
-//! checked when it is filed, before it can be seated. Nothing here reads state.
+//! the proposal's two pure-data rules. Nothing here reads state.
 
 mod v0;
 

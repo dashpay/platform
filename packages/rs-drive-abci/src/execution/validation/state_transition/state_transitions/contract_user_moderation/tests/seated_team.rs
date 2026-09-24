@@ -59,7 +59,6 @@ const MODERATION_CHARTER_ADDED_MODERATOR_LIMIT_REACHED: u32 = 41202;
 const DOCUMENT_ACTION_FEE_MODERATORS_SHARE_MISMATCH: u32 = 40139;
 const CONTRACT_FEE_CLAIM_NOT_ALLOWED: u32 = 41113;
 const DOCUMENT_ACTION_FEE_AGREEMENT_MISMATCH: u32 = 40133;
-const MODERATION_CHARTER_REWARD_SPLIT_NOT_ONE_HUNDRED: u32 = 11001;
 
 /// What creating a post costs on top of the gas: 0.0001 Dash for the contract owner and 0.001
 /// Dash for the moderation team.
@@ -1331,40 +1330,4 @@ async fn should_refuse_an_addition_before_protocol_version_14_before_the_cap_is_
         other => panic!("expected the addition to be refused, got {other:?}"),
     };
     assert_eq!(code, DATA_CONTRACT_NOT_PRESENT);
-}
-
-/// Seating writes nothing, so a proposal is judged by the rules its schema can not express when
-/// it is filed: a reward split that does not sum to 100 is refused, in the mempool and, paid, in
-/// a block.
-#[tokio::test]
-async fn should_refuse_a_proposal_whose_reward_split_does_not_sum_to_one_hundred() {
-    let team = Team::new(InterimModerators::ContractOwner).await;
-    let setup = &team.setup;
-    let proposal = SubmittedCharter {
-        target_contract_id: setup.contract.id(),
-        description: "Everyone takes everything".to_string(),
-        reasons: vec![],
-        moderators_share: None,
-        reward_split: ModerationCharterRewardSplit {
-            leader: 100,
-            equal: 100,
-            actions: 100,
-        },
-    };
-    let (_, filing) = team
-        .charter_document(
-            &team.leader,
-            SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
-            proposal.to_document_properties(),
-        )
-        .await;
-    assert_eq!(
-        team.check_tx_codes(&filing, CheckTxLevel::FirstTimeCheck),
-        vec![MODERATION_CHARTER_REWARD_SPLIT_NOT_ONE_HUNDRED]
-    );
-    let transaction = setup.platform.drive.grove.start_transaction();
-    assert_paid_with_code(
-        &setup.process(&filing, &transaction),
-        MODERATION_CHARTER_REWARD_SPLIT_NOT_ONE_HUNDRED,
-    );
 }

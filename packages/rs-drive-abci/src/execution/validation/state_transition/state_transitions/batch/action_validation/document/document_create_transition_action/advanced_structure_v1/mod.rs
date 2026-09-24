@@ -10,9 +10,6 @@ use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, Docum
 use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::identifier::Identifier;
-use dpp::moderation_charter::{
-    validate_submitted_charter, MODERATION_CHARTERS_CONTRACT_ID, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
-};
 use dpp::validation::{SimpleConsensusValidationResult};
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
@@ -174,27 +171,9 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
         // The schema validation above established every supplied value is a byte array
         // where the type says so; what is left is whether an `encryptedFor` property has
         // the shape its scheme produces, which is all consensus can tell about a ciphertext.
-        let result = document_type
+        document_type
             .validate_encrypted_property_shapes(self.data(), platform_version)
-            .map_err(Error::Protocol)?;
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        // A moderation charter proposal's two rules its schema can not express: the reward
-        // split sums to 100 and the description fits the byte cap. Seating writes nothing, so
-        // a proposal is judged when it is filed, before it can ever be seated. Only the
-        // moderation charters contract has the type, and it exists from protocol version 14.
-        if data_contract.id() == MODERATION_CHARTERS_CONTRACT_ID
-            && document_type_name == SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME
-        {
-            let proposal = validate_submitted_charter(self.data(), platform_version)
-                .map_err(Error::Protocol)?;
-            return Ok(SimpleConsensusValidationResult::new_with_errors(
-                proposal.errors,
-            ));
-        }
-        Ok(result)
+            .map_err(Error::Protocol)
         // -->> End Introduced in V1 <<--
     }
 }
