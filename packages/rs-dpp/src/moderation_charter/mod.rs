@@ -20,19 +20,14 @@
 //! The team that acts is the leader plus [`ElectedCharter::active_members`]: the elected
 //! members and the additions, less the removals.
 //!
-//! The schema carries almost every rule through its keywords (references, lookups, key
-//! requirements, `distinctFrom`). What it cannot say is here: [`SubmittedCharter`] and
-//! [`ElectedCharter`] read the documents' properties, and [`validate_submitted_charter`] adds
-//! the proposal's two pure-data rules, which the path that seats a team runs. Nothing here reads
-//! state.
-
-mod v0;
+//! The schema carries every rule through its keywords (references, lookups, key requirements,
+//! `distinctFrom`, and `sumOfProperties` and `maxBytes` for the proposal's reward split and
+//! description), so every document write checks them. [`SubmittedCharter`] and
+//! [`ElectedCharter`] read the documents' properties. Nothing here reads state.
 
 use crate::consensus::basic::moderation_charter::ModerationCharterMalformedFieldError;
-use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
-use crate::ProtocolError;
+use crate::validation::ConsensusValidationResult;
 use platform_value::{Identifier, IdentifierBytes32, Value, ValueMap};
-use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The id of the moderation charters system contract, `EG7RGfV8fDTayC2FyVr8HwdpJh3fXDbVztcfE94UmN88`.
@@ -78,7 +73,8 @@ pub mod property_names {
     pub const MEMBER_ID: &str = "memberId";
 }
 
-/// How a team splits every claim of the moderators pot: three percentages summing to 100.
+/// How a team splits every claim of the moderators pot: three percentages summing to 100,
+/// which the schema's `sumOfProperties` holds every stored proposal to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ModerationCharterRewardSplit {
     /// The share of the leader.
@@ -88,13 +84,6 @@ pub struct ModerationCharterRewardSplit {
     /// The share split between the members by the moderation actions each signed since the
     /// last claim.
     pub actions: u8,
-}
-
-impl ModerationCharterRewardSplit {
-    /// The three shares summed, as declared.
-    pub fn total(&self) -> u16 {
-        self.leader as u16 + self.equal as u16 + self.actions as u16
-    }
 }
 
 /// A proposal to moderate a contract, as read out of a `submittedCharter` document. Its owner
@@ -178,8 +167,8 @@ impl SubmittedCharter {
     /// Reads a proposal out of the properties of a `submittedCharter` document.
     ///
     /// The result carries a consensus error, never a proposal, when a property is missing or
-    /// of the wrong type. The proposal's own rules are checked by
-    /// [`SubmittedCharter::validate`]; [`validate_submitted_charter`] does both.
+    /// of the wrong type. The proposal's own rules (the split sums to 100, the description
+    /// fits 4096 bytes) are the schema's, checked when the document is written.
     pub fn from_document_properties(
         properties: &BTreeMap<String, Value>,
     ) -> ConsensusValidationResult<Self> {
@@ -276,33 +265,6 @@ impl SubmittedCharter {
         }
         properties
     }
-
-    /// Checks the proposal's own rules, the two the schema cannot express: the reward split
-    /// sums to 100, and the description fits
-    /// `SystemLimits::max_moderation_charter_description_length` bytes (the schema's
-    /// `maxLength` counts characters).
-    pub fn validate(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        match platform_version
-            .dpp
-            .validation
-            .data_contract
-            .validate_moderation_charter
-        {
-            Some(0) => Ok(self.validate_v0(platform_version)),
-            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
-                method: "SubmittedCharter::validate".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-            None => Err(ProtocolError::NotSupported(format!(
-                "moderation charters do not exist at protocol version {}",
-                platform_version.protocol_version
-            ))),
-        }
-    }
 }
 
 impl ElectedCharter {
@@ -374,28 +336,6 @@ impl ElectedCharter {
                 identifier_list_value(&self.members),
             ),
         ])
-    }
-}
-
-/// Reads a proposal out of the properties of a `submittedCharter` document and checks its own
-/// rules. The result carries the proposal when it passes, and the first error it fails on
-/// otherwise.
-pub fn validate_submitted_charter(
-    properties: &BTreeMap<String, Value>,
-    platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<SubmittedCharter>, ProtocolError> {
-    let result = SubmittedCharter::from_document_properties(properties);
-    if !result.is_valid_with_data() {
-        return Ok(ConsensusValidationResult::new_with_errors(result.errors));
-    }
-    let charter = result.into_data()?;
-    let validation = charter.validate(platform_version)?;
-    if validation.is_valid() {
-        Ok(ConsensusValidationResult::new_with_data(charter))
-    } else {
-        Ok(ConsensusValidationResult::new_with_errors(
-            validation.errors,
-        ))
     }
 }
 

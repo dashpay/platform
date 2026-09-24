@@ -228,12 +228,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
                 // only has to fund its principal (purchases, contest collateral) itself.
                 identity_minimum_balance_pre_check: 1,
-                document_create_transition_structure_validation: 1, // changed: v1 also cross-checks the prefunded voting balance against the contested index and refuses a `distinctFrom` identifier property equal to the value it must differ from
+                document_create_transition_structure_validation: 1, // changed: v1 also cross-checks the prefunded voting balance against the contested index, refuses a `distinctFrom` identifier property equal to the value it must differ from, a string over its `maxBytes` and an object missing its `sumOfProperties`
                 // Reject deletes on legacy keep-history types as paid consensus errors.
                 // Protocols through 13 retain the original internal-error outcome.
                 document_delete_transition_structure_validation: 1,
                 document_index_only_delete_transition_structure_validation: 0,
-                document_replace_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom` refusal in place, inert before this version
+                document_replace_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom`, `encryptedFor` shape, `maxBytes` and `sumOfProperties` refusals in place, inert before this version
                 document_transfer_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_purchase_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_update_price_transition_structure_validation: 0,

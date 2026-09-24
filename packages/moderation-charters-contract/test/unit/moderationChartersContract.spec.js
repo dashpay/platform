@@ -173,8 +173,12 @@ describe('Moderation Charters Contract', () => {
 
       it('should count characters, not bytes; consensus caps the bytes at 4096', async () => {
         // 2049 two-byte characters: within the schema's 4096 characters, over the
-        // 4096 bytes `SystemLimits::max_moderation_charter_description_length`
-        // enforces in rs-dpp (ModerationCharterDescriptionTooLongError, 11002).
+        // 4096 bytes its `maxBytes` declares, which the document create and replace
+        // structure validation checks (DocumentPropertyMaxBytesExceededError, 10421),
+        // not JSON Schema validation.
+        expect(moderationChartersContractDocumentsSchema.submittedCharter.properties
+          .description.maxBytes).to.equal(4096);
+
         const raw = await rawProposal();
         raw.description = 'é'.repeat(2049);
 
@@ -271,6 +275,19 @@ describe('Moderation Charters Contract', () => {
         const error = expectJsonSchemaError(validate('submittedCharter', raw));
 
         expect(error.keyword).to.equal('additionalProperties');
+      });
+
+      it('should leave the total of 100 to consensus', async () => {
+        // `sumOfProperties` is checked by the document create and replace structure
+        // validation (DocumentPropertySumMismatchError, 10422), not JSON Schema
+        // validation, which sees three shares each within 0 to 100.
+        expect(moderationChartersContractDocumentsSchema.submittedCharter.properties
+          .rewardSplit.sumOfProperties).to.equal(100);
+
+        const raw = await rawProposal();
+        raw.rewardSplit = { leader: 10, equal: 40, actions: 40 };
+
+        expect(validate('submittedCharter', raw).isValid()).to.be.true();
       });
     });
   });

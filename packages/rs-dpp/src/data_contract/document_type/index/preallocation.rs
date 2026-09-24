@@ -198,6 +198,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            max_bytes: None,
+            sum_of_properties: None,
             transient: false,
         }
     }
@@ -213,6 +215,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            max_bytes: None,
+            sum_of_properties: None,
             transient: false,
         }
     }
@@ -224,6 +228,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            max_bytes: None,
+            sum_of_properties: None,
             transient: false,
         }
     }

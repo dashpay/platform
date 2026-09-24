@@ -171,8 +171,25 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
         // The schema validation above established every supplied value is a byte array
         // where the type says so; what is left is whether an `encryptedFor` property has
         // the shape its scheme produces, which is all consensus can tell about a ciphertext.
-        document_type
+        let result = document_type
             .validate_encrypted_property_shapes(self.data(), platform_version)
+            .map_err(Error::Protocol)?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        // The schema validation above made every string a string and every summed object
+        // an object of integers; what is left is a string's UTF-8 length against its
+        // `maxBytes` (`maxLength` counts characters) and an object's members against its
+        // `sumOfProperties`.
+        let result = document_type
+            .validate_max_bytes_properties(self.data(), platform_version)
+            .map_err(Error::Protocol)?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
+        document_type
+            .validate_sum_of_properties(self.data(), platform_version)
             .map_err(Error::Protocol)
         // -->> End Introduced in V1 <<--
     }

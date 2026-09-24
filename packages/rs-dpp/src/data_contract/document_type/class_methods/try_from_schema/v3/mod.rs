@@ -900,6 +900,8 @@ mod index_only_tests;
 mod keep_history_tests;
 #[cfg(all(test, feature = "validation"))]
 mod list_element_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod max_bytes_and_sum_tests;
 #[cfg(test)]
 mod meta_schema_v0_stray_keyword_tests;
 #[cfg(test)]

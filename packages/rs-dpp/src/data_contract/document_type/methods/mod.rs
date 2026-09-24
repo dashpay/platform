@@ -14,16 +14,57 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
 #[cfg(feature = "validation")]
-use crate::consensus::basic::document::InvalidEncryptedPropertyShapeError;
+use crate::consensus::basic::document::{
+    DocumentPropertyMaxBytesExceededError, DocumentPropertySumMismatchError,
+    InvalidEncryptedPropertyShapeError,
+};
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::methods::versioned_methods::DocumentTypeV0MethodsVersioned;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::{DocumentProperty, DocumentPropertyType};
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
 #[cfg(feature = "validation")]
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::{Identifier, Value};
+
+/// The mismatch an object property declaring `sumOfProperties` has in `properties`, the
+/// document's data, with `path` the object's dotted path: `None` when the object declares
+/// no sum, is absent, or its members add up to the total.
+#[cfg(feature = "validation")]
+fn sum_of_properties_violation(
+    path: &str,
+    property: &DocumentProperty,
+    properties: &BTreeMap<String, Value>,
+) -> Option<DocumentPropertySumMismatchError> {
+    let total = property.sum_of_properties?;
+    let DocumentPropertyType::Object(members) = &property.property_type else {
+        return None;
+    };
+    // An absent object has nothing to add up; whether it may be absent is `required`'s
+    if !matches!(
+        properties.get_optional_at_path(path),
+        Ok(Some(Value::Map(_)))
+    ) {
+        return None;
+    }
+    let sum = members.keys().fold(0i128, |sum, member| {
+        let value = match properties.get_optional_at_path(&format!("{path}.{member}")) {
+            Ok(Some(value)) => value.to_integer::<i128>().unwrap_or(i128::MAX),
+            _ => 0,
+        };
+        sum.saturating_add(value)
+    });
+    (sum != i128::from(total)).then(|| {
+        DocumentPropertySumMismatchError::new(
+            path.to_string(),
+            total,
+            i64::try_from(sum).unwrap_or(if sum < 0 { i64::MIN } else { i64::MAX }),
+        )
+    })
+}
 
 pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     fn unique_id_for_storage(&self) -> [u8; 32] {
@@ -128,6 +169,140 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
                     )
                     .into(),
                 );
+            }
+        }
+        SimpleConsensusValidationResult::new()
+    }
+
+    /// Checks every string `properties` supplies for a property declaring `maxBytes`
+    /// against it, counting UTF-8 bytes: the property's value, or every element of a
+    /// typed array of strings, whose error names the element (`tags[2]`). A declared
+    /// property the document leaves out is not checked.
+    ///
+    /// Meant to run after the JSON schema validation of `properties`, which already
+    /// established every supplied value's type; a value that still is not a string
+    /// holds no bytes to count.
+    ///
+    /// Versioned on `validate_max_bytes` in the document type method versions: `None`
+    /// before protocol version 14 returns an empty result, which keeps the shipped
+    /// structure validation that calls it inert.
+    #[cfg(feature = "validation")]
+    fn validate_max_bytes_properties(
+        &self,
+        properties: &BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_max_bytes
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => Ok(self.validate_max_bytes_properties_v0(properties)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_max_bytes_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "validation")]
+    fn validate_max_bytes_properties_v0(
+        &self,
+        properties: &BTreeMap<String, Value>,
+    ) -> SimpleConsensusValidationResult {
+        let over = |path: String, value: &Value, max_bytes: u16| {
+            let length = value.as_text()?.len();
+            (length > max_bytes as usize).then(|| {
+                DocumentPropertyMaxBytesExceededError::new(
+                    path,
+                    u32::try_from(length).unwrap_or(u32::MAX),
+                    max_bytes,
+                )
+            })
+        };
+        let declared = self
+            .flattened_properties()
+            .iter()
+            .filter_map(|(path, property)| Some((path, property, property.max_bytes?)));
+        for (path, property, max_bytes) in declared {
+            let Ok(Some(value)) = properties.get_optional_at_path(path) else {
+                continue;
+            };
+            let error = match (&property.property_type, value) {
+                // A typed array declares on its items: every element is bounded on its own
+                (DocumentPropertyType::TypedArray(_), Value::Array(elements)) => {
+                    elements.iter().enumerate().find_map(|(index, element)| {
+                        over(format!("{path}[{index}]"), element, max_bytes)
+                    })
+                }
+                (DocumentPropertyType::TypedArray(_), _) => None,
+                _ => over(path.clone(), value, max_bytes),
+            };
+            if let Some(error) = error {
+                return SimpleConsensusValidationResult::new_with_error(error.into());
+            }
+        }
+        SimpleConsensusValidationResult::new()
+    }
+
+    /// Checks every object `properties` supplies for an object property declaring
+    /// `sumOfProperties`: its integer members must add up to the declared total. An
+    /// object the document leaves out is not checked. Objects are not in the flattened
+    /// map, so the declarations are found by walking [`DocumentTypeV0Getters::properties`].
+    ///
+    /// Meant to run after the JSON schema validation of `properties`, which already
+    /// established that every member is present and an integer. A member value that still
+    /// is not an `i128` counts as the largest one, so the sum cannot match by accident.
+    ///
+    /// Versioned on `validate_sum_of_properties` in the document type method versions:
+    /// `None` before protocol version 14 returns an empty result, which keeps the shipped
+    /// structure validation that calls it inert.
+    #[cfg(feature = "validation")]
+    fn validate_sum_of_properties(
+        &self,
+        properties: &BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_sum_of_properties
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => Ok(self.validate_sum_of_properties_v0(properties)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_sum_of_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "validation")]
+    fn validate_sum_of_properties_v0(
+        &self,
+        properties: &BTreeMap<String, Value>,
+    ) -> SimpleConsensusValidationResult {
+        let mut objects = vec![(None::<String>, self.properties())];
+        while let Some((prefix, level)) = objects.pop() {
+            for (name, property) in level {
+                let DocumentPropertyType::Object(members) = &property.property_type else {
+                    continue;
+                };
+                let path = match &prefix {
+                    Some(prefix) => format!("{prefix}.{name}"),
+                    None => name.clone(),
+                };
+                if let Some(error) = sum_of_properties_violation(&path, property, properties) {
+                    return SimpleConsensusValidationResult::new_with_error(error.into());
+                }
+                objects.push((Some(path), members));
             }
         }
         SimpleConsensusValidationResult::new()

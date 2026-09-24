@@ -168,6 +168,8 @@ impl ErrorWithCode for BasicError {
             Self::ContestedDocumentsTemporarilyNotAllowedError(_) => 10418,
             Self::DocumentPropertyNotDistinctError(_) => 10419,
             Self::InvalidEncryptedPropertyShapeError(_) => 10420,
+            Self::DocumentPropertyMaxBytesExceededError(_) => 10421,
+            Self::DocumentPropertySumMismatchError(_) => 10422,
 
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,
@@ -275,8 +277,6 @@ impl ErrorWithCode for BasicError {
 
             // Moderation Team Errors: 11000-11099
             Self::ModerationCharterMalformedFieldError(_) => 11000,
-            Self::ModerationCharterRewardSplitNotOneHundredError(_) => 11001,
-            Self::ModerationCharterDescriptionTooLongError(_) => 11002,
         }
     }
 }

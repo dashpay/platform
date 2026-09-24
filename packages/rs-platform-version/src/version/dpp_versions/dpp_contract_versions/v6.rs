@@ -84,6 +84,8 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             apply_required_since: Some(0), // changed: the meta-schema v3 `requiredSince` keyword (contract version a property is required from) is parsed onto the property; None before this version means the keyword is ignored, as it was before it existed
             apply_distinct_from: Some(0), // changed: the meta-schema v3 `distinctFrom` keyword (an identifier property whose value must differ from a named sibling property or the document's `$ownerId`) is parsed onto the property; None before this version means the keyword is ignored, as it was before it existed
             apply_encrypted_for: Some(0), // changed: the meta-schema v3 `encryptedFor` keyword (recipient, key ids and scheme of a byte array property's ciphertext) is parsed onto the property and its named properties are checked at registration; None before this version means the keyword is ignored, as it was before it existed
+            apply_max_bytes: Some(0), // changed: the meta-schema v3 `maxBytes` keyword (the most UTF-8 bytes a string property, or each string element of a typed array, may hold) is parsed onto the property; None before this version means the keyword is ignored, as it was before it existed
+            apply_sum_of_properties: Some(0), // changed: the meta-schema v3 `sumOfProperties` keyword (the total an object property's integer members must add up to) is parsed onto the object and its members are checked at registration; None before this version means the keyword is ignored, as it was before it existed
             parse_typed_array: Some(0), // changed: a meta-schema v3 typed array (`type: "array"` with an `items` element schema) parses to `DocumentPropertyType::TypedArray`; None before this version leaves it to the scalar parser, which refuses an array that is not a byte array
             validate_max_depth: 0,
             max_depth: 256,
@@ -115,6 +117,8 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             deserialize_value_for_key: 0,
             validate_distinct_from: Some(0), // changed: `validate_distinct_from_properties` refuses a document whose `distinctFrom` property equals what it must differ from (DocumentPropertyNotDistinctError, 10419); None before this version, where no property can carry the keyword
             validate_encrypted_property_shapes: Some(0), // changed: refuses an `encryptedFor` property whose bytes are not the shape its scheme produces; None before this version returns an empty result
+            validate_max_bytes: Some(0), // changed: refuses a string longer in UTF-8 bytes than its property's `maxBytes` (DocumentPropertyMaxBytesExceededError, 10421); None before this version returns an empty result
+            validate_sum_of_properties: Some(0), // changed: refuses an object whose integer members miss its `sumOfProperties` (DocumentPropertySumMismatchError, 10422); None before this version returns an empty result
         },
     },
     token_versions: TokenVersions {

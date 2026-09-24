@@ -84,6 +84,16 @@ pub struct DocumentTypeMethodVersions {
     /// that predate the keyword: the method returns an empty result there, so the
     /// shipped create and replace structure validations that call it are inert.
     pub validate_encrypted_property_shapes: OptionalFeatureVersion,
+    /// `validate_max_bytes_properties`: refuses a document supplying a string longer in
+    /// UTF-8 bytes than the `maxBytes` its property declares. `None` on versions that
+    /// predate the keyword: the method returns an empty result there, so the shipped
+    /// replace structure validation that calls it is inert.
+    pub validate_max_bytes: OptionalFeatureVersion,
+    /// `validate_sum_of_properties`: refuses a document supplying an object whose integer
+    /// properties do not add up to the `sumOfProperties` it declares. `None` on versions
+    /// that predate the keyword: the method returns an empty result there, so the shipped
+    /// replace structure validation that calls it is inert.
+    pub validate_sum_of_properties: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -113,6 +123,16 @@ pub struct DocumentTypeSchemaVersions {
     /// `None` on versions that predate the keyword: they ignore it entirely,
     /// exactly as they parsed before it existed.
     pub apply_encrypted_for: OptionalFeatureVersion,
+    /// Parses the `maxBytes` keyword (the most UTF-8 bytes a string property, or
+    /// each string element of a typed array, may hold) onto the property. `None`
+    /// on versions that predate the keyword: they ignore it entirely, exactly as
+    /// they parsed before it existed.
+    pub apply_max_bytes: OptionalFeatureVersion,
+    /// Parses the `sumOfProperties` keyword (the total an object property's
+    /// integer members must add up to) onto the object, and checks its members
+    /// at contract registration. `None` on versions that predate the keyword:
+    /// they ignore it entirely, exactly as they parsed before it existed.
+    pub apply_sum_of_properties: OptionalFeatureVersion,
     /// Parses a typed array property (`type: "array"` with an `items`
     /// element schema instead of `byteArray`). `None` on versions that
     /// predate typed arrays: they leave such a property to the scalar

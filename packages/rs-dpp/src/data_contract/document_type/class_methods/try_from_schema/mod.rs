@@ -210,6 +210,10 @@ fn insert_values(
                     apply_distinct_from(&inner_properties, &property_type, platform_version)?;
                 let encrypted_for =
                     apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
+                let max_bytes =
+                    apply_max_bytes(&inner_properties, &property_type, platform_version)?;
+                // Objects are not in the flattened map, so no entry here carries a sum:
+                // the nested pass reads `sumOfProperties` onto the object itself.
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -219,6 +223,8 @@ fn insert_values(
                         required_since,
                         distinct_from,
                         encrypted_for,
+                        max_bytes,
+                        sum_of_properties: None,
                     },
                 );
             }
@@ -342,6 +348,13 @@ fn insert_values_nested(
         apply_property_reference(&inner_properties, property_type, platform_version)?;
     let distinct_from = apply_distinct_from(&inner_properties, &property_type, platform_version)?;
     let encrypted_for = apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
+    let max_bytes = apply_max_bytes(&inner_properties, &property_type, platform_version)?;
+    let sum_of_properties = apply_sum_of_properties(
+        &inner_properties,
+        &property_type,
+        root_schema,
+        platform_version,
+    )?;
 
     document_properties.insert(
         property_key,
@@ -352,6 +365,8 @@ fn insert_values_nested(
             required_since,
             distinct_from,
             encrypted_for,
+            max_bytes,
+            sum_of_properties,
         },
     );
 
@@ -530,6 +545,231 @@ fn validate_distinct_from_targets_v0(
         }
     }
     Ok(())
+}
+
+/// Reads a `maxBytes` declaration off a string property, or off the `items`
+/// of a typed array of strings: the most UTF-8 bytes the value (every
+/// element) may hold. `maxLength` counts characters, which are up to four
+/// bytes each, so it cannot bound the stored size on its own.
+///
+/// Versioned on `apply_max_bytes` in the platform version's document type
+/// schema versions. `None` selects the behavior of the versions that predate
+/// the keyword: it is ignored entirely, so their parses stay byte-for-byte
+/// identical to what they always produced.
+fn apply_max_bytes(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<Option<u16>, DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_max_bytes
+    {
+        None => Ok(None),
+        Some(0) => apply_max_bytes_v0(inner_properties, property_type),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_max_bytes version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_max_bytes_v0(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+) -> Result<Option<u16>, DataContractError> {
+    // A typed array carries the declaration on its `items`: every element is
+    // bounded, so the elements must be strings
+    if let DocumentPropertyType::TypedArray(typed_array) = property_type {
+        if inner_properties.contains_key(property_names::MAX_BYTES) {
+            return Err(DataContractError::InvalidContractStructure(
+                "maxBytes on a typed array belongs on its items, where it bounds every element"
+                    .to_string(),
+            ));
+        }
+        let items_map = match inner_properties.get(property_names::ITEMS) {
+            Some(items) => items.to_btree_ref_string_map()?,
+            None => return Ok(None),
+        };
+        let Some(max_bytes_value) = items_map.get(property_names::MAX_BYTES) else {
+            return Ok(None);
+        };
+        let DocumentPropertyType::String(sizes) = typed_array.item_type.as_ref() else {
+            return Err(DataContractError::InvalidContractStructure(
+                "maxBytes is only allowed on string elements of a typed array".to_string(),
+            ));
+        };
+        return parse_max_bytes(max_bytes_value, sizes.min_length).map(Some);
+    }
+
+    let Some(max_bytes_value) = inner_properties.get(property_names::MAX_BYTES) else {
+        return Ok(None);
+    };
+    let DocumentPropertyType::String(sizes) = property_type else {
+        return Err(DataContractError::InvalidContractStructure(
+            "maxBytes is only allowed on string properties".to_string(),
+        ));
+    };
+    parse_max_bytes(max_bytes_value, sizes.min_length).map(Some)
+}
+
+/// A `maxBytes` bound: 1 to 65535, and no lower than `minLength`, since a
+/// string of `minLength` characters is at least that many bytes and a bound
+/// below it would refuse every value.
+fn parse_max_bytes(value: &Value, min_length: Option<u16>) -> Result<u16, DataContractError> {
+    let max_bytes = value
+        .to_integer::<u16>()
+        .ok()
+        .filter(|max_bytes| *max_bytes > 0)
+        .ok_or_else(|| {
+            DataContractError::InvalidContractStructure(
+                "maxBytes must be an integer from 1 to 65535".to_string(),
+            )
+        })?;
+    if let Some(min_length) = min_length {
+        if max_bytes < min_length {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "maxBytes {max_bytes} is below minLength {min_length}: a string of \
+                 {min_length} characters is at least {min_length} bytes, so no value could \
+                 be valid"
+            )));
+        }
+    }
+    Ok(max_bytes)
+}
+
+/// Reads a `sumOfProperties` declaration off an object property: the total
+/// its members must add up to. Every member must be an integer property that
+/// every document carries (required, with no `requiredSince`, not transient),
+/// so the sum is defined on every stored object, and the total must be one the
+/// members' `minimum` and `maximum` can reach.
+///
+/// Versioned on `apply_sum_of_properties` in the platform version's document
+/// type schema versions. `None` selects the behavior of the versions that
+/// predate the keyword: it is ignored entirely, so their parses stay
+/// byte-for-byte identical to what they always produced.
+fn apply_sum_of_properties(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+    root_schema: &Value,
+    platform_version: &PlatformVersion,
+) -> Result<Option<i64>, DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_sum_of_properties
+    {
+        None => Ok(None),
+        Some(0) => apply_sum_of_properties_v0(inner_properties, property_type, root_schema),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_sum_of_properties version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_sum_of_properties_v0(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+    root_schema: &Value,
+) -> Result<Option<i64>, DataContractError> {
+    let Some(sum_value) = inner_properties.get(property_names::SUM_OF_PROPERTIES) else {
+        return Ok(None);
+    };
+    let DocumentPropertyType::Object(members) = property_type else {
+        return Err(DataContractError::InvalidContractStructure(
+            "sumOfProperties is only allowed on object properties".to_string(),
+        ));
+    };
+    let total = sum_value.to_integer::<i64>().map_err(|_| {
+        DataContractError::InvalidContractStructure(
+            "sumOfProperties must be an integer in the i64 range".to_string(),
+        )
+    })?;
+    if members.is_empty() {
+        return Err(DataContractError::InvalidContractStructure(
+            "sumOfProperties needs an object with at least one integer property to add up"
+                .to_string(),
+        ));
+    }
+
+    let member_schemas = match inner_properties.get(property_names::PROPERTIES) {
+        Some(properties) => properties.to_btree_ref_string_map()?,
+        None => BTreeMap::new(),
+    };
+
+    // The least and the most the members can add up to, from each member's
+    // `minimum` and `maximum` where declared and its integer type otherwise
+    let (mut least, mut most) = (0i128, 0i128);
+    for (name, member) in members {
+        let Some((type_min, type_max)) = integer_range(&member.property_type) else {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "sumOfProperties adds up integer properties, but member \"{name}\" is not one"
+            )));
+        };
+        if !member.required || member.required_since.is_some() {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "sumOfProperties member \"{name}\" must be required, without requiredSince: \
+                 an absent member would leave the sum undefined"
+            )));
+        }
+        if member.transient {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "sumOfProperties member \"{name}\" is transient: it is never stored, so the \
+                 stored object could not be held to the sum"
+            )));
+        }
+        let (minimum, maximum) = match member_schemas.get(name.as_str()) {
+            Some(schema) => {
+                let mut schema = schema.to_btree_ref_string_map()?;
+                if let Some(schema_ref) = schema.get_optional_str(property_names::REF)? {
+                    schema = resolve_uri(root_schema, schema_ref)?.to_btree_ref_string_map()?;
+                }
+                (
+                    schema
+                        .get_optional_integer::<i128>(property_names::MINIMUM)
+                        .ok()
+                        .flatten(),
+                    schema
+                        .get_optional_integer::<i128>(property_names::MAXIMUM)
+                        .ok()
+                        .flatten(),
+                )
+            }
+            None => (None, None),
+        };
+        least = least.saturating_add(minimum.map_or(type_min, |minimum| minimum.max(type_min)));
+        most = most.saturating_add(maximum.map_or(type_max, |maximum| maximum.min(type_max)));
+    }
+    if i128::from(total) < least || i128::from(total) > most {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "sumOfProperties {total} is out of reach: the members add up to between {least} \
+             and {most}"
+        )));
+    }
+    Ok(Some(total))
+}
+
+/// The values an integer property type holds, widened to `i128` (a `u128`
+/// maximum is clamped). `None` for every other type, key id references
+/// included: a key id is a name, not an amount.
+fn integer_range(property_type: &DocumentPropertyType) -> Option<(i128, i128)> {
+    Some(match property_type {
+        DocumentPropertyType::U8 => (0, u8::MAX.into()),
+        DocumentPropertyType::I8 => (i8::MIN.into(), i8::MAX.into()),
+        DocumentPropertyType::U16 => (0, u16::MAX.into()),
+        DocumentPropertyType::I16 => (i16::MIN.into(), i16::MAX.into()),
+        DocumentPropertyType::U32 => (0, u32::MAX.into()),
+        DocumentPropertyType::I32 => (i32::MIN.into(), i32::MAX.into()),
+        DocumentPropertyType::U64 => (0, u64::MAX.into()),
+        DocumentPropertyType::I64 => (i64::MIN.into(), i64::MAX.into()),
+        DocumentPropertyType::U128 => (0, i128::MAX),
+        DocumentPropertyType::I128 => (i128::MIN, i128::MAX),
+        _ => return None,
+    })
 }
 
 /// Folds a `refersTo` declaration into the property type: an identifier property
