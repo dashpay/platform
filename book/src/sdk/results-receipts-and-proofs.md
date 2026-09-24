@@ -51,7 +51,12 @@ with one of two tags:
   affects, as of the proof's block, but cannot bind them to this
   transition's execution. Balance top-ups, credit transfers, address funds
   movements, shields and no-history token operations fall here. The result
-  is a height-pinned snapshot, and the SDK says so in the type.
+  is a height-pinned snapshot.
+
+The tag lives on the verifier's return value. The public wait methods
+consume it: each method accepts one set of tags and hands the caller the
+untagged inner result, so the guarantee a caller holds is expressed by the
+method it chose, not by a field on what it got back.
 
 The Rust SDK exposes the two as two API pairs on `BroadcastStateTransition`
 (see [Put Operations](put-operations.md)). The strict pair
@@ -177,18 +182,26 @@ keeps apart.
 
 The baseline the contract-call extension builds on:
 
-| API | Layer | Class returned |
-|---|---|---|
-| `fetch`, `fetch_many` | Rust SDK | Current-state proof (verified before the value is returned) |
-| `fetch_with_metadata_and_proof` | Rust SDK | Current-state proof plus the raw proof and metadata |
-| `fetch_unproved` | Rust SDK | Unproven execution-result text |
-| `wait_for_response`, `broadcast_and_wait` | Rust SDK | Current-state proof tagged `ExecutionProved` |
-| `wait_for_affected_state`, `broadcast_and_wait_for_affected_state` | Rust SDK | Current-state proof tagged `ExecutionProved` or `AffectedState` |
-| `FromProof` | Proof verifier | Current-state proof |
-| `FromUnproved` | Proof verifier | Unproven execution-result text |
-| `waitForResponse`, `broadcastAndWait` | JavaScript SDK | Current-state proof tagged `ExecutionProved` |
-| `waitForAffectedState`, `broadcastAndWaitForAffectedState` | JavaScript SDK | Current-state proof tagged `ExecutionProved` or `AffectedState` |
-| `fetchUnproved` | JavaScript SDK | Unproven execution-result text |
+| API | Layer | Class returned | Guarantee accepted |
+|---|---|---|---|
+| `fetch`, `fetch_many` | Rust SDK | Current-state proof (verified before the value is returned) | Proof at the signed root |
+| `fetch_with_metadata_and_proof` | Rust SDK | Current-state proof plus the raw proof and metadata | Proof at the signed root |
+| `fetch_unproved` | Rust SDK | Unproven execution-result text | None |
+| `wait_for_response`, `broadcast_and_wait` | Rust SDK | Current-state proof | `ExecutionProved` only |
+| `wait_for_affected_state`, `broadcast_and_wait_for_affected_state` | Rust SDK | Current-state proof | `ExecutionProved` or `AffectedState` |
+| `FromProof` | Proof verifier | Current-state proof | Proof at the signed root |
+| `FromUnproved` | Proof verifier | Unproven execution-result text | None |
+| `waitForResponse`, `broadcastAndWait` | JavaScript SDK | Current-state proof | `ExecutionProved` only |
+| `waitForAffectedState`, `broadcastAndWaitForAffectedState` | JavaScript SDK | Current-state proof | `ExecutionProved` or `AffectedState` |
+| `waitForStateTransitionResult` | JavaScript SDK | Unproven execution-result text (a status string) | None |
+| `fetchUnproved` | JavaScript SDK | Unproven execution-result text | None |
+
+The wait rows return the untagged inner result: the method chosen fixes
+which tags were accepted, and the value carries no tag of its own. The
+hash-based `waitForStateTransitionResult` is different in kind from the two
+wait pairs. It reports the node's status for a transition hash and treats
+any returned proof as success without verifying it or the quorum
+signature, so its status is a node report, not execution evidence.
 
 No row returns a stored receipt yet. The contract-call work adds receipt
 queries and receipt-bearing wait results without moving any existing row to
