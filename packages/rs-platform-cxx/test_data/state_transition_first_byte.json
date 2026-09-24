@@ -1,0 +1,12 @@
+{
+  "description": "First byte of a serialized StateTransition: bincode's variant index of the StateTransition enum (declaration order in rs-dpp state_transition/mod.rs), not StateTransitionType. Core's WalletSigner asserts it matches the SigningOperation kind before signing.",
+  "protocol_version": 14,
+  "batch": {
+    "first_byte": 2,
+    "example_hex": "0201777777777777"
+  },
+  "identity_create": {
+    "first_byte": 3,
+    "example_hex": "0300030000000000"
+  }
+}
