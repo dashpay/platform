@@ -347,10 +347,11 @@ mod test {
         );
     }
 
-    /// A chain id mismatch fails over to another node without banning either one, so
-    /// a Sdk whose own chain id is outdated keeps getting the mismatch.
+    /// A chain id mismatch fails over to another node with a short flat exclusion
+    /// rather than an exponential health ban, so a Sdk whose own chain id is outdated
+    /// keeps getting the mismatch.
     #[tokio::test]
-    async fn test_retry_chain_id_mismatch_does_not_ban() {
+    async fn test_retry_chain_id_mismatch_uses_short_exclusion() {
         let address_list: AddressList = ["http://localhost:1", "http://localhost:2"]
             .into_iter()
             .map(|address| address.parse().expect("valid address"))

@@ -1728,7 +1728,7 @@ mod test {
         ));
         assert!(
             !error.can_retry(),
-            "the server must not be banned for serving another chain"
+            "the server must not be health-banned for serving another chain"
         );
         assert_eq!(sdk.protocol_version_number(), 1);
         assert_eq!(
