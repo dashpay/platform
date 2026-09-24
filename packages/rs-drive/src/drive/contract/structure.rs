@@ -264,9 +264,12 @@ pub(crate) fn structure() -> StructureNode {
                         .kind(ElementKind::Item)
                         .flags(&[FlagsKind::EpochOwned], MODERATOR_FLAGS)
                         .value(
-                            "the moderator's reason: a tag byte (0 no code, 1 a \
-                                 code), the code as a u16 big endian when tagged, \
-                                 then the text as UTF-8 to the end of the value",
+                            "the moderator's reason: a tag byte (bit 0 a code, bit \
+                                 1 documents, bit 2 a reason document), the code as a \
+                                 u16 big endian, the 32-byte reason document id and the \
+                                 documents cited (a count byte, then each type name as \
+                                 a length byte and the name, and the 32-byte id) when \
+                                 tagged, then the text as UTF-8 to the end of the value",
                         )
                         .describe("One ban and why, until an unban."),
                     ),

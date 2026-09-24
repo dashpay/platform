@@ -29829,7 +29829,8 @@ proto.org.dash.platform.dapi.v0.ContractModerationReason.toObject = function(inc
     code: jspb.Message.getFieldWithDefault(msg, 1, 0),
     text: jspb.Message.getFieldWithDefault(msg, 2, ""),
     documentsList: jspb.Message.toObjectList(msg.getDocumentsList(),
-    proto.org.dash.platform.dapi.v0.ContractModerationDocument.toObject, includeInstance)
+    proto.org.dash.platform.dapi.v0.ContractModerationDocument.toObject, includeInstance),
+    reasonDocumentId: msg.getReasonDocumentId_asB64()
   };
 
   if (includeInstance) {
@@ -29878,6 +29879,10 @@ proto.org.dash.platform.dapi.v0.ContractModerationReason.deserializeBinaryFromRe
       var value = new proto.org.dash.platform.dapi.v0.ContractModerationDocument;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.ContractModerationDocument.deserializeBinaryFromReader);
       msg.addDocuments(value);
+      break;
+    case 4:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setReasonDocumentId(value);
       break;
     default:
       reader.skipField();
@@ -29928,6 +29933,13 @@ proto.org.dash.platform.dapi.v0.ContractModerationReason.serializeBinaryToWriter
       3,
       f,
       proto.org.dash.platform.dapi.v0.ContractModerationDocument.serializeBinaryToWriter
+    );
+  }
+  f = /** @type {!(string|Uint8Array)} */ (jspb.Message.getField(message, 4));
+  if (f != null) {
+    writer.writeBytes(
+      4,
+      f
     );
   }
 };
@@ -30022,6 +30034,66 @@ proto.org.dash.platform.dapi.v0.ContractModerationReason.prototype.addDocuments 
  */
 proto.org.dash.platform.dapi.v0.ContractModerationReason.prototype.clearDocumentsList = function() {
   return this.setDocumentsList([]);
+};
+
+
+/**
+ * optional bytes reason_document_id = 4;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.ContractModerationReason.prototype.getReasonDocumentId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, ""));
+};
+
+
+/**
+ * optional bytes reason_document_id = 4;
+ * This is a type-conversion wrapper around `getReasonDocumentId()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.ContractModerationReason.prototype.getReasonDocumentId_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getReasonDocumentId()));
+};
+
+
+/**
+ * optional bytes reason_document_id = 4;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getReasonDocumentId()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.ContractModerationReason.prototype.getReasonDocumentId_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getReasonDocumentId()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.ContractModerationReason} returns this
+ */
+proto.org.dash.platform.dapi.v0.ContractModerationReason.prototype.setReasonDocumentId = function(value) {
+  return jspb.Message.setField(this, 4, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.ContractModerationReason} returns this
+ */
+proto.org.dash.platform.dapi.v0.ContractModerationReason.prototype.clearReasonDocumentId = function() {
+  return jspb.Message.setField(this, 4, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.ContractModerationReason.prototype.hasReasonDocumentId = function() {
+  return jspb.Message.getField(this, 4) != null;
 };
 
 

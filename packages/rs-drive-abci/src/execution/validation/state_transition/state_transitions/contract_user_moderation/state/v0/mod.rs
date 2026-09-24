@@ -25,6 +25,7 @@ use dpp::consensus::state::contract_moderation::{
     ContractUserWarningLimitReachedError, DocumentModerationWindowElapsedError,
     DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
     DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
+    ModerationReasonNotListedError,
 };
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::state_error::StateError;
@@ -229,6 +230,17 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
                 ContractModerationAbilityNotGrantedError::new(contract_id, ability, None).into(),
             );
         }
+        if let Some(error) = moderators.unlisted_reason(
+            action,
+            contract_id,
+            platform.drive,
+            epoch,
+            execution_context,
+            tx,
+            platform_version,
+        )? {
+            return refuse(error);
+        }
         // Whoever the contract protects (the owner and the moderators, and the owner of an
         // elected contract whose declaration says so) cannot be put on a list. They can
         // be taken off one: a contract update may name as moderator an identity that already
@@ -399,6 +411,17 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
             )
             .into(),
         );
+    }
+    if let Some(error) = moderators.unlisted_reason(
+        transition.action(),
+        contract_id,
+        platform.drive,
+        epoch,
+        execution_context,
+        tx,
+        platform_version,
+    )? {
+        return refuse(error);
     }
 
     let Some(document) = fetch_document_with_id(
@@ -856,6 +879,53 @@ impl<'a> Moderators<'a> {
                 )
             }
         }
+    }
+
+    /// The refusal of a seated team's ban, suspension, warning or document deletion whose
+    /// reason names no reason document its proposal lists (decentralized moderation teams): a
+    /// team acts only on the grounds it proposed, and a proposal that lists none can take no
+    /// such action. The proposal is read, billed, only when the reason names a document. A
+    /// reversal carries no reason and is not checked, and neither are the moderators a
+    /// declaration names, the interim among them, whose reason document is stored as written.
+    #[allow(clippy::too_many_arguments)]
+    fn unlisted_reason(
+        &self,
+        action: &ContractUserModerationAction,
+        contract_id: Identifier,
+        drive: &Drive,
+        epoch: &Epoch,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<ConsensusError>, Error> {
+        let Moderators::Seated { charter, .. } = self else {
+            return Ok(None);
+        };
+        let reason = match action {
+            ContractUserModerationAction::Ban { reason, .. }
+            | ContractUserModerationAction::Suspend { reason, .. }
+            | ContractUserModerationAction::Warn { reason, .. }
+            | ContractUserModerationAction::DeleteDocument { reason, .. } => reason,
+            ContractUserModerationAction::Unban { .. }
+            | ContractUserModerationAction::Unsuspend { .. }
+            | ContractUserModerationAction::ClearWarnings { .. }
+            | ContractUserModerationAction::RestoreDocument { .. } => return Ok(None),
+        };
+        let listed = match reason.reason_document_id {
+            None => false,
+            Some(reason_document_id) => charter
+                .fetch_proposal(drive, epoch, execution_context, tx, platform_version)?
+                .reasons
+                .contains(&reason_document_id),
+        };
+        Ok((!listed).then(|| {
+            ModerationReasonNotListedError::new(
+                contract_id,
+                charter.charter.submitted_charter_id,
+                reason.reason_document_id,
+            )
+            .into()
+        }))
     }
 
     /// `action`, counted for its signer when a member of a seated team signs a ban, a

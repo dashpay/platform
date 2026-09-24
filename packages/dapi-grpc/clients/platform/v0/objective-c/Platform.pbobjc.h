@@ -3006,12 +3006,13 @@ typedef GPB_ENUM(ContractModerationReason_FieldNumber) {
   ContractModerationReason_FieldNumber_Code = 1,
   ContractModerationReason_FieldNumber_Text = 2,
   ContractModerationReason_FieldNumber_DocumentsArray = 3,
+  ContractModerationReason_FieldNumber_ReasonDocumentId = 4,
 };
 
 /**
  * Why a moderator banned, suspended or warned an identity, or deleted a
  * document. Nothing checks what a moderator writes, and the documents cited
- * are not looked up.
+ * are not looked up, except the reason document a seated elected team names.
  **/
 GPB_FINAL @interface ContractModerationReason : GPBMessage
 
@@ -3026,6 +3027,11 @@ GPB_FINAL @interface ContractModerationReason : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<ContractModerationDocument*> *documentsArray;
 /** The number of items in @c documentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
+
+/** The 32-byte id of the moderation charters contract's `reason` */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *reasonDocumentId;
+/** Test to see if @c reasonDocumentId has been set. */
+@property(nonatomic, readwrite) BOOL hasReasonDocumentId;
 
 @end
 

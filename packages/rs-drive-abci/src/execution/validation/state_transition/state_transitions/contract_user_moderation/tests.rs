@@ -737,6 +737,7 @@ fn suspension_reason() -> ContractModerationReason {
         code: Some(7),
         text: "flooding".to_string(),
         documents: vec![],
+        reason_document_id: None,
     }
 }
 
@@ -1792,6 +1793,7 @@ async fn should_store_the_reason_of_a_ban_and_of_a_suspension_with_any_code() {
         code: Some(u16::MAX),
         text: "flooding the feed".to_string(),
         documents: vec![],
+        reason_document_id: None,
     };
     let transaction = setup.platform.drive.grove.start_transaction();
     let suspend = setup
@@ -2236,6 +2238,7 @@ fn deletion_reason() -> ContractModerationReason {
         code: Some(3),
         text: "spam".to_string(),
         documents: vec![],
+        reason_document_id: None,
     }
 }
 

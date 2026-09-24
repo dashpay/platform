@@ -160,6 +160,7 @@ mod test {
                     code: Some(u16::MAX),
                     text: "spam".to_string(),
                     documents: vec![],
+                    reason_document_id: None,
                 },
             },
             ContractUserModerationAction::Unban {
@@ -291,6 +292,7 @@ pub(crate) mod json_convertible_tests {
                     code: Some(12),
                     text: "flooding".to_string(),
                     documents: vec![],
+                    reason_document_id: None,
                 },
             },
             user_fee_increase: 4,

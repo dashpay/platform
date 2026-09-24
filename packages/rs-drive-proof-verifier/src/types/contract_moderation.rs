@@ -225,6 +225,7 @@ pub fn reason_from_response(
         code,
         text,
         documents,
+        reason_document_id,
     } = reason.ok_or(Error::ResponseDecodeError {
         error: "contract moderation entry holds no reason".to_string(),
     })?;
@@ -252,10 +253,22 @@ pub fn reason_from_response(
             })
         })
         .collect::<Result<Vec<_>, Error>>()?;
+    let reason_document_id = reason_document_id
+        .map(|id| {
+            Identifier::from_bytes(&id).map_err(|_| Error::ResponseDecodeError {
+                error: format!(
+                    "the reason document a contract moderation reason names has an id of {} \
+                     bytes, not 32",
+                    id.len()
+                ),
+            })
+        })
+        .transpose()?;
     Ok(ContractModerationReason {
         code,
         text,
         documents,
+        reason_document_id,
     })
 }
 
@@ -630,6 +643,7 @@ mod tests {
                     code: None,
                     text: "spam".to_string(),
                     documents: vec![],
+                    reason_document_id: None,
                 }),
                 warnings: vec![],
             },
@@ -640,6 +654,7 @@ mod tests {
                     code: Some(3),
                     text: String::new(),
                     documents: vec![],
+                    reason_document_id: None,
                 }),
                 warnings: vec![],
             },
@@ -654,6 +669,7 @@ mod tests {
                             code: None,
                             text: "first strike".to_string(),
                             documents: vec![],
+                            reason_document_id: None,
                         }),
                     },
                     ContractWarningProto {
@@ -662,6 +678,7 @@ mod tests {
                             code: None,
                             text: "second strike".to_string(),
                             documents: vec![],
+                            reason_document_id: None,
                         }),
                     },
                 ],
@@ -684,6 +701,7 @@ mod tests {
                         code: Some(3),
                         text: String::new(),
                         documents: vec![],
+                        reason_document_id: None,
                     },
                     warnings: vec![],
                 },
@@ -768,6 +786,7 @@ mod tests {
                     document_type_name: "post".to_string(),
                     document_id,
                 }],
+                reason_document_id: None,
             })
         };
         let cited = entries_from_response(vec![ContractModerationEntryProto {
@@ -805,6 +824,7 @@ mod tests {
                 code: None,
                 text: "x".repeat(4096),
                 documents: vec![],
+                reason_document_id: None,
             }),
             warnings: vec![],
         }])
@@ -896,6 +916,7 @@ mod tests {
                 code: None,
                 text: "spam".to_string(),
                 documents: vec![],
+                reason_document_id: None,
             }),
             document_hash: removal.document_hash.to_vec(),
             restoration: removal
@@ -1063,6 +1084,7 @@ mod tests {
                 code: Some(u32::from(u16::MAX) + 1),
                 text: String::new(),
                 documents: vec![],
+                reason_document_id: None,
             }),
         ] {
             let proto = ContractDocumentRemovalProto {
