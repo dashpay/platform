@@ -370,6 +370,7 @@ impl ErrorWithCode for StateError {
             Self::ReferencedIdentityKeyRequirementNotMetError(_) => 40136,
             Self::ReferencedDocumentLookupInvalidError(_) => 40137,
             Self::ReferencedDocumentListInvalidError(_) => 40138,
+            Self::DocumentActionFeeModeratorsShareMismatchError(_) => 40139,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
@@ -490,6 +491,8 @@ impl ErrorWithCode for StateError {
 
             // Contract moderation team errors: 41200-41299
             Self::ContractModeratedDocumentTypeNotYetUsableError(_) => 41200,
+            Self::ContractModerationAbilityNotGrantedError(_) => 41201,
+            Self::ModerationCharterAddedModeratorLimitReachedError(_) => 41202,
         }
     }
 }

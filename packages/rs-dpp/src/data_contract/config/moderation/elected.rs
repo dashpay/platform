@@ -386,9 +386,20 @@ impl ElectedModerators {
             .is_some_and(|abilities| abilities.contains(&ability))
     }
 
+    /// Whether the seated team holds the ability on some moderated document type. The lists
+    /// are contract-wide, so this is what lets the team ban, suspend or warn (and lift each):
+    /// an ability on a type is what the team may do over the documents of that type, and an
+    /// identity is barred from the whole contract.
+    pub fn allows_on_any_type(&self, ability: ModerationAbility) -> bool {
+        self.moderated_document_types
+            .values()
+            .any(|abilities| abilities.contains(&ability))
+    }
+
     /// Whether the interim refuses every document transition of the document type: the
-    /// interim names nobody and the type is moderated. Once a team is seated (not yet
-    /// possible) this ends.
+    /// interim names nobody and the type is moderated. This is the declaration's side only:
+    /// the block ends once a charter is seated on the contract, which only state says, so the
+    /// document gate reads whether one is before it refuses.
     pub fn interim_blocks_document_type(&self, document_type_name: &str) -> bool {
         self.interim.blocks_moderated_document_types()
             && self.moderates_document_type(document_type_name)
@@ -769,6 +780,27 @@ mod tests {
         assert!(!protected.may_moderate(&owner, &owner));
         assert!(protected.protects(&owner, &owner));
         assert!(!protected.protects(&owner, &user));
+    }
+
+    #[test]
+    fn should_give_a_seated_team_the_abilities_of_any_moderated_type_on_the_lists_only() {
+        let mut declaration = elected();
+        declaration
+            .moderated_document_types
+            .insert("like".to_string(), moderated(&[ModerationAbility::Warn]));
+        declaration.moderated_document_types.insert(
+            "post".to_string(),
+            moderated(&[ModerationAbility::Ban, ModerationAbility::DeleteDocuments]),
+        );
+
+        // The lists are contract-wide: an ability on any moderated type lets the team use it.
+        assert!(declaration.allows_on_any_type(ModerationAbility::Ban));
+        assert!(declaration.allows_on_any_type(ModerationAbility::Warn));
+        assert!(!declaration.allows_on_any_type(ModerationAbility::Suspend));
+        // A deletion is of one type's documents: only where that type carries the ability.
+        assert!(declaration.allows("post", ModerationAbility::DeleteDocuments));
+        assert!(!declaration.allows("like", ModerationAbility::DeleteDocuments));
+        assert!(!declaration.allows("comment", ModerationAbility::Ban));
     }
 
     #[test]

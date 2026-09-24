@@ -9,7 +9,7 @@ mod transformer;
 
 // A moderator's document deletion (`contract_user_moderation`) reads the document the way a
 // document's own deletion does, billed the same.
-pub(in crate::execution::validation::state_transition::state_transitions) use state::v0::fetch_documents::fetch_document_with_id;
+pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id;
 
 #[cfg(test)]
 mod tests;
