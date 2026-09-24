@@ -499,10 +499,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
         additionalProperties: false,
       },
     };
-    const buildListElementContract = (schemas: object) => new wasm.DataContract({
+    const buildListElementContract = (documentSchemas: object) => new wasm.DataContract({
       ownerId,
       identityNonce: BigInt(2),
-      schemas,
+      schemas: documentSchemas,
       definitions: null,
       fullValidation: true,
       platformVersion: new PlatformVersion(14),

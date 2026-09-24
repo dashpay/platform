@@ -1,7 +1,5 @@
-mod moderation_charter_description_too_long_error;
 mod moderation_charter_malformed_field_error;
 mod moderation_charter_reward_split_not_one_hundred_error;
 
-pub use moderation_charter_description_too_long_error::*;
 pub use moderation_charter_malformed_field_error::*;
 pub use moderation_charter_reward_split_not_one_hundred_error::*;

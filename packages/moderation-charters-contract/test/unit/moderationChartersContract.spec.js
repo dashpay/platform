@@ -171,12 +171,21 @@ describe('Moderation Charters Contract', () => {
         expect(error.keyword).to.equal('maxLength');
       });
 
-      it('should count characters, not bytes; consensus caps the bytes at 4096', async () => {
-        // 2049 two-byte characters: within the schema's 4096 characters, over the
-        // 4096 bytes `SystemLimits::max_moderation_charter_description_length`
-        // enforces in rs-dpp (ModerationCharterDescriptionTooLongError, 11002).
+      it('should refuse more than 4096 bytes within 4096 characters', async () => {
+        // 2049 two-byte characters: within `maxLength`, which counts characters, but
+        // 4098 bytes, over `maxBytes` (DocumentPropertyMaxBytesExceededError, 10421)
         const raw = await rawProposal();
         raw.description = 'é'.repeat(2049);
+
+        const errors = validate('submittedCharter', raw).getErrors();
+
+        expect(errors).to.have.length(1);
+        expect(errors[0].getCode()).to.equal(10421);
+      });
+
+      it('should accept 4096 bytes in two-byte characters', async () => {
+        const raw = await rawProposal();
+        raw.description = 'é'.repeat(2048);
 
         expect(validate('submittedCharter', raw).isValid()).to.be.true();
       });

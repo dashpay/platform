@@ -522,7 +522,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     accumulates for the team to come, and with the types not yet usable
 ///     `contract_moderation_gate` v0 refuses, paid, every document transition
 ///     of a moderated type (`ContractModeratedDocumentTypeNotYetUsableError`,
-///     41200) until a charter is seated (item 38).
+///     41200) until a charter is seated (item 39).
 ///
 /// 23. **Contested indexes without a Lock choice, and ties to the earliest
 ///     contender**: a contested unique index may declare `"resolution": 1`,
@@ -962,24 +962,44 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     35) and which carries a message encrypted to the leader; the leader acts
 ///     on it with a removal. The cap on
 ///     additions, the target's `maxAddedModerators`, is a consensus rule of
-///     item 38.
+///     item 39.
 ///     Its `byTargetContract` index is a contested unique index
 ///     with `"resolution": 1`, the masternode vote without a Lock choice of
 ///     item 23, so an elected charter create opens or joins the contest for
 ///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it
 ///     (`moderation_charters: 1`), and
 ///     `DPP_VALIDATION_VERSIONS_V5.validate_moderation_charter = Some(0)` turns
-///     on the pure-data rules of a proposal: its reward split sums to 100 and
-///     its description fits
-///     `SystemLimits::max_moderation_charter_description_length` bytes (basic
-///     errors 11000 to 11002). Genesis registers it on chains born at this
+///     on the pure-data rule of a proposal: its reward split sums to 100
+///     (basic errors 11000 and 11001). Its description fits 4096 bytes through
+///     the schema's own `maxBytes` (item 38), which every document validation
+///     checks. Genesis registers it on chains born at this
 ///     version (`create_genesis_state` v1, behind the app-connect branch),
 ///     `transition_to_version_14` inserts it on upgrade, and the Drive system
 ///     contract cache serves it from this version
-///     (`MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION`). Item 38 seats
+///     (`MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION`). Item 39 seats
 ///     the winning team.
 ///
-/// 38. **Elected moderation teams moderate from their stored charter**: seating
+/// 38. **`maxBytes` on strings**: a property keyword for the bound plain JSON
+///     Schema cannot count, the most UTF-8 bytes a string may take
+///     (`maxLength` counts characters, which are up to four bytes each). It
+///     goes on a string property, or on the `items` of a typed array of
+///     strings where it bounds every element, and is 1 to 65535 and no lower
+///     than `minLength`, checked at registration. Meta-schema v3 admits it and
+///     `apply_max_bytes` 0 folds it into `StringPropertySizes::max_bytes`, so
+///     `max_byte_size`, `max_size` and random documents respect it. The
+///     document validation (`DataContract::validate_document_properties` 0,
+///     extended in place, inert before this version) calls
+///     `validate_max_bytes_properties` (`validate_max_bytes` 0, `None` before
+///     this version) after the JSON schema, on every create and replace and in
+///     every client that validates a document, and refuses a longer value with
+///     `DocumentPropertyMaxBytesExceededError` (10421, naming the element as
+///     `tags[2]` for an item). On update it moves like `maxLength`: it may be
+///     raised or removed, not added or lowered. The moderation charters
+///     contract (item 37) declares it on the proposal's description, replacing
+///     the charter-specific description check, its error 11002 and
+///     `SystemLimits::max_moderation_charter_description_length`.
+///
+/// 39. **Elected moderation teams moderate from their stored charter**: seating
 ///     writes nothing. Awarding the contest of item 37 writes the winning
 ///     `electedCharter`, the only one ever stored for its target, so the
 ///     charter seated on an elected contract is the one the charter contract's

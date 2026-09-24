@@ -12,6 +12,7 @@ mod index_only;
 mod keep_history;
 mod list_element_reference;
 mod lookup_reference;
+mod max_bytes;
 mod nft;
 mod owner_balance_proof;
 mod owner_reference;
