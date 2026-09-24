@@ -64,8 +64,11 @@ pub(crate) trait DocumentReferenceValidation {
     /// lives on the transition rather than in `document_data`.
     /// `creator_id` is the document's creator for the `$creatorId` form and
     /// the value of the document type's `creatorRefersTo`: the writer on a
-    /// create, the stored creator on a replace, `None` when the document type
-    /// records none (registration then admits neither).
+    /// create, the stored creator on a replace. It is `None` on a replace of a
+    /// document that records none: its type records no creator ids
+    /// (registration then admits neither), or it was written before its type
+    /// did: a `$creatorId` key id property a contract update added may then
+    /// not be set, and an update cannot add a `creatorRefersTo`.
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,

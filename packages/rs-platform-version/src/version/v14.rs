@@ -689,9 +689,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     over `KeyReferenceIdentityProperty`). At document create and replace the
 ///     reference validation reads the key id from the property, resolves the
 ///     identity (the writer, the creator the action carries, or the named
-///     property's value, a key id set while it is unset being refused with
-///     40125) and fetches that key, so the key fetch is the only read; a key
-///     that does not exist refuses the write, paid, with
+///     property's value; a key id set while that property is unset, or on a
+///     document that records no creator, one written before its type recorded
+///     creator ids, being refused with 40125) and fetches that key, so the key
+///     fetch is the only read; a key that does not exist refuses the write,
+///     paid, with
 ///     `ReferencedIdentityKeyNotFoundError` (40123) and a disabled one with
 ///     `ReferencedIdentityKeyDisabledError` (40124), as for the identifier
 ///     form. A replace re-validates `$ownerId` touched or not, as the
@@ -702,9 +704,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `keyIdProperty` may not name a property carrying this form (40125 at
 ///     registration). `keyRequirements` (item 29) sit on this form exactly
 ///     as on the identifier form, checked by the same key check and by the
-///     same `boundTo` registration rule. Adding, removing or changing it is
-///     an incompatible schema change on update, like the rest of a
-///     `refersTo`.
+///     same `boundTo` registration rule. Adding it to, removing it from or
+///     changing it on an existing property is an incompatible schema change
+///     on update, like the rest of a `refersTo`; a property an update adds
+///     may carry it, so a `$creatorId` one can meet documents written before
+///     their type recorded creator ids.
 ///
 /// 31. **`refersTo` on the elements of a typed array**: an identifier element
 ///     of a typed array may carry a `refersTo` declaration on its `items`,

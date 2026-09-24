@@ -2,7 +2,9 @@ use super::*;
 
 mod replacement_tests {
     use super::*;
+    use crate::platform_types::platform_state::PlatformState;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::DataContract;
     use dpp::document::Document;
     use dpp::fee::fee_result::FeeResult;
@@ -10,10 +12,14 @@ mod replacement_tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::KeyID;
     use dpp::prelude::IdentityNonce;
+    use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::state_transition::StateTransition;
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
     use drive::util::test_helpers::setup_contract;
     use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     const REFERENCE_VALIDATION_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract.json";
@@ -4513,6 +4519,254 @@ mod replacement_tests {
                 )),
                 ..
             } if *e.identity_id() == targets.writer_id && e.key_id() == 99
+        );
+    }
+
+    const REFERENCE_VALIDATION_CREATOR_KEY_BEFORE_CREATOR_IDS_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-creator-key-before-creator-ids.json";
+    const REFERENCE_VALIDATION_CREATOR_KEY_BEFORE_CREATOR_IDS_UPDATE_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-creator-key-before-creator-ids-update.json";
+
+    /// Processes `transition` at the protocol version of `platform_state`,
+    /// commits, and returns its execution result.
+    fn process_and_commit_one(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        transition: &StateTransition,
+    ) -> StateTransitionExecutionResult {
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected the current platform version");
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[transition
+                    .serialize_to_bytes()
+                    .expect("expected a serialized transition")],
+                platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process the state transition");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the transaction");
+        processing_result.into_execution_results().remove(0)
+    }
+
+    /// A document written before its type recorded creator ids meets a
+    /// `$creatorId` key reference a later contract update adds. A transferable
+    /// `message` of a format-1 contract with a version 1 config is created at
+    /// protocol version 9, which records no creator id for any type; the chain
+    /// moves to the latest protocol version, where the type records them; a
+    /// contract update adds `senderKeyId` with `identityProperty: $creatorId`,
+    /// which registration admits on such a type; and the writer replaces the
+    /// old message shaped by `replace_mutator`. Returns the replace execution
+    /// result.
+    async fn run_replace_of_a_message_written_before_creator_ids<R>(
+        replace_mutator: R,
+    ) -> StateTransitionExecutionResult
+    where
+        R: FnOnce(&mut Document),
+    {
+        let platform_version_9 = PlatformVersion::get(9).expect("expected protocol version 9");
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(9)
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let platform_state = platform.state.load();
+        let mut rng = StdRng::seed_from_u64(9437);
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+        let mut contract = json_document_to_contract(
+            REFERENCE_VALIDATION_CREATOR_KEY_BEFORE_CREATOR_IDS_CONTRACT_PATH,
+            true,
+            platform_version_9,
+        )
+        .expect("expected to parse the contract at protocol version 9");
+        contract.set_owner_id(identity.id());
+        // What makes the type record creator ids from protocol version 10 on
+        assert!(contract.system_version_type() > 0 && contract.config().version() > 0);
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version_9,
+            )
+            .expect("expected to apply the contract");
+
+        let message = contract
+            .document_type_for_name("message")
+            .expect("expected a message document type");
+        assert!(message.documents_transferable().is_transferable());
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = message
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version_9,
+            )
+            .expect("expected a random message document");
+        document
+            .set_id_for_creation(message, &entropy.0, 1, platform_version_9)
+            .expect("expected to set the document id");
+        document.set("note", "written at protocol version 9".into());
+
+        let create_transition = BatchTransition::new_document_creation_transition_from_document(
+            document.clone(),
+            message,
+            entropy.0,
+            &key,
+            1,
+            0,
+            None,
+            &signer,
+            platform_version_9,
+            None,
+        )
+        .await
+        .expect("expected a create transition");
+        assert_matches!(
+            process_and_commit_one(&platform, &platform_state, &create_transition),
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "the message is created at protocol version 9"
+        );
+
+        let query = DriveDocumentQuery::from_sql_expr(
+            "select * from message",
+            &contract,
+            Some(&platform.config.drive),
+            platform_version_9,
+        )
+        .expect("expected a document query");
+        let stored = platform
+            .drive
+            .query_documents(query, None, false, None, None)
+            .expect("expected a query result")
+            .documents()
+            .to_vec();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].creator_id(),
+            None,
+            "protocol version 9 records no creator id, even on a transferable type"
+        );
+
+        // The chain moves to the latest protocol version
+        let mut upgraded_state = platform.state.load().as_ref().clone();
+        upgraded_state.set_current_protocol_version_in_consensus(platform_version.protocol_version);
+        upgraded_state.set_next_epoch_protocol_version(platform_version.protocol_version);
+        platform.state.store(Arc::new(upgraded_state));
+        let platform_state = platform.state.load();
+
+        let mut updated_contract = json_document_to_contract(
+            REFERENCE_VALIDATION_CREATOR_KEY_BEFORE_CREATOR_IDS_UPDATE_PATH,
+            true,
+            platform_version,
+        )
+        .expect("expected to parse the updated contract");
+        updated_contract.set_owner_id(identity.id());
+        updated_contract.set_config(contract.config().clone());
+
+        let update_transition = DataContractUpdateTransition::new_from_data_contract(
+            updated_contract.clone(),
+            &identity.clone().into_partial_identity_info(),
+            key.id(),
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected an update transition");
+        assert_matches!(
+            process_and_commit_one(&platform, &platform_state, &update_transition),
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "the update adding a $creatorId key reference to a type that records creator ids \
+             is accepted, documents written before it did notwithstanding"
+        );
+
+        let updated_message = updated_contract
+            .document_type_for_name("message")
+            .expect("expected the updated message document type");
+        let mut replacement = document;
+        replacement.set_revision(Some(2));
+        replace_mutator(&mut replacement);
+
+        let replace_transition =
+            BatchTransition::new_document_replacement_transition_from_document(
+                replacement,
+                updated_message,
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected a replace transition");
+
+        process_and_commit_one(&platform, &platform_state, &replace_transition)
+    }
+
+    /// The old message records no creator, so a `$creatorId` key id set on it
+    /// names no identity's key: the replace is refused, paid, with the error a
+    /// key id set while its identity property is not gets. Key 0 is the
+    /// writer's enabled master key, so the missing creator is the only fault.
+    #[tokio::test]
+    async fn should_document_replace_fail_when_creator_key_id_is_set_on_a_document_that_records_no_creator(
+    ) {
+        let result = run_replace_of_a_message_written_before_creator_ids(|document| {
+            document.set("senderKeyId", 0i64.into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedKeyIdPropertyInvalidError(e)
+                ),
+                ..
+            } if e.key_id_property() == "senderKeyId"
+                && e.path() == "senderKeyId"
+                && e.message().contains("records no $creatorId")
+        );
+    }
+
+    /// The creator is only read when the key id changes, so the old message
+    /// stays replaceable while its key id stays unset.
+    #[tokio::test]
+    async fn should_document_replace_succeed_on_a_document_that_records_no_creator_while_the_creator_key_id_stays_unset(
+    ) {
+        let result = run_replace_of_a_message_written_before_creator_ids(|document| {
+            document.set("note", "replaced at the latest protocol version".into());
+        })
+        .await;
+
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
     }
 
