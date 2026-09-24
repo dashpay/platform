@@ -748,6 +748,10 @@ fn with_own_contract_id_omitted(
         | DocumentPropertyReferenceTarget::DeletableDocument {
             contract_id: referenced,
             ..
+        }
+        | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+            contract_id: referenced,
+            ..
         } => {
             if *referenced == Some(contract_id) {
                 *referenced = None;
@@ -815,8 +819,9 @@ fn validate_reference_count(
 
 /// An `immutable` property may not hold a `deletableDocument` reference the
 /// replace state validation could not clear: a typed array of them, at the
-/// top level or inside an immutable object, or a single one inside an
-/// immutable object. Every replace re-validates such a reference, so once a
+/// top level or inside an immutable object, a single one inside an immutable
+/// object, or one declared with a lookup, alone or as an operand of an
+/// expression, anywhere. Every replace re-validates such a reference, so once a
 /// target is deleted the property would have to change, which an immutable
 /// property cannot: the document could never be replaced again. The one
 /// such reference that has a way out is a single one held by an immutable
@@ -832,21 +837,37 @@ fn validate_no_immutable_deletable_element_references(
         let Some(reference) = property.property_type.reference() else {
             continue;
         };
-        if !matches!(
-            reference.target(),
-            Some(DocumentPropertyReferenceTarget::DeletableDocument { .. })
-        ) {
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        // A deletableDocument found through a lookup, alone or as an operand of
+        // an expression, is re-validated on every replace too, and the clearing
+        // exception reads a document id, which a lookup key is not
+        let deletable_lookup = target.leaves().into_iter().any(|leaf| {
+            matches!(
+                leaf,
+                DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
+            )
+        });
+        if !deletable_lookup
+            && !matches!(
+                target,
+                DocumentPropertyReferenceTarget::DeletableDocument { .. }
+            )
+        {
             continue;
         }
         let top_level = path.split('.').next().unwrap_or(path);
         let is_list = matches!(reference, PropertyReference::Elements { .. });
-        // A single reference that is itself the immutable property can be
+        // A single reference by id that is itself the immutable property can be
         // cleared once its target is gone
-        if !is_list && top_level == path {
+        if !deletable_lookup && !is_list && top_level == path {
             continue;
         }
         if document_type.immutable_fields.contains(top_level) {
-            let held_as = if is_list {
+            let held_as = if deletable_lookup {
+                "a deletableDocument reference through a lookup"
+            } else if is_list {
                 "a typed array of deletableDocument references"
             } else {
                 "a deletableDocument reference inside an object"

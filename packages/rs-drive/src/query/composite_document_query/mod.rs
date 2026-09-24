@@ -621,7 +621,8 @@ impl<'a> DriveDocumentQuery<'a> {
                 // `document_reference_of` leaves it out; it is named here so
                 // the refusal says why
                 if let Some(DocumentPropertyType::IdentifierWithReference(
-                    DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. },
+                    DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
+                    | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. },
                 )) = source_property_type
                 {
                     return Err(label(&format!(

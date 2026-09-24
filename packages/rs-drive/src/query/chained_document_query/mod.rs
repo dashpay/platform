@@ -235,7 +235,8 @@ impl<'a> DriveDocumentQuery<'a> {
         // outer document's id, so `as_document_reference` leaves it out; it
         // is named here so the refusal says why
         if let DocumentPropertyType::IdentifierWithReference(
-            DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. },
+            DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
+            | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. },
         ) = &join_document_property.property_type
         {
             return Err(unsupported(format!(

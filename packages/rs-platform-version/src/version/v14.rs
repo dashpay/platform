@@ -735,8 +735,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     a key assembled from the referring document. `keys` maps every index
 ///     property to a property path of the referring type, `$ownerId` or `.`
 ///     (the value, or the element, exactly once). A `deletableDocument`
-///     reference takes none: a key into a deletable type could find a new
-///     document once the one it found is deleted. Generation 3 of the parser
+///     reference may take one too (`DeletableDocumentLookup`, appended): it
+///     then means a document with this key exists now, since the key may find
+///     a later document once the one it found is deleted, so every replace
+///     re-validates it, an immutable property may not hold it, and it is the
+///     one deletable form a reference expression and `ownerRefersTo` (never
+///     `creatorRefersTo`) take. Generation 3 of the parser
 ///     checks on every parse that each property a key reads is a stored,
 ///     required, single value of the referring type;
 ///     `create_document_types_from_document_schemas` 1, edited in place like
@@ -772,9 +776,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     target keeps its variant and its encoding; decoding refuses a nesting
 ///     deeper than `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH`, 16, so the bytes of
 ///     a consensus error cannot recurse without bound). An operand is a leaf,
-///     an `identity` or a `permanentDocument` (by id or with a `lookup`, item
-///     32), or an expression of the other combinator; a list names two or more
-///     operands. `contract`, `token`, `deletableDocument` and
+///     an `identity`, a `permanentDocument` (by id or with a `lookup`, item
+///     32), a `listElement`, a `deletableDocument` with a `lookup` (which
+///     re-validates the expression on every replace), or an expression of the
+///     other combinator; a list names two or more operands. `contract`,
+///     `token`, `deletableDocument` by id and
 ///     `identityPublicKey` leaves, the key id form, a combinator directly
 ///     inside the same combinator and keys beside a combinator are refused on
 ///     every parse. Registration caps a list at
@@ -808,9 +814,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     keyword (meta-schema v3, which reuses the property declaration by
 ///     `$ref`), whose value is the document's `$ownerId`, the writer, instead
 ///     of a property's: a single target, or a reference expression (item 33)
-///     whose every leaf is one of the two targets that can hold a writer:
+///     whose every leaf is one of the targets that can hold a writer:
 ///     `identity`, and a `permanentDocument` found through a `lookup`, where
-///     `.` is the writer; `contract`, `token` and a document by id (which the
+///     `.` is the writer (and, for the writer alone, a `deletableDocument`
+///     found through one, item 32); `contract`, `token` and a document by id (which the
 ///     writer's identity id never is) and `identityPublicKey` (which needs a
 ///     key id) are refused, as a leaf too. Parser generation 3 reads it from
 ///     the stored schema once the core parse has run the meta-schema, on
@@ -930,7 +937,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// 37. **The moderation charters system contract**
 ///     (`SystemDataContract::ModerationCharters`, schema v1, the first piece of
 ///     decentralized moderation teams) carries seven document types, all
-///     immutable and all but `resignationRequest` undeletable. A `reason` is a ground for a moderation
+///     immutable, the four a charter is made of undeletable and the three team
+///     changes deletable. A `reason` is a ground for a moderation
 ///     action, keyed by its owner and a three-letter `code` unique among the
 ///     owner's reasons. A `submittedCharter` is a leader's proposal to
 ///     moderate one contract on that contract's own terms: its
@@ -951,16 +959,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     which filed a join request for that proposal (item 32, a lookup through
 ///     the join request's unique index) and none of which is the leader
 ///     (item 26). Once a charter is seated, its leader adds members from the
-///     same join requests (`addedModerator`, the same lookup) and removes
-///     members (`removedModerator`), each once per member and charter (unique
-///     indexes), removals final, so the team that acts is the leader plus the
-///     elected members and the additions less the removals
-///     (`ElectedCharter::active_members`). A member asks to leave with a
-///     deletable `resignationRequest`, which only a member may file
-///     (`ownerRefersTo` with an `anyOf` of a `listElement` into the elected
-///     charter's `members` and a lookup of an `addedModerator`, items 33 to
-///     35) and which carries a message encrypted to the leader; the leader acts
-///     on it with a removal. The cap on
+///     same join requests (`addedModerator`, the same lookup) and takes them
+///     back by deleting the addition, and removes elected members
+///     (`removedModerator`, whose `memberId` is a `listElement` of the
+///     charter's `members`), putting one back by deleting the removal; each
+///     exists at most once per member and charter (unique indexes), so the
+///     team that acts is the leader plus the elected members less the
+///     removals plus the additions (`ElectedCharter::active_members`). A
+///     member asks to leave with a deletable `resignationRequest`, which only
+///     a member may file (`ownerRefersTo` with an `anyOf` of a `listElement`
+///     into the elected charter's `members` and a `deletableDocument` lookup
+///     of an `addedModerator`, items 32 to 35) and which carries a message
+///     encrypted to the leader; the leader acts on it by deleting the addition
+///     or removing an elected member. The cap on
 ///     additions, the target's `maxAddedModerators`, is a consensus rule of
 ///     item 40.
 ///     Its `byTargetContract` index is a contested unique index
@@ -1036,9 +1047,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `byTargetContract` index finds, and the moderation paths read it, each
 ///     read a billed document query of the system contract. Once one is seated,
 ///     only its team moderates the contract: the leader (the charter's owner)
-///     and the active members (its `members` and additions, less removals),
-///     each alone, found by at most two point reads of the unique
-///     `addedModerator` and `removedModerator` indexes; the interim moderators
+///     and the active members (its `members` less removals, plus additions),
+///     each alone, found by one point read of the unique `removedModerator`
+///     index for an elected member or of `addedModerator` for anyone else; the
+///     interim moderators
 ///     are refused (41101). The team holds the abilities the declaration gives
 ///     it: a deletion or restore needs `deleteDocuments` on the type, a list
 ///     action the ability on some moderated type
@@ -1047,7 +1059,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     declaration says so, and the interim moderators no longer are. A
 ///     `notYetUsable` interim stops blocking the moderated types
 ///     (`contract_moderation_gate` v0). An `addedModerator` past the target's
-///     `maxAddedModerators` additions ever filed for the charter is refused,
+///     `maxAddedModerators` additions the charter holds is refused,
 ///     paid (`ModerationCharterAddedModeratorLimitReachedError`, 41202), by a
 ///     hook in the batch's `validate_state` v0 that only a create of the
 ///     charter contract reaches. A document action on a moderated type may

@@ -173,7 +173,7 @@ fn should_combine_the_elected_members_the_additions_and_the_removals() {
         [id(3), id(4), id(5)].into()
     );
 
-    // A removal is final: an addition of a removed member does not bring it back
+    // A removal wins over an addition of the same elected member
     assert_eq!(
         charter.active_members(leader, &[id(2)], &[id(2)]),
         [id(3), id(4)].into()

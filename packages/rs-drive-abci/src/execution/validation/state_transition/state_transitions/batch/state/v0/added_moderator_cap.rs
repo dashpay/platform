@@ -2,8 +2,9 @@
 //!
 //! An `addedModerator` of the moderation charters system contract names a seated
 //! `electedCharter` and a member the leader adds from the proposal's join requests. The target
-//! contract's elected declaration caps them: at most `maxAddedModerators` per charter, counting
-//! the additions ever filed (the type is immutable and undeletable), so a removal frees no slot.
+//! contract's elected declaration caps them: at most `maxAddedModerators` per charter at a time,
+//! counting the additions that exist now (the leader takes one back by deleting it, which frees
+//! its slot).
 //! The schema can not count documents, so this is a consensus rule of the document create,
 //! judged here once the create's own state validation passed: its references then proved the
 //! charter is seated, that its leader is the writer, and that the member asked to join.

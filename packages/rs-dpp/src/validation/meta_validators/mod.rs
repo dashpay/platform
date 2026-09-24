@@ -450,8 +450,8 @@ mod tests {
     }
 
     #[test]
-    fn should_accept_a_lookup_on_a_permanent_document_refers_to_in_v3_document_schema() {
-        for reference_type in ["permanentDocument"] {
+    fn should_accept_a_lookup_on_a_document_refers_to_in_v3_document_schema() {
+        for reference_type in ["permanentDocument", "deletableDocument"] {
             for keys in [
                 json!({ "submittedCharterId": "submittedCharterId", "$ownerId": "." }),
                 json!({ "submittedCharterId": ".", "$ownerId": "$ownerId" }),
@@ -479,8 +479,8 @@ mod tests {
             json!({ "type": "contract", "lookup": { "index": "byOwner", "keys": keys } }),
             json!({ "type": "token", "lookup": { "index": "byOwner", "keys": keys } }),
             json!({ "type": "identityPublicKey", "keyIdProperty": "keyId", "lookup": { "index": "byOwner", "keys": keys } }),
-            json!({ "type": "deletableDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": keys } }),
             json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "keys": keys } }),
+            json!({ "type": "deletableDocument", "documentType": "note", "lookup": { "index": "byOwner" } }),
             json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner" } }),
             json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "", "keys": keys } }),
             json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "x".repeat(33), "keys": keys } }),

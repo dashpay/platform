@@ -288,6 +288,52 @@ fn should_parse_an_all_of_of_a_lookup_and_an_identity() {
     );
 }
 
+/// A `deletableDocument` found through a lookup is an operand like a permanent one: the
+/// leader takes an added moderator off by deleting the addition, and the expression is then
+/// re-validated on every replace. An immutable property may not hold it, since once the
+/// document is gone the property could never change to pass again.
+#[test]
+fn should_parse_a_deletable_document_lookup_operand_and_refuse_it_in_an_immutable_property() {
+    let mut deletable_added_moderator = added_moderator_lookup();
+    deletable_added_moderator["type"] = json!("deletableDocument");
+    let mut schema = charter_contract(any_of(vec![
+        join_request_lookup(),
+        deletable_added_moderator,
+    ]));
+    schema["documentSchemas"]["addedModerator"]["canBeDeleted"] = json!(true);
+
+    let parsed = contract(schema.clone()).expect("parses");
+    let DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+        contract_id,
+        document_type_name,
+        property_agreement,
+        lookup,
+    } = expected_added_moderator_lookup()
+    else {
+        unreachable!("a permanent lookup")
+    };
+    assert_eq!(
+        property_type(&parsed, "memberId"),
+        DocumentPropertyType::IdentifierWithReference(any_of_targets(vec![
+            expected_join_request_lookup(),
+            DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                contract_id,
+                document_type_name,
+                property_agreement,
+                lookup,
+            },
+        ]))
+    );
+
+    let mut immutable = schema;
+    immutable["documentSchemas"]["resignation"]["immutable"] = json!(["memberId"]);
+    assert_refused(
+        contract(immutable),
+        "lists \"memberId\" as immutable, but \"memberId\" is a deletableDocument reference \
+         through a lookup",
+    );
+}
+
 /// Each leaf is an ordinary declaration with its own keys: an agreement
 /// belongs to the leaf it is declared on.
 #[test]
@@ -477,7 +523,7 @@ fn should_refuse_every_leaf_type_an_expression_does_not_take() {
         (
             json!({ "type": "deletableDocument", "documentType": "note" }),
             "reference of type deletableDocument, which a reference expression does not take: \
-             it is re-validated on every replace",
+             by id it is re-validated on every replace",
         ),
         (
             json!({ "type": "identityPublicKey", "keyIdProperty": "keyId" }),

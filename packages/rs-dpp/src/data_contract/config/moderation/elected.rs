@@ -327,8 +327,8 @@ pub struct ElectedModerators {
     /// `contractRequirements: { "moderation": "electionOpen" }` is what reads it.
     pub election_delay: Option<u32>,
     /// How many members the leader of a seated team may add after the election, each one
-    /// an identity that asked to join the team's proposal: the additions ever filed against
-    /// a seated charter, so a removal or a resignation frees no slot. 0 when the declaration
+    /// an identity that asked to join the team's proposal: the additions a seated charter
+    /// holds at a time, the leader taking one back by deleting it. 0 when the declaration
     /// leaves it out, a team then being exactly what was elected; at most
     /// `SystemLimits::max_contract_moderation_added_moderators`. The moderation charters
     /// contract's `addedModerator` documents are what it counts.

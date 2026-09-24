@@ -384,7 +384,7 @@
   "addedModerator": {
     "type": "object",
     "documentsMutable": false,
-    "canBeDeleted": false,
+    "canBeDeleted": true,
     "indices": [
       {
         "name": "byElectedCharterMember",
@@ -454,12 +454,12 @@
       "memberId"
     ],
     "additionalProperties": false,
-    "description": "A member the leader adds after the election, up to the target's maxAddedModerators"
+    "description": "A member the leader adds after the election, at most the target's maxAddedModerators at a time; deleting it takes the member off the team"
   },
   "removedModerator": {
     "type": "object",
     "documentsMutable": false,
-    "canBeDeleted": false,
+    "canBeDeleted": true,
     "indices": [
       {
         "name": "byElectedCharterMember",
@@ -498,6 +498,15 @@
         "maxItems": 32,
         "contentMediaType": "application/x.dash.dpp.identifier",
         "distinctFrom": "$ownerId",
+        "refersTo": {
+          "type": "listElement",
+          "documentType": "electedCharter",
+          "propertyAgreement": {
+            "electedCharterId": "$id"
+          },
+          "inList": "members"
+        },
+        "description": "An elected member of the charter; an added one is taken off by deleting its addition",
         "position": 1
       }
     },
@@ -507,7 +516,7 @@
       "memberId"
     ],
     "additionalProperties": false,
-    "description": "A member the leader removes; final"
+    "description": "An elected member the leader takes off the team; deleting it puts them back"
   },
   "resignationRequest": {
     "type": "object",
@@ -524,7 +533,7 @@
           "inList": "members"
         },
         {
-          "type": "permanentDocument",
+          "type": "deletableDocument",
           "documentType": "addedModerator",
           "lookup": {
             "index": "byElectedCharterMember",
