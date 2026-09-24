@@ -834,7 +834,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     TokenShieldedPoolIncompatibleRulesError(TokenShieldedPoolIncompatibleRulesError),
-
 }
 
 impl From<BasicError> for ConsensusError {

@@ -633,7 +633,6 @@ pub enum StateError {
 
     #[error(transparent)]
     TokenShieldedPaymentNotRequiredError(TokenShieldedPaymentNotRequiredError),
-
 }
 
 impl From<StateError> for ConsensusError {
