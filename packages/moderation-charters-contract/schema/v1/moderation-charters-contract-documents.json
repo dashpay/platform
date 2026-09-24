@@ -152,7 +152,6 @@
           "actions"
         ],
         "additionalProperties": false,
-        "sumOfProperties": 100,
         "description": "Percentages summing to 100",
         "position": 4
       }

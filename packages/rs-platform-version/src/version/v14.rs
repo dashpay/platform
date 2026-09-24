@@ -967,43 +967,37 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     with `"resolution": 1`, the masternode vote without a Lock choice of
 ///     item 23, so an elected charter create opens or joins the contest for
 ///     its target. `SYSTEM_DATA_CONTRACT_VERSIONS_V3` registers it
-///     (`moderation_charters: 1`). A proposal's reward split sums to 100 and
-///     its description fits 4096 bytes through the schema's own
-///     `sumOfProperties` and `maxBytes` (item 38), so every create checks
-///     them; `ModerationCharterMalformedFieldError` (basic error 11000) is what
-///     the readers report on a document they cannot read. Genesis registers it on chains born at this
+///     (`moderation_charters: 1`), and
+///     `DPP_VALIDATION_VERSIONS_V5.validate_moderation_charter = Some(0)` turns
+///     on the pure-data rule the seating path will run on a proposal: its
+///     reward split sums to 100 (basic errors 11000 and 11001). Its description
+///     fits 4096 bytes through the schema's own `maxBytes` (item 38), which
+///     every document validation checks. Genesis registers it on chains born at this
 ///     version (`create_genesis_state` v1, behind the app-connect branch),
 ///     `transition_to_version_14` inserts it on upgrade, and the Drive system
 ///     contract cache serves it from this version
 ///     (`MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION`). Seating a
 ///     winning team comes in a later pull request.
 ///
-/// 38. **`maxBytes` on strings and `sumOfProperties` on objects**: two
-///     property keywords for bounds plain JSON Schema cannot count.
-///     `maxBytes` (1 to 65535, no lower than `minLength`) goes on a string
-///     property, or on the `items` of a typed array of strings where it bounds
-///     every element, and caps the value's UTF-8 length: `maxLength` counts
-///     characters, which are up to four bytes each. `sumOfProperties` goes on
-///     an object property and is the total its members must add up to; every
-///     member must be an integer, required without `requiredSince` and not
-///     transient, and the total must be reachable from the members' `minimum`
-///     and `maximum`, all checked at registration. Meta-schema v3 admits both,
-///     `apply_max_bytes` 0 and `apply_sum_of_properties` 0 parse them onto
-///     `DocumentProperty::max_bytes` and `DocumentProperty::sum_of_properties`
-///     (the object's entry in `properties()`, since objects are not in the
-///     flattened map). Document create structure validation 1 and replace
-///     structure validation 0 (extended in place, inert before this version,
-///     where no parsed property carries either keyword) call
-///     `validate_max_bytes_properties` (`validate_max_bytes` 0) and
-///     `validate_sum_of_properties` (`validate_sum_of_properties` 0), `None`
-///     before this version, which refuse a longer string with
+/// 38. **`maxBytes` on strings**: a property keyword for the bound plain JSON
+///     Schema cannot count, the most UTF-8 bytes a string may take
+///     (`maxLength` counts characters, which are up to four bytes each). It
+///     goes on a string property, or on the `items` of a typed array of
+///     strings where it bounds every element, and is 1 to 65535 and no lower
+///     than `minLength`, checked at registration. Meta-schema v3 admits it and
+///     `apply_max_bytes` 0 folds it into `StringPropertySizes::max_bytes`, so
+///     `max_byte_size`, `max_size` and random documents respect it. The
+///     document validation (`DataContract::validate_document_properties` 0,
+///     extended in place, inert before this version) calls
+///     `validate_max_bytes_properties` (`validate_max_bytes` 0, `None` before
+///     this version) after the JSON schema, on every create and replace and in
+///     every client that validates a document, and refuses a longer value with
 ///     `DocumentPropertyMaxBytesExceededError` (10421, naming the element as
-///     `tags[2]` for an item) and an object adding up to anything else with
-///     `DocumentPropertySumMismatchError` (10422). On update `maxBytes` moves
-///     like `maxLength` (it may be raised or removed, not added or lowered) and
-///     `sumOfProperties` is frozen. The moderation charters contract (item 37)
-///     declares both, which replace the charter-specific rules and their
-///     errors 11001 and 11002 and `SystemLimits::max_moderation_charter_description_length`.
+///     `tags[2]` for an item). On update it moves like `maxLength`: it may be
+///     raised or removed, not added or lowered. The moderation charters
+///     contract (item 37) declares it on the proposal's description, replacing
+///     the charter-specific description check, its error 11002 and
+///     `SystemLimits::max_moderation_charter_description_length`.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

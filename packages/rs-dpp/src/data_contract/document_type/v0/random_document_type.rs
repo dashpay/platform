@@ -156,6 +156,7 @@ impl DocumentTypeV0 {
                 DocumentPropertyType::String(StringPropertySizes {
                     min_length,
                     max_length,
+                    max_bytes: None,
                 })
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
                 DocumentPropertyType::I64
@@ -200,8 +201,6 @@ impl DocumentTypeV0 {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
-                max_bytes: None,
-                sum_of_properties: None,
             }
         };
 
@@ -552,6 +551,7 @@ impl DocumentTypeV0 {
                 DocumentPropertyType::String(StringPropertySizes {
                     min_length,
                     max_length,
+                    max_bytes: None,
                 })
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
                 DocumentPropertyType::I64
@@ -596,8 +596,6 @@ impl DocumentTypeV0 {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
-                max_bytes: None,
-                sum_of_properties: None,
             }
         };
 

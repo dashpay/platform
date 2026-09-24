@@ -76,7 +76,7 @@ bound to it, the key join requests are encrypted to.
 | `description` | string, 1 to 4096 characters and at most 4096 bytes (`maxBytes`), required | What the team would moderate and how, for joiners and voters. Informational |
 | `reasons` | typed array of at most 64 unique identifiers, required, each `refersTo` a `reason` | The moderation reasons the team's actions may name; empty is allowed, a team that can take no action; a missing reason refuses the create, naming the element (`reasons[2]`) |
 | `moderatorsShare` | integer 0 to 100 | The percentage of each moderated document type's declared moderators fee the team takes. Absent is the full amount; a lower number is a discount; 0 is a team that will not moderate and takes no rewards |
-| `rewardSplit` | object, required, `sumOfProperties: 100` | `leader`, `equal` and `actions`, three percentages summing to 100: the leader's share, the share split equally among the other members, and the share split by each member's action count |
+| `rewardSplit` | object, required | `leader`, `equal` and `actions`, three percentages summing to 100: the leader's share, the share split equally among the other members, and the share split by each member's action count |
 
 Indexes: `byTargetContract` (`targetContractId`, `$createdAt`) lists the
 proposals for a contract in filing order; `byOwner` (`$ownerId`) lists a
@@ -173,21 +173,21 @@ contest for its target contract. Reading the join window, the vote window and
 the fund from the target contract comes with the seating, in a later pull
 request.
 
-## The split total and the description cap
+## Validation beyond the schema
 
 Every rule above is enforced by the schema's keywords when a document is
-written, the reward split's total and the description's byte cap included:
+written, the description's 4096-byte cap included: `maxBytes` refuses a longer
+description with `DocumentPropertyMaxBytesExceededError` (10421). One rule of a
+proposal is not expressible there, and `validate_submitted_charter` in `rs-dpp`
+(`packages/rs-dpp/src/moderation_charter/`) checks it without reading state,
+for the path that seats a team:
 
 | Rule | Error | Code |
 | --- | --- | --- |
-| The three shares of `rewardSplit` do not sum to 100 (`sumOfProperties`) | `DocumentPropertySumMismatchError` | 10422 |
-| The description is over 4096 bytes (`maxBytes`); `maxLength` counts characters | `DocumentPropertyMaxBytesExceededError` | 10421 |
+| A property is missing or of the wrong type | `ModerationCharterMalformedFieldError` | 11000 |
+| The three shares of `rewardSplit` do not sum to 100 | `ModerationCharterRewardSplitNotOneHundredError` | 11001 |
 
-`SubmittedCharter` and `ElectedCharter` in `rs-dpp`
-(`packages/rs-dpp/src/moderation_charter/`) read a proposal's and an elected
-charter's properties without reading state, and report a property that is
-missing or of the wrong type with `ModerationCharterMalformedFieldError`
-(11000).
+`ElectedCharter` reads an elected charter's properties for the same path.
 
 ## Reading and writing from a client
 

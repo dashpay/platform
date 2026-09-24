@@ -1,10 +1,11 @@
 use super::{
-    property_names, ElectedCharter, ModerationCharterRewardSplit, SubmittedCharter,
-    FULL_MODERATORS_SHARE,
+    property_names, validate_submitted_charter, ElectedCharter, ModerationCharterRewardSplit,
+    SubmittedCharter, FULL_MODERATORS_SHARE,
 };
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 
 fn proposal() -> SubmittedCharter {
     SubmittedCharter {
@@ -17,6 +18,15 @@ fn proposal() -> SubmittedCharter {
             equal: 40,
             actions: 50,
         },
+    }
+}
+
+fn first_basic_error(
+    result: &crate::validation::ConsensusValidationResult<SubmittedCharter>,
+) -> &BasicError {
+    match result.errors.first() {
+        Some(ConsensusError::BasicError(error)) => error,
+        other => panic!("expected a basic error, got {other:?}"),
     }
 }
 
@@ -53,14 +63,51 @@ fn should_read_a_zero_share_as_zero() {
 }
 
 #[test]
-fn should_read_a_proposal_without_reasons() {
+fn should_accept_a_proposal_without_reasons() {
     let proposal = SubmittedCharter {
         reasons: vec![],
         ..proposal()
     };
-    let read = SubmittedCharter::from_document_properties(&proposal.to_document_properties());
-    assert!(read.is_valid_with_data(), "{:?}", read.errors);
-    assert_eq!(read.into_data().expect("data"), proposal);
+    let result = validate_submitted_charter(
+        &proposal.to_document_properties(),
+        PlatformVersion::latest(),
+    )
+    .expect("validation executes");
+    assert!(result.is_valid_with_data());
+}
+
+#[test]
+fn should_accept_a_valid_proposal() {
+    let result = validate_submitted_charter(
+        &proposal().to_document_properties(),
+        PlatformVersion::latest(),
+    )
+    .expect("validation executes");
+    assert!(result.is_valid_with_data(), "{:?}", result.errors);
+}
+
+#[test]
+fn should_refuse_a_reward_split_that_does_not_sum_to_one_hundred() {
+    for (leader, equal, actions) in [(10, 40, 40), (50, 50, 1), (0, 0, 0)] {
+        let proposal = SubmittedCharter {
+            reward_split: ModerationCharterRewardSplit {
+                leader,
+                equal,
+                actions,
+            },
+            ..proposal()
+        };
+        let result = validate_submitted_charter(
+            &proposal.to_document_properties(),
+            PlatformVersion::latest(),
+        )
+        .expect("validation executes");
+        assert!(matches!(
+            first_basic_error(&result),
+            BasicError::ModerationCharterRewardSplitNotOneHundredError(e)
+                if (e.leader(), e.equal(), e.actions()) == (leader, equal, actions)
+        ));
+    }
 }
 
 #[test]
@@ -96,6 +143,12 @@ fn should_refuse_a_missing_or_mistyped_property() {
             BasicError::ModerationCharterMalformedFieldError(e)
         )) if e.field() == property_names::REASONS
     ));
+}
+
+#[test]
+fn should_refuse_to_validate_below_protocol_version_14() {
+    let platform_version = PlatformVersion::get(13).expect("version 13");
+    assert!(proposal().validate(platform_version).is_err());
 }
 
 #[test]

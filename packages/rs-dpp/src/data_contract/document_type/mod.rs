@@ -163,10 +163,6 @@ pub(crate) mod property_names {
     /// Meta-schema v3+ (protocol version 14). See `apply_max_bytes` in
     /// `try_from_schema`.
     pub const MAX_BYTES: &str = "maxBytes";
-    /// Property-level integer on an object property: the total its integer
-    /// members must add up to. Meta-schema v3+ (protocol version 14). See
-    /// `apply_sum_of_properties` in `try_from_schema`.
-    pub const SUM_OF_PROPERTIES: &str = "sumOfProperties";
     pub const KEY_REQUIREMENTS: &str = "keyRequirements";
     pub const PURPOSE: &str = "purpose";
     pub const BOUND_TO: &str = "boundTo";

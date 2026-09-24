@@ -1548,48 +1548,6 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                 ],
             },
         ),
-        // `sumOfProperties` (the total an object's integer properties add up
-        // to) is frozen like `distinctFrom`: readers of stored documents rely on
-        // the total, so adding, removing or changing it is refused.
-        (
-            "sumOfProperties",
-            CompatibilityRules {
-                allow_addition: false,
-                allow_removal: false,
-                allow_replacement_callback: FALSE_CALLBACK.clone(),
-                subschema_levels_depth: None,
-                inner: None,
-                #[cfg(any(test, feature = "examples"))]
-                examples: vec![
-                    (
-                        json!({}),
-                        json!({ "sumOfProperties": 100 }),
-                        Some(JsonSchemaChange::Add(AddOperation {
-                            path: "/sumOfProperties".to_string(),
-                            value: json!(100),
-                        })),
-                    )
-                        .into(),
-                    (
-                        json!({ "sumOfProperties": 100 }),
-                        json!({}),
-                        Some(JsonSchemaChange::Remove(RemoveOperation {
-                            path: "/sumOfProperties".to_string(),
-                        })),
-                    )
-                        .into(),
-                    (
-                        json!({ "sumOfProperties": 100 }),
-                        json!({ "sumOfProperties": 1000 }),
-                        Some(JsonSchemaChange::Replace(ReplaceOperation {
-                            path: "/sumOfProperties".to_string(),
-                            value: json!(1000),
-                        })),
-                    )
-                        .into(),
-                ],
-            },
-        ),
         (
             "$defs",
             CompatibilityRules {

@@ -661,37 +661,23 @@ In Rust the declaration is `DocumentProperty::encrypted_for` (`Option<EncryptedF
 
 Clients encrypt and decrypt through the declaration rather than a per-contract recipe. The Rust SDK's `dash_sdk::platform::encrypted_for` module has `encrypt_property`, which writes the ciphertext and both key id properties, and `decrypt_property`. `EncryptedPropertyEnvelope::read` names the identities and key ids a reader needs. `select_encryption_keys` picks the keys the document type's `identityPublicKey` references demand through their `keyRequirements`. In JavaScript the same helpers are `sdk.encryptedFor.encrypt`, `decrypt` and `envelope` (`WasmSdk.encryptDocumentProperty`, `decryptDocumentProperty` and `encryptedPropertyEnvelope`). The layout has no authentication tag, so a wrong key fails the padding check except about once in 256 attempts, when it yields garbage.
 
-## Byte Caps and Sums (`maxBytes`, `sumOfProperties`)
+## Byte Caps on Strings (`maxBytes`)
 
-Protocol version 14 adds two property keywords for bounds plain JSON Schema cannot count. Both are pure structure rules: they read the transition being written and nothing else.
+Protocol version 14 adds the property keyword `maxBytes`, a bound plain JSON Schema cannot count: the most bytes a string may take in UTF-8. `maxLength` counts characters, and a character is up to four bytes, so `maxLength: 4096` alone admits values up to the 5120-byte cap every field has (`SystemLimits::max_field_value_size`), not 4096 bytes.
 
 ```json
 "description": {
   "type": "string", "minLength": 1, "maxLength": 4096,
   "maxBytes": 4096,
   "position": 1
-},
-"rewardSplit": {
-  "type": "object",
-  "properties": {
-    "leader": { "type": "integer", "minimum": 0, "maximum": 100, "position": 0 },
-    "equal": { "type": "integer", "minimum": 0, "maximum": 100, "position": 1 },
-    "actions": { "type": "integer", "minimum": 0, "maximum": 100, "position": 2 }
-  },
-  "required": ["leader", "equal", "actions"],
-  "additionalProperties": false,
-  "sumOfProperties": 100,
-  "position": 4
 }
 ```
 
-`maxBytes` caps a string's UTF-8 length. `maxLength` counts characters, and a character is up to four bytes, so `maxLength: 4096` alone lets a value take 16384 bytes. The keyword goes on a string property, or on the `items` of a typed array of strings, where it bounds every element; it is refused on the array itself and on elements of any other type. It is an integer from 1 to 65535 and no lower than `minLength`, since a string of `minLength` characters is at least that many bytes. On contract update it moves like `maxLength`: raising or removing it is compatible, adding or lowering it is not.
+The keyword goes on a string property, or on the `items` of a typed array of strings, where it bounds every element; it is refused on the array itself and on elements of any other type. It is an integer from 1 to 65535 and no lower than `minLength`, since a string of `minLength` characters is at least that many bytes. On contract update it moves like `maxLength`: raising or removing it is compatible, adding or lowering it is not.
 
-`sumOfProperties` goes on an object property and is the total the object's members must add up to. At contract registration every member must be an integer property, required without `requiredSince`, and not transient, so the sum is defined on every stored object, and the total must be reachable from the members' `minimum` and `maximum` (their integer type's bounds where absent). A contract update that adds, removes or changes it is an incompatible schema change: readers of stored objects rely on the total.
+The parser (generation 3, meta-schema v3, `apply_max_bytes`) folds the bound into the string's `StringPropertySizes::max_bytes`, next to `max_length`, so the sizes the type reports take it into account: `max_byte_size` is the smaller of `maxBytes` and four bytes a character, and random documents stay within it.
 
-Enforcement lives in the structure validation of the document create and replace actions (create structure generation 1, introduced at protocol version 14, and replace structure generation 0, extended in place: the calls are inert before 14, where no property can carry either keyword), after the schema validation of the document's properties. A longer string fails the write with `DocumentPropertyMaxBytesExceededError` (basic code 10421), which names the property (`tags[2]` for an element) and both lengths; an object adding up to anything else fails it with `DocumentPropertySumMismatchError` (basic code 10422), which names the object and both sums. A property or object the document leaves out is not checked; whether it may be left out is the `required` list's business.
-
-In Rust the declarations are `DocumentProperty::max_bytes` (`Option<u16>`) and `DocumentProperty::sum_of_properties` (`Option<i64>`, on the object's entry in `properties()`, since objects are not in the flattened map), and the checks are `DocumentTypeBasicMethods::validate_max_bytes_properties()` and `validate_sum_of_properties()`, versioned on the `validate_max_bytes` and `validate_sum_of_properties` method slots (`None` before protocol version 14).
+The check runs where the JSON schema validation of a document's properties runs, `DataContract::validate_document_properties`, right after it: on every document create and replace, and in every client that validates a document before sending it. A longer string is refused with `DocumentPropertyMaxBytesExceededError` (basic code 10421), which names the property (`tags[2]` for an element) and both lengths. The document validation (version 0, extended in place) is inert before protocol version 14, where no string carries a byte cap and the `validate_max_bytes` method slot is `None`. In Rust the check is `DocumentTypeBasicMethods::validate_max_bytes_properties()`; in JavaScript the error reaches an app as `DocumentMaxBytesErrorCode.MaxBytesExceeded`.
 
 ## Rules and Guidelines
 

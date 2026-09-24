@@ -198,8 +198,6 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
-            max_bytes: None,
-            sum_of_properties: None,
             transient: false,
         }
     }
@@ -210,13 +208,12 @@ mod tests {
             property_type: DocumentPropertyType::String(StringPropertySizes {
                 min_length: None,
                 max_length: None,
+                max_bytes: None,
             }),
             required: true,
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
-            max_bytes: None,
-            sum_of_properties: None,
             transient: false,
         }
     }
@@ -228,8 +225,6 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
-            max_bytes: None,
-            sum_of_properties: None,
             transient: false,
         }
     }

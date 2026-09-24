@@ -201,9 +201,9 @@ impl DocumentEncryptionErrorCodeWasm {
     }
 }
 
-/// Consensus error codes emitted by the `maxBytes` and `sumOfProperties`
-/// checks, which run from protocol version 14 onward on every document create
-/// and replace.
+/// Consensus error codes emitted by the `maxBytes` check, which runs from
+/// protocol version 14 onward wherever a document is validated, on every
+/// create and replace included.
 ///
 /// Branch on an error's `code` against these instead of matching its
 /// message:
@@ -212,29 +212,25 @@ impl DocumentEncryptionErrorCodeWasm {
 /// try {
 ///   await sdk.documents.create({ document, identityKey, signer });
 /// } catch (e) {
-///   if (e.code === DocumentPropertyBoundErrorCode.MaxBytesExceeded) {
+///   if (e.code === DocumentMaxBytesErrorCode.MaxBytesExceeded) {
 ///     // a string is longer in UTF-8 bytes than its property's maxBytes
 ///   }
 /// }
 /// ```
-#[wasm_bindgen(js_name = "DocumentPropertyBoundErrorCode")]
+#[wasm_bindgen(js_name = "DocumentMaxBytesErrorCode")]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum DocumentPropertyBoundErrorCodeWasm {
+pub enum DocumentMaxBytesErrorCodeWasm {
     /// A string, or an element of a typed array of strings, is longer in
     /// UTF-8 bytes than the `maxBytes` its property declares. `maxLength`
     /// counts characters, which are up to four bytes each.
     MaxBytesExceeded = 10421,
-    /// An object's integer members do not add up to the `sumOfProperties`
-    /// it declares.
-    SumMismatch = 10422,
 }
 
-impl DocumentPropertyBoundErrorCodeWasm {
-    /// The bound error a code names, or `None` for any other code.
+impl DocumentMaxBytesErrorCodeWasm {
+    /// The maxBytes error a code names, or `None` for any other code.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             10421 => Some(Self::MaxBytesExceeded),
-            10422 => Some(Self::SumMismatch),
             _ => None,
         }
     }
@@ -293,11 +289,10 @@ impl ConsensusErrorWasm {
     pub fn document_encryption_error_code(&self) -> Option<DocumentEncryptionErrorCodeWasm> {
         DocumentEncryptionErrorCodeWasm::from_code(self.0.code())
     }
-    /// The `maxBytes` or `sumOfProperties` error this is, or `undefined` when
-    /// it is not code 10421 or 10422.
-    #[wasm_bindgen(getter = "documentPropertyBoundErrorCode")]
-    pub fn document_property_bound_error_code(&self) -> Option<DocumentPropertyBoundErrorCodeWasm> {
-        DocumentPropertyBoundErrorCodeWasm::from_code(self.0.code())
+    /// The maxBytes error this is, or `undefined` when it is not code 10421.
+    #[wasm_bindgen(getter = "documentMaxBytesErrorCode")]
+    pub fn document_max_bytes_error_code(&self) -> Option<DocumentMaxBytesErrorCodeWasm> {
+        DocumentMaxBytesErrorCodeWasm::from_code(self.0.code())
     }
 }
 
@@ -420,41 +415,27 @@ mod tests {
         assert_eq!(DocumentEncryptionErrorCodeWasm::from_code(10419), None);
     }
 
-    /// Built from the real DPP errors rather than code literals, like the
+    /// Built from the real DPP error rather than a code literal, like the
     /// encryption test above.
     #[test]
-    fn property_bound_error_codes_mirror_the_dpp_errors() {
+    fn should_mirror_the_dpp_error_in_the_max_bytes_error_code() {
         use dpp::consensus::basic::BasicError;
-        use dpp::consensus::basic::document::{
-            DocumentPropertyMaxBytesExceededError, DocumentPropertySumMismatchError,
-        };
+        use dpp::consensus::basic::document::DocumentPropertyMaxBytesExceededError;
 
-        for (error, expected) in [
-            (
-                ConsensusError::from(BasicError::DocumentPropertyMaxBytesExceededError(
-                    DocumentPropertyMaxBytesExceededError::new(
-                        "description".to_string(),
-                        4098,
-                        4096,
-                    ),
-                )),
-                DocumentPropertyBoundErrorCodeWasm::MaxBytesExceeded,
-            ),
-            (
-                ConsensusError::from(BasicError::DocumentPropertySumMismatchError(
-                    DocumentPropertySumMismatchError::new("rewardSplit".to_string(), 100, 90),
-                )),
-                DocumentPropertyBoundErrorCodeWasm::SumMismatch,
-            ),
-        ] {
-            assert_eq!(expected as u32, error.code());
-            assert_eq!(
-                ConsensusErrorWasm(error).document_property_bound_error_code(),
-                Some(expected)
-            );
-        }
+        let error = ConsensusError::from(BasicError::DocumentPropertyMaxBytesExceededError(
+            DocumentPropertyMaxBytesExceededError::new("description".to_string(), 4098, 4096),
+        ));
+
+        assert_eq!(
+            DocumentMaxBytesErrorCodeWasm::MaxBytesExceeded as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_max_bytes_error_code(),
+            Some(DocumentMaxBytesErrorCodeWasm::MaxBytesExceeded)
+        );
         // A neighbouring code is not claimed.
-        assert_eq!(DocumentPropertyBoundErrorCodeWasm::from_code(10420), None);
+        assert_eq!(DocumentMaxBytesErrorCodeWasm::from_code(10420), None);
     }
 
     /// The six reference-validation errors, paired with the JS enum variant

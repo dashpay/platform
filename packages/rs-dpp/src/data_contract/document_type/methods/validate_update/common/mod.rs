@@ -2909,43 +2909,37 @@ mod tests {
         }
     }
 
-    mod max_bytes_and_sum_of_properties {
+    mod max_bytes {
         use super::*;
         use crate::consensus::basic::BasicError;
         use crate::data_contract::config::DataContractConfig;
         use std::collections::BTreeMap;
 
-        /// A string `note` with `maxBytes` as given, and an object `split` of two
-        /// percentages with `sumOfProperties` as given.
+        /// A string `note` with `maxBytes` as `note_bound`, and a typed string array
+        /// `tags` whose `items` carry `maxBytes` as `tags_bound`.
         fn document_type(
-            max_bytes: Option<u64>,
-            sum_of_properties: Option<i64>,
+            note_bound: Option<u64>,
+            tags_bound: Option<u64>,
             platform_version: &PlatformVersion,
         ) -> DocumentType {
             let mut note = platform_value!({ "type": "string", "maxLength": 64, "position": 0 });
-            if let Some(max_bytes) = max_bytes {
+            if let Some(max_bytes) = note_bound {
                 note.insert("maxBytes".to_string(), max_bytes.into())
                     .expect("should insert maxBytes");
             }
-            let mut split = platform_value!({
-                "type": "object",
-                "position": 1,
-                "properties": {
-                    "a": { "type": "integer", "minimum": 0, "maximum": 100, "position": 0 },
-                    "b": { "type": "integer", "minimum": 0, "maximum": 100, "position": 1 }
-                },
-                "required": ["a", "b"],
-                "additionalProperties": false
-            });
-            if let Some(total) = sum_of_properties {
-                split
-                    .insert("sumOfProperties".to_string(), total.into())
-                    .expect("should insert sumOfProperties");
+            let mut items = platform_value!({ "type": "string", "maxLength": 16 });
+            if let Some(max_bytes) = tags_bound {
+                items
+                    .insert("maxBytes".to_string(), max_bytes.into())
+                    .expect("should insert maxBytes");
             }
 
             let schema = platform_value!({
                 "type": "object",
-                "properties": { "note": note, "split": split },
+                "properties": {
+                    "note": note,
+                    "tags": { "type": "array", "maxItems": 4, "items": items, "position": 1 }
+                },
                 "signatureSecurityLevelRequirement": 0,
                 "additionalProperties": false,
             });
@@ -2970,8 +2964,8 @@ mod tests {
         }
 
         fn compatibility(
-            old: (Option<u64>, Option<i64>),
-            new: (Option<u64>, Option<i64>),
+            old: (Option<u64>, Option<u64>),
+            new: (Option<u64>, Option<u64>),
         ) -> SimpleConsensusValidationResult {
             let platform_version = PlatformVersion::latest();
             let old_document_type = document_type(old.0, old.1, platform_version);
@@ -2983,17 +2977,18 @@ mod tests {
         }
 
         /// `maxBytes` moves like `maxLength`: every stored string still fits a
-        /// raised or dropped bound.
+        /// raised or dropped bound, on a property and on typed array elements.
         #[test]
         fn should_return_valid_result_when_max_bytes_is_raised_or_removed() {
             for (old_bound, new_bound) in [(Some(8), Some(16)), (Some(8), None), (Some(8), Some(8))]
             {
-                let result = compatibility((old_bound, None), (new_bound, None));
-                assert!(
-                    result.is_valid(),
-                    "{old_bound:?} -> {new_bound:?}: {:?}",
-                    result.errors
-                );
+                for (old, new) in [
+                    ((old_bound, None), (new_bound, None)),
+                    ((None, old_bound), (None, new_bound)),
+                ] {
+                    let result = compatibility(old, new);
+                    assert!(result.is_valid(), "{old:?} -> {new:?}: {:?}", result.errors);
+                }
             }
         }
 
@@ -3001,38 +2996,28 @@ mod tests {
         #[test]
         fn should_return_invalid_result_when_max_bytes_is_added_or_lowered() {
             for (old_bound, new_bound) in [(None, Some(8)), (Some(16), Some(8))] {
-                let result = compatibility((old_bound, None), (new_bound, None));
-                assert_matches!(
-                    result.errors.as_slice(),
-                    [ConsensusError::BasicError(
-                        BasicError::IncompatibleDocumentTypeSchemaError(e)
-                    )] if e.property_path() == "/properties/note/maxBytes",
-                    "{old_bound:?} -> {new_bound:?}"
-                );
+                for (old, new, changed_path) in [
+                    (
+                        (old_bound, None),
+                        (new_bound, None),
+                        "/properties/note/maxBytes",
+                    ),
+                    (
+                        (None, old_bound),
+                        (None, new_bound),
+                        "/properties/tags/items/maxBytes",
+                    ),
+                ] {
+                    let result = compatibility(old, new);
+                    assert_matches!(
+                        result.errors.as_slice(),
+                        [ConsensusError::BasicError(
+                            BasicError::IncompatibleDocumentTypeSchemaError(e)
+                        )] if e.property_path() == changed_path,
+                        "{old:?} -> {new:?}"
+                    );
+                }
             }
-        }
-
-        /// Readers of stored objects rely on the total, so it is frozen.
-        #[test]
-        fn should_return_invalid_result_when_sum_of_properties_is_added_removed_or_changed() {
-            for (old_total, new_total) in
-                [(None, Some(100)), (Some(100), None), (Some(100), Some(200))]
-            {
-                let result = compatibility((None, old_total), (None, new_total));
-                assert_matches!(
-                    result.errors.as_slice(),
-                    [ConsensusError::BasicError(
-                        BasicError::IncompatibleDocumentTypeSchemaError(e)
-                    )] if e.property_path() == "/properties/split/sumOfProperties",
-                    "{old_total:?} -> {new_total:?}"
-                );
-            }
-        }
-
-        #[test]
-        fn should_return_valid_result_when_sum_of_properties_is_unchanged() {
-            let result = compatibility((None, Some(100)), (None, Some(100)));
-            assert!(result.is_valid(), "{:?}", result.errors);
         }
     }
 

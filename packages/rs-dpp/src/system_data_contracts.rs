@@ -315,19 +315,19 @@ mod moderation_charters_tests {
     use crate::data_contract::document_type::accessors::{
         DocumentTypeV0Getters, DocumentTypeV2Getters,
     };
-    use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::data_contract::document_type::{
         ContestedIndexResolution, ContractReferenceModeration, DistinctFrom,
         DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentType, EncryptedForRecipient,
         EncryptionScheme, KeyReferenceIdentityProperty, LookupKeySource, PropertyReference,
+        StringPropertySizes,
     };
     use crate::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
     use crate::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use crate::identity::Purpose;
     use crate::moderation_charter::{
-        property_names, ElectedCharter, ModerationCharterRewardSplit, SubmittedCharter,
-        ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
+        property_names, validate_submitted_charter, ElectedCharter, ModerationCharterRewardSplit,
+        SubmittedCharter, ADDED_MODERATOR_DOCUMENT_TYPE_NAME, ELECTED_CHARTER_DOCUMENT_TYPE_NAME,
         JOIN_REQUEST_DOCUMENT_TYPE_NAME, MODERATION_CHARTERS_CONTRACT_ID,
         REASON_DOCUMENT_TYPE_NAME, REMOVED_MODERATOR_DOCUMENT_TYPE_NAME,
         RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
@@ -703,133 +703,11 @@ mod moderation_charters_tests {
             vec![],
             "the encoded proposal passes the schema"
         );
-        assert_eq!(
-            keyword_errors(&contract, &document),
-            vec![],
-            "the encoded proposal meets its split and description bounds"
-        );
-        let read = SubmittedCharter::from_document_properties(document.properties())
+        let read = validate_submitted_charter(document.properties(), PlatformVersion::latest())
+            .expect("validation executes")
             .into_data()
-            .expect("the proposal reads back");
+            .expect("the proposal is valid");
         assert_eq!(read, proposal);
-    }
-
-    /// The errors of the two write-time keyword checks a proposal is held to, in the order
-    /// document create and replace run them.
-    fn keyword_errors(contract: &DataContract, document: &Document) -> Vec<ConsensusError> {
-        let proposal_type = document_type(contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME);
-        let platform_version = PlatformVersion::latest();
-        let mut errors = proposal_type
-            .validate_max_bytes_properties(document.properties(), platform_version)
-            .expect("maxBytes validation executes")
-            .errors;
-        errors.extend(
-            proposal_type
-                .validate_sum_of_properties(document.properties(), platform_version)
-                .expect("sumOfProperties validation executes")
-                .errors,
-        );
-        errors
-    }
-
-    /// The proposal's two rules that plain JSON Schema cannot express are the schema's own
-    /// keywords: the reward split's `sumOfProperties` and the description's `maxBytes`.
-    #[test]
-    fn should_declare_the_split_total_and_the_description_byte_cap() {
-        let contract = contract();
-        let proposal_type = document_type(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME);
-        assert_eq!(
-            proposal_type
-                .flattened_properties()
-                .get(property_names::DESCRIPTION)
-                .expect("the description")
-                .max_bytes,
-            Some(4096)
-        );
-        assert_eq!(
-            proposal_type
-                .properties()
-                .get(property_names::REWARD_SPLIT)
-                .expect("the reward split")
-                .sum_of_properties,
-            Some(100)
-        );
-    }
-
-    #[test]
-    fn should_refuse_a_reward_split_that_does_not_sum_to_one_hundred() {
-        let contract = contract();
-        for (leader, equal, actions) in [(10, 40, 40), (50, 50, 1), (0, 0, 0)] {
-            let proposal = SubmittedCharter {
-                reward_split: ModerationCharterRewardSplit {
-                    leader,
-                    equal,
-                    actions,
-                },
-                ..proposal()
-            };
-            let document = document_with(
-                &contract,
-                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
-                proposal.to_document_properties(),
-            );
-            assert_eq!(
-                schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document),
-                vec![],
-                "each share alone is within 0 to 100"
-            );
-            let expected_sum = i64::from(leader) + i64::from(equal) + i64::from(actions);
-            assert!(
-                matches!(
-                    keyword_errors(&contract, &document).as_slice(),
-                    [ConsensusError::BasicError(BasicError::DocumentPropertySumMismatchError(e))]
-                        if e.property() == property_names::REWARD_SPLIT
-                            && e.expected_sum() == 100
-                            && e.actual_sum() == expected_sum
-                ),
-                "{leader}/{equal}/{actions}"
-            );
-        }
-    }
-
-    #[test]
-    fn should_refuse_a_description_over_4096_bytes_within_4096_characters() {
-        let contract = contract();
-        let with_description = |description: String| {
-            document_with(
-                &contract,
-                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
-                SubmittedCharter {
-                    description,
-                    ..proposal()
-                }
-                .to_document_properties(),
-            )
-        };
-
-        // At the cap, in one-byte and in two-byte characters
-        for description in ["a".repeat(4096), "é".repeat(2048)] {
-            let document = with_description(description);
-            assert_eq!(
-                schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document),
-                vec![]
-            );
-            assert_eq!(keyword_errors(&contract, &document), vec![]);
-        }
-
-        // 2049 characters pass maxLength, but their 4098 bytes do not pass maxBytes
-        let document = with_description("é".repeat(2049));
-        assert_eq!(
-            schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document),
-            vec![]
-        );
-        assert!(matches!(
-            keyword_errors(&contract, &document).as_slice(),
-            [ConsensusError::BasicError(BasicError::DocumentPropertyMaxBytesExceededError(e))]
-                if e.property() == property_names::DESCRIPTION
-                    && e.byte_length() == 4098
-                    && e.max_bytes() == 4096
-        ));
     }
 
     #[test]
@@ -936,6 +814,57 @@ mod moderation_charters_tests {
                 "{property} is required"
             );
         }
+    }
+
+    /// The description's cap is 4096 bytes, not just 4096 characters: the schema's `maxBytes`,
+    /// which document validation checks after the JSON schema, so clients refuse an oversized
+    /// description before they broadcast it.
+    #[test]
+    fn should_refuse_a_description_over_4096_bytes_within_4096_characters() {
+        let contract = contract();
+        assert_eq!(
+            document_type(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME)
+                .flattened_properties()
+                .get(property_names::DESCRIPTION)
+                .expect("the description")
+                .property_type,
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: Some(1),
+                max_length: Some(4096),
+                max_bytes: Some(4096),
+            })
+        );
+        let with_description = |description: String| {
+            document_with(
+                &contract,
+                SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
+                SubmittedCharter {
+                    description,
+                    ..proposal()
+                }
+                .to_document_properties(),
+            )
+        };
+
+        // At the cap, in one-byte and in two-byte characters
+        for description in ["a".repeat(4096), "é".repeat(2048)] {
+            let document = with_description(description);
+            assert_eq!(
+                schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document),
+                vec![]
+            );
+        }
+
+        // 2049 characters are within maxLength, but their 4098 bytes are over maxBytes
+        let document = with_description("é".repeat(2049));
+        assert!(matches!(
+            schema_validation(&contract, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME, &document)
+                .as_slice(),
+            [ConsensusError::BasicError(BasicError::DocumentPropertyMaxBytesExceededError(e))]
+                if e.property() == property_names::DESCRIPTION
+                    && e.byte_length() == 4098
+                    && e.max_bytes() == 4096
+        ));
     }
 
     /// After the election the leader adds members from the same join requests and removes

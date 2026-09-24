@@ -77,30 +77,8 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
         // an `encryptedFor` property the replace supplies must have the shape its scheme
         // produces, which is all consensus can tell about a ciphertext; the schema
         // validation above already made every such value a byte array.
-        let result = document_type
-            .validate_encrypted_property_shapes(self.data(), platform_version)
-            .map_err(Error::Protocol)?;
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        // Added in place at protocol version 14, inert for every earlier version this
-        // generation serves: their meta-schemas refuse `maxBytes` and `sumOfProperties`,
-        // their parser ignores both (`apply_max_bytes` and `apply_sum_of_properties` are
-        // `None`, so no parsed property carries a declaration), and `validate_max_bytes`
-        // and `validate_sum_of_properties` are `None` there, so both calls return an
-        // empty result. From 14, a string the replace supplies must fit its property's
-        // `maxBytes` in UTF-8, and an object must add up to its `sumOfProperties`; the
-        // schema validation above already made every such value a string or an object
-        // of integers.
-        let result = document_type
-            .validate_max_bytes_properties(self.data(), platform_version)
-            .map_err(Error::Protocol)?;
-        if !result.is_valid() {
-            return Ok(result);
-        }
         document_type
-            .validate_sum_of_properties(self.data(), platform_version)
+            .validate_encrypted_property_shapes(self.data(), platform_version)
             .map_err(Error::Protocol)
     }
 }

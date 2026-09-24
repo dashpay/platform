@@ -147,6 +147,7 @@ fn should_parse_every_scalar_element_type() {
             DocumentPropertyType::String(StringPropertySizes {
                 min_length: Some(1),
                 max_length: Some(20),
+                max_bytes: None,
             }),
         ),
         (

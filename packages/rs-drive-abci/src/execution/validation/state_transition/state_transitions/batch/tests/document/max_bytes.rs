@@ -1,13 +1,12 @@
-//! End-to-end coverage for the `maxBytes` and `sumOfProperties` property
-//! keywords (protocol version 14): a string bounded by its UTF-8 length, and
-//! an object whose integer members must add up to a declared total. Both are
-//! checked on every create and replace, after the JSON schema validation; a
-//! value that breaks either is consensus-rejected and leaves the stored
-//! document untouched.
+//! End-to-end coverage for the `maxBytes` property keyword (protocol version
+//! 14): a string, or each string element of a typed array, bounded by its
+//! UTF-8 length. The document validation checks it after the JSON schema on
+//! every create and replace; a longer value is consensus-rejected and leaves
+//! the stored document untouched.
 
 use super::*;
 
-mod max_bytes_and_sum_tests {
+mod max_bytes_tests {
     use super::*;
     use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
     use crate::rpc::core::MockCoreRPCLike;
@@ -29,7 +28,7 @@ mod max_bytes_and_sum_tests {
     use simple_signer::signer::SimpleSigner;
 
     /// A mutable `profile` type: a `bio` of at most 64 characters and 16 bytes,
-    /// and a `split` of two percentages that must add up to 100.
+    /// and `tags`, up to four strings of at most 8 bytes each.
     fn profile_schema() -> Value {
         platform_value!({
             "type": "object",
@@ -41,25 +40,24 @@ mod max_bytes_and_sum_tests {
                     "maxBytes": 16,
                     "position": 0
                 },
-                "split": {
-                    "type": "object",
-                    "position": 1,
-                    "properties": {
-                        "leader": { "type": "integer", "minimum": 0, "maximum": 100, "position": 0 },
-                        "rest": { "type": "integer", "minimum": 0, "maximum": 100, "position": 1 }
-                    },
-                    "required": ["leader", "rest"],
-                    "additionalProperties": false,
-                    "sumOfProperties": 100
+                "tags": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": { "type": "string", "maxLength": 16, "maxBytes": 8 },
+                    "position": 1
                 }
             },
-            "required": ["bio", "split"],
+            "required": ["bio", "tags"],
             "additionalProperties": false
         })
     }
 
-    fn split(leader: u8, rest: u8) -> Value {
-        platform_value!({ "leader": leader, "rest": rest })
+    fn tags(tags: &[&str]) -> Value {
+        Value::Array(
+            tags.iter()
+                .map(|tag| Value::Text(tag.to_string()))
+                .collect(),
+        )
     }
 
     /// One identity and one contract whose `profile` type is the one above.
@@ -121,7 +119,7 @@ mod max_bytes_and_sum_tests {
             }
         }
 
-        async fn create(&mut self, bio: &str, split: Value) -> StateTransitionExecutionResult {
+        async fn create(&mut self, bio: &str, tags: Value) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let profile_type = self
                 .contract
@@ -143,7 +141,7 @@ mod max_bytes_and_sum_tests {
                 .set_id_for_creation(profile_type, &entropy.0, self.next_nonce, platform_version)
                 .expect("expected to set the document id");
             profile.set("bio", Value::Text(bio.to_string()));
-            profile.set("split", split);
+            profile.set("tags", tags);
 
             let transition = BatchTransition::new_document_creation_transition_from_document(
                 profile,
@@ -244,36 +242,30 @@ mod max_bytes_and_sum_tests {
         }
     }
 
-    fn expect_max_bytes_error(result: StateTransitionExecutionResult, byte_length: u32) {
+    fn expect_max_bytes_error(
+        result: StateTransitionExecutionResult,
+        property: &str,
+        byte_length: u32,
+        max_bytes: u16,
+    ) {
         let StateTransitionExecutionResult::PaidConsensusError { error, .. } = result else {
             panic!("expected a paid consensus error, got {result:?}");
         };
         assert_matches!(
             error,
             ConsensusError::BasicError(BasicError::DocumentPropertyMaxBytesExceededError(e))
-                if e.property() == "bio" && e.byte_length() == byte_length && e.max_bytes() == 16
-        );
-    }
-
-    fn expect_sum_error(result: StateTransitionExecutionResult, actual_sum: i64) {
-        let StateTransitionExecutionResult::PaidConsensusError { error, .. } = result else {
-            panic!("expected a paid consensus error, got {result:?}");
-        };
-        assert_matches!(
-            error,
-            ConsensusError::BasicError(BasicError::DocumentPropertySumMismatchError(e))
-                if e.property() == "split"
-                    && e.expected_sum() == 100
-                    && e.actual_sum() == actual_sum
+                if e.property() == property
+                    && e.byte_length() == byte_length
+                    && e.max_bytes() == max_bytes
         );
     }
 
     #[tokio::test]
-    async fn should_create_a_document_within_both_bounds() {
+    async fn should_create_a_document_within_its_byte_caps() {
         let mut fixture = ProfileFixture::new();
 
-        // Sixteen bytes in eight two-byte characters, and a split of exactly 100
-        let result = fixture.create("éééééééé", split(40, 60)).await;
+        // Sixteen bytes in eight two-byte characters, and tags of eight bytes at most
+        let result = fixture.create("éééééééé", tags(&["éééé", "short"])).await;
 
         assert_matches!(
             result,
@@ -288,27 +280,30 @@ mod max_bytes_and_sum_tests {
     async fn should_refuse_a_string_over_its_max_bytes_within_its_max_length() {
         let mut fixture = ProfileFixture::new();
 
-        let result = fixture.create("ééééééééé", split(40, 60)).await;
+        let result = fixture.create("ééééééééé", tags(&[])).await;
 
-        expect_max_bytes_error(result, 18);
+        expect_max_bytes_error(result, "bio", 18, 16);
+        assert!(fixture.stored_profiles().is_empty());
+    }
+
+    /// Each element of a typed array of strings is bounded on its own, and the
+    /// refusal names the element.
+    #[tokio::test]
+    async fn should_refuse_a_typed_array_element_over_its_max_bytes() {
+        let mut fixture = ProfileFixture::new();
+
+        let result = fixture
+            .create("hello", tags(&["ok", "fine", "ééééé"]))
+            .await;
+
+        expect_max_bytes_error(result, "tags[2]", 10, 8);
         assert!(fixture.stored_profiles().is_empty());
     }
 
     #[tokio::test]
-    async fn should_refuse_an_object_whose_members_miss_their_sum() {
+    async fn should_refuse_a_replace_over_a_byte_cap() {
         let mut fixture = ProfileFixture::new();
-
-        for (leader, rest) in [(40, 50), (0, 0), (100, 100)] {
-            let result = fixture.create("hello", split(leader, rest)).await;
-            expect_sum_error(result, i64::from(leader) + i64::from(rest));
-        }
-        assert!(fixture.stored_profiles().is_empty());
-    }
-
-    #[tokio::test]
-    async fn should_refuse_a_replace_that_breaks_either_bound() {
-        let mut fixture = ProfileFixture::new();
-        let result = fixture.create("hello", split(40, 60)).await;
+        let result = fixture.create("hello", tags(&["a"])).await;
         assert_matches!(
             result,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
@@ -320,23 +315,23 @@ mod max_bytes_and_sum_tests {
                 profile.set("bio", Value::Text("ééééééééé".to_string()))
             })
             .await;
-        expect_max_bytes_error(result, 18);
+        expect_max_bytes_error(result, "bio", 18, 16);
 
         let result = fixture
-            .replace(&stored, |profile| profile.set("split", split(10, 10)))
+            .replace(&stored, |profile| profile.set("tags", tags(&["ééééé"])))
             .await;
-        expect_sum_error(result, 20);
+        expect_max_bytes_error(result, "tags[0]", 10, 8);
 
         let after = fixture.stored_profiles();
         assert_eq!(after.len(), 1);
         assert_eq!(after[0].get("bio"), stored.get("bio"));
-        assert_eq!(after[0].get("split"), stored.get("split"));
+        assert_eq!(after[0].get("tags"), stored.get("tags"));
 
-        // A replace within both bounds still goes through
+        // A replace within both caps still goes through
         let result = fixture
             .replace(&stored, |profile| {
                 profile.set("bio", Value::Text("hé".to_string()));
-                profile.set("split", split(0, 100));
+                profile.set("tags", tags(&["éééé"]));
             })
             .await;
         assert_matches!(
@@ -345,14 +340,13 @@ mod max_bytes_and_sum_tests {
         );
     }
 
-    /// The replace structure dispatcher on both sides of the gate: structure
-    /// generation 0 gained both checks in place, so at protocol version 13 it
-    /// must still accept the action (no property parsed there carries either
-    /// keyword and both dpp gates are `None`), and at 14 refuse it. The action
-    /// is built by hand the way the transformer would build it, against the
-    /// contract as Drive hands it back.
+    /// The replace structure dispatcher on both sides of the gate: the document
+    /// validation it runs gained the check in place, so at protocol version 13
+    /// it must still accept the action (the dpp gate is `None` there), and at
+    /// 14 refuse it. The action is built by hand the way the transformer would
+    /// build it, against the contract as Drive hands it back.
     #[test]
-    fn should_not_check_either_bound_on_replace_before_protocol_version_14() {
+    fn should_not_check_the_byte_cap_on_replace_before_protocol_version_14() {
         let platform_version = PlatformVersion::latest();
         let fixture = ProfileFixture::new();
         let owner_id = fixture.identity.id();
@@ -370,7 +364,7 @@ mod max_bytes_and_sum_tests {
             .expect("expected to fetch the contract");
         let contract_fetch_info = contract_fetch_info.expect("the contract is in state");
 
-        let action = |bio: &str, leader: u8, rest: u8| {
+        let action = |bio: &str| {
             DocumentReplaceTransitionAction::V0(DocumentReplaceTransitionActionV0 {
                 base: DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
                     id: Identifier::from([0xAA; 32]),
@@ -394,7 +388,7 @@ mod max_bytes_and_sum_tests {
                 transferred_at_core_block_height: None,
                 data: BTreeMap::from([
                     ("bio".to_string(), Value::Text(bio.to_string())),
-                    ("split".to_string(), split(leader, rest)),
+                    ("tags".to_string(), tags(&[])),
                 ]),
                 changed_data_fields: BTreeSet::new(),
                 added_data_fields: BTreeSet::new(),
@@ -406,32 +400,22 @@ mod max_bytes_and_sum_tests {
         let platform_version_13 =
             PlatformVersion::get(13).expect("platform version 13 should exist");
 
-        for (bio, leader, rest) in [("ééééééééé", 40, 60), ("hello", 10, 10)] {
-            let before = action(bio, leader, rest)
-                .validate_structure(owner_id, platform_version_13)
-                .expect("structure validation should run");
-            assert!(
-                before.is_valid(),
-                "structure generation 0 must check neither bound before 14: {:?}",
-                before.errors
-            );
-        }
+        let before = action("ééééééééé")
+            .validate_structure(owner_id, platform_version_13)
+            .expect("structure validation should run");
+        assert!(
+            before.is_valid(),
+            "the document validation must not check the byte cap before 14: {:?}",
+            before.errors
+        );
 
-        let at = action("ééééééééé", 40, 60)
+        let at = action("ééééééééé")
             .validate_structure(owner_id, platform_version)
             .expect("structure validation should run");
         assert_matches!(
             at.errors.as_slice(),
             [ConsensusError::BasicError(BasicError::DocumentPropertyMaxBytesExceededError(e))]
                 if e.property() == "bio" && e.byte_length() == 18
-        );
-        let at = action("hello", 10, 10)
-            .validate_structure(owner_id, platform_version)
-            .expect("structure validation should run");
-        assert_matches!(
-            at.errors.as_slice(),
-            [ConsensusError::BasicError(BasicError::DocumentPropertySumMismatchError(e))]
-                if e.property() == "split" && e.actual_sum() == 20
         );
     }
 }
