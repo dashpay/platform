@@ -122,6 +122,14 @@ impl Drive {
         );
 
         // Nullifiers tree: [16, 224, token_id, 64]
+        //
+        // The sixteen levels model roughly 65 000 keys, and the estimate stays at or above the
+        // real cost only while the tree is shallower than that. It fills about twice as fast as
+        // the depth was chosen for: spends contribute one nullifier each, but every inflow
+        // bundle now also records a dummy nullifier per action, up to sixteen. A pool that
+        // outgrows the model does not merely misprice — the estimate falls below the actual
+        // cost and fee validation refuses the block, so the ceiling is a halting condition and
+        // not a rounding one. Raise the level before a pool approaches it.
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(token_shielded_pool_nullifiers_path_vec(token_id)),
             EstimatedLayerInformation {

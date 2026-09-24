@@ -99,6 +99,19 @@ pub struct SystemLimits {
     ///   their siblings — which is why the withdrawal paths batch many documents safely. It is
     ///   not a drop-in for batch transitions: it carries no delete variant.
     ///
+    /// * A token shielded pool leans on the cap twice, and neither is visible from the pool's
+    ///   own code. Its balance write is absolute rather than a delta, so two pool operations in
+    ///   one batch would silently discard the first — value lost on every node, no disagreement
+    ///   to notice. And an outputs-only bundle binds neither owner nor anchor, so the same
+    ///   authorized bytes can sit in two shields of one batch: state validation runs per
+    ///   transition against the transaction before any operation applies, so the second cannot
+    ///   see the first's pending insert, and the within-bundle check is scoped to one action
+    ///   set. The two inserts are then byte-identical in path, key and value, which a node
+    ///   running the shipped batching default folds in silence while a node verifying batch
+    ///   consistency refuses — the two disagree on one block and neither shows why. Raising the
+    ///   cap means batch-scoped nullifier deduplication and a delta-based pool balance write,
+    ///   not just making the ignored cases above pass.
+    ///
     /// Five cases in `rs-drive`'s `batched_group_drain` suite are `#[ignore]`d for exactly this
     /// reason; the rest of that suite runs. Anyone raising this cap should un-ignore those five
     /// first and make them pass.
@@ -292,7 +305,8 @@ mod tests {
                     .max_transitions_in_documents_batch,
                 1,
                 "protocol version {} allows more than one transition per documents batch; \
-                 see the documentation on SystemLimits::max_transitions_in_documents_batch \
+                 token shielded pools rely on this cap for two separate properties, so read \
+                 the documentation on SystemLimits::max_transitions_in_documents_batch \
                  for what that exposes",
                 platform_version.protocol_version
             );
@@ -329,7 +343,8 @@ mod tests {
                     .max_transitions_in_documents_batch,
                 1,
                 "mock platform version {} allows more than one transition per documents \
-                 batch; see SystemLimits::max_transitions_in_documents_batch",
+                 batch; token shielded pools rely on this cap for two separate properties, so \
+                 read SystemLimits::max_transitions_in_documents_batch",
                 platform_version.protocol_version
             );
         }

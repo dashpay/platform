@@ -125,7 +125,7 @@ impl TokenDirectPurchaseToPoolTransitionActionStateValidationV0
 
         let validation_result = validate_token_pool_output_nullifiers(
             platform,
-            &token_id.to_buffer(),
+            token_id.as_bytes(),
             &self.nullifiers(),
             block_info,
             execution_context,
