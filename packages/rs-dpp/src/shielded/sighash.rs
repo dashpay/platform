@@ -4,10 +4,14 @@
 //! per-action spend-auth signatures + the RedPallas binding signature over the platform sighash.
 //! These helpers build the transparent `extra_data` each transition binds into that sighash so the
 //! signing (client/builder) and verifying (consensus) sides commit to identical bytes. The byte
-//! layouts are consensus-critical and versioned via `dpp.methods.shielded_extra_sighash_data`.
+//! layouts are consensus-critical and versioned via `dpp.methods.shielded_extra_sighash_data`; the
+//! credit pool's outputs-only bundles via `dpp.methods.credit_pool_bundle_binding`.
 
 use crate::address_funds::PlatformAddress;
+use crate::fee::Credits;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::prelude::AddressNonce;
 use crate::shielded::{serialized_actions_digest, SerializedAction};
 use crate::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
@@ -16,6 +20,7 @@ use crate::withdrawal::Pooling;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 
 /// Domain separator for Platform sighash computation.
 const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
@@ -43,6 +48,17 @@ pub const TOKEN_CLAIM_TO_POOL_BUNDLE_TAG: u8 = 0x82;
 /// Domain tag of a `TokenDirectPurchaseToPool` bundle. See [`TOKEN_SHIELD_BUNDLE_TAG`].
 pub const TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG: u8 = 0x83;
 
+/// Domain tag of a credit pool `Shield` bundle. The credit pool's outputs-only tags continue the
+/// token pool range above: they share the same preimage slot at the same length, so every tag
+/// in both sets must stay distinct from each other and from every `StateTransitionType` byte.
+/// `credit_pool_outputs_only_tags_cannot_collide_with_state_transition_types` and
+/// `outputs_only_bundle_tags_are_pairwise_distinct` hold both reservations.
+pub const SHIELD_BUNDLE_TAG: u8 = 0x84;
+/// Domain tag of a `ShieldFromIdentity` bundle. See [`SHIELD_BUNDLE_TAG`].
+pub const SHIELD_FROM_IDENTITY_BUNDLE_TAG: u8 = 0x85;
+/// Domain tag of a `ShieldFromAssetLock` bundle. See [`SHIELD_BUNDLE_TAG`].
+pub const SHIELD_FROM_ASSET_LOCK_BUNDLE_TAG: u8 = 0x86;
+
 /// Computes the platform sighash from an Orchard bundle commitment and optional
 /// transparent field data.
 ///
@@ -60,11 +76,11 @@ pub const TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG: u8 = 0x83;
 /// against every pool.
 ///
 /// The same computation must be used on both the signing (client) and verification (platform)
-/// sides. `extra_data` is empty for the credit pool's `Shield`, `ShieldFromIdentity`,
-/// `ShieldFromAssetLock` and `ShieldedTransfer`; every other transition spells out a layout.
-/// Of those four only `ShieldedTransfer` spends, so it carries an anchor and nullifiers that
-/// pin it to one pool and one set of notes. The three credit shields are outputs-only and so
-/// are pinned by nothing.
+/// sides. `extra_data` is empty only for the credit pool's `ShieldedTransfer`, and for the credit
+/// pool's outputs-only bundles at protocol versions that predate their binding (see
+/// [`shield_extra_sighash_data`]); each other transition has a builder in this module that
+/// spells out its layout. `ShieldedTransfer` is the one that needs no layout of its own: it
+/// spends, so it carries an anchor and nullifiers that pin it to one pool and one set of notes.
 pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(SIGHASH_DOMAIN);
@@ -750,6 +766,153 @@ pub fn token_pool_output_only_extra_sighash_data_v0(
     data
 }
 
+/// Extra sighash data of a credit pool `Shield` bundle: its kind tag and a digest of the platform
+/// addresses that fund it. See [`credit_pool_output_only_extra_sighash_data_v0`] for why the
+/// credit pool's outputs-only bundles bind anything at all.
+///
+/// A `Shield` has no identity, so its owner is its funding: the SHA-256 of its input addresses,
+/// each in its 21-byte encoding ([`PlatformAddress::to_bytes`]), in the order the `inputs` map
+/// holds them. That order is part of the wire format. It is the map's key order, which is also
+/// the order the transition serializes its inputs in, so a client that assembles the same set in
+/// any other order still binds the same bytes.
+///
+/// The nonces and the contributed amounts are deliberately left out. The owner answers "who
+/// funds this", not "which transition carries it", exactly as `ShieldFromIdentity` binds its
+/// identity and not its nonce: the preimage is there to stop somebody else from re-wrapping the
+/// bundle. Binding the nonce would not stop the funder's own duplicates either, because a sender
+/// can rebuild the same notes under any preimage (see
+/// [`credit_pool_output_only_extra_sighash_data_v0`]); closing that would need the bundles' dummy
+/// nullifiers recorded and checked, which consensus does not do. Adding the nonce later would
+/// change the layout under every bundle already built for this one.
+///
+/// Dispatches on `dpp.methods.credit_pool_bundle_binding`, which the client builder and the
+/// consensus verifier both read: `None` binds nothing (the empty preimage every shipped verifier
+/// expects), `Some(0)` binds `tag (1) || funding digest (32)`.
+pub fn shield_extra_sighash_data(
+    inputs: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.credit_pool_bundle_binding {
+        None => Ok(Vec::new()),
+        Some(0) => Ok(credit_pool_output_only_extra_sighash_data_v0(
+            SHIELD_BUNDLE_TAG,
+            &shield_funding_digest_v0(inputs),
+        )),
+        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+            method: "shield_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// The version 0 owner of a `Shield` bundle: SHA-256 over the 21-byte encoding of each input
+/// address, in the map's key order. Frozen: never mutate; see [`shield_extra_sighash_data`].
+fn shield_funding_digest_v0(
+    inputs: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for address in inputs.keys() {
+        hasher.update(address.to_bytes());
+    }
+    hasher.finalize().into()
+}
+
+/// Extra sighash data of a `ShieldFromIdentity` bundle: its kind tag and the identity whose
+/// balance funds it. See [`credit_pool_output_only_extra_sighash_data_v0`].
+///
+/// The identity signature already covers the bundle, but only this transition's: nothing in the
+/// bundle itself says which identity it was proved for, so without this preimage any other
+/// identity could sign a transition of its own around the same proved bytes. The funding identity
+/// itself can still land the same bundle again under a new nonce, which is what a client retrying
+/// with a fresh nonce does; stopping that would need the bundles' dummy nullifiers recorded and
+/// checked, which consensus does not do.
+///
+/// Dispatches on `dpp.methods.credit_pool_bundle_binding` like [`shield_extra_sighash_data`].
+pub fn shield_from_identity_extra_sighash_data(
+    identity_id: &[u8; 32],
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.credit_pool_bundle_binding {
+        None => Ok(Vec::new()),
+        Some(0) => Ok(credit_pool_output_only_extra_sighash_data_v0(
+            SHIELD_FROM_IDENTITY_BUNDLE_TAG,
+            identity_id,
+        )),
+        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+            method: "shield_from_identity_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Extra sighash data of a `ShieldFromAssetLock` bundle: its kind tag and the identifier of the
+/// asset lock that funds it ([`AssetLockProof::create_identifier`], the double SHA-256 of the
+/// locked outpoint). See [`credit_pool_output_only_extra_sighash_data_v0`].
+///
+/// Binding the full outpoint, rather than the transaction id, makes this binding single-use. A
+/// successful shield consumes the whole lock, so a given bundle can land at most once, whoever
+/// wraps it and however often it is resubmitted: a copier would have to fund it from this very
+/// lock, and so would the sender's own retry. Binding only the transaction id would let anybody
+/// holding another credit output of the same asset-lock transaction lift the bundle. A sender who
+/// deliberately rebuilds the same notes under another lock is still not stopped; see
+/// [`credit_pool_output_only_extra_sighash_data_v0`].
+///
+/// The identifier is the same one an identity created from that lock would get; the kind tag keeps
+/// this preimage apart from a `ShieldFromIdentity` of that identity.
+///
+/// Dispatches on `dpp.methods.credit_pool_bundle_binding` like [`shield_extra_sighash_data`].
+pub fn shield_from_asset_lock_extra_sighash_data(
+    asset_lock_proof: &AssetLockProof,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.credit_pool_bundle_binding {
+        None => Ok(Vec::new()),
+        Some(0) => Ok(credit_pool_output_only_extra_sighash_data_v0(
+            SHIELD_FROM_ASSET_LOCK_BUNDLE_TAG,
+            &asset_lock_proof.create_identifier()?.to_buffer(),
+        )),
+        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+            method: "shield_from_asset_lock_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Version 0 layout of the credit pool's outputs-only bundles — `Shield`, `ShieldFromIdentity` and
+/// `ShieldFromAssetLock`: `bundle tag (1) || owner (32)`. Frozen: never mutate; a layout change
+/// requires a new `credit_pool_bundle_binding` version.
+///
+/// These bundles have no spends, so they carry no anchor to pin them to anything: the proof and
+/// the binding signature verify wherever they are submitted. Unbound, the authorized bundle bytes
+/// are a free-standing, self-verifying object: anybody can lift them out of the mempool into a
+/// transition of their own, funded by their own credits, and any bundle ever published can be
+/// replayed. The copier pays the full amount to the original recipient and gains nothing, but the
+/// copy lands a second note with the same commitment and the same nullifier in the credit pool,
+/// whose notes share one nullifier set, so only one of the two can ever be spent.
+///
+/// The owner is what a third party cannot authorize: the addresses, identity or asset lock whose
+/// signatures fund the original. The tag stops a bundle proved for one kind from being submitted as another,
+/// which the owner alone would not: the three kinds are otherwise indistinguishable to the proof,
+/// and an identity created from an asset lock has that lock's identifier as its id.
+///
+/// This does not reach Faerie Gold. The `rho` of an outputs-only note is the nullifier of its
+/// bundle's dummy spend, so a sender who builds and signs a fresh bundle reusing the same dummy
+/// spend note and `rseed` gets the same commitment and the same nullifier under any preimage, and
+/// a recipient counting deposits by commitment credits two where only one can be spent. Nor does
+/// it stop the funder landing their own bundle twice through a new transition, as a client that
+/// retries with a fresh nonce does — except for `ShieldFromAssetLock`, whose lock can fund one
+/// successful shield only (see [`shield_from_asset_lock_extra_sighash_data`]). Closing either
+/// would need the bundles' dummy nullifiers recorded and checked, which consensus does not do.
+pub fn credit_pool_output_only_extra_sighash_data_v0(bundle_tag: u8, owner: &[u8; 32]) -> Vec<u8> {
+    let mut data = Vec::with_capacity(1 + 32);
+    data.push(bundle_tag);
+    data.extend_from_slice(owner);
+    data
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1250,6 +1413,296 @@ mod tests {
                 StateTransitionType::try_from(tag).is_err(),
                 "state transition type {tag:#04x} now collides with an outputs-only bundle tag"
             );
+        }
+    }
+
+    mod credit_pool_outputs_only {
+        use super::*;
+        use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        use crate::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+        use crate::util::hash::hash_double;
+        use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+        use dashcore::transaction::special_transaction::TransactionPayload;
+        use dashcore::{InstantLock, OutPoint, ScriptBuf, Transaction, TxOut};
+
+        fn protocol_version(version: u32) -> &'static PlatformVersion {
+            PlatformVersion::get(version).expect("known protocol version")
+        }
+
+        fn chain_asset_lock_proof(outpoint: [u8; 36]) -> AssetLockProof {
+            AssetLockProof::Chain(ChainAssetLockProof {
+                core_chain_locked_height: 100,
+                out_point: OutPoint::from(outpoint),
+            })
+        }
+
+        fn inputs(
+            entries: &[(PlatformAddress, AddressNonce, Credits)],
+        ) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
+            entries
+                .iter()
+                .map(|(address, nonce, amount)| (*address, (*nonce, *amount)))
+                .collect()
+        }
+
+        #[test]
+        fn should_pin_the_v0_layout_of_all_three_kinds() {
+            // Every byte here is consensus: a kind whose tag or owner changes invalidates every
+            // bundle already proved for it, so the tags are written literally, not through the
+            // constants, and the owners are derived independently of the code under test.
+            let version = PlatformVersion::latest();
+
+            // The map orders P2pkh before P2sh whatever their hash bytes, and each address is its
+            // 21-byte encoding: variant index, then the 20-byte hash.
+            let shield_inputs = inputs(&[
+                (PlatformAddress::P2sh([0x00; 20]), 1, 10),
+                (PlatformAddress::P2pkh([0x11; 20]), 2, 20),
+            ]);
+            let mut funding = Vec::new();
+            funding.push(0x00);
+            funding.extend_from_slice(&[0x11; 20]);
+            funding.push(0x01);
+            funding.extend_from_slice(&[0x00; 20]);
+            let mut expected = vec![0x84];
+            expected.extend_from_slice(&Sha256::digest(&funding));
+            assert_eq!(
+                shield_extra_sighash_data(&shield_inputs, version).expect("shield"),
+                expected,
+                "Shield: 0x84 || SHA-256 of the input addresses in map order"
+            );
+
+            let identity_id = [0x22u8; 32];
+            let mut expected = vec![0x85];
+            expected.extend_from_slice(&identity_id);
+            assert_eq!(
+                shield_from_identity_extra_sighash_data(&identity_id, version)
+                    .expect("shield from identity"),
+                expected,
+                "ShieldFromIdentity: 0x85 || identity id"
+            );
+
+            let outpoint = [0x33u8; 36];
+            let mut expected = vec![0x86];
+            expected.extend_from_slice(&hash_double(outpoint));
+            assert_eq!(
+                shield_from_asset_lock_extra_sighash_data(
+                    &chain_asset_lock_proof(outpoint),
+                    version
+                )
+                .expect("shield from asset lock"),
+                expected,
+                "ShieldFromAssetLock: 0x86 || double SHA-256 of the locked outpoint"
+            );
+        }
+
+        #[test]
+        fn should_bind_the_same_shield_funding_whatever_order_the_inputs_were_assembled_in() {
+            // The funding digest hashes the addresses in the map's key order, and that order is
+            // wire format: a client that collected the same addresses in another order must
+            // still produce the bytes the verifier rebuilds from the transition.
+            let version = PlatformVersion::latest();
+            let a = (PlatformAddress::P2pkh([0x01; 20]), 1, 100);
+            let b = (PlatformAddress::P2sh([0x02; 20]), 2, 200);
+            let c = (PlatformAddress::P2pkh([0x03; 20]), 3, 300);
+
+            let forward = shield_extra_sighash_data(&inputs(&[a, b, c]), version).expect("shield");
+            let backward = shield_extra_sighash_data(&inputs(&[c, b, a]), version).expect("shield");
+            let shuffled = shield_extra_sighash_data(&inputs(&[b, c, a]), version).expect("shield");
+
+            assert_eq!(forward, backward);
+            assert_eq!(forward, shuffled);
+        }
+
+        #[test]
+        fn should_bind_who_funds_a_shield_but_not_its_nonces_or_amounts() {
+            // The owner is the funding, not the transition: the same addresses with other nonces
+            // or other contributions bind the same bytes, so a later "tightening" that adds the
+            // nonce shows up here as a layout change rather than slipping in.
+            let version = PlatformVersion::latest();
+            let first = PlatformAddress::P2pkh([0x01; 20]);
+            let second = PlatformAddress::P2pkh([0x02; 20]);
+            let base =
+                shield_extra_sighash_data(&inputs(&[(first, 1, 100)]), version).expect("shield");
+
+            assert_eq!(
+                base,
+                shield_extra_sighash_data(&inputs(&[(first, 9, 100)]), version).expect("shield"),
+                "the nonce must not be bound"
+            );
+            assert_eq!(
+                base,
+                shield_extra_sighash_data(&inputs(&[(first, 1, 999)]), version).expect("shield"),
+                "the contributed amount must not be bound"
+            );
+            assert_ne!(
+                base,
+                shield_extra_sighash_data(&inputs(&[(second, 1, 100)]), version).expect("shield"),
+                "another funding address is another owner"
+            );
+            assert_ne!(
+                base,
+                shield_extra_sighash_data(&inputs(&[(first, 1, 100), (second, 1, 100)]), version)
+                    .expect("shield"),
+                "an added funding address is another owner"
+            );
+            assert_ne!(
+                base,
+                shield_extra_sighash_data(
+                    &inputs(&[(PlatformAddress::P2sh([0x01; 20]), 1, 100)]),
+                    version
+                )
+                .expect("shield"),
+                "the address type is part of the owner, not only its hash"
+            );
+        }
+
+        #[test]
+        fn should_keep_kinds_apart_when_their_owners_coincide() {
+            // An identity created from an asset lock has that lock's identifier as its id, so a
+            // `ShieldFromAssetLock` and a `ShieldFromIdentity` can bind the very same owner bytes.
+            // Only the tag keeps a bundle proved for one from being accepted as the other.
+            let version = PlatformVersion::latest();
+            let proof = chain_asset_lock_proof([0x44; 36]);
+            let identity_id = proof.create_identifier().expect("identifier").to_buffer();
+
+            let from_lock =
+                shield_from_asset_lock_extra_sighash_data(&proof, version).expect("asset lock");
+            let from_identity =
+                shield_from_identity_extra_sighash_data(&identity_id, version).expect("identity");
+
+            assert_eq!(&from_lock[1..], &from_identity[1..], "the owners coincide");
+            assert_ne!(from_lock, from_identity, "the kinds must not");
+        }
+
+        #[test]
+        fn should_bind_the_whole_outpoint_of_the_asset_lock_not_only_its_transaction() {
+            // A lock transaction can carry several credit outputs, each its own asset lock. Bound
+            // to the transaction id alone, a bundle could be lifted by whoever holds another
+            // output of the same transaction. The owner is the outpoint, and it is the same owner
+            // whichever kind of proof presents it.
+            let version = PlatformVersion::latest();
+            let credit_output = |value| TxOut {
+                value,
+                script_pubkey: ScriptBuf::new(),
+            };
+            let transaction = Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                    AssetLockPayload {
+                        version: 0,
+                        credit_outputs: vec![credit_output(100_000), credit_output(200_000)],
+                    },
+                )),
+            };
+            let txid = transaction.txid();
+            let instant = |output_index| {
+                AssetLockProof::Instant(InstantAssetLockProof::new(
+                    InstantLock::default(),
+                    transaction.clone(),
+                    output_index,
+                ))
+            };
+            let bound = |proof: &AssetLockProof| {
+                shield_from_asset_lock_extra_sighash_data(proof, version).expect("asset lock")
+            };
+
+            assert_ne!(
+                bound(&instant(0)),
+                bound(&instant(1)),
+                "another output of the same lock transaction is another owner"
+            );
+            assert_eq!(
+                bound(&instant(1)),
+                bound(&AssetLockProof::Chain(ChainAssetLockProof {
+                    core_chain_locked_height: 100,
+                    out_point: OutPoint::new(txid, 1),
+                })),
+                "the same outpoint is the same owner whichever proof presents it"
+            );
+        }
+
+        #[test]
+        fn should_bind_nothing_at_protocol_versions_before_the_binding() {
+            // Protocol versions 12 and 13 run the credit pool with verifiers that rebuild an empty
+            // preimage. A client building for one of them reads the same field, so it must get the
+            // empty preimage back, or every shield it makes there is rejected.
+            let lock = chain_asset_lock_proof([0x55; 36]);
+            let funding = inputs(&[(PlatformAddress::P2pkh([0x01; 20]), 1, 100)]);
+            for version in [12, 13] {
+                let version = protocol_version(version);
+                assert_eq!(version.dpp.methods.credit_pool_bundle_binding, None);
+                assert!(shield_extra_sighash_data(&funding, version)
+                    .expect("shield")
+                    .is_empty());
+                assert!(
+                    shield_from_identity_extra_sighash_data(&[0x66; 32], version)
+                        .expect("shield from identity")
+                        .is_empty()
+                );
+                assert!(shield_from_asset_lock_extra_sighash_data(&lock, version)
+                    .expect("shield from asset lock")
+                    .is_empty());
+            }
+        }
+
+        #[test]
+        fn should_refuse_an_unknown_binding_version() {
+            // Neither side may guess: a builder that fell back to one layout while the verifier
+            // chose another would reject every honest shield.
+            let mut version = PlatformVersion::latest().clone();
+            version.dpp.methods.credit_pool_bundle_binding = Some(1);
+            let lock = chain_asset_lock_proof([0x77; 36]);
+
+            for result in [
+                shield_extra_sighash_data(&BTreeMap::new(), &version),
+                shield_from_identity_extra_sighash_data(&[0x88; 32], &version),
+                shield_from_asset_lock_extra_sighash_data(&lock, &version),
+            ] {
+                assert_matches::assert_matches!(
+                    result,
+                    Err(ProtocolError::UnknownVersionMismatch { received: 1, .. })
+                );
+            }
+        }
+
+        #[test]
+        fn credit_pool_outputs_only_tags_cannot_collide_with_state_transition_types() {
+            // The tags share a preimage slot with the `StateTransitionType` byte the identity-less
+            // token bundles commit to, at the same 1 + 32 length. Asking the enum itself is what
+            // makes this break on the day a transition type is assigned inside the tag range.
+            for tag in [
+                SHIELD_BUNDLE_TAG,
+                SHIELD_FROM_IDENTITY_BUNDLE_TAG,
+                SHIELD_FROM_ASSET_LOCK_BUNDLE_TAG,
+            ] {
+                assert!(
+                    StateTransitionType::try_from(tag).is_err(),
+                    "state transition type {tag:#04x} now collides with a credit pool bundle tag"
+                );
+            }
+        }
+
+        #[test]
+        fn outputs_only_bundle_tags_are_pairwise_distinct() {
+            // All seven outputs-only layouts are `tag (1) || 32 bytes`, so two kinds sharing a
+            // tag would share a preimage whenever their 32 bytes coincide.
+            let tags = [
+                TOKEN_SHIELD_BUNDLE_TAG,
+                TOKEN_MINT_TO_POOL_BUNDLE_TAG,
+                TOKEN_CLAIM_TO_POOL_BUNDLE_TAG,
+                TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG,
+                SHIELD_BUNDLE_TAG,
+                SHIELD_FROM_IDENTITY_BUNDLE_TAG,
+                SHIELD_FROM_ASSET_LOCK_BUNDLE_TAG,
+            ];
+            for (i, a) in tags.iter().enumerate() {
+                for b in tags.iter().skip(i + 1) {
+                    assert_ne!(a, b, "outputs-only bundle tag {a:#04x} is used twice");
+                }
+            }
         }
     }
 }

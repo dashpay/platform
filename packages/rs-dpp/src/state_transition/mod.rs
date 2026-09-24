@@ -1186,8 +1186,16 @@ impl StateTransition {
             StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
-            | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_) => 12..=LATEST_VERSION,
+            // From protocol version 14 the bundle must bind its kind and its asset lock, which
+            // only version 1 does. Version 0 is refused there on its version byte, before any
+            // proof is verified: uncharged, with its asset lock left unspent, so a version 0 still
+            // waiting when 14 activates costs its sender nothing. There is no window in which 14
+            // accepts version 0.
+            StateTransition::ShieldFromAssetLock(st) => match st {
+                ShieldFromAssetLockTransition::V0(_) => 12..=13,
+                ShieldFromAssetLockTransition::V1(_) => 14..=LATEST_VERSION,
+            },
             StateTransition::ShieldFromIdentity(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
             | StateTransition::IdentityKeyLimitsUpdate(_)
@@ -3940,6 +3948,72 @@ mod tests {
         }
     }
 
+    // A `ShieldFromAssetLock` is refused on its version byte at decode, before any proof work:
+    // version 0 (whose bundle binds nothing) up to protocol version 13 only, version 1 (whose
+    // bundle binds its kind and asset lock) from 14 only.
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[test]
+    fn should_decode_each_shield_from_asset_lock_version_only_where_it_is_active() {
+        use crate::serialization::PlatformSerializable;
+        use crate::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
+
+        let v0 = sample_shield_from_asset_lock_st();
+        let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(body)) = &v0
+        else {
+            panic!("expected a version 0 shield from asset lock");
+        };
+        let v1 = StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(
+            ShieldFromAssetLockTransitionV1 {
+                asset_lock_proof: body.asset_lock_proof.clone(),
+                actions: body.actions.clone(),
+                value_balance: body.value_balance,
+                anchor: body.anchor,
+                proof: body.proof.clone(),
+                binding_signature: body.binding_signature,
+                surplus_output: body.surplus_output,
+                signature: body.signature.clone(),
+            },
+        ));
+        assert_eq!(v0.active_version_range(), 12..=13);
+        assert_eq!(v1.active_version_range(), 14..=LATEST_VERSION);
+
+        let decodes_at = |transition: &StateTransition, protocol_version: u32| {
+            let bytes =
+                PlatformSerializable::serialize_to_bytes(transition).expect("serialize succeeds");
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("known protocol version");
+            match StateTransition::deserialize_from_bytes_untrusted_in_version(
+                &bytes,
+                platform_version,
+            ) {
+                Ok(decoded) => {
+                    assert_eq!(&decoded, transition);
+                    true
+                }
+                Err(ProtocolError::StateTransitionError(
+                    crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError {
+                        current_protocol_version,
+                        ..
+                    },
+                )) => {
+                    assert_eq!(current_protocol_version, protocol_version);
+                    false
+                }
+                Err(other) => panic!("unexpected decode error: {other:?}"),
+            }
+        };
+
+        for protocol_version in [12, 13] {
+            assert!(decodes_at(&v0, protocol_version));
+            assert!(!decodes_at(&v1, protocol_version));
+        }
+        assert!(
+            !decodes_at(&v0, 14),
+            "protocol version 14 must refuse version 0"
+        );
+        assert!(decodes_at(&v1, 14));
+    }
+
     // A version 1 data contract create carries contract groups, which only exist from
     // protocol version 14. Below that a node must reject it rather than create the
     // contract and drop the group data.
@@ -4361,10 +4435,10 @@ mod tests {
     }
 
     #[test]
-    fn test_shield_from_asset_lock_active_range_12_latest() {
+    fn test_shield_from_asset_lock_version_0_active_range_12_to_13() {
+        // Version 0's bundle binds nothing; protocol version 14 admits only version 1.
         let range = sample_shield_from_asset_lock_st().active_version_range();
-        assert_eq!(*range.start(), 12);
-        assert_eq!(*range.end(), LATEST_VERSION);
+        assert_eq!(range, 12..=13);
     }
 
     // ---------- Batch with Token transition exercises TokenTransfer arm

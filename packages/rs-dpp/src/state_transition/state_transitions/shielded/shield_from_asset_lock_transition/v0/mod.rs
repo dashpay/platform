@@ -1,6 +1,6 @@
 mod proved;
 mod state_transition_like;
-mod state_transition_validation;
+pub(super) mod state_transition_validation;
 mod types;
 pub(super) mod v0_methods;
 mod version;

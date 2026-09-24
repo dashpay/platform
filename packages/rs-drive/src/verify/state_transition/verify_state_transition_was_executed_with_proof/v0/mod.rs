@@ -2151,7 +2151,7 @@ impl Drive {
                 use dpp::state_transition::proof_result::StateTransitionProofResult::{
                     VerifiedAssetLockConsumed, VerifiedAssetLockConsumedWithAddressInfos,
                 };
-                use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+                use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
                 use grovedb::Element;
 
                 let outpoint = st.asset_lock_proof().out_point().ok_or_else(|| {
@@ -2161,9 +2161,7 @@ impl Drive {
                 })?;
                 let outpoint_bytes: [u8; 36] = outpoint.into();
 
-                // No accessor trait exposes `surplus_output`, so read it directly off the V0 body.
-                let ShieldFromAssetLockTransition::V0(v0) = st;
-                let surplus_output = &v0.surplus_output;
+                let surplus_output = st.surplus_output();
 
                 // Build the outpoint sub-query exactly as the prove side does (same path, same key).
                 let mut outpoint_query = grovedb::Query::new();

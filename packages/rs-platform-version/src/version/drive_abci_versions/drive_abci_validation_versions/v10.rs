@@ -363,7 +363,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1, // changed: the bundle's sighash binds its kind tag and the asset lock it is funded from
             },
             shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),

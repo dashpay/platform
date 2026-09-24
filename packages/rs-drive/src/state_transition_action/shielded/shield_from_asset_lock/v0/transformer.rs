@@ -2,13 +2,15 @@ use crate::state_transition_action::shielded::shield_from_asset_lock::v0::Shield
 use crate::state_transition_action::shielded::ShieldedActionNote;
 use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::state_transitions::shielded::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
+use dpp::state_transition::state_transitions::shielded::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
+use dpp::state_transition::state_transitions::shielded::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 
 impl ShieldFromAssetLockTransitionActionV0 {
-    /// Transforms the shield from asset lock transition into an action
+    /// Transforms the shield from asset lock transition into an action. Every transition version
+    /// carries the same fields, so the action does not depend on which one it came from.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_transition(
-        value: &ShieldFromAssetLockTransitionV0,
+        value: &ShieldFromAssetLockTransition,
         asset_lock_outpoint: [u8; 36],
         asset_lock_value_to_be_consumed: Credits,
         signable_bytes_hasher: [u8; 32],
@@ -16,8 +18,11 @@ impl ShieldFromAssetLockTransitionActionV0 {
         current_total_balance: Credits,
         surplus_amount: Credits,
     ) -> ConsensusValidationResult<Self> {
-        let notes: Vec<ShieldedActionNote> =
-            value.actions.iter().map(ShieldedActionNote::from).collect();
+        let notes: Vec<ShieldedActionNote> = value
+            .actions()
+            .iter()
+            .map(ShieldedActionNote::from)
+            .collect();
 
         ConsensusValidationResult::new_with_data(ShieldFromAssetLockTransitionActionV0 {
             asset_lock_outpoint,
@@ -26,7 +31,7 @@ impl ShieldFromAssetLockTransitionActionV0 {
             shield_amount,
             notes,
             current_total_balance,
-            surplus_output: value.surplus_output,
+            surplus_output: value.surplus_output().copied(),
             surplus_amount,
         })
     }

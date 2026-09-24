@@ -613,7 +613,7 @@ impl Drive {
             }
             StateTransition::ShieldFromAssetLock(st) => {
                 use dpp::identity::state_transition::AssetLockProved;
-                use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+                use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
 
                 let outpoint = st.asset_lock_proof().out_point().ok_or_else(|| {
                     Error::Proof(ProofError::InvalidTransition(
@@ -630,9 +630,7 @@ impl Drive {
                     grovedb::SizedQuery::new(query, Some(1), None),
                 );
 
-                // No accessor trait exposes `surplus_output`, so read it directly off the V0 body.
-                let ShieldFromAssetLockTransition::V0(v0) = st;
-                match &v0.surplus_output {
+                match st.surplus_output() {
                     Some(surplus_address) => {
                         // Mirror the Unshield arm: also prove the balance of the signed
                         // surplus-output address so a light client can confirm the surplus

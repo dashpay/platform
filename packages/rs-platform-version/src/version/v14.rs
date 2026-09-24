@@ -1155,8 +1155,25 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   structure, identity signature, and nonce validation. It moves credits
 ///   from an identity balance straight into the shielded pool: the funding
 ///   side is identity-signed like `IdentityCreditTransferToAddresses`, the
-///   pool side is an outputs-only Orchard bundle like `Shield`, and the fee
-///   is metered plus the shielded compute fee, paid from the identity.
+///   pool side is an outputs-only Orchard bundle like `Shield`, bound to the
+///   funding identity (next item), and the fee is metered plus the shielded
+///   compute fee, paid from the identity.
+///
+/// * The credit pool's outputs-only bundles bind `kind tag || owner` into their
+///   Orchard sighash (`DPP_METHOD_VERSIONS_V3` sets `credit_pool_bundle_binding`
+///   to `Some(0)`): `Shield` (`0x84`) the SHA-256 of its input addresses,
+///   checked by `validate_shielded_proof` v1; `ShieldFromIdentity` (`0x85`) its
+///   identity id; `ShieldFromAssetLock` (`0x86`) its asset lock identifier,
+///   checked by the `transform_into_action` v1 that
+///   `DRIVE_ABCI_VALIDATION_VERSIONS_V10` selects. A third party can no longer
+///   wrap a proved bundle in a transition of their own. v13 keeps both checks
+///   unbound. A sender rebuilding the same notes (Faerie Gold) is not stopped:
+///   that needs the bundles' dummy nullifiers recorded and checked.
+///   `ShieldFromAssetLock` also gains transition version 1
+///   (`STATE_TRANSITION_SERIALIZATION_VERSIONS_V3`), the only version 14
+///   admits: version 0 is refused at decode by `active_version_range`, before
+///   any proof work, uncharged and with its asset lock left unspent, so one
+///   still waiting when 14 activates is not burned by the bound check.
 ///
 /// * `IdentityTopUpFromShieldedPool` (state transition type 22) activates at the
 ///   same gate (`IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION = 14`,
@@ -1208,7 +1225,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 1 admits a document token cost paid from a token pool
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 1 admits a document token cost paid from a token pool; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -1216,7 +1233,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
         validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2; validate_token_config_update 1 keeps the shielded pool opt-in immutable after creation
-        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; the ContractUserModeration transition
+        state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; ShieldFromAssetLock moves to version 1 alone; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
@@ -1226,7 +1243,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V3, // changed: distribution_function_evaluate v1 — deterministic libm for token reward math; reward_distribution_max_cycle_moment v1: the epoch claim cap no longer wraps; distribution_function_cycle_epochs v1: evonode cycles weighted by the epochs they span
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
-        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago
+        methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago; credit_pool_bundle_binding Some(0) — the credit pool's outputs-only bundles bind a kind tag and their owner
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status

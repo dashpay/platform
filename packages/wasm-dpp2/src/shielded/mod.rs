@@ -38,8 +38,16 @@ use wasm_bindgen::prelude::wasm_bindgen;
 /// it and compares, so a byte out of place rejects an otherwise valid bundle. Integers are
 /// little endian.
 ///
-/// - Credit pool `Shield`, `ShieldFromIdentity`, `ShieldFromAssetLock` and `ShieldedTransfer`:
-///   empty.
+/// - Credit pool `ShieldedTransfer`: empty.
+/// - Credit pool transitions that only create notes — shield, shield from identity and shield
+///   from asset lock: `kind tag (1 byte) || owner (32 bytes)`, with the tag `0x84`, `0x85` and
+///   `0x86` in that order. The owner is what funds the bundle: for shield, the SHA-256 of its
+///   input addresses, each as `type byte (0x00 P2PKH, 0x01 P2SH) || 20-byte hash` (not the
+///   bech32m type byte), sorted by type byte then hash, nonces and amounts excluded; for shield
+///   from identity, the identity id; for shield from asset lock, the double SHA-256 of the
+///   locked 36-byte outpoint. Before protocol version 14 shield and shield from asset lock bind
+///   nothing, so build for the network's protocol version. Such a bundle carries no anchor of
+///   its own, so this data is what ties it to the transition that carries it.
 /// - `Unshield`: `outputAddress || amount (u64)`.
 /// - Shielded withdrawal: `outputScript || amount (u64) || coreFeePerByte (u32) ||
 ///   pooling (1 byte)`.

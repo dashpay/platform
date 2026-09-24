@@ -5,6 +5,7 @@ use crate::address_funds::{OrchardAddress, PlatformAddress};
 use crate::fee::Credits;
 use crate::identity::signer::Signer;
 use crate::prelude::{AddressNonce, UserFeeIncrease};
+use crate::shielded::shield_extra_sighash_data;
 use crate::state_transition::shield_transition::methods::ShieldTransitionMethodsV0;
 use crate::state_transition::shield_transition::ShieldTransition;
 use crate::state_transition::StateTransition;
@@ -52,10 +53,21 @@ pub async fn build_shield_transition<S: Signer<PlatformAddress>, P: OrchardProve
         ));
     }
 
+    // Bound to the funding addresses, so nobody else can re-wrap the proved bundle; empty at
+    // protocol versions whose verifier predates the binding.
+    let extra_sighash_data = shield_extra_sighash_data(&inputs, platform_version)?;
+
     // Shield (Type 15) never pads with anonymity-set fillers — only the
     // Type 18 ShieldFromAssetLock pool-seeding path does (`dummy_outputs`).
-    let bundle =
-        build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, 0, &[], prover)?;
+    let bundle = build_output_only_bundle(
+        recipient,
+        shield_amount,
+        memo,
+        sender_ovk,
+        0,
+        &extra_sighash_data,
+        prover,
+    )?;
     let sb = serialize_authorized_bundle(&bundle);
 
     ShieldTransition::try_from_bundle_with_signer(

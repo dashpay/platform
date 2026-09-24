@@ -1,7 +1,9 @@
 use crate::address_funds::OrchardAddress;
+use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 use crate::prelude::{IdentityNonce, UserFeeIncrease};
+use crate::shielded::shield_from_identity_extra_sighash_data;
 use crate::state_transition::shield_from_identity_transition::methods::ShieldFromIdentityTransitionMethodsV0;
 use crate::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
 use crate::state_transition::StateTransition;
@@ -38,8 +40,19 @@ pub async fn build_shield_from_identity_transition<
         ));
     }
 
-    let bundle =
-        build_output_only_bundle(recipient, shield_amount, memo, sender_ovk, 0, &[], prover)?;
+    // Bound to the funding identity, so no other identity can sign the proved bundle into a
+    // transition of its own.
+    let extra_sighash_data =
+        shield_from_identity_extra_sighash_data(&identity.id().to_buffer(), platform_version)?;
+    let bundle = build_output_only_bundle(
+        recipient,
+        shield_amount,
+        memo,
+        sender_ovk,
+        0,
+        &extra_sighash_data,
+        prover,
+    )?;
     let sb = serialize_authorized_bundle(&bundle);
 
     ShieldFromIdentityTransition::try_from_bundle_with_identity_signer(

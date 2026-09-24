@@ -24,7 +24,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{signer, ScriptBuf, Txid};
 use dpp::fee::Credits;
-use dpp::shielded::compute_minimum_shielded_fee;
+use dpp::shielded::{compute_minimum_shielded_fee, shield_from_asset_lock_extra_sighash_data};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::identity::KeyType;
 use dpp::platform_value::{Bytes32, Bytes36};
@@ -38,9 +38,9 @@ use drive::state_transition_action::system::partially_use_asset_lock_action::Par
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
 use drive::state_transition_action::StateTransitionAction;
 
-pub(in crate::execution::validation::state_transition::state_transitions::shield_from_asset_lock) trait ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
+pub(in crate::execution::validation::state_transition::state_transitions::shield_from_asset_lock) trait ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
 {
-    fn transform_into_action_v0<C: CoreRPCLike>(
+    fn transform_into_action_v1<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
@@ -51,10 +51,10 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
-impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
+impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
     for ShieldFromAssetLockTransition
 {
-    fn transform_into_action_v0<C: CoreRPCLike>(
+    fn transform_into_action_v1<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
@@ -65,14 +65,13 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
+        // Only transition version 1 reaches this generation: protocol version 14 refuses version 0
+        // when it decodes the transition (`StateTransition::active_version_range`), uncharged and
+        // with its asset lock unspent. The version 0 arms below exist because the enum has them.
+
         // Step 1: Get the shield amount (value_balance is u64, the amount entering the pool)
         let shield_amount: Credits = match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.value_balance,
-            // Protocol versions 12 and 13 are the only ones that select this generation, and a
-            // version 1 transition cannot exist there: `StateTransition::active_version_range`
-            // gives it `14..=LATEST_VERSION`, refused while decoding by the one funnel both block
-            // processing and CheckTx go through. The version 1 arms here and below exist only
-            // because the enum has the variant; none of them is reachable at 12 or 13.
             ShieldFromAssetLockTransition::V1(v1) => v1.value_balance,
         };
 
@@ -306,8 +305,14 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         };
 
         // Step 9: Verify Orchard ZK proof via reconstruct_and_verify_bundle()
-        // Use EMPTY extra_sighash_data -- no transparent binding needed since
-        // the asset lock proof authenticates the source of funds.
+        // The asset lock signature authenticates this transition, but the bundle itself carries
+        // no anchor and says nothing about who proved it, so anybody could re-wrap the proved
+        // bytes around an asset lock of their own. The sighash therefore binds the kind and the
+        // funding asset lock, whose outpoint structure validation has already established.
+        let extra_sighash_data = shield_from_asset_lock_extra_sighash_data(
+            AssetLockProved::asset_lock_proof(self),
+            platform_version,
+        )?;
         let (actions, anchor, proof, binding_signature) = match self {
             ShieldFromAssetLockTransition::V0(v0) => (
                 &v0.actions,
@@ -315,11 +320,6 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
                 v0.proof.as_slice(),
                 &v0.binding_signature,
             ),
-            // This verifies a version 1 body against the empty preimage, which at protocol
-            // version 14 would be exactly the unbound check version 1 was introduced to close.
-            // It is unreachable: 14 selects transform_into_action 1, and 12 and 13 cannot decode
-            // a version 1 at all. Do not treat this arm as the verification path for version 1 —
-            // that is transform_into_action/v1.
             ShieldFromAssetLockTransition::V1(v1) => (
                 &v1.actions,
                 &v1.anchor,
@@ -335,7 +335,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
             anchor,
             proof,
             binding_signature,
-            &[], // No transparent fields to bind for shield_from_asset_lock
+            &extra_sighash_data,
         ) {
             // Step 10: ZK proof failed -- consume asset lock with penalty (PartiallyUseAssetLockAction)
             let penalty = platform_version

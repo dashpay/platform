@@ -29,7 +29,7 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
     TokenTransition, TokenTransitionV0Methods,
 };
 use dpp::shielded::{
-    TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE, compute_token_purchase_from_shielded_pool_fee, compute_token_shielded_transfer_with_shielded_fee_fee, compute_token_unshield_with_shielded_fee_fee, document_token_payment_extra_sighash_data, token_burn_from_pool_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data, token_pool_output_only_extra_sighash_data, token_purchase_from_shielded_pool_extra_sighash_data, token_shielded_transfer_extra_sighash_data, token_shielded_transfer_with_shielded_fee_extra_sighash_data, token_unshield_extra_sighash_data, token_unshield_with_shielded_fee_extra_sighash_data,
+    shield_extra_sighash_data, shield_from_identity_extra_sighash_data, TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE, compute_token_purchase_from_shielded_pool_fee, compute_token_shielded_transfer_with_shielded_fee_fee, compute_token_unshield_with_shielded_fee_fee, document_token_payment_extra_sighash_data, token_burn_from_pool_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data, token_pool_output_only_extra_sighash_data, token_purchase_from_shielded_pool_extra_sighash_data, token_shielded_transfer_extra_sighash_data, token_shielded_transfer_with_shielded_fee_extra_sighash_data, token_unshield_extra_sighash_data, token_unshield_with_shielded_fee_extra_sighash_data,
 };
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
@@ -209,6 +209,9 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
             StateTransition::ShieldFromAssetLock(st) => match st {
                 dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition::V0(v0) => {
                     v0.actions.len()
+                }
+                dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition::V1(v1) => {
+                    v1.actions.len()
                 }
             },
             StateTransition::Batch(batch) => batch
@@ -1115,6 +1118,11 @@ fn validate_batch_token_shielded_proofs(
 /// Generation 1 (protocol version 14): the credit pool rules of v0, the token shielded pools,
 /// and the identity key restrictions v0 cannot express.
 ///
+/// `Shield` and `ShieldFromIdentity`, the credit pool outputs-only bundles checked here
+/// (`ShieldFromAssetLock` is checked in its transform), are checked against the preimage
+/// `dpp.methods.credit_pool_bundle_binding` selects, which binds their kind and what funds them;
+/// v0 checks them against an empty one.
+///
 /// In `IdentityCreateFromShieldedPool` it refuses the keys the v0 Orchard sighash preimage cannot
 /// bind, before that preimage is built: a key bound to a contract group (the layout predates group
 /// bounds, and an error out of the preimage builder would be an internal error rather than a
@@ -1171,8 +1179,13 @@ fn validate_shielded_proof_v1(
     }
 
     let result = match state_transition {
+                    // The credit pool's outputs-only bundles carry no anchor, so the proved
+                    // bytes verify wherever they land. Their preimage binds the kind and the
+                    // funder, which a copy re-wrapped under someone else's funding cannot match.
                     StateTransition::Shield(st) => match st {
                         dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {
+                            let extra_sighash_data =
+                                shield_extra_sighash_data(&v0.inputs, platform_version)?;
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
                                 FLAGS_OUTPUTS_ONLY,
@@ -1180,20 +1193,28 @@ fn validate_shielded_proof_v1(
                                 &v0.anchor,
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,
-                                &[], // No transparent fields for shield
+                                &extra_sighash_data,
                             )
                         }
                     },
+                    // CheckTx's admission check. Block processing verifies the same bundle in
+                    // `ShieldFromIdentity`'s transform, which must rebuild the same preimage.
                     StateTransition::ShieldFromIdentity(st) => match st {
-                        ShieldFromIdentityTransition::V0(v0) => reconstruct_and_verify_bundle(
-                            &v0.actions,
-                            FLAGS_OUTPUTS_ONLY,
-                            -(v0.amount as i64),
-                            &v0.anchor,
-                            v0.proof.as_slice(),
-                            &v0.binding_signature,
-                            &[],
-                        ),
+                        ShieldFromIdentityTransition::V0(v0) => {
+                            let extra_sighash_data = shield_from_identity_extra_sighash_data(
+                                &v0.identity_id.to_buffer(),
+                                platform_version,
+                            )?;
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_OUTPUTS_ONLY,
+                                -(v0.amount as i64),
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &extra_sighash_data,
+                            )
+                        }
                     },
                     StateTransition::ShieldedTransfer(st) => match st {
                         dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
@@ -1996,6 +2017,122 @@ mod tests {
                 .validate_shielded_proof(platform_version)
                 .expect("should not error");
             assert!(result.is_valid());
+        }
+    }
+
+    /// The credit pool's outputs-only bundles are bound by the builder according to
+    /// `dpp.methods.credit_pool_bundle_binding`, and verified by drive-abci generations chosen in
+    /// another table. The generations that predate the binding hardcode an empty preimage; the
+    /// ones after it rebuild whatever the field says. Were a protocol version to say "bound"
+    /// while selecting an old generation, every client would bind and every node would expect
+    /// empty; were it to select a new generation while saying "unbound", the bundles would
+    /// silently go unprotected. Nothing ties the two tables together except this test.
+    #[test]
+    fn credit_pool_bundle_binding_should_agree_with_the_selected_shield_verifiers_at_every_protocol_version(
+    ) {
+        use dpp::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
+        use dpp::version::feature_initial_protocol_versions::{
+            SHIELDED_POOL_INITIAL_PROTOCOL_VERSION, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+        };
+        use platform_version::version::PLATFORM_VERSIONS;
+
+        let asset_lock_v0 = StateTransition::ShieldFromAssetLock(
+            ShieldFromAssetLockTransition::V0(ShieldFromAssetLockTransitionV0 {
+                asset_lock_proof: Default::default(),
+                actions: vec![],
+                value_balance: 1,
+                anchor: [0; 32],
+                proof: vec![],
+                binding_signature: [0; 64],
+                surplus_output: None,
+                signature: Default::default(),
+            }),
+        );
+        let asset_lock_v1 = StateTransition::ShieldFromAssetLock(
+            ShieldFromAssetLockTransition::V1(ShieldFromAssetLockTransitionV1 {
+                asset_lock_proof: Default::default(),
+                actions: vec![],
+                value_balance: 1,
+                anchor: [0; 32],
+                proof: vec![],
+                binding_signature: [0; 64],
+                surplus_output: None,
+                signature: Default::default(),
+            }),
+        );
+
+        for platform_version in PLATFORM_VERSIONS {
+            let protocol_version = platform_version.protocol_version;
+            let binds = match platform_version.dpp.methods.credit_pool_bundle_binding {
+                None => false,
+                Some(0) => true,
+                Some(other) => panic!(
+                    "protocol version {protocol_version}: unknown credit_pool_bundle_binding {other}"
+                ),
+            };
+            let validation = &platform_version.drive_abci.validation_and_processing;
+
+            // `Shield`, and `ShieldFromIdentity` at admission: `validate_shielded_proof` v1 reads
+            // the field, v0 binds nothing.
+            assert_eq!(
+                binds,
+                validation.validate_shielded_proof >= 1,
+                "protocol version {protocol_version}: credit_pool_bundle_binding disagrees with \
+                 validate_shielded_proof {}",
+                validation.validate_shielded_proof
+            );
+            // `ShieldFromAssetLock`: its transform v1 reads the field, v0 binds nothing.
+            let asset_lock_transform = validation
+                .state_transitions
+                .shield_from_asset_lock_state_transition
+                .transform_into_action;
+            assert_eq!(
+                binds,
+                asset_lock_transform >= 1,
+                "protocol version {protocol_version}: credit_pool_bundle_binding disagrees with \
+                 the ShieldFromAssetLock transform {asset_lock_transform}"
+            );
+            // `ShieldFromAssetLock`'s transition version 1 carries the bound bundle and version 0
+            // the unbound one. Wherever the transition exists, the version clients build and the
+            // only version that decodes must be the one the selected transform expects;
+            // otherwise a waiting version 0 would reach the bound check and burn its lock's
+            // penalty, or a bound bundle would meet an unbound check.
+            if protocol_version >= SHIELDED_POOL_INITIAL_PROTOCOL_VERSION {
+                let built = platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .shield_from_asset_lock_state_transition
+                    .default_current_version;
+                assert_eq!(
+                    binds,
+                    built == 1,
+                    "protocol version {protocol_version}: credit_pool_bundle_binding disagrees \
+                     with the ShieldFromAssetLock version clients build, {built}"
+                );
+                assert_eq!(
+                    binds,
+                    !asset_lock_v0
+                        .active_version_range()
+                        .contains(&protocol_version),
+                    "protocol version {protocol_version}: ShieldFromAssetLock version 0 must \
+                     decode exactly where the binding is off"
+                );
+                assert_eq!(
+                    binds,
+                    asset_lock_v1
+                        .active_version_range()
+                        .contains(&protocol_version),
+                    "protocol version {protocol_version}: ShieldFromAssetLock version 1 must \
+                     decode exactly where the binding is on"
+                );
+            }
+            // `ShieldFromIdentity` has never existed unbound: wherever it is allowed, it binds.
+            if protocol_version >= SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION {
+                assert!(
+                    binds,
+                    "protocol version {protocol_version} allows ShieldFromIdentity unbound"
+                );
+            }
         }
     }
 }
