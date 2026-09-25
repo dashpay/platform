@@ -200,14 +200,13 @@ serial_test = "3"
 platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers", "test-util"] }
 # The adapter is a tokio task; the durability test drives it and awaits its
 # join handle. Current-thread runtime only — nothing here needs threads.
+# Also drives key-wallet's async `check_core_transaction` in the
+# restore-then-redeliver regression tests (`sqlite_core_state_reader.rs`).
 tokio = { version = "1", features = ["rt", "macros", "sync"] }
 # The adapter's cancellation handle — the test passes a never-fired token, but
 # the parameter is part of the public signature.
 tokio-util = { version = "0.7", default-features = false }
 tempfile = "3"
-# Drives key-wallet's async `check_core_transaction` in the restore-then-redeliver
-# regression tests (`sqlite_core_state_reader.rs`).
-tokio = { version = "1.40", features = ["macros", "rt"] }
 # `sqlite_hardening_3625.rs`, `sqlite_persist_roundtrip.rs`, and
 # `sqlite_load_reconstruction.rs` import `dash_sdk::platform::address_sync::AddressFunds`.
 # Mocks feature lets the consumer↔persister boundary tests stand up a
