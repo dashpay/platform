@@ -1151,6 +1151,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     a second write replaced the first and two credits to an indebted
 ///     identity repaid its debt twice.
 ///
+/// 43. **The total supply ceiling bounds every mint and direct purchase**: a
+///     token's total supply is stored in a sum item, so it can never pass
+///     `i64::MAX`. Token mint and token direct purchase state validation 1
+///     treat `i64::MAX` as the max supply when the token configures none (and
+///     cap a configured one there), refusing a mint or purchase past it with
+///     `TokenMintPastMaxSupplyError`, as a paid consensus error. State
+///     validation 0 checked only a configured max supply, so such a transition
+///     failed in execution as an internal error instead. Both now read the
+///     total supply on every mint and purchase, and pay for that read.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
