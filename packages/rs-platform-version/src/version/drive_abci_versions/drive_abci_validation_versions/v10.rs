@@ -229,7 +229,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                         reject_data_trigger: 0,
                     },
                 },
-                is_allowed: 0,
                 // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
                 // only has to fund its principal (purchases, contest collateral) itself.
                 identity_minimum_balance_pre_check: 1,

@@ -43,7 +43,7 @@ mod tests {
 
     #[stack_size(STACK_SIZE)]
     #[test]
-    async fn run_chain_with_temporarily_disabled_contested_documents() {
+    async fn run_chain_accepts_contested_documents_before_epoch_4() {
         let epoch_time_length_s = 60;
 
         let config = PlatformConfig {
@@ -52,7 +52,6 @@ mod tests {
                 store_platform_state: false,
                 block_commit_signature_verification: false,
                 disable_instant_lock_signature_verification: true,
-                disable_contested_documents_is_allowed_validation: false,
                 disable_checkpoints: true,
                 ..Default::default()
             },
@@ -167,23 +166,13 @@ mod tests {
 
         let ChainExecutionOutcome {
             abci_app,
-            proposers,
-            validator_quorums,
-            current_validator_quorum_hash,
-            instant_lock_quorums,
-            current_proposer_versions,
-            end_time_ms,
-            identity_nonce_counter,
-            identity_contract_nonce_counter,
             state_transition_results_per_block,
-            identities,
-            addresses_with_balance,
             ..
         } = run_chain_for_strategy(
             &mut platform,
             2,
-            strategy.clone(),
-            config.clone(),
+            strategy,
+            config,
             15,
             &mut voting_signer,
             &mut None,
@@ -192,140 +181,17 @@ mod tests {
 
         let platform_state = abci_app.platform.state.load();
 
-        // On first block we have identity
-        // On second block we have should have documents
-        // but not in our case because we disabled contested documents
+        // The identity is created in the first block and the contested DPNS name in the second,
+        // long before epoch 4
+        assert_eq!(platform_state.last_committed_block_epoch().index, 1);
+
         let state_transitions_block_2 = state_transition_results_per_block
             .get(&2)
             .expect("expected to get block 2");
 
-        // Document transaction was rejected
-        assert!(state_transitions_block_2.is_empty());
+        assert_eq!(state_transitions_block_2.len(), 1);
 
-        assert_eq!(platform_state.last_committed_block_epoch().index, 1);
-
-        // Move over 2nd epochs
-
-        let block_start = platform_state
-            .last_committed_block_info()
-            .as_ref()
-            .unwrap()
-            .basic_info()
-            .height
-            + 1;
-
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            validator_quorums,
-            current_validator_quorum_hash,
-            instant_lock_quorums,
-            current_proposer_versions,
-            end_time_ms,
-            identity_nonce_counter,
-            identity_contract_nonce_counter,
-            ..
-        } = continue_chain_for_strategy(
-            abci_app,
-            ChainExecutionParameters {
-                block_start,
-                core_height_start: 1,
-                block_count: 3,
-                proposers,
-                validator_quorums,
-                current_validator_quorum_hash,
-                instant_lock_quorums,
-                current_proposer_versions: Some(current_proposer_versions.clone()),
-                current_identity_nonce_counter: identity_nonce_counter,
-                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
-                current_votes: BTreeMap::default(),
-                start_time_ms: 1681094380000,
-                current_time_ms: end_time_ms,
-                current_identities: Vec::new(),
-                current_addresses_with_balance: AddressesWithBalance::default(),
-            },
-            NetworkStrategy::default(),
-            config.clone(),
-            StrategyRandomness::SeedEntropy(7),
-        )
-        .await;
-
-        let platform_state = abci_app.platform.state.load();
-
-        assert_eq!(platform_state.last_committed_block_epoch().index, 4);
-
-        // Insert successfully contested document
-
-        let block_start = platform_state
-            .last_committed_block_info()
-            .as_ref()
-            .unwrap()
-            .basic_info()
-            .height
-            + 1;
-
-        let strategy = NetworkStrategy {
-            strategy: Strategy {
-                operations: vec![Operation {
-                    op_type: OperationType::Document(document_op_1.clone()),
-                    frequency: Frequency {
-                        times_per_block_range: 1..2,
-                        chance_per_block: None,
-                    },
-                }],
-                signer: Some(simple_signer),
-                ..Default::default()
-            },
-            total_hpmns: 100,
-            extra_normal_mns: 0,
-            validator_quorum_count: 24,
-            chain_lock_quorum_count: 24,
-            upgrading_info: None,
-
-            proposer_strategy: Default::default(),
-            rotate_quorums: false,
-            failure_testing: None,
-            query_testing: None,
-            verify_state_transition_results: true,
-            ..Default::default()
-        };
-
-        let ChainExecutionOutcome {
-            state_transition_results_per_block,
-            ..
-        } = continue_chain_for_strategy(
-            abci_app,
-            ChainExecutionParameters {
-                block_start,
-                core_height_start: 1,
-                block_count: 1,
-                proposers,
-                validator_quorums,
-                current_validator_quorum_hash,
-                instant_lock_quorums,
-                current_proposer_versions: Some(current_proposer_versions.clone()),
-                current_identity_nonce_counter: identity_nonce_counter,
-                current_identity_contract_nonce_counter: identity_contract_nonce_counter,
-                current_votes: BTreeMap::default(),
-                start_time_ms: 1681094380000,
-                current_time_ms: end_time_ms,
-                current_identities: identities,
-                current_addresses_with_balance: addresses_with_balance,
-            },
-            strategy,
-            config.clone(),
-            StrategyRandomness::SeedEntropy(7),
-        )
-        .await;
-
-        let state_transitions_block_6 = state_transition_results_per_block
-            .get(&6)
-            .expect("expected to get block 6");
-
-        // Contested document was created
-        assert_eq!(state_transitions_block_6.len(), 1);
-
-        let (state_transition, execution_result) = state_transitions_block_6
+        let (state_transition, execution_result) = state_transitions_block_2
             .first()
             .expect("expected a document insert");
 
