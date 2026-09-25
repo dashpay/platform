@@ -54,13 +54,14 @@ use jni::JNIEnv;
 use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
-    ContactRequestRemovalFFI, CoreAddressEntryFFI, DpnsNameStateFFI, IdentityEntryFFI,
-    IdentityKeyEntryFFI, IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    InvitationEntryFFI, OutPointFFI, PaymentRestoreEntryFFI, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI,
-    SpentOutPointFFI, SweepBatchFFI, TokenBalanceRemovalFFI, TokenBalanceUpsertFFI,
-    TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI,
-    WalletChangeSetFFI, WalletRestoreEntryFFI,
+    ContactRequestRemovalFFI, CoreAddressEntryFFI, DashPayBackfillCoveredContactFFI,
+    DpnsNameStateFFI, IdentityEntryFFI, IdentityKeyEntryFFI, IdentityKeyRemovalFFI,
+    IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, InvitationEntryFFI, OutPointFFI,
+    PaymentRestoreEntryFFI, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI, SweepBatchFFI,
+    TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
+    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
+    WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -217,6 +218,7 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
         on_persist_wallet_changeset_chain_lock_height_fn: Some(
             tramp_persist_wallet_changeset_chain_lock_height,
         ),
+        on_persist_wallet_dashpay_backfill_fn: Some(tramp_persist_wallet_dashpay_backfill),
         ..Default::default()
     }
 }
@@ -845,6 +847,61 @@ unsafe extern "C" fn tramp_persist_wallet_changeset_chain_lock_height(
             "onWalletChangesetChainLockHeight",
             "([BI)I",
             &[(&wid).into(), JValue::Int(jint_height(chain_lock_height)?)],
+        )?
+        .i()
+    })
+}
+
+/// Wire size of one covered contact in the flat `covered` array handed to
+/// `onWalletChangesetDashPayBackfill` and read back from
+/// `WalletRestoreData.dashPayBackfillCovered`: owner (32) ‖ contact (32) ‖
+/// `coveredFrom` (u32, little-endian). The same layout as
+/// `DashPayBackfillRecord::covered_bytes`, so the handler can store the array
+/// as one opaque blob and hand it straight back at load.
+const DASHPAY_BACKFILL_COVERED_ENTRY_LEN: usize = 32 + 32 + 4;
+
+/// Descriptor of `NativePersistenceBridge.onWalletChangesetDashPayBackfill`:
+/// `(walletId, floor, rewoundFrom, covered, coveredCount)`. The cover set is
+/// shipped as ONE flat `byte[]` of `68·N` bytes plus a count, the same packing
+/// the sweep slot uses for its txids, rather than one JVM allocation per
+/// contact — a contact-heavy wallet records hundreds.
+const WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR: &str = "([BII[BI)I";
+
+/// Deliver the wallet's DashPay backfill record (see
+/// `PersistWalletDashPayBackfillFn`) — the durable half of the coreHeight
+/// rescan guard (dashpay/platform#4302). Whole-record semantics: the handler
+/// replaces what it holds on the wallet row.
+unsafe extern "C" fn tramp_persist_wallet_dashpay_backfill(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    floor: u32,
+    rewound_from: u32,
+    covered: *const DashPayBackfillCoveredContactFFI,
+    covered_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let entries = slice_or_empty(covered, covered_count);
+        let mut packed = Vec::with_capacity(entries.len() * DASHPAY_BACKFILL_COVERED_ENTRY_LEN);
+        for entry in entries {
+            packed.extend_from_slice(&entry.owner_identity_id);
+            packed.extend_from_slice(&entry.contact_identity_id);
+            packed.extend_from_slice(&entry.covered_from.to_le_bytes());
+        }
+        let packed_arr = env.byte_array_from_slice(&packed)?;
+        let count = i32::try_from(entries.len())
+            .map_err(|_| jni::errors::Error::JniCall(jni::errors::JniError::InvalidArguments))?;
+        env.call_method(
+            bridge,
+            "onWalletChangesetDashPayBackfill",
+            WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR,
+            &[
+                (&wid).into(),
+                JValue::Int(jint_height(floor)?),
+                JValue::Int(jint_height(rewound_from)?),
+                (&packed_arr).into(),
+                JValue::Int(count),
+            ],
         )?
         .i()
     })
@@ -1973,6 +2030,11 @@ struct WalletRestoreStaged {
     /// minted null / 0 at seal (no chainlock persisted). A single flat
     /// buffer, freed with one `free_raw_bytes`.
     last_applied_chain_lock: Vec<u8>,
+    /// The DashPay backfill record's cover set. `Copy` POD like the
+    /// platform-address balances: minted in one shot at seal, freed with a
+    /// single `free_raw_slice`. The record's scalars and presence flag ride
+    /// on `entry` directly.
+    dashpay_backfill_covered: Vec<DashPayBackfillCoveredContactFFI>,
 }
 
 /// Staged account spec: FFI struct with a null xpub pointer plus the
@@ -2169,6 +2231,7 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                  unresolved_asset_lock_tx_records,
                  provider_special_txs,
                  last_applied_chain_lock,
+                 dashpay_backfill_covered,
              }| {
                 // Flat POD array — no nested owned buffers, so the whole
                 // `Vec<AddressBalanceEntryFFI>` mints in one shot and
@@ -2290,6 +2353,13 @@ fn seal_wallet_entries(staged: Vec<WalletRestoreStaged>) -> Vec<WalletRestoreEnt
                     entry.last_applied_chain_lock_bytes,
                     entry.last_applied_chain_lock_bytes_len,
                 ) = vec_into_raw(last_applied_chain_lock);
+
+                // DashPay backfill cover set — flat POD array, one mint, one
+                // `free_raw_slice` (see `tramp_load_wallet_list_free`).
+                (
+                    entry.dashpay_backfill_covered,
+                    entry.dashpay_backfill_covered_count,
+                ) = vec_into_raw(dashpay_backfill_covered);
 
                 // Identities: mint each identity's nested key / contact /
                 // ignored-sender arrays first, then the identity array
@@ -2572,6 +2642,18 @@ fn build_wallet_restore_entry(
     // fallback can fire at launch. Empty → null / 0 at seal.
     let last_applied_chain_lock = read_bytes_field_vec(env, holder, "lastAppliedChainLockBytes")?;
 
+    // Persisted DashPay backfill record (dashpay/platform#4302) — the
+    // durable half of the coreHeight rescan guard. A blob that is not a
+    // whole number of entries is read as NO record rather than a shorter
+    // cover set: a contact missing from the set costs one redundant rewind,
+    // a contact wrongly present is never backfilled again.
+    let (
+        has_dashpay_backfill,
+        dashpay_backfill_floor,
+        dashpay_backfill_rewound_from,
+        dashpay_backfill_covered,
+    ) = build_dashpay_backfill_restore(env, holder)?;
+
     let entry = WalletRestoreEntryFFI {
         wallet_id,
         network: net_from_ord(network_ord),
@@ -2605,6 +2687,11 @@ fn build_wallet_restore_entry(
         last_applied_chain_lock_bytes_len: 0,
         provider_special_txs: ptr::null(),
         provider_special_txs_count: 0,
+        has_dashpay_backfill,
+        dashpay_backfill_floor,
+        dashpay_backfill_rewound_from,
+        dashpay_backfill_covered: ptr::null(),
+        dashpay_backfill_covered_count: 0,
     };
     Ok(WalletRestoreStaged {
         entry,
@@ -2617,7 +2704,60 @@ fn build_wallet_restore_entry(
         unresolved_asset_lock_tx_records,
         provider_special_txs,
         last_applied_chain_lock,
+        dashpay_backfill_covered,
     })
+}
+
+/// Read the Kotlin `WalletRestoreData.dashPayBackfill*` fields: the presence
+/// flag, the two scalars, and the cover set unpacked from its flat
+/// `68·N`-byte blob (see [`DASHPAY_BACKFILL_COVERED_ENTRY_LEN`]) into staged
+/// [`DashPayBackfillCoveredContactFFI`] rows. A blob whose length is not a
+/// whole number of entries yields `(false, 0, 0, [])` — no record — and a
+/// `warn`, never a partial cover set.
+fn build_dashpay_backfill_restore(
+    env: &mut JNIEnv,
+    holder: &JObject,
+) -> Result<(bool, u32, u32, Vec<DashPayBackfillCoveredContactFFI>), jni::errors::Error> {
+    let present = env.get_field(holder, "hasDashPayBackfill", "Z")?.z()?;
+    if !present {
+        return Ok((false, 0, 0, Vec::new()));
+    }
+    let floor = env.get_field(holder, "dashPayBackfillFloor", "I")?.i()?;
+    let rewound_from = env
+        .get_field(holder, "dashPayBackfillRewoundFrom", "I")?
+        .i()?;
+    let blob = read_bytes_field_vec(env, holder, "dashPayBackfillCovered")?;
+    if floor < 0
+        || rewound_from < 0
+        || !blob
+            .len()
+            .is_multiple_of(DASHPAY_BACKFILL_COVERED_ENTRY_LEN)
+    {
+        log::warn!(
+            "load: malformed DashPay backfill record on the wallet row (floor={floor}, \
+             rewound_from={rewound_from}, blob_len={}); reading as no record",
+            blob.len()
+        );
+        return Ok((false, 0, 0, Vec::new()));
+    }
+    let (chunks, _) = blob.as_chunks::<DASHPAY_BACKFILL_COVERED_ENTRY_LEN>();
+    let covered = chunks
+        .iter()
+        .map(|chunk| {
+            let mut owner_identity_id = [0u8; 32];
+            let mut contact_identity_id = [0u8; 32];
+            let mut height = [0u8; 4];
+            owner_identity_id.copy_from_slice(&chunk[..32]);
+            contact_identity_id.copy_from_slice(&chunk[32..64]);
+            height.copy_from_slice(&chunk[64..68]);
+            DashPayBackfillCoveredContactFFI {
+                owner_identity_id,
+                contact_identity_id,
+                covered_from: u32::from_le_bytes(height),
+            }
+        })
+        .collect();
+    Ok((true, floor as u32, rewound_from as u32, covered))
 }
 
 /// Read the Kotlin `WalletRestoreData.utxos` array into staged
@@ -3613,6 +3753,9 @@ unsafe extern "C" fn tramp_load_wallet_list_free(
                 e.last_applied_chain_lock_bytes_len,
             );
 
+            // DashPay backfill cover set — flat POD slice, one mint at seal.
+            free_raw_slice(e.dashpay_backfill_covered, e.dashpay_backfill_covered_count);
+
             // identities + nested key / contact / ignored-sender /
             // payment / contact-profile arrays (each key's `data` buffer +
             // contract-bounds doc-type C-string; each contact's three byte
@@ -4548,6 +4691,10 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     // literal at the `call_method` site in
     // `tramp_persist_wallet_changeset_chain_lock_height`.
     ("onWalletChangesetChainLockHeight", "([BI)I"),
+    (
+        "onWalletChangesetDashPayBackfill",
+        WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR,
+    ),
     (
         "onPersistIdentityUpsert",
         "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\

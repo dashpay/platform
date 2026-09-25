@@ -108,6 +108,45 @@ pub struct UtxoCreditVerdictFFI {
     pub spent_at_height: u32,
 }
 
+/// One receival contact the DashPay coreHeight backfill covers, and the
+/// height it covers it from — the C mirror of
+/// [`DashPayBackfillCoveredContact`](platform_wallet::changeset::DashPayBackfillCoveredContact).
+///
+/// Delivered through the persistence extension's
+/// `on_persist_wallet_dashpay_backfill_fn` slot alongside the record's
+/// `floor` / `rewound_from`, and handed back at restore on
+/// `WalletRestoreEntryFFI::dashpay_backfill_covered`. Rides the extension
+/// rather than `WalletChangeSetFFI` for the layout reason documented there:
+/// that struct crosses by bare pointer and cannot prove a new field present,
+/// while the extension's `struct_size` can.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DashPayBackfillCoveredContactFFI {
+    /// Our identity — the owner of the receival account.
+    pub owner_identity_id: [u8; 32],
+    /// The contact whose payments the receival account collects.
+    pub contact_identity_id: [u8; 32],
+    /// Lowest height the scan is guaranteed to test with this contact's
+    /// addresses watched.
+    pub covered_from: u32,
+}
+
+/// Project a backfill record's cover set into its C mirrors for the
+/// extension slot, in record order (sorted by `(owner, contact)`).
+pub fn build_dashpay_backfill_covered_for_callback(
+    record: &platform_wallet::changeset::DashPayBackfillRecord,
+) -> Vec<DashPayBackfillCoveredContactFFI> {
+    record
+        .covered
+        .iter()
+        .map(|entry| DashPayBackfillCoveredContactFFI {
+            owner_identity_id: entry.owner.to_buffer(),
+            contact_identity_id: entry.contact.to_buffer(),
+            covered_from: entry.covered_from,
+        })
+        .collect()
+}
+
 /// Project a changeset's credit verdicts into their C mirrors for the
 /// extension slot, in outpoint order (the map's own ordering — stable,
 /// so a host log of a round is reproducible).
