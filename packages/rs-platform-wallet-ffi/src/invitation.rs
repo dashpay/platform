@@ -765,6 +765,10 @@ mod tests {
             contract_bounds_kind: 0,
             contract_bounds_id: std::ptr::null(),
             contract_bounds_document_type: std::ptr::null(),
+            has_total_budget: false,
+            total_budget: 0,
+            has_expires_at: false,
+            expires_at: 0,
         };
         let rows = [ffi_row(&pk_a), ffi_row(&pk_b)];
         let dummy_signer = std::ptr::dangling_mut::<SignerHandle>();

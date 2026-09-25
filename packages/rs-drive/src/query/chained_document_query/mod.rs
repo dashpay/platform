@@ -29,16 +29,23 @@
 //! ([`DriveDocumentQuery::chained_join_values`] →
 //! [`DriveDocumentQuery::derive_chained_outer_query`], the same functions
 //! the server executes), so a server cannot substitute, omit, or inject
-//! outer documents. Because the join property's `refersTo` targets a
+//! outer documents. When the join property's `refersTo` targets a
 //! `permanentDocument` type (non-deletable, enforced at write time),
 //! every proven join value MUST resolve to a document — a missing outer
-//! document is an invalid proof, not an absence.
+//! document is an invalid proof, not an absence. A `deletableDocument`
+//! target promises only that the document existed when the inner one was
+//! written, so there a join value with no outer document is left out.
+//! That omission is proven, not trusted: every derived `$id` is a queried
+//! key of the merged query, and grovedb refuses a proof without the
+//! coverage to show a queried key present or absent, so a prover cannot
+//! pass an existing document off as deleted.
 //!
 //! Guardrails (v1): the inner query must resolve to an indexOnly index
 //! that carries the join property (as terminal or prefix property, so
 //! every synthesized projection provably carries its value); the join
-//! edge must be a same-contract `refersTo: permanentDocument` whose
-//! target is the outer type; the inner limit is required (it is what
+//! edge must be a same-contract `refersTo: permanentDocument` or
+//! `refersTo: deletableDocument` whose target is the outer type; the
+//! inner limit is required (it is what
 //! bounds the outer fan-out); the outer half takes no clauses, no
 //! limit and no cursor — it is purely the derived by-ids fetch, and
 //! pagination lives on the inner query alone.
@@ -53,7 +60,8 @@ use crate::query::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
@@ -73,6 +81,12 @@ pub const MAX_CHAINED_JOIN_VALUES: usize = 100;
 /// The materialized result of a chained query, in inner-proof order.
 #[derive(Debug, Default)]
 pub struct ChainedDocumentsResult {
+    /// The join values that have NO outer document, in first-appearance
+    /// order. Only a join off a `refersTo: deletableDocument` property
+    /// can report any (a referenced document deleted after the inner one
+    /// was written); off a `permanentDocument` property a missing document
+    /// is refused instead. On the proof path each is a proven absence.
+    pub missing_outer_ids: Vec<Identifier>,
     /// The inner projections (synthesized indexOnly documents), exactly
     /// as the inner query alone would return them — the caller reads its
     /// pagination cursor (the last join value) from here.
@@ -192,12 +206,13 @@ impl<'a> DriveDocumentQuery<'a> {
             ));
         }
 
-        // The join property must be a same-contract permanentDocument
-        // reference targeting the outer type. `refersTo` writes are
-        // existence-validated and permanentDocument targets can never be
-        // deleted, so every proven join value MUST resolve — which is
-        // what lets the verifier treat a missing outer document as an
-        // invalid proof instead of needing absence proofs.
+        // The join property must be a same-contract document reference
+        // targeting the outer type. `refersTo` writes are
+        // existence-validated; a permanentDocument target can never be
+        // deleted, so every proven join value MUST resolve and a missing
+        // outer document is an invalid proof, while a deletableDocument
+        // target may be gone and is then left out (see
+        // `assemble_chained_outer_documents`).
         let Some(join_document_property) =
             self.document_type.flattened_properties().get(join_property)
         else {
@@ -208,16 +223,50 @@ impl<'a> DriveDocumentQuery<'a> {
                 self.document_type.name(),
             )));
         };
-        match &join_document_property.property_type {
-            DocumentPropertyType::IdentifierWithReference(
-                DocumentPropertyReferenceTarget::PermanentDocument {
-                    contract_id,
-                    document_type_name,
-                    ..
-                },
-            ) => {
+        // A typed array of references is no join property: it is not
+        // indexable, and a join value is one identifier
+        let document_reference = match &join_document_property.property_type {
+            DocumentPropertyType::IdentifierWithReference(reference_target) => {
+                reference_target.as_document_reference()
+            }
+            _ => None,
+        };
+        // A lookup reference is a document reference whose value is not the
+        // outer document's id, so `as_document_reference` leaves it out; it
+        // is named here so the refusal says why
+        if let DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
+            | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. },
+        ) = &join_document_property.property_type
+        {
+            return Err(unsupported(format!(
+                "chained query join property \"{}\" refers to its document through the \
+                 unique index \"{}\", so its value is not the outer document's id: a join \
+                 needs a reference whose value is the referenced document's $id",
+                join_property, lookup.index,
+            )));
+        }
+        // A reference expression is no single document reference either: an
+        // `anyOf` value may be the id of any of its leaves, and an `allOf`
+        // names no one outer document type to join through
+        if let DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_),
+        ) = &join_document_property.property_type
+        {
+            return Err(unsupported(format!(
+                "chained query join property \"{}\" declares a refersTo anyOf or allOf \
+                 expression: a join needs a reference to one document type",
+                join_property,
+            )));
+        }
+        match document_reference {
+            Some(DocumentReferenceDeclaration {
+                contract_id,
+                document_type_name,
+                ..
+            }) => {
                 if let Some(referenced_contract_id) = contract_id {
-                    if *referenced_contract_id != self.contract.id() {
+                    if referenced_contract_id != self.contract.id() {
                         return Err(unsupported(
                             "chained document queries support same-contract joins only: \
                              the join property's refersTo names another contract"
@@ -234,11 +283,11 @@ impl<'a> DriveDocumentQuery<'a> {
                     )));
                 }
             }
-            _ => {
+            None => {
                 return Err(unsupported(format!(
                     "chained query join property \"{}\" must carry a `refersTo: \
-                     permanentDocument` declaration: only a permanent-document reference \
-                     guarantees every proven join value resolves to an outer document",
+                     permanentDocument` or `refersTo: deletableDocument` declaration: it is \
+                     what names the outer document type the proven join values resolve in",
                     join_property,
                 )));
             }
@@ -247,7 +296,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // The resolved index must carry the join property, so every
         // synthesized inner projection provably carries its value.
         let index = self.index_only_query_index(platform_version)?;
-        let index_carries_join_property = index.terminal.as_deref() == Some(join_property)
+        let index_carries_join_property = index.terminal_contains(join_property)
             || index
                 .properties
                 .iter()
@@ -347,17 +396,42 @@ impl<'a> DriveDocumentQuery<'a> {
         })
     }
 
+    /// Whether the join property's reference guarantees its target stays
+    /// in state (`permanentDocument`) or not (`deletableDocument`). A join
+    /// property that is neither, which `validate_chained` refuses, is
+    /// held to the strict rule.
+    fn chained_join_target_is_permanent(&self) -> Result<bool, Error> {
+        let (join_property, _, _) = self.chained_join()?;
+        Ok(self
+            .document_type
+            .flattened_properties()
+            .get(join_property)
+            .and_then(|property| match &property.property_type {
+                DocumentPropertyType::IdentifierWithReference(reference_target) => {
+                    reference_target.as_document_reference()
+                }
+                _ => None,
+            })
+            .is_none_or(|declaration| declaration.permanent))
+    }
+
     /// Reorders the outer documents (returned in key order by the by-ids
-    /// query) into first-appearance join order, and enforces EXACT set
-    /// equality between the proven outer ids and the derived join
-    /// values — both directions. Shared by the server (where a mismatch
-    /// is corrupted state: permanentDocument references cannot dangle)
-    /// and the verifier (where it is an invalid proof).
+    /// query) into first-appearance join order, and checks them against
+    /// the derived join values. An outer document carried twice, or one
+    /// no join value references, is always refused. A join value with no
+    /// outer document is refused when the join property is a
+    /// `permanentDocument` reference (it cannot dangle: corrupted state
+    /// on the server, an invalid proof in the verifier) and left out when
+    /// it is a `deletableDocument` reference (the target was deleted after
+    /// the inner document was written, and the by-ids query that found
+    /// nothing under its `$id` is the very query the proof covers); the
+    /// join values left out are returned alongside, in first-appearance
+    /// order. Shared by the server and the verifier.
     pub fn assemble_chained_outer_documents(
         &self,
         join_values: &[Identifier],
         outer_documents: Vec<Document>,
-    ) -> Result<Vec<Document>, Error> {
+    ) -> Result<(Vec<Document>, Vec<Identifier>), Error> {
         use std::collections::BTreeMap;
         let mut by_id: BTreeMap<Identifier, Document> = BTreeMap::new();
         for document in outer_documents {
@@ -371,17 +445,25 @@ impl<'a> DriveDocumentQuery<'a> {
                 ));
             }
         }
+        let target_is_permanent = self.chained_join_target_is_permanent()?;
         let mut ordered = Vec::with_capacity(join_values.len());
+        let mut missing = Vec::new();
         for join_value in join_values {
-            let document = by_id.remove(join_value).ok_or_else(|| {
-                Error::Proof(crate::error::proof::ProofError::CorruptedProof(format!(
-                    "chained outer results are missing referenced document {}: a \
-                     permanentDocument reference cannot dangle, so the outer half does \
-                     not prove the derived query",
-                    join_value
-                )))
-            })?;
-            ordered.push(document);
+            match by_id.remove(join_value) {
+                Some(document) => ordered.push(document),
+                None if target_is_permanent => {
+                    return Err(Error::Proof(
+                        crate::error::proof::ProofError::CorruptedProof(format!(
+                            "chained outer results are missing referenced document {}: a \
+                             permanentDocument reference cannot dangle, so the outer half \
+                             does not prove the derived query",
+                            join_value
+                        )),
+                    ));
+                }
+                // A deletableDocument target that is no longer in state.
+                None => missing.push(*join_value),
+            }
         }
         if let Some((extra_id, _)) = by_id.into_iter().next() {
             return Err(Error::Proof(
@@ -392,7 +474,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 )),
             ));
         }
-        Ok(ordered)
+        Ok((ordered, missing))
     }
 
     /// The component path queries the chained proof covers: the inner
@@ -459,6 +541,7 @@ impl DriveDocumentQuery<'_> {
             return Ok(ChainedDocumentsResult {
                 inner_documents,
                 outer_documents: Vec::new(),
+                missing_outer_ids: Vec::new(),
             });
         }
 
@@ -478,12 +561,13 @@ impl DriveDocumentQuery<'_> {
                     .map_err(|e| Error::Protocol(Box::new(e)))
             })
             .collect::<Result<Vec<Document>, Error>>()?;
-        let outer_documents =
+        let (outer_documents, missing_outer_ids) =
             self.assemble_chained_outer_documents(&join_values, outer_documents)?;
 
         Ok(ChainedDocumentsResult {
             inner_documents,
             outer_documents,
+            missing_outer_ids,
         })
     }
 

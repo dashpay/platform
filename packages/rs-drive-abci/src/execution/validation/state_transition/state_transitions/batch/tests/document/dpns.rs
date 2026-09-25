@@ -27,8 +27,17 @@ mod dpns_tests {
             // reading the old value, billing one fewer seek than the V3 path.
             // +740 per document write: the contract's version item is one more
             // node to rehash. +4_300 per domain create: the v2 state validation
-            // probes contested storage for the id.
-            6_021_500,
+            // probes contested storage for the id. The ids commit to the identity
+            // contract nonce from v14, so the three domains sort differently in
+            // the primary key tree than their entropy only ids did, and the
+            // inserts touch a cheaper set of nodes (v13 moves by the same amount
+            // when the seed reorders its ids). +10_000 per create: the nonce
+            // derived id is billed both SHA-256 passes, 4 blocks instead of 2.
+            // The app-connect contract adds one sibling to the genesis contracts tree,
+            // increasing the bytes billed when reading that tree (protocol 14 only). The
+            // moderation charters contract adds another, which reshapes the tree so the
+            // DPNS contract's node is billed fewer bytes to reach (-287_760).
+            5_761_600,
         )
         .await;
     }
@@ -145,6 +154,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut preorder_document_2 = preorder
             .random_document_with_identifier_and_entropy(
@@ -156,6 +168,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_2
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut preorder_document_3 = preorder
             .random_document_with_identifier_and_entropy(
@@ -167,6 +182,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_3
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -178,6 +196,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_2 = domain
             .random_document_with_identifier_and_entropy(
@@ -189,6 +210,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_2
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_3 = domain
             .random_document_with_identifier_and_entropy(
@@ -200,6 +224,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_3
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -616,6 +643,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut preorder_document_2 = preorder
             .random_document_with_identifier_and_entropy(
@@ -627,6 +657,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_2
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut preorder_document_3 = preorder
             .random_document_with_identifier_and_entropy(
@@ -638,6 +671,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_3
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -649,6 +685,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_2 = domain
             .random_document_with_identifier_and_entropy(
@@ -660,6 +699,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_2
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_3 = domain
             .random_document_with_identifier_and_entropy(
@@ -671,6 +713,9 @@ mod dpns_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_3
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -1056,6 +1101,9 @@ mod dpns_username_transfer_tests {
                 platform_version,
             )
             .expect("expected a random preorder document");
+        preorder_document
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document = domain
             .random_document_with_identifier_and_entropy(
@@ -1067,6 +1115,9 @@ mod dpns_username_transfer_tests {
                 platform_version,
             )
             .expect("expected a random domain document");
+        document
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let normalized_label = convert_to_homograph_safe_chars(label);
 
@@ -3015,6 +3066,9 @@ mod dpns_username_transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -3158,7 +3212,7 @@ mod dpns_username_transfer_tests {
 
         let entropy = Bytes32::random_with_rng(&mut rng);
 
-        let document = transfer_document_type
+        let mut document = transfer_document_type
             .random_document_with_identifier_and_entropy(
                 &mut rng,
                 identity.id(),
@@ -3168,6 +3222,9 @@ mod dpns_username_transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(transfer_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let documents_batch_create_transition =
             BatchTransition::new_document_creation_transition_from_document(

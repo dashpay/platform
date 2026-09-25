@@ -1,8 +1,14 @@
+use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
-use integer_encoding::VarInt;
+use byteorder::{BigEndian, ReadBytesExt};
+use integer_encoding::{VarInt, VarIntReader};
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
+use rand::rngs::StdRng;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::io::BufReader;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(into = "ArrayItemTypeRepr", from = "ArrayItemTypeRepr")]
@@ -16,12 +22,427 @@ pub enum ArrayItemType {
     Date,
 }
 
+/// A typed array property: `type: "array"` with an `items` schema naming the
+/// type of every element, parsed from protocol version 14
+/// (`parse_typed_array` 0).
+///
+/// It is stored inline in the document like any other property: a varint
+/// element count followed by the elements, each encoded exactly as a required
+/// scalar property of `item_type` is. So an identifier element is 32 raw
+/// bytes, a byte array element whose bounds pin one size is raw, an integer
+/// element takes the width its schema's bounds give it, and a string or a
+/// variable-size byte array element carries a varint length. Nothing is
+/// indexed per element, so a typed array cannot be an index property.
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub struct TypedArrayProperty {
+    /// The scalar type of every element, parsed from `items` exactly as a
+    /// scalar property schema is: an integer, a number, a string, a boolean,
+    /// a byte array or an identifier, never an object or an array.
+    pub item_type: Box<DocumentPropertyType>,
+    /// What the `items` schema bounds beyond the type: read by random
+    /// document generation, enforced on every document by the JSON schema
+    /// validator.
+    pub item_constraints: ArrayItemConstraints,
+    /// `minItems`: the fewest elements a document may hold, never above
+    /// `max_items`.
+    pub min_items: Option<u16>,
+    /// `maxItems`: the most elements a document may hold. Every parse
+    /// requires it; full validation also caps it at
+    /// `SystemLimits::max_typed_array_items`.
+    pub max_items: u16,
+    /// `uniqueItems`: whether a document is refused for repeating an element.
+    pub unique_items: bool,
+}
+
+/// The bounds an `items` schema declares beyond its element type. The JSON
+/// schema validator enforces them on every document; they are parsed so
+/// random document generation stays inside them (an `exclusiveMinimum`,
+/// `exclusiveMaximum`, `multipleOf`, `pattern` or `format` on an element is
+/// not read here, exactly as it is not for a scalar property).
+#[derive(Debug, PartialEq, Clone, Default, Serialize)]
+pub struct ArrayItemConstraints {
+    /// `enum`: the values every element must be one of, in declared order.
+    /// Every member is of the element type; a byte array or identifier
+    /// element takes none.
+    pub allowed_values: Option<Vec<Value>>,
+    /// `minimum` of an integer or number element, inclusive.
+    pub minimum: Option<Value>,
+    /// `maximum` of an integer or number element, inclusive, never below
+    /// `minimum`.
+    pub maximum: Option<Value>,
+}
+
+/// Which size a random element is drawn at.
+#[derive(Clone, Copy)]
+enum RandomFill {
+    /// Any size the bounds allow.
+    Any,
+    /// The smallest value the bounds allow.
+    Smallest,
+    /// The largest value the bounds allow.
+    Largest,
+}
+
+/// The range an integer element type can hold, for drawing a random element
+/// when its schema bounds only one side.
+fn integer_kind_range(kind: &DocumentPropertyType) -> Option<(i128, i128)> {
+    Some(match kind {
+        DocumentPropertyType::U8 => (0, u8::MAX as i128),
+        DocumentPropertyType::I8 => (i8::MIN as i128, i8::MAX as i128),
+        DocumentPropertyType::U16 => (0, u16::MAX as i128),
+        DocumentPropertyType::I16 => (i16::MIN as i128, i16::MAX as i128),
+        DocumentPropertyType::U32 => (0, u32::MAX as i128),
+        DocumentPropertyType::I32 => (i32::MIN as i128, i32::MAX as i128),
+        DocumentPropertyType::U64 => (0, u64::MAX as i128),
+        DocumentPropertyType::I64 => (i64::MIN as i128, i64::MAX as i128),
+        DocumentPropertyType::U128 => (0, i128::MAX),
+        DocumentPropertyType::I128 => (i128::MIN, i128::MAX),
+        _ => return None,
+    })
+}
+
+/// An integer in the value kind an element type reads back as, so a random
+/// document round-trips through the codec unchanged. `n` is within the
+/// kind's range, which the caller clamps it to.
+fn integer_value_of_kind(kind: &DocumentPropertyType, n: i128) -> Value {
+    match kind {
+        DocumentPropertyType::U8 => Value::U8(n as u8),
+        DocumentPropertyType::I8 => Value::I8(n as i8),
+        DocumentPropertyType::U16 => Value::U16(n as u16),
+        DocumentPropertyType::I16 => Value::I16(n as i16),
+        DocumentPropertyType::U32 => Value::U32(n as u32),
+        DocumentPropertyType::I32 => Value::I32(n as i32),
+        DocumentPropertyType::U64 => Value::U64(n as u64),
+        DocumentPropertyType::U128 => Value::U128(n as u128),
+        DocumentPropertyType::I128 => Value::I128(n),
+        _ => Value::I64(n as i64),
+    }
+}
+
+impl TypedArrayProperty {
+    /// Whether an element's encoding is a varint length followed by the bytes:
+    /// a string, and a byte array whose bounds do not pin one size. Every
+    /// other scalar has a fixed width.
+    fn element_is_length_prefixed(&self) -> bool {
+        match self.item_type.as_ref() {
+            DocumentPropertyType::String(_) => true,
+            DocumentPropertyType::ByteArray(sizes) => {
+                !(sizes.min_size.is_some() && sizes.min_size == sizes.max_size)
+            }
+            _ => false,
+        }
+    }
+
+    /// The width of an element written raw from bytes: 32 for an identifier,
+    /// the size of a byte array whose bounds pin one. The scalar encoder
+    /// writes those bytes as given, so the list checks their length: a short
+    /// element would shift every element after it.
+    fn element_raw_width(&self) -> Option<usize> {
+        match self.item_type.as_ref() {
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) => {
+                Some(32)
+            }
+            DocumentPropertyType::ByteArray(sizes)
+                if sizes.min_size.is_some() && sizes.min_size == sizes.max_size =>
+            {
+                sizes.min_size.map(usize::from)
+            }
+            _ => None,
+        }
+    }
+
+    /// An element's encoded size for its scalar byte bound: the bound, plus
+    /// the varint length in front of a length-prefixed element.
+    fn element_encoded_size(&self, element_bytes: u16) -> u64 {
+        let prefix = if self.element_is_length_prefixed() {
+            usize::from(element_bytes).required_space() as u64
+        } else {
+            0
+        };
+        u64::from(element_bytes).saturating_add(prefix)
+    }
+
+    /// The fewest bytes the array encodes to: the varint count of `minItems`
+    /// elements and that many of the smallest element, sized as its scalar
+    /// type is sized, saturating at `u16::MAX`.
+    pub fn min_encoded_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<u16, ProtocolError> {
+        let min_items = self.min_items.unwrap_or(0);
+        let element_bytes = self.item_type.min_byte_size(platform_version)?.unwrap_or(0);
+        let size = (min_items.required_space() as u64).saturating_add(
+            u64::from(min_items).saturating_mul(self.element_encoded_size(element_bytes)),
+        );
+        Ok(u16::try_from(size).unwrap_or(u16::MAX))
+    }
+
+    /// The most bytes the array encodes to: the varint count of `maxItems`
+    /// elements and that many of the largest element, sized as its scalar
+    /// type is sized, saturating at `u16::MAX`, the size an unbounded string
+    /// or byte array reports. Also `u16::MAX` when the element is unbounded.
+    pub fn max_encoded_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<u16, ProtocolError> {
+        let element_bytes = match self.item_type.max_byte_size(platform_version)? {
+            Some(element_bytes) if element_bytes < u16::MAX => element_bytes,
+            _ => return Ok(u16::MAX),
+        };
+        let size = (self.max_items.required_space() as u64).saturating_add(
+            u64::from(self.max_items).saturating_mul(self.element_encoded_size(element_bytes)),
+        );
+        Ok(u16::try_from(size).unwrap_or(u16::MAX))
+    }
+
+    /// Encodes a list: the varint element count, then each element exactly as
+    /// a required scalar property of `item_type` is encoded.
+    pub(super) fn encode_value_ref(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
+        let Value::Array(elements) = value else {
+            return Err(DataContractError::ValueWrongType(format!(
+                "a typed array value must be a list, got {value}"
+            ))
+            .into());
+        };
+        let mut bytes = elements.len().encode_var_vec();
+        for element in elements {
+            // A null encodes to no bytes at all, which would drop the element
+            if element.is_null() {
+                return Err(DataContractError::ValueWrongType(
+                    "a typed array element can not be null".to_string(),
+                )
+                .into());
+            }
+            let element_bytes = self.item_type.encode_value_ref_with_size(element, true)?;
+            if let Some(width) = self.element_raw_width() {
+                if element_bytes.len() != width {
+                    return Err(DataContractError::ValueWrongType(format!(
+                        "a typed array element must be {width} bytes, got {}",
+                        element_bytes.len()
+                    ))
+                    .into());
+                }
+            }
+            bytes.extend(element_bytes);
+        }
+        Ok(bytes)
+    }
+
+    /// Reads a list, the mirror of [`Self::encode_value_ref`]: a varint
+    /// element count, then each element as a required scalar property of
+    /// `item_type` is read. The count comes from the serialized document, so
+    /// a count above `maxItems` is refused before anything is read: that
+    /// bounds the loop even for elements of zero width (a byte array pinned
+    /// to zero bytes).
+    pub(super) fn read_from(&self, buf: &mut BufReader<&[u8]>) -> Result<Value, DataContractError> {
+        let count: usize = buf.read_varint().map_err(|_| {
+            DataContractError::CorruptedSerialization(
+                "error reading varint of typed array element count".to_string(),
+            )
+        })?;
+        if count > usize::from(self.max_items) {
+            return Err(DataContractError::CorruptedSerialization(format!(
+                "a serialized typed array claims {count} elements, more than its maxItems of {}",
+                self.max_items
+            )));
+        }
+        let mut elements = Vec::new();
+        for _ in 0..count {
+            let (element, _) = self.item_type.read_optionally_from(buf, true)?;
+            let Some(element) = element else {
+                return Err(DataContractError::CorruptedSerialization(
+                    "a typed array element read back as absent".to_string(),
+                ));
+            };
+            elements.push(element);
+        }
+        Ok(Value::Array(elements))
+    }
+
+    /// How many elements a random value holds: between `minItems` and
+    /// `maxItems`.
+    fn random_items_range(&self) -> (usize, usize) {
+        let max_items = usize::from(self.max_items);
+        let min_items = usize::from(self.min_items.unwrap_or(0)).min(max_items);
+        (min_items, max_items)
+    }
+
+    /// A random value holding between `minItems` and `maxItems` random
+    /// elements.
+    pub(super) fn random_value(&self, rng: &mut StdRng) -> Value {
+        let (min_items, max_items) = self.random_items_range();
+        let count = rng.gen_range(min_items..=max_items);
+        self.random_items(count, rng, RandomFill::Any)
+    }
+
+    /// A random value holding `minItems` elements, each of its smallest size.
+    pub(super) fn random_sub_filled_value(&self, rng: &mut StdRng) -> Value {
+        let (min_items, _) = self.random_items_range();
+        self.random_items(min_items, rng, RandomFill::Smallest)
+    }
+
+    /// A random value holding `maxItems` elements, each of its largest size.
+    pub(super) fn random_filled_value(&self, rng: &mut StdRng) -> Value {
+        let (_, max_items) = self.random_items_range();
+        self.random_items(max_items, rng, RandomFill::Largest)
+    }
+
+    /// `count` elements drawn at `fill`, each in the value kind it reads
+    /// back as. Under `uniqueItems` a repeat is drawn again, a bounded number
+    /// of times, so an element type with fewer distinct values than `count`
+    /// (a boolean, a short `enum`) yields fewer elements rather than looping
+    /// forever.
+    fn random_items(&self, count: usize, rng: &mut StdRng, fill: RandomFill) -> Value {
+        let fixed_size_bytes = matches!(
+            self.item_type.as_ref(),
+            DocumentPropertyType::ByteArray(sizes)
+                if sizes.min_size.is_some() && sizes.min_size == sizes.max_size
+        );
+        let mut items: Vec<Value> = Vec::with_capacity(count);
+        let mut draws_left = count.saturating_mul(8).saturating_add(16);
+        while items.len() < count && draws_left > 0 {
+            draws_left -= 1;
+            let item = match self.random_item(rng, fill) {
+                Value::Bytes(bytes) if fixed_size_bytes => fixed_size_bytes_value(bytes),
+                item => item,
+            };
+            if self.unique_items && items.contains(&item) {
+                continue;
+            }
+            items.push(item);
+        }
+        Value::Array(items)
+    }
+
+    /// One element within the item constraints: a member of the `enum` when
+    /// there is one (the shortest, the longest or any), a number within
+    /// `minimum` / `maximum`, and otherwise the element type's own random
+    /// value at `fill`. Integer and number members come back in the element
+    /// type's own value kind, which is what the codec reads back.
+    fn random_item(&self, rng: &mut StdRng, fill: RandomFill) -> Value {
+        if let Some(allowed_values) = &self.item_constraints.allowed_values {
+            let encoded_len = |value: &Value| {
+                self.item_type
+                    .encode_value_ref_with_size(value, true)
+                    .map(|bytes| bytes.len())
+                    .unwrap_or(0)
+            };
+            let member = match fill {
+                RandomFill::Any => {
+                    allowed_values.get(rng.gen_range(0..allowed_values.len().max(1)))
+                }
+                RandomFill::Smallest => {
+                    allowed_values.iter().min_by_key(|value| encoded_len(value))
+                }
+                RandomFill::Largest => allowed_values.iter().max_by_key(|value| encoded_len(value)),
+            };
+            if let Some(member) = member {
+                return self.in_element_kind(member);
+            }
+        }
+        if let Some(bounded) = self.random_bounded_number(rng, fill) {
+            return bounded;
+        }
+        match fill {
+            RandomFill::Any => self.item_type.random_value(rng),
+            RandomFill::Smallest => self.item_type.random_sub_filled_value(rng),
+            RandomFill::Largest => self.item_type.random_filled_value(rng),
+        }
+    }
+
+    /// A constraint value in the element type's own value kind.
+    fn in_element_kind(&self, value: &Value) -> Value {
+        if let Some((min, max)) = integer_kind_range(&self.item_type) {
+            if let Ok(n) = value.to_integer::<i128>() {
+                return integer_value_of_kind(&self.item_type, n.clamp(min, max));
+            }
+        }
+        if matches!(self.item_type.as_ref(), DocumentPropertyType::F64) {
+            if let Ok(f) = value.to_float() {
+                return Value::Float(f);
+            }
+        }
+        value.clone()
+    }
+
+    /// A random integer or number element within the declared `minimum` /
+    /// `maximum`, or `None` when the element declares neither or is not a
+    /// number. A bound the parser could not read as the element's type is
+    /// ignored, so generation never panics on a stored contract.
+    fn random_bounded_number(&self, rng: &mut StdRng, fill: RandomFill) -> Option<Value> {
+        let constraints = &self.item_constraints;
+        if constraints.minimum.is_none() && constraints.maximum.is_none() {
+            return None;
+        }
+        if let Some((kind_min, kind_max)) = integer_kind_range(&self.item_type) {
+            let min = constraints
+                .minimum
+                .as_ref()
+                .and_then(|value| value.to_integer::<i128>().ok())
+                .unwrap_or(kind_min)
+                .clamp(kind_min, kind_max);
+            let max = constraints
+                .maximum
+                .as_ref()
+                .and_then(|value| value.to_integer::<i128>().ok())
+                .unwrap_or(kind_max)
+                .clamp(kind_min, kind_max)
+                .max(min);
+            let n = match fill {
+                RandomFill::Any => rng.gen_range(min..=max),
+                RandomFill::Smallest => min,
+                RandomFill::Largest => max,
+            };
+            return Some(integer_value_of_kind(&self.item_type, n));
+        }
+        if matches!(self.item_type.as_ref(), DocumentPropertyType::F64) {
+            let min = constraints
+                .minimum
+                .as_ref()
+                .and_then(|value| value.to_float().ok())
+                .filter(|value| value.is_finite())
+                .unwrap_or(-1.0e9);
+            let max = constraints
+                .maximum
+                .as_ref()
+                .and_then(|value| value.to_float().ok())
+                .filter(|value| value.is_finite())
+                .unwrap_or(1.0e9)
+                .max(min);
+            return Some(Value::Float(match fill {
+                RandomFill::Any => rng.gen_range(min..=max),
+                RandomFill::Smallest => min,
+                RandomFill::Largest => max,
+            }));
+        }
+        None
+    }
+}
+
+/// The value a fixed-size byte array reads back as: 20, 32 or 36 bytes as
+/// `Bytes20`, `Bytes32` or `Bytes36`, any other size as `Bytes`.
+fn fixed_size_bytes_value(bytes: Vec<u8>) -> Value {
+    let bytes = match <[u8; 20]>::try_from(bytes) {
+        Ok(bytes) => return Value::Bytes20(bytes),
+        Err(bytes) => bytes,
+    };
+    let bytes = match <[u8; 32]>::try_from(bytes) {
+        Ok(bytes) => return Value::Bytes32(bytes),
+        Err(bytes) => bytes,
+    };
+    match <[u8; 36]>::try_from(bytes) {
+        Ok(bytes) => Value::Bytes36(bytes),
+        Err(bytes) => Value::Bytes(bytes),
+    }
+}
+
 // Internal-`$type` serde shape. Mixed unit + 2-tuple variants, so a
 // struct-variant Repr (serde can't auto-internal-tag tuple variants). Unit
 // variants -> `{"$type":"integer"}`; the tuple variants get named size bounds
 // (`#[serde(default)]` so an omitted bound deserializes as `None`). Serde-only
-// type (no bincode); its on-wire form is exercised solely by these tests —
-// document-schema parsing goes through `TryFrom<&Value>`, not serde.
+// type (no bincode); its on-wire form is exercised solely by these tests. No
+// document schema parses into an `ArrayItemType`: a typed array's elements are
+// `DocumentPropertyType`s.
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "$type", rename_all = "camelCase")]
 enum ArrayItemTypeRepr {
@@ -314,6 +735,71 @@ impl ArrayItemType {
                     Ok(vec![0]) // 2 is false
                 }
             }
+        }
+    }
+
+    /// Reads one element of the never-produced [`DocumentPropertyType::Array`],
+    /// mirroring [`Self::encode_value_ref_with_size`]. Every element takes at
+    /// least one byte, so a reader looping over a claimed element count stops
+    /// when the serialized document runs out.
+    pub(super) fn read_from(&self, buf: &mut BufReader<&[u8]>) -> Result<Value, DataContractError> {
+        match self {
+            ArrayItemType::String(_, _) => {
+                let bytes = DocumentPropertyType::read_varint_value(buf)?;
+                String::from_utf8(bytes).map(Value::Text).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading string array element from serialized document".to_string(),
+                    )
+                })
+            }
+            ArrayItemType::Integer => buf.read_i64::<BigEndian>().map(Value::I64).map_err(|_| {
+                DataContractError::CorruptedSerialization(
+                    "error reading integer array element from serialized document".to_string(),
+                )
+            }),
+            ArrayItemType::Number | ArrayItemType::Date => {
+                buf.read_f64::<BigEndian>().map(Value::Float).map_err(|_| {
+                    DataContractError::CorruptedSerialization(
+                        "error reading number array element from serialized document".to_string(),
+                    )
+                })
+            }
+            ArrayItemType::ByteArray(_, _) => {
+                let bytes = DocumentPropertyType::read_varint_value(buf)?;
+                Ok(self.byte_array_value(bytes))
+            }
+            ArrayItemType::Identifier => {
+                let bytes = DocumentPropertyType::read_varint_value(buf)?;
+                <[u8; 32]>::try_from(bytes)
+                    .map(Value::Identifier)
+                    .map_err(|bytes| {
+                        DataContractError::CorruptedSerialization(format!(
+                            "identifier array element must be 32 bytes, found {}",
+                            bytes.len()
+                        ))
+                    })
+            }
+            ArrayItemType::Boolean => match buf.read_u8() {
+                Ok(0) => Ok(Value::Bool(false)),
+                Ok(1) => Ok(Value::Bool(true)),
+                _ => Err(DataContractError::CorruptedSerialization(
+                    "error reading boolean array element from serialized document".to_string(),
+                )),
+            },
+        }
+    }
+
+    /// The value a byte array element reads back as: a fixed-size element
+    /// of 20, 32 or 36 bytes as `Bytes20`, `Bytes32` or `Bytes36`, the kinds a
+    /// fixed-size scalar byte array reads back as, and `Bytes` otherwise.
+    fn byte_array_value(&self, bytes: Vec<u8>) -> Value {
+        match self {
+            ArrayItemType::ByteArray(min_size, max_size)
+                if min_size.is_some() && min_size == max_size =>
+            {
+                fixed_size_bytes_value(bytes)
+            }
+            _ => Value::Bytes(bytes),
         }
     }
 }

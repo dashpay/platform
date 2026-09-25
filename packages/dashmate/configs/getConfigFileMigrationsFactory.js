@@ -1709,6 +1709,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // development build is stamped above that key and skips it.
             delete options.platform?.drive?.tenderdash?.consensus?.unsafeOverride?.commit;
 
+            if (options.platform?.drive?.tenderdash?.docker) {
+              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            }
+
             const providerConfigs = options.platform?.gateway?.ssl?.providerConfigs;
 
             if (providerConfigs?.letsencrypt

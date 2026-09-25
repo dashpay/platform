@@ -42,6 +42,7 @@ mod validate_document_replace_transition_action_uniqueness;
 mod validate_document_purchase_transition_action_uniqueness;
 mod validate_document_transfer_transition_action_uniqueness;
 mod validate_document_update_price_transition_action_uniqueness;
+mod validate_restored_document_uniqueness;
 
 #[cfg(test)]
 #[cfg(feature = "server")]
@@ -127,6 +128,8 @@ mod tests {
             data_contract: data_contract_fetch_info,
             token_cost: None,
             gas_fees_paid_by: GasFeesPaidBy::default(),
+            contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
         });
 
         let data = BTreeMap::from([(

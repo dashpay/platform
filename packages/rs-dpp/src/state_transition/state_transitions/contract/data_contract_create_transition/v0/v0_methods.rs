@@ -1,16 +1,14 @@
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 
-use crate::{data_contract::DataContract, identity::KeyID, NonConsensusError, ProtocolError};
+use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
 
-use crate::serialization::Signable;
-
-use crate::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
 use crate::data_contract::accessors::v0::DataContractV0Setters;
-use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::{IdentityPublicKey, PartialIdentity};
 use crate::prelude::IdentityNonce;
-use crate::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+use crate::state_transition::data_contract_create_transition::methods::{
+    sign_new_transition, DataContractCreateTransitionMethodsV0,
+};
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;
@@ -43,56 +41,6 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
             signature: Default::default(),
         });
 
-        let mut state_transition: StateTransition = transition.into();
-        let value = state_transition.signable_bytes()?;
-
-        // The public key ids don't always match the keys in the map, so we need to do this.
-        let matching_key = identity
-            .loaded_public_keys
-            .iter()
-            .find_map(|(&key, public_key)| {
-                if public_key.id() == key_id {
-                    Some(key)
-                } else {
-                    None
-                }
-            })
-            .expect("No matching public key id found in the map");
-
-        let public_key = identity.loaded_public_keys.get(&matching_key).ok_or(
-            ProtocolError::NonConsensusError(NonConsensusError::StateTransitionCreationError(
-                "public key did not exist".to_string(),
-            )),
-        )?;
-
-        let security_level_requirements = state_transition
-            .security_level_requirement(public_key.purpose())
-            .ok_or(ProtocolError::CorruptedCodeExecution(
-                "expected security level requirements".to_string(),
-            ))?;
-
-        if !security_level_requirements.contains(&public_key.security_level()) {
-            return Err(ProtocolError::ConsensusError(Box::new(
-                SignatureError::InvalidSignaturePublicKeySecurityLevelError(
-                    InvalidSignaturePublicKeySecurityLevelError::new(
-                        public_key.security_level(),
-                        security_level_requirements,
-                    ),
-                )
-                .into(),
-            )));
-        }
-
-        // There was an error here where the public key supplied was not one belonging to the signer.
-        match signer.sign(public_key, &value).await {
-            Ok(signature) => {
-                state_transition.set_signature(signature);
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-
-        Ok(state_transition)
+        sign_new_transition(transition.into(), identity, key_id, signer).await
     }
 }

@@ -64,3 +64,7 @@ use drive::util::storage_flags::StorageFlags;
 use rand::prelude::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
+
+mod contract_bound_auth;
+mod contract_group_bound_auth;
+mod key_limits;

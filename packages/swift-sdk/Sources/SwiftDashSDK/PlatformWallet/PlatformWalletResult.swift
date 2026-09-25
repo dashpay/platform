@@ -106,8 +106,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// Do not present "try a smaller amount" to the user on the drain path.
     ///
     /// The structured `available` / `required` duff amounts travel in the
-    /// message string — `PlatformWalletFFIResult` is ABI-frozen at code +
-    /// message, so there are no out-params for them.
+    /// message string: `PlatformWalletFFIResult` carries no per-error value
+    /// fields, so there are no out-params for them.
     ///
     /// Distinct from `errorCoreInsufficientFunds` (22), which is the atomic
     /// Core-send selector rather than the asset-lock builder. What the figures
@@ -204,13 +204,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// UTXO one of its own earlier asset locks had already consumed. Peers drop
     /// such a double spend without replying, so the lock cannot confirm while
     /// that spender stands and an unbounded proof wait would hang. The resume
-    /// still runs — the sighting bounds that wait rather than replacing it, so
-    /// the lock was (re-)broadcast and waited on (a `Broadcast`-status lock
-    /// was also sent on an earlier call) — and this is what the bounded wait
-    /// expired with. This is the ONLY double-spend code the SDK emits, and it
-    /// is PROVISIONAL: no discard licence, keep the lock tracked and retry
-    /// later. A later chainlock does not upgrade it to 47 today; what a retry
-    /// can resolve is a reorg dropping the sibling. Repetition licenses
+    /// still attempts recovery. With a ready transport, the sighting bounds
+    /// the proof wait and this is what that wait expired with. In the
+    /// `Broadcast` arm, after a readiness miss and pre-dispatch rejection, a
+    /// still-standing conflict returns immediately after refreshing local
+    /// finality, and the readiness-deferred retry owns the next proof wait. A
+    /// `Broadcast`-status lock may also represent an earlier attempt that sent
+    /// the transaction. This is the ONLY double-spend code the SDK emits,
+    /// and it is PROVISIONAL: no discard licence, keep the lock tracked and
+    /// retry later. A later chainlock does not upgrade it to 47 today; what a
+    /// retry can resolve is a reorg dropping the sibling. Repetition licenses
     /// nothing either — a conflict that persists across sessions still does
     /// not prove finalized ancestry. Its absence is not proof of liveness —
     /// the Rust-side scan cannot see conflicts whose spender was already
@@ -253,6 +256,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorShieldedRecoveryCorrupted = 56
     /// Recovery needs its account and compatible keys; damaged ciphertext can look the same.
     case errorShieldedRecoveryKeysRequired = 57
+    /// Platform returned no balance. Retrying the read is safe; ownership is unchanged.
+    case errorIdentityBalanceUnavailable = 58
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -378,6 +383,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedRecoveryCorrupted
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_KEYS_REQUIRED:
             self = .errorShieldedRecoveryKeysRequired
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_BALANCE_UNAVAILABLE:
+            self = .errorIdentityBalanceUnavailable
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -385,6 +392,65 @@ public enum PlatformWalletResultCode: Int32, Sendable {
         default:
             self = .errorUnknown
         }
+    }
+}
+
+// MARK: - Consensus rejection
+
+/// Platform's own verdict on a state transition it refused.
+///
+/// Drive answers a rejected transition with an rs-dpp consensus error: its
+/// numeric `code` names the exact rule that refused it (40722 is a second
+/// once-per-identity token claim), and its `kind` says which family of rule
+/// that was. Rust reads both off the consensus error and puts them on the FFI
+/// result, so a host branches on the code rather than recognising the
+/// rejection in its rendered text.
+public struct PlatformConsensusError: Equatable, Sendable {
+    /// The family a consensus rejection belongs to.
+    ///
+    /// rs-dpp groups its codes by family (basic 1xxxx, signature 2xxxx, fee
+    /// 3xxxx, state 4xxxx) and hands the grouping over as a value of its own,
+    /// so this side never derives it from the digits of `code`. Mirror of
+    /// `PlatformWalletFFIConsensusErrorKind`.
+    public enum Kind: Equatable, Sendable {
+        case basic
+        case signature
+        case fee
+        case state
+
+        /// `nil` for the FFI's `None` value, which pairs with
+        /// `consensus_code == 0`, and for any family a newer Rust side adds
+        /// before this mirror learns it.
+        init?(ffi: PlatformWalletFFIConsensusErrorKind) {
+            switch ffi {
+            case PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_BASIC:     self = .basic
+            case PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_SIGNATURE: self = .signature
+            case PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_FEE:       self = .fee
+            case PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE:     self = .state
+            default: return nil
+            }
+        }
+    }
+
+    /// The rs-dpp consensus error code
+    /// (`packages/rs-dpp/src/errors/consensus/codes.rs`). Always 10000 or
+    /// above: 0 is the FFI's "no rejection" sentinel and never reaches here.
+    public let code: UInt32
+
+    /// Which family of consensus rule refused the transition.
+    public let kind: Kind
+
+    public init(code: UInt32, kind: Kind) {
+        self.code = code
+        self.kind = kind
+    }
+
+    /// The rejection an FFI result carries, or `nil` when it carries none.
+    init?(ffi: PlatformWalletFFIResult) {
+        guard ffi.consensus_code != 0, let kind = Kind(ffi: ffi.consensus_kind) else {
+            return nil
+        }
+        self.init(code: ffi.consensus_code, kind: kind)
     }
 }
 
@@ -420,6 +486,12 @@ final class PlatformWalletResult {
         inner.message.map { String(cString: $0) }
     }
 
+    /// Platform's verdict when the failure was a consensus rejection, read
+    /// from the result's own fields rather than from `message`.
+    var consensusError: PlatformConsensusError? {
+        PlatformConsensusError(ffi: inner)
+    }
+
     var isSuccess: Bool {
         code == .success
     }
@@ -448,6 +520,8 @@ public enum PlatformWalletError: LocalizedError {
     case invalidNetwork(String)
     case walletOperation(String)
     case identityNotFound(String)
+    /// A managed identity has no balance in the Platform response; the read may be retried.
+    case identityBalanceUnavailable(String)
     case contactNotFound(String)
     case utf8Conversion(String)
     case serialization(String)
@@ -592,11 +666,14 @@ public enum PlatformWalletError: LocalizedError {
     case assetLockInputConflict(String)
     /// The tracked asset lock spends an outpoint a different,
     /// already-confirmed transaction of this wallet spent first, so no peer
-    /// will relay it while that spender stands. The resume still ran — it
-    /// re-broadcast and waited for a proof under a bounded timeout, and this
-    /// is what the wait expired with. A `Broadcast`-status lock was also
-    /// already sent on an earlier call, so this is not a claim that nothing
-    /// ever reached the network.
+    /// will relay it while that spender stands. The resume still attempts
+    /// recovery. With a ready transport, this is what the bounded proof wait
+    /// expired with. In the `Broadcast` arm, after a readiness miss and
+    /// pre-dispatch rejection, a still-standing conflict returns immediately
+    /// after refreshing local finality and leaves that wait to the
+    /// readiness-deferred retry. A `Broadcast`-status lock may also represent
+    /// an earlier attempt that sent it, so this is not a claim that nothing
+    /// reached the network.
     ///
     /// The only double-spend verdict the SDK emits, and PROVISIONAL: the
     /// tracked lock must NOT be discarded on this error. A conflict that
@@ -646,7 +723,29 @@ public enum PlatformWalletError: LocalizedError {
     /// retryable — unlike `reservationWalletMismatch`, no other generation holds
     /// this payment either.
     case notFound(String)
+    /// Platform refused the state transition, and the wallet layer has no
+    /// dedicated case for that particular refusal. Carries the rs-dpp
+    /// consensus code and family, so a host can branch on the exact rule that
+    /// refused it (`error.consensusError?.code == 40722` is a second
+    /// once-per-identity token claim), plus the rendered message `.unknown`
+    /// would have carried.
+    ///
+    /// Only the catch-all FFI code reaches here. A rejection the wallet layer
+    /// promotes to a code of its own (a changed listing price, an
+    /// address-nonce race) keeps its typed case, which already carries the
+    /// values that case exists for.
+    case consensusRejection(PlatformConsensusError, String)
     case unknown(String)
+
+    /// Platform's verdict when this error is a consensus rejection the wallet
+    /// layer left untyped, so a caller can write
+    /// `error.consensusError?.code == 40722` without pattern matching. `nil`
+    /// for every other case, including the typed promotions of specific
+    /// rejections.
+    public var consensusError: PlatformConsensusError? {
+        guard case .consensusRejection(let consensus, _) = self else { return nil }
+        return consensus
+    }
 
     /// What to show a person. For most cases this is still the diagnostic
     /// detail Rust attached to the originating `PlatformWalletFFIResult` (or
@@ -659,7 +758,7 @@ public enum PlatformWalletError: LocalizedError {
         switch self {
         case .nullPointer(let m), .invalidHandle(let m), .invalidParameter(let m),
              .invalidIdentifier(let m), .invalidNetwork(let m), .walletOperation(let m),
-             .identityNotFound(let m), .contactNotFound(let m), .utf8Conversion(let m),
+             .identityNotFound(let m), .identityBalanceUnavailable(let m), .contactNotFound(let m), .utf8Conversion(let m),
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .coreInsufficientFunds(let m),
@@ -682,6 +781,7 @@ public enum PlatformWalletError: LocalizedError {
              .notForSale(let m),
              .assetLockInputConflict(let m),
              .assetLockInputContested(let m),
+             .consensusRejection(_, let m),
              .notFound(let m), .unknown(let m):
             return m
         // The persister messages are a nested Rust error chain naming the
@@ -732,13 +832,26 @@ public enum PlatformWalletError: LocalizedError {
     }
 
     init(result: PlatformWalletResult) {
-        self.init(code: result.code, message: result.message)
+        self.init(
+            code: result.code,
+            message: result.message,
+            consensus: result.consensusError
+        )
     }
 
     /// Internal seam for exercising the stable error-code/detail contract
     /// without manufacturing a Rust-owned `PlatformWalletFFIResult` string.
     /// Production callers continue to enter through `init(result:)`.
-    init(code: PlatformWalletResultCode, message: String?) {
+    ///
+    /// `consensus` is Platform's verdict when the result carried one, and is
+    /// consulted on the catch-all code alone: every other code is a
+    /// classification the wallet layer chose deliberately and must keep
+    /// reaching its own case.
+    init(
+        code: PlatformWalletResultCode,
+        message: String?,
+        consensus: PlatformConsensusError? = nil
+    ) {
         let detail = message ?? "<no detail from Rust>"
         switch code {
         case .success:
@@ -752,6 +865,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorDeserialization:   self = .deserialization(detail)
         case .errorWalletOperation:   self = .walletOperation(detail)
         case .errorIdentityNotFound:  self = .identityNotFound(detail)
+        case .errorIdentityBalanceUnavailable: self = .identityBalanceUnavailable(detail)
         case .errorContactNotFound:   self = .contactNotFound(detail)
         case .errorInvalidNetwork:    self = .invalidNetwork(detail)
         case .errorInvalidIdentifier: self = .invalidIdentifier(detail)
@@ -860,7 +974,16 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedRecoveryKeysRequired:
             self = .shieldedRecoveryKeysRequired(detail)
         case .notFound:               self = .notFound(detail)
-        case .errorUnknown:           self = .unknown(detail)
+        // The catch-all, which is where a consensus rejection with no
+        // dedicated code lands. When Rust stamped its verdict on the result,
+        // keep it: a host that has to tell one rejection from another gets
+        // the code instead of the rendered sentence.
+        case .errorUnknown:
+            if let consensus {
+                self = .consensusRejection(consensus, detail)
+            } else {
+                self = .unknown(detail)
+            }
         }
     }
 }
@@ -870,7 +993,7 @@ public enum PlatformWalletError: LocalizedError {
 /// Decoders for the stable JSON detail objects that FFI result codes
 /// 38/39/40 put in the result `message`.
 ///
-/// `PlatformWalletFFIResult` is ABI-frozen at `{ code, message }`, so the
+/// `PlatformWalletFFIResult` carries no per-error value fields, so the
 /// wallet layer's typed values (both prices, both credit amounts, the
 /// contest end time) can only cross as a documented JSON object. Each
 /// decoder returns `nil` on anything that isn't that object, and the
@@ -915,6 +1038,23 @@ private enum TradeErrorDetail {
 // MARK: - Convenience extensions
 
 extension PlatformWalletFFIResult {
+    /// A result built from the `{ code, message }` pair alone, carrying no
+    /// consensus verdict: the same defaults Rust's own `ok()` / `err()`
+    /// constructors fill in.
+    ///
+    /// Swift-side call sites that fabricate a result (the manager's
+    /// null-pointer guard, the native call doubles in the tests) describe a
+    /// failure this side invented, which by definition is not a Platform
+    /// rejection, so they say only what they mean.
+    init(code: PlatformWalletFFIResultCode, message: UnsafeMutablePointer<CChar>?) {
+        self.init(
+            code: code,
+            message: message,
+            consensus_code: 0,
+            consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE
+        )
+    }
+
     @inline(__always)
     func check() throws {
         try PlatformWalletResult(self).throwIfError()

@@ -6,6 +6,7 @@ impl FeatureVersioned for DataContractCreateTransition {
     fn feature_version(&self) -> FeatureVersion {
         match self {
             DataContractCreateTransition::V0(v0) => v0.feature_version(),
+            DataContractCreateTransition::V1(v1) => v1.feature_version(),
         }
     }
 }

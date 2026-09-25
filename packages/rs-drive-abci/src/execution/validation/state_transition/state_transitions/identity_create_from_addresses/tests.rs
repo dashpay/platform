@@ -8205,10 +8205,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::SignatureError(SignatureError::BasicECDSAError(_)),
-                    ..
-                }],
+                // From protocol version 14 a key whose proof of possession fails is refused unpaid
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
+                )],
                 "Expected BasicECDSAError, got {:?}",
                 processing_result.execution_results()
             );
@@ -8318,10 +8318,10 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::SignatureError(SignatureError::BasicBLSError(_)),
-                    ..
-                }],
+                // From protocol version 14 a key whose proof of possession fails is refused unpaid
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::SignatureError(SignatureError::BasicBLSError(_))
+                )],
                 "Expected BasicBLSError, got {:?}",
                 processing_result.execution_results()
             );
@@ -11073,7 +11073,23 @@ mod tests {
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
         use crate::execution::validation::state_transition::state_transitions::identity_create_from_addresses::public_key_signatures::v0::IdentityCreateFromAddressesStateTransitionSignaturesValidationV0;
         use crate::execution::validation::state_transition::state_transitions::identity_create_from_addresses::advanced_structure::v0::IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0;
+        use drive::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
         use platform_version::DefaultForPlatformVersion;
+
+        /// The action the transition transforms into when each input holds exactly what it spends.
+        fn action_for(
+            transition: &IdentityCreateFromAddressesTransition,
+        ) -> IdentityCreateFromAddressesTransitionAction {
+            let IdentityCreateFromAddressesTransition::V0(v0) = transition;
+            let remaining = v0
+                .inputs
+                .iter()
+                .map(|(address, (nonce, _))| (*address, (*nonce, 0)))
+                .collect();
+            IdentityCreateFromAddressesTransitionAction::try_from_transition(transition, remaining)
+                .into_data()
+                .expect("should transform into an action")
+        }
 
         #[tokio::test]
         async fn test_public_key_signatures_validation_trait() {
@@ -11193,6 +11209,7 @@ mod tests {
 
             // Call advanced structure validation
             let result = transition.validate_advanced_structure_v0(
+                &action_for(&transition),
                 signable_bytes,
                 &mut execution_context,
                 platform_version,
@@ -11250,6 +11267,7 @@ mod tests {
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("should create execution context");
             let result = transition.validate_advanced_structure_v0(
+                &action_for(&transition),
                 signable_bytes,
                 &mut execution_context,
                 platform_version,
@@ -11320,6 +11338,7 @@ mod tests {
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("should create execution context");
             let result = transition.validate_advanced_structure_v0(
+                &action_for(&transition),
                 signable_bytes,
                 &mut execution_context,
                 platform_version,
@@ -11377,6 +11396,7 @@ mod tests {
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("should create execution context");
             let result = transition.validate_advanced_structure_v0(
+                &action_for(&transition),
                 signable_bytes,
                 &mut execution_context,
                 platform_version,
@@ -11787,6 +11807,536 @@ mod tests {
             // To fix: include a domain separator (transition type byte) in the hash input.
             // e.g., hash(0x01 || address_nonce_data) for creates
             //        hash(0x02 || address_nonce_data) for topups
+        }
+    }
+
+    // ==========================================
+    // FAILED TRANSITIONS CONSERVE CREDITS
+    // A transition that fails after its inputs were checked still bumps the input nonces and
+    // charges a penalty. The inputs keep their balance minus exactly what the fee pools receive.
+    // ==========================================
+
+    mod failed_transition_credit_conservation {
+        use super::*;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::setup_address_with_balance_and_system_credits;
+        use crate::execution::validation::state_transition::state_transitions::tests::process_state_transitions_with_results;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::fee::fee_result::FeeResult;
+        use dpp::prelude::UserFeeIncrease;
+        use dpp::state_transition::public_key_in_creation::accessors::{
+            IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+        };
+
+        /// 1.1 Dash
+        const INITIAL_BALANCE: Credits = 110_000_000_000;
+        /// 1 Dash
+        const INPUT_AMOUNT: Credits = 100_000_000_000;
+
+        /// The latest version, and the last released one, whose failure paths were fixed in
+        /// place.
+        fn platform_versions() -> [&'static PlatformVersion; 2] {
+            [
+                PlatformVersion::latest(),
+                PlatformVersion::get(13).expect("expected protocol version 13"),
+            ]
+        }
+
+        fn setup_platform(platform_version: &PlatformVersion) -> TempPlatform<MockCoreRPCLike> {
+            TestPlatformBuilder::new()
+                .with_config(PlatformConfig::default())
+                .with_initial_protocol_version(platform_version.protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state()
+        }
+
+        /// Runs `transition` through a whole block at the platform's protocol version; the
+        /// block-end sum tree check panics on a credit imbalance.
+        fn process_block(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: StateTransition,
+        ) -> Vec<StateTransitionExecutionResult> {
+            let platform_state = platform.state.load();
+            let (results, _) = process_state_transitions_with_results(
+                platform,
+                &[transition],
+                BlockInfo::default(),
+                &platform_state,
+            );
+            results
+        }
+
+        /// Returns what the failed transition was charged.
+        fn process_failing_transition(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: StateTransition,
+        ) -> (ConsensusError, FeeResult) {
+            match process_block(platform, transition).as_slice() {
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error, actual_fees, ..
+                }] => (error.clone(), actual_fees.clone()),
+                other => panic!("expected one paid consensus error, got {other:?}"),
+            }
+        }
+
+        /// The failed transition bumped the input's nonce, booked the penalty as a fee, and took
+        /// exactly the booked fee from the input.
+        fn assert_input_paid_the_fee_and_penalty(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            address: PlatformAddress,
+            balance_before: Credits,
+            fees: &FeeResult,
+            penalty: Credits,
+        ) {
+            assert!(
+                fees.processing_fee >= penalty,
+                "the penalty must be booked as a fee, got {fees:?}"
+            );
+            let (nonce, balance) = platform
+                .drive
+                .fetch_balance_and_nonce(&address, None, PlatformVersion::latest())
+                .expect("should fetch")
+                .expect("address should exist");
+            assert_eq!(nonce, 1, "the failed transition must still bump the nonce");
+            assert_eq!(
+                balance,
+                balance_before - fees.total_base_fee(),
+                "the input must keep its balance minus exactly the booked fee {fees:?}"
+            );
+        }
+
+        /// A transition spending `INPUT_AMOUNT` from `address` whose first key signature is
+        /// corrupted, so it fails proof of possession. Key signatures are outside the signed
+        /// bytes, so the address witness stays valid.
+        async fn transition_with_an_invalid_key_signature(
+            address_signer: &TestAddressSigner,
+            address: PlatformAddress,
+            user_fee_increase: UserFeeIncrease,
+            rng: &mut StdRng,
+            platform_version: &PlatformVersion,
+        ) -> StateTransition {
+            let (identity, identity_signer) =
+                create_identity_with_keys([91u8; 32], rng, platform_version);
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (1 as AddressNonce, INPUT_AMOUNT));
+            let mut transition =
+                IdentityCreateFromAddressesTransition::try_from_inputs_with_signer(
+                    &identity,
+                    inputs,
+                    None,
+                    AddressFundsFeeStrategy::from(vec![
+                        AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    ]),
+                    &identity_signer,
+                    address_signer,
+                    user_fee_increase,
+                    platform_version,
+                )
+                .await
+                .expect("should create transition");
+
+            let StateTransition::IdentityCreateFromAddresses(
+                IdentityCreateFromAddressesTransition::V0(ref mut v0),
+            ) = transition
+            else {
+                panic!("expected an identity create from addresses transition");
+            };
+            let mut signature = v0.public_keys[0].signature().to_vec();
+            signature[10] ^= 0xFF;
+            v0.public_keys[0].set_signature(BinaryData::new(signature));
+            transition
+        }
+
+        /// A transition spending `INPUT_AMOUNT` from `address` whose two keys share id 0, so it
+        /// fails the key structure check.
+        async fn transition_with_duplicated_key_ids(
+            address_signer: &TestAddressSigner,
+            address: PlatformAddress,
+            output: Option<(PlatformAddress, Credits)>,
+            fee_strategy: AddressFundsFeeStrategy,
+            user_fee_increase: UserFeeIncrease,
+            rng: &mut StdRng,
+            platform_version: &PlatformVersion,
+        ) -> StateTransition {
+            let (key1, _) = IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                0,
+                rng,
+                platform_version,
+            )
+            .expect("should create key");
+            let (key2, _) = IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                0,
+                rng,
+                platform_version,
+            )
+            .expect("should create key");
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (1 as AddressNonce, INPUT_AMOUNT));
+            let mut transition_v0 = IdentityCreateFromAddressesTransitionV0 {
+                public_keys: vec![key1.into(), key2.into()],
+                inputs,
+                output,
+                fee_strategy,
+                user_fee_increase,
+                input_witnesses: Vec::new(),
+            };
+            let signable_bytes = StateTransition::from(transition_v0.clone())
+                .signable_bytes()
+                .expect("should get signable bytes");
+            transition_v0.input_witnesses = vec![address_signer
+                .sign_create_witness(&address, &signable_bytes)
+                .await
+                .expect("should create witness")];
+            transition_v0.into()
+        }
+
+        /// Before protocol version 14 a key whose proof of possession fails is a paid refusal.
+        #[tokio::test]
+        async fn should_conserve_credits_when_a_key_signature_is_invalid() {
+            for platform_version in
+                [PlatformVersion::get(13).expect("expected protocol version 13")]
+            {
+                let mut platform = setup_platform(platform_version);
+                let mut rng = StdRng::seed_from_u64(9100);
+                let mut address_signer = TestAddressSigner::new();
+                let address = address_signer.add_p2pkh([91u8; 32]);
+                setup_address_with_balance_and_system_credits(
+                    &mut platform,
+                    address,
+                    0,
+                    INITIAL_BALANCE,
+                );
+
+                let transition = transition_with_an_invalid_key_signature(
+                    &address_signer,
+                    address,
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .await;
+                let (error, fees) = process_failing_transition(&platform, transition);
+
+                assert_matches!(error, ConsensusError::SignatureError(_));
+                assert_input_paid_the_fee_and_penalty(
+                    &platform,
+                    address,
+                    INITIAL_BALANCE,
+                    &fees,
+                    platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .penalties
+                        .validation_of_added_keys_proof_of_possession_failure,
+                );
+            }
+        }
+
+        /// The metered processing fee doubles at a user fee increase of 100 while the penalty
+        /// does not, so twice the fee at 0 minus the fee at 100 is exactly the penalty.
+        #[tokio::test]
+        async fn should_charge_the_penalty_unscaled_by_the_user_fee_increase() {
+            for platform_version in platform_versions() {
+                let mut processing_fees = vec![];
+                for user_fee_increase in [0, 100] {
+                    let mut platform = setup_platform(platform_version);
+                    let mut rng = StdRng::seed_from_u64(9150);
+                    let mut address_signer = TestAddressSigner::new();
+                    let address = address_signer.add_p2pkh([91u8; 32]);
+                    setup_address_with_balance_and_system_credits(
+                        &mut platform,
+                        address,
+                        0,
+                        INITIAL_BALANCE,
+                    );
+
+                    let transition = transition_with_duplicated_key_ids(
+                        &address_signer,
+                        address,
+                        None,
+                        AddressFundsFeeStrategy::from(vec![
+                            AddressFundsFeeStrategyStep::DeductFromInput(0),
+                        ]),
+                        user_fee_increase,
+                        &mut rng,
+                        platform_version,
+                    )
+                    .await;
+                    let (_, fees) = process_failing_transition(&platform, transition);
+                    let penalty = platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .penalties
+                        .validation_of_added_keys_structure_failure;
+                    assert_input_paid_the_fee_and_penalty(
+                        &platform,
+                        address,
+                        INITIAL_BALANCE,
+                        &fees,
+                        penalty,
+                    );
+                    processing_fees.push(fees.processing_fee);
+                }
+
+                assert_eq!(
+                    2 * processing_fees[0] - processing_fees[1],
+                    platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .penalties
+                        .validation_of_added_keys_structure_failure,
+                    "at protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_conserve_credits_when_key_ids_are_duplicated() {
+            for platform_version in platform_versions() {
+                let mut platform = setup_platform(platform_version);
+                let mut rng = StdRng::seed_from_u64(9200);
+                let mut address_signer = TestAddressSigner::new();
+                let address = address_signer.add_p2pkh([92u8; 32]);
+                setup_address_with_balance_and_system_credits(
+                    &mut platform,
+                    address,
+                    0,
+                    INITIAL_BALANCE,
+                );
+
+                let transition = transition_with_duplicated_key_ids(
+                    &address_signer,
+                    address,
+                    None,
+                    AddressFundsFeeStrategy::from(vec![
+                        AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    ]),
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .await;
+                let (error, fees) = process_failing_transition(&platform, transition);
+
+                assert_matches!(
+                    error,
+                    ConsensusError::BasicError(
+                        BasicError::DuplicatedIdentityPublicKeyIdBasicError(_)
+                    )
+                );
+                assert_input_paid_the_fee_and_penalty(
+                    &platform,
+                    address,
+                    INITIAL_BALANCE,
+                    &fees,
+                    platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .penalties
+                        .validation_of_added_keys_structure_failure,
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_conserve_credits_when_a_key_is_already_registered() {
+            for platform_version in platform_versions() {
+                let mut platform = setup_platform(platform_version);
+                let mut rng = StdRng::seed_from_u64(9300);
+                let mut address_signer = TestAddressSigner::new();
+                let first_address = address_signer.add_p2pkh([93u8; 32]);
+                let second_address = address_signer.add_p2pkh([94u8; 32]);
+                setup_address_with_balance_and_system_credits(
+                    &mut platform,
+                    first_address,
+                    0,
+                    INITIAL_BALANCE,
+                );
+                setup_address_with_balance_and_system_credits(
+                    &mut platform,
+                    second_address,
+                    0,
+                    INITIAL_BALANCE,
+                );
+
+                let (identity, identity_signer) =
+                    create_identity_with_keys([93u8; 32], &mut rng, platform_version);
+
+                let mut first_inputs = BTreeMap::new();
+                first_inputs.insert(first_address, (1 as AddressNonce, INPUT_AMOUNT));
+                let first = create_signed_identity_create_from_addresses_transition(
+                    &identity,
+                    &address_signer,
+                    &identity_signer,
+                    first_inputs,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .await;
+                assert_matches!(
+                    process_block(&platform, first).as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                );
+
+                // The same keys again from another address, with a change output: a new
+                // identity id whose keys are already registered.
+                let mut second_inputs = BTreeMap::new();
+                second_inputs.insert(second_address, (1 as AddressNonce, INPUT_AMOUNT));
+                let second = create_signed_identity_create_from_addresses_transition(
+                    &identity,
+                    &address_signer,
+                    &identity_signer,
+                    second_inputs,
+                    Some((first_address, dash_to_credits!(0.1))),
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                let (error, fees) = process_failing_transition(&platform, second);
+
+                assert_matches!(
+                    error,
+                    ConsensusError::StateError(
+                        StateError::DuplicatedIdentityPublicKeyIdStateError(_)
+                    )
+                );
+                assert_input_paid_the_fee_and_penalty(
+                    &platform,
+                    second_address,
+                    INITIAL_BALANCE,
+                    &fees,
+                    platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .penalties
+                        .unique_key_already_present,
+                );
+            }
+        }
+
+        /// A fee strategy that only names the output leaves a failed transition, which has no
+        /// output, to pay from its inputs.
+        #[tokio::test]
+        async fn should_charge_the_inputs_when_the_fee_strategy_only_reduces_the_output() {
+            for platform_version in platform_versions() {
+                let mut platform = setup_platform(platform_version);
+                let mut rng = StdRng::seed_from_u64(9400);
+                let mut address_signer = TestAddressSigner::new();
+                let address = address_signer.add_p2pkh([95u8; 32]);
+                let change_address = address_signer.add_p2pkh([96u8; 32]);
+                setup_address_with_balance_and_system_credits(
+                    &mut platform,
+                    address,
+                    0,
+                    INITIAL_BALANCE,
+                );
+
+                let transition = transition_with_duplicated_key_ids(
+                    &address_signer,
+                    address,
+                    Some((change_address, dash_to_credits!(0.1))),
+                    AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::ReduceOutput(
+                        0,
+                    )]),
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .await;
+                let (_, fees) = process_failing_transition(&platform, transition);
+
+                assert_input_paid_the_fee_and_penalty(
+                    &platform,
+                    address,
+                    INITIAL_BALANCE,
+                    &fees,
+                    platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .penalties
+                        .validation_of_added_keys_structure_failure,
+                );
+            }
+        }
+
+        /// From protocol version 14 a key whose proof of possession fails is refused unpaid: the
+        /// address witnesses do not sign the key signatures, so the inputs are not charged.
+        #[tokio::test]
+        async fn should_refuse_an_invalid_key_signature_unpaid() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform(platform_version);
+            let mut rng = StdRng::seed_from_u64(9500);
+            let mut address_signer = TestAddressSigner::new();
+            let address = address_signer.add_p2pkh([97u8; 32]);
+            setup_address_with_balance_and_system_credits(
+                &mut platform,
+                address,
+                0,
+                INITIAL_BALANCE,
+            );
+
+            let transition = transition_with_an_invalid_key_signature(
+                &address_signer,
+                address,
+                0,
+                &mut rng,
+                platform_version,
+            )
+            .await;
+
+            assert_matches!(
+                process_block(&platform, transition).as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::SignatureError(_)
+                )]
+            );
+            let (nonce, balance) = platform
+                .drive
+                .fetch_balance_and_nonce(&address, None, platform_version)
+                .expect("should fetch")
+                .expect("address should exist");
+            assert_eq!(nonce, 0, "the refused transition must not bump the nonce");
+            assert_eq!(balance, INITIAL_BALANCE, "the inputs must not be charged");
+        }
+
+        /// check_tx checks the key proofs of possession at every protocol version, so a
+        /// transition whose key signatures fail never enters the mempool.
+        #[tokio::test]
+        async fn should_refuse_an_invalid_key_signature_at_check_tx() {
+            for platform_version in platform_versions() {
+                let mut platform = setup_platform(platform_version);
+                let mut rng = StdRng::seed_from_u64(9600);
+                let mut address_signer = TestAddressSigner::new();
+                let address = address_signer.add_p2pkh([98u8; 32]);
+                setup_address_with_balance_and_system_credits(
+                    &mut platform,
+                    address,
+                    0,
+                    INITIAL_BALANCE,
+                );
+
+                let transition = transition_with_an_invalid_key_signature(
+                    &address_signer,
+                    address,
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .await;
+                let raw_transition = transition.serialize_to_bytes().expect("should serialize");
+
+                let result = run_check_tx(&platform, &raw_transition, platform_version);
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::SignatureError(_)],
+                    "at protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
         }
     }
 }

@@ -1111,8 +1111,7 @@ pub async fn create_identities_state_transitions(
 
     // Update keys with new KeyIDs and add them to signer
     for (current_id_num, (key, _)) in (starting_id_num..).zip(keys.iter_mut()) {
-        let IdentityPublicKey::V0(ref mut id_pub_key_v0) = key;
-        id_pub_key_v0.set_id(current_id_num);
+        key.set_id(current_id_num);
     }
     signer.add_identity_public_keys(keys);
 
@@ -1129,9 +1128,8 @@ pub async fn create_identities_state_transitions(
             .values_mut()
             .enumerate()
             .for_each(|(key_index, public_key)| {
-                let IdentityPublicKey::V0(ref mut id_pub_key_v0) = public_key;
                 let new_id = identity_starting_id + key_index as u32;
-                id_pub_key_v0.set_id(new_id);
+                public_key.set_id(new_id);
             });
 
         if let Some(proof_and_pk) = asset_lock_proofs.pop() {

@@ -41,9 +41,10 @@ pub use identity::signer::IdentitySignerWasm;
 pub use identity::transitions::pooling::PoolingWasm;
 
 pub use data_contract::{
-    ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
-    DataContractWasm, DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs,
-    DocumentWasm, tokens_configuration_from_js_value,
+    ContractBoundsWasm, ContractFeeClaimWasm, ContractUserModerationWasm,
+    DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm, DataContractWasm,
+    DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs, DocumentWasm,
+    tokens_configuration_from_js_value,
 };
 pub use epoch::*;
 pub use group::*;
@@ -52,10 +53,11 @@ pub use identifier::{
 };
 pub use identity::{
     IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
-    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm,
-    IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm, IdentityTopUpTransitionWasm,
-    IdentityUpdateTransitionWasm, IdentityWasm, MasternodeVoteTransitionWasm, PartialIdentityWasm,
-    PublicKeyHashLikeJs, public_key_hash_from_js,
+    IdentityCreditWithdrawalTransitionWasm, IdentityKeyLimitsUpdateWasm,
+    IdentityPublicKeyInCreationWasm, IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm,
+    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
+    MasternodeVoteTransitionWasm, PartialIdentityWasm, PublicKeyHashLikeJs,
+    public_key_hash_from_js,
 };
 pub use platform_address::transitions::{
     AddressCreditWithdrawalTransitionWasm, AddressFundingFromAssetLockTransitionWasm,

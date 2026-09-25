@@ -31,17 +31,23 @@
 //! refuses any divergence from the bootstrap, any result outside a
 //! derived value set, and (for by-id joins on `refersTo:
 //! permanentDocument` properties, which cannot dangle) any missing
-//! referenced document. A node that ignores the sub-queries serves a
+//! referenced document. A by-id join on a `refersTo: deletableDocument`
+//! property leaves a derived id with no document out instead: the
+//! target may have been deleted since, and the absence is proven (every
+//! derived id is a queried key grovedb must show present or absent). A
+//! node that ignores the sub-queries serves a
 //! page-only proof, which cannot satisfy the merged query whenever a
 //! sub-query derived anything — the composition fails closed.
 //!
 //! Three sub-query shapes, one binding rule:
 //!
 //! - **Documents by id** (`bind.field == "$id"`): the classic join. The
-//!   source property must declare `refersTo: permanentDocument` targeting
-//!   the sub-query's type, so every derived id MUST resolve — the result
-//!   is the referenced documents in first-appearance order, set-equal to
-//!   the derived ids.
+//!   source property must declare `refersTo: permanentDocument` or
+//!   `refersTo: deletableDocument` targeting the sub-query's type — the
+//!   result is the referenced documents in first-appearance order. For a
+//!   `permanentDocument` source every derived id MUST resolve, so the
+//!   result is set-equal to the derived ids; for a `deletableDocument`
+//!   source a derived id whose document was deleted is left out.
 //! - **Documents by an indexed property** (`bind.field` is `$ownerId` or
 //!   an indexed property): a lookup, `WHERE <fixed clauses> AND <field>
 //!   IN <derived values>`, with an explicit limit unless the values
@@ -93,7 +99,8 @@ use crate::query::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentTypeRef,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -216,6 +223,14 @@ pub struct CompositeDocumentsResult {
     pub page_documents: Vec<Document>,
     /// One result per sub-query, in request order.
     pub sub_results: Vec<SubQueryResult>,
+    /// One list per sub-query, in request order: for a by-id join, the
+    /// derived ids that have NO document, in first-appearance order;
+    /// empty for every other sub-query. Only a join off a `refersTo:
+    /// deletableDocument` property can report any (a referenced document
+    /// deleted after the referring one was written); off a
+    /// `permanentDocument` property a missing document is refused
+    /// instead. On the proof path each reported id is a proven absence.
+    pub sub_result_missing_ids: Vec<Vec<Identifier>>,
 }
 
 /// The values one binding derived, deduplicated to first appearance.
@@ -289,6 +304,21 @@ fn sorted_values(values: &[Identifier]) -> Vec<Identifier> {
     let mut sorted = values.to_vec();
     sorted.sort();
     sorted
+}
+
+/// The document reference a property type declares, of either kind. Only
+/// a scalar reference counts: a binding reads one identifier out of the
+/// property, and a typed array whose elements are references holds many,
+/// is no index property and so is never a join field.
+fn document_reference_of(
+    property_type: &DocumentPropertyType,
+) -> Option<DocumentReferenceDeclaration<'_>> {
+    match property_type {
+        DocumentPropertyType::IdentifierWithReference(reference_target) => {
+            reference_target.as_document_reference()
+        }
+        _ => None,
+    }
 }
 
 impl<'a> DriveSubQuery<'a> {
@@ -487,7 +517,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // carries, so the property must sit on that index.
         if source_is_index_only_query {
             let carries = |index: &dpp::data_contract::document_type::Index| {
-                index.terminal.as_deref() == Some(binding.source_property.as_str())
+                index.terminal_contains(&binding.source_property)
                     || index
                         .properties
                         .iter()
@@ -580,17 +610,46 @@ impl<'a> DriveDocumentQuery<'a> {
                          first appearance",
                     ));
                 }
-                // Only a permanentDocument reference guarantees every
-                // derived id resolves, which is what lets a missing
-                // document be an invalid proof instead of an absence.
-                match source_property_type {
-                    Some(DocumentPropertyType::IdentifierWithReference(
-                        DocumentPropertyReferenceTarget::PermanentDocument {
-                            contract_id,
-                            document_type_name,
-                            ..
-                        },
-                    )) => {
+                // The source must be a document reference: it is what
+                // names the type the derived ids resolve in. A
+                // permanentDocument one guarantees every derived id
+                // resolves, which lets a missing document be an invalid
+                // proof; a deletableDocument one does not, and a missing
+                // document is then a proven absence (see
+                // `assemble_documents`).
+                // A lookup reference's values are not document ids, so
+                // `document_reference_of` leaves it out; it is named here so
+                // the refusal says why
+                if let Some(DocumentPropertyType::IdentifierWithReference(
+                    DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
+                    | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. },
+                )) = source_property_type
+                {
+                    return Err(label(&format!(
+                        "the source property's refersTo finds its document through the unique \
+                         index \"{}\", so its values are not document ids: a by-id join needs \
+                         a reference whose value is the referenced document's $id",
+                        lookup.index,
+                    )));
+                }
+                // A reference expression names no single type the derived ids
+                // resolve in
+                if let Some(DocumentPropertyType::IdentifierWithReference(
+                    DocumentPropertyReferenceTarget::AnyOf(_)
+                    | DocumentPropertyReferenceTarget::AllOf(_),
+                )) = source_property_type
+                {
+                    return Err(label(
+                        "the source property declares a refersTo anyOf or allOf expression: a \
+                         by-id join needs a reference to one document type",
+                    ));
+                }
+                match source_property_type.and_then(document_reference_of) {
+                    Some(DocumentReferenceDeclaration {
+                        contract_id,
+                        document_type_name,
+                        ..
+                    }) => {
                         let referenced_contract =
                             contract_id.unwrap_or_else(|| source_contract.id());
                         if referenced_contract != sub_query.contract.id()
@@ -604,11 +663,12 @@ impl<'a> DriveDocumentQuery<'a> {
                             )));
                         }
                     }
-                    _ => {
+                    None => {
                         return Err(label(&format!(
                             "a by-id join needs a source property declaring `refersTo: \
-                             permanentDocument` (\"{}\" does not): only a permanent-document \
-                             reference guarantees every derived id resolves",
+                             permanentDocument` or `refersTo: deletableDocument` (\"{}\" \
+                             does not): the declaration names the document type the derived \
+                             ids resolve in",
                             binding.source_property,
                         )));
                     }
@@ -627,7 +687,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     // The lookup's own field must be provable positionally:
                     // the resolved index has to carry it.
                     let index = shape.index_only_query_index(platform_version)?;
-                    let carried = index.terminal.as_deref() == Some(binding.field.as_str())
+                    let carried = index.terminal_contains(&binding.field)
                         || index
                             .properties
                             .iter()
@@ -715,7 +775,9 @@ impl<'a> DriveDocumentQuery<'a> {
             .collect();
         if sub_query.document_type.index_only() {
             let index = shape.index_only_query_index(platform_version)?;
-            let terminal_is_bound = index.terminal.as_deref() == Some(binding.field.as_str());
+            // A composite terminal is bound only through every component;
+            // a single-component terminal through its one field.
+            let terminal_is_bound = index.single_terminal() == Some(binding.field.as_str());
             let prefix_fixed = index
                 .properties
                 .iter()
@@ -1352,13 +1414,14 @@ impl<'a> DriveDocumentQuery<'a> {
             let index = query.index_only_query_index(platform_version)?;
             return trios
                 .into_iter()
-                .map(|(path, key, _)| {
+                .map(|(path, key, element)| {
                     synthesize_index_only_document(
                         query.contract.id(),
                         query.document_type,
                         index,
                         &path,
                         &key,
+                        Some(&element),
                     )
                 })
                 .collect();
@@ -1414,11 +1477,70 @@ impl<'a> DriveDocumentQuery<'a> {
         entries
     }
 
+    /// The derived ids of each by-id join that have no document among its
+    /// assembled result, in first-appearance order; an empty list for
+    /// every other sub-query. [`Self::assemble_documents`] has already
+    /// refused a missing document of a `permanentDocument` join, so what
+    /// is left here are the deleted targets of `deletableDocument` joins.
+    fn sub_result_missing_ids(
+        &self,
+        derived: &[DerivedValues],
+        sub_results: &[SubQueryResult],
+    ) -> Vec<Vec<Identifier>> {
+        self.sub_queries
+            .iter()
+            .zip(derived)
+            .zip(sub_results)
+            .map(|((sub_query, values), result)| {
+                if !sub_query.is_by_id_join() {
+                    return Vec::new();
+                }
+                let present: BTreeSet<Identifier> = result
+                    .documents()
+                    .iter()
+                    .map(|document| document.id())
+                    .collect();
+                values
+                    .iter()
+                    .filter(|value| !present.contains(*value))
+                    .copied()
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Whether a by-id join's source property guarantees its targets stay
+    /// in state (`permanentDocument`) or not (`deletableDocument`). A
+    /// source that is neither, which `validate_sub_query` refuses, is held
+    /// to the strict rule.
+    fn by_id_join_target_is_permanent(&self, binding: &SubQueryBinding) -> bool {
+        let source_type = match binding.source {
+            BindingSource::Page => Some(self.document_type),
+            BindingSource::SubQuery(source_index) => self
+                .sub_queries
+                .get(source_index)
+                .map(|source| source.document_type),
+        };
+        let Some(source_type) = source_type else {
+            return true;
+        };
+        source_type
+            .flattened_properties()
+            .get(binding.source_property.as_str())
+            .and_then(|property| document_reference_of(&property.property_type))
+            .is_none_or(|declaration| declaration.permanent)
+    }
+
     /// Assembles one documents sub-query's result from its decoded
     /// documents, keeping only the ones its derived values admit and, for
-    /// a by-id join, enforcing exact set equality in first-appearance
-    /// order. Shared by the server (where a violation is corrupted state)
-    /// and the verifier (where it is an invalid proof).
+    /// a by-id join, putting them in first-appearance order. A derived id
+    /// with no document is refused when the source property is a
+    /// `permanentDocument` reference (exact set equality: it cannot
+    /// dangle) and left out when it is a `deletableDocument` reference
+    /// (the target was deleted since, and the fetch that found nothing
+    /// under it is the query the proof covers). Shared by the server
+    /// (where a violation is corrupted state) and the verifier (where it
+    /// is an invalid proof).
     fn assemble_documents(
         &self,
         sub_query: &DriveSubQuery<'a>,
@@ -1444,17 +1566,22 @@ impl<'a> DriveDocumentQuery<'a> {
                     )));
                 }
             }
+            let target_is_permanent = self.by_id_join_target_is_permanent(binding);
             let mut ordered = Vec::with_capacity(values.len());
             for value in values {
-                let document = by_id.remove(value).ok_or_else(|| {
-                    corrupted_proof(format!(
-                        "composite join results are missing referenced document {}: a \
-                         permanentDocument reference cannot dangle, so the proof does not \
-                         cover the derived query",
-                        value
-                    ))
-                })?;
-                ordered.push(document.clone());
+                match by_id.remove(value) {
+                    Some(document) => ordered.push(document.clone()),
+                    None if target_is_permanent => {
+                        return Err(corrupted_proof(format!(
+                            "composite join results are missing referenced document {}: a \
+                             permanentDocument reference cannot dangle, so the proof does \
+                             not cover the derived query",
+                            value
+                        )));
+                    }
+                    // A deletableDocument target that is no longer in state.
+                    None => {}
+                }
             }
             return Ok(ordered);
         }
@@ -1667,18 +1794,21 @@ impl<'a> DriveDocumentQuery<'a> {
             )?));
         }
 
+        let sub_results: Vec<SubQueryResult> = sub_results
+            .into_iter()
+            .zip(&self.sub_queries)
+            .map(|(result, sub_query)| {
+                result.unwrap_or_else(|| match sub_query.kind {
+                    SubQueryKind::Documents => SubQueryResult::Documents(Vec::new()),
+                    SubQueryKind::Count => SubQueryResult::Counts(Vec::new()),
+                })
+            })
+            .collect();
+        let sub_result_missing_ids = self.sub_result_missing_ids(derived, &sub_results);
         Ok(CompositeDocumentsResult {
             page_documents: page_documents.unwrap_or_default(),
-            sub_results: sub_results
-                .into_iter()
-                .zip(&self.sub_queries)
-                .map(|(result, sub_query)| {
-                    result.unwrap_or_else(|| match sub_query.kind {
-                        SubQueryKind::Documents => SubQueryResult::Documents(Vec::new()),
-                        SubQueryKind::Count => SubQueryResult::Counts(Vec::new()),
-                    })
-                })
-                .collect(),
+            sub_results,
+            sub_result_missing_ids,
         })
     }
 
@@ -1977,9 +2107,11 @@ impl<'a> DriveDocumentQuery<'a> {
         // just the representative shapes checked by validate(). Reject
         // them on the materialized entry point as on the proof entry point.
         self.proof_path_queries(&derived, platform_version)?;
+        let sub_result_missing_ids = self.sub_result_missing_ids(&derived, &sub_results);
         Ok(CompositeDocumentsResult {
             page_documents,
             sub_results,
+            sub_result_missing_ids,
         })
     }
 

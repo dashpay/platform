@@ -56,7 +56,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     protocol_upgrade: DriveAbciProtocolUpgradeMethodVersions {
         check_for_desired_protocol_upgrade: 1,
         upgrade_protocol_version_on_epoch_change: 0,
-        perform_events_on_first_block_of_protocol_change: Some(1),
+        perform_events_on_first_block_of_protocol_change: Some(2), // changed: empties the contract cache first, so no read is billed at a fee cached under the old fee schedule
         protocol_version_upgrade_percentage_needed: 67,
     },
     block_fee_processing: DriveAbciBlockFeeProcessingMethodVersions {
@@ -95,6 +95,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         update_broadcasted_withdrawal_statuses: 0,
         rebroadcast_expired_withdrawal_documents: 2, // changed in v14: an expired withdrawal whose payout is Core dust is marked FAILED instead of re-signed
         append_signatures_and_broadcast_withdrawal_transactions: 0,
+        has_pending_withdrawal_work: 0,
         cleanup_expired_locks_of_withdrawal_amounts: 1, // changed in v14: also prunes expired entries of the credit inflows sum tree
         record_credit_inflows_for_withdrawals: Some(0), // new in v14: the block's credit mints recorded as an inflow for the net daily withdrawal limit
         record_total_credits_history_for_withdrawals: Some(0), // changed in v14: per-block total credits history for the day-lagged daily withdrawal limit
@@ -103,7 +104,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         keep_record_of_finished_contested_resource_vote_poll: 0,
         clean_up_after_vote_poll_end: 0,
         clean_up_after_contested_resources_vote_poll_end: 1,
-        check_for_ended_vote_polls: 0,
+        check_for_ended_vote_polls: 1, // changed in v14: a tie goes to the earliest contender
         tally_votes_for_contested_document_resource_vote_poll: 0,
         award_document_to_winner: 0,
         delay_vote_poll: 0,
@@ -111,13 +112,13 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         remove_votes_for_removed_masternodes: 0,
     },
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
-        execute_event: 0,
+        execute_event: 1, // changed: deducts what a budgeted signing key spent from its remaining budget, and charges a document batch's gas sponsor instead of its signer
         process_raw_state_transitions: 0,
         // unchanged from V9: v1 since v13 (records the balance effects of paid-INVALID /
         // unsuccessful-paid transitions)
         process_validation_result: 1,
         decode_raw_state_transitions: 0,
-        validate_fees_of_event: 0,
+        validate_fees_of_event: 1, // changed: refuses an expired signing key and a spend the signing key's remaining budget does not cover, and judges a sponsored document batch's fee against its gas sponsor's balance
         store_address_balances_to_recent_block_storage: Some(0),
         cleanup_recent_block_storage_address_balances: Some(0),
         // unchanged from V9: v1 since v13 (records shielded-spend transparent credits)
@@ -140,7 +141,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         prune_shielded_pool_anchors: Some(0),
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
-        fetch_platform_state: 0,
-        store_platform_state: 0,
+        fetch_platform_state: 1, // changed: reads structure 1 records together with their masternode and validator set entries
+        store_platform_state: 1, // changed: writes the base record every block and only the masternode and validator set entries that changed
     },
 };

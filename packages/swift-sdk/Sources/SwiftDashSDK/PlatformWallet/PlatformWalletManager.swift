@@ -967,7 +967,7 @@ public class PlatformWalletManager: ObservableObject {
                     "ffi_code": .integer(Int64(result.code.rawValue)),
                     "step": .publicText(name),
                 ],
-                error: PlatformWalletError(code: result.code, message: result.message)
+                error: PlatformWalletError(result: result)
             )
         }
         return .init(name: name, ffiCode: result.code.rawValue, milliseconds: ms)
@@ -1462,10 +1462,10 @@ public class PlatformWalletManager: ObservableObject {
                     "off_main_thread": .boolean(offMain),
                     "source": .publicText("mnemonic"),
                 ],
-                error: PlatformWalletError(code: result.code, message: result.message),
+                error: PlatformWalletError(result: result),
                 redacting: [params.mnemonic]
             )
-            return .failure(PlatformWalletError(code: result.code, message: result.message))
+            return .failure(PlatformWalletError(result: result))
         }
         SDKLogger.event(
             "wallet_create_completed",
@@ -1745,10 +1745,10 @@ public class PlatformWalletManager: ObservableObject {
                     "off_main_thread": .boolean(offMain),
                     "phase": .publicText("bulk_load"),
                 ],
-                error: PlatformWalletError(code: bulk.code, message: bulk.message)
+                error: PlatformWalletError(result: bulk)
             )
             return OffMainLoadOutcome(
-                bulkResult: .failure(PlatformWalletError(code: bulk.code, message: bulk.message)),
+                bulkResult: .failure(PlatformWalletError(result: bulk)),
                 lookups: [])
         }
 
@@ -2573,6 +2573,9 @@ public class PlatformWalletManager: ObservableObject {
                 "deleteWallet requires a persistence handler — configure the manager with a ModelContainer"
             )
         }
+
+        // Snapshot cleanup must succeed before deleting keys or live rows.
+        try persistenceHandler.deleteCompletedMigrationSnapshots()
 
         let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
 

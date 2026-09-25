@@ -18,6 +18,16 @@ keyword-search-contract:
   - packages/keyword-search-contract/schema/**
   - packages/keyword-search-contract/Cargo.toml
 
+app-connect-contract:
+  - packages/app-connect-contract/src/**
+  - packages/app-connect-contract/schema/**
+  - packages/app-connect-contract/Cargo.toml
+
+moderation-charters-contract:
+  - packages/moderation-charters-contract/src/**
+  - packages/moderation-charters-contract/schema/**
+  - packages/moderation-charters-contract/Cargo.toml
+
 dashpay-contract:
   - packages/dashpay-contract/src/**
   - packages/dashpay-contract/schema/**

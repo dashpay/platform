@@ -1,3 +1,4 @@
+use advanced_structure::v1::DocumentsBatchStateTransitionStructureValidationV1;
 mod action_validation;
 mod advanced_structure;
 mod data_triggers;
@@ -5,6 +6,10 @@ mod identity_contract_nonce;
 mod is_allowed;
 mod state;
 mod transformer;
+
+// A moderator's document deletion (`contract_user_moderation`) reads the document the way a
+// document's own deletion does, billed the same.
+pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id;
 
 #[cfg(test)]
 mod tests;
@@ -34,11 +39,14 @@ use crate::execution::validation::state_transition::batch::advanced_structure::v
 use crate::execution::validation::state_transition::batch::identity_contract_nonce::v0::DocumentsBatchStateTransitionIdentityContractNonceV0;
 use crate::execution::validation::state_transition::batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::batch::state::v1::DocumentsBatchStateTransitionStateValidationV1;
+use crate::execution::validation::state_transition::batch::state::v2::DocumentsBatchStateTransitionStateValidationV2;
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
+use crate::execution::validation::state_transition::transformer::{
+    StateTransitionActionTransformer, StateTransitionSignerAwareActionTransformer,
+};
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
@@ -59,9 +67,36 @@ impl StateTransitionActionTransformer for BatchTransition {
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
+        remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        // No signer: nothing that depends on the signing key is resolved. Block processing and
+        // CheckTx go through `transform_into_action_for_signer`.
+        self.transform_into_action_for_signer(
+            platform,
+            block_info,
+            remaining_address_input_balances,
+            None,
+            validation_mode,
+            execution_context,
+            tx,
+        )
+    }
+}
+
+impl StateTransitionSignerAwareActionTransformer for BatchTransition {
+    fn transform_into_action_for_signer<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
         _remaining_address_input_balances: &Option<
             BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         >,
+        signer_identity: Option<&PartialIdentity>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -90,11 +125,83 @@ impl StateTransitionActionTransformer for BatchTransition {
                 execution_context,
                 tx,
             ),
+            // PROTOCOL_VERSION_14+: when the signing key is bound to a contract
+            // group, `_v2` also resolves the contract group memberships of the
+            // batch's contracts into the action, so the key is judged from the
+            // action.
+            2 => self.transform_into_action_v2(
+                &platform.into(),
+                block_info,
+                signer_identity,
+                validation_mode.should_validate_batch_valid_against_state(),
+                execution_context,
+                tx,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: transform_into_action".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
+        }
+    }
+}
+
+/// Check tx only: transforms the batch validating it against the state, as a block would,
+/// whatever the validation mode says. The mode names where validation runs, and check tx leaves
+/// the state checks of the transformer to the block; check tx asks for them here for a batch
+/// whose signer relies on a gas sponsor (`relies_on_gas_sponsor_to_pay`), because nobody could
+/// be charged for its failure in a block.
+pub(in crate::execution::validation::state_transition) trait BatchTransitionCheckTxStateValidatingTransformer
+{
+    /// Gas sponsorship starts with transformer v2, so earlier versions have no such batch and
+    /// transform as the mode says.
+    fn transform_into_action_validating_against_state_for_check_tx<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        signer_identity: Option<&PartialIdentity>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+}
+
+impl BatchTransitionCheckTxStateValidatingTransformer for BatchTransition {
+    fn transform_into_action_validating_against_state_for_check_tx<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        signer_identity: Option<&PartialIdentity>,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let platform_version = platform.state.current_platform_version()?;
+
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .transform_into_action
+        {
+            2 => self.transform_into_action_v2(
+                &platform.into(),
+                block_info,
+                signer_identity,
+                true,
+                execution_context,
+                tx,
+            ),
+            _ => self.transform_into_action_for_signer(
+                platform,
+                block_info,
+                &None,
+                signer_identity,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
         }
     }
 }
@@ -175,7 +282,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
             .batch_state_transition
             .advanced_structure
         {
-            0 => {
+            0 | 1 => {
                 let identity =
                     identity.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "The identity must be known on advanced structure validation",
@@ -186,18 +293,36 @@ impl StateTransitionStructureKnownInStateValidationV0 for BatchTransition {
                         "action must be a documents batch transition action",
                     )));
                 };
-                self.validate_advanced_structure_from_state_v0(
-                    block_info,
-                    network,
-                    documents_batch_transition_action,
-                    identity,
-                    execution_context,
-                    platform_version,
-                )
+                if platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .batch_state_transition
+                    .advanced_structure
+                    == 1
+                {
+                    self.validate_advanced_structure_from_state_v1(
+                        block_info,
+                        network,
+                        documents_batch_transition_action,
+                        identity,
+                        execution_context,
+                        platform_version,
+                    )
+                } else {
+                    self.validate_advanced_structure_from_state_v0(
+                        block_info,
+                        network,
+                        documents_batch_transition_action,
+                        identity,
+                        execution_context,
+                        platform_version,
+                    )
+                }
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: advanced structure from state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

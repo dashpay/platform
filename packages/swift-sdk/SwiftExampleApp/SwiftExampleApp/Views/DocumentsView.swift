@@ -533,6 +533,7 @@ struct ReplaceDocumentView: View {
                         DetailRow(label: "Document ID", value: document.documentId)
                         DetailRow(label: "Type", value: document.documentType)
                     }
+                    immutabilitySection
                     Section {
                         TextEditor(text: $propertiesText)
                             .font(.system(.body, design: .monospaced))
@@ -559,6 +560,51 @@ struct ReplaceDocumentView: View {
                 Alert(title: Text("Replace failed"), message: Text(err.message), dismissButton: .default(Text("OK")))
             }
             .onAppear { seedProperties() }
+        }
+    }
+
+    /// The protocol-version-14 freeze declared by this document's type. The
+    /// editor is one free-form JSON object rather than per-property fields, so
+    /// there is nothing to disable: name the frozen properties instead, which
+    /// the seeded text already carries at their stored values. Consensus
+    /// refuses a replace that changes, adds or removes one
+    /// (`DocumentImmutablePropertyChangedError`, code 40128), and the rejected
+    /// transition is still paid for. This surface knows the stored document,
+    /// so a settable-once property is listed as still open only while the
+    /// document really has no value for it.
+    @ViewBuilder
+    private var immutabilitySection: some View {
+        let immutability = document.documentType_relation?.immutability
+            ?? DocumentTypeImmutability.none
+        if !immutability.isEmpty {
+            let storedNames = Set((document.properties ?? [:]).keys)
+            let settableNow = immutability.immutableProperties.filter {
+                immutability.lockState(
+                    for: $0, hasStoredValue: storedNames.contains($0)) == .settableOnce
+            }
+            let frozen = immutability.immutableProperties.filter { !settableNow.contains($0) }
+            Section {
+                if !frozen.isEmpty {
+                    Label(
+                        "Immutable: \(frozen.joined(separator: ", "))",
+                        systemImage: "lock.fill"
+                    )
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                }
+                if !settableNow.isEmpty {
+                    Label(
+                        "Settable once: \(settableNow.joined(separator: ", "))",
+                        systemImage: "lock.open"
+                    )
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Immutable Properties")
+            } footer: {
+                Text("Keep the immutable values exactly as seeded. A settable-once property may still be given a value while the document has none.")
+            }
         }
     }
 
@@ -1432,7 +1478,10 @@ struct CreateDocumentView: View {
 
     /// Field values produced by `DocumentFieldsView`. Byte-array fields
     /// arrive as `Data`, identifier fields as `Data`, scalars as
-    /// `Int`/`Double`/`Bool`/`String`, arrays as `[String]`.
+    /// `Int`/`Double`/`Bool`/`String`, plain arrays as `[String]`, and typed
+    /// arrays as `[Any]` of JSON-native elements (identifier elements as
+    /// base58 and byte array elements as hex strings, never `Data`), or as
+    /// the `DocumentTypedArray.InputError` refusing the list.
     @State private var fieldValues: [String: Any] = [:]
 
     @State private var isSubmitting = false
@@ -1819,7 +1868,18 @@ struct CreateDocumentView: View {
     /// hex/base58 identifiers back to native values. `object`-typed
     /// fields arrive as the editor's raw JSON `String`; they are parsed
     /// back into a nested object so they serialize as objects, not as a
-    /// JSON string. Other values are JSON-native and pass through.
+    /// JSON string. Other values are JSON-native and pass through,
+    /// typed arrays included: their elements are already `Int` / `Double` /
+    /// `Bool` / `String`, which the same sanitize step narrows or decodes
+    /// per element.
+    ///
+    /// Throws, so that nothing is broadcast, when a typed array failed its
+    /// client-side check (the field value is then the
+    /// `DocumentTypedArray.InputError` itself: a refused transition is still
+    /// paid for) and when any value is one JSON cannot carry, such as NaN
+    /// from a number field, which `JSONSerialization` would otherwise raise
+    /// on as an Objective-C exception. The state-transition builder
+    /// (`TransitionDetailView`) encodes its document fields here too.
     static func propertiesJSON(
         from fieldValues: [String: Any],
         documentType: PersistentDocumentType
@@ -1830,7 +1890,12 @@ struct CreateDocumentView: View {
                 .map(\.name) ?? []
         )
         var jsonObject: [String: Any] = [:]
-        for (key, value) in fieldValues {
+        // Sorted, so the reported refusal does not depend on hash order
+        for key in fieldValues.keys.sorted() {
+            guard let value = fieldValues[key] else { continue }
+            if let refusal = value as? DocumentTypedArray.InputError {
+                throw refusal
+            }
             if let data = value as? Data {
                 jsonObject[key] = data.toHexString()
             } else if objectFields.contains(key), let text = value as? String {
@@ -1841,9 +1906,24 @@ struct CreateDocumentView: View {
             } else {
                 jsonObject[key] = value
             }
+            if let encoded = jsonObject[key], !JSONSerialization.isValidJSONObject([encoded]) {
+                throw DocumentPropertiesEncodingError.notJSON(property: key)
+            }
         }
         let data = try JSONSerialization.data(withJSONObject: jsonObject, options: [])
         return String(data: data, encoding: .utf8) ?? "{}"
+    }
+}
+
+/// A document field value `JSONSerialization` cannot encode.
+enum DocumentPropertiesEncodingError: LocalizedError {
+    case notJSON(property: String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .notJSON(property):
+            return "\(property) holds a value JSON cannot carry (a number must be finite)."
+        }
     }
 }
 

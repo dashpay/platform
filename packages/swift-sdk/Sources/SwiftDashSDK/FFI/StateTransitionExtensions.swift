@@ -716,9 +716,28 @@ extension SDK {
 
                 // 2. Update the document properties
                 // Use pre-serialized JSON to avoid capturing non-Sendable value types
+                // The FFI decodes base58 identifiers and hex/base64 bytes against the document type.
                 let propertiesJson = propertiesJsonPre
-                _ = propertiesJson.withCString { propsCStr in
-                    dash_sdk_document_set_properties(OpaquePointer(documentHandle), propsCStr)
+                let setPropertiesError = contractId.withCString { contractIdCStr in
+                    documentType.withCString { docTypeCStr in
+                        propertiesJson.withCString { propsCStr in
+                            dash_sdk_document_set_properties(
+                                handle,
+                                OpaquePointer(documentHandle),
+                                contractIdCStr,
+                                docTypeCStr,
+                                propsCStr
+                            )
+                        }
+                    }
+                }
+
+                if let error = setPropertiesError {
+                    let errorString = String(cString: error.pointee.message)
+                    dash_sdk_error_free(error)
+                    print("❌ [DOCUMENT REPLACE] Failed to set document properties: \(errorString)")
+                    continuation.resume(throwing: SDKError.internalError("Failed to set document properties: \(errorString)"))
+                    return
                 }
 
                 // 3. Get appropriate key for signing
@@ -2152,6 +2171,8 @@ extension SDK {
                     distributionTypeEnum = DashSDKTokenDistributionType(1) // Perpetual = 1
                 case "preprogrammed":
                     distributionTypeEnum = DashSDKTokenDistributionType(0) // PreProgrammed = 0
+                case "onceperidentity":
+                    distributionTypeEnum = DashSDKTokenDistributionType(2) // OncePerIdentity = 2
                 default:
                     continuation.resume(throwing: SDKError.invalidParameter("Invalid distribution type: \(distributionType)"))
                     return

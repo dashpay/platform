@@ -2,6 +2,13 @@ name: Tests
 
 on:
   workflow_dispatch:
+    inputs:
+      coverage:
+        # What the nightly schedule does. Off by default so a manual "run
+        # everything on this branch" stays as fast as a PR run.
+        description: Instrument the Rust workspace tests with cargo-llvm-cov and upload the reports to Codecov
+        type: boolean
+        default: false
   push:
     branches:
       - master
@@ -22,7 +29,11 @@ concurrency:
 jobs:
   check-secrets:
     name: Check secret availability
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+      || !github.event.pull_request.draft
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && startsWith(github.head_ref, 'codex/freeze-swift-schema-v')) }}
     runs-on: ubuntu-24.04
     outputs:
       has_ecr: ${{ steps.check.outputs.has_ecr }}
@@ -39,7 +50,11 @@ jobs:
 
   changes:
     name: Determine changed packages
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+      || !github.event.pull_request.draft
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && startsWith(github.head_ref, 'codex/freeze-swift-schema-v')) }}
     runs-on: ubuntu-24.04
     outputs:
       js-packages: ${{ steps.override.outputs.js-packages || steps.prune-pr-matrix.outputs.js-packages || steps.filter-js.outputs.changes }}
@@ -307,8 +322,11 @@ jobs:
           filters: |
             swift-sdk-changed:
               - .github/workflows/swift-sdk-build.yml
+              - .github/workflows/swift-sdk-freeze-release.yml
               - .github/workflows/tests.yml
               - packages/swift-sdk/**
+              - packages/app-connect-contract/**
+              - packages/moderation-charters-contract/**
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
               - packages/data-contracts/**
@@ -433,7 +451,13 @@ jobs:
     name: Rust workspace tests
     needs:
       - changes
-    if: ${{ (needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true') && needs.changes.outputs.rs-scope != 'wallet' }}
+    # The nightly schedule (and a manual dispatch) always runs this job: the
+    # nightly is the only run that collects code coverage, so it must not
+    # depend on the change filter.
+    if: >-
+      ${{ ((needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true') && needs.changes.outputs.rs-scope != 'wallet')
+      || github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch' }}
     secrets: inherit
     uses: ./.github/workflows/tests-rs-workspace.yml
     with:
@@ -441,6 +465,9 @@ jobs:
       # Anything other than an explicit 'false' (including an empty output
       # from a skipped detector step) fails safe into running the suite.
       shielded-changed: ${{ needs.changes.outputs.shielded-changed != 'false' }}
+      # Code coverage runs nightly only. PR and push runs execute the same
+      # test phases without instrumentation and upload nothing to Codecov.
+      coverage: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.coverage == true) }}
 
   # Fast path: only wallet crates changed, so run the scoped wallet suite
   # instead of the full workspace job above (the two are mutually exclusive
@@ -494,6 +521,9 @@ jobs:
 
       - name: Check the frozen SwiftData models match FREEZES
         run: python3 packages/swift-sdk/scripts/freeze_schema_models.py --check
+
+      - name: Verify the historical migration fixture and pinned sources
+        run: python3 packages/swift-sdk/scripts/historical_schema_fixture.py --check
 
       - name: Test the freeze generator
         run: python3 -m unittest discover -s packages/swift-sdk/scripts -p 'test_*.py' -v

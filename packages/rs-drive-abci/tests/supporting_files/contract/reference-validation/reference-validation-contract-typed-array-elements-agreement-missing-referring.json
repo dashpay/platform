@@ -1,0 +1,54 @@
+{
+  "$formatVersion": "1",
+  "id": "8oxw8UU9C9b3UdPW3ygAeNXdcQ3S7WJwFe8GB4k6DfH4",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "reason": {
+      "type": "object",
+      "canBeDeleted": false,
+      "properties": {
+        "topic": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 63
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "topicCharter": {
+      "type": "object",
+      "documentsMutable": true,
+      "properties": {
+        "reasons": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "permanentDocument",
+              "documentType": "reason",
+              "propertyAgreement": {
+                "subject": "topic"
+              }
+            }
+          },
+          "position": 0
+        },
+        "topic": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 63
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

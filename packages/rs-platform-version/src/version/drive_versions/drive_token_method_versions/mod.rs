@@ -1,6 +1,7 @@
 use versioned_feature_core::FeatureVersion;
 
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveTokenMethodVersions {
@@ -17,6 +18,8 @@ pub struct DriveTokenDistributionMethodVersions {
     pub add_pre_programmed_distributions: FeatureVersion,
     pub mark_perpetual_release_as_distributed: FeatureVersion,
     pub mark_pre_programmed_release_as_distributed: FeatureVersion,
+    pub add_once_per_identity_distribution: FeatureVersion,
+    pub mark_once_per_identity_release_as_distributed: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -34,6 +37,7 @@ pub struct DriveTokenFetchMethodVersions {
     pub pre_programmed_distributions: FeatureVersion,
     pub perpetual_distribution_last_paid_time: FeatureVersion,
     pub pre_programmed_distribution_last_paid_time: FeatureVersion,
+    pub once_per_identity_distribution_claim: FeatureVersion,
     pub token_direct_purchase_price: FeatureVersion,
     pub token_direct_purchase_prices: FeatureVersion,
     pub token_contract_info: FeatureVersion,

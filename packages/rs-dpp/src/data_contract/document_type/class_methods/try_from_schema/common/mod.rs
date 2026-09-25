@@ -19,6 +19,7 @@
 //! generation 2 (schema 1 and 2).
 
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
+use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
 use crate::data_contract::document_type::index::Index;
@@ -26,10 +27,11 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
-    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
-    RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CAN_BE_DELETED_BY_MODERATORS_FOR,
+    CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY,
+    DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY,
+    KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
+    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -40,6 +42,7 @@ use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
+use crate::document::property_names::{CREATED_AT, UPDATED_AT};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -68,8 +71,7 @@ use crate::consensus::basic::data_contract::{
 };
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::{
-    DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
+    DuplicateIndexNameError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
 #[cfg(feature = "validation")]
@@ -97,9 +99,10 @@ use jsonschema::JSONSchema;
 use std::collections::HashSet;
 
 #[cfg(feature = "validation")]
-use super::{
-    MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH,
-    NOT_ALLOWED_SYSTEM_PROPERTIES,
+use super::NOT_ALLOWED_SYSTEM_PROPERTIES;
+use super::{MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH};
+use crate::consensus::basic::data_contract::{
+    InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
 };
 
 /// RANKED: the extra index-property check a generation runs before the generic
@@ -217,6 +220,15 @@ pub(super) struct ParserGeneration {
     /// (conditional-participation indexOnly indexes). Forwarded to
     /// [`Index::try_from_value_map`] exactly like the admissions above.
     pub admit_index_skip_if_absent: bool,
+    /// Whether `rangeCountable: true` promotes an omitted `countable` to
+    /// `"countable"` (generation 3 and later), as the doctype-level
+    /// `rangeCountable` has always implied `documentsCountable`. Forwarded to
+    /// [`Index::try_from_value_map`] exactly like the admissions above.
+    pub admit_range_countable_implies_countable: bool,
+    /// Whether a contested index may declare `"resolution": 1`, the masternode
+    /// vote without a Lock choice. Forwarded to [`Index::try_from_value_map`]
+    /// exactly like the admissions above.
+    pub admit_index_no_locking_resolution: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -791,6 +803,16 @@ fn parse_document_properties(
         .map_err(consensus_or_protocol_data_contract_error)?;
     }
 
+    // Every property is in the flattened map now, so a `distinctFrom` target
+    // can be resolved against its siblings. Gated on the same version that
+    // parsed the declarations, so the two halves of the rule move together.
+    super::validate_distinct_from_targets(
+        &flattened_document_properties,
+        ctx.name,
+        ctx.platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+
     Ok(ParsedProperties {
         flattened_document_properties,
         document_properties,
@@ -858,6 +880,10 @@ fn parse_indices(
                             terminal: ctx.generation.admit_index_terminal,
                             preallocated: ctx.generation.admit_index_preallocated,
                             skip_if_absent: ctx.generation.admit_index_skip_if_absent,
+                            range_countable_implies_countable: ctx
+                                .generation
+                                .admit_range_countable_implies_countable,
+                            no_locking_resolution: ctx.generation.admit_index_no_locking_resolution,
                         },
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -1150,7 +1176,7 @@ fn parse_indices(
         use crate::document::property_names::OWNER_ID;
         for index in indices.values_mut() {
             if index.terminal.is_none() {
-                index.terminal = Some(OWNER_ID.to_string());
+                index.terminal = Some(vec![OWNER_ID.to_string()]);
             }
         }
     }
@@ -1277,66 +1303,89 @@ fn validate_index_properties(
                 ctx.platform_version,
             )?;
 
-            // Validate indexed property type
-            match &property_definition.property_type {
-                // Array and objects aren't supported for indexing yet
-                DocumentPropertyType::Array(_)
-                | DocumentPropertyType::Object(_)
-                | DocumentPropertyType::VariableTypeArray(_) => {
-                    Err(ProtocolError::ConsensusError(Box::new(
-                        InvalidIndexPropertyTypeError::new(
-                            ctx.name.to_owned(),
-                            index.name.to_owned(),
-                            index_property.name.to_owned(),
-                            property_definition.property_type.name(),
-                        )
-                        .into(),
-                    )))
-                }
-                // Indexed byte array size must be limited
-                DocumentPropertyType::ByteArray(sizes)
-                    if sizes.max_size.is_none()
-                        || sizes.max_size.unwrap() > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
-                {
-                    Err(ProtocolError::ConsensusError(Box::new(
-                        InvalidIndexedPropertyConstraintError::new(
-                            ctx.name.to_owned(),
-                            index.name.to_owned(),
-                            index_property.name.to_owned(),
-                            "maxItems".to_string(),
-                            format!(
-                                "should be less or equal {}",
-                                MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
-                            ),
-                        )
-                        .into(),
-                    )))
-                }
-                // Indexed string length must be limited
-                DocumentPropertyType::String(sizes)
-                    if sizes.max_length.is_none()
-                        || sizes.max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
-                {
-                    Err(ProtocolError::ConsensusError(Box::new(
-                        InvalidIndexedPropertyConstraintError::new(
-                            ctx.name.to_owned(),
-                            index.name.to_owned(),
-                            index_property.name.to_owned(),
-                            "maxLength".to_string(),
-                            format!(
-                                "should be less or equal {}",
-                                MAX_INDEXED_STRING_PROPERTY_LENGTH
-                            ),
-                        )
-                        .into(),
-                    )))
-                }
-                _ => Ok(()),
-            }
+            // The shape limits every indexed value carries as a grovedb key,
+            // shared with an indexOnly index's terminal.
+            check_indexable_property_shape(
+                ctx.name,
+                &index.name,
+                &index_property.name,
+                &property_definition.property_type,
+            )
         } else {
             Ok(())
         }
     })
+}
+
+/// The shape checks a property must pass to be indexed, shared by the
+/// prefix positions of an index and an indexOnly index's terminal: the
+/// encoded value becomes a grovedb key, so arrays and objects are refused
+/// and byte arrays and strings must be bounded (grovedb caps keys at 255
+/// bytes; the string bound is in characters, each at most four bytes).
+fn check_indexable_property_shape(
+    document_type_name: &str,
+    index_name: &str,
+    property_name: &str,
+    property_type: &DocumentPropertyType,
+) -> Result<(), ProtocolError> {
+    match property_type {
+        // Array and objects aren't supported for indexing yet. A typed array
+        // is stored inline in the document, with no index entry per element
+        // and no query operator (see Drive's `allowed_ops_for_type`).
+        DocumentPropertyType::Array(_)
+        | DocumentPropertyType::Object(_)
+        | DocumentPropertyType::VariableTypeArray(_)
+        | DocumentPropertyType::TypedArray(_) => Err(ProtocolError::ConsensusError(Box::new(
+            InvalidIndexPropertyTypeError::new(
+                document_type_name.to_owned(),
+                index_name.to_owned(),
+                property_name.to_owned(),
+                property_type.name(),
+            )
+            .into(),
+        ))),
+        // Indexed byte array size must be limited
+        DocumentPropertyType::ByteArray(sizes)
+            if sizes
+                .max_size
+                .is_none_or(|max_size| max_size > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) =>
+        {
+            Err(ProtocolError::ConsensusError(Box::new(
+                InvalidIndexedPropertyConstraintError::new(
+                    document_type_name.to_owned(),
+                    index_name.to_owned(),
+                    property_name.to_owned(),
+                    "maxItems".to_string(),
+                    format!(
+                        "should be less or equal {}",
+                        MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                    ),
+                )
+                .into(),
+            )))
+        }
+        // Indexed string length must be limited
+        DocumentPropertyType::String(sizes)
+            if sizes
+                .max_length
+                .is_none_or(|max_length| max_length > MAX_INDEXED_STRING_PROPERTY_LENGTH) =>
+        {
+            Err(ProtocolError::ConsensusError(Box::new(
+                InvalidIndexedPropertyConstraintError::new(
+                    document_type_name.to_owned(),
+                    index_name.to_owned(),
+                    property_name.to_owned(),
+                    "maxLength".to_string(),
+                    format!(
+                        "should be less or equal {}",
+                        MAX_INDEXED_STRING_PROPERTY_LENGTH
+                    ),
+                )
+                .into(),
+            )))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// The identifier and binary paths implied by the parsed properties, plus
@@ -1412,6 +1461,11 @@ fn parse_token_costs(
                         .map(|int| int.try_into())
                         .transpose()?
                         .unwrap_or(DocumentActionTokenEffect::TransferTokenToContractOwner);
+                    // Whether a transition may skip the token payment and have its signer pay
+                    // the gas in credits instead (the v3 meta-schema admits the flag)
+                    let optional = action_cost
+                        .get_optional_bool("optional")?
+                        .unwrap_or_default();
 
                     #[cfg(feature = "validation")]
                     if ctx.full_validation {
@@ -1471,6 +1525,7 @@ fn parse_token_costs(
                         token_amount,
                         effect,
                         gas_fees_paid_by,
+                        optional,
                     })
                 })
                 .transpose()
@@ -1511,12 +1566,13 @@ pub(super) fn parse_doctype_aggregate_keywords(
     //
     // Note on pre-v12 contracts: contracts created before v12 used the
     // generation-1 parser, which ignores these fields. After v12 upgrade,
-    // deserialization uses the generation-2 parser which will read them. This
-    // is safe because the contract update path runs through that parser with
-    // full_validation=true, and the primary key tree type is set correctly at
-    // contract creation time. Pre-v12 contracts can only have these flags if
-    // they were explicitly set in the schema — the meta-schema allows them as
-    // optional boolean properties.
+    // deserialization uses the generation-2 parser which will read them.
+    // Meta-schema v0 does not declare these fields: it admits them as unknown
+    // keys of any shape, so a pre-v12 contract carrying one was never
+    // validated against it, and reading it would assume a primary key tree
+    // type the contract was not created with. No such contract exists on
+    // mainnet or testnet; see `try_from_schema_generation_3` for the census
+    // and the rule that follows from it.
     let schema_map_opt = schema.to_map().ok();
 
     let documents_countable = schema_map_opt
@@ -1963,6 +2019,338 @@ pub(super) fn parse_index_only_keyword(schema: &Value) -> Result<bool, ProtocolE
         .unwrap_or(false))
 }
 
+/// Reads the doctype-level `canBeDeletedByModerators` flag before the core
+/// parse consumes `schema`, same shape as [`parse_index_only_keyword`]. Only
+/// the generation-3 driver calls this; earlier generations predate the keyword
+/// and their meta-schemas reject it under `full_validation`.
+pub(super) fn parse_can_be_deleted_by_moderators_keyword(
+    schema: &Value,
+) -> Result<bool, ProtocolError> {
+    let schema_map_opt = schema.to_map().ok();
+
+    Ok(schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED_BY_MODERATORS)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?
+        .unwrap_or(false))
+}
+
+/// Applies the `canBeDeletedByModerators` flag and checks what it requires.
+///
+/// The flag lets the contract's moderators delete documents of the type, so:
+/// - the contract must declare moderation, or there would be nobody to delete
+///   anything (moderation can not be switched on by a later update);
+/// - the type must not keep history: Drive refuses to delete such documents;
+/// - the type must not be indexOnly: such a document has no stored row a
+///   moderator could name by id;
+/// - the type must not restrict creation: its documents are the contract
+///   owner's, which no moderator may delete.
+///
+/// The rules hold for every contract that could be stored (the keyword and
+/// the moderation config both arrive with protocol version 14), so they are
+/// not skipped when a stored contract is read back.
+pub(super) fn apply_can_be_deleted_by_moderators(
+    document_type: &mut DocumentTypeV2,
+    can_be_deleted_by_moderators: bool,
+    data_contract_config: &DataContractConfig,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !can_be_deleted_by_moderators {
+        return Ok(());
+    }
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if data_contract_config.moderation().is_none() {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModerators: true`, but the contract \
+             declares no `moderation` in its config, so nobody could delete its documents \
+             (moderation can only be declared when the contract is created)",
+            name,
+        )));
+    }
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets both `documentsKeepHistory: true` and \
+             `canBeDeletedByModerators: true`, but the storage layer refuses to delete a \
+             document whose type keeps history",
+            name,
+        )));
+    }
+    if document_type.index_only {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must not set `canBeDeletedByModerators`: there \
+             is no stored row a moderator could name by id",
+            name,
+        )));
+    }
+    if document_type.creation_restriction_mode != CreationRestrictionMode::NoRestrictions {
+        return Err(structure_error(format!(
+            "document type \"{}\" restricts document creation and must not set \
+             `canBeDeletedByModerators`: its documents belong to the contract owner, whose \
+             documents no moderator may delete",
+            name,
+        )));
+    }
+    // A moderator's restore puts the document back through the ordinary insert, unique
+    // indexes checked; a contested index awards its value by a vote, which no restore can go
+    // through, so such a type would have deletions that can not be undone.
+    if document_type
+        .indices
+        .values()
+        .any(|index| index.contested_index.is_some())
+    {
+        return Err(structure_error(format!(
+            "document type \"{}\" has a contested index and must not set \
+             `canBeDeletedByModerators`: a document a moderator deleted is restored by \
+             an ordinary insert, and a contested index only takes a document through a vote",
+            name,
+        )));
+    }
+
+    document_type.documents_can_be_deleted_by_moderators = true;
+    Ok(())
+}
+
+/// Reads the doctype-level `canBeDeletedByModeratorsFor` keyword, a number of
+/// seconds, before the core parse consumes `schema`. Its shape is enforced here
+/// and not left to the meta-schema: a stored contract is read without one, and
+/// no doctype-level keyword of this generation is read more leniently there.
+pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
+    schema: &Value,
+) -> Result<Option<u32>, ProtocolError> {
+    // A schema that is not an object carries no keyword. Like every other
+    // doctype-level keyword read before the core parser, this one must not be
+    // the first to fail on such a schema: the core parser refuses it as an
+    // invalid contract structure, and a raw value error here would replace
+    // that refusal.
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(None);
+    };
+
+    Value::inner_optional_integer_value::<u32>(schema_map, CAN_BE_DELETED_BY_MODERATORS_FOR)
+        .map_err(consensus_or_protocol_value_error)
+}
+
+/// Applies the `canBeDeletedByModeratorsFor` window and checks what it
+/// requires.
+///
+/// The window limits how long after a document's last modification the
+/// moderators may delete it, so:
+/// - the type must let moderators delete its documents at all, or the window
+///   would limit nothing;
+/// - the type must require the clock the window is measured on. That is
+///   `$updatedAt`, set at creation and moved by every replace, and where a type
+///   does not carry it, `$createdAt`. A type whose documents can be replaced
+///   must require `$updatedAt`: measured from creation alone, its author could
+///   wait the window out and then rewrite the document into something no
+///   moderator can remove any more. A type whose documents never change has
+///   no modification after the creation, so `$createdAt` says as much;
+/// - it lasts at least a second: a window of none would be a type moderators
+///   can never delete from, which is said by not setting the flag.
+///
+/// Runs after `apply_can_be_deleted_by_moderators`, which sets the flag read
+/// here.
+pub(super) fn apply_can_be_deleted_by_moderators_for(
+    document_type: &mut DocumentTypeV2,
+    can_be_deleted_by_moderators_for: Option<u32>,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    let Some(seconds) = can_be_deleted_by_moderators_for else {
+        return Ok(());
+    };
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if !document_type.documents_can_be_deleted_by_moderators {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which limits \
+             `canBeDeletedByModerators: true` and means nothing without it",
+            name,
+        )));
+    }
+    if seconds == 0 {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor: 0`: a window lasts at \
+             least one second (leave `canBeDeletedByModerators` out for a type moderators can \
+             not delete from)",
+            name,
+        )));
+    }
+    let requires_updated_at = document_type.required_fields.contains(UPDATED_AT);
+    if document_type.documents_mutable && !requires_updated_at {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which is measured from \
+             a document's last modification, and its documents can be replaced: list \
+             `$updatedAt` in `required`",
+            name,
+        )));
+    }
+    if !requires_updated_at && !document_type.required_fields.contains(CREATED_AT) {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which is measured from \
+             a document's last modification: list `$updatedAt`, or `$createdAt` for documents \
+             that never change, in `required`",
+            name,
+        )));
+    }
+
+    document_type.documents_can_be_deleted_by_moderators_for = Some(seconds);
+    Ok(())
+}
+
+/// Reads a doctype-level array of top-level property names (`immutable`, the
+/// properties frozen at document creation on a mutable type, or
+/// `immutableAllowSetting`, the frozen properties a replace may still set
+/// while absent) before the core parse consumes `schema`, same shape as
+/// [`parse_index_only_keyword`]. Only the generation-3 driver calls this;
+/// earlier generations ignore both keywords exactly as they ignore every
+/// doctype-level keyword they predate (their meta-schemas still reject them
+/// under `full_validation`).
+///
+/// Every entry must be a string, on either path. A non-string entry is refused
+/// rather than silently dropped: dropping it would record a smaller set than
+/// the author declared. A contract admitted under meta-schema v0 was never
+/// checked against this keyword; `try_from_schema_generation_3` states why the
+/// stored path is strict all the same.
+pub(super) fn parse_property_name_list_keyword(
+    schema: &Value,
+    name: &str,
+    keyword: &str,
+) -> Result<BTreeSet<String>, ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(BTreeSet::new());
+    };
+    let Some(value) = Value::get_optional_from_map(schema_map, keyword) else {
+        return Ok(BTreeSet::new());
+    };
+    let Value::Array(entries) = value else {
+        return Err(structure_error(format!(
+            "document type \"{name}\": `{keyword}` must be an array of top-level property names"
+        )));
+    };
+
+    entries
+        .iter()
+        .map(|entry| {
+            entry.as_text().map(str::to_owned).ok_or_else(|| {
+                structure_error(format!(
+                    "document type \"{name}\": every `{keyword}` entry must be a property name \
+                     (a string)"
+                ))
+            })
+        })
+        .collect()
+}
+
+/// Write the `immutable` and `immutableAllowSetting` property lists onto the
+/// parsed document type and, under full validation, check them against the
+/// rest of the type.
+///
+/// The checks are schema lints rather than storage-layout invariants: an
+/// entry naming an unknown property could never match a changed field, and a
+/// list on a non-mutable type is unreachable because replaces of such
+/// documents are refused before any property is compared. So, like the
+/// keep-history/delete check in the generation-3 driver, they only run for
+/// contracts entering the chain. Stored contracts bypass them, which keeps a
+/// later tightening of these rules from ever making a committed contract
+/// unreadable.
+///
+/// Entries are top-level property names only. A nested path is refused with
+/// a hint to list the containing object instead: the replace action compares
+/// top-level properties, so freezing an object freezes everything inside it.
+/// Every `immutableAllowSetting` entry must also be in `immutable`: the
+/// second list only relaxes the first (a frozen property may still be set
+/// while the stored document has no value for it), so on its own it means
+/// nothing.
+pub(super) fn apply_immutable_fields(
+    document_type: &mut DocumentTypeV2,
+    immutable_fields: BTreeSet<String>,
+    immutable_fields_allow_setting: BTreeSet<String>,
+    name: &str,
+    full_validation: bool,
+) -> Result<(), ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if full_validation {
+        if !immutable_fields.is_empty() && !document_type.documents_mutable {
+            return Err(structure_error(format!(
+                "document type \"{name}\" lists `immutable` properties but its documents are not \
+                 mutable (documentsMutable: false), so every property is already immutable; \
+                 remove the `immutable` list or set documentsMutable: true"
+            )));
+        }
+
+        for property in &immutable_fields {
+            if property.starts_with('$') {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists system property \"{property}\" as immutable: \
+                     system properties are managed by the platform and cannot be listed"
+                )));
+            }
+            if !document_type.properties.contains_key(property) {
+                let hint = if property.contains('.') {
+                    "; nested paths are not accepted, list the top-level property that contains \
+                     it to freeze it whole"
+                } else {
+                    ""
+                };
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" as immutable, but it is not a \
+                     top-level property of the document type{hint}"
+                )));
+            }
+            // A transient property is never stored, so the stored document
+            // always lacks it and any replace that supplies it counts as
+            // setting it. Frozen at "absent", it could never be written; if
+            // it is also required, no replace could ever pass at all.
+            if document_type.transient_fields.contains(property) {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" as both transient and \
+                     immutable: a transient property is never stored, so every replace that \
+                     supplies it would be refused as changing an immutable property; remove it \
+                     from one of the two lists"
+                )));
+            }
+        }
+
+        for property in &immutable_fields_allow_setting {
+            if !immutable_fields.contains(property) {
+                return Err(structure_error(format!(
+                    "document type \"{name}\" lists \"{property}\" in `immutableAllowSetting`, but \
+                     it is not in `immutable`: only an immutable property can be allowed to be \
+                     set while absent"
+                )));
+            }
+        }
+    }
+
+    document_type.immutable_fields = immutable_fields;
+    document_type.immutable_fields_allow_setting = immutable_fields_allow_setting;
+
+    Ok(())
+}
+
 /// Write the `indexOnly` flag onto the parsed document type, normalize each
 /// index's `terminal` (an omitted terminal defaults to `$ownerId`), and run
 /// the structural cross-checks the index-only on-disk layout depends on.
@@ -1983,6 +2371,7 @@ pub(super) fn apply_index_only(
     document_type: &mut DocumentTypeV2,
     index_only: bool,
     name: &str,
+    platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
     use crate::document::property_names::{CREATED_AT, OWNER_ID};
 
@@ -2004,6 +2393,29 @@ pub(super) fn apply_index_only(
                  allowed on indexOnly document types (set `indexOnly: true` on the document \
                  type, or remove the terminal)",
                 index_name, name,
+            )));
+        }
+        // An index without properties is only meaningful as a flat indexOnly
+        // index (keyed by its terminal alone); on a stored type it would
+        // reach no level at all and index nothing.
+        if let Some((index_name, _)) = document_type
+            .indices
+            .iter()
+            .find(|(_, index)| index.properties.is_empty())
+        {
+            return Err(structure_error(format!(
+                "index \"{}\" on document type \"{}\" has no properties: an index keyed by \
+                 a terminal alone (a flat index) is only allowed on an indexOnly document \
+                 type",
+                index_name, name,
+            )));
+        }
+        if !document_type.entry_payload.is_empty() {
+            return Err(structure_error(format!(
+                "document type \"{}\" declares `entryPayload`, which is only allowed on \
+                 indexOnly document types (a stored document type keeps every property in \
+                 its primary row)",
+                name,
             )));
         }
         // Same for `preallocated`: only an indexOnly index's trees are cheap
@@ -2117,15 +2529,110 @@ pub(super) fn apply_index_only(
     // structure's level info and the `Index` values below agree, and every
     // check here reads `Some`.
 
+    // ---- entry payload --------------------------------------------------
+    // `entryPayload` names the type's value slot: top-level scalar
+    // properties stored in every entry's value, after the row commitment,
+    // instead of in a key. They are still committed (the commitment hashes
+    // every present property) and still required, but they sit in no
+    // index, so the every-property-indexed rule below exempts them. Each
+    // must be bounded, since fee estimation sizes the entry value by the
+    // sum of their bounds, and the sum is capped by the field value limit.
+    let mut payload_max_total: u32 = 0;
+    for payload_property in document_type.entry_payload.iter() {
+        let Some(property) = document_type.properties.get(payload_property) else {
+            return Err(structure_error(format!(
+                "entryPayload of indexOnly document type \"{}\" names \"{}\", which is not \
+                 a top-level property of the document type",
+                name, payload_property,
+            )));
+        };
+        if matches!(
+            property.property_type,
+            DocumentPropertyType::Object(_)
+                | DocumentPropertyType::Array(_)
+                | DocumentPropertyType::VariableTypeArray(_)
+                | DocumentPropertyType::TypedArray(_)
+        ) {
+            return Err(structure_error(format!(
+                "entryPayload property \"{}\" of indexOnly document type \"{}\" must be a \
+                 scalar (a byte array, string, integer, boolean, date or identifier): the \
+                 entry value is a flat concatenation of length-framed scalars",
+                payload_property, name,
+            )));
+        }
+        let max_width = property
+            .property_type
+            .max_byte_size(platform_version)?
+            .unwrap_or(u16::MAX);
+        if max_width == u16::MAX {
+            return Err(structure_error(format!(
+                "entryPayload property \"{}\" of indexOnly document type \"{}\" must be \
+                 bounded (declare maxItems on a byte array or maxLength on a string): fee \
+                 estimation sizes every entry's value by the payload bounds",
+                payload_property, name,
+            )));
+        }
+        // Two bytes of length frame per property.
+        payload_max_total += u32::from(max_width) + 2;
+        if !document_type.required_fields.contains(payload_property) {
+            return Err(structure_error(format!(
+                "entryPayload property \"{}\" of indexOnly document type \"{}\" must be \
+                 listed in `required`: the entry value has no representation for an absent \
+                 property",
+                payload_property, name,
+            )));
+        }
+        if let Some((index_name, _)) = document_type.indices.iter().find(|(_, index)| {
+            index.terminal_contains(payload_property)
+                || index
+                    .properties
+                    .iter()
+                    .any(|index_property| index_property.name == *payload_property)
+        }) {
+            return Err(structure_error(format!(
+                "entryPayload property \"{}\" of indexOnly document type \"{}\" also \
+                 appears in index \"{}\": a property is either a key (a prefix property or \
+                 a terminal component) or entry payload, never both",
+                payload_property, name, index_name,
+            )));
+        }
+    }
+    if payload_max_total > platform_version.system_limits.max_field_value_size {
+        return Err(structure_error(format!(
+            "entryPayload of indexOnly document type \"{}\" may encode to {} bytes, over \
+             the {}-byte cap on an entry's value",
+            name, payload_max_total, platform_version.system_limits.max_field_value_size,
+        )));
+    }
+
     // ---- per-index rules ------------------------------------------------
     for (index_name, index) in document_type.indices.iter() {
         if index.properties.is_empty() {
-            return Err(structure_error(format!(
-                "index \"{}\" on indexOnly document type \"{}\" has no properties: an \
-                 indexOnly entry is `[…property values, 0, terminal value]`, so at least \
-                 one prefix property is required above the terminal",
-                index_name, name,
-            )));
+            // FLAT index: no prefix levels, the entries live directly under
+            // a level keyed by the terminal's component names. There is no
+            // prefix level for an aggregate, a ranking, a time grid, a skip
+            // trigger or a preallocation to apply to, so none of those
+            // keywords is admitted on it.
+            if index.countable.is_countable()
+                || index.range_countable
+                || index.summable.is_some()
+                || index.range_summable
+                || index.ranked_countable
+                || !index.ranked_countable_at.is_empty()
+                || index.ranked_summable
+                || index.ranked_averageable
+                || index.time_range.is_some()
+                || index.skip_if_absent
+                || index.preallocated
+            {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" has no properties (a \
+                     flat index keyed by its terminal alone), so it admits no countable, \
+                     summable, ranked, timeRange, skipIfAbsent or preallocated keyword: \
+                     there is no prefix level for them to apply to",
+                    index_name, name,
+                )));
+            }
         }
         if index.unique {
             return Err(structure_error(format!(
@@ -2223,63 +2730,143 @@ pub(super) fn apply_index_only(
         // (canonical property, i64-safe integer type, `required`
         // membership) run for every doctype, indexOnly included.
 
-        let terminal = index.terminal.as_deref().expect("normalized to Some above");
-
-        if index
-            .properties
-            .iter()
-            .any(|property| property.name == terminal)
-        {
+        let components = index.terminal_components();
+        if components.is_empty() {
             return Err(structure_error(format!(
-                "index \"{}\" on indexOnly document type \"{}\" repeats its terminal \
-                 (\"{}\") in its properties: the terminal is the member key below the \
-                 listed properties, so listing it again would index the same dimension \
-                 twice",
-                index_name, name, terminal,
+                "index \"{}\" on indexOnly document type \"{}\" has no terminal after \
+                 normalization: internal parser error",
+                index_name, name,
             )));
         }
 
-        // The terminal is the member key — it must be a referable entity id:
-        // the owner identity, or a property carrying a refersTo declaration
-        // whose value alone IS the referenced entity's id (identity,
-        // contract, token, or permanent document — all kinds that can never
-        // dangle). `identityPublicKey` is deliberately NOT admitted: it is a
-        // compound reference — this property carries the identity id while a
-        // separate `keyIdProperty` carries the key id — so a terminal keyed
-        // by it would conflate references to different keys of the same
-        // identity.
-        if terminal != OWNER_ID {
-            use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
-            match document_type.flattened_properties.get(terminal) {
-                Some(property)
-                    if matches!(
-                        property.property_type,
-                        DocumentPropertyType::IdentifierWithReference(
-                            DocumentPropertyReferenceTarget::Identity
-                                | DocumentPropertyReferenceTarget::Contract
-                                | DocumentPropertyReferenceTarget::Token
-                                | DocumentPropertyReferenceTarget::PermanentDocument { .. }
-                        )
-                    ) => {}
-                Some(_) => {
+        for component in components {
+            if index
+                .properties
+                .iter()
+                .any(|property| property.name == *component)
+            {
+                return Err(structure_error(format!(
+                    "index \"{}\" on indexOnly document type \"{}\" repeats its terminal \
+                     component (\"{}\") in its properties: the terminal is the member key \
+                     below the listed properties, so listing it again would index the same \
+                     dimension twice",
+                    index_name, name, component,
+                )));
+            }
+        }
+
+        // The terminal is the member key: the encoded values of its
+        // components, concatenated in order. Any property a prefix position
+        // admits may serve as a component: every path derives the member
+        // key through the same tree-key encoding the prefix levels use (the
+        // walkers and probes via `get_raw_for_document_type`, queries and
+        // executed proofs via `serialize_value_for_key`, synthesis via
+        // `decode_value_for_tree_keys`), so a component needs no particular
+        // width or meaning — only the shape limits every indexed value
+        // carries. Structural uniqueness spans the whole key: one entry per
+        // (prefix values, terminal values).
+        //
+        // Every component but the last must be fixed width: a leading
+        // component is followed by more key bytes, and only a fixed-width
+        // encoding keeps equality on the leading components a clean key
+        // range (and lets synthesis split the key back). Strings are never
+        // fixed width (their bound counts characters, not bytes), so a
+        // string can only be the last component.
+        //
+        // System properties other than `$ownerId` are refused: `$createdAt`
+        // is the one other system value an indexOnly entry can carry, and
+        // the rules that reason about it (the proof-index selection,
+        // `required` membership, bucketing) all walk the prefix properties,
+        // so admitting it as a component would need each of them extended
+        // first.
+        let mut terminal_max_width: u32 = 0;
+        for (position, component) in components.iter().enumerate() {
+            let is_last = position + 1 == components.len();
+            let max_width: u32 = if component == OWNER_ID {
+                32
+            } else {
+                if component.starts_with('$') {
                     return Err(structure_error(format!(
-                        "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
-                         must be \"$ownerId\" or an identifier property with a refersTo \
-                         declaration targeting identity, contract, token, or \
-                         permanentDocument: the terminal is the entry's member key and must \
-                         alone be a referable entity id (an identityPublicKey reference is \
-                         compound — its key id lives in a separate property — and is not \
-                         admitted)",
-                        terminal, index_name, name,
+                        "terminal component \"{}\" of index \"{}\" on indexOnly document \
+                         type \"{}\" is a system property: only $ownerId may be a terminal \
+                         component (name a schema property, or list $createdAt among the \
+                         index's properties instead)",
+                        component, index_name, name,
                     )));
                 }
-                None => {
+                // A flat level is keyed by its component names, each behind
+                // a zero byte (`flat_level_key_for`); a name carrying one
+                // would alias another flat level or a property-name tree.
+                // The meta-schema's name pattern already excludes it for
+                // contracts entering the chain; this keeps the invariant
+                // explicit for every parse.
+                if component.contains('\0') {
                     return Err(structure_error(format!(
-                        "terminal \"{}\" of index \"{}\" on indexOnly document type \"{}\" \
-                         does not name a property of the document type",
-                        terminal, index_name, name,
+                        "terminal component \"{}\" of index \"{}\" on indexOnly document \
+                         type \"{}\" contains a zero byte, which the flat level key \
+                         reserves as its separator",
+                        component.escape_default(),
+                        index_name,
+                        name,
                     )));
                 }
+                let Some(property) = document_type.flattened_properties.get(component) else {
+                    return Err(structure_error(format!(
+                        "terminal component \"{}\" of index \"{}\" on indexOnly document \
+                         type \"{}\" does not name a property of the document type",
+                        component, index_name, name,
+                    )));
+                };
+                check_indexable_property_shape(
+                    name,
+                    index_name,
+                    component,
+                    &property.property_type,
+                )?;
+                let max_width = property
+                    .property_type
+                    .max_byte_size(platform_version)?
+                    .unwrap_or(u16::MAX);
+                // Fixed width by the tree-key encoding itself: the same
+                // helper synthesis splits member keys with.
+                let fixed_width = property.property_type.fixed_tree_key_width().is_some();
+                if !is_last && !fixed_width {
+                    return Err(structure_error(format!(
+                        "terminal component \"{}\" of index \"{}\" on indexOnly document \
+                         type \"{}\" is followed by another component but is not fixed \
+                         width: every component but the last must encode to a fixed number \
+                         of bytes (a byte array with minItems equal to maxItems, an \
+                         identifier, an integer, a boolean or a date); a string or a \
+                         variable-size byte array can only be the last component",
+                        component, index_name, name,
+                    )));
+                }
+                u32::from(max_width)
+            };
+            terminal_max_width += max_width;
+        }
+        if terminal_max_width > u32::from(MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) {
+            return Err(structure_error(format!(
+                "the terminal of index \"{}\" on indexOnly document type \"{}\" encodes to \
+                 up to {} bytes, over the {}-byte member key cap: shorten or drop a \
+                 component",
+                index_name, name, terminal_max_width, MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
+            )));
+        }
+
+        // The flat level is itself a GroveDB key. Bounding the encoded
+        // values above does not bound the concatenated component names.
+        if let Some(flat_key) = index.flat_level_key() {
+            if flat_key.len() > usize::from(MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH) {
+                return Err(structure_error(format!(
+                    "the flat level of index \"{}\" on indexOnly document type \"{}\" \
+                     encodes to {} bytes, over the {}-byte flat level key cap: shorten \
+                     or drop a terminal component name",
+                    index_name,
+                    name,
+                    flat_key.len(),
+                    MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH,
+                )));
             }
         }
 
@@ -2312,7 +2899,7 @@ pub(super) fn apply_index_only(
         // row — and remove an entry it never created; binding every entry
         // to its owner closes that, at the cost of the (unneeded) global-
         // uniqueness-without-owner shape.
-        if terminal != OWNER_ID
+        if !index.terminal_contains(OWNER_ID)
             && !index
                 .properties
                 .iter()
@@ -2331,7 +2918,7 @@ pub(super) fn apply_index_only(
         // `created_at` only when `$createdAt` is in `required`. Without
         // this, an indexed `$createdAt` would silently take the missing-
         // value branch instead of storing block time.
-        if (terminal == CREATED_AT
+        if (index.terminal_contains(CREATED_AT)
             || index
                 .properties
                 .iter()
@@ -2382,10 +2969,14 @@ pub(super) fn apply_index_only(
                  but its path is not determined by a reference: every index property must \
                  be either a property with a same-contract permanentDocument `refersTo` \
                  declaration (the referring property — its value is the referenced \
-                 document's $id) or a key of that declaration's `propertyAgreement` \
-                 (consensus-equal to a referenced-document property). System properties \
-                 like $ownerId cannot be determined by the referenced document, so a \
-                 preallocated index may carry $ownerId only as its terminal",
+                 document's $id; a deletableDocument declaration does not qualify, \
+                 since the trees would outlive a deleted target) or a key of that \
+                 declaration's `propertyAgreement` \
+                 (consensus-equal to a referenced-document property, which may be the \
+                 referenced document's $ownerId or $creatorId). The referring document's \
+                 OWN system properties like $ownerId cannot be determined by the \
+                 referenced document, so a preallocated index may carry $ownerId only as \
+                 its terminal",
                 index_name, name,
             )));
         }
@@ -2403,7 +2994,7 @@ pub(super) fn apply_index_only(
     // index qualifies as the proof index.)
     let has_proof_index = document_type.indices.values().any(|index| {
         !index.skip_if_absent
-            && index.terminal.as_deref() != Some(CREATED_AT)
+            && !index.terminal_contains(CREATED_AT)
             && !index
                 .properties
                 .iter()
@@ -2444,10 +3035,15 @@ pub(super) fn apply_index_only(
             continue;
         }
         let is_trigger = skip_triggers.contains(property_name.as_str());
+        if document_type.entry_payload.contains(property_name.as_str()) {
+            // Stored in every entry's value: validated above (required,
+            // bounded, in no index).
+            continue;
+        }
         let covered = document_type.indices.values().any(|index| {
             // A skip index only counts as coverage for its own trigger.
             (is_trigger || !index.skip_if_absent)
-                && (index.terminal.as_deref() == Some(property_name.as_str())
+                && (index.terminal_contains(property_name)
                     || index
                         .properties
                         .iter()
@@ -2481,7 +3077,7 @@ pub(super) fn apply_index_only(
             // when no non-skip index (and no deeper level of any index)
             // reaches through that branch.
             for (index_name, index) in document_type.indices.iter() {
-                if index.terminal.as_deref() == Some(property_name.as_str()) {
+                if index.terminal_contains(property_name) {
                     return Err(structure_error(format!(
                         "optional property \"{}\" on indexOnly document type \"{}\" is the \
                          terminal of index \"{}\": a terminal is every entry's member key \

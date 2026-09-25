@@ -33,10 +33,13 @@ pub enum PreallocatedKeySource<'a> {
     /// referencing the created document is that document's `$id`.
     ReferencedDocumentId,
     /// The index property is bound by the reference's `propertyAgreement`:
-    /// its value is the named property of the referenced document. The two
-    /// sides are validated to share one value kind, so encoding the
-    /// referenced document's value yields the same key bytes the referring
-    /// side would produce.
+    /// its value is the named property of the referenced document, which may
+    /// be one of its `$ownerId` and `$creatorId` system identifiers as well
+    /// as a schema property. The two sides are validated to share one value
+    /// kind, so encoding the referenced document's value yields the same key
+    /// bytes the referring side would produce; the insert path resolves the
+    /// name through the same document accessor the entry walkers key by,
+    /// which serves the two system names alongside the schema properties.
     ReferencedDocumentProperty(&'a str),
 }
 
@@ -103,6 +106,14 @@ impl Index {
             let Some(property) = flattened_properties.get(&candidate.name) else {
                 continue;
             };
+            // Only a scalar reference can bind: an index property is never a
+            // typed array, so element references never reach an index. A
+            // lookup reference of either kind never matches either: its value
+            // is not the referenced document's `$id`. Nor
+            // does a reference expression (`anyOf` / `allOf`), even of
+            // permanentDocument leaves only: an `anyOf` value may be the id of
+            // a document of any of them, and binding an `allOf` would have to
+            // pick one leaf's agreement over the others'
             let DocumentPropertyType::IdentifierWithReference(
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id,
@@ -127,6 +138,13 @@ impl Index {
                 .map(|index_property| {
                     if index_property.name == candidate.name {
                         Some(PreallocatedKeySource::ReferencedDocumentId)
+                    } else if index_property.name.starts_with('$') {
+                        // The referring document's own system properties are
+                        // never derived from the referenced document, even
+                        // when an agreement binds the writer's `$ownerId` to
+                        // it: that agreement is a write gate, and deriving an
+                        // owner-prefixed path from it is left for later.
+                        None
                     } else {
                         property_agreement
                             .get(&index_property.name)
@@ -153,7 +171,9 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::document_type::IndexProperty;
+    use crate::data_contract::document_type::{
+        DocumentReferenceLookup, IndexProperty, LookupKeySource, ReferenceOperands,
+    };
     use std::collections::BTreeMap;
 
     fn identifier_reference_property(
@@ -176,6 +196,8 @@ mod tests {
             ),
             required: true,
             required_since: None,
+            distinct_from: None,
+            encrypted_for: None,
             transient: false,
         }
     }
@@ -186,9 +208,23 @@ mod tests {
             property_type: DocumentPropertyType::String(StringPropertySizes {
                 min_length: None,
                 max_length: None,
+                max_bytes: None,
             }),
             required: true,
             required_since: None,
+            distinct_from: None,
+            encrypted_for: None,
+            transient: false,
+        }
+    }
+
+    fn identifier_property() -> DocumentProperty {
+        DocumentProperty {
+            property_type: DocumentPropertyType::Identifier,
+            required: true,
+            required_since: None,
+            distinct_from: None,
+            encrypted_for: None,
             transient: false,
         }
     }
@@ -215,7 +251,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
-            terminal: Some("$ownerId".to_string()),
+            terminal: Some(vec!["$ownerId".to_string()]),
             preallocated: true,
             skip_if_absent: false,
         }
@@ -244,6 +280,55 @@ mod tests {
                 ],
             }]
         );
+    }
+
+    /// An agreement on the referenced document's `$ownerId` (or
+    /// `$creatorId`) determines the index path exactly like one on a
+    /// schema property: the key source carries the system name for the
+    /// insert path to resolve against the created document.
+    #[test]
+    fn binds_agreement_on_referenced_system_identifier() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        for referenced in ["$ownerId", "$creatorId"] {
+            let mut properties = IndexMap::new();
+            properties.insert("authorId".to_string(), identifier_property());
+            properties.insert(
+                "postId".to_string(),
+                identifier_reference_property("post", None, &[("authorId", referenced)]),
+            );
+
+            let index = index_on(&["authorId", "postId"]);
+            let bindings = index.preallocation_bindings(&properties, own_contract_id);
+            assert_eq!(
+                bindings,
+                vec![PreallocationBinding {
+                    referring_property: "postId",
+                    target_document_type_name: "post",
+                    key_sources: vec![
+                        PreallocatedKeySource::ReferencedDocumentProperty(referenced),
+                        PreallocatedKeySource::ReferencedDocumentId,
+                    ],
+                }]
+            );
+        }
+    }
+
+    /// A writer gate (`{ "$ownerId": "$ownerId" }`) does not make an
+    /// owner-prefixed index preallocatable: the referring document's own
+    /// system properties never come from the referenced document.
+    #[test]
+    fn no_binding_through_a_writer_owner_agreement() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        let mut properties = IndexMap::new();
+        properties.insert(
+            "postId".to_string(),
+            identifier_reference_property("post", None, &[("$ownerId", "$ownerId")]),
+        );
+
+        let index = index_on(&["$ownerId", "postId"]);
+        assert!(index
+            .preallocation_bindings(&properties, own_contract_id)
+            .is_empty());
     }
 
     #[test]
@@ -282,5 +367,64 @@ mod tests {
             identifier_reference_property("post", Some(own_contract_id), &[]),
         );
         assert_eq!(index.preallocation_bindings(&own, own_contract_id).len(), 1);
+    }
+    #[test]
+    fn should_not_bind_through_a_lookup_reference() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        let mut property = identifier_reference_property("post", None, &[]);
+        property.property_type = DocumentPropertyType::IdentifierWithReference(
+            DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                contract_id: None,
+                document_type_name: "post".to_string(),
+                property_agreement: BTreeMap::new(),
+                lookup: DocumentReferenceLookup {
+                    index: "byAuthor".to_string(),
+                    keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                },
+            },
+        );
+        let mut properties = IndexMap::new();
+        properties.insert("postId".to_string(), property);
+
+        // The value names the post's owner, not the post, so no path follows
+        // from the post being created
+        assert!(index_on(&["postId"])
+            .preallocation_bindings(&properties, own_contract_id)
+            .is_empty());
+    }
+
+    #[test]
+    fn should_not_bind_through_a_reference_expression() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        let post = |document_type_name: &str| DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: None,
+            document_type_name: document_type_name.to_string(),
+            property_agreement: BTreeMap::new(),
+        };
+        let index = index_on(&["postId"]);
+        for expression in [
+            DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
+                post("post"),
+                post("repost"),
+            ])),
+            DocumentPropertyReferenceTarget::AllOf(ReferenceOperands::new(vec![
+                post("post"),
+                DocumentPropertyReferenceTarget::Identity,
+            ])),
+        ] {
+            let mut property = identifier_reference_property("post", None, &[]);
+            property.property_type = DocumentPropertyType::IdentifierWithReference(expression);
+            let mut properties = IndexMap::new();
+            properties.insert("postId".to_string(), property);
+
+            // An anyOf value may name a repost as well as a post, and an
+            // allOf is refused alike: no single leaf determines the path
+            assert!(index
+                .preallocation_bindings(&properties, own_contract_id)
+                .is_empty());
+            assert!(index
+                .preallocation_bindings_for_target(&properties, own_contract_id, "post")
+                .is_empty());
+        }
     }
 }

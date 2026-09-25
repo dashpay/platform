@@ -80,6 +80,9 @@ dpp = { path = "../rs-dpp", features = [
 once_cell = "1.7"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 assert_matches = "1.5.0"
+# Replays merk proof ops to record the exact shape of fixed-key layers in
+# grovedb-structure.json
+grovedb-merk = { workspace = true, features = ["minimal"] }
 
 [[bench]]
 name = "benchmarks"
@@ -101,6 +104,9 @@ harness = false
 
 default = ["full", "verify", "fixtures-and-mocks", "cbor_query"]
 grovedbg = ["grovedb/grovedbg"]
+# The GroveDB structure described as code (`drive::structure`). Tests always
+# compile it; nothing in the node depends on it.
+structure = ["server"]
 fee-distribution = ["dpp/fee-distribution"]
 fixtures-and-mocks = [
   "full",

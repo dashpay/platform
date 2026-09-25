@@ -88,6 +88,29 @@ impl DataContractFactory {
         }
     }
 
+    /// Create a DataContract under a given id instead of the one derived from the owner and
+    /// the nonce, for the system contracts whose ids are published constants.
+    pub fn create_with_id(
+        &self,
+        data_contract_id: Identifier,
+        owner_id: Identifier,
+        identity_nonce: IdentityNonce,
+        documents: Value,
+        config: Option<DataContractConfig>,
+        definitions: Option<Value>,
+    ) -> Result<CreatedDataContract, ProtocolError> {
+        match self {
+            DataContractFactory::V0(v0) => v0.create_with_id(
+                data_contract_id,
+                owner_id,
+                identity_nonce,
+                documents,
+                config,
+                definitions,
+            ),
+        }
+    }
+
     #[cfg(feature = "value-conversion")]
     /// Create a DataContract from a plain object
     pub fn create_from_object(

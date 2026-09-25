@@ -2,13 +2,17 @@ mod v0;
 mod v1;
 mod v2;
 
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::property::{
+    DocumentProperty, DocumentPropertyReferenceTarget,
+};
 use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, DocumentTypeRef};
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
@@ -940,6 +944,15 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
     }
 }
 
+/// What `immutable_fields` returns for the document type generations that
+/// predate the keyword: V0 and V1 have no field to borrow from, and the
+/// getter hands out a reference.
+static NO_IMMUTABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
+static NO_ENTRY_PAYLOAD: BTreeSet<String> = BTreeSet::new();
+/// What `property_constraints` returns for the generations that predate the
+/// keyword, for the same reason.
+static NO_PROPERTY_CONSTRAINTS: BTreeMap<String, PropertyConstraint> = BTreeMap::new();
+
 impl DocumentTypeV2Getters for DocumentType {
     fn documents_countable(&self) -> bool {
         match self {
@@ -978,6 +991,87 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => false,
             DocumentType::V1(_) => false,
             DocumentType::V2(v2) => v2.index_only(),
+        }
+    }
+
+    /// The entry-payload property names of an indexOnly type (empty before V2).
+    fn entry_payload(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_ENTRY_PAYLOAD,
+            DocumentType::V1(_) => &NO_ENTRY_PAYLOAD,
+            DocumentType::V2(v2) => v2.entry_payload(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.documents_can_be_deleted_by_moderators(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn distinct_from_fields(&self) -> &[String] {
+        match self {
+            DocumentType::V0(_) => &[],
+            DocumentType::V1(_) => &[],
+            DocumentType::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V2(v2) => v2.immutable_fields(),
+        }
+    }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentType::V2(v2) => v2.immutable_fields_allow_setting(),
+        }
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.action_fees(),
+        }
+    }
+
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.owner_reference(),
+        }
+    }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.creator_reference(),
+        }
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentType::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V2(v2) => v2.property_constraints(),
         }
     }
 }
@@ -1056,6 +1150,87 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V2(v2) => v2.index_only(),
         }
     }
+
+    /// The entry-payload property names of an indexOnly type (empty before V2).
+    fn entry_payload(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeRef::V1(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeRef::V2(v2) => v2.entry_payload(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_deleted_by_moderators(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn distinct_from_fields(&self) -> &[String] {
+        match self {
+            DocumentTypeRef::V0(_) => &[],
+            DocumentTypeRef::V1(_) => &[],
+            DocumentTypeRef::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V2(v2) => v2.immutable_fields(),
+        }
+    }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeRef::V2(v2) => v2.immutable_fields_allow_setting(),
+        }
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.action_fees(),
+        }
+    }
+
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.owner_reference(),
+        }
+    }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.creator_reference(),
+        }
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V2(v2) => v2.property_constraints(),
+        }
+    }
 }
 
 impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
@@ -1096,6 +1271,87 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.index_only(),
+        }
+    }
+
+    /// The entry-payload property names of an indexOnly type (empty before V2).
+    fn entry_payload(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeMutRef::V1(_) => &NO_ENTRY_PAYLOAD,
+            DocumentTypeMutRef::V2(v2) => v2.entry_payload(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted_by_moderators(),
+        }
+    }
+
+    fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn distinct_from_fields(&self) -> &[String] {
+        match self {
+            DocumentTypeMutRef::V0(_) => &[],
+            DocumentTypeMutRef::V1(_) => &[],
+            DocumentTypeMutRef::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
+    fn immutable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V2(v2) => v2.immutable_fields(),
+        }
+    }
+
+    fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V1(_) => &NO_IMMUTABLE_FIELDS,
+            DocumentTypeMutRef::V2(v2) => v2.immutable_fields_allow_setting(),
+        }
+    }
+
+    fn action_fees(&self) -> Option<&DocumentActionFees> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.action_fees(),
+        }
+    }
+
+    fn owner_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.owner_reference(),
+        }
+    }
+
+    fn creator_reference(&self) -> Option<&DocumentPropertyReferenceTarget> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.creator_reference(),
+        }
+    }
+
+    fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V2(v2) => v2.property_constraints(),
         }
     }
 }

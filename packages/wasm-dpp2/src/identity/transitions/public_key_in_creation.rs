@@ -7,15 +7,17 @@ use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
-use crate::utils::{try_from_options, try_from_options_optional, try_to_u32};
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use crate::utils::{try_from_options, try_from_options_optional, try_to_u32, try_to_u64};
+use dpp::fee::Credits;
+use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+    IdentityPublicKeyInCreationV1Getters,
 };
 use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+use dpp::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -29,10 +31,20 @@ struct IdentityPublicKeyInCreationOptions {
     is_read_only: bool,
     #[serde(default)]
     signature: Option<Vec<u8>>,
+    #[serde(default)]
+    total_budget: Option<Credits>,
+    #[serde(default)]
+    expires_at: Option<TimestampMillis>,
 }
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
+/**
+ * A key registered with `totalBudget` or `expiresAt` carries usage limits (protocol version
+ * 14): the credits its transitions may take from the identity over its lifetime, and the block
+ * time in milliseconds from which it can no longer sign. Only AUTHENTICATION keys below MASTER
+ * may carry them. The limits are part of what the identity signs when the key is registered.
+ */
 export interface IdentityPublicKeyInCreationOptions {
     keyId: number;
     purpose: PurposeLike;
@@ -42,12 +54,16 @@ export interface IdentityPublicKeyInCreationOptions {
     data: Uint8Array;
     signature?: Uint8Array;
     contractBounds?: ContractBounds;
+    totalBudget?: bigint;
+    expiresAt?: bigint;
 }
 
 /**
- * IdentityPublicKeyInCreation serialized as a plain object.
+ * IdentityPublicKeyInCreation serialized as a plain object. `$formatVersion` is "0" for a key
+ * without limits and "1" for a key that may carry them.
  */
 export interface IdentityPublicKeyInCreationObject {
+    $formatVersion: string;
     keyId: number;
     purpose: Purpose;
     securityLevel: SecurityLevel;
@@ -56,12 +72,15 @@ export interface IdentityPublicKeyInCreationObject {
     data: Uint8Array;
     signature?: Uint8Array;
     contractBounds?: ContractBoundsObject;
+    totalBudget?: bigint;
+    expiresAt?: bigint;
 }
 
 /**
  * IdentityPublicKeyInCreation serialized as JSON.
  */
 export interface IdentityPublicKeyInCreationJSON {
+    $formatVersion: string;
     keyId: number;
     purpose: string;
     securityLevel: string;
@@ -70,6 +89,8 @@ export interface IdentityPublicKeyInCreationJSON {
     data: string;
     signature?: string;
     contractBounds?: ContractBoundsJSON;
+    totalBudget?: number | string;
+    expiresAt?: number | string;
 }
 "#;
 
@@ -103,19 +124,9 @@ impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKeyInCreation {
 }
 
 impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKey {
+    /// Goes through the enum so the limits of a version 1 key follow it
     fn from(value: IdentityPublicKeyInCreationWasm) -> Self {
-        let contract_bounds = value.0.contract_bounds().cloned();
-
-        IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id: value.0.id(),
-            purpose: value.0.purpose(),
-            security_level: value.0.security_level(),
-            contract_bounds,
-            key_type: value.0.key_type(),
-            read_only: value.0.read_only(),
-            data: value.0.data().clone(),
-            disabled_at: None,
-        })
+        IdentityPublicKey::from(value.0)
     }
 }
 
@@ -143,18 +154,27 @@ impl IdentityPublicKeyInCreationWasm {
             serde_wasm_bindgen::from_value(options.into())
                 .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
 
-        Ok(IdentityPublicKeyInCreationWasm(
-            IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
-                id: opts.key_id,
-                key_type: KeyType::from(key_type),
-                purpose: Purpose::from(purpose),
-                security_level: SecurityLevel::from(security_level),
-                contract_bounds: contract_bounds.map(Into::into),
-                read_only: opts.is_read_only,
-                data: BinaryData::new(opts.data),
-                signature: BinaryData::from(opts.signature.unwrap_or_default()),
-            }),
-        ))
+        let key = IdentityPublicKeyInCreationV0 {
+            id: opts.key_id,
+            key_type: KeyType::from(key_type),
+            purpose: Purpose::from(purpose),
+            security_level: SecurityLevel::from(security_level),
+            contract_bounds: contract_bounds.map(Into::into),
+            read_only: opts.is_read_only,
+            data: BinaryData::new(opts.data),
+            signature: BinaryData::from(opts.signature.unwrap_or_default()),
+        };
+
+        // A key without limits stays a version 0 key, the same bytes as ever
+        let key = match (opts.total_budget, opts.expires_at) {
+            (None, None) => key.into(),
+            (total_budget, expires_at) => {
+                IdentityPublicKeyInCreationV1::from_v0_with_limits(key, total_budget, expires_at)
+                    .into()
+            }
+        };
+
+        Ok(IdentityPublicKeyInCreationWasm(key))
     }
 
     #[wasm_bindgen(js_name = "toIdentityPublicKey")]
@@ -209,6 +229,19 @@ impl IdentityPublicKeyInCreationWasm {
     #[wasm_bindgen(getter = signature)]
     pub fn signature(&self) -> Vec<u8> {
         self.0.signature().to_vec()
+    }
+
+    /// The credits the key may spend over its lifetime, `undefined` when it has no budget
+    #[wasm_bindgen(getter = "totalBudget")]
+    pub fn total_budget(&self) -> Option<u64> {
+        self.0.total_budget()
+    }
+
+    /// The block time in milliseconds from which the key can no longer sign, `undefined` when
+    /// it does not expire
+    #[wasm_bindgen(getter = "expiresAt")]
+    pub fn expires_at(&self) -> Option<u64> {
+        self.0.expires_at()
     }
 
     #[wasm_bindgen(setter = keyId)]
@@ -270,6 +303,50 @@ impl IdentityPublicKeyInCreationWasm {
     #[wasm_bindgen(setter = "contractBounds")]
     pub fn set_contract_bounds(&mut self, bounds: Option<ContractBoundsWasm>) {
         self.0.set_contract_bounds(bounds.map(|b| b.into()));
+    }
+
+    /// Setting a budget on a version 0 key makes it a version 1 key. The key's own signature
+    /// no longer covers it afterwards: sign again.
+    #[wasm_bindgen(setter = "totalBudget")]
+    pub fn set_total_budget(
+        &mut self,
+        #[wasm_bindgen(js_name = "totalBudget")] total_budget: Option<js_sys::BigInt>,
+    ) -> WasmDppResult<()> {
+        let total_budget = total_budget
+            .map(|value| try_to_u64(&value, "totalBudget"))
+            .transpose()?;
+        self.set_limits(total_budget, self.0.expires_at());
+        Ok(())
+    }
+
+    /// Setting an expiry on a version 0 key makes it a version 1 key. The key's own signature
+    /// no longer covers it afterwards: sign again.
+    #[wasm_bindgen(setter = "expiresAt")]
+    pub fn set_expires_at(
+        &mut self,
+        #[wasm_bindgen(js_name = "expiresAt")] expires_at: Option<js_sys::BigInt>,
+    ) -> WasmDppResult<()> {
+        let expires_at = expires_at
+            .map(|value| try_to_u64(&value, "expiresAt"))
+            .transpose()?;
+        self.set_limits(self.0.total_budget(), expires_at);
+        Ok(())
+    }
+}
+
+impl IdentityPublicKeyInCreationWasm {
+    fn set_limits(&mut self, total_budget: Option<Credits>, expires_at: Option<TimestampMillis>) {
+        self.0 = match self.0.clone() {
+            IdentityPublicKeyInCreation::V0(v0) => {
+                IdentityPublicKeyInCreationV1::from_v0_with_limits(v0, total_budget, expires_at)
+                    .into()
+            }
+            IdentityPublicKeyInCreation::V1(mut v1) => {
+                v1.total_budget = total_budget;
+                v1.expires_at = expires_at;
+                v1.into()
+            }
+        };
     }
 }
 

@@ -48,6 +48,26 @@ class Identities internal constructor(private val sdk: Sdk) {
         }
 
     /**
+     * What is left of the budgets of [keyIds] (protocol version 14), as a JSON
+     * object keyed by key id: `{"5": "1000", "6": null}`. A budgeted key maps to
+     * the credits left as a decimal string; a key without a budget, or that the
+     * identity does not have, maps to null. Raising a budget with
+     * `IdentityUpdates.updateKeyLimits` raises what is left by the same amount.
+     */
+    suspend fun fetchKeysRemainingBudgets(identityId: String, keyIds: List<Int>): String? =
+        sdk.queryGate.op {
+            require(keyIds.isNotEmpty()) { "keyIds must hold at least one key id" }
+            require(keyIds.all { it >= 0 }) { "every key id must be non-negative, got $keyIds" }
+            mapNativeErrors {
+                QueriesNative.identityFetchKeysRemainingBudgets(
+                    sdk.handle,
+                    identityId,
+                    keyIds.toIntArray(),
+                )
+            }
+        }
+
+    /**
      * Fetch the identity that owns a unique public-key [hashHex] (hex), as
      * JSON, or null if none.
      */

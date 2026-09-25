@@ -1,4 +1,4 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
@@ -117,6 +117,11 @@ pub struct DriveDocumentInsertContestedMethodVersions {
     pub add_contested_indices_for_contract_operations: FeatureVersion,
     pub add_contested_reference_and_vote_subtree_to_document_operations: FeatureVersion,
     pub add_contested_vote_subtree_for_non_identities_operations: FeatureVersion,
+    /// Reads the join window and the vote window of a moderation election (an
+    /// `electedCharter` contest) from the elected moderation declaration of the contract it
+    /// contends for. `None` before protocol version 14, when no such contest exists and every
+    /// contest keeps the generic windows.
+    pub fetch_charter_election_windows: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -159,6 +164,7 @@ pub struct DriveDocumentIndexUniquenessMethodVersions {
     pub validate_document_transfer_transition_action_uniqueness: FeatureVersion,
     pub validate_document_purchase_transition_action_uniqueness: FeatureVersion,
     pub validate_document_update_price_transition_action_uniqueness: FeatureVersion,
+    pub validate_restored_document_uniqueness: FeatureVersion,
 }
 
 #[cfg(test)]

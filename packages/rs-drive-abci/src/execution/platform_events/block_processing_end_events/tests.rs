@@ -62,6 +62,9 @@ mod refund_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("avatarUrl", "http://test.com/ivan.jpg".into());
 
@@ -163,6 +166,9 @@ mod refund_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(profile, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document.set("avatarUrl", "http://test.com/bob.jpg".into());
 

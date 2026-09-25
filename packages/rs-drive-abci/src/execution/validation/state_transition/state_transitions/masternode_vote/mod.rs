@@ -22,6 +22,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::masternode_vote::state::v0::MasternodeVoteStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::masternode_vote::state::v1::MasternodeVoteStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
@@ -79,9 +80,10 @@ impl StateTransitionStateValidation for MasternodeVoteTransition {
             .state
         {
             0 => self.validate_state_v0(action, platform, tx, platform_version),
+            1 => self.validate_state_v1(action, platform, tx, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode votes state transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -91,6 +93,12 @@ impl StateTransitionStateValidation for MasternodeVoteTransition {
         true
     }
 }
+
+#[cfg(test)]
+mod no_locking_contest_tests;
+
+#[cfg(test)]
+mod charter_election_tests;
 
 #[cfg(test)]
 mod tests {
@@ -7750,7 +7758,7 @@ mod tests {
                     .unwrap()
                     .expect("expected to commit transaction");
 
-                // At this point the document should have been awarded to contender 1.
+                // At this point the document should have been awarded to contender 2, the earliest document (a tie, protocol version 14).
 
                 {
                     let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
@@ -7770,7 +7778,7 @@ mod tests {
                         Some(FinishedVoteInfo {
                             finished_vote_outcome:
                                 finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
-                            won_by_identity_id: Some(contender_1.id().to_vec()),
+                            won_by_identity_id: Some(contender_2.id().to_vec()),
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,
                             finished_at_block_time_ms: 1209900000,
@@ -7818,7 +7826,7 @@ mod tests {
                     assert_eq!(
                         finished_vote_info,
                         Some((
-                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_2.id()),
                             block_info
                         ))
                     );
@@ -8165,7 +8173,7 @@ mod tests {
                     .unwrap()
                     .expect("expected to commit transaction");
 
-                // At this point the document should have been awarded to contender 1.
+                // At this point the document should have been awarded to contender 2, the earliest document (a tie, protocol version 14).
 
                 {
                     let (contenders, abstaining, locking, finished_vote_info) = get_vote_states(
@@ -8185,7 +8193,7 @@ mod tests {
                         Some(FinishedVoteInfo {
                             finished_vote_outcome:
                                 finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
-                            won_by_identity_id: Some(contender_1.id().to_vec()),
+                            won_by_identity_id: Some(contender_2.id().to_vec()),
                             finished_at_block_height: 10000,
                             finished_at_core_block_height: 42,
                             finished_at_block_time_ms: 1209900000,
@@ -8233,7 +8241,7 @@ mod tests {
                     assert_eq!(
                         finished_vote_info,
                         Some((
-                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_1.id()),
+                            ContestedDocumentVotePollWinnerInfo::WonByIdentity(contender_2.id()),
                             block_info
                         ))
                     );
@@ -8616,7 +8624,10 @@ mod tests {
                     pro_tx_hash,
                     &voting_key,
                     2,
-                    Some("VotePoll ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }) not available for voting: Awarded(BjNejy4r9QAvLHpQ9Yq6yRMgNymeGZ46d48fJxJbMrfW)"),
+                    // Settling the poll deleted its pot, and a block checks the pot before the
+                    // poll's status; check_tx, which validates the poll's status first, is what
+                    // tells a late voter the poll is over.
+                    Some("Did not find a specialized balance with id: 8cLBdc35uovu4yHKuMKy4JWYhRFVUPSnnm8KTJJaaJw4"),
                     platform_version,
                 )
                 .await;
@@ -8811,7 +8822,10 @@ mod tests {
                     pro_tx_hash,
                     &voting_key,
                     2,
-                    Some("VotePoll ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] }) not available for voting: Locked"),
+                    // Settling the poll deleted its pot, and a block checks the pot before the
+                    // poll's status; check_tx, which validates the poll's status first, is what
+                    // tells a late voter the poll is over.
+                    Some("Did not find a specialized balance with id: 8cLBdc35uovu4yHKuMKy4JWYhRFVUPSnnm8KTJJaaJw4"),
                     platform_version,
                 )
                 .await;
