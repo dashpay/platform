@@ -578,8 +578,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     validation checks them against the contract it fetched for the
 ///     existence check and the write itself (its owner and block time), so
 ///     they cost no further read, and refuses the first unmet requirement with
-///     `ReferencedContractRequirementNotMetError` (40135). A changed
-///     `contractRequirements` is an incompatible schema change on update.
+///     `ReferencedContractRequirementNotMetError` (40135). A replace re-checks
+///     them when it changes the reference. `owner` is judged against the
+///     writer, which a transfer or a purchase changes without any write, so
+///     on a document type whose documents can be transferred or traded a
+///     declaration carrying it is re-checked, whole, on every replace, as a
+///     `$ownerId` writer gate is: the new owner has to repoint the reference,
+///     so registration refuses one held by an `immutable` property of such a
+///     type. The other requirements are facts about the referenced contract and
+///     never bring a reference back. A changed `contractRequirements` is an
+///     incompatible schema change on update.
 ///
 /// 25. **Typed arrays of scalars in document schemas**: a document property
 ///     may be `type: "array"` with an `items` element schema instead of
@@ -741,7 +749,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     refuses an `immutable` property holding a `deletableDocument`
 ///     reference no replace could clear (a typed array of them, or a single
 ///     one inside an immutable object), which could never be replaced once
-///     a target is deleted. A changed
+///     a target is deleted, and a single top-level one that is also listed
+///     under `immutableAllowSetting`, which a replace could clear once its
+///     target is deleted and the next one set to another document. A changed
 ///     element `refersTo` is an incompatible schema change on update.
 ///
 /// 32. **Document references resolved through a unique index**: a

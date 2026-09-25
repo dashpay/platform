@@ -3037,6 +3037,144 @@ mod tests {
         }
     }
 
+    fn contract_identifier(refers_to: serde_json::Value) -> serde_json::Value {
+        json!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": refers_to
+        })
+    }
+
+    /// A mutable document type holding `reference` (a single identifier, an object or a typed
+    /// array) at `link`, with `owner_change` merged in (`transferable`, `tradeMode`) and
+    /// `link` listed as immutable when `immutable` is set
+    fn contract_reference_holder_schema(
+        owner_change: serde_json::Value,
+        mut reference: serde_json::Value,
+        immutable: bool,
+    ) -> serde_json::Value {
+        reference["position"] = json!(0);
+        let mut schema = json!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "link": reference,
+                "note": { "type": "string", "maxLength": 64, "position": 1 }
+            },
+            "required": [],
+            "additionalProperties": false
+        });
+        if immutable {
+            schema["immutable"] = json!(["link"]);
+        }
+        if let (Some(schema), Some(owner_change)) =
+            (schema.as_object_mut(), owner_change.as_object())
+        {
+            schema.extend(owner_change.clone());
+        }
+        schema
+    }
+
+    fn owner_requirement(owner: &str) -> serde_json::Value {
+        json!({ "type": "contract", "contractRequirements": { "owner": owner } })
+    }
+
+    #[test]
+    fn should_refuse_an_immutable_contract_owner_requirement_on_a_type_whose_documents_change_owner(
+    ) {
+        for owner_change in [json!({ "transferable": 1 }), json!({ "tradeMode": 1 })] {
+            for owner in ["self", "other"] {
+                let schema = contract_reference_holder_schema(
+                    owner_change.clone(),
+                    contract_identifier(owner_requirement(owner)),
+                    true,
+                );
+                let err = try_document_type_from_schema_full_validation(schema.clone())
+                    .expect_err("should be refused");
+                assert!(
+                    err.to_string()
+                        .contains("is a contract reference with an `owner` requirement"),
+                    "{owner_change} {owner}: got {err}"
+                );
+                // A stored contract is parsed without the registration rules and stays readable
+                try_document_type_from_schema(schema).expect("should parse without validation");
+            }
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_contract_owner_requirement_inside_an_immutable_object_or_typed_array() {
+        let in_object = json!({
+            "type": "object",
+            "properties": {
+                "contractId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0,
+                    "refersTo": owner_requirement("self")
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        });
+        let in_typed_array = json!({
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 4,
+            "items": contract_identifier(owner_requirement("self"))
+        });
+        for (reference, path) in [(in_object, "link.contractId"), (in_typed_array, "link")] {
+            let err = try_document_type_from_schema_full_validation(
+                contract_reference_holder_schema(json!({ "transferable": 1 }), reference, true),
+            )
+            .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(&format!(
+                    "\"{path}\" is a contract reference with an `owner` requirement"
+                )),
+                "{path}: got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_admit_an_immutable_contract_owner_requirement_where_documents_cannot_change_owner() {
+        for owner in ["self", "other"] {
+            try_document_type_from_schema_full_validation(contract_reference_holder_schema(
+                json!({}),
+                contract_identifier(owner_requirement(owner)),
+                true,
+            ))
+            .expect("the writer never changes, so the requirement is never re-checked");
+        }
+    }
+
+    #[test]
+    fn should_admit_a_mutable_owner_requirement_and_other_immutable_contract_requirements() {
+        // Mutable: a new owner can repoint the reference at a contract that meets it
+        try_document_type_from_schema_full_validation(contract_reference_holder_schema(
+            json!({ "transferable": 1 }),
+            contract_identifier(owner_requirement("self")),
+            false,
+        ))
+        .expect("a mutable reference can be repointed");
+        // The other requirements are facts about the referenced contract, never re-checked
+        try_document_type_from_schema_full_validation(contract_reference_holder_schema(
+            json!({ "transferable": 1 }),
+            contract_identifier(
+                json!({ "type": "contract", "contractRequirements": { "readonly": true } }),
+            ),
+            true,
+        ))
+        .expect("only the owner requirement is re-checked on replace");
+    }
+
     #[test]
     fn should_reject_permanent_document_refers_to_with_invalid_contract_id() {
         let err = try_document_type_from_schema(json!({
