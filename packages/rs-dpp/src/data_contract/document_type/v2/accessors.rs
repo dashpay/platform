@@ -248,6 +248,16 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         self.documents_can_be_deleted_by_moderators_for
     }
 
+    fn documents_ttl_seconds(&self) -> Option<u32> {
+        self.documents_ttl_seconds
+    }
+
+    fn documents_can_disappear(&self) -> bool {
+        self.documents_can_be_deleted
+            || self.documents_can_be_deleted_by_moderators
+            || self.documents_ttl_seconds.is_some()
+    }
+
     fn immutable_fields(&self) -> &BTreeSet<String> {
         &self.immutable_fields
     }

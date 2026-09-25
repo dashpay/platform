@@ -4,6 +4,7 @@ mod creation;
 mod deletable_document_reference;
 mod deletion;
 mod distinct_from;
+mod document_ttl;
 mod dpns;
 mod encrypted_for;
 mod gas_sponsorship;

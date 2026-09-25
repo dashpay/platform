@@ -1,6 +1,12 @@
+use crate::drive::document::expiration::pricing::{
+    document_expiration_cleanup_fee, document_expires_at, document_remaining_lifetime_ms,
+    document_ttl_pricing,
+};
+use crate::drive::document::expiration::DocumentExpirationEntry;
 use crate::drive::document::paths::contract_documents_primary_key_path;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
@@ -10,6 +16,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::document::DocumentV0Getters;
+use dpp::fee::fee_result::FeeResult;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -40,6 +48,10 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        // A document whose type declares a `ttl` is stored without storage flags.
+        let document_and_contract_info =
+            document_and_contract_info.without_storage_flags_if_expiring();
 
         // indexOnly document types have no primary-storage row and no
         // primary-key tree at all — the index entries are the rows, and
@@ -175,6 +187,25 @@ impl Drive {
             platform_version,
         )?;
 
+        // A document whose type declares a `ttl` also gets its expirations tree entry, pays
+        // for its bytes by the time it will live, and prepays its deletion.
+        if let Some(ttl_seconds) = document_and_contract_info
+            .document_type
+            .documents_ttl_seconds()
+        {
+            batch_operations = self.add_document_ttl_operations(
+                &document_and_contract_info,
+                ttl_seconds,
+                override_document,
+                block_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                batch_operations,
+                platform_version,
+            )?;
+        }
+
         // If any indexOnly document type of this contract carries a
         // `preallocated` index bound to this document type through a
         // refersTo declaration, create that index's trees for entries
@@ -190,6 +221,89 @@ impl Drive {
             platform_version,
         )?;
 
+        Ok(batch_operations)
+    }
+
+    /// The expiry side of creating a document whose type declares a `ttl`, given the
+    /// operations writing the document and its index entries: adds its entry in the documents
+    /// expirations tree (keyed by `$createdAt` plus the time to live), re-tags every grove
+    /// operation of the document so its bytes are priced for the lifetime it has left (see
+    /// `document_ttl_pricing`), and adds the processing its deletion will cost
+    /// (`document_expiration_cleanup_fee`), paid now since nobody pays when it expires.
+    ///
+    /// A dry run that overrides an existing document is the update path estimating a replace
+    /// through this insert (see `update_document_for_contract_operations`): a replace writes no
+    /// entry and prepays no deletion, so only the lifetime pricing applies to it.
+    #[allow(clippy::too_many_arguments)]
+    fn add_document_ttl_operations(
+        &self,
+        document_and_contract_info: &DocumentAndContractInfo,
+        ttl_seconds: u32,
+        override_document: bool,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        mut batch_operations: Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let contract = document_and_contract_info.contract;
+        let document_type = document_and_contract_info.document_type;
+        let document_info = &document_and_contract_info.owned_document_info.document_info;
+        let (document_id, created_at) = match document_info.get_borrowed_document() {
+            Some(document) => {
+                // The parser refuses `ttl` on a type that does not require `$createdAt`, and
+                // the create action sets it from block time.
+                let created_at = document.created_at().ok_or(Error::Drive(
+                    DriveError::CorruptedCodeExecution(
+                        "a document of a type with a time to live must carry $createdAt",
+                    ),
+                ))?;
+                (Some(document.id().to_buffer()), Some(created_at))
+            }
+            // A worst-case estimate without a document: it would be created now.
+            None => (None, None),
+        };
+        let estimates_a_replace =
+            override_document && estimated_costs_only_with_layer_info.is_some();
+        let expires_at_ms =
+            document_expires_at(created_at.unwrap_or(block_info.time_ms), ttl_seconds)?;
+        if !estimates_a_replace {
+            self.add_document_expiration_operations(
+                document_id,
+                &DocumentExpirationEntry {
+                    contract_id: contract.id(),
+                    document_type_name: document_type.name().clone(),
+                },
+                expires_at_ms,
+                estimated_costs_only_with_layer_info,
+                previous_batch_operations,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+        }
+
+        let pricing = document_ttl_pricing(
+            document_remaining_lifetime_ms(created_at, ttl_seconds, block_info.time_ms),
+            self.config.epoch_time_length_s,
+            &platform_version.fee_version,
+        )?;
+        let mut batch_operations: Vec<LowLevelDriveOperation> = batch_operations
+            .into_iter()
+            .map(|operation| operation.retag_document_ttl(pricing))
+            .collect();
+        if !estimates_a_replace {
+            batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(FeeResult {
+                processing_fee: document_expiration_cleanup_fee(
+                    document_type,
+                    &platform_version.fee_version,
+                )?,
+                ..Default::default()
+            }));
+        }
         Ok(batch_operations)
     }
 }

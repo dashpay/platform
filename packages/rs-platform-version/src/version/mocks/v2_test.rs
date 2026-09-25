@@ -607,6 +607,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_time_range_overlap_factor: None,
         max_time_range_ttl_seconds: None,
         min_time_range_ttl_drop_operations_per_write: None,
+    max_document_ttl_seconds: None,
+    max_document_expirations_per_block: None,
         minimum_grovedb_proof_envelope_version: 0,
     },
     consensus: ConsensusVersions {

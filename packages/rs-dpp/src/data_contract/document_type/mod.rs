@@ -231,6 +231,15 @@ pub(crate) mod property_names {
     /// Absent means no limit. Meta-schema v3+ (protocol version 14). See
     /// `apply_can_be_deleted_by_moderators_for` in `try_from_schema::common`.
     pub const CAN_BE_DELETED_BY_MODERATORS_FOR: &str = "canBeDeletedByModeratorsFor";
+    /// Doctype-level time to live, in seconds: the platform deletes each document of the
+    /// type once `$createdAt` plus this many seconds has passed, whoever owns it and
+    /// whatever `canBeDeleted` says; from then on it can no longer be changed or restored by a
+    /// moderator. Its documents are stored without storage flags, pay
+    /// for the time they live instead of perpetual storage, and refund nothing. Requires
+    /// `$createdAt` in `required`; refused with `documentsKeepHistory`, `indexOnly` and a
+    /// contested index, and fixed when the document type is created. Meta-schema v3+
+    /// (protocol version 14). See `apply_documents_ttl` in `try_from_schema::common`.
+    pub const TTL: &str = "ttl";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -12,5 +12,11 @@ pub(in crate::execution) mod should_checkpoint;
 /// Updates checkpoints (legacy - calls should_checkpoint then creates checkpoint)
 pub(in crate::execution) mod update_checkpoints;
 
+/// Deletes documents whose time to live has passed, after the block's state transitions
+pub(in crate::execution) mod expire_documents;
+
+/// The block's expiry cleanups, run together after its state transitions
+pub(in crate::execution) mod clean_up_expired_state;
+
 /// Creates a GroveDB checkpoint (called after transaction commit)
 pub(crate) mod create_grovedb_checkpoint;

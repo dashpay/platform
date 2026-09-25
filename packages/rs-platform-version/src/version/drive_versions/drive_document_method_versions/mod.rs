@@ -15,6 +15,22 @@ pub struct DriveDocumentMethodVersions {
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
     pub primary_key_tree_type: FeatureVersion,
+    pub expiration: DriveDocumentExpirationMethodVersions,
+}
+
+/// Drive methods of document expiry: the expirations tree under `Misc` that indexes every
+/// document of a type declaring a `ttl` by the time it expires, and the cleanup that
+/// deletes expired documents after each block's state transitions. Reachable from protocol
+/// version 14 only, the first version whose parser reads the `ttl` keyword; the slots are
+/// 0 in every table.
+#[derive(Clone, Debug, Default)]
+pub struct DriveDocumentExpirationMethodVersions {
+    pub insert_documents_expirations_tree: FeatureVersion,
+    pub add_document_expiration_operations: FeatureVersion,
+    pub remove_document_expiration_operations: FeatureVersion,
+    pub fetch_expired_documents: FeatureVersion,
+    pub remove_expired_documents: FeatureVersion,
+    pub add_estimation_costs_for_document_expiration: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

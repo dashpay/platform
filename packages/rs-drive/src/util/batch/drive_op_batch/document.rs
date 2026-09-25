@@ -115,6 +115,18 @@ pub enum DocumentOperationType<'a> {
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
     },
+    /// Deletes a document whose type declares a `ttl` once it has passed, on the platform's
+    /// behalf after a block's state transitions (protocol version 14). Like a moderator's
+    /// deletion, `canBeDeleted` is not consulted: it rules what the document's own owner may
+    /// do. The deletion removes the document's expirations tree entry with it.
+    DeleteExpiredDocument {
+        /// The document id
+        document_id: Identifier,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+    },
     /// Deletes an indexOnly document from its property values — there is
     /// no primary-storage row to fetch, so the values (plus the owner)
     /// are what every index entry is recomputed from. `$createdAt` may
@@ -222,6 +234,11 @@ impl DocumentOperationType<'_> {
                 ..
             }
             | Self::DeleteDocumentByModerator {
+                contract_info,
+                document_type_info,
+                ..
+            }
+            | Self::DeleteExpiredDocument {
                 contract_info,
                 document_type_info,
                 ..
@@ -480,6 +497,35 @@ impl DocumentOperationType<'_> {
                 let document_type = document_type_info.resolve(contract)?;
 
                 // The deletion a document's own owner runs, without its `canBeDeleted` guard.
+                drive.force_delete_document_for_contract_operations(
+                    document_id,
+                    contract,
+                    document_type,
+                    None,
+                    estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
+                    transaction,
+                    platform_version,
+                )
+            }
+            DocumentOperationType::DeleteExpiredDocument {
+                document_id,
+                contract_info,
+                document_type_info,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                // The deletion a document's own owner runs, without its `canBeDeleted` guard;
+                // it removes the expirations tree entry of a type with a `ttl` itself.
                 drive.force_delete_document_for_contract_operations(
                     document_id,
                     contract,

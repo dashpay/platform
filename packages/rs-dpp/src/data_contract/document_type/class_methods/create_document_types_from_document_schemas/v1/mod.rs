@@ -207,8 +207,8 @@ impl DocumentType {
                     // exists from the same protocol version 14 as every other lookup, so
                     // this stays inert before it
                     let referenced = referenced_document_type.as_ref();
-                    let deletable = referenced.documents_can_be_deleted()
-                        || referenced.documents_can_be_deleted_by_moderators();
+                    // Deletable by anyone: owner, moderators, or the platform (`ttl`).
+                    let deletable = referenced.documents_can_disappear();
                     if permanent == deletable {
                         continue;
                     }

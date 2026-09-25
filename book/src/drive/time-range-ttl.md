@@ -7,6 +7,9 @@ shares. The storage primitive underneath is grovedb's flat-subtree drop
 landed in grovedb PR #849); see
 [the storage section](#grovedb-dependency-flat-subtree-drop).
 
+A document type can also expire whole documents with its own `ttl` keyword; that is a
+different mechanism, described in [Document Time To Live](../data-model/document-ttl.md).
+
 ## Motivation
 
 A `timeRange` index stores every document once per containing window, and

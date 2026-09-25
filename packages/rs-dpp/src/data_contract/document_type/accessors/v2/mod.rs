@@ -53,6 +53,19 @@ pub trait DocumentTypeV2Getters {
     /// document type that predates the keyword answers.
     fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32>;
 
+    /// How many seconds after its creation (`$createdAt`) the platform deletes each
+    /// document of the type (the `ttl` keyword, protocol version 14). `None` means the
+    /// documents live until someone deletes them, and is what every document type that
+    /// predates the keyword answers.
+    fn documents_ttl_seconds(&self) -> Option<u32>;
+
+    /// Whether a document of the type can stop existing once written: its owner may delete
+    /// it (`canBeDeleted`), the contract's moderators may (`canBeDeletedByModerators`), or
+    /// the platform deletes it when its `ttl` passes. A reference that must always resolve
+    /// (`permanentDocument`, a lookup, a list element) may only target a type for which
+    /// this is false, and a `deletableDocument` reference only one for which it is true.
+    fn documents_can_disappear(&self) -> bool;
+
     /// The top-level properties frozen at document creation on a mutable
     /// document type (the `immutable` keyword, protocol version 14). A
     /// replace that changes, adds or removes any of them is rejected with

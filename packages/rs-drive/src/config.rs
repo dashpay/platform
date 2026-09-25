@@ -18,6 +18,8 @@ pub const DEFAULT_QUERY_LIMIT: u16 = 100;
 pub const DEFAULT_MAX_QUERY_LIMIT: u16 = 100;
 /// Default maximum number of contracts in cache
 pub const DEFAULT_DATA_CONTRACTS_CACHE_SIZE: u64 = 500;
+/// The default length of an epoch in seconds, the node's `ExecutionConfig` default
+pub const DEFAULT_EPOCH_TIME_LENGTH_S: u64 = 788400;
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -120,6 +122,16 @@ pub struct DriveConfig {
         serde(skip_deserializing, default = "DriveConfig::default_network")
     )]
     pub network: Network,
+
+    /// How long an epoch lasts, in seconds. Not read from the environment: the node sets it
+    /// from its execution config's `epoch_time_length_s` when it opens Drive, so there is one
+    /// source. Drive reads it to price documents whose type declares a `ttl` by the epochs
+    /// they span and to route that price to the processing or the storage fee pool.
+    #[cfg_attr(
+        feature = "serde",
+        serde(skip_deserializing, default = "default_epoch_time_length_s")
+    )]
+    pub epoch_time_length_s: u64,
 }
 
 // TODO: some weird envy behavior requires this to exist
@@ -174,6 +186,10 @@ const fn default_epochs_per_era() -> u16 {
     DEFAULT_EPOCHS_PER_ERA
 }
 
+const fn default_epoch_time_length_s() -> u64 {
+    DEFAULT_EPOCH_TIME_LENGTH_S
+}
+
 const fn default_max_query_limit() -> u16 {
     DEFAULT_MAX_QUERY_LIMIT
 }
@@ -204,6 +220,7 @@ impl Default for DriveConfig {
             #[cfg(feature = "grovedbg")]
             grovedb_visualizer_enabled: false,
             network: Network::Mainnet,
+            epoch_time_length_s: default_epoch_time_length_s(),
         }
     }
 }

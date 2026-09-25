@@ -1,4 +1,7 @@
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::document::expiration::pricing::{
+    document_remaining_lifetime_ms, document_ttl_pricing,
+};
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
@@ -24,7 +27,7 @@ use crate::util::object_size_info::{
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -155,6 +158,11 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let drive_version = &platform_version.drive;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+        // A document whose type declares a `ttl` stays without storage flags when replaced,
+        // transferred, bought or repriced. Dropped before anything is sized, so the replaced
+        // elements' sizes agree with what is stored.
+        let document_and_contract_info =
+            document_and_contract_info.without_storage_flags_if_expiring();
         if !document_and_contract_info.document_type.requires_revision()
         // if it requires revision then there are reasons for us to be able to update in drive
         {
@@ -897,6 +905,25 @@ impl Drive {
                     )?;
                 }
             }
+        }
+
+        // A document whose type declares a `ttl` pays for the bytes a change adds by the
+        // lifetime it has left; its `$createdAt`, and so its expiry and its expirations tree
+        // entry, never change. No second deletion fee: creation prepaid it.
+        if let Some(ttl_seconds) = document_type.documents_ttl_seconds() {
+            let pricing = document_ttl_pricing(
+                document_remaining_lifetime_ms(
+                    document.created_at(),
+                    ttl_seconds,
+                    block_info.time_ms,
+                ),
+                self.config.epoch_time_length_s,
+                &platform_version.fee_version,
+            )?;
+            batch_operations = batch_operations
+                .into_iter()
+                .map(|operation| operation.retag_document_ttl(pricing))
+                .collect();
         }
         Ok(batch_operations)
     }

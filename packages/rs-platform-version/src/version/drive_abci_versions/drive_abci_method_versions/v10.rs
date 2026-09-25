@@ -140,6 +140,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         update_checkpoints: Some(0),
         record_shielded_pool_anchor: Some(0),
         prune_shielded_pool_anchors: Some(0),
+        expire_documents: Some(0), // new in v14: document ttl cleanup
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 1, // changed: reads structure 1 records together with their masternode and validator set entries

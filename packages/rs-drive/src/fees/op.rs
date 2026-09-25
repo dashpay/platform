@@ -209,24 +209,25 @@ impl FunctionOp {
 pub enum LowLevelDriveOperation {
     /// Grove operation
     GroveOperation(QualifiedGroveDbOp),
-    /// A grove operation targeting a TTL'd `timeRange` index subtree.
-    /// Applied in its own batch and consumed at the EPHEMERAL price:
-    /// added bytes bill to processing at the fee table's
-    /// `ttl_ephemeral_disk_usage_credit_per_byte` instead of to storage
-    /// (the bytes provably live at most `ttl` plus a bounded drainage
-    /// lag), and removals produce no refunds — TTL elements carry no
-    /// storage flags. Produced only by the document index walkers for
-    /// sub-levels whose transform declares a `ttl`; unreachable before
-    /// protocol v14, where the grammar does not parse.
-    EphemeralGroveOperation(QualifiedGroveDbOp),
+    /// A grove operation writing bytes that provably live a bounded time,
+    /// applied in its own batch (one per [`EphemeralPricing`]) so its added
+    /// bytes can be priced by that rule instead of at the perpetual storage
+    /// price. The elements it writes carry no storage flags (the retag that
+    /// produces it strips them), so their removal refunds nothing. Produced
+    /// for sub-levels of a `timeRange` index that declares a `ttl`
+    /// ([`EphemeralPricing::TimeRangeTtl`]) and for the writes of a document
+    /// whose type declares a `ttl` ([`EphemeralPricing::DocumentTtl`]); both
+    /// keywords are unreachable before protocol v14, where their grammar
+    /// does not parse.
+    EphemeralGroveOperation(QualifiedGroveDbOp, EphemeralPricing),
     /// A drive operation
     FunctionOperation(FunctionOp),
     /// Calculated cost operation
     CalculatedCostOperation(OperationCost),
-    /// The applied cost of an ephemeral (TTL'd-subtree) batch — same
-    /// pricing rule as [`Self::EphemeralGroveOperation`], carrying the
-    /// cost the batch application (or its estimation) actually returned.
-    CalculatedEphemeralCostOperation(OperationCost),
+    /// The applied cost of an ephemeral batch — same pricing rule as the
+    /// [`Self::EphemeralGroveOperation`]s it applied, carrying the cost the
+    /// batch application (or its estimation) actually returned.
+    CalculatedEphemeralCostOperation(OperationCost, EphemeralPricing),
     /// Pre Calculated Fee Result
     PreCalculatedFeeResult(FeeResult),
     /// Credits an identity's incoming balance repaid of its debt (its negative credit balance).
@@ -237,6 +238,45 @@ pub enum LowLevelDriveOperation {
     /// `add_to_identity_balance_operations` 1; an apply that meets one it does not route fails
     /// instead of dropping it.
     RepaidIdentityDebt(Credits),
+}
+
+/// How the added bytes of an ephemeral batch are priced.
+///
+/// Both rules bill the processing of the batch exactly like any other
+/// batch; they differ from ordinary storage only in what an added byte
+/// costs and in never producing refunds (the elements carry no flags).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EphemeralPricing {
+    /// Entries under a `timeRange` index that declares a `ttl`: every added
+    /// byte bills to processing at the fee table's
+    /// `ttl_ephemeral_disk_usage_credit_per_byte` (the bytes live at most
+    /// `ttl` plus a bounded drainage lag).
+    TimeRangeTtl,
+    /// The writes of a document whose type declares a `ttl`: every added
+    /// byte costs `credit_per_byte`, resolved from the fee schedule's
+    /// `document_ttl` group for the document's remaining lifetime, into the
+    /// storage fee distribution pool when `storage_pool`, else into the
+    /// current epoch's processing fees.
+    DocumentTtl {
+        /// Credits per added byte
+        credit_per_byte: Credits,
+        /// Whether the amount enters the storage fee pool (a lifetime of at
+        /// least the schedule's `processing_route_below_epochs`) rather than
+        /// the processing fees
+        storage_pool: bool,
+    },
+}
+
+impl EphemeralPricing {
+    /// The order ephemeral batches apply in, after the standing batch. A
+    /// document's own writes come first: a `timeRange` sub-level with a
+    /// `ttl` may sit under a value tree the same document creates.
+    fn apply_rank(&self) -> u8 {
+        match self {
+            EphemeralPricing::DocumentTtl { .. } => 0,
+            EphemeralPricing::TimeRangeTtl => 1,
+        }
+    }
 }
 
 /// Shared rejection message for the three `Element` wrappers
@@ -285,7 +325,57 @@ impl LowLevelDriveOperation {
                     processing_fee: op.cost(fee_version),
                     ..Default::default()
                 }),
-                CalculatedEphemeralCostOperation(cost) => {
+                CalculatedEphemeralCostOperation(cost, EphemeralPricing::DocumentTtl {
+                    credit_per_byte,
+                    storage_pool,
+                }) => {
+                    // The writes of a document whose type declares a `ttl`:
+                    // each added byte costs the price of the document's
+                    // remaining lifetime, into the storage pool or the
+                    // processing fees as resolved when the document was
+                    // written. Processing is billed as for any batch.
+                    let bytes_fee = (cost.storage_cost.added_bytes as u64)
+                        .checked_mul(credit_per_byte)
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow pricing the bytes of a document with a time to live",
+                        )))?;
+                    let ephemeral_cost = cost.ephemeral_cost(fee_version)?;
+                    let (storage_fee, processing_fee) = if storage_pool {
+                        (bytes_fee, ephemeral_cost)
+                    } else {
+                        (
+                            0,
+                            ephemeral_cost.checked_add(bytes_fee).ok_or(Error::Fee(
+                                FeeError::Overflow(
+                                    "overflow adding the bytes fee of a document with a time \
+                                     to live",
+                                ),
+                            ))?,
+                        )
+                    };
+                    // The elements of such a document carry no storage flags,
+                    // so removals are basic. A sectioned (refundable) removal
+                    // could only come from an element someone else paid for;
+                    // its bytes leave the system all the same and no refund
+                    // is owed through this batch, whose writes refund nothing.
+                    let removed_bytes_from_system = match cost.storage_cost.removed_bytes {
+                        NoStorageRemoval => 0,
+                        BasicStorageRemoval(amount) => amount,
+                        SectionedStorageRemoval(removal_per_epoch_by_identifier) => {
+                            removal_per_epoch_by_identifier
+                                .values()
+                                .flat_map(|per_epoch| per_epoch.values())
+                                .fold(0u32, |total, bytes| total.saturating_add(*bytes))
+                        }
+                    };
+                    Ok(FeeResult {
+                        storage_fee,
+                        processing_fee,
+                        fee_refunds: FeeRefunds::default(),
+                        removed_bytes_from_system,
+                    })
+                }
+                CalculatedEphemeralCostOperation(cost, EphemeralPricing::TimeRangeTtl) => {
                     // TTL'd-subtree bytes: the added bytes bill to
                     // PROCESSING at the ephemeral rate instead of to
                     // storage — they provably live at most `ttl` plus a
@@ -381,12 +471,12 @@ impl LowLevelDriveOperation {
     /// Returns the cost of this operation
     pub fn operation_cost(self) -> Result<OperationCost, Error> {
         match self {
-            GroveOperation(_) | EphemeralGroveOperation(_) => {
+            GroveOperation(_) | EphemeralGroveOperation(..) => {
                 Err(Error::Drive(DriveError::CorruptedCodeExecution(
                     "grove operations must be executed, not directly transformed to costs",
                 )))
             }
-            CalculatedCostOperation(c) | CalculatedEphemeralCostOperation(c) => Ok(c),
+            CalculatedCostOperation(c) | CalculatedEphemeralCostOperation(c, _) => Ok(c),
             PreCalculatedFeeResult(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "pre calculated fees should not be requested by operation costs",
             ))),
@@ -448,7 +538,7 @@ impl LowLevelDriveOperation {
         let operations: Vec<QualifiedGroveDbOp> = insert_operations
             .iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op, _) => {
                     Some(grovedb_op.clone())
                 }
                 _ => None,
@@ -470,7 +560,7 @@ impl LowLevelDriveOperation {
         let operations = insert_operations
             .into_iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op, _) => {
                     Some(grovedb_op)
                 }
                 _ => None,
@@ -502,36 +592,83 @@ impl LowLevelDriveOperation {
         )
     }
 
-    /// Splits operations three ways: the ordinary grove batch, the
-    /// ephemeral (TTL'd-subtree) grove batch — applied separately so its
-    /// cost can be consumed at the ephemeral price — and every
-    /// non-grove leftover.
+    /// Splits operations three ways: the ordinary grove batch, one
+    /// ephemeral grove batch per [`EphemeralPricing`] — each applied
+    /// separately so its cost can be consumed under its own rule — and
+    /// every non-grove leftover. The ephemeral batches come in the order
+    /// they must apply in (a document's own writes before `timeRange` TTL
+    /// sub-levels, then first appearance), and each keeps its operations in
+    /// their original order.
     pub fn grovedb_operations_batch_consume_split_ephemeral(
         insert_operations: Vec<LowLevelDriveOperation>,
-    ) -> (GroveDbOpBatch, GroveDbOpBatch, Vec<LowLevelDriveOperation>) {
+    ) -> (
+        GroveDbOpBatch,
+        Vec<(EphemeralPricing, GroveDbOpBatch)>,
+        Vec<LowLevelDriveOperation>,
+    ) {
         let mut grove_operations = vec![];
-        let mut ephemeral_operations = vec![];
+        let mut ephemeral_groups: Vec<(EphemeralPricing, Vec<QualifiedGroveDbOp>)> = vec![];
         let mut other_operations = vec![];
         for op in insert_operations {
             match op {
                 GroveOperation(grovedb_op) => grove_operations.push(grovedb_op),
-                EphemeralGroveOperation(grovedb_op) => ephemeral_operations.push(grovedb_op),
+                EphemeralGroveOperation(grovedb_op, pricing) => {
+                    match ephemeral_groups
+                        .iter_mut()
+                        .find(|(group_pricing, _)| *group_pricing == pricing)
+                    {
+                        Some((_, group)) => group.push(grovedb_op),
+                        None => ephemeral_groups.push((pricing, vec![grovedb_op])),
+                    }
+                }
                 other => other_operations.push(other),
             }
         }
+        // Stable: groups of one rank keep their first-appearance order.
+        //
+        // Several `DocumentTtl` groups (one document written at two prices)
+        // would apply in first-appearance order, which is only right when no
+        // later group creates a tree an earlier one writes under. No apply
+        // holds two such documents: a documents batch carries one transition
+        // (`max_transitions_in_documents_batch`), and the only operation
+        // writing several documents at once serves system contracts, which
+        // declare no `ttl`. A feature batching document writes must keep one
+        // document's writes in one group or revisit this order.
+        ephemeral_groups.sort_by_key(|(pricing, _)| pricing.apply_rank());
         (
             GroveDbOpBatch::from_operations(grove_operations),
-            GroveDbOpBatch::from_operations(ephemeral_operations),
+            ephemeral_groups
+                .into_iter()
+                .map(|(pricing, operations)| (pricing, GroveDbOpBatch::from_operations(operations)))
+                .collect(),
             other_operations,
         )
     }
 
-    /// Re-tag an operation as targeting a TTL'd (ephemeral) subtree, so
-    /// its bytes are consumed at the ephemeral price. Grove operations
-    /// move to their ephemeral batch; already-calculated costs keep their
-    /// numbers under the ephemeral consumption rule; fee results pass
-    /// through untouched (nothing byte-priced remains in them).
+    /// Re-tag an operation as targeting a TTL'd `timeRange` index subtree
+    /// ([`EphemeralPricing::TimeRangeTtl`]); see [`Self::retag_ephemeral_with`].
     pub fn retag_ephemeral(self) -> LowLevelDriveOperation {
+        self.retag_ephemeral_with(EphemeralPricing::TimeRangeTtl)
+    }
+
+    /// Re-tag one of the writes of a document whose type declares a `ttl`,
+    /// so its bytes are priced for the document's remaining lifetime. Only
+    /// ordinary grove operations move: an operation already ephemeral (a
+    /// `timeRange` TTL sub-level) keeps its own rule, and costs and fee
+    /// results pass through untouched.
+    pub fn retag_document_ttl(self, pricing: EphemeralPricing) -> LowLevelDriveOperation {
+        match self {
+            GroveOperation(_) => self.retag_ephemeral_with(pricing),
+            other => other,
+        }
+    }
+
+    /// Re-tag an operation as ephemeral under `pricing`, so its bytes are
+    /// consumed by that rule. Grove operations move to that rule's batch,
+    /// their elements stripped of storage flags; already-calculated costs
+    /// keep their numbers under the rule; everything else, operations
+    /// already ephemeral included, passes through untouched.
+    pub fn retag_ephemeral_with(self, pricing: EphemeralPricing) -> LowLevelDriveOperation {
         match self {
             GroveOperation(mut grovedb_op) => {
                 // TTL'd (ephemeral) subtrees must hold flagless elements:
@@ -555,9 +692,9 @@ impl LowLevelDriveOperation {
                     GroveOp::RefreshReference { flags, .. } => *flags = None,
                     _ => {}
                 }
-                EphemeralGroveOperation(grovedb_op)
+                EphemeralGroveOperation(grovedb_op, pricing)
             }
-            CalculatedCostOperation(cost) => CalculatedEphemeralCostOperation(cost),
+            CalculatedCostOperation(cost) => CalculatedEphemeralCostOperation(cost, pricing),
             other => other,
         }
     }
@@ -572,7 +709,7 @@ impl LowLevelDriveOperation {
         insert_operations
             .into_iter()
             .filter_map(|op| match op {
-                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
+                GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op, _) => {
                     Some(grovedb_op)
                 }
                 _ => None,
@@ -2389,7 +2526,7 @@ mod tests {
         assert!(
             leftovers
                 .iter()
-                .any(|op| matches!(op, EphemeralGroveOperation(_))),
+                .any(|op| matches!(op, EphemeralGroveOperation(..))),
             "an ephemeral grove op must survive as a leftover, never be dropped"
         );
     }

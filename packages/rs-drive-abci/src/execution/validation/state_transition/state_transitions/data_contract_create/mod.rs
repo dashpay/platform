@@ -5685,6 +5685,41 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_reject_a_permanent_reference_to_a_type_whose_documents_expire() {
+            // The target forbids its owners to delete, but declares a `ttl`: the platform
+            // deletes its documents, so a permanentDocument reference could dangle.
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-expiring.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentTypeDeletableError(_)
+                    ),
+                    ..
+                }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_register_a_deletable_reference_to_a_type_whose_documents_expire() {
+            // `canBeDeleted: false` alone would refuse a deletableDocument reference; the
+            // `ttl` makes the target deletable, so it is accepted.
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-deletable-doc-registration-expiring.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
         async fn should_reject_contract_referencing_unknown_own_document_type() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-registration-unknown-type.json",
