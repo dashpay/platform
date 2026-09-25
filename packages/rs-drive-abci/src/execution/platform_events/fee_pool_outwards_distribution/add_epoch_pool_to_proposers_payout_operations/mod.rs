@@ -32,7 +32,8 @@ impl<C> Platform<C> {
     ///
     /// # Returns
     ///
-    /// * `Result<u16, Error>` - Returns the number of proposers to be paid out if successful, otherwise returns an `Error`.
+    /// * `Result<(StorageAndProcessingPoolCredits, BTreeMap<Identifier, u64>), Error>` - The unpaid
+    ///   epoch's pool credits and the block count of every proposer paid, otherwise an `Error`.
     pub(super) fn add_epoch_pool_to_proposers_payout_operations(
         &self,
         unpaid_epoch: &UnpaidEpoch,
@@ -83,7 +84,12 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::system_data_contracts::load_system_data_contract;
     use dpp::version::PlatformVersion;
+    use dpp::version::ProtocolVersion;
     use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use drive::drive::identity::IdentityRootStructure;
+    use drive::drive::RootTree;
+    use drive::grovedb::Element;
+    use drive::grovedb_path::SubtreePath;
     use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use drive::util::batch::GroveDbOpBatch;
     use drive::util::test_helpers::test_utils::identities::{
@@ -95,17 +101,61 @@ mod tests {
     const SECOND_PROPOSER: [u8; 32] = [2; 32];
     const THIRD_PROPOSER: [u8; 32] = [3; 32];
     const RECIPIENT: [u8; 32] = [4; 32];
+    /// An id no identity has.
+    const NOBODY: [u8; 32] = [5; 32];
 
-    /// Balances after one payout of an epoch in which each of three proposers proposed one
-    /// block, the first two name the same recipient in their reward share (30% and 20%) and
-    /// the third names the first proposer (10%).
-    struct SharedRecipientPayout {
+    /// The first two proposers name the same recipient (30% and 20%) and the third names the
+    /// first proposer (10%).
+    const SHARED_RECIPIENT_SHARES: [([u8; 32], [u8; 32], u16); 3] = [
+        (FIRST_PROPOSER, RECIPIENT, 3000),
+        (SECOND_PROPOSER, RECIPIENT, 2000),
+        (THIRD_PROPOSER, FIRST_PROPOSER, 1000),
+    ];
+
+    /// The state after one payout of an epoch in which each of the three proposers proposed
+    /// one block.
+    struct Payout {
         balances: BTreeMap<[u8; 32], Credits>,
-        owed: BTreeMap<[u8; 32], Credits>,
+        /// What each masternode earned, before any reward share.
+        masternode_payout: Credits,
+        /// The rounding remainder, which the last proposer also takes.
+        remainder: Credits,
+        recipient_debt_after: Credits,
         credits_after: TotalCreditsBalance,
     }
 
-    fn pay_out_to_shared_recipients(protocol_version: u32) -> SharedRecipientPayout {
+    impl Payout {
+        fn share(&self, percentage: Credits) -> Credits {
+            self.masternode_payout * percentage / 10000
+        }
+
+        /// What `SHARED_RECIPIENT_SHARES` owe each identity, less the recipient's debt.
+        fn owed_for_shared_recipient_shares(
+            &self,
+            recipient_debt: Credits,
+        ) -> BTreeMap<[u8; 32], Credits> {
+            let m = self.masternode_payout;
+            BTreeMap::from([
+                (FIRST_PROPOSER, m - self.share(3000) + self.share(1000)),
+                (SECOND_PROPOSER, m - self.share(2000)),
+                (THIRD_PROPOSER, self.remainder + m - self.share(1000)),
+                (
+                    RECIPIENT,
+                    self.share(3000) + self.share(2000) - recipient_debt,
+                ),
+            ])
+        }
+    }
+
+    fn recipient_path() -> Vec<Vec<u8>> {
+        vec![vec![RootTree::Identities as u8], RECIPIENT.to_vec()]
+    }
+
+    fn pay_out(
+        protocol_version: ProtocolVersion,
+        shares: &[([u8; 32], [u8; 32], u16)],
+        recipient_debt: Credits,
+    ) -> Payout {
         let platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
@@ -171,12 +221,11 @@ mod tests {
             )
             .expect("expected to count the pooled fees");
 
-        let mut identities = BTreeMap::new();
         for (seed, id) in [FIRST_PROPOSER, SECOND_PROPOSER, THIRD_PROPOSER, RECIPIENT]
             .into_iter()
             .enumerate()
         {
-            let identity = create_test_identity(
+            create_test_identity(
                 &platform.drive,
                 id,
                 Some(seed as u64),
@@ -184,7 +233,6 @@ mod tests {
                 platform_version,
             )
             .expect("expected to create an identity");
-            identities.insert(id, identity);
         }
         increment_in_epoch_each_proposers_block_count(
             &platform.drive,
@@ -194,20 +242,29 @@ mod tests {
             platform_version,
         );
 
+        if recipient_debt > 0 {
+            let mut batch = GroveDbOpBatch::new();
+            batch.add_insert(
+                recipient_path(),
+                vec![IdentityRootStructure::IdentityTreeNegativeCredit as u8],
+                Element::new_item(recipient_debt.to_be_bytes().to_vec()),
+            );
+            platform
+                .drive
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+                .expect("expected to record the recipient's debt");
+        }
+
         let contract =
             load_system_data_contract(SystemDataContract::MasternodeRewards, platform_version)
                 .expect("expected the masternode reward shares contract");
-        for (owner, pay_to, percentage) in [
-            (FIRST_PROPOSER, RECIPIENT, 3000),
-            (SECOND_PROPOSER, RECIPIENT, 2000),
-            (THIRD_PROPOSER, FIRST_PROPOSER, 1000),
-        ] {
+        for (owner, pay_to, percentage) in shares {
             create_test_mn_share_document(
                 &platform.drive,
                 &contract,
-                Identifier::new(owner),
-                &identities[&pay_to],
-                percentage,
+                Identifier::new(*owner),
+                Identifier::new(*pay_to),
+                *percentage,
                 Some(&transaction),
                 platform_version,
             );
@@ -259,42 +316,53 @@ mod tests {
             credits_after.total_credits_in_platform - credits_before.total_credits_in_platform;
         let total_payouts = processing_fees + storage_fees + core_block_rewards;
         let masternode_payout = total_payouts / 3;
-        let share = |percentage: Credits| masternode_payout * percentage / 10000;
-        let owed = BTreeMap::from([
-            (
-                FIRST_PROPOSER,
-                masternode_payout - share(3000) + share(1000),
-            ),
-            (SECOND_PROPOSER, masternode_payout - share(2000)),
-            // The last proposer also takes the rounding remainder.
-            (
-                THIRD_PROPOSER,
-                (total_payouts - 3 * masternode_payout) + (masternode_payout - share(1000)),
-            ),
-            (RECIPIENT, share(3000) + share(2000)),
-        ]);
 
         let balances = platform
             .drive
             .fetch_identities_balances(
-                &owed.keys().copied().collect(),
+                &vec![
+                    FIRST_PROPOSER,
+                    SECOND_PROPOSER,
+                    THIRD_PROPOSER,
+                    RECIPIENT,
+                    NOBODY,
+                ],
                 Some(&transaction),
                 platform_version,
             )
             .expect("expected the balances");
 
-        SharedRecipientPayout {
+        let recipient_path = recipient_path();
+        let recipient_debt_after = match platform
+            .drive
+            .grove
+            .get(
+                SubtreePath::from(recipient_path.as_slice()),
+                &[IdentityRootStructure::IdentityTreeNegativeCredit as u8],
+                Some(&transaction),
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected the recipient's negative credit")
+        {
+            Element::Item(bytes, _) => Credits::from_be_bytes(
+                bytes
+                    .try_into()
+                    .expect("expected the negative credit to be 8 bytes"),
+            ),
+            element => panic!("expected the negative credit to be an item, got {element:?}"),
+        };
+
+        Payout {
             balances,
-            owed,
+            masternode_payout,
+            remainder: total_payouts - 3 * masternode_payout,
+            recipient_debt_after,
             credits_after,
         }
     }
 
-    #[test]
-    fn should_credit_an_identity_everything_one_payout_owes_it() {
-        let payout = pay_out_to_shared_recipients(PlatformVersion::latest().protocol_version);
-
-        assert_eq!(payout.balances, payout.owed);
+    fn assert_credits_balance(payout: &Payout) {
         assert!(
             payout.credits_after.ok().expect("expected no overflow"),
             "the credits must balance after the payout: {}",
@@ -303,21 +371,73 @@ mod tests {
     }
 
     #[test]
-    fn should_keep_one_credit_per_identity_at_protocol_version_13() {
-        let payout = pay_out_to_shared_recipients(13);
+    fn should_credit_an_identity_everything_one_payout_owes_it() {
+        let payout = pay_out(
+            PlatformVersion::latest().protocol_version,
+            &SHARED_RECIPIENT_SHARES,
+            0,
+        );
+
+        assert_eq!(payout.balances, payout.owed_for_shared_recipient_shares(0));
+        assert_credits_balance(&payout);
+    }
+
+    #[test]
+    fn should_repay_a_recipients_debt_once_from_everything_one_payout_owes_it() {
+        let recipient_debt = 1_000_000;
+        let payout = pay_out(
+            PlatformVersion::latest().protocol_version,
+            &SHARED_RECIPIENT_SHARES,
+            recipient_debt,
+        );
+
+        // One credit per identity: the debt comes out of the recipient's two shares once, and
+        // what is left of them is its balance. Where the repaid debt goes is not decided here.
+        assert!(recipient_debt < payout.share(2000));
+        assert_eq!(
+            payout.balances,
+            payout.owed_for_shared_recipient_shares(recipient_debt)
+        );
+        assert_eq!(payout.recipient_debt_after, 0);
+    }
+
+    #[test]
+    fn should_leave_a_share_naming_no_identity_with_its_masternode() {
+        let payout = pay_out(
+            PlatformVersion::latest().protocol_version,
+            &[(FIRST_PROPOSER, NOBODY, 3000)],
+            0,
+        );
+
+        let m = payout.masternode_payout;
+        assert_eq!(
+            payout.balances,
+            BTreeMap::from([
+                (FIRST_PROPOSER, m),
+                (SECOND_PROPOSER, m),
+                (THIRD_PROPOSER, m + payout.remainder),
+                (RECIPIENT, 0),
+            ])
+        );
+        assert_credits_balance(&payout);
+    }
+
+    /// Reproduces the lost credits on generation 0 as it shipped. No reward share can be
+    /// written at the protocol versions that select generation 0, so if it is ever hardened in
+    /// place, this test goes with it.
+    #[test]
+    fn should_reproduce_the_lost_credits_of_generation_0_at_protocol_version_13() {
+        let payout = pay_out(13, &SHARED_RECIPIENT_SHARES, 0);
 
         // Generation 0 writes one balance per credit, each from the balance before the batch,
         // and only the last write to an identity lands.
         let mut missing: Credits = 0;
-        for (id, owed) in &payout.owed {
-            let balance = payout.balances[id];
-            if *id == RECIPIENT || *id == FIRST_PROPOSER {
-                assert!(
-                    balance < *owed,
-                    "identity {id:?} should be missing a credit"
-                );
+        for (id, owed) in payout.owed_for_shared_recipient_shares(0) {
+            let balance = payout.balances[&id];
+            if id == RECIPIENT || id == FIRST_PROPOSER {
+                assert!(balance < owed, "identity {id:?} should be missing a credit");
             } else {
-                assert_eq!(balance, *owed, "identity {id:?} has one credit");
+                assert_eq!(balance, owed, "identity {id:?} has one credit");
             }
             missing += owed - balance;
         }

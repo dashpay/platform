@@ -25,7 +25,7 @@ impl<C> Platform<C> {
     /// Adds operations to the op batch which distribute the fees from an unpaid epoch pool
     /// to the total fees to be paid out to proposers and divides amongst masternode reward shares.
     ///
-    /// Returns the number of proposers to be paid out.
+    /// Returns the epoch's pool credits and the block count of every proposer paid.
     ///
     /// Generation 1 (protocol version 14) credits each identity once, with everything this payout
     /// owes it. Every `AddToIdentityBalance` is converted against the state before the batch and
@@ -33,6 +33,9 @@ impl<C> Platform<C> {
     /// same `payToId`, or a proposer that is also a `payToId`) each wrote the previous balance plus
     /// their own credit, and only one of those writes landed. Generation 0 built one operation per
     /// share and per proposer.
+    ///
+    /// A reward share whose `payToId` names no identity stays with its masternode. Generation 0
+    /// failed the payout on it, because an identity without a balance cannot be credited.
     pub(super) fn add_epoch_pool_to_proposers_payout_operations_v1(
         &self,
         unpaid_epoch: &UnpaidEpoch,
@@ -75,7 +78,7 @@ impl<C> Platform<C> {
             )
             .map_err(Error::Drive)?;
 
-        let proposers_len = proposers.len() as u16;
+        let proposers_len = proposers.len();
 
         tracing::trace!(
             unpaid_block_count = unpaid_epoch_block_count,
@@ -89,8 +92,6 @@ impl<C> Platform<C> {
         );
 
         for (i, (proposer_tx_hash, proposed_block_count)) in proposers.iter().enumerate() {
-            let i = i as u16;
-
             let total_masternode_payout = total_payouts
                 .checked_mul(*proposed_block_count)
                 .and_then(|r| r.checked_div(unpaid_epoch_block_count))
@@ -111,6 +112,19 @@ impl<C> Platform<C> {
                     .properties()
                     .get_identifier("payToId")
                     .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+
+                if self
+                    .drive
+                    .fetch_identity_balance(
+                        pay_to_id.to_buffer(),
+                        Some(transaction),
+                        platform_version,
+                    )
+                    .map_err(Error::Drive)?
+                    .is_none()
+                {
+                    continue;
+                }
 
                 // TODO this shouldn't be a percentage we need to update masternode share contract
                 let share_percentage: u64 = document
@@ -149,8 +163,12 @@ impl<C> Platform<C> {
                     "overflow when subtracting for the remaining fees",
                 )))?;
 
-            let proposer_payout = if i == proposers_len - 1 {
-                remaining_payouts + masternode_payout_leftover
+            let proposer_payout = if i + 1 == proposers_len {
+                remaining_payouts
+                    .checked_add(masternode_payout_leftover)
+                    .ok_or(Error::Execution(ExecutionError::Overflow(
+                        "overflow when adding the remaining fees to the last proposer's payout",
+                    )))?
             } else {
                 masternode_payout_leftover
             };
@@ -224,7 +242,7 @@ mod tests {
         use rust_decimal_macros::dec;
 
         #[test]
-        fn test_payout_to_proposers() {
+        fn should_pay_every_proposer_and_its_reward_share() {
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();

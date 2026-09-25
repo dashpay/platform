@@ -1118,9 +1118,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     identity, its reward shares and its own proposer payout, before building
 ///     its balance operation. Generation 0 built one operation per share and per
 ///     proposer, each computed from the balance before the batch, so an identity
-///     owed two credits in one payout received only one of them. No reward share
-///     document can be written at any protocol version so far, so no payout made
-///     before this version is affected.
+///     owed two credits in one payout received only one of them. A share whose
+///     `payToId` names no identity now stays with its masternode; generation 0
+///     could not credit it. No reward share document can be written at any
+///     protocol version so far, so no payout made before this version is
+///     affected.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

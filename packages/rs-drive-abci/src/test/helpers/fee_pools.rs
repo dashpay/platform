@@ -48,6 +48,7 @@ use dpp::data_contract::DataContract;
 use dpp::document::{DocumentV0, INITIAL_REVISION};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::system_data_contracts::masternode_reward_shares_contract::v1::document_types;
+use dpp::util::hash::hash_double;
 use dpp::version::PlatformVersion;
 use drive::dpp::document::Document;
 use drive::drive::Drive;
@@ -58,22 +59,27 @@ use drive::util::storage_flags::StorageFlags;
 use drive::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
 
 /// A function which creates a test MN_REWARD_SHARES_DOCUMENT_TYPE document.
+///
+/// The document id is derived from the owner and `pay_to_id`, which the contract's unique
+/// index makes a unique pair.
 pub fn create_test_mn_share_document(
     drive: &Drive,
     contract: &DataContract,
     identity_id: Identifier,
-    pay_to_identity: &Identity,
+    pay_to_id: Identifier,
     percentage: u16,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Document {
-    let id = Identifier::random();
+    let id = Identifier::new(hash_double(
+        [identity_id.as_slice(), pay_to_id.as_slice()].concat(),
+    ));
 
     let mut properties: BTreeMap<String, Value> = BTreeMap::new();
 
     properties.insert(
         String::from("payToId"),
-        Value::Bytes(pay_to_identity.id().to_buffer().to_vec()),
+        Value::Bytes(pay_to_id.to_buffer().to_vec()),
     );
     properties.insert(String::from("percentage"), percentage.into());
 
@@ -158,7 +164,7 @@ pub fn create_test_masternode_share_identities_and_documents(
                     drive,
                     contract,
                     Identifier::new(*mn_identity),
-                    &identity,
+                    identity.id(),
                     5000,
                     transaction,
                     platform_version,
