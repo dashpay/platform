@@ -711,6 +711,136 @@ mod tests {
         let display = format!("{}", err);
         assert!(display.contains("address list error"));
     }
+
+    /// Executor-level coverage for evicting the pooled connection of a node
+    /// whose attempt missed its deadline.
+    #[cfg(not(target_arch = "wasm32"))]
+    mod deadline_pool_eviction {
+        use super::*;
+        use crate::connection_pool::{PoolItem, PoolPrefix};
+        use crate::transport::{BoxFuture, PlatformGrpcClient};
+        use crate::Uri;
+        use dapi_grpc::tonic::transport::Channel;
+        use std::sync::{Arc, Mutex};
+
+        /// Takes its connection from the executor's pool, as the real gRPC
+        /// clients do, so the pool holds an entry for every node dialed.
+        struct PooledClient {
+            uri: Uri,
+        }
+
+        impl PooledClient {
+            fn pooled(
+                uri: Uri,
+                settings: Option<&AppliedRequestSettings>,
+                pool: &ConnectionPool,
+            ) -> Result<Self, TransportError> {
+                pool.get_or_create(PoolPrefix::Platform, &uri, settings, || {
+                    Ok::<_, TransportError>(PoolItem::Platform(PlatformGrpcClient::new(
+                        Channel::builder(uri.clone()).connect_lazy(),
+                    )))
+                })?;
+                Ok(Self { uri })
+            }
+        }
+
+        impl TransportClient for PooledClient {
+            fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
+                Self::pooled(uri, None, pool)
+            }
+
+            fn with_uri_and_settings(
+                uri: Uri,
+                settings: &AppliedRequestSettings,
+                pool: &ConnectionPool,
+            ) -> Result<Self, TransportError> {
+                Self::pooled(uri, Some(settings), pool)
+            }
+        }
+
+        #[derive(Debug)]
+        struct Pong;
+
+        impl Mockable for Pong {}
+
+        /// Never answers on the first node it is sent to; answers at once
+        /// everywhere else.
+        #[derive(Clone, Debug, Default)]
+        struct StallFirstRequest {
+            stalled: Arc<Mutex<Option<Uri>>>,
+        }
+
+        impl Mockable for StallFirstRequest {}
+
+        impl TransportRequest for StallFirstRequest {
+            type Client = PooledClient;
+            type Response = Pong;
+
+            const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
+
+            fn method_name(&self) -> &'static str {
+                "stall_first"
+            }
+
+            fn execute_transport<'c>(
+                self,
+                client: &'c mut Self::Client,
+                _settings: &AppliedRequestSettings,
+            ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
+                let mut stalled = self.stalled.lock().expect("stall lock");
+                let target = stalled.get_or_insert_with(|| client.uri.clone());
+                if *target == client.uri {
+                    Box::pin(futures::future::pending())
+                } else {
+                    Box::pin(async { Ok(Pong) })
+                }
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn should_evict_the_pooled_connection_of_a_node_that_missed_its_deadline() {
+            let request = StallFirstRequest::default();
+            let client = DapiClient::new(
+                "http://127.0.0.1:10001,http://127.0.0.1:10002"
+                    .parse()
+                    .expect("valid address list"),
+                RequestSettings::default(),
+            );
+
+            let response = client
+                .execute(request.clone(), RequestSettings::default())
+                .await
+                .expect("the other node must answer");
+
+            let stalled = request
+                .stalled
+                .lock()
+                .expect("stall lock")
+                .clone()
+                .expect("a node stalled");
+            // The executor's applied settings for these defaults (no CA
+            // certificate) produce the same pool key.
+            let settings = RequestSettings::default().finalize();
+            assert!(
+                client
+                    .pool
+                    .get(PoolPrefix::Platform, &stalled, Some(&settings))
+                    .is_none(),
+                "the stalled node's connection must be evicted"
+            );
+            assert!(
+                client
+                    .pool
+                    .get(
+                        PoolPrefix::Platform,
+                        response.address.uri(),
+                        Some(&settings)
+                    )
+                    .is_some(),
+                "the healthy node's connection must stay pooled"
+            );
+        }
+    }
 }
 
 #[async_trait]
