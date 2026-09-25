@@ -416,8 +416,11 @@ impl DocumentReferenceLookup {
 
 /// Whether a document of `document_type` can change owner after it was
 /// written, by a transfer or a purchase. Both flags are immutable on contract
-/// update, so the answer holds for good.
-pub(crate) fn owner_can_change(document_type: DocumentTypeRef) -> bool {
+/// update, so the answer holds for good. Public for the document reference
+/// validation, which re-checks a `contract` reference's `owner` requirement
+/// on every replace of such a document: the replace may be written by an
+/// owner the requirement never checked.
+pub fn owner_can_change(document_type: DocumentTypeRef) -> bool {
     document_type.documents_transferable().is_transferable()
         || document_type.trade_mode() != TradeMode::None
 }

@@ -520,6 +520,7 @@ fn try_from_schema_generation_3(
         validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
+        validate_no_immutable_contract_owner_requirements(&v2, name)?;
         validate_transient_fields(&v2, name)?;
         validate_no_transient_index_properties(&v2, name)?;
     }
@@ -813,6 +814,60 @@ fn validate_reference_count(
                  leaves of a reference expression), above the maximum of {limit}",
             )),
         ));
+    }
+    Ok(())
+}
+
+/// An `immutable` property may not hold a `contract` reference whose
+/// `contractRequirements` carry an `owner` requirement when the document type's
+/// documents can be transferred or traded. The requirement relates the
+/// referenced contract's owner to the owner writing the document, and on such
+/// a type every replace re-checks it: after a transfer or a purchase an owner
+/// who does not meet it could not replace the document, and the immutable
+/// property could not be repointed at a contract it does meet. That holds
+/// wherever the reference sits under the immutable property (the property
+/// itself, inside an immutable object, the elements of a typed array) and for
+/// both `self` and `other`. On a type whose documents cannot change owner the
+/// requirement is never re-checked, so the pair is admitted there.
+#[cfg(feature = "validation")]
+fn validate_no_immutable_contract_owner_requirements(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !owner_can_change(DocumentTypeRef::V2(document_type)) {
+        return Ok(());
+    }
+    for (path, property) in document_type.flattened_properties() {
+        let Some(reference) = property.property_type.reference() else {
+            continue;
+        };
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        let carries_owner_requirement = target.leaves().into_iter().any(|leaf| {
+            matches!(
+                leaf,
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements,
+                } if contract_requirements.owner.is_some()
+            )
+        });
+        if !carries_owner_requirement {
+            continue;
+        }
+        let top_level = path.split('.').next().unwrap_or(path);
+        if document_type.immutable_fields.contains(top_level) {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
+                     a contract reference with an `owner` requirement and the type's documents can \
+                     be transferred or traded: every replace re-checks the requirement against the \
+                     owner writing it, so an owner who does not meet it could never replace the \
+                     document, nor repoint the reference. Leave the property mutable, or drop the \
+                     owner requirement",
+                )),
+            ));
+        }
     }
     Ok(())
 }
