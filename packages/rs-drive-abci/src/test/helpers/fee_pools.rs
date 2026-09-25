@@ -58,10 +58,15 @@ use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::util::storage_flags::StorageFlags;
 use drive::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
 
+/// The id `create_test_mn_share_document` gives a share, derived from the owner and
+/// `pay_to_id`, which the contract's unique index makes a unique pair.
+pub fn test_mn_share_document_id(identity_id: Identifier, pay_to_id: Identifier) -> Identifier {
+    Identifier::new(hash_double(
+        [identity_id.as_slice(), pay_to_id.as_slice()].concat(),
+    ))
+}
+
 /// A function which creates a test MN_REWARD_SHARES_DOCUMENT_TYPE document.
-///
-/// The document id is derived from the owner and `pay_to_id`, which the contract's unique
-/// index makes a unique pair.
 pub fn create_test_mn_share_document(
     drive: &Drive,
     contract: &DataContract,
@@ -71,9 +76,7 @@ pub fn create_test_mn_share_document(
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Document {
-    let id = Identifier::new(hash_double(
-        [identity_id.as_slice(), pay_to_id.as_slice()].concat(),
-    ));
+    let id = test_mn_share_document_id(identity_id, pay_to_id);
 
     let mut properties: BTreeMap<String, Value> = BTreeMap::new();
 

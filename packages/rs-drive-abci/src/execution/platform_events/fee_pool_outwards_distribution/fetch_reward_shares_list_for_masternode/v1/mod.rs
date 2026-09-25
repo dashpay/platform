@@ -80,6 +80,6 @@ impl<C> Platform<C> {
             Some(platform_version.protocol_version),
         )?;
 
-        Ok(query_documents_outcome.documents().to_owned())
+        Ok(query_documents_outcome.documents_owned())
     }
 }

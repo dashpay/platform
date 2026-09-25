@@ -74,7 +74,9 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use crate::platform_types::platform_state::PlatformStateV0Methods;
-    use crate::test::helpers::fee_pools::create_test_mn_share_document;
+    use crate::test::helpers::fee_pools::{
+        create_test_mn_share_document, test_mn_share_document_id,
+    };
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::balances::total_credits_balance::TotalCreditsBalance;
     use dpp::block::block_info::BlockInfo;
@@ -448,30 +450,43 @@ mod tests {
 
     #[test]
     fn should_pay_shares_over_the_whole_payout_until_it_is_used_up() {
-        let payout = pay_out(
-            PlatformVersion::latest().protocol_version,
-            &[
-                (FIRST_PROPOSER, RECIPIENT, 8000),
-                (FIRST_PROPOSER, SECOND_PROPOSER, 5000),
-            ],
-            0,
-        );
+        let to_recipient = (FIRST_PROPOSER, RECIPIENT, 8000);
+        let to_second_proposer = (FIRST_PROPOSER, SECOND_PROPOSER, 5000);
+        // A masternode's shares are read in document id order, whatever order they were
+        // written in.
+        let recipient_share_read_first =
+            test_mn_share_document_id(Identifier::new(FIRST_PROPOSER), Identifier::new(RECIPIENT))
+                < test_mn_share_document_id(
+                    Identifier::new(FIRST_PROPOSER),
+                    Identifier::new(SECOND_PROPOSER),
+                );
 
-        // 130% of the first masternode's payout is shared: the share read first is paid in
-        // full, the other gets what is left, and the masternode keeps nothing.
-        let m = payout.masternode_payout;
-        let to_recipient = payout.balances[&RECIPIENT];
-        let to_second_proposer = payout.balances[&SECOND_PROPOSER] - m;
-        assert_eq!(payout.balances[&FIRST_PROPOSER], 0);
-        assert_eq!(to_recipient + to_second_proposer, m);
-        assert!(
-            (to_recipient, to_second_proposer) == (payout.share(8000), m - payout.share(8000))
-                || (to_recipient, to_second_proposer)
-                    == (m - payout.share(5000), payout.share(5000)),
-            "one share is paid in full and the other gets the rest: {to_recipient}, {to_second_proposer}"
-        );
-        assert_eq!(payout.balances[&THIRD_PROPOSER], m + payout.remainder);
-        assert_credits_balance(&payout);
+        for shares in [
+            [to_recipient, to_second_proposer],
+            [to_second_proposer, to_recipient],
+        ] {
+            let payout = pay_out(PlatformVersion::latest().protocol_version, &shares, 0);
+
+            // 130% of the first masternode's payout is shared: the share read first is paid
+            // in full, the other gets what is left, and the masternode keeps nothing.
+            let m = payout.masternode_payout;
+            let (recipient_share, second_proposer_share) = if recipient_share_read_first {
+                (payout.share(8000), m - payout.share(8000))
+            } else {
+                (m - payout.share(5000), payout.share(5000))
+            };
+            assert_eq!(
+                payout.balances,
+                BTreeMap::from([
+                    (FIRST_PROPOSER, 0),
+                    (SECOND_PROPOSER, m + second_proposer_share),
+                    (THIRD_PROPOSER, m + payout.remainder),
+                    (RECIPIENT, recipient_share),
+                ]),
+                "shares written in the order {shares:?}"
+            );
+            assert_credits_balance(&payout);
+        }
     }
 
     /// Reproduces the lost credits on generation 0 as it shipped. No reward share can be
