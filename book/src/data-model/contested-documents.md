@@ -76,7 +76,8 @@ one tree per end date holding an entry for each contest ending then.
 Once the contest ends, the winning document is awarded, the losers are removed, and the stored
 result stays for the `getContestedResourceVoteState` query.
 
-A block ends at most `maximum_vote_polls_to_process` contests (two), the earliest end date first,
-so contests due together may end over several blocks. The cleanup removes each ended contest's
+A block ends at most `maximum_vote_polls_to_process` contests (a drive-abci `event_constants`
+value, two at protocol version 14), the earliest end date first, so contests due together may end
+over several blocks. The cleanup removes each ended contest's
 end-date entry, and removes an end date only once none of its contests remain under it; the rest
 end in the next blocks.

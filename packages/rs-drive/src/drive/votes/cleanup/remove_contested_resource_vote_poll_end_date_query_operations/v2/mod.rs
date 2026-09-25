@@ -6,13 +6,13 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::query::VotePollsByEndDateDriveQuery;
 use crate::util::common::encode::encode_u64;
 use crate::util::grove_operations::BatchDeleteApplyType;
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use grovedb::query_result_type::QueryResultType;
-use grovedb::{MaybeTree, PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::{MaybeTree, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -72,25 +72,25 @@ impl Drive {
             // how many there are says nothing about what is left. Read one entry more than this
             // batch removes: the end date is left empty only when every entry read is removed
             // here, and then the read found all of them. A count too large for a query limit
-            // reads without one.
+            // reads without one. An end date that lists nothing (it has no tree) is not removed.
             let limit = u16::try_from(unique_ids.len().saturating_add(1)).ok();
-            let mut query = Query::new();
-            query.insert_all();
-            let path_query = PathQuery::new(time_path, SizedQuery::new(query, limit, None));
-            let (entries, _) = self.grove_get_raw_path_query(
-                &path_query,
+            let entries = VotePollsByEndDateDriveQuery::execute_no_proof_keys_for_single_end_time(
+                end_date,
+                limit,
+                self,
                 transaction,
-                QueryResultType::QueryKeyElementPairResultType,
                 &mut vec![],
-                &platform_version.drive,
+                platform_version,
             )?;
-            let none_remain = entries.to_keys().into_iter().all(|key| {
-                Identifier::from_bytes(&key).is_ok_and(|entry_id| unique_ids.contains(&entry_id))
-            });
+            let none_remain = !entries.is_empty()
+                && entries.iter().all(|key| {
+                    Identifier::from_bytes(key).is_ok_and(|entry_id| unique_ids.contains(&entry_id))
+                });
 
             if none_remain {
                 // The end date holds nothing once this batch applies, so it goes in the same
-                // batch, without an emptiness check of its own
+                // batch. The `NotTree` hint is deliberate although the end date is a tree: it
+                // queues the same plain delete as v1, and the read above is the emptiness check
                 self.batch_delete(
                     vote_end_date_queries_tree_path_vec().as_slice().into(),
                     encode_u64(end_date).as_slice(),
@@ -108,16 +108,13 @@ impl Drive {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use crate::drive::votes::paths::{
-        vote_contested_resource_end_date_queries_at_time_tree_path_vec,
-        vote_end_date_queries_tree_path_vec,
-    };
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::error::Error;
-    use crate::util::common::encode::decode_u64;
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::util::object_size_info::DataContractOwnedResolvedInfo;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::vote_poll_end_dates;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::DataContract;
     use dpp::identifier::Identifier;
@@ -126,8 +123,6 @@ pub(super) mod tests {
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use dpp::voting::vote_polls::VotePoll;
-    use grovedb::query_result_type::QueryResultType;
-    use grovedb::{PathQuery, Query};
     use platform_version::version::PlatformVersion;
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -223,44 +218,19 @@ pub(super) mod tests {
         )
     }
 
-    /// Every end date with the vote polls listed under it; an end date with none shows as an
-    /// empty set
-    pub(in crate::drive::votes::cleanup) fn end_dates(
-        drive: &Drive,
-        platform_version: &PlatformVersion,
-    ) -> BTreeMap<TimestampMillis, BTreeSet<Identifier>> {
-        let keys_at = |path: Vec<Vec<u8>>| {
-            let mut query = Query::new();
-            query.insert_all();
-            drive
-                .grove_get_raw_path_query(
-                    &PathQuery::new_unsized(path, query),
-                    None,
-                    QueryResultType::QueryKeyElementPairResultType,
-                    &mut vec![],
-                    &platform_version.drive,
-                )
-                .expect("expected to read the end date queries")
-                .0
-                .to_keys()
-        };
-        keys_at(vote_end_date_queries_tree_path_vec())
-            .into_iter()
-            .map(|date_key| {
-                let end_date = decode_u64(&date_key).expect("expected an encoded end date");
-                let unique_ids = keys_at(
-                    vote_contested_resource_end_date_queries_at_time_tree_path_vec(end_date),
-                )
-                .into_iter()
-                .map(|key| Identifier::from_bytes(&key).expect("expected a vote poll id"))
-                .collect();
-                (end_date, unique_ids)
-            })
-            .collect()
-    }
-
     fn unique_id(vote_poll: &ContestedDocumentResourceVotePollWithContractInfo) -> Identifier {
         vote_poll.unique_id().expect("expected a vote poll id")
+    }
+
+    /// The DPNS name contests on `labels`, lowest vote poll id first: the order in which a block
+    /// ends the vote polls of one end date
+    fn vote_polls_by_id<const N: usize>(
+        dpns_contract: &DataContract,
+        labels: [&str; N],
+    ) -> [ContestedDocumentResourceVotePollWithContractInfo; N] {
+        let mut vote_polls = labels.map(|label| vote_poll(dpns_contract, label));
+        vote_polls.sort_by_key(unique_id);
+        vote_polls
     }
 
     #[test]
@@ -268,8 +238,7 @@ pub(super) mod tests {
         let platform_version = PlatformVersion::latest();
         let (drive, dpns_contract) = setup(platform_version);
         let a = vote_poll(&dpns_contract, "a0000");
-        let b = vote_poll(&dpns_contract, "b0000");
-        let c = vote_poll(&dpns_contract, "c0000");
+        let [b, c] = vote_polls_by_id(&dpns_contract, ["b0000", "c0000"]);
         add_end_date(&drive, &a, T1, platform_version);
         add_end_date(&drive, &b, T2, platform_version);
         add_end_date(&drive, &c, T2, platform_version);
@@ -279,7 +248,7 @@ pub(super) mod tests {
             .expect("expected the cleanup of A and B to apply");
 
         assert_eq!(
-            end_dates(&drive, platform_version),
+            vote_poll_end_dates(&drive, platform_version),
             BTreeMap::from([(T2, BTreeSet::from([unique_id(&c)]))]),
             "T1 goes with A, T2 stays with C under it"
         );
@@ -288,7 +257,10 @@ pub(super) mod tests {
         remove_end_dates(&drive, &[(&c, T2)], platform_version)
             .expect("expected the cleanup of C to apply");
 
-        assert_eq!(end_dates(&drive, platform_version), BTreeMap::new());
+        assert_eq!(
+            vote_poll_end_dates(&drive, platform_version),
+            BTreeMap::new()
+        );
     }
 
     #[test]
@@ -301,7 +273,10 @@ pub(super) mod tests {
         remove_end_dates(&drive, &[(&a, T1)], platform_version)
             .expect("expected the cleanup of A to apply");
 
-        assert_eq!(end_dates(&drive, platform_version), BTreeMap::new());
+        assert_eq!(
+            vote_poll_end_dates(&drive, platform_version),
+            BTreeMap::new()
+        );
     }
 
     #[test]
@@ -327,16 +302,17 @@ pub(super) mod tests {
         remove_end_dates(&drive, &ended, platform_version)
             .expect("expected the cleanup of a full block of vote polls to apply");
 
-        assert_eq!(end_dates(&drive, platform_version), BTreeMap::new());
+        assert_eq!(
+            vote_poll_end_dates(&drive, platform_version),
+            BTreeMap::new()
+        );
     }
 
     #[test]
     fn should_keep_an_end_date_with_more_vote_polls_than_the_limit() {
         let platform_version = PlatformVersion::latest();
         let (drive, dpns_contract) = setup(platform_version);
-        let a = vote_poll(&dpns_contract, "a0000");
-        let b = vote_poll(&dpns_contract, "b0000");
-        let c = vote_poll(&dpns_contract, "c0000");
+        let [a, b, c] = vote_polls_by_id(&dpns_contract, ["a0000", "b0000", "c0000"]);
         add_end_date(&drive, &a, T1, platform_version);
         add_end_date(&drive, &b, T1, platform_version);
         add_end_date(&drive, &c, T1, platform_version);
@@ -345,14 +321,86 @@ pub(super) mod tests {
             .expect("expected the cleanup of A and B to apply");
 
         assert_eq!(
-            end_dates(&drive, platform_version),
+            vote_poll_end_dates(&drive, platform_version),
             BTreeMap::from([(T1, BTreeSet::from([unique_id(&c)]))])
         );
 
         remove_end_dates(&drive, &[(&c, T1)], platform_version)
             .expect("expected the cleanup of C to apply");
 
-        assert_eq!(end_dates(&drive, platform_version), BTreeMap::new());
+        assert_eq!(
+            vote_poll_end_dates(&drive, platform_version),
+            BTreeMap::new()
+        );
+    }
+
+    #[test]
+    fn should_keep_an_end_date_when_its_read_stops_before_its_last_vote_poll() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, dpns_contract) = setup(platform_version);
+        let vote_polls = vote_polls_by_id(&dpns_contract, ["a0000", "b0000", "c0000", "d0000"]);
+        for vote_poll in &vote_polls {
+            add_end_date(&drive, vote_poll, T1, platform_version);
+        }
+
+        // Only the first is removed, so the read of two entries does not reach the last two
+        remove_end_dates(&drive, &[(&vote_polls[0], T1)], platform_version)
+            .expect("expected the cleanup of the first vote poll to apply");
+
+        assert_eq!(
+            vote_poll_end_dates(&drive, platform_version),
+            BTreeMap::from([(
+                T1,
+                vote_polls[1..]
+                    .iter()
+                    .map(unique_id)
+                    .collect::<BTreeSet<_>>()
+            )])
+        );
+    }
+
+    #[test]
+    fn should_remove_a_repeated_vote_poll_once() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, dpns_contract) = setup(platform_version);
+        let a = vote_poll(&dpns_contract, "a0000");
+        let b = vote_poll(&dpns_contract, "b0000");
+        add_end_date(&drive, &a, T1, platform_version);
+        add_end_date(&drive, &b, T2, platform_version);
+
+        remove_end_dates(&drive, &[(&a, T1), (&a, T1)], platform_version)
+            .expect("expected the cleanup of A listed twice to apply");
+
+        assert_eq!(
+            vote_poll_end_dates(&drive, platform_version),
+            BTreeMap::from([(T2, BTreeSet::from([unique_id(&b)]))])
+        );
+    }
+
+    #[test]
+    fn should_not_remove_an_end_date_that_lists_nothing() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, dpns_contract) = setup(platform_version);
+        let a = vote_poll(&dpns_contract, "a0000");
+        let no_votes = BTreeMap::new();
+
+        let mut operations = vec![];
+        drive
+            .remove_contested_resource_vote_poll_end_date_query_operations(
+                &[(&a, &T1, &no_votes)],
+                &mut operations,
+                None,
+                platform_version,
+            )
+            .expect("expected the cleanup of an end date with no tree to build");
+
+        // Only the delete of A's entry, no delete of T1
+        assert_eq!(
+            LowLevelDriveOperation::grovedb_operations_batch(&operations)
+                .operations
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -368,7 +416,7 @@ pub(super) mod tests {
             .expect("expected the cleanup of A to apply");
 
         assert_eq!(
-            end_dates(&drive, platform_version),
+            vote_poll_end_dates(&drive, platform_version),
             BTreeMap::from([(T2, BTreeSet::from([unique_id(&b)]))])
         );
     }

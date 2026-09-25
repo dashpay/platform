@@ -12,48 +12,17 @@ use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_cont
 use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::FinishedVoteInfo;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
-use dpp::prelude::TimestampMillis;
+use dpp::prelude::{Identifier, TimestampMillis};
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::VotePoll;
-use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
-use drive::query::{PathQuery, Query, QueryResultType, VotePollsByEndDateDriveQuery};
-use std::collections::BTreeMap;
+use drive::util::test_helpers::vote_poll_end_dates;
+use std::collections::{BTreeMap, BTreeSet};
 
-/// Every vote poll listed under an end date, by end date
-fn listed_vote_polls(
-    platform: &TempPlatform<MockCoreRPCLike>,
-    platform_version: &PlatformVersion,
-) -> BTreeMap<TimestampMillis, Vec<VotePoll>> {
-    VotePollsByEndDateDriveQuery::execute_no_proof_for_specialized_end_time_query(
-        TimestampMillis::MAX >> 1,
-        u16::MAX,
-        &platform.drive,
-        None,
-        &mut vec![],
-        platform_version,
-    )
-    .expect("expected to list the vote polls by end date")
-}
-
-/// How many end dates exist, including any left with no vote poll under it
-fn end_date_count(
-    platform: &TempPlatform<MockCoreRPCLike>,
-    platform_version: &PlatformVersion,
-) -> usize {
-    let mut query = Query::new();
-    query.insert_all();
-    platform
-        .drive
-        .grove_get_raw_path_query(
-            &PathQuery::new_unsized(vote_end_date_queries_tree_path_vec(), query),
-            None,
-            QueryResultType::QueryKeyElementPairResultType,
-            &mut vec![],
-            &platform_version.drive,
-        )
-        .expect("expected to read the end dates")
-        .0
-        .len()
+/// The unique id of the DPNS name contest on `name`
+fn contest_id(dpns_contract: &DataContract, name: &str) -> Identifier {
+    VotePoll::ContestedDocumentResourceVotePoll(dpns_name_vote_poll(dpns_contract, name))
+        .unique_id()
+        .expect("expected a vote poll id")
 }
 
 fn finished_vote_info(
@@ -140,59 +109,73 @@ async fn should_end_vote_polls_across_end_dates_and_keep_the_end_date_of_the_one
         .await;
     }
 
-    let names = ["quantum", "coolio", "crazyman"];
-    let name_of = |vote_poll: &VotePoll| {
-        names
+    let names = BTreeMap::from(
+        ["quantum", "coolio", "crazyman"].map(|name| (contest_id(&dpns_contract, name), name)),
+    );
+    let [(t1, at_t1), (t2, at_t2)]: [(TimestampMillis, BTreeSet<Identifier>); 2] =
+        vote_poll_end_dates(&platform.drive, platform_version)
             .into_iter()
-            .find(|name| {
-                *vote_poll
-                    == VotePoll::ContestedDocumentResourceVotePoll(dpns_name_vote_poll(
-                        &dpns_contract,
-                        name,
-                    ))
-            })
-            .expect("expected one of the contests")
-    };
-
-    let listed = listed_vote_polls(&platform, platform_version);
-    let [(t1, at_t1), (t2, at_t2)]: [(TimestampMillis, Vec<VotePoll>); 2] = listed
-        .into_iter()
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("expected two end dates");
-    assert_eq!(at_t1.iter().map(name_of).collect::<Vec<_>>(), ["quantum"]);
-    let mut names_at_t2 = at_t2.iter().map(name_of).collect::<Vec<_>>();
-    names_at_t2.sort();
-    assert_eq!(names_at_t2, ["coolio", "crazyman"]);
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("expected two end dates");
+    assert_eq!(
+        at_t1,
+        BTreeSet::from([contest_id(&dpns_contract, "quantum")])
+    );
+    assert_eq!(
+        at_t2,
+        BTreeSet::from([
+            contest_id(&dpns_contract, "coolio"),
+            contest_id(&dpns_contract, "crazyman")
+        ])
+    );
     assert!(t1 < t2);
 
     // The first block past T2 ends two vote polls, the most one block ends: A, then the
-    // first listed at T2
+    // lowest id at T2
     end_due_vote_polls(&platform, t2, 200, platform_version);
 
-    let ended_at_t2 = name_of(&at_t2[0]);
-    let left_at_t2 = name_of(&at_t2[1]);
+    let [ended_at_t2, left_at_t2]: [Identifier; 2] = at_t2
+        .into_iter()
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("expected two vote polls at T2");
     assert!(finished_vote_info(&platform, &dpns_contract, "quantum", platform_version).is_some());
-    assert!(finished_vote_info(&platform, &dpns_contract, ended_at_t2, platform_version).is_some());
+    assert!(finished_vote_info(
+        &platform,
+        &dpns_contract,
+        names[&ended_at_t2],
+        platform_version
+    )
+    .is_some());
     assert_eq!(
-        finished_vote_info(&platform, &dpns_contract, left_at_t2, platform_version),
+        finished_vote_info(
+            &platform,
+            &dpns_contract,
+            names[&left_at_t2],
+            platform_version
+        ),
         None
     );
     assert_eq!(
-        listed_vote_polls(&platform, platform_version),
-        BTreeMap::from([(t2, vec![at_t2[1].clone()])])
+        vote_poll_end_dates(&platform.drive, platform_version),
+        BTreeMap::from([(t2, BTreeSet::from([left_at_t2]))])
     );
-    assert_eq!(end_date_count(&platform, platform_version), 1);
 
     // The next block ends the vote poll left at T2 and removes T2
     end_due_vote_polls(&platform, t2 + 1_000, 201, platform_version);
 
-    assert!(finished_vote_info(&platform, &dpns_contract, left_at_t2, platform_version).is_some());
+    assert!(finished_vote_info(
+        &platform,
+        &dpns_contract,
+        names[&left_at_t2],
+        platform_version
+    )
+    .is_some());
     assert_eq!(
-        listed_vote_polls(&platform, platform_version),
+        vote_poll_end_dates(&platform.drive, platform_version),
         BTreeMap::new()
     );
-    assert_eq!(end_date_count(&platform, platform_version), 0);
 }
 
 #[tokio::test]
@@ -204,26 +187,29 @@ async fn should_end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block() {
         .set_genesis_state();
 
     let platform_state = platform.state.load();
-    let mut dpns_contract = None;
-    for (seed, name) in [(7, "quantum"), (8, "coolio")] {
-        let (_, _, contract) = create_dpns_identity_name_contest(
-            &mut platform,
-            &platform_state,
-            seed,
-            name,
-            platform_version,
-        )
-        .await;
-        dpns_contract = Some(contract);
-    }
-    let dpns_contract = dpns_contract.expect("expected the DPNS contract");
+    let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        7,
+        "quantum",
+        platform_version,
+    )
+    .await;
+    create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        8,
+        "coolio",
+        platform_version,
+    )
+    .await;
 
-    let listed = listed_vote_polls(&platform, platform_version);
-    let [(end_date, at_end_date)]: [(TimestampMillis, Vec<VotePoll>); 1] = listed
-        .into_iter()
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("expected one end date");
+    let [(end_date, at_end_date)]: [(TimestampMillis, BTreeSet<Identifier>); 1] =
+        vote_poll_end_dates(&platform.drive, platform_version)
+            .into_iter()
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("expected one end date");
     assert_eq!(
         at_end_date.len(),
         platform_version
@@ -239,8 +225,7 @@ async fn should_end_every_vote_poll_of_an_end_date_at_the_limit_in_one_block() {
         assert!(finished_vote_info(&platform, &dpns_contract, name, platform_version).is_some());
     }
     assert_eq!(
-        listed_vote_polls(&platform, platform_version),
+        vote_poll_end_dates(&platform.drive, platform_version),
         BTreeMap::new()
     );
-    assert_eq!(end_date_count(&platform, platform_version), 0);
 }
