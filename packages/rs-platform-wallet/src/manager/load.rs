@@ -129,6 +129,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 identity_manager,
                 unused_asset_locks,
                 unconfirmed_outgoing_txs,
+                dashpay_backfill,
             } = wallet_state;
 
             // Replay the sends the host still holds as unconfirmed, before
@@ -229,6 +230,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
+                dashpay_backfill,
             };
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
@@ -718,6 +720,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: self.pending.clone(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -784,6 +787,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -823,6 +827,7 @@ mod idempotent_load_tests {
                 identity_manager: IdentityManagerStartState::default(),
                 unused_asset_locks: BTreeMap::new(),
                 unconfirmed_outgoing_txs: Vec::new(),
+                dashpay_backfill: Default::default(),
             };
             let mut wallets = BTreeMap::new();
             wallets.insert(self.wallet.compute_wallet_id(), entry());
