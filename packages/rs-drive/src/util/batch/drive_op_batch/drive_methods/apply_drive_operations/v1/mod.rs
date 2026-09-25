@@ -1,7 +1,6 @@
-use crate::util::batch::{DriveOperation, IdentityOperationType};
+use crate::util::batch::DriveOperation;
 
 use crate::drive::Drive;
-use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
@@ -18,8 +17,7 @@ use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use dpp::fee::Credits;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
@@ -46,6 +44,20 @@ impl Drive {
     /// distributed to. An estimate carries no refund to begin with, so `check_tx` sees the
     /// same fee with or without the forfeiture.
     ///
+    /// Every write of one identity balance, one contract fee pot or one prefunded specialized
+    /// balance is also merged into one ([`DriveOperation::merge_balance_writes`]): each
+    /// computes the new value from the one committed before the batch, so a second write in the
+    /// same batch would replace the first and the credits would no longer add up. Token writes
+    /// cannot be merged the same way, so a batch that writes one token balance or token supply
+    /// twice is refused ([`DriveOperation::refuse_repeated_token_balance_writes`]); no state
+    /// transition makes one. A batch that writes each key once is applied exactly as by
+    /// generation 0.
+    ///
+    /// An estimate is merged the same way, so it prices the batch execution applies. It reads
+    /// no balance and lets a merged removal take up to the largest balance there can be; fee
+    /// validation estimates for the payer it settles on, and refuses an identity that cannot
+    /// fund what it owes before estimating, so no merged removal it estimates takes more.
+    ///
     /// Credits the batch adds to an identity that repay its debt
     /// ([`LowLevelDriveOperation::RepaidIdentityDebt`], from `add_to_identity_balance_operations`
     /// 1) go to the processing fee pool of the block's epoch once the batch applied: the debt
@@ -53,10 +65,8 @@ impl Drive {
     /// reach no balance the credit sum counts. The pool write reads the state the batch left,
     /// so it adds to a pool write the batch made itself (the fee distribution at the end of a
     /// block) instead of racing it, and it is not billed. An estimate reads no debt and repays
-    /// none. Every write the batch makes to one identity's balance is merged into one net write
-    /// first ([`merge_identity_balance_writes`]): each is converted against the balance and debt
-    /// committed before the batch, so a second write would replace the first, and two credits
-    /// to an indebted identity would both repay the same debt.
+    /// none. The balance writes are merged before the batch is converted, so two credits to an
+    /// indebted identity repay its debt once, as one net credit.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v1(
         &self,
@@ -67,7 +77,8 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
-        let operations = merge_identity_balance_writes(operations)?;
+        DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
+        let operations = DriveOperation::merge_balance_writes(operations)?;
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
@@ -161,102 +172,6 @@ impl Drive {
             previous_fee_versions,
         )
     }
-}
-
-/// Merges every `AddToIdentityBalance` and `RemoveFromIdentityBalance` of one identity in
-/// `operations` into one net write, in the place of the first, or none when they cancel out. A
-/// batch that writes each identity's balance at most once is returned as it is. Each write is
-/// converted against the balance and debt committed before the batch, and a batch keeps only
-/// the last write of a key, so unmerged, a second write to one identity would replace the
-/// first, and two credits to an indebted one would each report repaying the same debt. The
-/// merged write applies them as if in turn: a debt exists only at a zero balance, so writes
-/// that would succeed one after the other net to a credit that repays it once.
-fn merge_identity_balance_writes(
-    operations: Vec<DriveOperation<'_>>,
-) -> Result<Vec<DriveOperation<'_>>, Error> {
-    // Most batches write at most one balance: nothing to merge, and no map to build
-    if operations
-        .iter()
-        .filter(|operation| identity_balance_write(operation).is_some())
-        .nth(1)
-        .is_none()
-    {
-        return Ok(operations);
-    }
-    let mut writes: BTreeMap<[u8; 32], (usize, i128)> = BTreeMap::new();
-    for (identity_id, change) in operations.iter().filter_map(identity_balance_write) {
-        let (count, net) = writes.entry(identity_id).or_default();
-        *count += 1;
-        *net = net
-            .checked_add(change)
-            .ok_or(Error::Fee(FeeError::Overflow(
-                "the balance writes one batch makes to an identity overflow",
-            )))?;
-    }
-    if writes.values().all(|(count, _)| *count == 1) {
-        return Ok(operations);
-    }
-    let mut merged = Vec::with_capacity(operations.len());
-    for operation in operations {
-        let Some((identity_id, _)) = identity_balance_write(&operation) else {
-            merged.push(operation);
-            continue;
-        };
-        match writes.get_mut(&identity_id) {
-            Some((1, _)) => merged.push(operation),
-            // The first write of an identity written more than once: the net one goes here,
-            // and the entry is marked done so the later ones are dropped
-            Some((count, net)) if *count > 1 => {
-                merged.extend(net_identity_balance_write(identity_id, *net)?);
-                *count = 0;
-            }
-            _ => {}
-        }
-    }
-    Ok(merged)
-}
-
-/// The identity whose balance `operation` writes and the signed change it makes, if it is a
-/// credit or a debit of an identity balance
-fn identity_balance_write(operation: &DriveOperation) -> Option<([u8; 32], i128)> {
-    match operation {
-        DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
-            identity_id,
-            added_balance,
-        }) => Some((*identity_id, i128::from(*added_balance))),
-        DriveOperation::IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
-            identity_id,
-            balance_to_remove,
-        }) => Some((*identity_id, -i128::from(*balance_to_remove))),
-        _ => None,
-    }
-}
-
-/// The one write that makes the signed change `net` to `identity_id`'s balance, or none when
-/// it is zero
-fn net_identity_balance_write<'a>(
-    identity_id: [u8; 32],
-    net: i128,
-) -> Result<Option<DriveOperation<'a>>, Error> {
-    if net == 0 {
-        return Ok(None);
-    }
-    let amount = Credits::try_from(net.unsigned_abs()).map_err(|_| {
-        Error::Fee(FeeError::Overflow(
-            "the merged writes of one identity balance overflow credits",
-        ))
-    })?;
-    Ok(Some(DriveOperation::IdentityOperation(if net > 0 {
-        IdentityOperationType::AddToIdentityBalance {
-            identity_id,
-            added_balance: amount,
-        }
-    } else {
-        IdentityOperationType::RemoveFromIdentityBalance {
-            identity_id,
-            balance_to_remove: amount,
-        }
-    })))
 }
 
 /// Turns every removal attributed to an identity into a removal attributed to nobody: the same
