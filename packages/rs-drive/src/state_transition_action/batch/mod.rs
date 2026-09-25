@@ -129,9 +129,9 @@ fn saturating_credits(a: Credits, b: Credits) -> Credits {
 /// contested document's voting fund, a sale paying a contract owner who sponsors the gas):
 /// `apply_drive_operations` merges those writes with this removal into one.
 ///
-/// Fee validation and execution both build the operations here: fee validation for the
-/// identity, whose operations cover the sponsor's too (a sponsor, being the contract owner,
-/// never adds to the owner pot), and execution for the payer fee validation settled on.
+/// Fee validation and execution both build the operations here: fee validation to estimate
+/// the batch for the sponsor and, when the sponsor does not pay, for the identity; execution
+/// for the payer fee validation settled on.
 pub fn action_fee_operations(
     payer_id: Identifier,
     action_fees: &[ResolvedDocumentActionFee],

@@ -385,9 +385,11 @@ cannot make a transition signed against the old one pay the new one.
 contract owner when they sponsor the gas. A sponsor's balance has to cover the
 gas *and* the fees they would owe; one that insisted and falls short is the
 same unpaid refusal as before (40222), and one that only preferred hands the
-gas and the fees back to the signer. Fee validation and execution ask that one
-question through one function (`gas_sponsor_pays`), on one estimate, so they
-always name the same payer. The contract owner never pays the `owner` part:
+gas and the fees back to the signer. The gas is estimated for the payer:
+first with the sponsor paying, then, when the sponsor does not pay, with the
+signer paying. Fee validation and execution ask the sponsor question through
+one function (`gas_sponsor_pays`), execution on the estimate fee validation
+returns, so they always name the same payer. The contract owner never pays the `owner` part:
 it would travel through the owner pot back to them and only cost writes. A
 sponsor is always the contract owner, so a sponsored action pays into the
 moderators pot only, which a contract that sponsors gas should price in. The

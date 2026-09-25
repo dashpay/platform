@@ -1461,6 +1461,28 @@ mod action_fee_tests {
         purchase_from_a_seller_who_sponsors_the_gas(MAX_CREDITS - MODERATORS_PART - 1).await;
     }
 
+    /// A buyer who pays the gas owes the price and the whole purchase fee, which fee validation
+    /// knows without an estimate. When no balance could fund them, the purchase is refused
+    /// unpaid for an insufficient balance before anything is estimated, rather than failing an
+    /// estimate that would merge them into one removal no balance covers.
+    #[tokio::test]
+    async fn should_refuse_unpaid_a_buyer_who_cannot_fund_the_price_and_the_purchase_fee() {
+        let (setup, card) = card_for_sale(MAX_CREDITS - MODERATORS_PART - 1).await;
+        let purchase = purchase_of(&setup, card, GasFeesPaidBy::DocumentOwner).await;
+        assert_eq!(
+            setup.check_tx(&purchase),
+            vec![IDENTITY_INSUFFICIENT_BALANCE]
+        );
+        let tx = setup.platform.drive.grove.start_transaction();
+        let buyer_before = setup.credits(&setup.user, &tx);
+
+        let result = setup.process(&purchase, &tx);
+
+        assert_eq!(unpaid_codes(&result), vec![IDENTITY_INSUFFICIENT_BALANCE]);
+        assert_eq!(setup.credits(&setup.user, &tx), buyer_before);
+        assert_eq!(pots(&setup, &tx), (0, 0));
+    }
+
     /// The user buys the card for sale, with an owner part of `owner_part`, from the contract
     /// owner, who sponsors the gas; checks it through check tx and what execution moves
     async fn purchase_from_a_seller_who_sponsors_the_gas(owner_part: Credits) {

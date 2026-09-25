@@ -50,12 +50,10 @@ impl Drive {
     /// and the credits would no longer add up. A batch that writes each key once is applied
     /// exactly as by generation 0.
     ///
-    /// Only an applied batch is merged. An estimate reads no balance: it prices each write
-    /// against the largest balance there can be, so the separate writes cost at least what the
-    /// merged one does, while a merged removal could exceed that balance and fail. Fee
-    /// validation estimates the signer paying fees a sponsor may take over (a contract owner
-    /// who sponsors a purchase of their own document is never charged the owner part), and
-    /// that estimate must not refuse a batch execution would apply.
+    /// An estimate is merged the same way, so it prices the batch execution applies. It reads
+    /// no balance and lets a merged removal take up to the largest balance there can be; fee
+    /// validation estimates for the payer it settles on, and refuses an identity that cannot
+    /// fund what it owes before estimating, so no merged removal it estimates takes more.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v1(
         &self,
@@ -66,11 +64,7 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
-        let operations = if apply {
-            DriveOperation::merge_balance_writes(operations)?
-        } else {
-            operations
-        };
+        let operations = DriveOperation::merge_balance_writes(operations)?;
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }

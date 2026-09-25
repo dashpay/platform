@@ -10,9 +10,11 @@ use dpp::consensus::state::identity::gas_sponsor_insufficient_balance_error::Gas
 use dpp::consensus::state::identity::identity_public_key_budget_exceeded_error::IdentityPublicKeyBudgetExceededError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::ConsensusError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
+use dpp::platform_value::Identifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -47,7 +49,8 @@ pub(in crate::execution::platform_events::state_transition_processing) fn requir
 
 /// Whether the gas sponsor pays: their balance covers the estimated gas and the document action
 /// fees they would owe. Whoever pays the gas pays the action fees, so there is one question and
-/// fee validation and execution both ask it here, on the same estimate, and always agree.
+/// fee validation and execution both ask it here: validation on the gas estimated with the
+/// sponsor paying, execution on the estimate validation returns, which gives the same answer.
 pub(in crate::execution::platform_events::state_transition_processing) fn gas_sponsor_pays(
     gas_sponsor: &ResolvedGasSponsor,
     required_gas: Credits,
@@ -87,12 +90,12 @@ where
     ///   the sponsor pays, the key's budget only has to cover `removed_balance`.
     ///
     /// * the document action fees a batch owes (the `actionFees` keyword): whoever pays the gas
-    ///   pays them. The sponsor's balance has to cover the gas and the fees the sponsor would
-    ///   owe, and failing that the identity's balance has to cover the gas, its own principal
-    ///   and the fees the identity would owe, which also count against a budgeted key. The gas
-    ///   is estimated once, with the operations that charge the identity: they are those of
-    ///   the sponsor plus, at most, one addition to the owner pot, which a sponsor, being the
-    ///   contract owner, never makes, so the estimate covers either payer.
+    ///   pays them. The gas is estimated for the payer, as execution applies the batch: first
+    ///   with the sponsor paying, whose balance has to cover that gas and the fees the sponsor
+    ///   owes; failing that with the identity paying, whose balance has to cover that gas, its
+    ///   own principal and the fees the identity owes, which also count against a budgeted
+    ///   key. The identity's principal and fees are refused before anything is estimated when
+    ///   its balance cannot fund them.
     ///
     /// Every failure leaves the state transition unpaid, like an insufficient balance: nobody
     /// was allowed to be charged. This stage runs in check tx with the last committed block time
@@ -156,8 +159,6 @@ where
             }
         }
 
-        // From here to the balance check this is the v0 `Paid` arm, keeping hold of the
-        // processing fee before the user fee increase.
         let balance =
             identity
                 .balance
@@ -166,124 +167,150 @@ where
                 )))?;
         let principal = removed_balance.unwrap_or_default();
         let identity_action_fees = action_fees_total(&identity.id, action_fees)?;
-        let mut operations = operations.clone();
-        operations.extend(action_fee_operations(identity.id, action_fees)?);
-        let mut estimated_fee_result = self
-            .drive
-            .apply_drive_operations(
-                operations,
-                false,
-                block_info,
-                transaction,
+
+        // What the batch is estimated to cost when `payer_id` pays its gas, and so its action
+        // fees, charged by the operations execution appends and merged with the batch's own as
+        // execution applies them; and the part of the processing fee the user fee increase adds.
+        let estimate_paid_by = |payer_id: Identifier| -> Result<(FeeResult, Credits), Error> {
+            let mut operations = operations.clone();
+            operations.extend(action_fee_operations(payer_id, action_fees)?);
+            let mut estimated_fee_result = self
+                .drive
+                .apply_drive_operations(
+                    operations,
+                    false,
+                    block_info,
+                    transaction,
+                    platform_version,
+                    Some(previous_fee_versions),
+                )
+                .map_err(Error::Drive)?;
+            ValidationOperation::add_many_to_fee_result(
+                execution_operations,
+                &mut estimated_fee_result,
                 platform_version,
-                Some(previous_fee_versions),
+            )?;
+            let base_processing_fee = estimated_fee_result.processing_fee;
+            estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
+            let user_fee_increase_amount = estimated_fee_result
+                .processing_fee
+                .saturating_sub(base_processing_fee);
+            Ok((estimated_fee_result, user_fee_increase_amount))
+        };
+        let required_gas = |estimated_fee_result: &FeeResult| {
+            estimated_fee_result
+                .total_base_fee()
+                .saturating_add(additional_fixed_fee_cost.unwrap_or_default())
+        };
+        let insufficient_balance = |estimated_fee_result: FeeResult, required: Credits| {
+            ConsensusValidationResult::new_with_data_and_errors(
+                estimated_fee_result,
+                vec![StateError::IdentityInsufficientBalanceError(
+                    IdentityInsufficientBalanceError::new(identity.id, balance, required),
+                )
+                .into()],
             )
-            .map_err(Error::Drive)?;
-
-        ValidationOperation::add_many_to_fee_result(
-            execution_operations,
-            &mut estimated_fee_result,
-            platform_version,
-        )?;
-
-        let base_processing_fee = estimated_fee_result.processing_fee;
-        estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
-        let user_fee_increase_amount = estimated_fee_result
-            .processing_fee
-            .saturating_sub(base_processing_fee);
-
-        let mut required_balance = estimated_fee_result.total_base_fee();
-
-        if let Some(additional_fixed_fee_cost) = additional_fixed_fee_cost {
-            required_balance = required_balance.saturating_add(*additional_fixed_fee_cost);
-        }
-
-        // The sponsor pays the gas when their balance covers it; the identity always funds the
-        // principal. Execution asks `covers` the same question on the same estimate.
-        let sponsor_pays = match gas_sponsor {
-            Some(gas_sponsor) => {
-                if balance < principal {
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        estimated_fee_result,
-                        vec![StateError::IdentityInsufficientBalanceError(
-                            IdentityInsufficientBalanceError::new(identity.id, balance, principal),
-                        )
-                        .into()],
-                    ));
-                }
-                if gas_sponsor_pays(gas_sponsor, required_balance, action_fees)? {
-                    true
-                } else if gas_sponsor.strict {
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        estimated_fee_result,
-                        vec![StateError::GasSponsorInsufficientBalanceError(
-                            GasSponsorInsufficientBalanceError::new(
-                                gas_sponsor.identity_id,
-                                gas_sponsor.balance,
-                                required_from_gas_sponsor(
-                                    gas_sponsor,
-                                    required_balance,
-                                    action_fees,
-                                )?,
-                            ),
-                        )
-                        .into()],
-                    ));
-                } else {
-                    false
-                }
-            }
-            None => false,
+        };
+        // The refusal of a budgeted signing key with less than `required_budget` left.
+        // Signature validation already refuses a spent budget; the zero check keeps a
+        // transition that requires nothing from slipping through on an empty one.
+        let key_budget_exceeded = |required_budget: Credits| -> Option<ConsensusError> {
+            let signing_key_limits = signing_key_limits.as_ref()?;
+            let remaining_budget = signing_key_limits.remaining_budget?;
+            (remaining_budget == 0 || required_budget > remaining_budget).then(|| {
+                StateError::IdentityPublicKeyBudgetExceededError(
+                    IdentityPublicKeyBudgetExceededError::new(
+                        identity.id,
+                        signing_key_limits.key_id,
+                        remaining_budget,
+                        required_budget,
+                    ),
+                )
+                .into()
+            })
         };
 
-        if !sponsor_pays {
-            // The identity pays the gas, and with it the action fees it owes.
-            let required_balance = required_balance.saturating_add(identity_action_fees);
-            let balance_after_principal_operation = balance.saturating_sub(principal);
-            if balance_after_principal_operation < required_balance {
-                let total_required = required_balance.saturating_add(principal);
+        // The identity funds the principal itself, whoever pays the gas.
+        if balance < principal {
+            return Ok(insufficient_balance(FeeResult::default(), principal));
+        }
+
+        // The sponsor is judged on the batch as it runs when they pay: estimated with the
+        // action fees they owe, never an owner part, since a sponsor is the contract owner.
+        let mut passed_over_sponsor_estimate = None;
+        if let Some(gas_sponsor) = gas_sponsor {
+            let (estimated_fee_result, _) = estimate_paid_by(gas_sponsor.identity_id)?;
+            let required_balance = required_gas(&estimated_fee_result);
+            if gas_sponsor_pays(gas_sponsor, required_balance, action_fees)? {
+                // The key's budget only has to cover the principal.
+                return Ok(match key_budget_exceeded(principal) {
+                    Some(error) => ConsensusValidationResult::new_with_data_and_errors(
+                        estimated_fee_result,
+                        vec![error],
+                    ),
+                    None => ConsensusValidationResult::new_with_data(estimated_fee_result),
+                });
+            }
+            if gas_sponsor.strict {
                 return Ok(ConsensusValidationResult::new_with_data_and_errors(
                     estimated_fee_result,
-                    vec![StateError::IdentityInsufficientBalanceError(
-                        IdentityInsufficientBalanceError::new(identity.id, balance, total_required),
+                    vec![StateError::GasSponsorInsufficientBalanceError(
+                        GasSponsorInsufficientBalanceError::new(
+                            gas_sponsor.identity_id,
+                            gas_sponsor.balance,
+                            required_from_gas_sponsor(gas_sponsor, required_balance, action_fees)?,
+                        ),
                     )
                     .into()],
                 ));
             }
+            passed_over_sponsor_estimate = Some(estimated_fee_result);
         }
 
-        if let Some(signing_key_limits) = signing_key_limits {
-            if let Some(remaining_budget) = signing_key_limits.remaining_budget {
-                let required_budget = if sponsor_pays {
-                    principal
-                } else {
-                    // The action fees leave the identity like a principal does.
-                    required_from_key_budget(
-                        Some(principal.saturating_add(identity_action_fees)),
-                        estimated_fee_result.storage_fee,
-                        *additional_fixed_fee_cost,
-                        user_fee_increase_amount,
-                    )
-                };
-                // Signature validation already refuses a spent budget; the zero check keeps a
-                // transition that requires nothing from slipping through on an empty one.
-                if remaining_budget == 0 || required_budget > remaining_budget {
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        estimated_fee_result,
-                        vec![StateError::IdentityPublicKeyBudgetExceededError(
-                            IdentityPublicKeyBudgetExceededError::new(
-                                identity.id,
-                                signing_key_limits.key_id,
-                                remaining_budget,
-                                required_budget,
-                            ),
-                        )
-                        .into()],
-                    ));
-                }
+        // The identity pays the gas, and with it the action fees it owes. Those are known
+        // without an estimate and refused first, so the removal the estimate merges for the
+        // identity never takes more than its balance, the most an estimate lets it take.
+        let balance_after_principal_operation = balance - principal;
+        if balance_after_principal_operation < identity_action_fees {
+            return Ok(insufficient_balance(
+                passed_over_sponsor_estimate.unwrap_or_default(),
+                principal.saturating_add(identity_action_fees),
+            ));
+        }
+        let (estimated_fee_result, user_fee_increase_amount) = estimate_paid_by(identity.id)?;
+        let required_balance =
+            required_gas(&estimated_fee_result).saturating_add(identity_action_fees);
+        if balance_after_principal_operation < required_balance {
+            return Ok(insufficient_balance(
+                estimated_fee_result,
+                required_balance.saturating_add(principal),
+            ));
+        }
+        // The action fees leave the identity like a principal does.
+        if let Some(error) = key_budget_exceeded(required_from_key_budget(
+            Some(principal.saturating_add(identity_action_fees)),
+            estimated_fee_result.storage_fee,
+            *additional_fixed_fee_cost,
+            user_fee_increase_amount,
+        )) {
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                estimated_fee_result,
+                vec![error],
+            ));
+        }
+
+        // Execution asks `gas_sponsor_pays` again on the estimate returned here. The identity's
+        // can be the smaller one (its action fees merge into its principal, the sponsor's are a
+        // write of their own), so the sponsor's is returned then, and execution passes the
+        // sponsor over as validation did.
+        let estimated_fee_result = match passed_over_sponsor_estimate {
+            Some(sponsor_estimate)
+                if sponsor_estimate.total_base_fee() > estimated_fee_result.total_base_fee() =>
+            {
+                sponsor_estimate
             }
-        }
-
+            _ => estimated_fee_result,
+        };
         Ok(ConsensusValidationResult::new_with_data(
             estimated_fee_result,
         ))
