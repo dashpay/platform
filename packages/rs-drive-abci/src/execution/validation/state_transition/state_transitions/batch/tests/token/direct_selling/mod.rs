@@ -27,7 +27,10 @@ mod token_selling_tests {
             // PROTOCOL_VERSION_14: 27_400 credits more in fees — genesis system
             // documents now carry the contract-version stamp, shifting
             // byte-billed subtree reads
-            699_868_045_440, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            // +740 per document write from protocol version 14: the contract's version item is
+            // one more node to rehash. +8_420 from direct purchase state validation 1, which
+            // reads the total supply even though the token sets no max supply.
+            699_868_037_020,
         )
         .await;
     }
@@ -1129,5 +1132,207 @@ mod token_selling_tests {
             )
             .expect("expected to fetch token balance");
         assert_eq!(token_balance, None);
+    }
+
+    /// A token's total supply is stored in a sum item, so `i64::MAX` bounds it even when
+    /// the token configures no max supply. Buying 1 token of an `i64::MAX` supply is refused
+    /// in state validation as a paid consensus error that reports `i64::MAX` as the max
+    /// supply.
+    #[tokio::test]
+    async fn test_direct_purchase_past_i64_max_supply_without_max_supply_is_paid_consensus_error() {
+        let (results, paid) =
+            run_direct_purchase_of_one_onto_an_i64_max_supply_at_protocol_version(
+                PlatformVersion::latest().protocol_version,
+                None,
+            )
+            .await;
+        assert_purchase_refused_at_the_i64_max_ceiling(&results);
+        assert!(paid, "the refused purchase must be charged");
+    }
+
+    /// A configured max supply above `i64::MAX` is capped there: buying 1 token of an
+    /// `i64::MAX` supply is refused although it stays under the configured value.
+    #[tokio::test]
+    async fn test_direct_purchase_past_i64_max_supply_with_a_higher_max_supply_is_paid_consensus_error(
+    ) {
+        let (results, paid) =
+            run_direct_purchase_of_one_onto_an_i64_max_supply_at_protocol_version(
+                PlatformVersion::latest().protocol_version,
+                Some(u64::MAX),
+            )
+            .await;
+        assert_purchase_refused_at_the_i64_max_ceiling(&results);
+        assert!(paid, "the refused purchase must be charged");
+    }
+
+    /// PROTOCOL_VERSION_13: direct purchase state validation 0 checks only a configured max
+    /// supply, and `i64::MAX + 1` is under `u64::MAX`, so the same purchase passes validation
+    /// and fails in execution on the Drive sum item's overflow guard. That is an internal
+    /// error, which charges nothing. Pinned so v13 replay is unchanged.
+    #[tokio::test]
+    async fn test_direct_purchase_past_i64_max_supply_is_internal_error_protocol_version_13() {
+        for max_supply in [None, Some(u64::MAX)] {
+            let (results, paid) =
+                run_direct_purchase_of_one_onto_an_i64_max_supply_at_protocol_version(
+                    13, max_supply,
+                )
+                .await;
+            assert_matches!(
+                results.as_slice(),
+                [StateTransitionExecutionResult::InternalError(message)]
+                    if message.contains("overflow total supply"),
+                "max supply {max_supply:?}"
+            );
+            assert!(!paid, "an internal error charges nothing");
+        }
+    }
+
+    fn assert_purchase_refused_at_the_i64_max_ceiling(results: &[StateTransitionExecutionResult]) {
+        let [PaidConsensusError {
+            error: ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(err)),
+            ..
+        }] = results
+        else {
+            panic!("expected a paid TokenMintPastMaxSupplyError, got {results:?}");
+        };
+        assert_eq!(err.amount(), 1);
+        assert_eq!(err.current_supply(), i64::MAX as u64);
+        assert_eq!(err.max_supply(), i64::MAX as u64);
+    }
+
+    /// Creates a token whose base supply is `i64::MAX`, with the given max supply and a
+    /// price of 1 Dash, and buys 1 token. Asserts the total supply and the buyer's token
+    /// balance are unchanged and returns the purchase's execution results and whether the
+    /// buyer was charged.
+    async fn run_direct_purchase_of_one_onto_an_i64_max_supply_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        max_supply: Option<u64>,
+    ) -> (Vec<StateTransitionExecutionResult>, bool) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(12345);
+        let (seller, seller_signer, seller_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(1.0));
+        let (buyer, buyer_signer, buyer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(10.0));
+
+        let base = i64::MAX as u64;
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            seller.id(),
+            Some(move |token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_base_supply(base);
+                token_configuration.set_max_supply(max_supply);
+                token_configuration
+                    .distribution_rules_mut()
+                    .set_change_direct_purchase_pricing_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let platform_state = platform.state.load();
+
+        let single_price = TokenPricingSchedule::SinglePrice(dash_to_credits!(1));
+        let set_price_transition =
+            BatchTransition::new_token_change_direct_purchase_price_transition(
+                token_id,
+                seller.id(),
+                contract.id(),
+                0,
+                Some(single_price),
+                None,
+                None,
+                &seller_key,
+                2,
+                0,
+                &seller_signer,
+                platform_version,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            set_price_transition,
+            &platform_state,
+            platform_version,
+        );
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        let buyer_balance_before = platform
+            .drive
+            .fetch_identity_balance(buyer.id().to_buffer(), None, platform_version)
+            .expect("expected to fetch credit balance");
+
+        let purchase_transition = BatchTransition::new_token_direct_purchase_transition(
+            token_id,
+            buyer.id(),
+            contract.id(),
+            0,
+            1,
+            dash_to_credits!(1),
+            &buyer_key,
+            2,
+            0,
+            &buyer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let processing_result = process_test_state_transition(
+            &mut platform,
+            purchase_transition,
+            &platform_state,
+            platform_version,
+        );
+
+        let total_supply_after = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply_after, Some(base));
+
+        let buyer_token_balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                buyer.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch token balance");
+        assert_eq!(buyer_token_balance, None);
+
+        let buyer_balance_after = platform
+            .drive
+            .fetch_identity_balance(buyer.id().to_buffer(), None, platform_version)
+            .expect("expected to fetch credit balance");
+
+        (
+            processing_result.execution_results().to_vec(),
+            buyer_balance_after < buyer_balance_before,
+        )
     }
 }
