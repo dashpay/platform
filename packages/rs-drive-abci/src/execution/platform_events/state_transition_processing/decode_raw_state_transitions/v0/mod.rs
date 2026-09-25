@@ -5,9 +5,12 @@ use crate::execution::types::state_transition_container::v0::{
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
-use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
+use dpp::consensus::basic::state_transition::{
+    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError,
+};
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::state_transition::errors::StateTransitionError;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
@@ -105,6 +108,31 @@ where
                                     elapsed_time: start_time.elapsed(),
                                 })
                             }
+                            // A transition whose version is not active yet decoded fine; its
+                            // bytes are not at fault, and the submitter is owed a coded answer
+                            // rather than an internal error. Matched by variant: the sibling
+                            // `InvalidStateTransitionError` carries its own consensus errors and
+                            // is a separate question.
+                            ProtocolError::StateTransitionError(
+                                StateTransitionError::StateTransitionIsNotActiveError {
+                                    state_transition_type,
+                                    active_version_range,
+                                    current_protocol_version,
+                                },
+                            ) => {
+                                let consensus_error = StateTransitionNotActiveError::new(
+                                    state_transition_type,
+                                    current_protocol_version,
+                                    *active_version_range.start(),
+                                )
+                                .into();
+
+                                DecodedStateTransition::InvalidEncoding(InvalidStateTransition {
+                                    raw: raw_state_transition.as_ref(),
+                                    error: consensus_error,
+                                    elapsed_time: start_time.elapsed(),
+                                })
+                            }
                             protocol_error => DecodedStateTransition::FailedToDecode(
                                 InvalidWithProtocolErrorStateTransition {
                                     raw: raw_state_transition.as_ref(),
@@ -175,6 +203,58 @@ mod tests {
                 );
             }
             _ => panic!("expected InvalidEncoding for oversized state transition"),
+        }
+    }
+
+    /// A transition that decodes cleanly but whose version is not active yet is a client
+    /// error, not a malformed payload. It has to come back as a coded consensus rejection:
+    /// classified as a decode failure it reaches the node's internal-error path instead,
+    /// where the whole transition is logged at ERROR for every attempt — uncharged, and at
+    /// an activation boundary arriving from every client that has not updated.
+    #[test]
+    fn test_decode_state_transition_not_active_yet_is_a_consensus_error_not_a_decode_failure() {
+        use dpp::identifier::Identifier;
+        use dpp::platform_value::BinaryData;
+        use dpp::serialization::PlatformSerializable;
+        use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
+
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        // A batch transition version 1 is active only from protocol version 9.
+        let transition = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            owner_id: Identifier::from([1u8; 32]),
+            transitions: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::new(vec![0u8; 65]),
+        }));
+        let raw = transition.serialize_to_bytes().expect("serialize");
+
+        let older = PlatformVersion::get(1).expect("protocol version 1 should exist");
+        let raw_state_transitions = vec![raw];
+        let container = platform.decode_raw_state_transitions_v0(&raw_state_transitions, older);
+
+        let decoded: Vec<_> = container.into_iter().collect();
+        assert_eq!(decoded.len(), 1);
+
+        match &decoded[0] {
+            DecodedStateTransition::InvalidEncoding(invalid) => {
+                assert!(
+                    matches!(
+                        &invalid.error,
+                        ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
+                    ),
+                    "expected StateTransitionNotActiveError, got {:?}",
+                    invalid.error
+                );
+            }
+            DecodedStateTransition::FailedToDecode(_) => panic!(
+                "a transition whose version is not active decoded fine; reporting it as a decode \
+                 failure sends it down the internal-error path, which logs the whole transition"
+            ),
+            other => panic!("expected InvalidEncoding, got {:?}", other),
         }
     }
 
