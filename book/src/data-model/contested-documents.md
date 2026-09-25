@@ -6,6 +6,11 @@ that names the contract, the document type, the index and the index values, and 
 evonodes decide who gets the value. A masternode's vote counts once, an evonode's four times. Every
 vote is a `MasternodeVote` state transition carrying the poll and a `ResourceVoteChoice`.
 
+From protocol version 14, a vote towards an identity must name a contender of the poll. Any other
+identity, including the reserved keys under which the poll keeps its stored result and its abstain
+and lock tallies, is refused with `VoteChoiceNotAllowedForVotePollError` (40307). Before 14 such a
+vote failed with an internal error, or counted as abstain or lock when it named a reserved key.
+
 The contest is funded by the contenders' prefunded voting balances, and each vote costs a fixed
 amount from that balance. Contenders may join for the **join window** (one week on mainnet) after
 the first document; the contest runs for the **poll duration** (two weeks on mainnet). The first

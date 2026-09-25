@@ -1170,6 +1170,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     failed in execution as an internal error instead. Both now read the
 ///     total supply on every mint and purchase, and pay for that read.
 ///
+/// 45. **A masternode vote towards an identity names a contender**: a
+///     `ResourceVoteChoice::TowardsIdentity` vote for an identity that is not a
+///     contender of the poll is refused, unpaid, with
+///     `VoteChoiceNotAllowedForVotePollError` (40307) by `validate_state` 1 of
+///     the masternode vote, which reads the contender's document reference
+///     under the poll. The reserved keys of the poll's stored info, abstain
+///     tree and lock tree are refused before that read. Before, a vote for an
+///     unknown identity failed with an internal error, and a vote towards a
+///     reserved key was counted as Lock or Abstain. `check_for_ended_vote_polls`
+///     1 also ignores the lock tally of a contest resolved without locking. No
+///     table moves: both generations are selected by this version alone.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
