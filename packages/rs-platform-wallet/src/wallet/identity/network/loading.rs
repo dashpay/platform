@@ -407,8 +407,10 @@ impl IdentityWallet {
     /// Refresh DPNS names for all identities in the manager.
     ///
     /// Iterates every identity in the [`IdentityManager`], queries Platform
-    /// for its current DPNS usernames, and replaces the stored
-    /// `dpns_names` list with the fresh results.
+    /// for its current DPNS usernames, and merges them into the stored
+    /// `dpns_names` list, persisting one snapshot per identity (see
+    /// `ManagedIdentity::merge_dpns_names`). Add-only: the query is capped
+    /// by its limit, so it cannot prove that a known label left.
     pub async fn refresh_dpns_names(&self) -> Result<(), PlatformWalletError> {
         use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
 
@@ -442,13 +444,13 @@ impl IdentityWallet {
                     })?;
                     if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id)
                     {
-                        managed.dpns_names = usernames
-                            .into_iter()
-                            .map(|u| DpnsNameInfo {
+                        managed.merge_dpns_names(
+                            usernames.into_iter().map(|u| DpnsNameInfo {
                                 label: u.label,
                                 acquired_at: None,
-                            })
-                            .collect();
+                            }),
+                            &self.persister,
+                        );
                     }
                 }
                 Err(e) => {

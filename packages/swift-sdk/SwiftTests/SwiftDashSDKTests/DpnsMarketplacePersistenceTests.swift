@@ -262,7 +262,12 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
     func testSameWalletTransferRebindsSingleCanonicalRowToNewOwner() throws {
         let documentId = Data(repeating: 0x36, count: 32).toBase58String()
         let context = ModelContext(container)
-        let oldOwner = PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet)
+        let oldOwner = PersistentIdentity(
+            identityId: ownerId,
+            isLocal: false,
+            mainDpnsName: "Alice",
+            network: .testnet
+        )
         let nextOwner = PersistentIdentity(
             identityId: nextOwnerId,
             isLocal: false,
@@ -324,6 +329,14 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
                 predicate: PersistentDPNSName.predicate(identityId: nextOwnerId)
             )
         ).map(\.label), ["Alice"])
+
+        // The old owner kept its pick but has no rows left: the name's single
+        // row now belongs to the new owner, so the pick is not displayed.
+        let previous = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
+        XCTAssertEqual(previous.mainDpnsName, "Alice")
+        XCTAssertTrue(previous.dpnsNames.isEmpty)
+        XCTAssertNil(previous.ownedMainDpnsName)
+        XCTAssertNotEqual(previous.displayName, "Alice")
     }
 
     func testMarketplaceRemovalClearsOnlyMarketplaceColumns() throws {
