@@ -1,5 +1,6 @@
 import XCTest
 import SwiftData
+import DashSDKFFI
 @testable import SwiftDashSDK
 
 final class DpnsMarketplacePersistenceTests: XCTestCase {
@@ -54,6 +55,42 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
             removed: []
         )
         XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+    }
+
+    /// A cold restore hands Rust every OWNED name the store knows, so the
+    /// in-memory list is never empty/truncated before the first complete
+    /// fetch: a capped fetch can then only add, and no snapshot reads an
+    /// owned pick outside the fetched prefix as departed. Rows retained as
+    /// not owned stay out of the restored list.
+    func testColdRestoreCarriesEveryOwnedNameToRust() throws {
+        let context = ModelContext(container)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        context.insert(wallet)
+        let account = PersistentAccount(
+            wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "Standard")
+        account.accountExtendedPubKeyBytes = Data(repeating: 0x30, count: 78)
+        context.insert(account)
+        let identity = PersistentIdentity(
+            identityId: ownerId, mainDpnsName: "Carol", network: .testnet)
+        identity.wallet = wallet
+        context.insert(identity)
+        for (label, acquiredAt, owned) in [
+            ("Bob", UInt64(20), true), ("Alice", 10, true), ("Carol", 30, true), ("Dave", 5, false),
+        ] {
+            let row = PersistentDPNSName(identity: identity, label: label, acquiredAt: acquiredAt)
+            row.isOwned = owned
+            context.insert(row)
+        }
+        try context.save()
+
+        let loaded = handler.loadWalletList()
+        XCTAssertFalse(loaded.errored)
+        let entries = try XCTUnwrap(loaded.entries)
+        defer { handler.loadWalletListFree(entries: UnsafeRawPointer(entries)) }
+        let restored = try XCTUnwrap(entries[0].identities)[0]
+        let names = try XCTUnwrap(restored.dpns_names)
+        let labels = (0..<Int(restored.dpns_names_count)).map { String(cString: names[$0]!) }
+        XCTAssertEqual(labels, ["Alice", "Bob", "Carol"])
     }
 
     func testMarketplaceColumnsHaveMigrationSafeDefaults() {

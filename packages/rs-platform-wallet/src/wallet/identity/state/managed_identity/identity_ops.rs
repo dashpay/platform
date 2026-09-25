@@ -85,6 +85,7 @@ impl ManagedIdentity {
             status: Default::default(),
             dpns_names: Vec::new(),
             contested_dpns_names: Vec::new(),
+            pending_dpns_departures: Vec::new(),
             wallet_id: None,
             dashpay: Default::default(),
         }
@@ -106,6 +107,7 @@ impl ManagedIdentity {
             status: Default::default(),
             dpns_names: Vec::new(),
             contested_dpns_names: Vec::new(),
+            pending_dpns_departures: Vec::new(),
             wallet_id: None,
             dashpay: Default::default(),
         }
@@ -290,6 +292,19 @@ impl ManagedIdentity {
         if !complete {
             return self.merge_dpns_names(names, persister);
         }
+        // Labels this complete set no longer carries left the identity;
+        // queue them for the marketplace sweep before pruning (see
+        // `pending_dpns_departures`).
+        for known in &self.dpns_names {
+            let departed = !names.iter().any(|name| name.label == known.label);
+            let queued = self
+                .pending_dpns_departures
+                .iter()
+                .any(|pending| pending.label == known.label);
+            if departed && !queued {
+                self.pending_dpns_departures.push(known.clone());
+            }
+        }
         // Known labels still owned, in their existing order, then new ones.
         let mut next: Vec<DpnsNameInfo> = self
             .dpns_names
@@ -309,6 +324,19 @@ impl ManagedIdentity {
             self.set_dpns_names(next, persister);
         }
         added
+    }
+
+    /// Labels dropped by a complete username fetch and not yet classified
+    /// by the marketplace sweep.
+    pub fn pending_dpns_departures(&self) -> &[DpnsNameInfo] {
+        &self.pending_dpns_departures
+    }
+
+    /// Forget queued departures for `labels` once the marketplace sweep has
+    /// taken them over (or seen them owned again).
+    pub(crate) fn clear_pending_dpns_departures(&mut self, labels: &[String]) {
+        self.pending_dpns_departures
+            .retain(|pending| !labels.contains(&pending.label));
     }
 
     /// Replace the DPNS-name list wholesale.
@@ -822,6 +850,36 @@ mod tests {
         assert_eq!(
             managed.dpns_names,
             vec![dpns_name("alice", Some(10)), dpns_name("bob", None)]
+        );
+    }
+
+    /// A complete fetch queues every label it prunes for the marketplace
+    /// sweep (once); a partial fetch prunes nothing and queues nothing; a
+    /// cleared label leaves the queue.
+    #[test]
+    fn complete_dpns_fetch_queues_pruned_labels_for_the_marketplace_sweep() {
+        let (mut managed, _persister, p) = dpns_test_identity();
+        managed.set_dpns_names(
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", Some(20))],
+            &p,
+        );
+
+        managed.apply_fetched_dpns_names(vec![dpns_name("carol", None)], false, &p);
+        assert!(managed.pending_dpns_departures().is_empty());
+
+        managed.apply_fetched_dpns_names(vec![dpns_name("carol", None)], true, &p);
+        managed.apply_fetched_dpns_names(vec![dpns_name("carol", None)], true, &p);
+        let queued: Vec<&str> = managed
+            .pending_dpns_departures()
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(queued, ["alice", "bob"]);
+
+        managed.clear_pending_dpns_departures(&["alice".to_string()]);
+        assert_eq!(
+            managed.pending_dpns_departures(),
+            [dpns_name("bob", Some(20))]
         );
     }
 
