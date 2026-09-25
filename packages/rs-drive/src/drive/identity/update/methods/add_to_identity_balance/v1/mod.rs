@@ -1,6 +1,4 @@
-use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcomeV0Methods;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
@@ -102,59 +100,15 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let mut drive_operations = vec![];
-        let drive_version = &platform_version.drive;
-        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            Self::add_estimation_costs_for_balances(
-                estimated_costs_only_with_layer_info,
-                drive_version,
-            )?;
-            Self::add_estimation_costs_for_negative_credit(
+        let (mut drive_operations, repaid_debt) = self
+            .add_to_identity_balance_operations_and_repaid_debt_v0(
                 identity_id,
+                added_balance,
                 estimated_costs_only_with_layer_info,
-                drive_version,
-            )?;
-        }
-
-        let previous_balance = self
-            .fetch_identity_balance_operations(
-                identity_id,
-                estimated_costs_only_with_layer_info.is_none(),
                 transaction,
-                &mut drive_operations,
                 platform_version,
-            )?
-            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                "there should always be a balance",
-            )))?;
+            )?;
 
-        let add_to_previous_balance = self.add_to_previous_balance(
-            identity_id,
-            previous_balance,
-            added_balance,
-            estimated_costs_only_with_layer_info.is_none(),
-            transaction,
-            &mut drive_operations,
-            platform_version,
-        )?;
-
-        if let Some(new_balance) = add_to_previous_balance.balance_modified() {
-            drive_operations
-                .push(self.update_identity_balance_operation_v0(identity_id, new_balance)?);
-        }
-
-        if let Some(new_negative_balance) =
-            add_to_previous_balance.negative_credit_balance_modified()
-        {
-            drive_operations.push(
-                self.update_identity_negative_credit_operation_v0(
-                    identity_id,
-                    new_negative_balance,
-                ),
-            );
-        }
-
-        let repaid_debt = add_to_previous_balance.repaid_debt();
         if repaid_debt > 0 {
             drive_operations.push(LowLevelDriveOperation::RepaidIdentityDebt(repaid_debt));
         }
