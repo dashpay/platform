@@ -61,6 +61,18 @@ impl Drive {
                         transaction,
                         platform_version,
                     )?;
+                // Credits that repaid an identity's debt are owed to a fee pool, which a plain
+                // batch cannot carry: dropping them would leave them in no balance the credit
+                // sum counts. In place: only `add_to_identity_balance_operations` 1 (protocol
+                // version 14) produces one, and at that version the only caller converting an
+                // identity credit here, the epoch payout, gives its credits to
+                // `apply_drive_operations` instead
+                if LowLevelDriveOperation::holds_repaid_identity_debt(&inner_drive_operations) {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "convert_drive_operations_to_grove_operations cannot carry credits that \
+                         repaid an identity's debt; apply them through apply_drive_operations",
+                    )));
+                }
                 if inner_drive_operations.iter().any(|operation| {
                     matches!(
                         operation,
