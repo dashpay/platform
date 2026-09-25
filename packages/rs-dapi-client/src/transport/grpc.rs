@@ -32,12 +32,17 @@ impl TransportClient for PlatformGrpcClient {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Result<Self, TransportError> {
-        Ok(pool
-            .get_or_create(
-                PoolPrefix::Platform,
-                &uri,
-                Some(settings),
-                || match create_channel(uri.clone(), Some(settings)) {
+        Self::with_uri_and_settings_and_generation(uri, settings, pool).map(|(client, _)| client)
+    }
+
+    fn with_uri_and_settings_and_generation(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Result<(Self, u64), TransportError> {
+        let (item, generation) =
+            pool.get_or_create_with_generation(PoolPrefix::Platform, &uri, Some(settings), || {
+                match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => {
                         let mut client = Self::new(channel);
                         if let Some(max_size) = settings.max_decoding_message_size {
@@ -49,9 +54,9 @@ impl TransportClient for PlatformGrpcClient {
                         "Channel creation failed: {}",
                         e
                     ))),
-                },
-            )?
-            .into())
+                }
+            })?;
+        Ok((item.into(), generation))
     }
 }
 
@@ -75,12 +80,17 @@ impl TransportClient for CoreGrpcClient {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Result<Self, TransportError> {
-        Ok(pool
-            .get_or_create(
-                PoolPrefix::Core,
-                &uri,
-                Some(settings),
-                || match create_channel(uri.clone(), Some(settings)) {
+        Self::with_uri_and_settings_and_generation(uri, settings, pool).map(|(client, _)| client)
+    }
+
+    fn with_uri_and_settings_and_generation(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Result<(Self, u64), TransportError> {
+        let (item, generation) =
+            pool.get_or_create_with_generation(PoolPrefix::Core, &uri, Some(settings), || {
+                match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => {
                         let mut client = Self::new(channel);
                         if let Some(max_size) = settings.max_decoding_message_size {
@@ -92,9 +102,9 @@ impl TransportClient for CoreGrpcClient {
                         "Channel creation failed: {}",
                         e
                     ))),
-                },
-            )?
-            .into())
+                }
+            })?;
+        Ok((item.into(), generation))
     }
 }
 

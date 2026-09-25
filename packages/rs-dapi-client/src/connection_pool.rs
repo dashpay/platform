@@ -103,19 +103,52 @@ impl ConnectionPool {
         settings: Option<&AppliedRequestSettings>,
         create: impl FnOnce() -> Result<PoolItem, E>,
     ) -> Result<PoolItem, E> {
-        if let Some(cli) = self.get(prefix, uri, settings) {
-            return Ok(cli);
+        self.get_or_create_with_generation(prefix, uri, settings, create)
+            .map(|(item, _)| item)
+    }
+
+    /// Like [ConnectionPool::get_or_create], and also returns the generation
+    /// the returned connection was pooled at (see [ConnectionPool::generation]).
+    ///
+    /// The generation is read under the same lock that finds or stores the
+    /// connection, so it is the returned connection's own even when other
+    /// threads replace it right afterwards.
+    pub fn get_or_create_with_generation<E>(
+        &self,
+        prefix: PoolPrefix,
+        uri: &Uri,
+        settings: Option<&AppliedRequestSettings>,
+        create: impl FnOnce() -> Result<PoolItem, E>,
+    ) -> Result<(PoolItem, u64), E> {
+        let key = Self::key(prefix, uri, settings);
+        let cached = self
+            .inner
+            .lock()
+            .expect("must lock")
+            .connections
+            .get(&key)
+            .map(|pooled| (pooled.item.clone(), pooled.generation));
+        if let Some(cached) = cached {
+            return Ok(cached);
         }
 
-        let cli = create();
-        if let Ok(cli) = &cli {
-            self.put(uri, settings, cli.clone());
-        }
-        cli
+        let item = create()?;
+        let generation = self.put_with_generation(uri, settings, item.clone());
+        Ok((item, generation))
     }
 
     /// Put item into the pool for the given uri and settings.
     pub fn put(&self, uri: &Uri, settings: Option<&AppliedRequestSettings>, value: PoolItem) {
+        self.put_with_generation(uri, settings, value);
+    }
+
+    /// Put item into the pool and return the generation it was pooled at.
+    fn put_with_generation(
+        &self,
+        uri: &Uri,
+        settings: Option<&AppliedRequestSettings>,
+        value: PoolItem,
+    ) -> u64 {
         let key = Self::key(&value, uri, settings);
         let mut state = self.inner.lock().expect("must lock");
         state.generation += 1;
@@ -127,6 +160,7 @@ impl ConnectionPool {
                 item: value,
             },
         );
+        generation
     }
 
     /// Generation of the connection pooled most recently. Every connection
@@ -539,6 +573,32 @@ mod tests {
 
         pool.remove_uri(&uri, pool.generation());
         assert!(pool.get(PoolPrefix::Platform, &uri, None).is_none());
+    }
+
+    #[tokio::test]
+    async fn should_return_the_generation_of_the_connection_it_takes() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+
+        let (_, created) = pool
+            .get_or_create_with_generation(PoolPrefix::Platform, &uri, None, || {
+                Ok::<_, String>(make_platform_pool_item())
+            })
+            .unwrap();
+        assert_eq!(created, pool.generation());
+
+        let (_, taken) = pool
+            .get_or_create_with_generation(PoolPrefix::Platform, &uri, None, || {
+                Err("the pooled connection must be reused".to_string())
+            })
+            .unwrap();
+        pool.put(&uri, None, make_platform_pool_item());
+
+        assert_eq!(taken, created);
+        assert!(
+            taken < pool.generation(),
+            "a replacement pooled afterwards must get a higher generation"
+        );
     }
 
     #[tokio::test]

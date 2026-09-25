@@ -917,6 +917,118 @@ mod tests {
                 "a connection pooled after the attempt took its own must stay pooled"
             );
         }
+
+        /// Takes its node's pooled connection, which another worker replaces
+        /// before the constructor returns.
+        struct ReplacedWhileBuildingClient;
+
+        impl ReplacedWhileBuildingClient {
+            fn build(
+                uri: Uri,
+                settings: Option<&AppliedRequestSettings>,
+                pool: &ConnectionPool,
+            ) -> Result<(Self, u64), TransportError> {
+                let connect = || {
+                    Ok::<_, TransportError>(PoolItem::Platform(PlatformGrpcClient::new(
+                        Channel::builder(uri.clone()).connect_lazy(),
+                    )))
+                };
+                let (_, generation) = pool.get_or_create_with_generation(
+                    PoolPrefix::Platform,
+                    &uri,
+                    settings,
+                    connect,
+                )?;
+                // What a concurrent request that timed out and reconnected
+                // would pool.
+                pool.put(&uri, settings, connect()?);
+                Ok((Self, generation))
+            }
+        }
+
+        impl TransportClient for ReplacedWhileBuildingClient {
+            fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
+                Self::build(uri, None, pool).map(|(client, _)| client)
+            }
+
+            fn with_uri_and_settings(
+                uri: Uri,
+                settings: &AppliedRequestSettings,
+                pool: &ConnectionPool,
+            ) -> Result<Self, TransportError> {
+                Self::build(uri, Some(settings), pool).map(|(client, _)| client)
+            }
+
+            fn with_uri_and_settings_and_generation(
+                uri: Uri,
+                settings: &AppliedRequestSettings,
+                pool: &ConnectionPool,
+            ) -> Result<(Self, u64), TransportError> {
+                Self::build(uri, Some(settings), pool)
+            }
+        }
+
+        /// Never answers.
+        #[derive(Clone, Debug)]
+        struct StallOnReplacedConnection;
+
+        impl Mockable for StallOnReplacedConnection {}
+
+        impl TransportRequest for StallOnReplacedConnection {
+            type Client = ReplacedWhileBuildingClient;
+            type Response = Pong;
+
+            const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
+
+            fn method_name(&self) -> &'static str {
+                "stall_on_replaced_connection"
+            }
+
+            fn execute_transport<'c>(
+                self,
+                _client: &'c mut Self::Client,
+                _settings: &AppliedRequestSettings,
+            ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
+                Box::pin(futures::future::pending())
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn should_keep_a_connection_pooled_while_the_client_was_being_built() {
+            let client = DapiClient::new(
+                "http://127.0.0.1:10001"
+                    .parse()
+                    .expect("valid address list"),
+                RequestSettings {
+                    retries: Some(0),
+                    ..RequestSettings::default()
+                },
+            );
+
+            let error = client
+                .execute(StallOnReplacedConnection, RequestSettings::default())
+                .await
+                .expect_err("the only node never answers");
+
+            assert!(
+                matches!(
+                    &error.inner,
+                    DapiClientError::Transport(TransportError::Grpc(status))
+                        if status.code() == Code::DeadlineExceeded
+                ),
+                "expected DeadlineExceeded, got {:?}",
+                error.inner
+            );
+            let uri = error.address.expect("the attempted node").uri().clone();
+            let settings = RequestSettings::default().finalize();
+            assert!(
+                client
+                    .pool
+                    .get(PoolPrefix::Platform, &uri, Some(&settings))
+                    .is_some(),
+                "a connection pooled while the attempt's client was being built must stay pooled"
+            );
+        }
     }
 }
 
@@ -998,13 +1110,17 @@ impl DapiRequestExecutor for DapiClient {
                 let response_name = request.response_name();
 
                 // Try to create transport client
-                let transport_client_result = R::Client::with_uri_and_settings(
+                let transport_client_result = R::Client::with_uri_and_settings_and_generation(
                     address.uri().clone(),
                     &applied_settings,
                     &self.pool,
                 );
 
-                let mut transport_client = match transport_client_result {
+                // `pool_generation` is the pool generation of the connection
+                // this attempt uses. A deadline eviction below keeps
+                // connections pooled later: a concurrent request may already
+                // have evicted this one and reconnected.
+                let (mut transport_client, pool_generation) = match transport_client_result {
                     Ok(client) => client,
                     Err(transport_error) => {
                         let can_retry_error = transport_error.can_retry();
@@ -1042,13 +1158,6 @@ impl DapiRequestExecutor for DapiClient {
                     }
                 };
 
-                // The attempt's connection was pooled at or before this
-                // generation. A deadline eviction below keeps connections
-                // pooled later: a concurrent request may already have evicted
-                // this one and reconnected.
-                #[cfg(not(target_arch = "wasm32"))]
-                let pool_generation = self.pool.generation();
-
                 // Execute the transport request
                 let attempt = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)
@@ -1076,7 +1185,10 @@ impl DapiRequestExecutor for DapiClient {
                     None => attempt.await,
                 };
                 #[cfg(target_arch = "wasm32")]
-                let result = attempt.await;
+                let result = {
+                    let _ = pool_generation;
+                    attempt.await
+                };
 
                 let execution_result = match result {
                     Ok(response) => {
