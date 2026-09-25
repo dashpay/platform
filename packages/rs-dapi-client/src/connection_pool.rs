@@ -17,7 +17,21 @@ use crate::{
 /// Cloning the pool will create a new reference to the same pool.
 #[derive(Debug, Clone)]
 pub struct ConnectionPool {
-    inner: Arc<Mutex<LruCache<PoolKey, PoolItem>>>,
+    inner: Arc<Mutex<PoolState>>,
+}
+
+#[derive(Debug)]
+struct PoolState {
+    connections: LruCache<PoolKey, Pooled>,
+    /// Generation of the connection pooled most recently.
+    generation: u64,
+}
+
+/// A pooled connection and the generation it was pooled at.
+#[derive(Debug)]
+struct Pooled {
+    generation: u64,
+    item: PoolItem,
 }
 
 /// Identity of a pooled connection: the client type, the node, and the
@@ -38,9 +52,10 @@ impl ConnectionPool {
     /// Panics if the capacity is zero.
     pub fn new(capacity: usize) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(LruCache::new(
-                capacity.try_into().expect("must be non-zero"),
-            ))),
+            inner: Arc::new(Mutex::new(PoolState {
+                connections: LruCache::new(capacity.try_into().expect("must be non-zero")),
+                generation: 0,
+            })),
         }
     }
 }
@@ -65,7 +80,12 @@ impl ConnectionPool {
         settings: Option<&AppliedRequestSettings>,
     ) -> Option<PoolItem> {
         let key = Self::key(prefix, uri, settings);
-        self.inner.lock().expect("must lock").get(&key).cloned()
+        self.inner
+            .lock()
+            .expect("must lock")
+            .connections
+            .get(&key)
+            .map(|pooled| pooled.item.clone())
     }
 
     /// Get value from cache or create it using provided closure.
@@ -97,28 +117,47 @@ impl ConnectionPool {
     /// Put item into the pool for the given uri and settings.
     pub fn put(&self, uri: &Uri, settings: Option<&AppliedRequestSettings>, value: PoolItem) {
         let key = Self::key(&value, uri, settings);
-        self.inner.lock().expect("must lock").put(key, value);
+        let mut state = self.inner.lock().expect("must lock");
+        state.generation += 1;
+        let generation = state.generation;
+        state.connections.put(
+            key,
+            Pooled {
+                generation,
+                item: value,
+            },
+        );
     }
 
-    /// Drop every pooled connection to `uri`, whatever its prefix and
-    /// connection settings.
+    /// Generation of the connection pooled most recently. Every connection
+    /// put into the pool afterwards gets a higher generation.
+    pub fn generation(&self) -> u64 {
+        self.inner.lock().expect("must lock").generation
+    }
+
+    /// Drop every connection to `uri` pooled at or before `generation`,
+    /// whatever its prefix and connection settings.
     ///
     /// A request that misses its deadline may have been sent over a half-open
     /// connection: the network path died after the request left, and nothing
     /// on the idle channel would ever notice. Keeping it pooled would stall
     /// the next request sent to the same node, so the executor evicts it and
     /// the next request dials a fresh connection.
-    pub fn remove_uri(&self, uri: &Uri) {
+    ///
+    /// Connections pooled after `generation` stay. They were dialed after the
+    /// timed-out attempt took its connection, for example by a concurrent
+    /// request that already timed out on the same node and reconnected.
+    pub fn remove_uri(&self, uri: &Uri, generation: u64) {
         let uri = uri.to_string();
-        let mut cache = self.inner.lock().expect("must lock");
-        let stale: Vec<PoolKey> = cache
+        let mut state = self.inner.lock().expect("must lock");
+        let stale: Vec<PoolKey> = state
+            .connections
             .iter()
-            .map(|(key, _)| key)
-            .filter(|key| key.uri == uri)
-            .cloned()
+            .filter(|(key, pooled)| key.uri == uri && pooled.generation <= generation)
+            .map(|(key, _)| key.clone())
             .collect();
         for key in stale {
-            cache.pop(&key);
+            state.connections.pop(&key);
         }
     }
 
@@ -444,7 +483,7 @@ mod tests {
         pool.put(&uri, Some(&connect_timeout), make_platform_pool_item());
         pool.put(&longer_port, None, make_platform_pool_item());
 
-        pool.remove_uri(&uri);
+        pool.remove_uri(&uri, pool.generation());
 
         assert!(pool.get(PoolPrefix::Platform, &uri, None).is_none());
         assert!(pool.get(PoolPrefix::Core, &uri, None).is_none());
@@ -470,7 +509,7 @@ mod tests {
             pool.put(&evicted, None, make_platform_pool_item());
             pool.put(&kept, None, make_platform_pool_item());
 
-            pool.remove_uri(&evicted);
+            pool.remove_uri(&evicted, pool.generation());
 
             assert!(
                 pool.get(PoolPrefix::Platform, &evicted, None).is_none(),
@@ -481,6 +520,25 @@ mod tests {
                 "{kept} must stay pooled when {evicted} is evicted"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn should_keep_connections_pooled_after_the_given_generation() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+        pool.put(&uri, None, make_platform_pool_item());
+        let used_by_attempt = pool.generation();
+        // Replaced after the attempt took its connection.
+        pool.put(&uri, None, make_platform_pool_item());
+
+        pool.remove_uri(&uri, used_by_attempt);
+        assert!(
+            pool.get(PoolPrefix::Platform, &uri, None).is_some(),
+            "a connection pooled after the given generation must stay"
+        );
+
+        pool.remove_uri(&uri, pool.generation());
+        assert!(pool.get(PoolPrefix::Platform, &uri, None).is_none());
     }
 
     #[tokio::test]

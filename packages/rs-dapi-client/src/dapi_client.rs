@@ -721,6 +721,7 @@ mod tests {
         use crate::transport::{BoxFuture, PlatformGrpcClient};
         use crate::Uri;
         use dapi_grpc::tonic::transport::Channel;
+        use dapi_grpc::tonic::Code;
         use std::sync::{Arc, Mutex};
 
         /// Takes its connection from the executor's pool, as the real gRPC
@@ -838,6 +839,82 @@ mod tests {
                     )
                     .is_some(),
                 "the healthy node's connection must stay pooled"
+            );
+        }
+
+        /// Replaces its node's pooled connection, as a concurrent request
+        /// that timed out on the node and reconnected would, then never
+        /// answers.
+        #[derive(Clone, Debug)]
+        struct ReplaceConnectionThenStall {
+            pool: ConnectionPool,
+        }
+
+        impl Mockable for ReplaceConnectionThenStall {}
+
+        impl TransportRequest for ReplaceConnectionThenStall {
+            type Client = PooledClient;
+            type Response = Pong;
+
+            const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
+
+            fn method_name(&self) -> &'static str {
+                "replace_connection_then_stall"
+            }
+
+            fn execute_transport<'c>(
+                self,
+                client: &'c mut Self::Client,
+                settings: &AppliedRequestSettings,
+            ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
+                self.pool.put(
+                    &client.uri,
+                    Some(settings),
+                    PoolItem::Platform(PlatformGrpcClient::new(
+                        Channel::builder(client.uri.clone()).connect_lazy(),
+                    )),
+                );
+                Box::pin(futures::future::pending())
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn should_keep_a_connection_pooled_after_the_attempt_took_its_own() {
+            let client = DapiClient::new(
+                "http://127.0.0.1:10001"
+                    .parse()
+                    .expect("valid address list"),
+                RequestSettings {
+                    retries: Some(0),
+                    ..RequestSettings::default()
+                },
+            );
+            let request = ReplaceConnectionThenStall {
+                pool: client.pool.clone(),
+            };
+
+            let error = client
+                .execute(request, RequestSettings::default())
+                .await
+                .expect_err("the only node never answers");
+
+            assert!(
+                matches!(
+                    &error.inner,
+                    DapiClientError::Transport(TransportError::Grpc(status))
+                        if status.code() == Code::DeadlineExceeded
+                ),
+                "expected DeadlineExceeded, got {:?}",
+                error.inner
+            );
+            let uri = error.address.expect("the attempted node").uri().clone();
+            let settings = RequestSettings::default().finalize();
+            assert!(
+                client
+                    .pool
+                    .get(PoolPrefix::Platform, &uri, Some(&settings))
+                    .is_some(),
+                "a connection pooled after the attempt took its own must stay pooled"
             );
         }
     }
@@ -965,6 +1042,13 @@ impl DapiRequestExecutor for DapiClient {
                     }
                 };
 
+                // The attempt's connection was pooled at or before this
+                // generation. A deadline eviction below keeps connections
+                // pooled later: a concurrent request may already have evicted
+                // this one and reconnected.
+                #[cfg(not(target_arch = "wasm32"))]
+                let pool_generation = self.pool.generation();
+
                 // Execute the transport request
                 let attempt = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)
@@ -983,7 +1067,7 @@ impl DapiRequestExecutor for DapiClient {
                     Some(deadline) => match tokio::time::timeout(deadline, attempt).await {
                         Ok(result) => result,
                         Err(_) => {
-                            self.pool.remove_uri(address.uri());
+                            self.pool.remove_uri(address.uri(), pool_generation);
                             Err(TransportError::Grpc(Status::deadline_exceeded(format!(
                                 "no complete response within {deadline:?}"
                             ))))
