@@ -670,7 +670,12 @@ mod tests {
             assert_eq!(fee_change.change(), &BalanceChange::NoBalanceChange);
 
             let outcome = drive
-                .apply_balance_change_from_fee_to_identity(fee_change, None, platform_version)
+                .apply_balance_change_from_fee_to_identity(
+                    fee_change,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                )
                 .expect("should apply fee change");
 
             // The returned fee result still takes the other identity's refund out of the pools
@@ -775,8 +780,10 @@ mod tests {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
-                    })
-                ] if *refund_amount as Credits == removed_credits - negative_amount && debt_bytes == &0u64.to_be_bytes()
+                    }),
+                    // Owed to the processing fee pool by whoever applies the operations
+                    LowLevelDriveOperation::RepaidIdentityDebt(repaid_debt)
+                ] if *refund_amount as Credits == removed_credits - negative_amount && debt_bytes == &0u64.to_be_bytes() && *repaid_debt == negative_amount
             ));
 
             assert_eq!(fee_result_outcome, fee_result);
@@ -844,8 +851,10 @@ mod tests {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
-                    })
-                ] if debt_bytes == &2000u64.to_be_bytes()
+                    }),
+                    // All of the refund repaid debt, owed to the processing fee pool
+                    LowLevelDriveOperation::RepaidIdentityDebt(repaid_debt)
+                ] if debt_bytes == &2000u64.to_be_bytes() && *repaid_debt == removed_credits
             ));
 
             assert_eq!(fee_result_outcome, fee_result);

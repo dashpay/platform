@@ -300,7 +300,8 @@ mod tests {
             .apply_drive_operations(
                 batch,
                 true,
-                &BlockInfo::default(),
+                // The block that pays epoch 0 out is in epoch 1.
+                &BlockInfo::default_with_epoch(current_epoch),
                 Some(&transaction),
                 platform_version,
                 None,
@@ -394,13 +395,15 @@ mod tests {
         );
 
         // One credit per identity: the debt comes out of the recipient's two shares once, and
-        // what is left of them is its balance. Where the repaid debt goes is not decided here.
+        // what is left of them is its balance. The repaid debt goes to the block epoch's
+        // processing fee pool, so the credits still balance.
         assert!(recipient_debt < payout.share(2000));
         assert_eq!(
             payout.balances,
             payout.owed_for_shared_recipient_shares(recipient_debt)
         );
         assert_eq!(payout.recipient_debt_after, 0);
+        assert_credits_balance(&payout);
     }
 
     #[test]

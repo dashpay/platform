@@ -625,4 +625,117 @@ mod tests {
 
         assert!(recipient_balance > dash_to_credits!(0.5));
     }
+
+    #[tokio::test]
+    async fn should_credit_the_debt_a_transfer_repays_to_the_processing_fee_pool() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (sender, signer, transfer_key) =
+            setup_identity_with_transfer_key(&mut platform, 800, dash_to_credits!(1.0));
+
+        // The recipient's balance is empty and it owes 1000 credits, the unpaid part of an
+        // earlier fee
+        let (recipient, _, _) = setup_identity_with_transfer_key(&mut platform, 801, 0);
+        let owed = 1000;
+        let debt_operation = platform
+            .drive
+            .update_identity_negative_credit_operation(
+                recipient.id().to_buffer(),
+                owed,
+                platform_version,
+            )
+            .expect("expected a debt operation");
+        platform
+            .drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                vec![debt_operation],
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to store the debt");
+
+        let platform_state = platform.state.load();
+
+        let transfer_amount = 500_000u64;
+        let transfer_bytes = create_signed_transfer(
+            sender.id(),
+            recipient.id(),
+            transfer_amount,
+            1,
+            &signer,
+            &transfer_key,
+        )
+        .await;
+
+        let transaction = platform.drive.grove.start_transaction();
+        let block_info = BlockInfo::default();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transfer_bytes],
+                &platform_state,
+                &block_info,
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        // The debt is repaid first, and the recipient keeps the rest: the balance less the
+        // debt is the same number, so no debt is left
+        let recipient_balance = platform
+            .drive
+            .fetch_identity_balance(recipient.id().into_buffer(), None, platform_version)
+            .expect("expected to get balance")
+            .expect("expected balance to exist");
+        assert_eq!(recipient_balance, transfer_amount - owed);
+        let recipient_balance_less_debt = platform
+            .drive
+            .fetch_identity_balance_include_debt(
+                recipient.id().into_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to get balance")
+            .expect("expected balance to exist");
+        assert_eq!(recipient_balance_less_debt, (transfer_amount - owed) as i64);
+
+        // The repaid part reached the processing fee pool of the block's epoch. The
+        // transfer's own fee reaches it only when the block's fees are distributed, so the
+        // pool holds exactly the repaid debt
+        let processing_fees = platform
+            .drive
+            .get_epoch_processing_credits_for_distribution(
+                &block_info.epoch,
+                None,
+                platform_version,
+            )
+            .expect("expected the epoch's processing fees");
+        assert_eq!(processing_fees, owed);
+    }
 }
