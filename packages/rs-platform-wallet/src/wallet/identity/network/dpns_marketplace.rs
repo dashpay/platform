@@ -1579,7 +1579,7 @@ impl IdentityWallet {
     ) -> Result<DpnsMarketplaceSyncSummary, PlatformWalletError> {
         let _operation = self.dpns_operation_gate.lock().await;
         // Snapshot identity ids, their label lists, and the current rows.
-        let (identity_ids, labels_by_identity, previous_rows) = {
+        let (identity_ids, labels_by_identity, queued_by_identity, previous_rows) = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
                 PlatformWalletError::WalletNotFound(
@@ -1592,7 +1592,20 @@ impl IdentityWallet {
                 .wallet_managed_identities(&self.wallet_id)
                 .map(|managed| (managed.identity.id(), managed.dpns_names.clone()))
                 .collect();
-            (ids, labels, info.dpns_name_states.clone())
+            // Labels a complete username fetch already pruned: still
+            // departure candidates, but not "known" labels (a re-owned one
+            // must be re-added to the list).
+            let queued: BTreeMap<Identifier, Vec<DpnsNameInfo>> = info
+                .identity_manager
+                .wallet_managed_identities(&self.wallet_id)
+                .map(|managed| {
+                    (
+                        managed.identity.id(),
+                        managed.pending_dpns_departures().to_vec(),
+                    )
+                })
+                .collect();
+            (ids, labels, queued, info.dpns_name_states.clone())
         };
 
         let mut summary = DpnsMarketplaceSyncSummary::default();
@@ -1691,13 +1704,39 @@ impl IdentityWallet {
 
                 if complete {
                     progress.cursor = None;
+                    let queued_departures = queued_by_identity
+                        .get(&identity_id)
+                        .cloned()
+                        .unwrap_or_default();
+                    let candidate_labels: Vec<DpnsNameInfo> = previous_labels
+                        .iter()
+                        .chain(queued_departures.iter())
+                        .cloned()
+                        .collect();
                     progress.pending_departures = departure_candidates(
                         &identity_id,
-                        &previous_labels,
+                        &candidate_labels,
                         &previous_rows,
                         &progress.seen_normalized_labels,
                     );
                     progress.seen_normalized_labels.clear();
+                    // The sweep now owns those departures (or saw the label
+                    // owned again): drop exactly what this pass took over.
+                    if !queued_departures.is_empty() {
+                        let taken: Vec<String> = queued_departures
+                            .into_iter()
+                            .map(|name| name.label)
+                            .collect();
+                        let mut wm = self.wallet_manager.write().await;
+                        if let Some(managed) =
+                            wm.get_wallet_info_mut(&self.wallet_id).and_then(|info| {
+                                info.identity_manager
+                                    .wallet_identity_mut(&self.wallet_id, &identity_id)
+                            })
+                        {
+                            managed.clear_pending_dpns_departures(&taken);
+                        }
+                    }
                 } else {
                     progress.cursor = next_cursor;
                 }
@@ -3649,6 +3688,87 @@ mod tests {
             mirror.stored_dpns_removals(),
             vec![document_id],
             "the departed row must be retired"
+        );
+    }
+
+    /// The reviewer's sequence: no marketplace row tracked yet this session
+    /// (`dpns_name_states` empty, as right after a wallet load), a complete
+    /// username fetch prunes the departed label, THEN the marketplace sweep
+    /// runs. The prune queues the label, so the sweep still classifies the
+    /// departure and drains the queue.
+    #[tokio::test]
+    async fn sweep_after_username_prune_with_no_session_rows_resolves_the_departure() {
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::Identity;
+
+        let identity_id = Identifier::from([0xC3; 32]);
+        let mirror = Arc::new(MirrorPersister::hydrated(Vec::new()));
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&mirror),
+            sdk_for_departed_identity_sync(&identity_id, DEPARTED_LABEL).await,
+        );
+
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: identity_id,
+                        public_keys: BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet.wallet_id,
+                    &wallet.persister,
+                )
+                .expect("add identity");
+            assert!(info.dpns_name_states.is_empty());
+            let managed = info
+                .identity_manager
+                .wallet_identity_mut(&wallet.wallet_id, &identity_id)
+                .expect("managed identity");
+            managed.add_dpns_name(
+                DpnsNameInfo {
+                    label: DEPARTED_LABEL.to_string(),
+                    acquired_at: None,
+                },
+                &wallet.persister,
+            );
+            // A complete username fetch that no longer returns the label.
+            managed.apply_fetched_dpns_names(Vec::new(), true, &wallet.persister);
+            assert!(managed.dpns_names.is_empty());
+            assert_eq!(managed.pending_dpns_departures().len(), 1);
+        }
+
+        let summary = wallet
+            .sync_dpns_marketplace()
+            .await
+            .expect("sync pass must succeed");
+
+        assert!(
+            summary
+                .names_departed
+                .iter()
+                .any(|departed| departed.identity_id == identity_id
+                    && departed.label == DEPARTED_LABEL),
+            "the pruned label must still be classified as departed: {:?}",
+            summary.names_departed
+        );
+        let wm = wallet.wallet_manager.read().await;
+        let managed = wm
+            .get_wallet_info(&wallet.wallet_id)
+            .expect("wallet info")
+            .identity_manager
+            .wallet_managed_identities(&wallet.wallet_id)
+            .find(|managed| managed.identity.id() == identity_id)
+            .expect("managed identity");
+        assert!(
+            managed.pending_dpns_departures().is_empty(),
+            "the sweep must drain the queue it took over"
         );
     }
 

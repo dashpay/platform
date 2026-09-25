@@ -80,6 +80,16 @@ pub struct ManagedIdentity {
     /// success.
     pub contested_dpns_names: Vec<String>,
 
+    /// Labels a complete username fetch dropped from [`Self::dpns_names`]
+    /// that the DPNS marketplace sweep has not classified yet (sale,
+    /// transfer, deletion). The sweep discovers departures from the label
+    /// list; without this queue a fetch that prunes a label before the
+    /// first sweep would erase the only trigger. In-memory only: a cold
+    /// restore re-seeds `dpns_names` with every persisted owned label, so a
+    /// departure that happens across a restart is dropped — and queued —
+    /// by the first complete fetch after it.
+    pub(crate) pending_dpns_departures: Vec<DpnsNameInfo>,
+
     /// Wallet identifier (`SHA256(root_pub_key || chain_code)`) of
     /// the wallet that owns this identity, if known. Set during
     /// gap-limit scan and identity recovery.

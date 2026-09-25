@@ -8202,12 +8202,33 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // identity changeset path.
             entry.status = 0
 
-            // DPNS names — currently empty. Wiring is here so a
-            // future query against `PersistentDpnsName` rows (or a
-            // dedicated array column on the identity) drops in
-            // without touching the FFI plumbing.
-            entry.dpns_names = nil
-            entry.dpns_names_count = 0
+            // DPNS names — the identity's OWNED label rows, so Rust's
+            // `ManagedIdentity.dpns_names` starts with every name already
+            // known instead of empty. A capped (partial) username fetch
+            // then only adds to that list, and no snapshot emitted before
+            // the next complete fetch carries a truncated owned set that
+            // `upsertDPNSNames` would read as departures. Rows retained as
+            // not owned (departed names, a picked name the last snapshot
+            // omitted) are not restored. Order: oldest acquisition first,
+            // then label, so the restored list is deterministic.
+            let ownedLabels = identity.dpnsNames
+                .filter { $0.isOwned }
+                .sorted { ($0.acquiredAt, $0.label) < ($1.acquiredAt, $1.label) }
+                .map(\.label)
+            if ownedLabels.isEmpty {
+                entry.dpns_names = nil
+                entry.dpns_names_count = 0
+            } else {
+                let labelArray = UnsafeMutablePointer<UnsafePointer<CChar>?>.allocate(
+                    capacity: ownedLabels.count
+                )
+                for (i, label) in ownedLabels.enumerated() {
+                    labelArray[i] = UnsafePointer(duplicateCString(label, allocation: allocation))
+                }
+                allocation.cStringPointerArrays.append((labelArray, ownedLabels.count))
+                entry.dpns_names = UnsafePointer(labelArray)
+                entry.dpns_names_count = UInt(ownedLabels.count)
+            }
             entry.contested_dpns_names = nil
             entry.contested_dpns_names_count = 0
 
