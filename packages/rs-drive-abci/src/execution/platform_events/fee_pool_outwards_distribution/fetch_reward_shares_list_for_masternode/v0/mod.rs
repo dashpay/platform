@@ -91,8 +91,9 @@ mod tests {
     /// "masternode has no explicit reward shares" case.
     #[test]
     fn v0_returns_empty_for_unknown_masternode_owner() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -117,8 +118,9 @@ mod tests {
     /// leaking between calls.
     #[test]
     fn v0_empty_list_branch_holds_across_distinct_owners_on_fresh_state() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -139,8 +141,9 @@ mod tests {
     /// itself is read-only and does not require a transaction.
     #[test]
     fn v0_works_without_transaction() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
             .build_with_mock_rpc()
             .set_genesis_state();
 

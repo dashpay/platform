@@ -422,6 +422,58 @@ mod tests {
         assert_credits_balance(&payout);
     }
 
+    #[test]
+    fn should_pay_every_reward_share_of_one_masternode() {
+        let payout = pay_out(
+            PlatformVersion::latest().protocol_version,
+            &[
+                (FIRST_PROPOSER, RECIPIENT, 3000),
+                (FIRST_PROPOSER, SECOND_PROPOSER, 2000),
+            ],
+            0,
+        );
+
+        let m = payout.masternode_payout;
+        assert_eq!(
+            payout.balances,
+            BTreeMap::from([
+                (FIRST_PROPOSER, m - payout.share(3000) - payout.share(2000)),
+                (SECOND_PROPOSER, m + payout.share(2000)),
+                (THIRD_PROPOSER, m + payout.remainder),
+                (RECIPIENT, payout.share(3000)),
+            ])
+        );
+        assert_credits_balance(&payout);
+    }
+
+    #[test]
+    fn should_pay_shares_over_the_whole_payout_until_it_is_used_up() {
+        let payout = pay_out(
+            PlatformVersion::latest().protocol_version,
+            &[
+                (FIRST_PROPOSER, RECIPIENT, 8000),
+                (FIRST_PROPOSER, SECOND_PROPOSER, 5000),
+            ],
+            0,
+        );
+
+        // 130% of the first masternode's payout is shared: the share read first is paid in
+        // full, the other gets what is left, and the masternode keeps nothing.
+        let m = payout.masternode_payout;
+        let to_recipient = payout.balances[&RECIPIENT];
+        let to_second_proposer = payout.balances[&SECOND_PROPOSER] - m;
+        assert_eq!(payout.balances[&FIRST_PROPOSER], 0);
+        assert_eq!(to_recipient + to_second_proposer, m);
+        assert!(
+            (to_recipient, to_second_proposer) == (payout.share(8000), m - payout.share(8000))
+                || (to_recipient, to_second_proposer)
+                    == (m - payout.share(5000), payout.share(5000)),
+            "one share is paid in full and the other gets the rest: {to_recipient}, {to_second_proposer}"
+        );
+        assert_eq!(payout.balances[&THIRD_PROPOSER], m + payout.remainder);
+        assert_credits_balance(&payout);
+    }
+
     /// Reproduces the lost credits on generation 0 as it shipped. No reward share can be
     /// written at the protocol versions that select generation 0, so if it is ever hardened in
     /// place, this test goes with it.

@@ -85,7 +85,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: 1,
         add_epoch_pool_to_proposers_payout_operations: 1, // changed in v14: each identity is credited once with everything the payout owes it
         find_oldest_epoch_needing_payment: 0,
-        fetch_reward_shares_list_for_masternode: 0,
+        fetch_reward_shares_list_for_masternode: 1, // changed in v14: returns every reward share of the masternode, not only the first
     },
     withdrawals: DriveAbciIdentityCreditWithdrawalMethodVersions {
         build_untied_withdrawal_transactions_from_documents: 0,

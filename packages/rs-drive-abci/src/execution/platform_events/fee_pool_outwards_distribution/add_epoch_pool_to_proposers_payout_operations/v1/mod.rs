@@ -36,6 +36,11 @@ impl<C> Platform<C> {
     ///
     /// A reward share whose `payToId` names no identity stays with its masternode. Generation 0
     /// failed the payout on it, because an identity without a balance cannot be credited.
+    ///
+    /// Every reward share of a masternode is read (`fetch_reward_shares_list_for_masternode` v1;
+    /// generation 0's read returned one), and the shares are paid in the order they are read
+    /// until the masternode's payout is used up: a share larger than what is left gets what is
+    /// left, so shares adding up to more than the whole payout cannot fail it.
     pub(super) fn add_epoch_pool_to_proposers_payout_operations_v1(
         &self,
         unpaid_epoch: &UnpaidEpoch,
@@ -145,7 +150,8 @@ impl<C> Platform<C> {
                     .and_then(|a| a.checked_div(10000))
                     .ok_or(Error::Execution(ExecutionError::Overflow(
                         "overflow when calculating reward share",
-                    )))?;
+                    )))?
+                    .min(masternode_payout_leftover);
 
                 // update masternode reward that would be paid later
                 masternode_payout_leftover = masternode_payout_leftover
