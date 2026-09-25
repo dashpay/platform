@@ -270,18 +270,19 @@ public class WalletStorage {
 
     /// Delete a mnemonic keyed by wallet id. Idempotent.
     ///
-    /// The mnemonic goes first and the presence marker second, under the
-    /// same lock `walletPresence()` takes: a presence read cannot slip
-    /// between the two steps and backfill a marker for a mnemonic that is
-    /// about to disappear, and an interruption between them leaves a
-    /// marker whose mnemonic is gone only until the next unlocked
-    /// presence read reconciles it away.
+    /// The presence marker comes off first and the mnemonic second, so a
+    /// process killed between the two steps — or a mnemonic delete that
+    /// throws — leaves at most a mnemonic without a marker, which the next
+    /// unlocked presence read re-marks; never a marker without a mnemonic,
+    /// which a locked read would trust. The lock `walletPresence()` shares
+    /// keeps a presence read from backfilling the marker between the two
+    /// steps.
     public func deleteMnemonic(for walletId: Data) throws {
         Self.mutationLock.lock()
         defer { Self.mutationLock.unlock() }
 
-        try deleteMnemonicItem(for: walletId)
         try deletePresenceMarker(for: walletId)
+        try deleteMnemonicItem(for: walletId)
     }
 
     /// Enumerate all wallet ids with a stored mnemonic.
@@ -343,7 +344,7 @@ public class WalletStorage {
     // Invariant: marker ⇒ a mnemonic was stored for that id. The marker
     // is maintained only inside `storeMnemonic` / `deleteMnemonic`, in an
     // order that keeps the invariant across an interruption at any step
-    // (mnemonic on before marker on; mnemonic off before marker off), and
+    // (the marker goes on last and comes off first), and
     // the three entry points that touch both items share one process-wide
     // lock so a presence read cannot interleave with a write or delete
     // (`PlatformWalletManager.deleteWallet` uses its own `WalletStorage`

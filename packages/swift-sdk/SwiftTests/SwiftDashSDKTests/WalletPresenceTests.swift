@@ -27,7 +27,9 @@ final class WalletPresenceTests: XCTestCase {
         var inventoryFailure: OSStatus?
         var markerReadFailure: OSStatus?
         var markerWriteFailure: OSStatus?
+        var markerDeleteFailure: OSStatus?
         var mnemonicAddFailure: OSStatus?
+        var mnemonicDeleteFailure: OSStatus?
 
         func seed(mnemonics: [Data] = [], markers: [Data] = []) {
             lock.withLock {
@@ -68,9 +70,10 @@ final class WalletPresenceTests: XCTestCase {
             }
         }
 
-        func deleteMnemonic(_ id: Data) {
-            lock.withLock {
+        func deleteMnemonic(_ id: Data) throws {
+            try lock.withLock {
                 log.append("deleteMnemonic:\(Self.tag(id))")
+                if let status = mnemonicDeleteFailure { throw WalletStorageError.keychainError(status) }
                 mnemonics.remove(id)
             }
         }
@@ -83,9 +86,10 @@ final class WalletPresenceTests: XCTestCase {
             }
         }
 
-        func deleteMarker(_ id: Data) {
-            lock.withLock {
+        func deleteMarker(_ id: Data) throws {
+            try lock.withLock {
                 log.append("deleteMarker:\(Self.tag(id))")
+                if let status = markerDeleteFailure { throw WalletStorageError.keychainError(status) }
                 markers.remove(id)
             }
         }
@@ -107,9 +111,9 @@ final class WalletPresenceTests: XCTestCase {
         override func addMnemonicItem(_ data: Data, for walletId: Data) throws {
             try keychain.addMnemonic(walletId)
         }
-        override func deleteMnemonicItem(for walletId: Data) throws { keychain.deleteMnemonic(walletId) }
+        override func deleteMnemonicItem(for walletId: Data) throws { try keychain.deleteMnemonic(walletId) }
         override func storePresenceMarker(for walletId: Data) throws { try keychain.addMarker(walletId) }
-        override func deletePresenceMarker(for walletId: Data) throws { keychain.deleteMarker(walletId) }
+        override func deletePresenceMarker(for walletId: Data) throws { try keychain.deleteMarker(walletId) }
     }
 
     private let walletA = Data(repeating: 0xA1, count: 32)
@@ -246,32 +250,66 @@ final class WalletPresenceTests: XCTestCase {
         XCTAssertEqual(keychain.markerIds, [walletA], "and the next unlocked read repairs it")
     }
 
-    func testDeleteRemovesTheMnemonicBeforeTheMarker() throws {
+    func testDeleteRemovesTheMarkerBeforeTheMnemonic() throws {
         let keychain = FakeKeychain()
         keychain.seed(mnemonics: [walletA], markers: [walletA])
 
         try FakeStorage(keychain).deleteMnemonic(for: walletA)
 
-        XCTAssertEqual(keychain.steps, ["deleteMnemonic:a1", "deleteMarker:a1"])
+        XCTAssertEqual(keychain.steps, ["deleteMarker:a1", "deleteMnemonic:a1"])
         XCTAssertTrue(keychain.mnemonicIds.isEmpty)
         XCTAssertTrue(keychain.markerIds.isEmpty)
+    }
+
+    func testFailedMnemonicDeleteLeavesAnUnmarkedMnemonicNotAPhantom() {
+        // The interruption between the two deletions: the marker is
+        // already gone, the mnemonic is still there. A locked read then
+        // says unknown rather than present-for-a-wallet-that-is-gone, and
+        // an unlocked read re-marks the surviving mnemonic.
+        let keychain = FakeKeychain()
+        keychain.seed(mnemonics: [walletA], markers: [walletA])
+        keychain.mnemonicDeleteFailure = errSecWrPerm
+
+        XCTAssertThrowsError(try FakeStorage(keychain).deleteMnemonic(for: walletA))
+        XCTAssertEqual(keychain.mnemonicIds, [walletA])
+        XCTAssertTrue(keychain.markerIds.isEmpty, "the safe direction of drift")
+
+        keychain.inventoryFailure = locked
+        XCTAssertEqual(FakeStorage(keychain).walletPresence(), .unknown(locked))
+
+        keychain.inventoryFailure = nil
+        XCTAssertEqual(FakeStorage(keychain).walletPresence(), .present)
+        XCTAssertEqual(keychain.markerIds, [walletA], "and the next unlocked read repairs it")
+    }
+
+    func testFailedMarkerDeleteLeavesTheMnemonicInPlace() {
+        // The first step failing must not remove the mnemonic behind a
+        // marker that still exists.
+        let keychain = FakeKeychain()
+        keychain.seed(mnemonics: [walletA], markers: [walletA])
+        keychain.markerDeleteFailure = errSecWrPerm
+
+        XCTAssertThrowsError(try FakeStorage(keychain).deleteMnemonic(for: walletA))
+        XCTAssertEqual(keychain.steps, ["deleteMarker:a1"])
+        XCTAssertEqual(keychain.mnemonicIds, [walletA])
+        XCTAssertEqual(keychain.markerIds, [walletA])
     }
 
     // MARK: - Interleaving across storage instances
 
     func testPresenceReadCannotBackfillAMarkerDuringADeletion() throws {
         // `deleteMnemonic` on one instance is paused at its first keychain
-        // step; `walletPresence()` on a second instance (the inventory
-        // still lists the wallet, no marker yet) must wait for the
-        // deletion instead of backfilling a marker the deletion would
-        // then leave behind.
+        // step (the marker delete); `walletPresence()` on a second
+        // instance (the inventory still lists the wallet, no marker yet)
+        // must wait for the deletion instead of backfilling a marker the
+        // deletion would then leave behind.
         final class PausingStorage: FakeStorage, @unchecked Sendable {
             let entered = DispatchSemaphore(value: 0)
             let release = DispatchSemaphore(value: 0)
-            override func deleteMnemonicItem(for walletId: Data) throws {
+            override func deletePresenceMarker(for walletId: Data) throws {
                 entered.signal()
                 release.wait()
-                try super.deleteMnemonicItem(for: walletId)
+                try super.deletePresenceMarker(for: walletId)
             }
         }
 
