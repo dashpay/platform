@@ -2214,6 +2214,20 @@ extension ManagedPlatformWallet {
         /// unspent (a reclaim top-up consumes it without creating this
         /// identity), so the claim can still fail late.
         public let alreadyClaimed: Bool
+
+        public init(
+            prospectiveIdentityId: Data,
+            amountDuffs: UInt64,
+            isInstant: Bool,
+            isChainLocked: Bool,
+            alreadyClaimed: Bool
+        ) {
+            self.prospectiveIdentityId = prospectiveIdentityId
+            self.amountDuffs = amountDuffs
+            self.isInstant = isInstant
+            self.isChainLocked = isChainLocked
+            self.alreadyClaimed = alreadyClaimed
+        }
     }
 
     /// Create a DashPay invitation (DIP-13): fund a one-time asset-lock voucher
