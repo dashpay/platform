@@ -375,6 +375,11 @@ impl DriveOperation<'_> {
     /// sponsors the gas. Merged, they apply as if in turn. The merged operation takes the place
     /// of the first one on its key, and a balance or pot the writes leave as it was gets none.
     /// A key written once keeps its operation untouched.
+    ///
+    /// Two other kinds of write compute from the committed value too and are not merged here,
+    /// because no batch repeats their keys: the total system credits
+    /// ([`SystemOperationType`]) and address balances ([`AddressFundsOperationType`]). Their
+    /// docs say what keeps it so; a change that could repeat one must extend this merge first.
     pub fn merge_balance_writes(operations: Vec<Self>) -> Result<Vec<Self>, Error> {
         // Most batches make at most one such write: nothing to merge, and no map to build.
         if operations
