@@ -20,6 +20,12 @@
 //! `SpvBroadcaster` so most call sites don't need to name it.
 
 // Core handle + identity-lifecycle operations.
+/// Page size for the per-identity DPNS username query. Matches Platform's
+/// maximum query limit (`drive::config::DEFAULT_MAX_QUERY_LIMIT`), so a
+/// shorter result is the identity's complete owned set and only a full page
+/// may be truncated — see `ManagedIdentity::apply_fetched_dpns_names`.
+pub(crate) const DPNS_USERNAMES_PAGE_LIMIT: u32 = 100;
+
 mod balance;
 mod contract;
 mod discovery;

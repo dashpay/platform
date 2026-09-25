@@ -271,6 +271,46 @@ impl ManagedIdentity {
         added
     }
 
+    /// Apply one DPNS username fetch for this identity; returns how many
+    /// labels are new.
+    ///
+    /// `complete` says the fetch returned the identity's whole owned set (a
+    /// result shorter than the page limit). Then the list is replaced with
+    /// it — departed names drop out, an empty result clears the list — while
+    /// labels already known keep their `acquired_at`, and nothing is
+    /// persisted when the list is unchanged. A partial fetch (a full page)
+    /// cannot prove that a missing label left, so it only merges new labels
+    /// ([`Self::merge_dpns_names`]). Either way one snapshot at most.
+    pub fn apply_fetched_dpns_names(
+        &mut self,
+        names: Vec<DpnsNameInfo>,
+        complete: bool,
+        persister: &WalletPersister,
+    ) -> u32 {
+        if !complete {
+            return self.merge_dpns_names(names, persister);
+        }
+        // Known labels still owned, in their existing order, then new ones.
+        let mut next: Vec<DpnsNameInfo> = self
+            .dpns_names
+            .iter()
+            .filter(|known| names.iter().any(|name| name.label == known.label))
+            .cloned()
+            .collect();
+        let mut added = 0u32;
+        for name in names {
+            if next.iter().any(|existing| existing.label == name.label) {
+                continue;
+            }
+            next.push(name);
+            added += 1;
+        }
+        if next != self.dpns_names {
+            self.set_dpns_names(next, persister);
+        }
+        added
+    }
+
     /// Replace the DPNS-name list wholesale.
     ///
     /// Use this when a sync round (or a confirmed sale/transfer) has the
@@ -703,6 +743,108 @@ mod tests {
             2,
             "nothing new, nothing stored"
         );
+    }
+
+    fn dpns_test_identity() -> (
+        ManagedIdentity,
+        std::sync::Arc<CapturingPersister>,
+        WalletPersister,
+    ) {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+        (ManagedIdentity::new(identity, 0), persister, p)
+    }
+
+    fn dpns_name(label: &str, acquired_at: Option<u64>) -> DpnsNameInfo {
+        DpnsNameInfo {
+            label: label.to_string(),
+            acquired_at,
+        }
+    }
+
+    fn dpns_store_count(persister: &CapturingPersister) -> usize {
+        persister.stores.lock().unwrap().len()
+    }
+
+    /// A complete fetch is the owned set: a departed label drops out, a known
+    /// label keeps its timestamp, a new one is added — in one store.
+    #[test]
+    fn complete_dpns_fetch_replaces_the_list_in_one_store() {
+        let (mut managed, persister, p) = dpns_test_identity();
+        managed.set_dpns_names(
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", Some(20))],
+            &p,
+        );
+        let before = dpns_store_count(&persister);
+
+        let added = managed.apply_fetched_dpns_names(
+            vec![dpns_name("bob", Some(99)), dpns_name("carol", Some(99))],
+            true,
+            &p,
+        );
+
+        assert_eq!(added, 1);
+        assert_eq!(
+            managed.dpns_names,
+            vec![dpns_name("bob", Some(20)), dpns_name("carol", Some(99))]
+        );
+        assert_eq!(dpns_store_count(&persister), before + 1);
+    }
+
+    /// An empty complete fetch means the identity owns no names any more.
+    #[test]
+    fn empty_complete_dpns_fetch_clears_the_list() {
+        let (mut managed, persister, p) = dpns_test_identity();
+        managed.set_dpns_names(vec![dpns_name("alice", Some(10))], &p);
+        let before = dpns_store_count(&persister);
+
+        assert_eq!(managed.apply_fetched_dpns_names(Vec::new(), true, &p), 0);
+
+        assert!(managed.dpns_names.is_empty());
+        assert_eq!(dpns_store_count(&persister), before + 1);
+    }
+
+    /// A full page may be truncated: a label missing from it stays.
+    #[test]
+    fn partial_dpns_fetch_only_adds() {
+        let (mut managed, _persister, p) = dpns_test_identity();
+        managed.set_dpns_names(vec![dpns_name("alice", Some(10))], &p);
+
+        let added = managed.apply_fetched_dpns_names(vec![dpns_name("bob", None)], false, &p);
+
+        assert_eq!(added, 1);
+        assert_eq!(
+            managed.dpns_names,
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", None)]
+        );
+    }
+
+    /// Re-fetching the same complete set (even in another order, with fresh
+    /// timestamps) changes nothing and stores nothing.
+    #[test]
+    fn unchanged_complete_dpns_fetch_stores_nothing() {
+        let (mut managed, persister, p) = dpns_test_identity();
+        managed.set_dpns_names(
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", Some(20))],
+            &p,
+        );
+        let before = dpns_store_count(&persister);
+
+        let added = managed.apply_fetched_dpns_names(
+            vec![dpns_name("bob", Some(99)), dpns_name("alice", Some(99))],
+            true,
+            &p,
+        );
+
+        assert_eq!(added, 0);
+        assert_eq!(dpns_store_count(&persister), before);
+        assert_eq!(managed.dpns_names[0], dpns_name("alice", Some(10)));
     }
 
     /// `add_keys` records each key's breadcrumb (or `None` for watch-only)

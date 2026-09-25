@@ -330,13 +330,24 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
             )
         ).map(\.label), ["Alice"])
 
-        // The old owner kept its pick but has no rows left: the name's single
-        // row now belongs to the new owner, so the pick is not displayed.
+        // The rebind clears the old owner's pick of the transferred name.
         let previous = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
-        XCTAssertEqual(previous.mainDpnsName, "Alice")
+        XCTAssertNil(previous.mainDpnsName)
         XCTAssertTrue(previous.dpnsNames.isEmpty)
         XCTAssertNil(previous.ownedMainDpnsName)
         XCTAssertNotEqual(previous.displayName, "Alice")
+
+        // Even once the recipient's row is gone (its wallet deleted), the old
+        // owner has no stale pick left to resurface.
+        let deleteContext = ModelContext(container)
+        for row in try deleteContext.fetch(FetchDescriptor<PersistentDPNSName>()) {
+            deleteContext.delete(row)
+        }
+        try deleteContext.save()
+        let afterDelete = try XCTUnwrap(
+            PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        XCTAssertNil(afterDelete.ownedMainDpnsName)
+        XCTAssertNotEqual(afterDelete.displayName, "Alice")
     }
 
     func testMarketplaceRemovalClearsOnlyMarketplaceColumns() throws {

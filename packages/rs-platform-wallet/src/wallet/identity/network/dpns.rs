@@ -307,13 +307,16 @@ impl IdentityWallet {
         })
     }
 
-    /// Fetch all DPNS usernames owned by `identity_id` from Platform
-    /// and merge them into the local
+    /// Fetch the DPNS usernames owned by `identity_id` from Platform
+    /// and reconcile the local
     /// [`ManagedIdentity.dpns_names`](crate::wallet::identity::ManagedIdentity)
-    /// cache.
+    /// cache with them.
     ///
-    /// Skips labels that are already in the cache, so repeated syncs
-    /// don't emit duplicate entries. New labels get an
+    /// A result shorter than the page limit is the complete owned set and
+    /// replaces the cache (names that left drop out); a full page may be
+    /// truncated and is only merged — see
+    /// `ManagedIdentity::apply_fetched_dpns_names`. Known labels keep their
+    /// timestamp; new labels get an
     /// `acquired_at` timestamp of best-effort wall-clock millis —
     /// DPNS documents carry their own `$createdAt` but
     /// `DpnsUsername` doesn't surface it on the query result today.
@@ -331,17 +334,16 @@ impl IdentityWallet {
     ) -> Result<u32, PlatformWalletError> {
         let usernames = self
             .sdk
-            .get_dpns_usernames_by_identity(*identity_id, None)
+            .get_dpns_usernames_by_identity(*identity_id, Some(super::DPNS_USERNAMES_PAGE_LIMIT))
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to fetch DPNS usernames for identity {identity_id}: {e}",
                 ))
             })?;
-
-        if usernames.is_empty() {
-            return Ok(0);
-        }
+        // A short page is the complete owned set: it also drops names that
+        // left, and an empty one clears the list.
+        let complete = usernames.len() < super::DPNS_USERNAMES_PAGE_LIMIT as usize;
 
         let acquired_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -357,12 +359,16 @@ impl IdentityWallet {
             let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
                 return Ok(0);
             };
-            // One snapshot for the whole fetch — see `merge_dpns_names`.
-            added = managed.merge_dpns_names(
-                usernames.into_iter().map(|username| DpnsNameInfo {
-                    label: username.label,
-                    acquired_at,
-                }),
+            // One snapshot for the whole fetch — see `apply_fetched_dpns_names`.
+            added = managed.apply_fetched_dpns_names(
+                usernames
+                    .into_iter()
+                    .map(|username| DpnsNameInfo {
+                        label: username.label,
+                        acquired_at,
+                    })
+                    .collect(),
+                complete,
                 &self.persister,
             );
         }

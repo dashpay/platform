@@ -280,7 +280,7 @@ impl IdentityWallet {
         // Query DPNS names for the discovered identity.
         match self
             .sdk
-            .get_dpns_usernames_by_identity(identity_id, None)
+            .get_dpns_usernames_by_identity(identity_id, Some(super::DPNS_USERNAMES_PAGE_LIMIT))
             .await
         {
             Ok(usernames) => {
@@ -291,12 +291,17 @@ impl IdentityWallet {
                     )
                 })?;
                 if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
-                    // One snapshot for the whole fetch — see `merge_dpns_names`.
-                    managed.merge_dpns_names(
-                        usernames.into_iter().map(|username| DpnsNameInfo {
-                            label: username.label,
-                            acquired_at: None,
-                        }),
+                    // A short page is the complete owned set — see `apply_fetched_dpns_names`.
+                    let complete = usernames.len() < super::DPNS_USERNAMES_PAGE_LIMIT as usize;
+                    managed.apply_fetched_dpns_names(
+                        usernames
+                            .into_iter()
+                            .map(|username| DpnsNameInfo {
+                                label: username.label,
+                                acquired_at: None,
+                            })
+                            .collect(),
+                        complete,
                         &self.persister,
                     );
                 }
@@ -407,10 +412,11 @@ impl IdentityWallet {
     /// Refresh DPNS names for all identities in the manager.
     ///
     /// Iterates every identity in the [`IdentityManager`], queries Platform
-    /// for its current DPNS usernames, and merges them into the stored
-    /// `dpns_names` list, persisting one snapshot per identity (see
-    /// `ManagedIdentity::merge_dpns_names`). Add-only: the query is capped
-    /// by its limit, so it cannot prove that a known label left.
+    /// for its current DPNS usernames, and reconciles the stored
+    /// `dpns_names` list with them, persisting at most one snapshot per
+    /// identity: a complete result replaces the list (departed names drop
+    /// out), a full, possibly truncated page only adds — see
+    /// `ManagedIdentity::apply_fetched_dpns_names`.
     pub async fn refresh_dpns_names(&self) -> Result<(), PlatformWalletError> {
         use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
 
@@ -432,7 +438,7 @@ impl IdentityWallet {
         for identity_id in identity_ids {
             match self
                 .sdk
-                .get_dpns_usernames_by_identity(identity_id, None)
+                .get_dpns_usernames_by_identity(identity_id, Some(super::DPNS_USERNAMES_PAGE_LIMIT))
                 .await
             {
                 Ok(usernames) => {
@@ -444,11 +450,17 @@ impl IdentityWallet {
                     })?;
                     if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id)
                     {
-                        managed.merge_dpns_names(
-                            usernames.into_iter().map(|u| DpnsNameInfo {
-                                label: u.label,
-                                acquired_at: None,
-                            }),
+                        // A short page is the complete owned set — see `apply_fetched_dpns_names`.
+                        let complete = usernames.len() < super::DPNS_USERNAMES_PAGE_LIMIT as usize;
+                        managed.apply_fetched_dpns_names(
+                            usernames
+                                .into_iter()
+                                .map(|u| DpnsNameInfo {
+                                    label: u.label,
+                                    acquired_at: None,
+                                })
+                                .collect(),
+                            complete,
                             &self.persister,
                         );
                     }
