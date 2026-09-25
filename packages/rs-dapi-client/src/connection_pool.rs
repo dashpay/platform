@@ -17,7 +17,16 @@ use crate::{
 /// Cloning the pool will create a new reference to the same pool.
 #[derive(Debug, Clone)]
 pub struct ConnectionPool {
-    inner: Arc<Mutex<LruCache<String, PoolItem>>>,
+    inner: Arc<Mutex<LruCache<PoolKey, PoolItem>>>,
+}
+
+/// Identity of a pooled connection: the client type, the node, and the
+/// connection-affecting settings (`None` when none were given).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PoolKey {
+    prefix: PoolPrefix,
+    uri: String,
+    connection: Option<String>,
 }
 
 impl ConnectionPool {
@@ -100,16 +109,12 @@ impl ConnectionPool {
     /// the next request sent to the same node, so the executor evicts it and
     /// the next request dials a fresh connection.
     pub fn remove_uri(&self, uri: &Uri) {
-        let prefixes = [PoolPrefix::Core, PoolPrefix::Platform].map(|prefix| {
-            // Every key continues with `:` after the URI (see `key`), so this
-            // cannot match a longer URI that merely starts with this one.
-            format!("{}:{}:", prefix, uri)
-        });
+        let uri = uri.to_string();
         let mut cache = self.inner.lock().expect("must lock");
-        let stale: Vec<String> = cache
+        let stale: Vec<PoolKey> = cache
             .iter()
             .map(|(key, _)| key)
-            .filter(|key| prefixes.iter().any(|prefix| key.starts_with(prefix)))
+            .filter(|key| key.uri == uri)
             .cloned()
             .collect();
         for key in stale {
@@ -121,17 +126,14 @@ impl ConnectionPool {
         class: C,
         uri: &Uri,
         settings: Option<&AppliedRequestSettings>,
-    ) -> String {
-        let prefix: PoolPrefix = class.into();
+    ) -> PoolKey {
         // Only connection-affecting settings participate in the key (see
         // `AppliedRequestSettings::connection_key`), so requests differing only
         // in per-request knobs (timeout, retries, banning) share a connection.
-        // The settings segment is always present (and contains no `:`), so the
-        // two branches cannot produce colliding shapes even for a URI whose
-        // path mimics a key fragment.
-        match settings {
-            Some(settings) => format!("{}:{}:{}", prefix, uri, settings.connection_key()),
-            None => format!("{}:{}:none", prefix, uri),
+        PoolKey {
+            prefix: class.into(),
+            uri: uri.to_string(),
+            connection: settings.map(AppliedRequestSettings::connection_key),
         }
     }
 }
@@ -187,6 +189,7 @@ impl From<PoolItem> for CoreGrpcClient {
 }
 
 /// Prefix for the item in the pool. Used to distinguish between Core and Platform clients.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PoolPrefix {
     Core,
     Platform,
@@ -452,6 +455,32 @@ mod tests {
             pool.get(PoolPrefix::Platform, &longer_port, None).is_some(),
             "a URI that merely starts with the evicted one must stay pooled"
         );
+    }
+
+    #[tokio::test]
+    async fn should_remove_only_the_exact_uri_when_another_extends_it_past_a_colon() {
+        let cases = [
+            ("http://node", "http://node:443"),
+            ("http://node/grpc", "http://node/grpc:8080"),
+        ];
+        for (evicted, kept) in cases {
+            let pool = ConnectionPool::new(10);
+            let evicted = Uri::from_str(evicted).unwrap();
+            let kept = Uri::from_str(kept).unwrap();
+            pool.put(&evicted, None, make_platform_pool_item());
+            pool.put(&kept, None, make_platform_pool_item());
+
+            pool.remove_uri(&evicted);
+
+            assert!(
+                pool.get(PoolPrefix::Platform, &evicted, None).is_none(),
+                "{evicted} must be evicted"
+            );
+            assert!(
+                pool.get(PoolPrefix::Platform, &kept, None).is_some(),
+                "{kept} must stay pooled when {evicted} is evicted"
+            );
+        }
     }
 
     #[tokio::test]
