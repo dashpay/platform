@@ -18,6 +18,7 @@ mod action_fee_tests {
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::{
         PaidConsensusError, SuccessfulExecution, UnpaidConsensusError,
     };
+    use dpp::balances::credits::MAX_CREDITS;
     use dpp::block::epoch::Epoch;
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
@@ -1270,9 +1271,9 @@ mod action_fee_tests {
 
     /// The card game of the sponsorship tests with a card the contract owner created and put
     /// up for sale, committed so that check tx sees it, and the card as a purchase of it
-    /// carries it. A purchase charges an action fee to whoever pays the gas, and its token cost
-    /// offers that the contract owner pays it.
-    async fn card_for_sale() -> (Sponsorship, Document) {
+    /// carries it. A purchase charges an action fee of `owner_part` and `MODERATORS_PART` to
+    /// whoever pays the gas, and its token cost offers that the contract owner pays it.
+    async fn card_for_sale(owner_part: Credits) -> (Sponsorship, Document) {
         let setup = Sponsorship::build_customized(
             PlatformVersion::latest(),
             GasFeesPaidBy::DocumentOwner,
@@ -1281,7 +1282,7 @@ mod action_fee_tests {
             dash_to_credits!(0.1),
             15,
             None,
-            |contract| {
+            move |contract| {
                 let offered: u8 = GasFeesPaidBy::ContractOwner.into();
                 contract
                     .document_types_mut()
@@ -1301,7 +1302,7 @@ mod action_fee_tests {
                     "card",
                     platform_value!({
                         "pricing": "fixed",
-                        "purchase": {"owner": OWNER_PART, "moderators": MODERATORS_PART},
+                        "purchase": {"owner": owner_part, "moderators": MODERATORS_PART},
                     }),
                     true,
                 );
@@ -1400,7 +1401,7 @@ mod action_fee_tests {
     /// action fee leaves the same balance: the buyer pays both, and the credits only move.
     #[tokio::test]
     async fn should_charge_the_buyer_both_the_price_and_the_purchase_fee() {
-        let (setup, card) = card_for_sale().await;
+        let (setup, card) = card_for_sale(OWNER_PART).await;
         let purchase = purchase_of(&setup, card, GasFeesPaidBy::DocumentOwner).await;
         assert_check_tx_valid_at_all_levels(
             &setup.platform,
@@ -1448,7 +1449,22 @@ mod action_fee_tests {
     #[tokio::test]
     async fn should_pay_a_seller_who_sponsors_the_gas_the_price_less_the_moderators_part_and_the_gas(
     ) {
-        let (setup, card) = card_for_sale().await;
+        purchase_from_a_seller_who_sponsors_the_gas(OWNER_PART).await;
+    }
+
+    /// Fee validation estimates the signer paying the whole fee before it settles on the
+    /// sponsor, who is never charged the owner part. With an owner part that leaves the price
+    /// no room below the largest balance there can be, the price and that fee would be one
+    /// removal no balance covers: the estimate must still admit the purchase the sponsor pays.
+    #[tokio::test]
+    async fn should_admit_a_sponsored_purchase_whose_waived_owner_part_no_signer_could_pay() {
+        purchase_from_a_seller_who_sponsors_the_gas(MAX_CREDITS - MODERATORS_PART - 1).await;
+    }
+
+    /// The user buys the card for sale, with an owner part of `owner_part`, from the contract
+    /// owner, who sponsors the gas; checks it through check tx and what execution moves
+    async fn purchase_from_a_seller_who_sponsors_the_gas(owner_part: Credits) {
+        let (setup, card) = card_for_sale(owner_part).await;
         let purchase = purchase_of(&setup, card, GasFeesPaidBy::ContractOwner).await;
         assert_check_tx_valid_at_all_levels(
             &setup.platform,
