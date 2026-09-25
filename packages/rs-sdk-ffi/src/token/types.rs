@@ -69,6 +69,8 @@ pub enum DashSDKTokenDistributionType {
     PreProgrammed = 0,
     /// Perpetual distribution
     Perpetual = 1,
+    /// Once-per-identity distribution: a fixed amount every identity may claim once
+    OncePerIdentity = 2,
 }
 
 /// Token claim parameters

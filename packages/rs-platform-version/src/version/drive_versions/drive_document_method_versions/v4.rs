@@ -5,7 +5,7 @@ use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
 };
 
-/// V4 is protocol version 14's document-method table. It hosts four
+/// V4 is protocol version 14's document-method table. It hosts five
 /// independent changes that all gate at v14 (ranked aggregates, the
 /// shared-prefix aggregate index fix, the reworked non-primary-key
 /// query lowering via `query.non_primary_key_path_query: 1` — multiple
@@ -17,7 +17,11 @@ use crate::version::drive_versions::drive_document_method_versions::{
 /// which lets a resource be contested again over the storage of an
 /// abstain or lock vote tree an earlier poll's cleanup left orphaned: the
 /// raw existence probe reports it, v0 raised `CorruptedContractIndexes`,
-/// v1 checks that nothing is reachable there and creates the tree).
+/// v1 checks that nothing is reachable there and creates the tree), and
+/// `insert_contested.fetch_charter_election_windows: Some(0)` (`None` in
+/// every earlier table), which reads the join and vote windows of a
+/// moderation election (an `electedCharter` contest) from its target
+/// contract's elected moderation declaration.
 ///
 /// ## 1. Contract-level ranked aggregates
 ///
@@ -128,11 +132,12 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             add_contested_document: 0,
             add_contested_document_for_contract: 0,
             add_contested_document_for_contract_apply_and_add_to_operations: 0,
-            add_contested_document_for_contract_operations: 0,
+            add_contested_document_for_contract_operations: 1, // changed in v14: no-locking contests end at the join window until a second contender joins
             add_contested_document_to_primary_storage: 0,
             add_contested_indices_for_contract_operations: 0,
             add_contested_reference_and_vote_subtree_to_document_operations: 0,
             add_contested_vote_subtree_for_non_identities_operations: 1, // changed in v4: recreates the abstain or lock vote tree over the storage an earlier poll's cleanup left orphaned when a resource is contested again
+            fetch_charter_election_windows: Some(0), // new in v14: a moderation election runs on the join and vote windows its target contract declares
         },
         update: DriveDocumentUpdateMethodVersions {
             add_update_multiple_documents_operations: 0,
@@ -159,6 +164,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 1,
             validate_document_purchase_transition_action_uniqueness: 1,
             validate_document_update_price_transition_action_uniqueness: 1,
+            validate_restored_document_uniqueness: 0,
         },
         // Unchanged from V3 — see V3's comment for the v12-gated
         // count/sum composition rationale.

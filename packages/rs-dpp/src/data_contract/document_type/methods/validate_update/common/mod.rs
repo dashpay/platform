@@ -390,6 +390,22 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        // The entry payload is part of every stored entry's value layout:
+        // adding, dropping or renaming a payload property would leave the
+        // existing entries undecodable (and their commitments unrecomputable).
+        if new_document_type.entry_payload() != self.entry_payload() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    "document type can not change its entryPayload: the listed properties are \
+                     the value layout of every stored entry"
+                        .to_string(),
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 
@@ -1361,6 +1377,118 @@ mod tests {
         }
 
         #[test]
+        fn should_return_invalid_result_when_entry_payload_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "note";
+
+            // Both types are valid indexOnly types over the same properties:
+            // one keeps `body` in every entry's value slot, the other keys
+            // by it as the terminal's last component. Every other config
+            // flag is equal, so `validate_config` reaches the payload check.
+            let payload_schema = platform_value!({
+                "type": "object",
+                "indexOnly": true,
+                "documentsMutable": false,
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                    },
+                    "body": {
+                        "type": "array",
+                        "byteArray": true,
+                        "maxItems": 16,
+                        "position": 1,
+                    }
+                },
+                "required": ["postId", "body"],
+                "indices": [
+                    {
+                        "name": "byPost",
+                        "properties": [{ "postId": "asc" }],
+                    }
+                ],
+                "entryPayload": ["body"],
+                "additionalProperties": false,
+            });
+            let keyed_schema = platform_value!({
+                "type": "object",
+                "indexOnly": true,
+                "documentsMutable": false,
+                "properties": {
+                    "postId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0,
+                    },
+                    "body": {
+                        "type": "array",
+                        "byteArray": true,
+                        "maxItems": 16,
+                        "position": 1,
+                    }
+                },
+                "required": ["postId", "body"],
+                "indices": [
+                    {
+                        "name": "byPost",
+                        "properties": [{ "postId": "asc" }],
+                        "terminal": ["$ownerId", "body"],
+                    }
+                ],
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let make_document_type = |schema: platform_value::Value| {
+                DocumentType::try_from_schema(
+                    data_contract_id,
+                    1,
+                    config.version(),
+                    document_type_name,
+                    schema,
+                    None,
+                    &BTreeMap::new(),
+                    &config,
+                    false,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("document type should parse")
+            };
+
+            let old_document_type = make_document_type(payload_schema);
+            let new_document_type = make_document_type(keyed_schema);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message().starts_with("document type can not change its entryPayload")
+            );
+
+            // The unchanged pair passes the same check.
+            let result = old_document_type
+                .as_ref()
+                .validate_config(old_document_type.as_ref());
+            assert!(result.errors.is_empty(), "{:?}", result.errors);
+        }
+
+        #[test]
         fn should_return_invalid_result_when_range_countable_is_changed() {
             // documents_countable must remain equal across old/new so that
             // validate_config reaches the range_countable check below it.
@@ -1595,6 +1723,7 @@ mod tests {
     mod validate_schema {
         use super::*;
         use crate::consensus::basic::BasicError;
+        use crate::data_contract::document_type::accessors::DocumentTypeV0MutGetters;
         use std::collections::BTreeMap;
 
         #[test]
@@ -1831,6 +1960,1064 @@ mod tests {
                 )] if e.operation() == "replace"
                     && e.property_path() == "/properties/toUserId/refersTo/type"
             );
+        }
+
+        /// A property's document reference cannot trade the permanence
+        /// promise existing documents were written under for the weaker
+        /// one, nor the other way round (which would brick every write
+        /// against a deletable target type).
+        #[test]
+        fn should_return_invalid_result_when_a_document_reference_changes_kind() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_kind, new_kind) in [
+                ("permanentDocument", "deletableDocument"),
+                ("deletableDocument", "permanentDocument"),
+            ] {
+                let old_document_type = identifier_document_type(
+                    Some(platform_value!({ "type": old_kind, "documentType": "note" })),
+                    platform_version,
+                );
+                let new_document_type = identifier_document_type(
+                    Some(platform_value!({ "type": new_kind, "documentType": "note" })),
+                    platform_version,
+                );
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.operation() == "replace"
+                        && e.property_path() == "/properties/toUserId/refersTo/type"
+                );
+            }
+        }
+        #[test]
+        fn should_return_invalid_result_when_a_contract_reference_requirement_changes() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_fields, new_fields, changed_path) in [
+                (
+                    platform_value!({ "type": "contract" }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "moderation": "elected" } }),
+                    "/properties/toUserId/refersTo/contractRequirements",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "moderation": "elected" } }),
+                    platform_value!({ "type": "contract" }),
+                    "/properties/toUserId/refersTo/contractRequirements",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 3600 } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumAgeSeconds": 7200 } }),
+                    "/properties/toUserId/refersTo/contractRequirements/minimumAgeSeconds",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 60 } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "minimumSecondsSinceUpdate": 61 } }),
+                    "/properties/toUserId/refersTo/contractRequirements/minimumSecondsSinceUpdate",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "other" } }),
+                    "/properties/toUserId/refersTo/contractRequirements/owner",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "ownerProtected": true } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "ownerProtected": false } }),
+                    "/properties/toUserId/refersTo/contractRequirements/ownerProtected",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self", "readonly": true } }),
+                    "/properties/toUserId/refersTo/contractRequirements/readonly",
+                ),
+                (
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self", "keepsHistory": true } }),
+                    platform_value!({ "type": "contract", "contractRequirements": { "owner": "self" } }),
+                    "/properties/toUserId/refersTo/contractRequirements/keepsHistory",
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_fields), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_fields), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_an_identity_key_reference_requirement_changes() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_fields, new_fields, changed_path) in [
+                (
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex" }),
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "decryption" } }),
+                    "/properties/toUserId/refersTo/keyRequirements",
+                ),
+                (
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "decryption" } }),
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex" }),
+                    "/properties/toUserId/refersTo/keyRequirements",
+                ),
+                (
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "decryption" } }),
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "encryption" } }),
+                    "/properties/toUserId/refersTo/keyRequirements/purpose",
+                ),
+                (
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "boundTo": "test" } }),
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "boundTo": "other" } }),
+                    "/properties/toUserId/refersTo/keyRequirements/boundTo",
+                ),
+                (
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "decryption" } }),
+                    platform_value!({ "type": "identityPublicKey", "keyIdProperty": "toKeyIndex", "keyRequirements": { "purpose": "decryption", "boundTo": "test" } }),
+                    "/properties/toUserId/refersTo/keyRequirements/boundTo",
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_fields), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_fields), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path
+                );
+            }
+        }
+
+        /// `reasons`, a typed array of identifiers, with `refersTo` on its items as given,
+        /// next to a `topic` an agreement can name.
+        fn element_reference_document_type(
+            refers_to: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut items = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+            });
+            if let Some(refers_to) = refers_to {
+                items
+                    .insert("refersTo".to_string(), refers_to)
+                    .expect("should insert refersTo");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "reasons": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": items,
+                        "position": 0
+                    },
+                    "topic": { "type": "string", "maxLength": 32, "position": 1 }
+                },
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "submittedCharter",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        /// An element reference is frozen like a scalar one: stored documents were
+        /// checked against the declaration they were written under, so adding,
+        /// removing or changing it is an incompatible schema change.
+        #[test]
+        fn should_refuse_a_contract_update_that_changes_an_element_refers_to() {
+            let platform_version = PlatformVersion::latest();
+            let permanent =
+                platform_value!({ "type": "permanentDocument", "documentType": "reason" });
+
+            for (old_refers_to, new_refers_to, changed_path) in [
+                (
+                    None,
+                    Some(permanent.clone()),
+                    "/properties/reasons/items/refersTo",
+                ),
+                (
+                    Some(permanent.clone()),
+                    None,
+                    "/properties/reasons/items/refersTo",
+                ),
+                (
+                    Some(permanent.clone()),
+                    Some(
+                        platform_value!({ "type": "deletableDocument", "documentType": "reason" }),
+                    ),
+                    "/properties/reasons/items/refersTo/type",
+                ),
+                (
+                    Some(permanent.clone()),
+                    Some(platform_value!({ "type": "permanentDocument", "documentType": "rule" })),
+                    "/properties/reasons/items/refersTo/documentType",
+                ),
+                (
+                    Some(permanent.clone()),
+                    Some(platform_value!({
+                        "type": "permanentDocument",
+                        "documentType": "reason",
+                        "propertyAgreement": { "topic": "topic" }
+                    })),
+                    "/properties/reasons/items/refersTo/propertyAgreement",
+                ),
+            ] {
+                let old_document_type =
+                    element_reference_document_type(old_refers_to.clone(), platform_version);
+                let new_document_type =
+                    element_reference_document_type(new_refers_to.clone(), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_update(new_document_type.as_ref(), 2, platform_version)
+                    .expect("validate_update should not error");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path,
+                    "{old_refers_to:?} -> {new_refers_to:?}: {:?}",
+                    result.errors
+                );
+            }
+
+            // An unchanged declaration is no change
+            let document_type = element_reference_document_type(Some(permanent), platform_version);
+            let result = document_type
+                .as_ref()
+                .validate_update(document_type.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_a_document_reference_lookup_changes() {
+            let platform_version = PlatformVersion::latest();
+            let owner_lookup = |index: &str| {
+                platform_value!({
+                    "type": "permanentDocument",
+                    "documentType": "note",
+                    "lookup": { "index": index, "keys": { "$ownerId": "." } }
+                })
+            };
+
+            for (old_refers_to, new_refers_to, changed_path) in [
+                (
+                    platform_value!({ "type": "permanentDocument", "documentType": "note" }),
+                    owner_lookup("byOwner"),
+                    "/properties/toUserId/refersTo/lookup",
+                ),
+                (
+                    owner_lookup("byOwner"),
+                    platform_value!({ "type": "permanentDocument", "documentType": "note" }),
+                    "/properties/toUserId/refersTo/lookup",
+                ),
+                (
+                    owner_lookup("byOwner"),
+                    owner_lookup("byAuthor"),
+                    "/properties/toUserId/refersTo/lookup/index",
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_refers_to), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_refers_to), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path
+                );
+            }
+        }
+
+        /// A reference expression is frozen like a single target: documents were checked
+        /// against the expression they were written under, so turning a target into an
+        /// expression or back, adding, removing or reordering an operand (the order decides
+        /// which error a writer sees), swapping `anyOf` for `allOf`, nesting deeper, or
+        /// changing a leaf is an incompatible schema change. `anyOf` and `allOf` inside
+        /// `refersTo` are the declaration's data, never read as the JSON Schema keywords.
+        #[test]
+        fn should_return_invalid_result_when_a_reference_expression_changes() {
+            let platform_version = PlatformVersion::latest();
+            let identity = platform_value!({ "type": "identity" });
+            let note = platform_value!({ "type": "permanentDocument", "documentType": "note" });
+            let memo = platform_value!({ "type": "permanentDocument", "documentType": "memo" });
+            let any_of = |targets: Vec<platform_value::Value>| platform_value!({ "anyOf": platform_value::Value::Array(targets) });
+            let all_of = |targets: Vec<platform_value::Value>| platform_value!({ "allOf": platform_value::Value::Array(targets) });
+
+            for (old_refers_to, new_refers_to) in [
+                (
+                    identity.clone(),
+                    any_of(vec![identity.clone(), note.clone()]),
+                ),
+                (any_of(vec![identity.clone(), note.clone()]), note.clone()),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![identity.clone(), note.clone(), memo.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone(), memo.clone()]),
+                    any_of(vec![identity.clone(), note.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![note.clone(), identity.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![identity.clone(), memo.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    all_of(vec![identity.clone(), note.clone()]),
+                ),
+                (
+                    any_of(vec![identity.clone(), note.clone()]),
+                    any_of(vec![
+                        identity.clone(),
+                        all_of(vec![note.clone(), memo.clone()]),
+                    ]),
+                ),
+                (
+                    all_of(vec![
+                        identity.clone(),
+                        any_of(vec![note.clone(), memo.clone()]),
+                    ]),
+                    all_of(vec![
+                        identity.clone(),
+                        any_of(vec![memo.clone(), note.clone()]),
+                    ]),
+                ),
+            ] {
+                let old_document_type =
+                    identifier_document_type(Some(old_refers_to.clone()), platform_version);
+                let new_document_type =
+                    identifier_document_type(Some(new_refers_to.clone()), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert!(
+                    !result.errors.is_empty(),
+                    "{old_refers_to:?} -> {new_refers_to:?} should be incompatible"
+                );
+                for error in &result.errors {
+                    assert_matches!(
+                        error,
+                        ConsensusError::BasicError(
+                            BasicError::IncompatibleDocumentTypeSchemaError(e)
+                        ) if e.property_path().starts_with("/properties/toUserId/refersTo"),
+                        "{old_refers_to:?} -> {new_refers_to:?}"
+                    );
+                }
+            }
+
+            // An unchanged expression is no change
+            let document_type = identifier_document_type(
+                Some(any_of(vec![identity, all_of(vec![note, memo])])),
+                platform_version,
+            );
+            let result = document_type
+                .as_ref()
+                .validate_schema(document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// The same holds on the elements of a typed array.
+        #[test]
+        fn should_refuse_a_contract_update_that_changes_an_element_reference_expression() {
+            let platform_version = PlatformVersion::latest();
+            let reason = platform_value!({ "type": "permanentDocument", "documentType": "reason" });
+            let any_of = platform_value!({
+                "anyOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "reason" }]
+            });
+
+            let all_of = platform_value!({
+                "allOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "reason" }]
+            });
+            for (old_refers_to, new_refers_to) in [
+                (reason.clone(), any_of.clone()),
+                (any_of.clone(), reason.clone()),
+                (any_of.clone(), all_of.clone()),
+            ] {
+                let old_document_type =
+                    element_reference_document_type(Some(old_refers_to), platform_version);
+                let new_document_type =
+                    element_reference_document_type(Some(new_refers_to), platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_update(new_document_type.as_ref(), 2, platform_version)
+                    .expect("validate_update should not error");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    ), ..] if e.property_path().starts_with("/properties/reasons/items/refersTo"),
+                    "{:?}",
+                    result.errors
+                );
+            }
+        }
+
+        /// `reasons`, a typed array of identifiers, with `refersTo` on its items as given,
+        /// parsed as a contract read back from state is, so a `listElement` declaration
+        /// needs no `$id` property to exist beside it.
+        fn element_list_document_type(
+            refers_to: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut items = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+            });
+            if let Some(refers_to) = refers_to {
+                items
+                    .insert("refersTo".to_string(), refers_to)
+                    .expect("should insert refersTo");
+            }
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "reasons": { "type": "array", "maxItems": 8, "items": items, "position": 0 }
+                },
+                "additionalProperties": false,
+            });
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "resignation",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        /// A list element reference is frozen like every other declaration: stored
+        /// documents were checked against the list it names, on the document its `$id`
+        /// pair names, so adding, removing or changing it (on an identifier property or on
+        /// the elements of a typed array) is an incompatible schema change.
+        #[test]
+        fn should_return_invalid_result_when_a_list_element_reference_changes() {
+            let platform_version = PlatformVersion::latest();
+            let list_element = |id_property: &str, in_list: &str| {
+                platform_value!({
+                    "type": "listElement",
+                    "documentType": "electedCharter",
+                    "propertyAgreement": { id_property: "$id" },
+                    "inList": in_list
+                })
+            };
+            let members = list_element("electedCharterId", "members");
+
+            for (old_refers_to, new_refers_to, changed_path) in [
+                (None, Some(members.clone()), "/refersTo"),
+                (Some(members.clone()), None, "/refersTo"),
+                (
+                    Some(platform_value!({
+                        "type": "permanentDocument",
+                        "documentType": "electedCharter"
+                    })),
+                    Some(members.clone()),
+                    "/refersTo/type",
+                ),
+                (
+                    Some(members.clone()),
+                    Some(list_element("electedCharterId", "seats")),
+                    "/refersTo/inList",
+                ),
+                (
+                    Some(members.clone()),
+                    Some(list_element("otherCharterId", "members")),
+                    "/refersTo/propertyAgreement",
+                ),
+            ] {
+                for (old_document_type, new_document_type, property_path) in [
+                    (
+                        identifier_document_type(old_refers_to.clone(), platform_version),
+                        identifier_document_type(new_refers_to.clone(), platform_version),
+                        "/properties/toUserId",
+                    ),
+                    (
+                        element_list_document_type(old_refers_to.clone(), platform_version),
+                        element_list_document_type(new_refers_to.clone(), platform_version),
+                        "/properties/reasons/items",
+                    ),
+                ] {
+                    let result = old_document_type
+                        .as_ref()
+                        .validate_update(new_document_type.as_ref(), 2, platform_version)
+                        .expect("validate_update should not error");
+
+                    // Swapping the target kind also adds the keywords only a
+                    // list element takes, each its own incompatible change;
+                    // a renamed pair is a removal and an addition under
+                    // propertyAgreement
+                    let expected_path = format!("{property_path}{changed_path}");
+                    let changed_paths: Vec<&str> = result
+                        .errors
+                        .iter()
+                        .map(|error| match error {
+                            ConsensusError::BasicError(
+                                BasicError::IncompatibleDocumentTypeSchemaError(e),
+                            ) => e.property_path(),
+                            other => panic!("expected an incompatible schema change, got {other}"),
+                        })
+                        .collect();
+                    assert!(
+                        changed_paths
+                            .iter()
+                            .any(|changed| changed.starts_with(expected_path.as_str())),
+                        "{old_refers_to:?} -> {new_refers_to:?}: {changed_paths:?}"
+                    );
+                }
+            }
+
+            // An unchanged declaration is no change
+            let document_type = identifier_document_type(Some(members), platform_version);
+            let result = document_type
+                .as_ref()
+                .validate_update(document_type.as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// `toUserId` and `delegateId`, two identifier properties, with `distinctFrom` on
+        /// `delegateId` as given.
+        fn distinct_from_document_type(
+            distinct_from: Option<&str>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut delegate_id = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 1
+            });
+            if let Some(distinct_from) = distinct_from {
+                delegate_id
+                    .insert("distinctFrom".to_string(), distinct_from.into())
+                    .expect("should insert distinctFrom");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "toUserId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    },
+                    "delegateId": delegate_id
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_distinct_from_is_added_changed_or_removed() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_distinct_from, new_distinct_from) in [
+                (None, Some("$ownerId")),
+                (Some("$ownerId"), Some("toUserId")),
+                (Some("toUserId"), None),
+            ] {
+                let old_document_type =
+                    distinct_from_document_type(old_distinct_from, platform_version);
+                let new_document_type =
+                    distinct_from_document_type(new_distinct_from, platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == "/properties/delegateId/distinctFrom",
+                    "{old_distinct_from:?} -> {new_distinct_from:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_valid_result_when_distinct_from_is_unchanged() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type = distinct_from_document_type(Some("$ownerId"), platform_version);
+            let new_document_type = distinct_from_document_type(Some("$ownerId"), platform_version);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
+        /// A `message` type whose `senderKeyId` is a `u32` key id, carrying
+        /// `refers_to` when given.
+        fn key_id_document_type(
+            refers_to: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut sender_key_id = platform_value!({
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295u64,
+                "position": 0
+            });
+
+            if let Some(refers_to) = refers_to {
+                sender_key_id
+                    .insert("refersTo".to_string(), refers_to)
+                    .expect("should insert refersTo");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "senderKeyId": sender_key_id
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "message",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        /// The key id form of `identityPublicKey` is a `refersTo` like any
+        /// other: adding it, removing it or changing what it names is an
+        /// incompatible change, so a contract can neither start nor stop
+        /// checking a stored key id against the owner's keys.
+        #[test]
+        fn should_return_invalid_result_when_a_key_id_reference_is_added_removed_or_changed() {
+            let platform_version = PlatformVersion::latest();
+            let owner_key = platform_value!({
+                "type": "identityPublicKey",
+                "identityProperty": "$ownerId"
+            });
+
+            for (old_refers_to, new_refers_to, operation, changed_path) in [
+                (
+                    None,
+                    Some(owner_key.clone()),
+                    "add",
+                    "/properties/senderKeyId/refersTo",
+                ),
+                (
+                    Some(owner_key.clone()),
+                    None,
+                    "remove",
+                    "/properties/senderKeyId/refersTo",
+                ),
+                // `identityProperty` admits one value today; what a change
+                // would look like is the reference losing it for the other
+                // spelling of the same reference type, which is refused
+                // before the parser is even asked whether it can be parsed
+                (
+                    Some(owner_key.clone()),
+                    Some(platform_value!({
+                        "type": "identityPublicKey",
+                        "identityProperty": "$creatorId"
+                    })),
+                    "replace",
+                    "/properties/senderKeyId/refersTo/identityProperty",
+                ),
+            ] {
+                let old_document_type = key_id_document_type(old_refers_to, platform_version);
+                let new_document_type = if new_refers_to
+                    .as_ref()
+                    .is_some_and(|value| value.to_string().contains("creatorId"))
+                {
+                    // Not parseable at all: compare the schemas directly
+                    // through a type built without the reference, then swap
+                    // the schema in
+                    let mut document_type = key_id_document_type(None, platform_version);
+                    document_type
+                        .schema_mut()
+                        .get_mut("properties")
+                        .expect("the schema should be a map")
+                        .expect("properties should exist")
+                        .get_mut("senderKeyId")
+                        .expect("properties should be a map")
+                        .expect("senderKeyId should exist")
+                        .insert(
+                            "refersTo".to_string(),
+                            new_refers_to.clone().expect("a refersTo value"),
+                        )
+                        .expect("should insert refersTo");
+                    document_type
+                } else {
+                    key_id_document_type(new_refers_to, platform_version)
+                };
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.operation() == operation && e.property_path() == changed_path,
+                    "{operation} at {changed_path}: {:?}", result.errors
+                );
+            }
+        }
+    }
+
+    mod encrypted_for {
+        use super::*;
+        use crate::consensus::basic::BasicError;
+        use crate::data_contract::config::DataContractConfig;
+        use platform_value::platform_value;
+        use std::collections::BTreeMap;
+
+        /// A document type with a recipient, two key ids and an
+        /// `encryptedMessage` carrying `encrypted_for` when given.
+        fn encrypted_document_type(
+            encrypted_for: Option<platform_value::Value>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut encrypted_message = platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 1040,
+                "position": 3
+            });
+            if let Some(encrypted_for) = encrypted_for {
+                encrypted_message
+                    .insert("encryptedFor".to_string(), encrypted_for)
+                    .expect("should insert encryptedFor");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "recipientId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 0
+                    },
+                    "recipientKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 1 },
+                    "senderKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 2 },
+                    "encryptedMessage": encrypted_message
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        fn declaration(recipient: &str) -> platform_value::Value {
+            platform_value!({
+                "recipient": recipient,
+                "recipientKey": "recipientKeyId",
+                "senderKey": "senderKeyId",
+                "scheme": "ecdh-secp256k1-aes256-cbc"
+            })
+        }
+
+        /// Documents written under one recipe could not be read under another,
+        /// so adding, removing or changing the declaration is incompatible.
+        #[test]
+        fn should_return_invalid_result_when_encrypted_for_is_added_removed_or_changed() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_declaration, new_declaration, changed_path) in [
+                (
+                    None,
+                    Some(declaration("recipientId")),
+                    "/properties/encryptedMessage/encryptedFor",
+                ),
+                (
+                    Some(declaration("recipientId")),
+                    None,
+                    "/properties/encryptedMessage/encryptedFor",
+                ),
+                (
+                    Some(declaration("recipientId")),
+                    Some(declaration("$ownerId")),
+                    "/properties/encryptedMessage/encryptedFor/recipient",
+                ),
+            ] {
+                let old_document_type = encrypted_document_type(old_declaration, platform_version);
+                let new_document_type = encrypted_document_type(new_declaration, platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == changed_path
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_valid_result_when_encrypted_for_is_unchanged() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type =
+                encrypted_document_type(Some(declaration("recipientId")), platform_version);
+            let new_document_type =
+                encrypted_document_type(Some(declaration("recipientId")), platform_version);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+    }
+
+    mod max_bytes {
+        use super::*;
+        use crate::consensus::basic::BasicError;
+        use crate::data_contract::config::DataContractConfig;
+        use std::collections::BTreeMap;
+
+        /// A string `note` with `maxBytes` as `note_bound`, and a typed string array
+        /// `tags` whose `items` carry `maxBytes` as `tags_bound`.
+        fn document_type(
+            note_bound: Option<u64>,
+            tags_bound: Option<u64>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut note = platform_value!({ "type": "string", "maxLength": 64, "position": 0 });
+            if let Some(max_bytes) = note_bound {
+                note.insert("maxBytes".to_string(), max_bytes.into())
+                    .expect("should insert maxBytes");
+            }
+            let mut items = platform_value!({ "type": "string", "maxLength": 16 });
+            if let Some(max_bytes) = tags_bound {
+                items
+                    .insert("maxBytes".to_string(), max_bytes.into())
+                    .expect("should insert maxBytes");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "note": note,
+                    "tags": { "type": "array", "maxItems": 4, "items": items, "position": 1 }
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        fn compatibility(
+            old: (Option<u64>, Option<u64>),
+            new: (Option<u64>, Option<u64>),
+        ) -> SimpleConsensusValidationResult {
+            let platform_version = PlatformVersion::latest();
+            let old_document_type = document_type(old.0, old.1, platform_version);
+            let new_document_type = document_type(new.0, new.1, platform_version);
+            old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility")
+        }
+
+        /// `maxBytes` moves like `maxLength`: every stored string still fits a
+        /// raised or dropped bound, on a property and on typed array elements.
+        #[test]
+        fn should_return_valid_result_when_max_bytes_is_raised_or_removed() {
+            for (old_bound, new_bound) in [(Some(8), Some(16)), (Some(8), None), (Some(8), Some(8))]
+            {
+                for (old, new) in [
+                    ((old_bound, None), (new_bound, None)),
+                    ((None, old_bound), (None, new_bound)),
+                ] {
+                    let result = compatibility(old, new);
+                    assert!(result.is_valid(), "{old:?} -> {new:?}: {:?}", result.errors);
+                }
+            }
+        }
+
+        /// A stored string may be longer than a new or lowered bound.
+        #[test]
+        fn should_return_invalid_result_when_max_bytes_is_added_or_lowered() {
+            for (old_bound, new_bound) in [(None, Some(8)), (Some(16), Some(8))] {
+                for (old, new, changed_path) in [
+                    (
+                        (old_bound, None),
+                        (new_bound, None),
+                        "/properties/note/maxBytes",
+                    ),
+                    (
+                        (None, old_bound),
+                        (None, new_bound),
+                        "/properties/tags/items/maxBytes",
+                    ),
+                ] {
+                    let result = compatibility(old, new);
+                    assert_matches!(
+                        result.errors.as_slice(),
+                        [ConsensusError::BasicError(
+                            BasicError::IncompatibleDocumentTypeSchemaError(e)
+                        )] if e.property_path() == changed_path,
+                        "{old:?} -> {new:?}"
+                    );
+                }
+            }
         }
     }
 

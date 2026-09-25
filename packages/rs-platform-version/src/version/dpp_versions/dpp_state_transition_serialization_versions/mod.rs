@@ -10,6 +10,9 @@ pub struct DPPStateTransitionSerializationVersions {
     pub identity_create_from_addresses_state_transition: FeatureVersionBounds,
     pub identity_create_state_transition: FeatureVersionBounds,
     pub identity_update_state_transition: FeatureVersionBounds,
+    /// `IdentityKeyLimitsUpdate` (protocol version 14); the transition itself is gated by
+    /// `is_allowed`, this only versions its serialization.
+    pub identity_key_limits_update_state_transition: FeatureVersionBounds,
     pub identity_top_up_state_transition: FeatureVersionBounds,
     pub identity_top_up_from_addresses_state_transition: FeatureVersionBounds,
     pub identity_credit_withdrawal_state_transition: FeatureVersionBounds,
@@ -18,6 +21,10 @@ pub struct DPPStateTransitionSerializationVersions {
     pub masternode_vote_state_transition: FeatureVersionBounds,
     pub contract_create_state_transition: FeatureVersionBounds,
     pub contract_update_state_transition: FeatureVersionBounds,
+    /// `ContractUserModeration` (protocol version 14): bans and suspends identities on a
+    /// moderated contract.
+    pub contract_user_moderation_state_transition: FeatureVersionBounds,
+    pub contract_fee_claim_state_transition: FeatureVersionBounds,
     pub batch_state_transition: FeatureVersionBounds,
     pub document_base_state_transition: FeatureVersionBounds,
     pub document_create_state_transition: DocumentFeatureVersionBounds,

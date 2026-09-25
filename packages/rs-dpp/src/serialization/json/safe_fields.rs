@@ -113,6 +113,8 @@ impl JsonSafeFields
 impl JsonSafeFields for crate::tokens::token_payment_info::TokenPaymentInfo {}
 // `GasFeesPaidBy` is a unit-variant enum (no u64).
 impl JsonSafeFields for crate::tokens::gas_fees_paid_by::GasFeesPaidBy {}
+impl JsonSafeFields for crate::contract_group::ContractGroupRegistration {}
+impl JsonSafeFields for crate::contract_group::ContractGroupMembership {}
 // `GroupStateTransitionInfo` is verified via `#[json_safe_fields]` on the type
 // itself (named `u16` / `Identifier` / `bool` fields) — no manual marker needed.
 // `TokenBaseTransition` wraps `TokenBaseTransitionV0` which is

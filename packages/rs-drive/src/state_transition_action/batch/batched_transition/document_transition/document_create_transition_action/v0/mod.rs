@@ -19,6 +19,7 @@ use dpp::document::property_names::{
 use dpp::fee::Credits;
 
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
+use crate::state_transition_action::batch::batched_transition::document_transition::drop_transient_values;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::version::PlatformVersion;
@@ -148,11 +149,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
 
                 let required_fields = document_type.required_fields();
 
-                let transient_fields = document_type.transient_fields();
-
-                if !transient_fields.is_empty() {
-                    data.retain(|key, _| !transient_fields.contains(key));
-                }
+                drop_transient_values(&mut data, document_type.transient_fields());
 
                 let creator_id = if document_type.should_use_creator_id(
                     data_contract.contract.system_version_type(),
@@ -281,11 +278,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
 
                 let required_fields = document_type.required_fields();
 
-                let transient_fields = document_type.transient_fields();
-
-                if !transient_fields.is_empty() {
-                    data.retain(|key, _| !transient_fields.contains(key));
-                }
+                drop_transient_values(&mut data, document_type.transient_fields());
 
                 let creator_id = if document_type.should_use_creator_id(
                     data_contract.contract.system_version_type(),

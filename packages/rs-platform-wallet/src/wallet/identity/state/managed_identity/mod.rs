@@ -53,6 +53,11 @@ pub struct ManagedIdentity {
     /// Last block time when balance was updated for this identity
     pub last_updated_balance_block_time: Option<BlockTime>,
 
+    /// Latest verified balance still owed to persistence. Retained after either
+    /// store or flush fails; scalar snapshots must carry it until a successful
+    /// retry. Query results are published only after that retry commits.
+    pending_balance_snapshot: Option<(u64, BlockTime)>,
+
     /// Last block time when keys were synced for this identity
     pub last_synced_keys_block_time: Option<BlockTime>,
 

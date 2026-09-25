@@ -155,6 +155,19 @@ fun DocumentTypeDetailsScreen(
                     "Mutable",
                     if (capabilities.documentsMutable) "Yes" else "No",
                 )
+                val immutability = documentTypeImmutability(schema)
+                if (!immutability.isEmpty) {
+                    LabeledContent(
+                        "Immutable Properties",
+                        immutability.immutable.sorted().joinToString(", "),
+                    )
+                    if (immutability.allowSetting.isNotEmpty()) {
+                        LabeledContent(
+                            "Settable Once While Absent",
+                            immutability.allowSetting.sorted().joinToString(", "),
+                        )
+                    }
+                }
                 LabeledContent(
                     "Can Be Deleted",
                     if (capabilities.canBeDeleted) "Yes" else "No",
@@ -331,6 +344,7 @@ private fun PropertyRow(name: String, property: JsonObject, isRequired: Boolean)
             property.intField("maxLength")?.let { add("Max: $it") }
             if (property.stringField("pattern") != null) add("Pattern")
             if (property.boolField("byteArray") == true) add("Byte Array")
+            documentTypedArray(name, property)?.let { add(it.summary) }
             property.stringField("contentMediaType")
                 ?.substringAfterLast('.')
                 ?.let { add(it) }
@@ -352,7 +366,10 @@ private fun PropertyRow(name: String, property: JsonObject, isRequired: Boolean)
         }
         property.objectField("properties")?.let { subProperties ->
             subProperties.keys.sorted().forEach { subName ->
-                val subType = (subProperties[subName] as? JsonObject)?.stringField("type")
+                val subProperty = subProperties[subName] as? JsonObject
+                // A nested typed array reads as its element kind and bounds.
+                val subType = subProperty?.let { documentTypedArray(subName, it)?.summary }
+                    ?: subProperty?.stringField("type")
                 Text(
                     "→ $subName${subType?.let { " ($it)" } ?: ""}",
                     style = MaterialTheme.typography.bodySmall,

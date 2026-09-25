@@ -110,6 +110,9 @@ mod required_since_tests {
                     platform_version,
                 )
                 .expect("expected a random document");
+            document
+                .set_id_for_creation(note_type_v1, &entropy.0, nonce, platform_version)
+                .expect("expected to set the document id");
             document.set("message", seed_text.into());
 
             let transition = BatchTransition::new_document_creation_transition_from_document(
@@ -219,6 +222,9 @@ mod required_since_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        incomplete
+            .set_id_for_creation(note_type_v2, &entropy.0, 4, platform_version)
+            .expect("expected to set the document id");
         incomplete.set("message", "no extra".into());
         incomplete.remove("extra");
 
@@ -256,6 +262,9 @@ mod required_since_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        complete
+            .set_id_for_creation(note_type_v2, &entropy.0, 5, platform_version)
+            .expect("expected to set the document id");
         complete.set("message", "with extra".into());
         complete.set("extra", "present".into());
         let complete_id = complete.id();
@@ -528,6 +537,9 @@ mod required_since_tests {
                 platform_version_13,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(note_type_v1, &entropy.0, 1, platform_version_13)
+            .expect("expected to set the document id");
         document.set("message", "written at v13".into());
         let document_id = document.id();
 

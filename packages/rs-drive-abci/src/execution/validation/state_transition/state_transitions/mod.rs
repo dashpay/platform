@@ -16,6 +16,9 @@ pub mod identity_top_up;
 /// Module for updating an existing identity entity.
 pub mod identity_update;
 
+/// Module for raising the limits of an identity key.
+pub mod identity_key_limits_update;
+
 /// Validation shared by the data contract create and update transitions.
 pub mod data_contract_common;
 
@@ -24,6 +27,12 @@ pub mod data_contract_create;
 
 /// Module for updating an existing data contract entity.
 pub mod data_contract_update;
+
+/// Module for banning and suspending identities on a moderated data contract.
+pub mod contract_user_moderation;
+
+/// Module for paying out the fee pots a data contract's document action fees collect in.
+pub mod contract_fee_claim;
 
 /// Module for voting from a masternode.
 pub mod masternode_vote;
@@ -62,6 +71,21 @@ pub mod shielded_transfer;
 pub mod shielded_withdrawal;
 /// Module for unshield transition validation
 pub mod unshield;
+
+use dpp::document::Document;
+use dpp::version::PlatformVersion;
+
+pub(crate) fn stamp_withdrawal_document(
+    document: &mut Document,
+    platform_version: &PlatformVersion,
+) {
+    match document {
+        Document::V0(document) => {
+            document.contract_version =
+                Some(platform_version.system_data_contracts.withdrawals as u32);
+        }
+    }
+}
 
 /// The validation mode we are using
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -522,8 +546,39 @@ pub(in crate::execution) mod tests {
         block_info: BlockInfo,
         platform_state: &PlatformState,
     ) -> (Vec<FeeResult>, ProcessedBlockFeesOutcome) {
-        let platform_version = PlatformVersion::latest();
+        let (execution_results, processed_block_fees) = process_state_transitions_with_results(
+            platform,
+            state_transitions,
+            block_info,
+            platform_state,
+        );
 
+        let fee_results = execution_results.iter().map(|result| {
+            let fee_result = expect_match!(result, StateTransitionExecutionResult::SuccessfulExecution{ fee_result, .. } => fee_result);
+            fee_result.clone()
+        }).collect();
+
+        (fee_results, processed_block_fees)
+    }
+
+    /// Runs the state transitions through a whole block, including the block-end fee
+    /// distribution and sum tree check (a credit imbalance panics here), and commits it, all at
+    /// the protocol version of `platform_state`. Unlike `process_state_transitions` the
+    /// transitions may fail.
+    pub(in crate::execution) fn process_state_transitions_with_results(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        state_transitions: &[StateTransition],
+        block_info: BlockInfo,
+        platform_state: &PlatformState,
+    ) -> (
+        Vec<StateTransitionExecutionResult>,
+        ProcessedBlockFeesOutcome,
+    ) {
+        // Validation reads the version from the state, so decoding, execution and the block fees
+        // use the same one.
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected the state's platform version");
         let raw_state_transitions = state_transitions
             .iter()
             .map(|a| a.serialize_to_bytes().expect("expected to serialize"))
@@ -543,11 +598,6 @@ pub(in crate::execution) mod tests {
                 None,
             )
             .expect("expected to process state transition");
-
-        let fee_results = processing_result.execution_results().iter().map(|result| {
-            let fee_result = expect_match!(result, StateTransitionExecutionResult::SuccessfulExecution{ fee_result, .. } => fee_result);
-            fee_result.clone()
-        }).collect();
 
         // while we have the state transitions executed, we now need to process the block fees
         let block_fees_v0: BlockFeesV0 = processing_result.aggregated_fees().clone().into();
@@ -587,7 +637,10 @@ pub(in crate::execution) mod tests {
             .unwrap()
             .expect("expected to commit");
 
-        (fee_results, processed_block_fees)
+        (
+            processing_result.into_execution_results(),
+            processed_block_fees,
+        )
     }
 
     pub(in crate::execution) fn fetch_expected_identity_balance(
@@ -1176,6 +1229,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(
+                preorder,
+                &entropy.0,
+                2 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         let mut preorder_document_2 = preorder
             .random_document_with_identifier_and_entropy(
@@ -1187,6 +1248,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_2
+            .set_id_for_creation(
+                preorder,
+                &entropy.0,
+                2 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1198,6 +1267,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(
+                domain,
+                &entropy.0,
+                3 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         let mut document_2 = domain
             .random_document_with_identifier_and_entropy(
@@ -1209,6 +1286,14 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_2
+            .set_id_for_creation(
+                domain,
+                &entropy.0,
+                3 + nonce_offset.unwrap_or_default(),
+                platform_version,
+            )
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -1488,6 +1573,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut preorder_document_2 = preorder
             .random_document_with_identifier_and_entropy(
@@ -1499,6 +1587,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_2
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1510,6 +1601,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_2 = domain
             .random_document_with_identifier_and_entropy(
@@ -1521,6 +1615,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_2
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -1758,6 +1855,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        preorder_document_1
+            .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         let mut document_1 = domain
             .random_document_with_identifier_and_entropy(
@@ -1769,6 +1869,9 @@ pub(in crate::execution) mod tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document_1
+            .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document_1.set("parentDomainName", "dash".into());
         document_1.set("normalizedParentDomainName", "dash".into());
@@ -2114,6 +2217,57 @@ pub(in crate::execution) mod tests {
         assert_eq!(second_contender.vote_tally(), Some(0));
     }
 
+    /// The vote poll of the DPNS name contest on `name`
+    pub(in crate::execution) fn dpns_name_vote_poll(
+        dpns_contract: &DataContract,
+        name: &str,
+    ) -> ContestedDocumentResourceVotePoll {
+        ContestedDocumentResourceVotePoll {
+            contract_id: dpns_contract.id(),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![
+                Value::Text("dash".to_string()),
+                Value::Text(convert_to_homograph_safe_chars(name)),
+            ],
+        }
+    }
+
+    /// A masternode's signed vote on the DPNS name contest on `name`, serialized as broadcast
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::execution) async fn serialized_dpns_name_vote(
+        dpns_contract: &DataContract,
+        resource_vote_choice: ResourceVoteChoice,
+        name: &str,
+        signer: &SimpleSigner,
+        pro_tx_hash: Identifier,
+        voting_key: &IdentityPublicKey,
+        nonce: IdentityNonce,
+        platform_version: &PlatformVersion,
+    ) -> Vec<u8> {
+        let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: VotePoll::ContestedDocumentResourceVotePoll(dpns_name_vote_poll(
+                dpns_contract,
+                name,
+            )),
+            resource_vote_choice,
+        }));
+
+        MasternodeVoteTransition::try_from_vote_with_signer(
+            vote,
+            signer,
+            pro_tx_hash,
+            voting_key,
+            nonce,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to make transition vote")
+        .serialize_to_bytes()
+        .expect("expected to serialize the masternode vote")
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) async fn perform_vote(
         platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -2128,38 +2282,17 @@ pub(in crate::execution) mod tests {
         expect_error: Option<&str>,
         platform_version: &PlatformVersion,
     ) {
-        // Let's vote for contender 1
-
-        let vote = Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
-            vote_poll: VotePoll::ContestedDocumentResourceVotePoll(
-                ContestedDocumentResourceVotePoll {
-                    contract_id: dpns_contract.id(),
-                    document_type_name: "domain".to_string(),
-                    index_name: "parentNameAndLabel".to_string(),
-                    index_values: vec![
-                        Value::Text("dash".to_string()),
-                        Value::Text(convert_to_homograph_safe_chars(name)),
-                    ],
-                },
-            ),
+        let masternode_vote_serialized_transition = serialized_dpns_name_vote(
+            dpns_contract,
             resource_vote_choice,
-        }));
-
-        let masternode_vote_transition = MasternodeVoteTransition::try_from_vote_with_signer(
-            vote,
+            name,
             signer,
             pro_tx_hash,
             voting_key,
             nonce,
             platform_version,
-            None,
         )
-        .await
-        .expect("expected to make transition vote");
-
-        let masternode_vote_serialized_transition = masternode_vote_transition
-            .serialize_to_bytes()
-            .expect("expected documents batch serialized state transition");
+        .await;
 
         // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
         // cfg(test) that it never mutates committed grovedb state, so every valid vote
@@ -2658,6 +2791,7 @@ pub(in crate::execution) mod tests {
                     token_amount: token_cost_amount,
                     effect: DocumentActionTokenEffect::TransferTokenToContractOwner,
                     gas_fees_paid_by,
+                    optional: false,
                 }));
                 let gas_fees_paid_by_int: u8 = gas_fees_paid_by.into();
                 let schema = document_type.schema_mut();
@@ -3218,6 +3352,9 @@ pub(in crate::execution) mod tests {
                     platform_version,
                 )
                 .expect("expected a random preorder document");
+            preorder_document
+                .set_id_for_creation(preorder, &entropy.0, 2, platform_version)
+                .expect("expected to set the document id");
 
             let mut domain_document = domain
                 .random_document_with_identifier_and_entropy(
@@ -3229,6 +3366,9 @@ pub(in crate::execution) mod tests {
                     platform_version,
                 )
                 .expect("expected a random domain document");
+            domain_document
+                .set_id_for_creation(domain, &entropy.0, 3, platform_version)
+                .expect("expected to set the document id");
 
             domain_document.set("parentDomainName", "dash".into());
             domain_document.set("normalizedParentDomainName", "dash".into());
@@ -3688,6 +3828,9 @@ pub(in crate::execution) mod tests {
             document.set("subdomainRules.allowSubdomains", false.into());
             document.set("preorderSalt", rng.gen::<[u8; 32]>().into());
 
+            document
+                .set_id_for_creation(domain, &entropy.0, 2, platform_version)
+                .expect("expected to set the document id");
             let owner_id = document.owner_id();
             let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
                 base: DocumentBaseTransition::from_document(

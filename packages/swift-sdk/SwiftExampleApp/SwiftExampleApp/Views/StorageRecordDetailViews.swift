@@ -63,6 +63,29 @@ private func jsonString(_ data: Data?) -> String? {
     return str
 }
 
+// MARK: - PersistentIdentityBalanceMetadata
+
+struct IdentityBalanceMetadataStorageDetailView: View {
+    let record: PersistentIdentityBalanceMetadata
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Identity ID", value: hexString(record.identityId))
+            }
+            Section("Balance Freshness") {
+                FieldRow(label: "Platform Height", value: String(UInt64(bitPattern: record.platformHeight)))
+                FieldRow(label: "Core Height", value: String(record.coreHeight))
+                FieldRow(label: "Timestamp (ms)", value: String(UInt64(bitPattern: record.timestampMillis)))
+            }
+        }
+        .navigationTitle("Balance Metadata")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentIdentity
 
 struct IdentityStorageDetailView: View {
@@ -765,13 +788,18 @@ struct PublicKeyStorageDetailView: View {
             }
             Section("Data") {
                 FieldRow(label: "Public Key", value: hexString(record.publicKeyData))
+                // The kind row always shows, so a row whose stored kind
+                // says "bound" but whose id blob is missing or unreadable
+                // still surfaces the persisted discriminator instead of a
+                // bare "None".
+                FieldRow(label: "Contract Bounds", value: contractBoundsKindDisplay)
                 if let bounds = record.contractBounds, !bounds.isEmpty {
-                    FieldRow(label: "Contract Bounds", value: "\(bounds.count)")
-                    ForEach(Array(bounds.enumerated()), id: \.offset) { _, contractId in
-                        FieldRow(label: "Contract", value: contractId.toBase58String())
+                    ForEach(Array(bounds.enumerated()), id: \.offset) { _, boundId in
+                        FieldRow(label: boundIdLabel, value: boundId.toBase58String())
                     }
-                } else {
-                    FieldRow(label: "Contract Bounds", value: "None")
+                    if let docType = record.contractBoundsDocumentTypeName, !docType.isEmpty {
+                        FieldRow(label: "Document Type", value: docType)
+                    }
                 }
                 // Surface the keychain identifier itself rather than a
                 // bare presence/absence flag — it's load-bearing for
@@ -813,6 +841,28 @@ struct PublicKeyStorageDetailView: View {
     private var keyTypeDisplay: String {
         if let t = record.keyTypeEnum { return "\(t.name) (\(record.keyType))" }
         return record.keyType
+    }
+
+    /// The bounds variant the row restores as. Reads the stored kind
+    /// when there is one and the legacy inference otherwise, so a row
+    /// written before the kind column shows what it will actually
+    /// restore as, not what it was meant to be.
+    private var contractBoundsKindDisplay: String {
+        let kind = record.effectiveContractBoundsKind
+        let name: String
+        switch kind {
+        case 0: name = "None"
+        case 1: name = "Single contract"
+        case 2: name = "Single contract document type"
+        case 3: name = "Contract group"
+        default: name = "Unknown"
+        }
+        if kind == 0 && record.contractBoundsKind == nil { return name }
+        return record.contractBoundsKind == nil ? "\(name) (\(kind), inferred)" : "\(name) (\(kind))"
+    }
+
+    private var boundIdLabel: String {
+        record.effectiveContractBoundsKind == 3 ? "Contract Group" : "Contract"
     }
 }
 
@@ -1140,6 +1190,22 @@ struct DocumentTypeStorageDetailView: View {
             Section("Flags") {
                 FieldRow(label: "Keeps History", value: record.documentsKeepHistory ? "Yes" : "No")
                 FieldRow(label: "Mutable", value: record.documentsMutable ? "Yes" : "No")
+                // Protocol version 14 per-property freeze, read off the
+                // stored schema; rows appear only when the type declares it,
+                // so a pre-v14 type renders as before.
+                let immutability = record.immutability
+                if !immutability.isEmpty {
+                    FieldRow(
+                        label: "Immutable",
+                        value: immutability.immutableProperties.joined(separator: ", ")
+                    )
+                    if !immutability.immutableAllowSetting.isEmpty {
+                        FieldRow(
+                            label: "Settable Once While Absent",
+                            value: immutability.immutableAllowSetting.joined(separator: ", ")
+                        )
+                    }
+                }
                 FieldRow(label: "Can Be Deleted", value: record.documentsCanBeDeleted ? "Yes" : "No")
                 FieldRow(label: "Transferable", value: record.documentsTransferable ? "Yes" : "No")
                 FieldRow(
@@ -1326,6 +1392,12 @@ struct PropertyStorageDetailView: View {
                     label: "Max Items",
                     value: record.maxItems.map { "\($0)" } ?? "—"
                 )
+                // A typed array's element schema has no column: it is read
+                // off the document type's persisted schema
+                if let typedArray = record.documentType?.typedArray(named: record.name) {
+                    FieldRow(label: "Items", value: typedArray.element.summary)
+                    FieldRow(label: "Unique Items", value: typedArray.uniqueItems ? "Yes" : "No")
+                }
                 FieldRow(
                     label: "Min Value",
                     value: record.minValue.map { "\($0)" } ?? "—"

@@ -42,6 +42,7 @@ pub unsafe fn convert_state_transition_creation_options(
         } else {
             Some(options.base_feature_version)
         },
+        action_fee_agreement: None,
     })
 }
 
@@ -52,6 +53,7 @@ pub fn convert_token_distribution_type(
     match ffi_type {
         DashSDKTokenDistributionType::PreProgrammed => TokenDistributionType::PreProgrammed,
         DashSDKTokenDistributionType::Perpetual => TokenDistributionType::Perpetual,
+        DashSDKTokenDistributionType::OncePerIdentity => TokenDistributionType::OncePerIdentity,
     }
 }
 

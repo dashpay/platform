@@ -1,2 +1,4 @@
+mod contract_fee_claim_transition;
+mod contract_user_moderation_transition;
 mod data_contract_create_transition;
 mod data_contract_update_transition;

@@ -350,7 +350,18 @@ struct LoadIdentityView: View {
                         }
 
                         let readOnly = keyData["readOnly"] as? Bool ?? false
-                        let disabledAt = keyData["disabledAt"] as? UInt64
+                        // `disabledAt`, `totalBudget` and `expiresAt` are all protocol
+                        // `u64`s, which DPP writes as a JSON number up to 2^53 - 1 and
+                        // as a decimal string above it. `UInt64(jsonValue:)` reads both
+                        // shapes; a plain `as? UInt64` would drop the large ones.
+                        let disabledAt = UInt64(jsonValue: keyData["disabledAt"])
+                        // Usage limits (protocol version 14). Present only on a
+                        // version 1 key: `totalBudget` is credits for the key's
+                        // whole lifetime, `expiresAt` is block time in
+                        // milliseconds. Dropping them here would persist a
+                        // limited key as unlimited.
+                        let totalBudget = UInt64(jsonValue: keyData["totalBudget"])
+                        let expiresAt = UInt64(jsonValue: keyData["expiresAt"])
 
                         return IdentityPublicKey(
                             id: UInt32(id),
@@ -360,7 +371,9 @@ struct LoadIdentityView: View {
                             keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
                             readOnly: readOnly,
                             data: data,
-                            disabledAt: disabledAt
+                            disabledAt: disabledAt,
+                            totalBudget: totalBudget,
+                            expiresAt: expiresAt
                         )
                     }
                 } else if let publicKeysArray = identityData["publicKeys"] as? [[String: Any]] {
@@ -382,7 +395,18 @@ struct LoadIdentityView: View {
                         }
 
                         let readOnly = keyData["readOnly"] as? Bool ?? false
-                        let disabledAt = keyData["disabledAt"] as? UInt64
+                        // `disabledAt`, `totalBudget` and `expiresAt` are all protocol
+                        // `u64`s, which DPP writes as a JSON number up to 2^53 - 1 and
+                        // as a decimal string above it. `UInt64(jsonValue:)` reads both
+                        // shapes; a plain `as? UInt64` would drop the large ones.
+                        let disabledAt = UInt64(jsonValue: keyData["disabledAt"])
+                        // Usage limits (protocol version 14). Present only on a
+                        // version 1 key: `totalBudget` is credits for the key's
+                        // whole lifetime, `expiresAt` is block time in
+                        // milliseconds. Dropping them here would persist a
+                        // limited key as unlimited.
+                        let totalBudget = UInt64(jsonValue: keyData["totalBudget"])
+                        let expiresAt = UInt64(jsonValue: keyData["expiresAt"])
 
                         return IdentityPublicKey(
                             id: UInt32(id),
@@ -392,7 +416,9 @@ struct LoadIdentityView: View {
                             keyType: KeyType(rawValue: UInt8(keyType)) ?? .ecdsaSecp256k1,
                             readOnly: readOnly,
                             data: data,
-                            disabledAt: disabledAt
+                            disabledAt: disabledAt,
+                            totalBudget: totalBudget,
+                            expiresAt: expiresAt
                         )
                     }
                 } else {

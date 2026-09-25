@@ -1,3 +1,4 @@
+use dapi_grpc::platform::v0::ResponseMetadata;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::address_inputs::collect_address_infos_from_proof;
@@ -42,6 +43,20 @@ pub trait TransferToAddresses: Waitable {
     ) -> Result<(AddressInfos, Credits, u64), Error>;
 }
 
+/// Identity transfers that preserve the full metadata of the balance proof.
+#[async_trait::async_trait]
+pub trait TransferToAddressesWithMetadata: Waitable {
+    /// Return recipient address infos, the identity balance, and proof metadata.
+    async fn transfer_credits_to_addresses_with_metadata<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        recipient_addresses: BTreeMap<PlatformAddress, Credits>,
+        signing_transfer_key_to_use: Option<&IdentityPublicKey>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(AddressInfos, Credits, ResponseMetadata), Error>;
+}
+
 #[async_trait::async_trait]
 impl TransferToAddresses for Identity {
     async fn transfer_credits_to_addresses<S: Signer<IdentityPublicKey> + Send>(
@@ -52,6 +67,28 @@ impl TransferToAddresses for Identity {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, Credits, u64), Error> {
+        self.transfer_credits_to_addresses_with_metadata(
+            sdk,
+            recipient_addresses,
+            signing_transfer_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+        .map(|(infos, balance, metadata)| (infos, balance, metadata.height))
+    }
+}
+
+#[async_trait::async_trait]
+impl TransferToAddressesWithMetadata for Identity {
+    async fn transfer_credits_to_addresses_with_metadata<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        recipient_addresses: BTreeMap<PlatformAddress, Credits>,
+        signing_transfer_key_to_use: Option<&IdentityPublicKey>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(AddressInfos, Credits, ResponseMetadata), Error> {
         if recipient_addresses.is_empty() {
             return Err(Error::Generic(
                 "recipient_addresses must contain at least one address".to_string(),
@@ -109,7 +146,7 @@ impl TransferToAddresses for Identity {
                     )
                 })?;
 
-                Ok((address_infos, balance, metadata.height))
+                Ok((address_infos, balance, metadata))
             }
             other => Err(Error::InvalidProvedResponse(format!(
                 "identity proof was expected for {:?}, but received {:?}",

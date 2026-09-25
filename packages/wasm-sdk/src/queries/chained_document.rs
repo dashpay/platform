@@ -42,7 +42,9 @@ const CHAINED_DOCUMENTS_QUERY_TS: &'static str = r#"
  * an index carrying `joinProperty`, and `joinProperty` must declare a
  * same-contract `refersTo: permanentDocument` targeting
  * `outerDocumentType` ("posts I liked": inner `like` through `byLiker`,
- * join `postId`, outer `post`). There are no outer-side clauses by
+ * join `postId`, outer `post`) whose `refersTo` carries no `lookup`: a
+ * reference resolved through a unique index holds no document ids, so it is
+ * refused as a join property. There are no outer-side clauses by
  * design — the verifier derives the outer query from the proven inner
  * results.
  */
@@ -78,9 +80,18 @@ interface ChainedDocumentsResult {
   innerDocuments: Document[];
   /**
    * The joined outer documents, ordered by first appearance of their
-   * id among the inner projections (deduplicated).
+   * id among the inner projections (deduplicated). When the join
+   * property is a `deletableDocument` reference, a referenced document
+   * deleted since is proven absent and has no entry here: match the
+   * halves by id, not by position.
    */
   outerDocuments: Document[];
+  /**
+   * The join values that have NO outer document, in first-appearance
+   * order: referenced documents deleted since, each one a proven
+   * absence. Always empty under a `permanentDocument` join property.
+   */
+  missingOuterIds: Identifier[];
 }
 "#;
 
@@ -165,6 +176,16 @@ fn chained_result_to_js(
         &outer_documents,
     )
     .map_err(|_| WasmSdkError::generic("failed to build chained result object"))?;
+    let missing_outer_ids = Array::new();
+    for id in &chained.missing_outer_ids {
+        missing_outer_ids.push(&JsValue::from(IdentifierWasm::from(*id)));
+    }
+    Reflect::set(
+        &result,
+        &JsValue::from_str("missingOuterIds"),
+        &missing_outer_ids,
+    )
+    .map_err(|_| WasmSdkError::generic("failed to build chained result object"))?;
     Ok(result)
 }
 
@@ -175,9 +196,10 @@ impl WasmSdk {
     ///
     /// The composition is always proof-verified: one merged grovedb
     /// proof commits to one quorum-signed root, and the proven outer
-    /// documents must match the proven inner join values exactly (a
-    /// missing referenced document is a verification error, not an
-    /// absence).
+    /// documents must match the proven inner join values: exactly for a
+    /// `permanentDocument` join property (a missing referenced document
+    /// is a verification error), while for a `deletableDocument` one a
+    /// document deleted since is proven absent and left out.
     #[wasm_bindgen(
         js_name = "getChainedDocuments",
         unchecked_return_type = "ChainedDocumentsResult"

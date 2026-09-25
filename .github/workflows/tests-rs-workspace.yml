@@ -8,14 +8,22 @@ on:
       shielded-changed:
         # Computed by the `changes` job in tests.yml (see the
         # "Check for shielded-relevant changes" step there for the heuristic
-        # and its safety net). When false, the shielded test phase is skipped
-        # and no rust-shielded coverage is uploaded — codecov carries the
-        # base commit's rust-shielded flag forward (see .codecov.yml).
+        # and its safety net). When false, the shielded test phase is skipped.
         # Defaults to true so any caller that doesn't compute the heuristic
         # gets the full suite.
         description: Whether shielded code (or anything affecting the shielded suite) changed
         type: boolean
         default: true
+      coverage:
+        # Code coverage is collected on the nightly schedule only (tests.yml
+        # sets this on `schedule`, and on `workflow_dispatch` when asked). PR
+        # and post-merge push runs execute the very same test phases with
+        # plain cargo-nextest / cargo-test: no instrumented build, no lcov
+        # report, no Codecov upload. Which phases run is decided by the
+        # event and the inputs above, not by this flag.
+        description: Instrument the test phases with cargo-llvm-cov and upload the reports to Codecov
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -32,6 +40,11 @@ jobs:
       || github.event.pull_request.head.repo.full_name == github.repository
       || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
     timeout-minutes: 90
+    defaults:
+      run:
+        # Self-hosted macOS runners may keep their work directory on a volume
+        # with spaces in its name. Quote the generated script path explicitly.
+        shell: bash --noprofile --norc -eo pipefail "{0}"
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -46,9 +59,11 @@ jobs:
           fi
 
       # target/llvm-cov-target is deliberately NOT pruned here: it holds the
-      # coverage-instrumented build (~10GB) that makes the test step's compile
-      # incremental (~2.5 min saved per run). The size/free-disk guard below
-      # removes the whole target/ if it ever outgrows the caps.
+      # coverage-instrumented build (~10GB) the nightly coverage run compiles
+      # into, and keeping it makes that run's compile incremental (~2.5 min
+      # saved). PR and push runs build the plain dev profile into
+      # target/debug, which persists the same way. The size/free-disk guard
+      # below removes the whole target/ if it ever outgrows the caps.
       - name: Prune runner disk before tests
         run: |
           for path in ../target-backup-before-*-clean-*; do
@@ -58,11 +73,11 @@ jobs:
             fi
           done
 
-          # Purge per-run profile data possibly left by a cancelled run whose
-          # end-of-job cleanup never executed — BEFORE measuring target/, so
-          # stale profraw can neither leak into this run's coverage report
-          # nor inflate the size check below and cost the whole instrumented
-          # build.
+          # Purge per-run profile data possibly left by a cancelled nightly
+          # coverage run whose end-of-job cleanup never executed — BEFORE
+          # measuring target/, so stale profraw can neither leak into the
+          # next coverage report nor inflate the size check below and cost
+          # the whole instrumented build.
           if [ -d target/llvm-cov-target ]; then
             find target/llvm-cov-target \( -name '*.profraw' -o -name '*.profdata' \) -delete || true
           fi
@@ -159,13 +174,14 @@ jobs:
           cache: false
           components: llvm-tools, rustfmt, clippy
 
-      # Both tools are required by the test steps below. Install only when
-      # missing, and fail HERE, loudly, if the tool still doesn't work
-      # afterwards — the previous `cargo install ... 2>/dev/null || true`
-      # silently swallowed a failed nextest install on a freshly provisioned
-      # runner, and the job then died 10 minutes later in the test step with
-      # "no such command: nextest".
+      # Install only when missing, and fail HERE, loudly, if the tool still
+      # doesn't work afterwards — the previous `cargo install ... 2>/dev/null
+      # || true` silently swallowed a failed nextest install on a freshly
+      # provisioned runner, and the job then died 10 minutes later in the
+      # test step with "no such command: nextest". cargo-llvm-cov is only
+      # needed by the nightly coverage run.
       - name: Install cargo-llvm-cov
+        if: ${{ inputs.coverage }}
         run: |
           if ! cargo llvm-cov --version >/dev/null 2>&1; then
             cargo install cargo-llvm-cov --locked
@@ -362,14 +378,22 @@ jobs:
           done
           echo "No immutable/append_only structure violations found"
 
-      - name: Check if coverage can be reused
+      # The marker written by "Record tests tree hash" below says this exact
+      # source tree already passed the COMPLETE suite on this runner, which
+      # lets the post-merge push run (whose tree is usually identical to the
+      # PR merge ref that just passed) skip the tests. A coverage run never
+      # reuses: it has to execute the tests to have anything to report.
+      - name: Check if the tests can be skipped for an already-tested tree
         id: coverage-cache
         run: |
           CURRENT_TREE=$(git rev-parse 'HEAD^{tree}')
-          CACHED_TREE=$(cat target/lcov-tree-hash 2>/dev/null || echo "none")
-          if [ "$CURRENT_TREE" = "$CACHED_TREE" ] && [ -f lcov-nonshielded.info ]; then
+          CACHED_TREE=$(cat target/tests-tree-hash 2>/dev/null || echo "none")
+          if [ "${{ inputs.coverage }}" = "true" ]; then
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            echo "Coverage run — running tests regardless of the tree hash"
+          elif [ "$CURRENT_TREE" = "$CACHED_TREE" ]; then
             echo "reuse=true" >> "$GITHUB_OUTPUT"
-            echo "Tree hash matches ($CURRENT_TREE) — reusing coverage from previous run"
+            echo "Tree hash matches ($CURRENT_TREE) — this tree already passed the full suite, skipping tests"
           else
             echo "reuse=false" >> "$GITHUB_OUTPUT"
             echo "Tree hash changed ($CACHED_TREE -> $CURRENT_TREE) — running tests"
@@ -378,7 +402,7 @@ jobs:
       # Leftover profile data from a cancelled run is handled earlier, in
       # "Prune runner disk before tests", unconditionally for every job.
       - name: Remove stale coverage data
-        if: steps.coverage-cache.outputs.reuse == 'false'
+        if: ${{ inputs.coverage }}
         run: rm -f lcov.info lcov-nonshielded.info lcov-strategy.info lcov-shielded.info
 
       # The drive-abci chain-simulation suite (strategy_tests, ~90
@@ -391,12 +415,21 @@ jobs:
       # combined. The remaining simulations run in their own phase
       # below on push and nightly only, so a regression in one of them is
       # caught minutes after merge — the same safety-net pattern as the
-      # shielded phase. Keeping this phase's filter identical across events
-      # keeps the `rust` codecov flag comparable between PR and push runs.
+      # shielded phase.
+      #
+      # Every test phase runs under cargo-llvm-cov only when `coverage` is
+      # set (the nightly); otherwise it is a plain nextest run of the very
+      # same packages and filter. Only the command prefix differs, so the two
+      # modes select identical tests.
       - name: Run non-shielded tests with nextest (parallel, compiles all packages)
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
-          cargo llvm-cov nextest --no-report \
+          if [ "${{ inputs.coverage }}" = "true" ]; then
+            RUN=(cargo llvm-cov nextest --no-report)
+          else
+            RUN=(cargo nextest run)
+          fi
+          "${RUN[@]}" \
             --package drive \
             --package dpp \
             --package drive-abci \
@@ -419,6 +452,8 @@ jobs:
             --package token-history-contract \
             --package wallet-utils-contract \
             --package keyword-search-contract \
+            --package app-connect-contract \
+            --package moderation-charters-contract \
             --all-features \
             --locked \
             -E 'not test(~shield) and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations) or test(~process_proposal_collision))'
@@ -431,21 +466,25 @@ jobs:
       # its codecov flag), so profraw files are dropped between phases to
       # keep the reports disjoint.
       - name: Generate non-shielded coverage report
-        if: steps.coverage-cache.outputs.reuse == 'false'
+        if: inputs.coverage && steps.coverage-cache.outputs.reuse == 'false'
         run: |
           cargo llvm-cov report --lcov --output-path lcov-nonshielded.info
           cargo llvm-cov clean --profraw-only
 
       # The chain simulations excluded from the phase above. PR runs skip
-      # them (and upload no rust-strategy coverage — codecov carries the base
-      # commit's forward); push, nightly, and dispatch runs execute them all.
+      # them; push, nightly, and dispatch runs execute them all.
       - name: Run full chain-simulation suite (push and nightly only)
         id: strategy-tests
         if: >-
           steps.coverage-cache.outputs.reuse == 'false'
           && github.event_name != 'pull_request'
         run: |
-          cargo llvm-cov nextest --no-report \
+          if [ "${{ inputs.coverage }}" = "true" ]; then
+            RUN=(cargo llvm-cov nextest --no-report)
+          else
+            RUN=(cargo nextest run)
+          fi
+          "${RUN[@]}" \
             --package drive-abci \
             --all-features \
             --locked \
@@ -456,21 +495,31 @@ jobs:
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
       - name: Generate chain-simulation coverage report
-        if: steps.strategy-tests.outcome == 'success'
+        if: inputs.coverage && steps.strategy-tests.outcome == 'success'
         run: |
           cargo llvm-cov report --lcov --output-path lcov-strategy.info
           cargo llvm-cov clean --profraw-only
 
-      # When nothing shielded-relevant changed, the phase is skipped and no
-      # rust-shielded coverage is uploaded — codecov carries the base
-      # commit's forward (see .codecov.yml).
+      # When nothing shielded-relevant changed, the phase is skipped (see the
+      # `shielded-changed` input).
       - name: Run shielded tests with cargo test (shared process for VK reuse)
         id: shielded-tests
         if: >-
           steps.coverage-cache.outputs.reuse == 'false'
           && inputs.shielded-changed
         run: |
-          cargo llvm-cov test --no-report \
+          # `--tests` selects every test target except doctests, which have
+          # their own gated step at the end of the job. cargo-llvm-cov adds
+          # it itself when no target is selected; passing it explicitly in
+          # both modes pins the equivalence instead of relying on that
+          # default of an unpinned tool.
+          if [ "${{ inputs.coverage }}" = "true" ]; then
+            RUN=(cargo llvm-cov test --no-report)
+          else
+            RUN=(cargo test)
+          fi
+          "${RUN[@]}" \
+            --tests \
             --package dpp \
             --package drive \
             --package drive-abci \
@@ -484,42 +533,43 @@ jobs:
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
       - name: Generate shielded coverage report
-        if: steps.shielded-tests.outcome == 'success'
+        if: inputs.coverage && steps.shielded-tests.outcome == 'success'
         run: cargo llvm-cov report --lcov --output-path lcov-shielded.info
 
-      # The marker means "this exact tree passed the COMPLETE suite", so it
-      # is written only when both skippable phases (chain simulations and
-      # shielded) actually ran and succeeded. A PR fast-path run must not
-      # write it: the post-merge push commonly has the same tree as the PR
-      # merge ref, and on the same runner the marker would let the reuse
-      # check skip the push run's full phases — the safety net for changes
-      # the PR-path gating misses.
-      - name: Record coverage tree hash
+      # The marker means "this exact tree passed the COMPLETE suite in a
+      # plain run", so it is written only when both skippable phases (chain
+      # simulations and shielded) actually ran and succeeded. A PR fast-path
+      # run must not write it: the post-merge push commonly has the same
+      # tree as the PR merge ref, and on the same runner the marker would
+      # let the reuse check skip the push run's full phases — the safety net
+      # for changes the PR-path gating misses. A coverage run does not write
+      # it either: it never reads it, and the marker exists to dedup plain
+      # runs against each other, not against an instrumented pass.
+      - name: Record tests tree hash
         if: >-
-          steps.coverage-cache.outputs.reuse == 'false'
+          ${{ !inputs.coverage
+          && steps.coverage-cache.outputs.reuse == 'false'
           && steps.strategy-tests.outcome == 'success'
-          && steps.shielded-tests.outcome == 'success'
-        run: git rev-parse 'HEAD^{tree}' > target/lcov-tree-hash
+          && steps.shielded-tests.outcome == 'success' }}
+        run: git rev-parse 'HEAD^{tree}' > target/tests-tree-hash
 
+      # Needed by the Codecov upload below on the macOS runners.
       - name: Reset GPG state (fix stale keyboxd locks on the macOS runners)
-        if: always() && runner.os == 'macOS'
+        if: always() && inputs.coverage && runner.os == 'macOS'
         run: |
           gpgconf --kill all 2>/dev/null || true
           rm -rf ~/.gnupg/public-keys.d/*.lock 2>/dev/null || true
           rm -rf ~/.gnupg/.#* 2>/dev/null || true
 
-      # One upload per codecov flag. A phase that didn't run produces no file
-      # and uploads nothing — its flag is carried forward from the base
-      # commit by codecov (see .codecov.yml), so PR reports don't show a
-      # spurious coverage drop for suites that intentionally didn't run.
-      # File-existence gating (rather than step-outcome gating) also covers
-      # the tree-hash reuse path, where the files persist from the previous
-      # run of the identical tree.
+      # One upload per codecov flag, nightly only. A phase that failed
+      # produces no file and uploads nothing — its flag is carried forward
+      # from the previous upload by codecov (see .codecov.yml), so a single
+      # broken phase doesn't read as a coverage drop for the whole suite.
       # `files` is additive unless search is disabled. Persistent runners
       # also contain old reports and build artifacts named "coverage"; only
       # upload this phase's LCOV and do not generate unrelated plugin reports.
       - name: Upload coverage
-        if: always() && hashFiles('lcov-nonshielded.info') != ''
+        if: always() && inputs.coverage && hashFiles('lcov-nonshielded.info') != ''
         uses: codecov/codecov-action@v6
         with:
           files: lcov-nonshielded.info
@@ -530,7 +580,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload chain-simulation coverage
-        if: always() && hashFiles('lcov-strategy.info') != ''
+        if: always() && inputs.coverage && hashFiles('lcov-strategy.info') != ''
         uses: codecov/codecov-action@v6
         with:
           files: lcov-strategy.info
@@ -541,7 +591,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload shielded coverage
-        if: always() && hashFiles('lcov-shielded.info') != ''
+        if: always() && inputs.coverage && hashFiles('lcov-shielded.info') != ''
         uses: codecov/codecov-action@v6
         with:
           files: lcov-shielded.info
@@ -552,10 +602,11 @@ jobs:
           fail_ci_if_error: false
 
       # Keep the coverage-instrumented build (target/llvm-cov-target) between
-      # runs so the test step's compile stays incremental — a full wipe forces
-      # a ~2.5 min cold rebuild of ~700 crates every job. Only per-run profile
+      # nightly runs so that run's compile stays incremental — a full wipe
+      # forces a ~2.5 min cold rebuild of ~700 crates. Only per-run profile
       # data is removed: profraw files (one per test process, regenerated by
-      # every run) and the merged profdata. Disk pressure is handled by the
+      # every coverage run) and the merged profdata. A no-op on PR and push
+      # runs, which produce no profile data. Disk pressure is handled by the
       # size/free-disk guard in "Prune runner disk before tests", which
       # removes the whole target/ when it outgrows the caps. ("Prune runner
       # disk before tests" purges profile data again at the start of the next

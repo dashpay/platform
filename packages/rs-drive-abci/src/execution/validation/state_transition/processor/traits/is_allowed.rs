@@ -6,7 +6,9 @@ use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::feature_initial_protocol_versions::{
-    ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION,
+    ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION, CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION,
+    CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION,
+    IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION,
     IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     SHIELDED_POOL_INITIAL_PROTOCOL_VERSION, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
 };
@@ -41,7 +43,10 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
             | StateTransition::IdentityCreateFromShieldedPool(_)
-            | StateTransition::ShieldFromIdentity(_) => Ok(true),
+            | StateTransition::ShieldFromIdentity(_)
+            | StateTransition::IdentityKeyLimitsUpdate(_)
+            | StateTransition::ContractUserModeration(_)
+            | StateTransition::ContractFeeClaim(_) => Ok(true),
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::IdentityCreate(_)
@@ -125,6 +130,53 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                             self.state_transition_type().to_string(),
                             platform_version.protocol_version,
                             SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::IdentityKeyLimitsUpdate(_) => {
+                if platform_version.protocol_version
+                    >= IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::ContractUserModeration(_) => {
+                if platform_version.protocol_version
+                    >= CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::ContractFeeClaim(_) => {
+                if platform_version.protocol_version >= CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION,
                         )
                         .into(),
                     ]))

@@ -1,7 +1,20 @@
+use crate::types::contract_groups::{
+    contract_group_info_from_proto, members_page_from_response, members_query_from_request,
+    memberships_from_response, ContractGroupInfo, ContractGroupMembersPage,
+    ContractGroupMembershipsForContract,
+};
+use crate::types::contract_moderation::{
+    entries_from_response, fee_pots_from_response, list_from_request, lists_from_request,
+    reason_from_response, removals_from_response, removals_query_from_request,
+    warnings_from_response, ContractBan, ContractDocumentRemovals, ContractFeePots,
+    ContractModerationEntries, ContractModerationList, ContractModerationListStatuses,
+    ContractModerationStatus, ContractSuspension,
+};
 use crate::types::data_contracts_latest_versions::{
     DataContractLatestVersion, DataContractsLatestVersions,
 };
 use crate::types::evonode_status::EvoNodeStatus;
+use crate::types::identity_keys_remaining_budgets::IdentityKeysRemainingBudgets;
 use crate::types::CurrentQuorumsInfo;
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
@@ -831,5 +844,1004 @@ mod data_contracts_latest_versions_tests {
         };
         let err = parse(response).unwrap_err();
         assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
+    }
+}
+
+impl FromUnproved<platform::GetContractGroupInfoRequest> for ContractGroupInfo {
+    type Request = platform::GetContractGroupInfoRequest;
+    type Response = platform::GetContractGroupInfoResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_group_info_response::get_contract_group_info_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_group_info_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let info = match v0.result {
+            Some(V0Result::ContractGroupInfo(info)) => Some(contract_group_info_from_proto(info)?),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract group info, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((info, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractModerationStatusRequest> for ContractModerationListStatuses {
+    type Request = platform::GetContractModerationStatusRequest;
+    type Response = platform::GetContractModerationStatusResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_moderation_status_response::get_contract_moderation_status_response_v0::Result as V0Result;
+
+        // The response holds a flat status. Only the lists the request named are reported, and
+        // only when the response says it read them.
+        let request: Self::Request = request.into();
+        let platform::get_contract_moderation_status_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let lists = lists_from_request(&request_v0.lists)?;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_moderation_status_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let status = match v0.result {
+            Some(V0Result::Status(status)) => {
+                // The response says which lists it read. A list asked for and not among them
+                // was not read, so nothing may be reported about it, least of all "not banned".
+                let covered: Vec<ContractModerationList> = status
+                    .lists
+                    .iter()
+                    .filter_map(|list| list_from_request(*list, "lists").ok())
+                    .collect();
+                if let Some(missing) = lists.iter().find(|list| !covered.contains(list)) {
+                    return Err(Error::ResponseDecodeError {
+                        error: format!(
+                            "contract moderation status does not cover the {missing} asked for"
+                        ),
+                    });
+                }
+                let banned = match status.banned {
+                    Some(banned) => banned,
+                    None if lists.contains(&ContractModerationList::Banlist) => {
+                        return Err(Error::ResponseDecodeError {
+                            error: "contract moderation status covers the banlist but does not \
+                                    say whether the identity is banned"
+                                .to_string(),
+                        })
+                    }
+                    None => false,
+                };
+                // An entry comes with its reason. Only the lists asked for are decoded, since
+                // only they are reported.
+                let ban = (banned && lists.contains(&ContractModerationList::Banlist))
+                    .then(|| reason_from_response(status.ban_reason))
+                    .transpose()?
+                    .map(|reason| ContractBan { reason });
+                let suspension = status
+                    .suspended_until
+                    .filter(|_| lists.contains(&ContractModerationList::Suspensions))
+                    .map(|until| {
+                        reason_from_response(status.suspension_reason)
+                            .map(|reason| ContractSuspension { until, reason })
+                    })
+                    .transpose()?;
+                // The warnings are read only when the warning list was asked for: an empty
+                // list on the wire says "none" for a list read and nothing for one not read.
+                let warnings = if lists.contains(&ContractModerationList::Warnings) {
+                    warnings_from_response(status.warnings)?
+                } else {
+                    vec![]
+                };
+                Some(ContractModerationListStatuses::from_status(
+                    &lists,
+                    &ContractModerationStatus {
+                        ban,
+                        suspension,
+                        warnings,
+                    },
+                ))
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract moderation status, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((status, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractModerationEntriesRequest> for ContractModerationEntries {
+    type Request = platform::GetContractModerationEntriesRequest;
+    type Response = platform::GetContractModerationEntriesResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_moderation_entries_response::get_contract_moderation_entries_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_moderation_entries_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let entries = match v0.result {
+            Some(V0Result::Entries(entries)) => Some(entries_from_response(entries.entries)?),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract moderation entries, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((entries, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractDocumentRemovalsRequest> for ContractDocumentRemovals {
+    type Request = platform::GetContractDocumentRemovalsRequest;
+    type Response = platform::GetContractDocumentRemovalsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_document_removals_response::get_contract_document_removals_response_v0::Result as V0Result;
+
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // The request bounds what the response may hold, so it is read back here too, under
+        // the same rules the node applied.
+        let platform::get_contract_document_removals_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let query = removals_query_from_request(
+            request_v0.document_type_name,
+            request_v0.selection,
+            platform_version,
+        )?;
+
+        let platform::get_contract_document_removals_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let removals = match v0.result {
+            Some(V0Result::Removals(removals)) => {
+                Some(removals_from_response(removals.removals, &query)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract document removals, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((removals, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractFeePotsRequest> for ContractFeePots {
+    type Request = platform::GetContractFeePotsRequest;
+    type Response = platform::GetContractFeePotsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_fee_pots_response::get_contract_fee_pots_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_fee_pots_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let pots = match v0.result {
+            Some(V0Result::Pots(pots)) => Some(fee_pots_from_response(pots)?),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract fee pots, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((pots, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetIdentityKeysRemainingBudgetsRequest>
+    for IdentityKeysRemainingBudgets
+{
+    type Request = platform::GetIdentityKeysRemainingBudgetsRequest;
+    type Response = platform::GetIdentityKeysRemainingBudgetsResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_identity_keys_remaining_budgets_response::get_identity_keys_remaining_budgets_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_identity_keys_remaining_budgets_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let budgets = match v0.result {
+            Some(V0Result::KeysRemainingBudgets(budgets)) => Some(
+                budgets
+                    .entries
+                    .into_iter()
+                    .map(|entry| (entry.key_id, entry.remaining_budget))
+                    .collect(),
+            ),
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved remaining budgets, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((budgets, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractGroupMembersRequest> for ContractGroupMembersPage {
+    type Request = platform::GetContractGroupMembersRequest;
+    type Response = platform::GetContractGroupMembersResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_group_members_request::Version::V0(request_v0) =
+            request.version.ok_or(Error::EmptyVersion)?;
+        let query = members_query_from_request(request_v0.members)?;
+
+        let platform::get_contract_group_members_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let page = v0
+            .result
+            .map(|result| members_page_from_response(&query, result))
+            .transpose()?;
+
+        Ok((page, metadata))
+    }
+}
+
+impl FromUnproved<platform::GetContractGroupsForContractRequest>
+    for ContractGroupMembershipsForContract
+{
+    type Request = platform::GetContractGroupsForContractRequest;
+    type Response = platform::GetContractGroupsForContractResponse;
+
+    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        _platform_version: &PlatformVersion,
+    ) -> Result<(Option<Self>, ResponseMetadata), Error>
+    where
+        Self: Sized,
+    {
+        use platform::get_contract_groups_for_contract_response::get_contract_groups_for_contract_response_v0::Result as V0Result;
+
+        let response: Self::Response = response.into();
+
+        let platform::get_contract_groups_for_contract_response::Version::V0(v0) =
+            response.version.ok_or(Error::EmptyVersion)?;
+        let metadata = v0.metadata.ok_or(Error::EmptyResponseMetadata)?;
+
+        let memberships = match v0.result {
+            Some(V0Result::ContractGroupMemberships(memberships)) => {
+                Some(memberships_from_response(memberships)?)
+            }
+            Some(V0Result::Proof(_)) => {
+                return Err(Error::ResponseDecodeError {
+                    error: "expected unproved contract group memberships, got a proof".to_string(),
+                })
+            }
+            None => None,
+        };
+
+        Ok((memberships, metadata))
+    }
+}
+
+#[cfg(test)]
+mod contract_groups_tests {
+    use super::*;
+    use crate::types::contract_groups::{ContractGroupMembersQuery, ContractGroupOwner};
+    use dapi_grpc::platform::v0::get_contract_group_info_response::{
+        get_contract_group_info_response_v0::Result as InfoResult,
+        ContractGroupInfo as ContractGroupInfoProto, GetContractGroupInfoResponseV0,
+        Version as InfoVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_group_members_request::get_contract_group_members_request_v0::Members;
+    use dapi_grpc::platform::v0::get_contract_group_members_request::{
+        ContractMembersQuery, GetContractGroupMembersRequestV0, TokenMembersQuery,
+        Version as MembersRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_group_members_response::{
+        get_contract_group_members_response_v0::Result as MembersResult, ContractMembers,
+        GetContractGroupMembersResponseV0, TokenMembers, Version as MembersVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_groups_for_contract_response::{
+        get_contract_groups_for_contract_response_v0::Result as MembershipsResult,
+        ContractGroupMemberships, DocumentTypeMemberships, GetContractGroupsForContractResponseV0,
+        TokenMemberships, Version as MembershipsVersion,
+    };
+    use dapi_grpc::platform::v0::ContractGroupTokenMember;
+    use std::collections::BTreeSet;
+
+    fn info_response(result: Option<InfoResult>) -> platform::GetContractGroupInfoResponse {
+        platform::GetContractGroupInfoResponse {
+            version: Some(InfoVersion::V0(GetContractGroupInfoResponseV0 {
+                result,
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    fn parse_info(
+        response: platform::GetContractGroupInfoResponse,
+    ) -> Result<Option<ContractGroupInfo>, Error> {
+        <ContractGroupInfo as FromUnproved<platform::GetContractGroupInfoRequest>>::maybe_from_unproved(
+            platform::GetContractGroupInfoRequest::default(),
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+    }
+
+    #[test]
+    fn info_with_no_admins_is_a_single_owner() {
+        let info = parse_info(info_response(Some(InfoResult::ContractGroupInfo(
+            ContractGroupInfoProto {
+                owner_id: vec![1; 32],
+                admin_ids: vec![],
+                name: Some("alpha".to_string()),
+                description: None,
+            },
+        ))))
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            info.owner(),
+            &ContractGroupOwner::SingleOwner(Identifier::new([1; 32]))
+        );
+        assert_eq!(info.name(), Some("alpha"));
+        assert_eq!(info.description(), None);
+    }
+
+    #[test]
+    fn info_with_admins_is_an_owner_and_admins() {
+        let info = parse_info(info_response(Some(InfoResult::ContractGroupInfo(
+            ContractGroupInfoProto {
+                owner_id: vec![1; 32],
+                admin_ids: vec![vec![3; 32], vec![2; 32]],
+                name: None,
+                description: Some("shared".to_string()),
+            },
+        ))))
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            info.owner(),
+            &ContractGroupOwner::OwnerAndAdmins {
+                owner: Identifier::new([1; 32]),
+                admins: BTreeSet::from([Identifier::new([2; 32]), Identifier::new([3; 32])]),
+            }
+        );
+        assert_eq!(info.description(), Some("shared"));
+    }
+
+    #[test]
+    fn info_absent_group_and_bad_owner_and_proof() {
+        assert_eq!(parse_info(info_response(None)).expect("parse"), None);
+
+        let err = parse_info(info_response(Some(InfoResult::ContractGroupInfo(
+            ContractGroupInfoProto {
+                owner_id: vec![1; 4],
+                admin_ids: vec![],
+                name: None,
+                description: None,
+            },
+        ))))
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ProtocolError { .. }),
+            "a malformed response field is the node's error: {err:?}"
+        );
+
+        let err = parse_info(info_response(Some(InfoResult::Proof(
+            platform::Proof::default(),
+        ))))
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+    }
+
+    fn members_request(members: Members) -> platform::GetContractGroupMembersRequest {
+        platform::GetContractGroupMembersRequest {
+            version: Some(MembersRequestVersion::V0(
+                GetContractGroupMembersRequestV0 {
+                    contract_group_id: vec![1; 32],
+                    members: Some(members),
+                    limit: None,
+                    prove: false,
+                },
+            )),
+        }
+    }
+
+    fn members_response(
+        result: Option<MembersResult>,
+    ) -> platform::GetContractGroupMembersResponse {
+        platform::GetContractGroupMembersResponse {
+            version: Some(MembersVersion::V0(GetContractGroupMembersResponseV0 {
+                result,
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    fn parse_members(
+        request: platform::GetContractGroupMembersRequest,
+        response: platform::GetContractGroupMembersResponse,
+    ) -> Result<Option<ContractGroupMembersPage>, Error> {
+        <ContractGroupMembersPage as FromUnproved<platform::GetContractGroupMembersRequest>>::maybe_from_unproved(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+    }
+
+    #[test]
+    fn members_page_of_the_requested_kind_is_read() {
+        let page = parse_members(
+            members_request(Members::Tokens(TokenMembersQuery { start_after: None })),
+            members_response(Some(MembersResult::Tokens(TokenMembers {
+                tokens: vec![ContractGroupTokenMember {
+                    contract_id: vec![5; 32],
+                    token_position: 2,
+                }],
+            }))),
+        )
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            page,
+            ContractGroupMembersPage::Tokens(vec![(Identifier::new([5; 32]), 2)])
+        );
+        assert_eq!(
+            page.next_query(),
+            Some(ContractGroupMembersQuery::Tokens {
+                start_after: Some((Identifier::new([5; 32]), 2)),
+            })
+        );
+    }
+
+    #[test]
+    fn members_page_of_another_kind_is_rejected() {
+        let err = parse_members(
+            members_request(Members::Contracts(ContractMembersQuery {
+                start_after: None,
+            })),
+            members_response(Some(MembersResult::Tokens(TokenMembers::default()))),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+
+        let err = parse_members(
+            members_request(Members::Contracts(ContractMembersQuery {
+                start_after: None,
+            })),
+            members_response(Some(MembersResult::Proof(platform::Proof::default()))),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseDecodeError { .. }),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn members_page_contracts_are_read_in_order() {
+        let page = parse_members(
+            members_request(Members::Contracts(ContractMembersQuery {
+                start_after: None,
+            })),
+            members_response(Some(MembersResult::Contracts(ContractMembers {
+                contract_ids: vec![vec![1; 32], vec![2; 32]],
+            }))),
+        )
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            page,
+            ContractGroupMembersPage::Contracts(vec![
+                Identifier::new([1; 32]),
+                Identifier::new([2; 32])
+            ])
+        );
+    }
+
+    #[test]
+    fn memberships_are_read_into_sets() {
+        let response = platform::GetContractGroupsForContractResponse {
+            version: Some(MembershipsVersion::V0(
+                GetContractGroupsForContractResponseV0 {
+                    result: Some(MembershipsResult::ContractGroupMemberships(
+                        ContractGroupMemberships {
+                            contract_group_ids: vec![vec![1; 32]],
+                            document_types: vec![DocumentTypeMemberships {
+                                document_type_name: "note".to_string(),
+                                contract_group_ids: vec![vec![2; 32], vec![1; 32]],
+                            }],
+                            tokens: vec![TokenMemberships {
+                                token_position: 7,
+                                contract_group_ids: vec![vec![3; 32]],
+                            }],
+                        },
+                    )),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+
+        let memberships = <ContractGroupMembershipsForContract as FromUnproved<
+            platform::GetContractGroupsForContractRequest,
+        >>::maybe_from_unproved(
+            platform::GetContractGroupsForContractRequest::default(),
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .expect("parse")
+        .expect("present");
+
+        assert_eq!(
+            memberships.contract,
+            BTreeSet::from([Identifier::new([1; 32])])
+        );
+        assert_eq!(
+            memberships.document_types["note"],
+            BTreeSet::from([Identifier::new([1; 32]), Identifier::new([2; 32])])
+        );
+        assert_eq!(
+            memberships.tokens[&7],
+            BTreeSet::from([Identifier::new([3; 32])])
+        );
+        assert_eq!(
+            memberships.all_contract_group_ids(),
+            BTreeSet::from([
+                Identifier::new([1; 32]),
+                Identifier::new([2; 32]),
+                Identifier::new([3; 32])
+            ])
+        );
+    }
+}
+
+#[cfg(test)]
+mod contract_moderation_tests {
+    use super::*;
+    use crate::types::contract_moderation::ContractModerationReason;
+    use dapi_grpc::platform::v0::get_contract_document_removals_request::get_contract_document_removals_request_v0::Selection as RemovalsSelection;
+    use dapi_grpc::platform::v0::get_contract_document_removals_request::{
+        DocumentIds as RemovalsDocumentIds, GetContractDocumentRemovalsRequestV0,
+        Page as RemovalsPage, Version as RemovalsRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_document_removals_response::{
+        get_contract_document_removals_response_v0::Result as RemovalsResult,
+        ContractDocumentRemoval as ContractDocumentRemovalProto,
+        ContractDocumentRemovals as ContractDocumentRemovalsProto,
+        GetContractDocumentRemovalsResponseV0, Version as RemovalsResponseVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_moderation_status_request::{
+        GetContractModerationStatusRequestV0, Version as StatusRequestVersion,
+    };
+    use dapi_grpc::platform::v0::get_contract_moderation_status_response::{
+        get_contract_moderation_status_response_v0::Result as StatusResult,
+        ContractModerationStatus as ContractModerationStatusProto,
+        GetContractModerationStatusResponseV0, Version as StatusResponseVersion,
+    };
+    use dapi_grpc::platform::v0::ContractModerationReason as ContractModerationReasonProto;
+    use dapi_grpc::platform::v0::ContractWarning as ContractWarningProto;
+    use dapi_grpc::platform::v0::ResponseMetadata;
+    use dpp::dashcore::Network;
+    use dpp::version::PlatformVersion;
+
+    const BANLIST: i32 = 1;
+    const SUSPENSIONS: i32 = 2;
+    const WARNINGS: i32 = 3;
+
+    fn status(
+        requested: Vec<i32>,
+        response: ContractModerationStatusProto,
+    ) -> Result<Option<ContractModerationListStatuses>, Error> {
+        let request = platform::GetContractModerationStatusRequest {
+            version: Some(StatusRequestVersion::V0(
+                GetContractModerationStatusRequestV0 {
+                    contract_id: vec![1; 32],
+                    identity_id: vec![2; 32],
+                    lists: requested,
+                    prove: false,
+                },
+            )),
+        };
+        let response = platform::GetContractModerationStatusResponse {
+            version: Some(StatusResponseVersion::V0(
+                GetContractModerationStatusResponseV0 {
+                    result: Some(StatusResult::Status(response)),
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        ContractModerationListStatuses::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .map(|(status, _)| status)
+    }
+
+    #[test]
+    fn should_report_the_lists_the_response_covers() {
+        let statuses = status(
+            vec![BANLIST, SUSPENSIONS],
+            ContractModerationStatusProto {
+                banned: Some(true),
+                suspended_until: Some(7),
+                lists: vec![BANLIST, SUSPENSIONS],
+                ban_reason: Some(ContractModerationReasonProto {
+                    code: None,
+                    text: "spam".to_string(),
+                    documents: vec![],
+                    reason_document_id: None,
+                }),
+                suspension_reason: Some(ContractModerationReasonProto {
+                    code: Some(9),
+                    text: "flooding".to_string(),
+                    documents: vec![],
+                    reason_document_id: None,
+                }),
+                warnings: vec![],
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+
+        assert_eq!(statuses.banned(), Some(true));
+        assert_eq!(statuses.suspended_until(), Some(Some(7)));
+        // The warning list was not asked for, so nothing is said about it.
+        assert_eq!(statuses.warnings(), None);
+        assert_eq!(
+            statuses.ban().flatten().map(|ban| &ban.reason),
+            Some(&ContractModerationReason::from_text("spam"))
+        );
+        assert_eq!(
+            statuses.suspension().flatten().map(|entry| &entry.reason),
+            Some(&ContractModerationReason {
+                code: Some(9),
+                text: "flooding".to_string(),
+                documents: vec![],
+                reason_document_id: None,
+            })
+        );
+    }
+
+    #[test]
+    fn should_refuse_an_entry_without_a_reason_or_with_a_code_past_u16() {
+        let no_reason = status(
+            vec![BANLIST],
+            ContractModerationStatusProto {
+                banned: Some(true),
+                lists: vec![BANLIST],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(no_reason, Err(Error::ResponseDecodeError { .. })));
+
+        let wide_code = status(
+            vec![SUSPENSIONS],
+            ContractModerationStatusProto {
+                suspended_until: Some(7),
+                lists: vec![SUSPENSIONS],
+                suspension_reason: Some(ContractModerationReasonProto {
+                    code: Some(u16::MAX as u32 + 1),
+                    text: String::new(),
+                    documents: vec![],
+                    reason_document_id: None,
+                }),
+                ..Default::default()
+            },
+        );
+        assert!(matches!(wide_code, Err(Error::ResponseDecodeError { .. })));
+
+        // A clean identity has no reason to give.
+        let clean = status(
+            vec![BANLIST, SUSPENSIONS],
+            ContractModerationStatusProto {
+                banned: Some(false),
+                lists: vec![BANLIST, SUSPENSIONS],
+                ..Default::default()
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+        assert_eq!(clean.ban(), Some(None));
+        assert_eq!(clean.suspension(), Some(None));
+    }
+
+    #[test]
+    fn should_read_the_warnings_when_the_warning_list_was_asked_for() {
+        let warning = |warned_at: u64, text: &str| ContractWarningProto {
+            warned_at,
+            reason: Some(ContractModerationReasonProto {
+                code: None,
+                text: text.to_string(),
+                documents: vec![],
+                reason_document_id: None,
+            }),
+        };
+        let warned = status(
+            vec![WARNINGS],
+            ContractModerationStatusProto {
+                lists: vec![WARNINGS],
+                warnings: vec![warning(5, "first strike"), warning(6, "second strike")],
+                ..Default::default()
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+        let warnings = warned.warnings().expect("expected the warning list");
+        assert_eq!(warnings.len(), 2);
+        assert_eq!(warnings[1].warned_at, 6);
+        assert_eq!(warnings[1].reason.text, "second strike");
+        assert_eq!(warned.banned(), None);
+
+        // No warnings on a list that was read: none, not unknown.
+        let clean = status(
+            vec![WARNINGS],
+            ContractModerationStatusProto {
+                lists: vec![WARNINGS],
+                ..Default::default()
+            },
+        )
+        .expect("expected the status to convert")
+        .expect("expected a status");
+        assert_eq!(clean.warnings(), Some(&[][..]));
+
+        // A warning without a reason is refused like an entry without one.
+        let no_reason = status(
+            vec![WARNINGS],
+            ContractModerationStatusProto {
+                lists: vec![WARNINGS],
+                warnings: vec![ContractWarningProto {
+                    warned_at: 5,
+                    reason: None,
+                }],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(no_reason, Err(Error::ResponseDecodeError { .. })));
+    }
+
+    #[test]
+    fn should_refuse_a_status_that_does_not_cover_a_list_asked_for() {
+        // The banlist was asked for and the response does not say it was read: reporting "not
+        // banned" would be a guess.
+        let uncovered = status(
+            vec![BANLIST, SUSPENSIONS],
+            ContractModerationStatusProto {
+                lists: vec![SUSPENSIONS],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(uncovered, Err(Error::ResponseDecodeError { .. })));
+
+        let covered_but_unset = status(
+            vec![BANLIST],
+            ContractModerationStatusProto {
+                lists: vec![BANLIST],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(
+            covered_but_unset,
+            Err(Error::ResponseDecodeError { .. })
+        ));
+    }
+
+    fn removals(
+        selection: Option<RemovalsSelection>,
+        result: Option<RemovalsResult>,
+    ) -> Result<Option<ContractDocumentRemovals>, Error> {
+        let request = platform::GetContractDocumentRemovalsRequest {
+            version: Some(RemovalsRequestVersion::V0(
+                GetContractDocumentRemovalsRequestV0 {
+                    contract_id: vec![1; 32],
+                    document_type_name: "post".to_string(),
+                    selection,
+                    prove: false,
+                },
+            )),
+        };
+        let response = platform::GetContractDocumentRemovalsResponse {
+            version: Some(RemovalsResponseVersion::V0(
+                GetContractDocumentRemovalsResponseV0 {
+                    result,
+                    metadata: Some(ResponseMetadata::default()),
+                },
+            )),
+        };
+        ContractDocumentRemovals::maybe_from_unproved_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            PlatformVersion::latest(),
+        )
+        .map(|(removals, _)| removals)
+    }
+
+    fn removal_proto(seed: u8) -> ContractDocumentRemovalProto {
+        ContractDocumentRemovalProto {
+            document_id: vec![seed; 32],
+            document_owner_id: vec![seed + 0x10; 32],
+            moderator_id: vec![0x77; 32],
+            removed_at: 1_000 + u64::from(seed),
+            document_hash: vec![seed + 0x20; 32],
+            restoration: None,
+            reason: Some(ContractModerationReasonProto {
+                code: None,
+                text: "spam".to_string(),
+                documents: vec![],
+                reason_document_id: None,
+            }),
+        }
+    }
+
+    #[test]
+    fn should_read_the_removals_the_request_asked_for() {
+        let page = Some(RemovalsSelection::Page(RemovalsPage {
+            start_after: None,
+            limit: Some(2),
+        }));
+        let read = removals(
+            page.clone(),
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(1), removal_proto(2)],
+            })),
+        )
+        .expect("expected the removals to convert")
+        .expect("expected removals");
+        assert_eq!(read.removals().len(), 2);
+        assert_eq!(read.removals()[0].document_id, Identifier::from([1; 32]));
+        assert_eq!(
+            read.removals()[1].removal.moderator_id,
+            Identifier::from([0x77; 32])
+        );
+
+        // A page of more records than the request allowed, and a request that selects nothing.
+        let over_limit = removals(
+            Some(RemovalsSelection::Page(RemovalsPage {
+                start_after: None,
+                limit: Some(1),
+            })),
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(1), removal_proto(2)],
+            })),
+        );
+        assert!(matches!(over_limit, Err(Error::ResponseDecodeError { .. })));
+        assert!(matches!(
+            removals(None, None),
+            Err(Error::RequestError { .. })
+        ));
+
+        // The unproved path never reads a proof.
+        let proved = removals(page, Some(RemovalsResult::Proof(Default::default())));
+        assert!(matches!(proved, Err(Error::ResponseDecodeError { .. })));
+    }
+
+    #[test]
+    fn should_refuse_a_removal_of_a_document_the_request_did_not_name() {
+        let by_ids = Some(RemovalsSelection::DocumentIds(RemovalsDocumentIds {
+            document_ids: vec![vec![1; 32], vec![3; 32]],
+        }));
+        let unasked = removals(
+            by_ids.clone(),
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(2)],
+            })),
+        );
+        assert!(matches!(unasked, Err(Error::ResponseDecodeError { .. })));
+
+        // An id with no record is simply left out, which is an answer.
+        let partial = removals(
+            by_ids,
+            Some(RemovalsResult::Removals(ContractDocumentRemovalsProto {
+                removals: vec![removal_proto(1)],
+            })),
+        )
+        .expect("expected the removals to convert")
+        .expect("expected removals");
+        assert_eq!(partial.removals().len(), 1);
     }
 }

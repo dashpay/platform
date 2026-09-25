@@ -1753,9 +1753,9 @@ export interface TokenClaimOptions {
   identityId: Identifier;
 
   /**
-   * The type of distribution to claim from: "preProgrammed" or "perpetual".
+   * The type of distribution to claim from: "preProgrammed", "perpetual" or "oncePerIdentity".
    */
-  distributionType: "preProgrammed" | "perpetual";
+  distributionType: "preProgrammed" | "perpetual" | "oncePerIdentity";
 
   /**
    * Optional public note for the claim operation.
@@ -1871,15 +1871,15 @@ impl WasmSdk {
         let parsed = deserialize_token_claim_options(options.into())?;
 
         // Parse the distribution type
-        let distribution_type = match parsed.distribution_type.to_lowercase().as_str() {
-            "preprogrammed" => TokenDistributionType::PreProgrammed,
-            "perpetual" => TokenDistributionType::Perpetual,
-            _ => {
-                return Err(WasmSdkError::invalid_argument(
-                    "distributionType must be 'preProgrammed' or 'perpetual'",
-                ))
-            }
-        };
+        let distribution_type =
+            match parsed.distribution_type.to_lowercase().as_str() {
+                "preprogrammed" => TokenDistributionType::PreProgrammed,
+                "perpetual" => TokenDistributionType::Perpetual,
+                "onceperidentity" => TokenDistributionType::OncePerIdentity,
+                _ => return Err(WasmSdkError::invalid_argument(
+                    "distributionType must be 'preProgrammed', 'perpetual' or 'oncePerIdentity'",
+                )),
+            };
 
         // Fetch and cache the data contract
         let data_contract = self.get_or_fetch_contract(contract_id).await?;

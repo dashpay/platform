@@ -2,10 +2,15 @@
 pub mod transformer;
 /// v0
 pub mod v0;
+/// v1
+pub mod v1;
 
 use crate::state_transition_action::contract::data_contract_create::v0::DataContractCreateTransitionActionV0;
+use crate::state_transition_action::contract::data_contract_create::v1::DataContractCreateTransitionActionV1;
 use derive_more::From;
+use dpp::contract_group::{ContractGroupInfo, ContractGroupMembership};
 use dpp::data_contract::DataContract;
+use dpp::identifier::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 
 /// data contract create transition action
@@ -13,6 +18,8 @@ use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 pub enum DataContractCreateTransitionAction {
     /// v0
     V0(DataContractCreateTransitionActionV0),
+    /// v1: adds contract groups
+    V1(DataContractCreateTransitionActionV1),
 }
 
 impl DataContractCreateTransitionAction {
@@ -20,12 +27,14 @@ impl DataContractCreateTransitionAction {
     pub fn data_contract(self) -> DataContract {
         match self {
             DataContractCreateTransitionAction::V0(transition) => transition.data_contract,
+            DataContractCreateTransitionAction::V1(transition) => transition.data_contract,
         }
     }
     /// data contract ref
     pub fn data_contract_ref(&self) -> &DataContract {
         match self {
             DataContractCreateTransitionAction::V0(transition) => &transition.data_contract,
+            DataContractCreateTransitionAction::V1(transition) => &transition.data_contract,
         }
     }
 
@@ -33,6 +42,7 @@ impl DataContractCreateTransitionAction {
     pub fn identity_nonce(&self) -> IdentityNonce {
         match self {
             DataContractCreateTransitionAction::V0(transition) => transition.identity_nonce,
+            DataContractCreateTransitionAction::V1(transition) => transition.identity_nonce,
         }
     }
 
@@ -40,6 +50,27 @@ impl DataContractCreateTransitionAction {
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             DataContractCreateTransitionAction::V0(transition) => transition.user_fee_increase,
+            DataContractCreateTransitionAction::V1(transition) => transition.user_fee_increase,
+        }
+    }
+
+    /// The contract group the transition registers, with its derived id, if any.
+    pub fn contract_group(&self) -> Option<&(Identifier, ContractGroupInfo)> {
+        match self {
+            DataContractCreateTransitionAction::V0(_) => None,
+            DataContractCreateTransitionAction::V1(transition) => {
+                transition.contract_group.as_ref()
+            }
+        }
+    }
+
+    /// The contract group memberships the created contract declares.
+    pub fn contract_group_memberships(&self) -> &[ContractGroupMembership] {
+        match self {
+            DataContractCreateTransitionAction::V0(_) => &[],
+            DataContractCreateTransitionAction::V1(transition) => {
+                transition.contract_group_memberships.as_slice()
+            }
         }
     }
 }

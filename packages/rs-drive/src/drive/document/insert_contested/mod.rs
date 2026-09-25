@@ -36,6 +36,11 @@ mod add_contested_indices_for_contract_operations;
 mod add_contested_reference_and_vote_subtree_to_document_operations;
 mod add_contested_vote_subtrees_for_non_identities_operations;
 
+// Module: fetch_charter_election_windows
+// This module reads the windows a moderation election takes from its target contract
+mod fetch_charter_election_windows;
+pub use fetch_charter_election_windows::ContestWindows;
+
 // TODO: Disabled module add_contested_indices_for_index_level_for_contract_operations
 
 #[cfg(test)]

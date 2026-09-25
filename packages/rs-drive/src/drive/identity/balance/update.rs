@@ -516,12 +516,13 @@ mod tests {
 
     mod apply_balance_change_from_fee_to_identity_operations {
         use super::*;
+        use crate::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
         use crate::error::identity::IdentityError;
         use crate::fees::op::LowLevelDriveOperation;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use dpp::fee::fee_result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
-        use dpp::fee::fee_result::FeeResult;
+        use dpp::fee::fee_result::{BalanceChange, FeeResult};
         use dpp::fee::{Credits, SignedCredits};
         use dpp::version::PlatformVersion;
         use grovedb::batch::GroveOp;
@@ -616,6 +617,74 @@ mod tests {
             ));
 
             assert_eq!(fee_result_outcome, fee_result);
+        }
+
+        #[test]
+        fn should_credit_other_refunds_when_the_payers_refund_equals_its_fee() {
+            let drive = setup_drive_with_initial_state_structure(None);
+
+            let platform_version = PlatformVersion::latest();
+
+            let payer = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
+            let other_identity =
+                create_test_identity(&drive, [1; 32], Some(16), None, platform_version)
+                    .expect("expected to create an identity");
+
+            let payer_balance = 1_000_000;
+            drive
+                .add_to_identity_balance(
+                    payer.id().to_buffer(),
+                    payer_balance,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fund the payer");
+
+            let storage_fee = 30_000;
+            let processing_fee = 70_000;
+            let other_refund = 200_000;
+
+            let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =
+                BTreeMap::from_iter([
+                    (
+                        payer.id().to_buffer(),
+                        IntMap::from_iter([(GENESIS_EPOCH_INDEX, storage_fee + processing_fee)]),
+                    ),
+                    (
+                        other_identity.id().to_buffer(),
+                        IntMap::from_iter([(GENESIS_EPOCH_INDEX, other_refund)]),
+                    ),
+                ]);
+
+            let fee_result = FeeResult {
+                storage_fee,
+                processing_fee,
+                fee_refunds: FeeRefunds(refunds_per_epoch_by_identifier),
+                ..Default::default()
+            };
+            let fee_change = fee_result.clone().into_balance_change(payer.id());
+
+            assert_eq!(fee_change.change(), &BalanceChange::NoBalanceChange);
+
+            let outcome = drive
+                .apply_balance_change_from_fee_to_identity(fee_change, None, platform_version)
+                .expect("should apply fee change");
+
+            // The returned fee result still takes the other identity's refund out of the pools
+            assert_eq!(outcome.actual_fee_paid_owned(), fee_result);
+
+            let fetch_balance = |identity_id: [u8; 32]| {
+                drive
+                    .fetch_identity_balance(identity_id, None, platform_version)
+                    .expect("expected to fetch a balance")
+                    .expect("expected a balance")
+            };
+
+            assert_eq!(fetch_balance(payer.id().to_buffer()), payer_balance);
+            assert_eq!(fetch_balance(other_identity.id().to_buffer()), other_refund);
         }
 
         #[test]

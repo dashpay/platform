@@ -1,4 +1,9 @@
+use crate::drive::contract::moderation::types::{
+    ContractDocumentRemovalsQuery, ContractDocumentRemovalsSelection,
+};
+use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::{Drive, RootTree};
+use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::prove::prove_state_transition::ProofCreationResult;
@@ -7,8 +12,12 @@ use crate::query::{
 };
 use crate::verify::state_transition::state_transition_execution_path_queries::TryTransitionIntoPathQuery;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
@@ -21,6 +30,9 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::contract_fee_claim_transition::accessors::ContractFeeClaimTransitionAccessorsV0;
+use dpp::state_transition::contract_user_moderation_transition::accessors::ContractUserModerationTransitionAccessorsV0;
+use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
@@ -28,6 +40,7 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_key_limits_update_transition::accessors::IdentityKeyLimitsUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
@@ -61,6 +74,20 @@ impl Drive {
         &self,
         state_transition: &StateTransition,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
+        self.prove_state_transition_internal(state_transition, transaction, false, platform_version)
+    }
+
+    /// The proof of a state transition's execution, shared by every version of
+    /// `prove_state_transition`. With `carries_owner_balance` (from version 1) the
+    /// proof of an owned, fee-paying transition also carries the owner's credit
+    /// balance.
+    pub(in crate::prove::prove_state_transition) fn prove_state_transition_internal(
+        &self,
+        state_transition: &StateTransition,
+        transaction: TransactionArg,
+        carries_owner_balance: bool,
         platform_version: &PlatformVersion,
     ) -> Result<ProofCreationResult<Vec<u8>>, Error> {
         let path_query = match state_transition {
@@ -132,7 +159,7 @@ impl Drive {
                         // entry its values produce under the proof index —
                         // the same single-entry path query the verifier
                         // rebuilds from the transition.
-                        {
+                        let document_path_query = {
                             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
                             use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
                             if document_type.index_only() {
@@ -195,7 +222,9 @@ impl Drive {
                                 path_query.query.limit = None;
                                 path_query
                             }
-                        }
+                        };
+
+                        document_path_query
                     }
                     BatchedTransitionRef::Token(token_transition) => {
                         let data_contract_id = token_transition.data_contract_id();
@@ -242,6 +271,157 @@ impl Drive {
                 &st.identity_id().to_buffer(),
                 &platform_version.drive.grove_version,
             )?,
+            // The lists the moderation touched: a ban also removes a suspension, so it proves
+            // every list the contract keeps (the banlist entry present, the suspension absent);
+            // an unban, a suspend and an unsuspend prove the one entry they edit.
+            // A document deletion proves the record it left: a document id is produced at most
+            // once, so the record is of that document and the document is gone. A document
+            // restore proves the same record, now marked restored; the document's id is inside
+            // the bytes the transition carries, read under the contract's document type.
+            StateTransition::ContractUserModeration(st) => {
+                let contract_id = st.data_contract_id();
+                if let Some((document_type_name, document_id)) = st.action().document() {
+                    // The query the verifier rebuilds from the transition.
+                    Drive::contract_document_removals_query(
+                        contract_id.to_buffer(),
+                        &ContractDocumentRemovalsQuery {
+                            document_type_name: document_type_name.to_string(),
+                            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![
+                                document_id,
+                            ]),
+                        },
+                    )
+                } else if let Some((document_type_name, document_bytes)) =
+                    st.action().restored_document()
+                {
+                    let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                        contract_id.to_buffer(),
+                        false,
+                        None,
+                        platform_version,
+                    )?
+                    else {
+                        return Err(Error::Proof(ProofError::UnknownContract(format!(
+                            "unknown contract with id {} in contract moderation proving",
+                            contract_id
+                        ))));
+                    };
+                    let document_type = contract_fetch_info
+                        .contract
+                        .document_type_for_name(document_type_name)?;
+                    let document =
+                        Document::from_bytes(document_bytes, document_type, platform_version)?;
+                    Drive::contract_document_removals_query(
+                        contract_id.to_buffer(),
+                        &ContractDocumentRemovalsQuery {
+                            document_type_name: document_type_name.to_string(),
+                            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![
+                                document.id(),
+                            ]),
+                        },
+                    )
+                } else {
+                    let target_identity_id = st.target_identity_id().ok_or(Error::Drive(
+                        DriveError::CorruptedCodeExecution(
+                            "a moderation that names no document names an identity",
+                        ),
+                    ))?;
+                    let lists = match st.action() {
+                        ContractUserModerationAction::Ban { .. } => {
+                            let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                                contract_id.to_buffer(),
+                                false,
+                                None,
+                                platform_version,
+                            )?
+                            else {
+                                return Err(Error::Proof(ProofError::UnknownContract(format!(
+                                    "unknown contract with id {} in contract moderation proving",
+                                    contract_id
+                                ))));
+                            };
+                            // A ban removes a suspension too, so its proof covers the lists
+                            // that bar; the warning list, which a ban leaves alone, is not
+                            // among them.
+                            contract_fetch_info
+                                .contract
+                                .config()
+                                .moderation()
+                                .map(|moderation| moderation.barring_lists().collect::<Vec<_>>())
+                                .unwrap_or_else(|| vec![ContractModerationList::Banlist])
+                        }
+                        ContractUserModerationAction::Unban { .. } => {
+                            vec![ContractModerationList::Banlist]
+                        }
+                        ContractUserModerationAction::Suspend { .. }
+                        | ContractUserModerationAction::Unsuspend { .. } => {
+                            vec![ContractModerationList::Suspensions]
+                        }
+                        ContractUserModerationAction::Warn { .. }
+                        | ContractUserModerationAction::ClearWarnings { .. } => {
+                            vec![ContractModerationList::Warnings]
+                        }
+                        ContractUserModerationAction::DeleteDocument { .. }
+                        | ContractUserModerationAction::RestoreDocument { .. } => {
+                            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                                "a document deletion or restore is proved by the arms above",
+                            )))
+                        }
+                    };
+                    Drive::contract_moderation_status_query(
+                        contract_id.to_buffer(),
+                        target_identity_id.to_buffer(),
+                        &lists,
+                        &platform_version.drive.grove_version,
+                    )?
+                }
+            }
+            // The pot the claim paid out with its last claim (epoch, time, claimant), and the balance
+            // of every identity the contract names as a recipient of that pot, or the claimant's
+            // alone when the contract does not name it (a seated moderation team's member).
+            StateTransition::ContractFeeClaim(st) => {
+                let contract_id = st.data_contract_id();
+                let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                    contract_id.to_buffer(),
+                    false,
+                    None,
+                    platform_version,
+                )?
+                else {
+                    return Err(Error::Proof(ProofError::UnknownContract(format!(
+                        "unknown contract with id {} in contract fee claim proving",
+                        contract_id
+                    ))));
+                };
+                // A claimant the contract does not name as a recipient is on a seated
+                // moderation team, which the contract does not name either: its balance alone
+                // is proved. Only a contract fee claim takes this arm, a transition protocol
+                // version 14 introduced, so no earlier proof changes.
+                let recipients: Vec<[u8; 32]> = st
+                    .pot()
+                    .claim_proof_identities(&contract_fetch_info.contract, st.owner_id())
+                    .into_iter()
+                    .map(|recipient| recipient.to_buffer())
+                    .collect();
+                let pot_query = Drive::contract_fee_pots_query(
+                    contract_id.to_buffer(),
+                    &[st.pot()],
+                    &platform_version.drive.grove_version,
+                )?;
+                let balances_query = Drive::balances_for_identity_ids_query(&recipients);
+                PathQuery::merge(
+                    vec![&pot_query, &balances_query],
+                    &platform_version.drive.grove_version,
+                )?
+            }
+            // Only the rewritten key: the verifier compares that one key.
+            StateTransition::IdentityKeyLimitsUpdate(st) => {
+                IdentityKeysRequest::new_specific_key_query_without_limit(
+                    &st.identity_id().to_buffer(),
+                    st.key_id(),
+                )
+                .into_path_query()
+            }
             StateTransition::IdentityCreditTransfer(st) => {
                 let sender_query = Drive::identity_balance_query(&st.identity_id().into_buffer());
                 let recipient_query =
@@ -540,6 +720,30 @@ impl Drive {
             }
         };
 
+        // From version 1 the proof of an owned, fee-paying transition carries
+        // the owner's credit balance next to its result, so a wallet learns
+        // what the write left it with without a second query. The verifier
+        // rebuilds a document batch's merged query and verifies it strictly,
+        // and reads the other kinds' result and balance as subsets of the
+        // merged proof.
+        let path_query =
+            if carries_owner_balance && Self::proof_merges_owner_balance_after(state_transition) {
+                let owner_id = state_transition.owner_id().ok_or(Error::Proof(
+                    ProofError::InvalidTransition(
+                        "an owned transition names its owner".to_string(),
+                    ),
+                ))?;
+                let mut path_query = path_query;
+                path_query.query.limit = None;
+                let owner_balance_query = Drive::identity_balance_query(&owner_id.to_buffer());
+                PathQuery::merge(
+                    vec![&path_query, &owner_balance_query],
+                    &platform_version.drive.grove_version,
+                )?
+            } else {
+                path_query
+            };
+
         let proof = self.grove_get_proved_path_query(
             &path_query,
             transaction,
@@ -548,5 +752,21 @@ impl Drive {
         )?;
 
         Ok(ProofCreationResult::new_with_data(proof))
+    }
+
+    /// The owned, fee-paying transitions whose version 1 proof gains the owner's
+    /// balance by a merge after their own path query is built: document and token
+    /// batches, contract creates and updates, identity updates and key limit
+    /// updates, and contract moderation.
+    fn proof_merges_owner_balance_after(state_transition: &StateTransition) -> bool {
+        matches!(
+            state_transition,
+            StateTransition::Batch(_)
+                | StateTransition::DataContractCreate(_)
+                | StateTransition::DataContractUpdate(_)
+                | StateTransition::IdentityUpdate(_)
+                | StateTransition::IdentityKeyLimitsUpdate(_)
+                | StateTransition::ContractUserModeration(_)
+        )
     }
 }

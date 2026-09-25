@@ -6,5 +6,6 @@ pub mod token_distribution_key;
 pub mod token_distribution_rules;
 pub mod token_keeps_history_rules;
 pub mod token_marketplace_rules;
+pub mod token_once_per_identity_distribution;
 pub mod token_perpetual_distribution;
 pub mod token_pre_programmed_distribution;

@@ -11,6 +11,54 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions that predate this limit.
     pub max_document_value_depth: Option<u16>,
+    /// Maximum `maxItems` a typed array document property (`type: "array"` with an `items`
+    /// element schema) may declare, enforced when a contract is registered or updated (every
+    /// parse requires `maxItems`; full validation refuses one above this). The bound keeps an
+    /// array's worst-case encoded size, which fee estimation charges by, small. Read by
+    /// document type parser generation 3 (protocol version 14), the only generation that
+    /// parses typed arrays, and never reached before.
+    pub max_typed_array_items: u16,
+    /// Maximum number of references one document of a document type may carry, counted at
+    /// contract registration or update from the type's `refersTo` declarations: one for each
+    /// property that declares one (an identifier, or a key id carrying a key reference), one
+    /// for the type's `ownerRefersTo`, and `maxItems` for each typed array whose identifier
+    /// elements declare one. Every reference is checked against state when the
+    /// document is created or replaced, each check a billed read, so this bounds the reads one
+    /// document write can cause; without it a type could declare many typed arrays of
+    /// `max_typed_array_items` references each. Refused under full validation only, like
+    /// `max_typed_array_items`. Read by document type parser generation 3 (protocol version
+    /// 14), the only generation that parses `refersTo`, and never reached before.
+    pub max_references_per_document: u16,
+    /// Maximum number of operands one `anyOf` or `allOf` list of a `refersTo` reference
+    /// expression may hold (it holds at least two). Every leaf may be read for each value the
+    /// declaration covers when the document is written, and each counts against
+    /// `max_references_per_document`; this keeps one list from spending the whole budget on
+    /// alternatives. Refused under full validation only, like `max_typed_array_items`. Read by
+    /// document type parser generation 3 (protocol version 14), the only generation that parses
+    /// `refersTo`, and never reached before.
+    pub max_reference_operands: u16,
+    /// Maximum number of `anyOf` / `allOf` combinators on any path from a `refersTo` reference
+    /// expression to one of its leaves (a flat `anyOf` is 1). Refused under full validation
+    /// only, like `max_reference_operands`. Must stay at most
+    /// `dpp`'s `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH` (16), the nesting a decoder of a
+    /// consensus error carrying the declaration accepts; a test there holds every version to
+    /// it. Read by document type parser generation 3 (protocol version 14) and never reached
+    /// before.
+    pub max_reference_expression_depth: u16,
+    /// Maximum number of named rules one document type's `propertyConstraints` may
+    /// declare. Every rule is evaluated on each create and replace of a document of the
+    /// type, and no rule reads state, so this and `max_property_constraint_nodes` are what
+    /// bound the arithmetic one document write causes. Refused under full validation only,
+    /// like `max_typed_array_items`. Read by document type parser generation 3 (protocol
+    /// version 14), the only generation that parses `propertyConstraints`, and never
+    /// reached before.
+    pub max_property_constraints: u16,
+    /// Maximum number of nodes in one `propertyConstraints` rule: its comparison, every
+    /// arithmetic operator and every operand, an integer value or a property. An `ifAbsent`
+    /// operand is one node, the default it gives included. Refused under full validation
+    /// only, like `max_property_constraints`. Read by document type parser generation 3
+    /// (protocol version 14) and never reached before.
+    pub max_property_constraint_nodes: u16,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config
@@ -87,7 +135,68 @@ pub struct SystemLimits {
     /// FAILED instead of being re-signed forever (`rebroadcast_expired_withdrawal_documents`
     /// method version 2). `None` for the protocol versions that predate the rule.
     pub core_dust_relay_fee_per_kb: Option<u64>,
-    pub max_contract_group_size: u16,
+    /// Maximum Core transaction fee rate, in duffs per byte, accepted for a withdrawal.
+    /// `None` preserves the behavior of protocol versions that predate this limit.
+    pub max_core_fee_per_byte: Option<u32>,
+    /// Maximum number of members a change-control `Group` declared inside a data contract may
+    /// have (the groups token change-control rules delegate to). Not to be confused with
+    /// contract groups, the identity-owned sets of contracts below.
+    pub max_group_member_count: u16,
+    /// Maximum number of contract group memberships one data contract create transition may
+    /// declare. Contract groups exist from protocol version 14; earlier versions never reach
+    /// the check.
+    pub max_contract_group_memberships_per_contract: u16,
+    /// Maximum number of admins a contract group may name besides its owner.
+    pub max_contract_group_admins: u16,
+    /// Maximum length, in characters, of a contract group name.
+    pub max_contract_group_name_length: u16,
+    /// Maximum length, in characters, of a contract group description.
+    pub max_contract_group_description_length: u16,
+    /// Maximum number of moderator identities a moderated data contract may name
+    /// (`DataContractConfigV2::moderation`); the owner counts when it is named, and moderates
+    /// without being named. Contract moderation exists from protocol
+    /// version 14; read by the contract's `validate_moderation_config` v0 and never reached
+    /// before.
+    pub max_contract_moderators: u16,
+    /// Latest block time, in milliseconds, a contract suspension may run until: 2^53 - 1, the
+    /// largest integer JSON and JavaScript numbers hold exactly, which is how `until` travels
+    /// to clients. Read by the `ContractUserModeration` basic structure validation v0
+    /// (protocol version 14) and never reached before.
+    pub max_contract_suspension_until: u64,
+    /// Maximum length, in bytes of UTF-8, of the text of the reason a ban, a suspension, a
+    /// warning or a moderator's document deletion carries (`ContractModerationReason::text`). Read by the `ContractUserModeration` basic
+    /// structure validation v0 (protocol version 14) and never reached before.
+    pub max_contract_moderation_reason_length: u16,
+    /// Maximum number of warnings one identity may carry on a contract's warning list at a
+    /// time: a warn that would exceed it is refused until the warnings are cleared. Read by
+    /// the `ContractUserModeration` state validation v0 (protocol version 14) and never
+    /// reached before.
+    pub max_contract_warnings_per_identity: u16,
+    /// Maximum number of documents a contract moderation reason may cite
+    /// (`ContractModerationReason::documents`). Read by the reason's validation (protocol
+    /// version 14) and never reached before.
+    pub max_contract_moderation_reason_documents: u16,
+    /// Shortest join window and vote window, in seconds, an elected moderation team
+    /// declaration (`ContractModerators::Elected`) may set: one day. Read by the contract's
+    /// `validate_moderation_config` v0 (protocol version 14) and never reached before.
+    pub min_contract_moderation_election_window_seconds: u32,
+    /// Longest join window and vote window, in seconds, such a declaration may set: four
+    /// weeks.
+    pub max_contract_moderation_election_window_seconds: u32,
+    /// Shortest challenge cool-down, in seconds, such a declaration may set: two weeks. The
+    /// cool-down is how long a seated team is safe from a challenge after a seat change.
+    pub min_contract_moderation_challenge_cool_down_seconds: u32,
+    /// Longest challenge cool-down, in seconds, such a declaration may set: three years.
+    pub max_contract_moderation_challenge_cool_down_seconds: u32,
+    /// How long after a moderator's deletion of a document, in milliseconds of block time,
+    /// the contract's moderators may restore it (`ContractUserModeration`'s `RestoreDocument`
+    /// action): a week. Read by the `ContractUserModeration` state validation v0 (protocol
+    /// version 14) and never reached before.
+    pub contract_document_restore_window_ms: u64,
+    /// Most members an elected moderation declaration may let a seated team's leader add
+    /// after the election (`maxAddedModerators`). Read by the declaration's validation
+    /// (protocol version 14) and never reached before.
+    pub max_contract_moderation_added_moderators: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to
@@ -235,6 +344,67 @@ mod tests {
                 .system_limits
                 .max_document_value_depth,
             Some(256)
+        );
+    }
+
+    /// The withdrawal structure generations selected from protocol version 14 read the cap
+    /// through `dpp::withdrawal::validate_core_fee_per_byte_cap`, which treats `None` as "no
+    /// cap" per the field's contract. A table that selected one of those generations without a
+    /// cap would drop the limit silently, so that combination has to be a deliberate edit here.
+    #[test]
+    fn should_carry_a_core_fee_cap_wherever_the_capped_withdrawal_rules_are_selected() {
+        let selecting_capped_rules: Vec<_> = PLATFORM_VERSIONS
+            .iter()
+            .filter(|platform_version| {
+                let dpp_transitions = &platform_version.dpp.state_transitions;
+                let identity_structure = platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_credit_withdrawal_state_transition
+                    .basic_structure;
+                dpp_transitions
+                    .address_funds
+                    .validate_credit_withdrawal_structure
+                    >= 1
+                    || dpp_transitions.shielded.validate_withdrawal_structure >= 1
+                    || identity_structure.is_some_and(|version| version >= 2)
+            })
+            .collect();
+        assert!(
+            !selecting_capped_rules.is_empty(),
+            "no protocol version selects the fee-capped withdrawal rules; this test would \
+             assert nothing"
+        );
+        for platform_version in selecting_capped_rules {
+            assert!(
+                platform_version
+                    .system_limits
+                    .max_core_fee_per_byte
+                    .is_some(),
+                "protocol version {} selects the fee-capped withdrawal structure rules without \
+                 a Core fee-rate cap; see SystemLimits::max_core_fee_per_byte",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    #[test]
+    fn core_fee_per_byte_limit_starts_at_protocol_version_14() {
+        // v13 is already active on live networks, so the limit must not apply there.
+        assert_eq!(
+            PlatformVersion::get(13)
+                .expect("protocol version 13 should exist")
+                .system_limits
+                .max_core_fee_per_byte,
+            None
+        );
+        assert_eq!(
+            PlatformVersion::get(14)
+                .expect("protocol version 14 should exist")
+                .system_limits
+                .max_core_fee_per_byte,
+            Some(6_765)
         );
     }
 }

@@ -1,6 +1,6 @@
 //! DPNS name registration, resolution, search, and contest queries.
 
-use dpp::identity::accessors::IdentityGettersV0;
+use super::signing_key::AvailableSigningKey;
 
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
@@ -206,6 +206,7 @@ impl IdentityWallet {
                 .identity(identity_id)
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            drop(wm);
             // DPNS name registration writes a document state transition,
             // which DPP requires to be signed by a HIGH-or-stricter
             // authentication key. MASTER is intentionally excluded —
@@ -214,12 +215,13 @@ impl IdentityWallet {
             // rejected by the protocol on document-side state
             // transitions.
             let key = identity
-                .get_first_public_key_matching(
+                .available_signing_key(
+                    signer,
                     Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
+                    &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
                     false,
-                )
+                )?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
                         "No HIGH or CRITICAL authentication key found on identity \

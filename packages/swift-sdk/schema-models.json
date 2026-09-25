@@ -1,0 +1,56 @@
+{
+  "format_version": 1,
+  "models": {
+    "PersistentIdentity": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentIdentity.swift",
+    "PersistentDPNSName": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentDPNSName.swift",
+    "PersistentDashpayProfile": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentDashpayProfile.swift",
+    "PersistentDashpayContactProfile": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentDashpayContactProfile.swift",
+    "PersistentDashpayContactRequest": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentDashpayContactRequest.swift",
+    "PersistentDashpayPayment": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentDashpayPayment.swift",
+    "PersistentDashpayIgnoredSender": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentDashpayIgnoredSender.swift",
+    "PersistentDocument": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentDocument.swift",
+    "PersistentDataContract": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentDataContract.swift",
+    "PersistentPublicKey": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentPublicKey.swift",
+    "PersistentTokenBalance": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentTokenBalance.swift",
+    "PersistentKeyword": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentKeyword.swift",
+    "PersistentToken": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentToken.swift",
+    "PersistentDocumentType": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentDocumentType.swift",
+    "PersistentIndex": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentIndex.swift",
+    "PersistentProperty": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentProperty.swift",
+    "PersistentTokenHistoryEvent": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentTokenHistoryEvent.swift",
+    "PersistentPlatformAddress": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentPlatformAddress.swift",
+    "PersistentPlatformAddressesSyncState": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentPlatformAddressesSyncState.swift",
+    "PersistentWallet": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentWallet.swift",
+    "PersistentAccount": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentAccount.swift",
+    "PersistentCoreAddress": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentCoreAddress.swift",
+    "PersistentTransaction": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentTransaction.swift",
+    "PersistentTxo": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentTxo.swift",
+    "PersistentPendingInput": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentPendingInput.swift",
+    "PersistentWalletManagerMetadata": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentWalletManagerMetadata.swift",
+    "PersistentShieldedNote": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentShieldedNote.swift",
+    "PersistentShieldedOutgoingNote": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentShieldedOutgoingNote.swift",
+    "PersistentShieldedSyncState": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentShieldedSyncState.swift",
+    "PersistentShieldedActivity": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentShieldedActivity.swift",
+    "PersistentShieldedViewingKey": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentShieldedViewingKey.swift",
+    "PersistentAssetLock": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentAssetLock.swift",
+    "PersistentInvitation": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentInvitation.swift",
+    "PersistentMasternode": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentMasternode.swift",
+    "PersistentTrackedMasternode": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentTrackedMasternode.swift",
+    "PersistentIdentityBalanceMetadata": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentIdentityBalanceMetadata.swift"
+  },
+  "value_types": [
+    {
+      "path": "packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Types/TokenTypes.swift",
+      "names": [
+        "ChangeControlRules",
+        "AuthorizedActionTakers",
+        "TokenPerpetualDistribution",
+        "TokenPreProgrammedDistribution",
+        "DistributionEvent",
+        "TokenDistributionChangeRules",
+        "TokenTradeMode",
+        "TokenLocalization"
+      ]
+    }
+  ]
+}

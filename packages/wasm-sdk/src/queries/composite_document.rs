@@ -62,9 +62,13 @@ export interface CompositeBind {
   /**
    * The sub-query field receiving the `IN` clause. `$id` makes this a
    * by-id JOIN (the source property must declare `refersTo:
-   * permanentDocument` targeting the sub-query's document type, so a
-   * missing document is a verification error); otherwise `$ownerId` or an
-   * indexed property (a LOOKUP, where absence is a proven fact).
+   * permanentDocument`, where a missing document is a verification
+   * error, or `refersTo: deletableDocument`, where a document deleted
+   * since is proven absent and left out, targeting the sub-query's
+   * document type, and whose `refersTo` carries no `lookup`: a reference
+   * resolved through a unique index holds no document ids); otherwise
+   * `$ownerId` or an indexed property (a LOOKUP, where absence is a proven
+   * fact).
    */
   field: string;
 }
@@ -125,6 +129,13 @@ export interface CompositeDocumentsQuery {
 export interface CompositeDocumentsSubResult {
   kind: 'documents';
   documents: Document[];
+  /**
+   * By-id joins only: the derived ids that have NO document, in
+   * first-appearance order (referenced documents deleted since, each one
+   * a proven absence). Empty for a lookup or sibling, and always empty
+   * for a join off a `permanentDocument` property.
+   */
+  missingIds: Identifier[];
 }
 
 /**
@@ -380,11 +391,26 @@ fn composite_result_to_js(
     );
 
     let sub_results = Array::new();
-    for (sub_query, result) in query.sub_queries.iter().zip(composite.sub_results.iter()) {
+    for (index, (sub_query, result)) in query
+        .sub_queries
+        .iter()
+        .zip(composite.sub_results.iter())
+        .enumerate()
+    {
         let entry = Object::new();
         match result {
             CompositeSubQueryResult::Documents(documents) => {
                 set_field(&entry, "kind", &JsValue::from_str("documents"))?;
+                let missing_ids = Array::new();
+                for id in composite
+                    .sub_result_missing_ids
+                    .get(index)
+                    .map(|ids| ids.as_slice())
+                    .unwrap_or_default()
+                {
+                    missing_ids.push(&JsValue::from(IdentifierWasm::from(*id)));
+                }
+                set_field(&entry, "missingIds", &missing_ids)?;
                 set_field(
                     &entry,
                     "documents",
@@ -423,9 +449,10 @@ impl WasmSdk {
     ///
     /// The composition is always proof-verified: one merged grovedb
     /// proof commits to one quorum-signed root, every sub-query is
-    /// re-derived from the proven page, and a by-id join whose
-    /// referenced document is missing is a verification error, not an
-    /// absence.
+    /// re-derived from the proven page, and a by-id join off a
+    /// `permanentDocument` property whose referenced document is missing
+    /// is a verification error, not an absence (off a `deletableDocument`
+    /// property it is a proven absence, left out).
     #[wasm_bindgen(
         js_name = "getCompositeDocuments",
         unchecked_return_type = "CompositeDocumentsResult"

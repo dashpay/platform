@@ -1,12 +1,10 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
-use dpp::util::hash::hash_double_to_vec;
 use js_sys::{Error as JsError, Map, Object};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
-use wasm_bindgen::convert::RefFromWasmAbi;
+use wasm_bindgen::convert::{RefFromWasmAbi, RefMutFromWasmAbi};
 use wasm_bindgen::{JsCast, JsValue};
 
 /// Extension trait for extracting error messages from JsValue
@@ -115,6 +113,13 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
     js_value: &JsValue,
     class_name: &str,
 ) -> WasmDppResult<T::Anchor> {
+    let ptr = wasm_ptr_of_js_val(js_value, class_name)?;
+    Ok(unsafe { T::ref_from_abi(ptr) })
+}
+
+/// The internal wasm pointer of a JS object, once it is confirmed to be an
+/// instance of the expected wasm class.
+fn wasm_ptr_of_js_val(js_value: &JsValue, class_name: &str) -> WasmDppResult<u32> {
     if !js_value.is_object() {
         return Err(WasmDppError::invalid_argument(format!(
             "Value supplied as {} is not an object",
@@ -124,28 +129,36 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
 
     let ctor_name = get_class_type(js_value)?;
 
-    if ctor_name == class_name {
-        let ptr =
-            js_sys::Reflect::get(js_value, &JsValue::from_str("__wbg_ptr")).map_err(|err| {
-                let message = err.error_message();
-                WasmDppError::generic(format!(
-                    "failed to read internal pointer from JS object '{}': {}",
-                    class_name, message
-                ))
-            })?;
-        let ptr_u32: u32 = ptr
-            .as_f64()
-            .ok_or_else(|| WasmDppError::invalid_argument("Invalid JS object pointer"))?
-            as u32;
-        let reference = unsafe { T::ref_from_abi(ptr_u32) };
-        Ok(reference)
-    } else {
-        let error_string = format!(
+    if ctor_name != class_name {
+        return Err(WasmDppError::invalid_argument(format!(
             "JS object constructor name mismatch. Expected {}, provided {}.",
             class_name, ctor_name
-        );
-        Err(WasmDppError::invalid_argument(error_string))
+        )));
     }
+
+    let ptr = js_sys::Reflect::get(js_value, &JsValue::from_str("__wbg_ptr")).map_err(|err| {
+        let message = err.error_message();
+        WasmDppError::generic(format!(
+            "failed to read internal pointer from JS object '{}': {}",
+            class_name, message
+        ))
+    })?;
+
+    let ptr = ptr
+        .as_f64()
+        .ok_or_else(|| WasmDppError::invalid_argument("Invalid JS object pointer"))?
+        as u32;
+
+    // wasm-bindgen writes 0 into `__wbg_ptr` when JS frees the object (or
+    // moves it into wasm); dereferencing it would trap instead of erroring.
+    if ptr == 0 {
+        return Err(WasmDppError::invalid_argument(format!(
+            "JS object '{}' has already been freed",
+            class_name
+        )));
+    }
+
+    Ok(ptr)
 }
 
 /// Get the `__type` property from a JsValue (used for WASM class identification)
@@ -159,6 +172,31 @@ pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
     })?;
 
     Ok(class_type.as_string().unwrap_or_default())
+}
+
+/// The raw value of a property of a JS options object.
+fn read_property(options: &JsValue, property_name: &str) -> WasmDppResult<JsValue> {
+    js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
+        let message = err.error_message();
+        WasmDppError::generic(format!(
+            "failed to read '{}' from options: {}",
+            property_name, message
+        ))
+    })
+}
+
+/// The value of a required property, rejected when it is undefined or null.
+fn read_required_property(options: &JsValue, property_name: &str) -> WasmDppResult<JsValue> {
+    let value = read_property(options, property_name)?;
+
+    if value.is_undefined() || value.is_null() {
+        return Err(WasmDppError::invalid_argument(format!(
+            "'{}' is required",
+            property_name
+        )));
+    }
+
+    Ok(value)
 }
 
 /// Extract a required property from a JS value/object and convert it using TryFrom.
@@ -177,21 +215,7 @@ where
     for<'a> T: TryFrom<&'a JsValue>,
     for<'a> <T as TryFrom<&'a JsValue>>::Error: Into<WasmDppError>,
 {
-    let value =
-        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "failed to read '{}' from options: {}",
-                property_name, message
-            ))
-        })?;
-
-    if value.is_undefined() || value.is_null() {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' is required",
-            property_name
-        )));
-    }
+    let value = read_required_property(options, property_name)?;
 
     T::try_from(&value).map_err(Into::into)
 }
@@ -217,23 +241,35 @@ pub fn try_from_options_with<T, F>(
 where
     F: FnOnce(&JsValue) -> WasmDppResult<T>,
 {
-    let value =
-        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "failed to read '{}' from options: {}",
-                property_name, message
-            ))
-        })?;
-
-    if value.is_undefined() || value.is_null() {
-        return Err(WasmDppError::invalid_argument(format!(
-            "'{}' is required",
-            property_name
-        )));
-    }
+    let value = read_required_property(options, property_name)?;
 
     converter(&value)
+}
+
+/// Borrow a required wasm-class property of a JS object mutably, so that a
+/// change made through it lands on the caller's own object rather than on a
+/// clone.
+///
+/// Returns `Err` if the property is undefined or null, or is not an instance
+/// of the wasm class named `class_name`. The borrow panics, as any
+/// wasm-bindgen method on the object would, if the object is already
+/// borrowed: drop it before handing the object back to JS.
+///
+/// # Example
+///
+/// ```ignore
+/// let mut document = try_from_options_mut::<DocumentWasm>(&options, "document", "Document")?;
+/// document.set_id(id);
+/// ```
+pub fn try_from_options_mut<T: RefMutFromWasmAbi<Abi = u32>>(
+    options: &JsValue,
+    property_name: &str,
+    class_name: &str,
+) -> WasmDppResult<T::Anchor> {
+    let value = read_required_property(options, property_name)?;
+
+    let ptr = wasm_ptr_of_js_val(&value, class_name)?;
+    Ok(unsafe { T::ref_mut_from_abi(ptr) })
 }
 
 /// Extract an optional property from a JS object and convert it using TryFrom.
@@ -257,14 +293,7 @@ where
     for<'a> T: TryFrom<&'a JsValue>,
     for<'a> <T as TryFrom<&'a JsValue>>::Error: Into<WasmDppError>,
 {
-    let value =
-        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "failed to read '{}' from options: {}",
-                property_name, message
-            ))
-        })?;
+    let value = read_property(options, property_name)?;
 
     if value.is_undefined() || value.is_null() {
         Ok(None)
@@ -296,14 +325,7 @@ pub fn try_from_options_optional_with<T, F>(
 where
     F: FnOnce(&JsValue) -> WasmDppResult<T>,
 {
-    let value =
-        js_sys::Reflect::get(options, &JsValue::from_str(property_name)).map_err(|err| {
-            let message = err.error_message();
-            WasmDppError::generic(format!(
-                "failed to read '{}' from options: {}",
-                property_name, message
-            ))
-        })?;
+    let value = read_property(options, property_name)?;
 
     if value.is_undefined() || value.is_null() {
         Ok(None)
@@ -699,24 +721,6 @@ pub fn try_to_u16(value: &JsValue, field_name: &str) -> WasmDppResult<u16> {
             field_name
         )))
     }
-}
-
-/// Generate a document ID using the v0 algorithm
-pub fn generate_document_id_v0(
-    contract_id: &Identifier,
-    owner_id: &Identifier,
-    document_type_name: &str,
-    entropy: &[u8],
-) -> WasmDppResult<Identifier> {
-    let mut buf: Vec<u8> = vec![];
-
-    buf.extend_from_slice(&contract_id.to_buffer());
-    buf.extend_from_slice(&owner_id.to_buffer());
-    buf.extend_from_slice(document_type_name.as_bytes());
-    buf.extend_from_slice(entropy);
-
-    Identifier::from_bytes(&hash_double_to_vec(&buf))
-        .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
 }
 
 /// Macro to implement `TryFrom<&JsValue>` for WASM wrapper types using `IntoWasm`.

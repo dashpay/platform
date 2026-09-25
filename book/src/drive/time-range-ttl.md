@@ -226,10 +226,10 @@ it).
 
 ## Versioning
 
-Everything rides the still-unreleased PV14 grammar: the `ttl` key joins
-the meta-schema v3 `timeRange` map, the two limits join the (also
-unreleased) `SYSTEM_LIMITS_V4` in place, and the ephemeral-bytes rate
-joins the shared storage fee table directly — no fee-version fork,
+Everything rides the PV14 grammar, which was unreleased when this landed:
+the `ttl` key joined the meta-schema v3 `timeRange` map, the two limits
+joined `SYSTEM_LIMITS_V4` in place, and the ephemeral-bytes rate
+joined the shared storage fee table directly — no fee-version fork,
 because the rate is dead below PV14 (the grammar does not parse, so no
 ephemeral-classified operation can exist to read it). No migration
 story exists or is needed.

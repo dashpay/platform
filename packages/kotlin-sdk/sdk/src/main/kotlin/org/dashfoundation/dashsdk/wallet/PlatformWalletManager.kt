@@ -208,6 +208,16 @@ class PlatformWalletManager(
         // once, loudly, at manager construction. Best-effort — the probe
         // touches KeyguardManager/AndroidKeyStore, which may be absent in
         // JVM test fixtures.
+        //
+        // The OTHER degradation — MO-972's lock-gate drop, where DEVICE_BOUND
+        // keys lose setUnlockedDeviceRequired on a device with the
+        // false-locked defect on record — is deliberately NOT reported here:
+        // effectiveKeySecurityPolicy() cannot express it (see KeySecurityPolicy,
+        // "Lock-gate degradation") and the record is a suspending DataStore
+        // read with no scope available yet. It is logged loudly at the moment
+        // it is recorded (WalletStorage.healFalseLockedMnemonicStore /
+        // recordLockBindingDefectFromDeniedRead), and hosts can read it any
+        // time via WalletStorage.isMasterKeyLockBindingDefectObserved().
         runCatching {
             val requested = walletStorage.keySecurityPolicy
             val effective = walletStorage.effectiveKeySecurityPolicy()
@@ -767,10 +777,14 @@ class PlatformWalletManager(
      *   encrypt, and thrown BEFORE the native create, so nothing was
      *   created and nothing needs rolling back — or if the Keystore denies
      *   the mnemonic store as device-locked after the false-locked bounded
-     *   retry in [WalletStorage.storeMnemonic] is exhausted (that path runs
-     *   the full rollback below first). A locked device whose master key is
-     *   NOT lock-bound (generated before a PIN was enrolled) proceeds
-     *   normally.
+     *   retry in [WalletStorage.storeMnemonic] is exhausted AND its
+     *   last-rung degradation (re-encrypting under the never-lock-bound
+     *   master alias) also failed (that path runs the full rollback below
+     *   first). A locked device whose master key is NOT lock-bound
+     *   (generated before a PIN was enrolled) proceeds normally, as does a
+     *   device whose false-locked Keystore defect is already on record
+     *   (mnemonic writes target the never-lock-bound alias, which no lock
+     *   state can deny).
      */
     suspend fun createWallet(
         mnemonic: String,
@@ -2463,6 +2477,98 @@ class PlatformWalletManager(
                     next
                 }
                 delay(POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    // ── Ordered wallet bring-up ───────────────────────────────────────
+
+    /**
+     * Bring one wallet's DashPay state up in dependency order — identity →
+     * contacts → contact-account drain — then return so the caller can
+     * start Core SPV. Port of Swift's `startWalletSubsystems`
+     * (`PlatformWalletManagerStartup.swift`); the ordering, the retry
+     * policy and the budget all live Rust-side
+     * (`platform_wallet::manager::startup`) — this is a thin bridge.
+     *
+     * A contact's DIP-15 payment addresses are derived from its contact
+     * account, and an address the wallet is not watching when the
+     * compact-filter scan passes its funding height produces no
+     * transaction at all. Call this once per wallet load, immediately
+     * before [startSpv], so the first filter set already covers them —
+     * a restored wallet then needs no receival-payment rescan at all.
+     *
+     * Budget expiry is reported in the outcome, never thrown: Core sync is
+     * the wallet's primary function and must not be held hostage to
+     * Platform being slow. Start SPV regardless of the returned status;
+     * inspect [WalletStartupOutcome.contactAccountsPending] for
+     * diagnostics.
+     *
+     * Key material follows the drain's per-call contract: the mnemonic
+     * resolver and identity signer are built for this call and closed when
+     * it returns — Rust borrows and never retains them. An auth-gated
+     * signing failure (identity keys are biometric-gated on Android)
+     * leaves the affected entries queued; the recurring sweep self-heals.
+     *
+     * Throws only for a malformed request (bad wallet id, negative
+     * arguments, unknown wallet, torn-down manager).
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param budgetSecs ceiling for the whole sequence in seconds; 0 = SDK
+     *   default (20s). Never unbounded — this call gates Core SPV.
+     * @param gapLimit identity-discovery gap limit; 0 = SDK default.
+     */
+    suspend fun startWalletSubsystems(
+        walletId: ByteArray,
+        budgetSecs: Long = 0,
+        gapLimit: Int = 0,
+    ): WalletStartupOutcome = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be 32 bytes, got ${walletId.size}" }
+        require(budgetSecs >= 0) { "budgetSecs must be non-negative, got $budgetSecs" }
+        require(gapLimit >= 0) { "gapLimit must be non-negative, got $gapLimit" }
+        withContext(Dispatchers.IO) {
+            // Each handle is guarded from the moment it exists: the signer's
+            // constructor can throw (Keystore unlock, DAO access), and a single
+            // try covering both would leak the resolver's native handle when it
+            // does. Closed in reverse construction order.
+            val startupResolver = MnemonicResolverAndPersister(walletStorage)
+            try {
+                val startupSigner =
+                    KeystoreSigner(
+                        walletStorage,
+                        network,
+                        biometricGate,
+                        database.platformAddressDao(),
+                    )
+                try {
+                    val blob = mapNativeErrors {
+                        WalletManagerNative.startWalletSubsystems(
+                            managerHandle,
+                            walletId,
+                            startupResolver.nativeHandle,
+                            startupSigner.nativeHandle,
+                            budgetSecs,
+                            gapLimit,
+                        )
+                    }
+                    val rawStatus = blob.firstOrNull()?.toInt()?.and(0xFF)
+                    if (rawStatus != null && !WalletStartupStatus.isKnownRaw(rawStatus)) {
+                        // Append-only ABI: a newer native library reported a status
+                        // this build predates. decode() maps it to PARTIAL_NO_IDENTITY
+                        // (Swift parity); say so once so the mismatch is visible.
+                        android.util.Log.w(
+                            "PlatformWalletManager",
+                            "startWalletSubsystems: unknown WalletStartupStatus discriminant " +
+                                "$rawStatus from the native library; treating as PARTIAL_NO_IDENTITY " +
+                                "(update the Kotlin SDK to match the native build)",
+                        )
+                    }
+                    WalletStartupOutcome.decode(blob)
+                } finally {
+                    runCatching { startupSigner.close() }
+                }
+            } finally {
+                runCatching { startupResolver.close() }
             }
         }
     }

@@ -102,6 +102,56 @@ extension PersistentDocumentType {
         return try? JSONSerialization.jsonObject(with: data, options: []) as? [String]
     }
 
+    /// The type's `immutable` / `immutableAllowSetting` keywords (protocol
+    /// version 14), read off the persisted schema.
+    ///
+    /// Derived rather than stored in columns of its own: `schemaJSON` already
+    /// holds the whole document type dictionary as authored, so the keywords
+    /// are persisted with every contract the parser writes, and a new stored
+    /// property would move this model's entity hash. That costs a schema
+    /// version and a fixture store (see `DashModelContainer.modelTypes` and
+    /// `DashModelMigrationTests`), which a display-only keyword does not
+    /// justify. `indexOnly` predates that discipline and kept its column.
+    public var immutability: DocumentTypeImmutability {
+        DocumentTypeImmutability(documentTypeSchema: schema)
+    }
+
+    /// Top-level properties frozen at document creation, sorted. Empty when
+    /// the type declares no `immutable` list.
+    public var immutableProperties: [String] {
+        immutability.immutableProperties
+    }
+
+    /// The `immutable` entries a replace may still set while the stored
+    /// document has no value for them, sorted. Empty when none are declared.
+    public var immutableAllowSetting: [String] {
+        immutability.immutableAllowSetting
+    }
+
+    /// Every typed array property the type declares (protocol version 14),
+    /// those nested in object properties included under their dotted path
+    /// (`"team.leads"`), sorted by path. Empty when it declares none.
+    ///
+    /// Derived from the persisted schema rather than stored, for the same
+    /// reason as `immutability`: `schemaJSON` holds the whole document type
+    /// dictionary as authored, element schemas included, and a new stored
+    /// property on this model or on `PersistentProperty` would move an entity
+    /// hash, which costs a schema version and a fixture store (see
+    /// `DashModelContainer.modelTypes` and `DashModelMigrationTests`).
+    /// `PersistentProperty` keeps a typed array as an ordinary `"array"` row
+    /// with `byteArray` false and its element counts in `minItems` /
+    /// `maxItems`.
+    public var typedArrays: [DocumentTypedArray] {
+        DocumentTypedArray.all(inDocumentTypeSchema: schema)
+    }
+
+    /// The typed array declared as the top-level property `name`, or `nil`
+    /// when that property is absent or is not a typed array (a byte array
+    /// among them). Read off the persisted schema; see `typedArrays`.
+    public func typedArray(named name: String) -> DocumentTypedArray? {
+        DocumentTypedArray.named(name, inDocumentTypeSchema: schema)
+    }
+
     public var documentCount: Int {
         documents?.count ?? 0
     }

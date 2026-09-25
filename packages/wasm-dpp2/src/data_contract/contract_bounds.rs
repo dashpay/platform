@@ -10,21 +10,28 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 /**
- * ContractBounds serialized as a plain object.
+ * The kind of contract bounds: one contract, one document type of a contract, or every member
+ * of a contract group (`contractGroup`, protocol version 14, authentication keys only).
+ */
+export type ContractBoundsType = "singleContract" | "documentType" | "contractGroup";
+
+/**
+ * ContractBounds serialized as a plain object. `id` is the contract id, or the contract group
+ * id for `contractGroup` bounds.
  */
 export interface ContractBoundsObject {
-    identifier: Uint8Array;
+    $type: ContractBoundsType;
+    id: Uint8Array;
     documentTypeName?: string;
-    contractBoundsType: "SingleContract" | "SingleContractDocumentType";
 }
 
 /**
- * ContractBounds serialized as JSON.
+ * ContractBounds serialized as JSON. `id` is base58 encoded.
  */
 export interface ContractBoundsJSON {
-    identifier: string;
+    $type: ContractBoundsType;
+    id: string;
     documentTypeName?: string;
-    contractBoundsType: "SingleContract" | "SingleContractDocumentType";
 }
 "#;
 
@@ -98,9 +105,26 @@ impl ContractBoundsWasm {
         ))
     }
 
+    /// Bounds to every member of a contract group. Only authentication keys may carry them.
+    #[wasm_bindgen(js_name = "ContractGroup")]
+    pub fn contract_group(
+        #[wasm_bindgen(js_name = "contractGroupId")] contract_group_id: IdentifierLikeJs,
+    ) -> WasmDppResult<ContractBoundsWasm> {
+        let id: Identifier = contract_group_id.try_into()?;
+
+        Ok(ContractBoundsWasm(ContractBounds::ContractGroup { id }))
+    }
+
+    /// The contract id, or the contract group id for `contractGroup` bounds.
     #[wasm_bindgen(getter = "identifier")]
     pub fn id(&self) -> IdentifierWasm {
         (*self.0.identifier()).into()
+    }
+
+    /// The contract group id, for `contractGroup` bounds only.
+    #[wasm_bindgen(getter = "contractGroupId")]
+    pub fn contract_group_id(&self) -> Option<IdentifierWasm> {
+        self.0.contract_group_id().map(|id| (*id).into())
     }
 
     #[wasm_bindgen(getter = "documentTypeName")]
@@ -135,6 +159,9 @@ impl ContractBoundsWasm {
                 id: contract_id,
                 document_type_name,
             },
+            ContractBounds::ContractGroup { .. } => {
+                ContractBounds::ContractGroup { id: contract_id }
+            }
         };
 
         Ok(())
@@ -146,7 +173,9 @@ impl ContractBoundsWasm {
         #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
     ) {
         self.0 = match self.clone().0 {
-            ContractBounds::SingleContract { .. } => self.clone().0,
+            ContractBounds::SingleContract { .. } | ContractBounds::ContractGroup { .. } => {
+                self.clone().0
+            }
             ContractBounds::SingleContractDocumentType { id, .. } => {
                 ContractBounds::SingleContractDocumentType {
                     id,
