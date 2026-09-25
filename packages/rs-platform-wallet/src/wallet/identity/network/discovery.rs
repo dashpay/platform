@@ -582,7 +582,7 @@ impl IdentityWallet {
             let identity_id = identity.id();
             match self
                 .sdk
-                .get_dpns_usernames_by_identity(identity_id, None)
+                .get_dpns_usernames_by_identity(identity_id, Some(super::DPNS_USERNAMES_PAGE_LIMIT))
                 .await
             {
                 Ok(usernames) => {
@@ -599,12 +599,17 @@ impl IdentityWallet {
                         .identity_manager
                         .managed_identity_mut(&identity_id)
                     {
-                        // One snapshot for the whole fetch — see `merge_dpns_names`.
-                        managed.merge_dpns_names(
-                            usernames.into_iter().map(|username| DpnsNameInfo {
-                                label: username.label,
-                                acquired_at: None,
-                            }),
+                        // A short page is the complete owned set — see `apply_fetched_dpns_names`.
+                        let complete = usernames.len() < super::DPNS_USERNAMES_PAGE_LIMIT as usize;
+                        managed.apply_fetched_dpns_names(
+                            usernames
+                                .into_iter()
+                                .map(|username| DpnsNameInfo {
+                                    label: username.label,
+                                    acquired_at: None,
+                                })
+                                .collect(),
+                            complete,
                             &self.persister,
                         );
                     }

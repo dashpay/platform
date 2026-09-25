@@ -3758,6 +3758,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // transfers, and the unique constraint is per-network,
                 // so the row stays but the owner pointer moves.
                 if existing.identity !== identityRow {
+                    // The rebind is positive evidence the name left the
+                    // previous owner, so its selections of that name go too
+                    // — unlike a label merely missing from a snapshot. Once
+                    // the row moves, the old owner has nothing left to check
+                    // a stale pick against.
+                    let previousOwner = existing.identity
+                    if previousOwner.mainDpnsName.map(PersistentDPNSName.normalize) == normalizedLabel {
+                        previousOwner.mainDpnsName = nil
+                    }
+                    if previousOwner.dpnsName.map(PersistentDPNSName.normalize) == normalizedLabel {
+                        previousOwner.dpnsName = nil
+                    }
                     existing.identity = identityRow
                     existing.lastUpdated = Date()
                 }
