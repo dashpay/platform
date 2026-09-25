@@ -35,7 +35,7 @@ use platform_wallet::wallet::identity::crypto::{
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use platform_wallet::wallet::identity::network::{
-    MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+    InvitationClaimStatus, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
 };
 
 use crate::core_wallet_types::OutPointFFI;
@@ -443,6 +443,120 @@ pub unsafe extern "C" fn platform_wallet_invitation_prospective_identity_id(
     PlatformWalletFFIResult::ok()
 }
 
+/// The invitee's pre-claim view of an invitation (see
+/// [`platform_wallet_invitation_claim_status`]).
+#[repr(C)]
+pub struct InvitationClaimStatusFFI {
+    /// The identity the claim would create (derived from the credit outpoint).
+    pub prospective_identity_id: [u8; 32],
+    /// Value of the credit output the voucher key controls (duffs) — the
+    /// tier signal (the link does not say whether it funds a contested name).
+    pub amount_duffs: u64,
+    /// The claim would submit an InstantSend proof.
+    pub is_instant: bool,
+    /// The funding transaction is chain-locked.
+    pub is_chain_locked: bool,
+    /// An identity already exists at `prospective_identity_id`: the invitation
+    /// was claimed. `false` does NOT prove the voucher is unspent (see
+    /// [`platform_wallet_invitation_prospective_identity_id`]).
+    pub already_claimed: bool,
+}
+
+impl InvitationClaimStatusFFI {
+    fn zeroed() -> Self {
+        Self {
+            prospective_identity_id: [0u8; 32],
+            amount_duffs: 0,
+            is_instant: false,
+            is_chain_locked: false,
+            already_claimed: false,
+        }
+    }
+}
+
+impl From<InvitationClaimStatus> for InvitationClaimStatusFFI {
+    fn from(status: InvitationClaimStatus) -> Self {
+        Self {
+            prospective_identity_id: status.prospective_identity_id.to_buffer(),
+            amount_duffs: status.amount_duffs,
+            is_instant: status.is_instant,
+            is_chain_locked: status.is_chain_locked,
+            already_claimed: status.already_claimed,
+        }
+    }
+}
+
+/// What an invitation is worth and whether it was already claimed, without
+/// claiming it: one funding-tx fetch (with the claim's propagation retry) and
+/// one identity fetch.
+///
+/// Same error contract as
+/// [`platform_wallet_invitation_prospective_identity_id`]:
+///
+/// * `ErrorInvalidParameter` — the URI is malformed (definitive).
+/// * `ErrorInvalidNetwork` — the voucher key belongs to the other network
+///   (definitive).
+/// * anything else — undetermined (not propagated yet, transport error).
+///
+/// `out_status` is zeroed before any fallible work.
+///
+/// # Safety
+/// - `uri` must be a valid NUL-terminated UTF-8 C string.
+/// - `out_status` must be a valid `*mut InvitationClaimStatusFFI`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_invitation_claim_status(
+    wallet_handle: Handle,
+    uri: *const c_char,
+    out_status: *mut InvitationClaimStatusFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(uri);
+    check_ptr!(out_status);
+    unsafe {
+        *out_status = InvitationClaimStatusFFI::zeroed();
+    }
+
+    let uri = unwrap_result_or_return!(unsafe { CStr::from_ptr(uri) }.to_str());
+    let invitation = match parse_invitation_uri(uri) {
+        Ok(invitation) => invitation,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("invitation link is malformed and cannot be claimed: {e}"),
+            );
+        }
+    };
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(
+        wallet_handle,
+        |wallet| -> Result<InvitationClaimStatus, PlatformWalletFFIResult> {
+            if !wif_network_matches(invitation.voucher_key_network, wallet.network()) {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidNetwork,
+                    format!(
+                        "invitation is for the {:?} network but this wallet is on {:?}",
+                        invitation.voucher_key_network,
+                        wallet.network()
+                    ),
+                ));
+            }
+            let identity_wallet = wallet.identity().clone();
+            block_on_worker(
+                async move { identity_wallet.invitation_claim_status(&invitation).await },
+            )
+            .map_err(PlatformWalletFFIResult::from)
+        },
+    );
+    let result = unwrap_option_or_return!(option);
+    let status = match result {
+        Ok(status) => status,
+        Err(e) => return e,
+    };
+    unsafe {
+        *out_status = status.into();
+    }
+    PlatformWalletFFIResult::ok()
+}
+
 /// Read-only preview of a `dashpay://invite` link — decode + surface the
 /// invitation's metadata WITHOUT claiming it (no wallet handle, no network, no
 /// side effects). The claim UI uses this to show the amount, sender, and expiry
@@ -478,6 +592,13 @@ pub struct InvitationPreviewFFI {
     /// Advisory expiry (unix seconds) — always 0: the legacy link carries no
     /// expiry field.
     pub expiry_unix: u32,
+    /// Inviter display name (`display-name`) — heap C string, or null when the
+    /// link carried none. Free with [`crate::platform_wallet_string_free`].
+    pub inviter_display_name: *mut c_char,
+    /// Inviter avatar URL (`avatar-url`, already percent-decoded) — heap C
+    /// string, or null when the link carried none. Free with
+    /// [`crate::platform_wallet_string_free`].
+    pub inviter_avatar_url: *mut c_char,
 }
 
 impl InvitationPreviewFFI {
@@ -492,8 +613,20 @@ impl InvitationPreviewFFI {
             inviter_username: std::ptr::null_mut(),
             amount_duffs: 0,
             expiry_unix: 0,
+            inviter_display_name: std::ptr::null_mut(),
+            inviter_avatar_url: std::ptr::null_mut(),
         }
     }
+}
+
+/// Heap C string for an optional link field, or null when absent. An interior
+/// NUL cannot come out of a percent-decoded query value we accept, but falls
+/// back to null rather than failing the whole preview.
+fn optional_c_string(value: Option<&String>) -> *mut c_char {
+    value
+        .and_then(|v| std::ffi::CString::new(v.clone()).ok())
+        .map(|c| c.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 /// Decode a `dashpay://invite?…` link into a read-only
@@ -540,23 +673,26 @@ pub unsafe extern "C" fn platform_wallet_parse_invitation(
     let is_instant = parsed.islock_hex.is_some();
     let amount_duffs = 0;
 
-    let (has_inviter, inviter_id, inviter_username) = match parsed.inviter.as_ref() {
-        Some(info) => {
-            // Username is absent for a metadata-only (du-less) link; an interior
-            // NUL can't occur in a decoded UTF-8 DPNS label, but fall back to a
-            // null username rather than fail the whole preview.
-            let username = info
-                .username
-                .as_ref()
-                .and_then(|u| std::ffi::CString::new(u.clone()).ok())
-                .map(|c| c.into_raw())
-                .unwrap_or(std::ptr::null_mut());
-            // The link has no inviter identity id (resolved from the username via
-            // DPNS at contact-bootstrap); report zeros.
-            (true, [0u8; 32], username)
-        }
-        None => (false, [0u8; 32], std::ptr::null_mut()),
-    };
+    let (has_inviter, inviter_id, inviter_username, inviter_display_name, inviter_avatar_url) =
+        match parsed.inviter.as_ref() {
+            // Username is absent for a metadata-only (du-less) link. The link
+            // has no inviter identity id (resolved from the username via DPNS
+            // at contact-bootstrap); report zeros.
+            Some(info) => (
+                true,
+                [0u8; 32],
+                optional_c_string(info.username.as_ref()),
+                optional_c_string(info.display_name.as_ref()),
+                optional_c_string(info.avatar_url.as_ref()),
+            ),
+            None => (
+                false,
+                [0u8; 32],
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            ),
+        };
 
     unsafe {
         *out_preview = InvitationPreviewFFI {
@@ -568,6 +704,8 @@ pub unsafe extern "C" fn platform_wallet_parse_invitation(
             amount_duffs,
             // The link carries no expiry (legacy format); 0 ⇒ "no expiry".
             expiry_unix: 0,
+            inviter_display_name,
+            inviter_avatar_url,
         };
     }
     PlatformWalletFFIResult::ok()
@@ -816,6 +954,74 @@ mod tests {
         assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
         assert!(!preview.structurally_valid);
         assert!(preview.inviter_username.is_null());
+    }
+
+    /// The inviter's display name and avatar URL travel through the preview
+    /// (percent-decoded), and both are null for a link that carries neither.
+    #[test]
+    fn parse_invitation_surfaces_inviter_display_name_and_avatar() {
+        let key = SecretKey::from_slice(&[0x11u8; 32]).unwrap();
+        let wif = PrivateKey::new(key, Network::Testnet).to_wif();
+        let txid = "ab".repeat(32);
+        let take = |ptr: *mut c_char| -> Option<String> {
+            if ptr.is_null() {
+                return None;
+            }
+            let s = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_string();
+            unsafe { crate::platform_wallet_string_free(ptr) };
+            Some(s)
+        };
+
+        let with_meta = std::ffi::CString::new(format!(
+            "dashpay://invite?du=alice&assetlocktx={txid}&pk={wif}&islock=null\
+             &display-name=Alice%20B&avatar-url=https%3A%2F%2Fexample.org%2Fa.png"
+        ))
+        .unwrap();
+        let mut preview = InvitationPreviewFFI::invalid();
+        let r = unsafe { platform_wallet_parse_invitation(with_meta.as_ptr(), &mut preview) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        assert!(preview.structurally_valid);
+        assert_eq!(take(preview.inviter_username).as_deref(), Some("alice"));
+        assert_eq!(
+            take(preview.inviter_display_name).as_deref(),
+            Some("Alice B")
+        );
+        assert_eq!(
+            take(preview.inviter_avatar_url).as_deref(),
+            Some("https://example.org/a.png")
+        );
+
+        let bare = std::ffi::CString::new(format!(
+            "dashpay://invite?du=alice&assetlocktx={txid}&pk={wif}&islock=null"
+        ))
+        .unwrap();
+        let mut preview = InvitationPreviewFFI::invalid();
+        let r = unsafe { platform_wallet_parse_invitation(bare.as_ptr(), &mut preview) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(take(preview.inviter_username).as_deref(), Some("alice"));
+        assert!(preview.inviter_display_name.is_null());
+        assert!(preview.inviter_avatar_url.is_null());
+    }
+
+    /// A malformed link is a definitive `ErrorInvalidParameter` from the status
+    /// call — never a zeroed "not claimed" the caller could proceed on.
+    #[test]
+    fn claim_status_malformed_uri_is_invalid_parameter() {
+        let bad = std::ffi::CString::new("https://not-an-invite").unwrap();
+        let mut status = InvitationClaimStatusFFI::zeroed();
+        status.amount_duffs = 7;
+        let r = unsafe { platform_wallet_invitation_claim_status(0, bad.as_ptr(), &mut status) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert_eq!(status.amount_duffs, 0, "the out-param is zeroed first");
+    }
+
+    /// A null `uri` is rejected with `ErrorNullPointer`.
+    #[test]
+    fn claim_status_null_uri_is_null_pointer() {
+        let mut status = InvitationClaimStatusFFI::zeroed();
+        let r =
+            unsafe { platform_wallet_invitation_claim_status(0, std::ptr::null(), &mut status) };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 
     /// The amount-bound getters hand back the library constants verbatim. This

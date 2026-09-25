@@ -2189,6 +2189,31 @@ extension ManagedPlatformWallet {
         public let amountDuffs: UInt64
         /// Always 0: the legacy link carries no expiry field.
         public let expiryUnix: UInt32
+        /// Inviter display name (`display-name`) when the link carried one.
+        public let inviterDisplayName: String?
+        /// Inviter avatar URL (`avatar-url`, percent-decoded) when the link
+        /// carried one. Unvalidated — treat as untrusted input.
+        public let inviterAvatarURL: String?
+    }
+
+    /// The invitee's pre-claim view of an invitation, from
+    /// ``invitationClaimStatus(uri:)``.
+    public struct InvitationClaimStatus: Sendable, Equatable {
+        /// The identity the claim would create (32 bytes).
+        public let prospectiveIdentityId: Data
+        /// Value of the credit output the voucher key controls (duffs). This is
+        /// the tier signal: the link does not say whether it funds a contested
+        /// or a non-contested username, the amount the inviter locked does.
+        public let amountDuffs: UInt64
+        /// The claim would submit an InstantSend proof.
+        public let isInstant: Bool
+        /// The funding transaction is chain-locked.
+        public let isChainLocked: Bool
+        /// An identity already exists at `prospectiveIdentityId` — the
+        /// invitation was claimed. `false` does NOT prove the voucher is
+        /// unspent (a reclaim top-up consumes it without creating this
+        /// identity), so the claim can still fail late.
+        public let alreadyClaimed: Bool
     }
 
     /// Create a DashPay invitation (DIP-13): fund a one-time asset-lock voucher
@@ -2387,6 +2412,32 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// What an invitation is worth and whether it was already claimed, without
+    /// claiming it — one funding-tx fetch and one identity fetch.
+    ///
+    /// Same error contract as ``invitationProspectiveIdentityId(uri:)``: a
+    /// malformed link (`ErrorInvalidParameter`) and a link for the other
+    /// network (`ErrorInvalidNetwork`) are definitive; every other throw is
+    /// undetermined (not propagated yet, transport failure) and must not be
+    /// read as an answer either way.
+    public func invitationClaimStatus(uri: String) async throws -> InvitationClaimStatus {
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) { () -> InvitationClaimStatus in
+            var out = InvitationClaimStatusFFI()
+            let result = uri.withCString { uriPtr in
+                platform_wallet_invitation_claim_status(handle, uriPtr, &out)
+            }
+            try result.check()
+            return InvitationClaimStatus(
+                prospectiveIdentityId: withUnsafeBytes(of: out.prospective_identity_id) { Data($0) },
+                amountDuffs: out.amount_duffs,
+                isInstant: out.is_instant,
+                isChainLocked: out.is_chain_locked,
+                alreadyClaimed: out.already_claimed
+            )
+        }.value
+    }
+
     /// Read-only preview of a DashPay invitation link (DIP-13): decode a
     /// `dashpay://invite` URI and surface its metadata WITHOUT claiming it — no
     /// network, no identity registered. The claim UI uses this to show the
@@ -2401,11 +2452,17 @@ extension ManagedPlatformWallet {
             platform_wallet_parse_invitation(uriPtr, &out)
         }
         try result.check()
-        // The Rust side heap-allocates the username C string when the link
-        // carries an inviter; free it once we've copied it into Swift.
+        // The Rust side heap-allocates the inviter C strings when the link
+        // carries them; free them once we've copied them into Swift.
         defer {
             if out.inviter_username != nil {
                 platform_wallet_string_free(out.inviter_username)
+            }
+            if out.inviter_display_name != nil {
+                platform_wallet_string_free(out.inviter_display_name)
+            }
+            if out.inviter_avatar_url != nil {
+                platform_wallet_string_free(out.inviter_avatar_url)
             }
         }
         // Always nil, matching the documented contract: the legacy link
@@ -2421,7 +2478,9 @@ extension ManagedPlatformWallet {
             inviterId: inviterId,
             inviterUsername: inviterUsername,
             amountDuffs: out.amount_duffs,
-            expiryUnix: out.expiry_unix
+            expiryUnix: out.expiry_unix,
+            inviterDisplayName: out.inviter_display_name.map { String(cString: $0) },
+            inviterAvatarURL: out.inviter_avatar_url.map { String(cString: $0) }
         )
     }
 

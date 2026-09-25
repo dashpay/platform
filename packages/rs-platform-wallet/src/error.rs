@@ -1247,6 +1247,25 @@ pub fn is_asset_lock_already_consumed(
     )
 }
 
+/// Platform refused an identity create in a way that means the same create
+/// was already accepted: the identical transition is still in the mempool
+/// ("tx already exists in cache" — a broadcast that timed out after the node
+/// took it, then retried elsewhere), or its funding outpoint is consumed.
+///
+/// Neither says by whom. A caller may treat the create as done only after
+/// fetching the identity and checking it carries the keys it submitted.
+pub fn is_identity_create_already_landed(error: &dash_sdk::Error) -> bool {
+    use dpp::consensus::basic::BasicError;
+
+    matches!(error, dash_sdk::Error::AlreadyExists(_))
+        || matches!(
+            consensus_error_of(error),
+            Some(ConsensusError::BasicError(
+                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
+            ))
+        )
+}
+
 /// Promote a document-trade consensus rejection to its typed
 /// [`PlatformWalletError`] so callers get structured data instead of a
 /// stringified verdict:
