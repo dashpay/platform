@@ -582,10 +582,14 @@ impl IdentityWallet {
             let identity_id = identity.id();
             match self
                 .sdk
-                .get_dpns_usernames_by_identity(identity_id, Some(super::DPNS_USERNAMES_PAGE_LIMIT))
+                .get_all_dpns_usernames_by_identity(
+                    identity_id,
+                    super::DPNS_USERNAMES_PAGE_LIMIT,
+                    super::DPNS_USERNAMES_MAX_PAGES,
+                )
                 .await
             {
-                Ok(usernames) => {
+                Ok((usernames, complete)) => {
                     let mut wm_guard = self.wallet_manager.write().await;
                     let info_guard =
                         wm_guard
@@ -599,8 +603,7 @@ impl IdentityWallet {
                         .identity_manager
                         .managed_identity_mut(&identity_id)
                     {
-                        // A short page is the complete owned set — see `apply_fetched_dpns_names`.
-                        let complete = usernames.len() < super::DPNS_USERNAMES_PAGE_LIMIT as usize;
+                        // Complete once paging reached a short page — see `apply_fetched_dpns_names`.
                         managed.apply_fetched_dpns_names(
                             usernames
                                 .into_iter()

@@ -274,12 +274,12 @@ impl ManagedIdentity {
     /// Apply one DPNS username fetch for this identity; returns how many
     /// labels are new.
     ///
-    /// `complete` says the fetch returned the identity's whole owned set (a
-    /// result shorter than the page limit). Then the list is replaced with
+    /// `complete` says the fetch returned the identity's whole owned set (the
+    /// paged query reached a short page). Then the list is replaced with
     /// it — departed names drop out, an empty result clears the list — while
     /// labels already known keep their `acquired_at`, and nothing is
-    /// persisted when the list is unchanged. A partial fetch (a full page)
-    /// cannot prove that a missing label left, so it only merges new labels
+    /// persisted when the list is unchanged. A partial fetch (the page bound
+    /// was hit) cannot prove that a missing label left, so it only merges new labels
     /// ([`Self::merge_dpns_names`]). Either way one snapshot at most.
     pub fn apply_fetched_dpns_names(
         &mut self,
