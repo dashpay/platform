@@ -1,4 +1,5 @@
 pub mod v0;
+pub mod v1;
 /// Masternode reward shares document type
 pub const MN_REWARD_SHARES_DOCUMENT_TYPE: &str = "rewardShare";
 
@@ -42,9 +43,14 @@ impl<C> Platform<C> {
                 transaction,
                 platform_version,
             ),
+            1 => self.fetch_reward_shares_list_for_masternode_v1(
+                masternode_owner_id,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "fetch_reward_shares_list_for_masternode".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

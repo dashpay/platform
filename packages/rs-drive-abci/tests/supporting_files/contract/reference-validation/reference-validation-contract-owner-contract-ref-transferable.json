@@ -1,0 +1,83 @@
+{
+  "$formatVersion": "1",
+  "id": "6D5FHKgyufoVd6sJ9BKnonrZvCpUFxQhL6soXiQ8JY9M",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "message": {
+      "type": "object",
+      "documentsMutable": true,
+      "transferable": 1,
+      "properties": {
+        "selfContractId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "contract",
+            "contractRequirements": {
+              "owner": "self"
+            }
+          }
+        },
+        "otherContractId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1,
+          "refersTo": {
+            "type": "contract",
+            "contractRequirements": {
+              "owner": "other"
+            }
+          }
+        },
+        "readonlyContractId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 2,
+          "refersTo": {
+            "type": "contract",
+            "contractRequirements": {
+              "readonly": true
+            }
+          }
+        },
+        "selfContracts": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 4,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "contract",
+              "contractRequirements": {
+                "owner": "self"
+              }
+            }
+          },
+          "position": 3
+        },
+        "note": {
+          "type": "string",
+          "position": 4,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}
