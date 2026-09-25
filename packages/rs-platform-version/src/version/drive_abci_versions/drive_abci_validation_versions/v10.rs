@@ -253,7 +253,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,
-                token_mint_transition_state_validation: 0,
+                token_mint_transition_state_validation: 1, // changed: `i64::MAX` bounds the total supply when no max supply is set
                 token_burn_transition_state_validation: 0,
                 token_transfer_transition_state_validation: 0,
                 token_base_transition_structure_validation: 0,
@@ -272,7 +272,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 token_claim_transition_structure_validation: 0,
                 token_claim_transition_state_validation: 0,
                 token_direct_purchase_transition_structure_validation: 0,
-                token_direct_purchase_transition_state_validation: 0,
+                token_direct_purchase_transition_state_validation: 1, // changed: `i64::MAX` bounds the total supply when no max supply is set
                 token_set_price_for_direct_purchase_transition_structure_validation: 0,
                 token_set_price_for_direct_purchase_transition_state_validation: 0,
             },
