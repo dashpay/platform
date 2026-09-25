@@ -268,13 +268,31 @@ public final class PersistentIdentity {
     /// there, and is skipped here once its label row is no longer owned (the
     /// persister keeps the picked name's row for exactly this check). With
     /// no label rows at all, the identity has not been hydrated yet and the
-    /// pick is trusted.
+    /// pick is trusted — unless the label's row, unique per network, now
+    /// belongs to another identity: a transfer within the wallet rebinds it,
+    /// leaving the old owner with no rows.
     public var ownedMainDpnsName: String? {
         guard let mainDpnsName, !mainDpnsName.isEmpty else { return nil }
-        let names = dpnsNames
-        guard !names.isEmpty else { return mainDpnsName }
         let normalized = PersistentDPNSName.normalize(mainDpnsName)
-        return names.contains { $0.isOwned && $0.normalizedLabel == normalized } ? mainDpnsName : nil
+        let names = dpnsNames
+        guard names.isEmpty else {
+            return names.contains { $0.isOwned && $0.normalizedLabel == normalized } ? mainDpnsName : nil
+        }
+        guard let context = modelContext else { return mainDpnsName }
+        let networkRaw = networkRaw
+        let parent = PersistentDPNSName.normalize("dash")
+        var descriptor = FetchDescriptor<PersistentDPNSName>(
+            predicate: #Predicate {
+                $0.networkRaw == networkRaw
+                    && $0.normalizedParentDomainName == parent
+                    && $0.normalizedLabel == normalized
+            }
+        )
+        descriptor.fetchLimit = 1
+        if let row = try? context.fetch(descriptor).first, row.identity.identityId != identityId {
+            return nil
+        }
+        return mainDpnsName
     }
 
     public var identityTypeEnum: IdentityType {
