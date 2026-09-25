@@ -2,7 +2,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
-use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::util::grove_operations::pending_grove_operations::pending_grove_operations_for_delete_up_tree;
 use crate::util::grove_operations::{push_drive_operation_result, BatchDeleteUpTreeApplyType};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
@@ -25,16 +25,6 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        //these are the operations in the current operations (eg, delete/add)
-        let mut current_batch_operations =
-            LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
-
-        //These are the operations in the same batch, but in a different operation
-        if let Some(existing_operations) = check_existing_operations {
-            let mut other_batch_operations =
-                LowLevelDriveOperation::grovedb_operations_batch(existing_operations);
-            current_batch_operations.append(&mut other_batch_operations);
-        }
         let cost_context = match apply_type {
             BatchDeleteUpTreeApplyType::StatelessBatchDelete {
                 estimated_layer_info,
@@ -62,12 +52,23 @@ impl Drive {
                     // the claim for free from the value it reads for each delete.
                     backwards_references: BackwardsReferences::DontCheck,
                 };
+                // The pending operations in the current operations (eg, delete/add), then those
+                // in the same batch but in a different operation. Every protocol version builds
+                // the same deletes and cost as with a copy of both: GroveDB reads none of the
+                // operations left out.
+                let pending_operations = pending_grove_operations_for_delete_up_tree(
+                    drive_operations,
+                    check_existing_operations.as_deref().map(Vec::as_slice),
+                    &path,
+                    key,
+                    stop_path_height,
+                );
                 self.grove.delete_operations_for_delete_up_tree_while_empty(
                     path.to_path_refs().as_slice().into(),
                     key,
                     &options,
                     is_known_to_be_subtree_with_sum,
-                    current_batch_operations.operations,
+                    pending_operations,
                     transaction,
                     &drive_version.grove_version,
                 )

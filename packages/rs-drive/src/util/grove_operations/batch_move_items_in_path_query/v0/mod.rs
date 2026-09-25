@@ -3,6 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::grove_operations::pending_grove_operations::pending_grove_operations_for_delete;
 use crate::util::grove_operations::{push_drive_operation_result, BatchMoveApplyType};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
@@ -84,8 +85,6 @@ impl Drive {
 
         // Iterate over each element and add a delete operation for it
         for (path, key, mut element) in query_result {
-            let current_batch_operations =
-                LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
             let options = DeleteOptions {
                 // Drive stores no backward-reference participants; GroveDB checks the
                 // claim for free from the value it reads for the write.
@@ -115,15 +114,25 @@ impl Drive {
                 .map(|r| r.map(Some)),
                 BatchMoveApplyType::StatefulBatchMove {
                     is_known_to_be_subtree_with_sum,
-                } => self.grove.delete_operation_for_delete_internal(
-                    path.as_slice().into(),
-                    key.as_slice(),
-                    &options,
-                    is_known_to_be_subtree_with_sum,
-                    &current_batch_operations.operations,
-                    transaction,
-                    &drive_version.grove_version,
-                ),
+                } => {
+                    // Every protocol version builds the same delete and cost as with a copy of
+                    // the whole pending batch: GroveDB reads none of the operations left out.
+                    let pending_operations = pending_grove_operations_for_delete(
+                        drive_operations,
+                        &path.as_slice().into(),
+                        key.as_slice(),
+                        is_known_to_be_subtree_with_sum,
+                    );
+                    self.grove.delete_operation_for_delete_internal(
+                        path.as_slice().into(),
+                        key.as_slice(),
+                        &options,
+                        is_known_to_be_subtree_with_sum,
+                        &pending_operations,
+                        transaction,
+                        &drive_version.grove_version,
+                    )
+                }
             };
 
             if let Some(delete_operation) =

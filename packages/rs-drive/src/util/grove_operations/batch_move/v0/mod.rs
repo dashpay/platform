@@ -3,6 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::grove_operations::pending_grove_operations::pending_grove_operations_for_delete;
 use crate::util::grove_operations::{push_drive_operation_result, BatchMoveApplyType, QueryType};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
@@ -59,7 +60,6 @@ impl Drive {
         }
 
         // ── 2. Build the delete op ──────────────────────────────────────────
-        let current_batch = LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
         let delete_opts = DeleteOptions {
             // Drive stores no backward-reference participants; GroveDB checks the
             // claim for free from the value it reads for the write.
@@ -90,15 +90,25 @@ impl Drive {
             .map(|r| r.map(Some)),
             BatchMoveApplyType::StatefulBatchMove {
                 is_known_to_be_subtree_with_sum,
-            } => self.grove.delete_operation_for_delete_internal(
-                from_path,
-                key,
-                &delete_opts,
-                is_known_to_be_subtree_with_sum,
-                &current_batch.operations,
-                transaction,
-                &drive_version.grove_version,
-            ),
+            } => {
+                // Every protocol version builds the same delete and cost as with a copy of the
+                // whole pending batch: GroveDB reads none of the operations left out.
+                let pending_operations = pending_grove_operations_for_delete(
+                    drive_operations,
+                    &from_path,
+                    key,
+                    is_known_to_be_subtree_with_sum,
+                );
+                self.grove.delete_operation_for_delete_internal(
+                    from_path,
+                    key,
+                    &delete_opts,
+                    is_known_to_be_subtree_with_sum,
+                    &pending_operations,
+                    transaction,
+                    &drive_version.grove_version,
+                )
+            }
         };
 
         // ── 3. Push delete + insert into the batch ──────────────────────────
