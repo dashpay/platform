@@ -706,8 +706,15 @@ mod tests {
             .unwrap()
             .expect("expected to commit");
 
-        // The debt is repaid first, and the recipient keeps the rest
-        let recipient_balance_with_debt = platform
+        // The debt is repaid first, and the recipient keeps the rest: the balance less the
+        // debt is the same number, so no debt is left
+        let recipient_balance = platform
+            .drive
+            .fetch_identity_balance(recipient.id().into_buffer(), None, platform_version)
+            .expect("expected to get balance")
+            .expect("expected balance to exist");
+        assert_eq!(recipient_balance, transfer_amount - owed);
+        let recipient_balance_less_debt = platform
             .drive
             .fetch_identity_balance_include_debt(
                 recipient.id().into_buffer(),
@@ -716,7 +723,7 @@ mod tests {
             )
             .expect("expected to get balance")
             .expect("expected balance to exist");
-        assert_eq!(recipient_balance_with_debt, (transfer_amount - owed) as i64);
+        assert_eq!(recipient_balance_less_debt, (transfer_amount - owed) as i64);
 
         // The repaid part reached the processing fee pool of the block's epoch. The
         // transfer's own fee reaches it only when the block's fees are distributed, so the

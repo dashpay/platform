@@ -456,6 +456,10 @@ impl LowLevelDriveOperation {
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
+    ///
+    /// Every other operation is dropped, a [`RepaidIdentityDebt`] included: its credits are owed
+    /// to a fee pool, so operations that may hold one (identity credits from protocol version
+    /// 14) must go through [`Self::take_repaid_identity_debt`] or an apply that routes it first.
     pub fn grovedb_operations_batch_consume(
         insert_operations: Vec<LowLevelDriveOperation>,
     ) -> GroveDbOpBatch {
@@ -555,6 +559,9 @@ impl LowLevelDriveOperation {
     }
 
     /// Filters the groveDB ops from a list of operations and collects them in a `Vec<QualifiedGroveDbOp>`.
+    ///
+    /// Every other operation is dropped, a [`RepaidIdentityDebt`] included, so operations that
+    /// may hold one must have it routed first (see [`Self::grovedb_operations_batch_consume`]).
     pub fn grovedb_operations_consume(
         insert_operations: Vec<LowLevelDriveOperation>,
     ) -> Vec<QualifiedGroveDbOp> {

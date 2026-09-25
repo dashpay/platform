@@ -1126,8 +1126,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the block info, writes it in its own batch (the fee paid is unchanged),
 ///     and `add_epoch_pool_to_proposers_payout_operations` 1 hands the epoch
 ///     payouts to the block's `apply_drive_operations` instead of converting
-///     them to a plain grove batch. An apply that meets one it does not route
-///     fails (`CorruptedCodeExecution`) instead of dropping it.
+///     them to a plain grove batch, skips a share whose `payToId` has no
+///     balance and caps each share at what is left of its masternode's payout.
+///     An apply that meets one it does not route fails (`CorruptedCodeExecution`)
+///     instead of dropping it. `apply_drive_operations` 1 also merges every
+///     credit and debit one batch makes to an identity's balance into one net
+///     write: each converts against the balance committed before the batch, so
+///     a second write replaced the first and two credits to an indebted
+///     identity repaid its debt twice.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
@@ -1193,7 +1199,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance merged into one; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit

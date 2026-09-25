@@ -60,21 +60,12 @@ impl Drive {
         )?;
 
         // A dry run reads no debt, so it never repays one
-        if repaid_debt > 0 {
-            let pool_operation = self.add_epoch_processing_credits_for_distribution_operation(
-                &block_info.epoch,
-                repaid_debt,
-                transaction,
-                platform_version,
-            )?;
-            self.apply_batch_low_level_drive_operations(
-                None,
-                transaction,
-                vec![pool_operation],
-                &mut vec![],
-                &platform_version.drive,
-            )?;
-        }
+        self.apply_repaid_identity_debt_to_processing_pool(
+            repaid_debt,
+            &block_info.epoch,
+            transaction,
+            platform_version,
+        )?;
         if let Some(owned_transaction) = owned_transaction {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
         }
@@ -175,7 +166,10 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
-    use crate::drive::Drive;
+    use crate::drive::identity::update::methods::debt_test_helpers::{
+        balance, credits_are_balanced, debt, debt_test_block_info as block_info, indebted_identity,
+        processing_pool, DEBT_TEST_EPOCH_INDEX as EPOCH_INDEX,
+    };
     use crate::error::drive::DriveError;
     use crate::error::Error;
     use crate::fees::op::LowLevelDriveOperation;
@@ -184,93 +178,8 @@ mod tests {
     use crate::util::test_helpers::test_utils::identities::create_test_identity;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
-    use dpp::fee::Credits;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::version::PlatformVersion;
-
-    const EPOCH_INDEX: u16 = 2;
-
-    fn block_info() -> BlockInfo {
-        BlockInfo::default_with_epoch(Epoch::new(EPOCH_INDEX).expect("a valid epoch index"))
-    }
-
-    fn processing_pool(drive: &Drive, platform_version: &PlatformVersion) -> Credits {
-        match drive.get_epoch_processing_credits_for_distribution(
-            &Epoch::new(EPOCH_INDEX).expect("a valid epoch index"),
-            None,
-            platform_version,
-        ) {
-            Ok(credits) => credits,
-            Err(Error::GroveDB(error))
-                if matches!(error.as_ref(), grovedb::Error::PathKeyNotFound(_)) =>
-            {
-                0
-            }
-            Err(error) => panic!("expected to read the processing fee pool: {error}"),
-        }
-    }
-
-    fn balance(
-        drive: &Drive,
-        identity_id: [u8; 32],
-        platform_version: &PlatformVersion,
-    ) -> Credits {
-        drive
-            .fetch_identity_balance(identity_id, None, platform_version)
-            .expect("expected to fetch the balance")
-            .expect("expected the identity to have a balance")
-    }
-
-    fn debt(drive: &Drive, identity_id: [u8; 32], platform_version: &PlatformVersion) -> Credits {
-        drive
-            .fetch_identity_negative_balance_operations(
-                identity_id,
-                true,
-                None,
-                &mut vec![],
-                platform_version,
-            )
-            .expect("expected to fetch the debt")
-            .expect("expected a stored debt")
-    }
-
-    fn credits_are_balanced(drive: &Drive, platform_version: &PlatformVersion) -> bool {
-        drive
-            .calculate_total_credits_balance(None, &platform_version.drive)
-            .expect("expected to calculate the credit sum")
-            .ok()
-            .expect("expected no overflow")
-    }
-
-    /// An identity with an empty balance that owes `owed` credits, the way an unpaid part of a
-    /// fee leaves it
-    fn indebted_identity(
-        drive: &Drive,
-        id: [u8; 32],
-        owed: Credits,
-        platform_version: &PlatformVersion,
-    ) -> [u8; 32] {
-        let identity =
-            create_test_identity(drive, id, Some(u64::from(id[0])), None, platform_version)
-                .expect("expected an identity");
-        let debt_operation = drive
-            .update_identity_negative_credit_operation(
-                identity.id().to_buffer(),
-                owed,
-                platform_version,
-            )
-            .expect("expected a debt operation");
-        drive
-            .apply_batch_low_level_drive_operations(
-                None,
-                None,
-                vec![debt_operation],
-                &mut vec![],
-                &platform_version.drive,
-            )
-            .expect("expected to store the debt");
-        identity.id().to_buffer()
-    }
 
     #[test]
     fn should_credit_the_repaid_debt_to_the_processing_fee_pool_and_keep_the_credit_sum() {
@@ -527,6 +436,47 @@ mod tests {
             .expect("expected to apply the batch");
 
         assert_eq!(balance(&drive, identity_id, platform_version), 20);
+        assert_eq!(debt(&drive, identity_id, platform_version), 0);
+        assert_eq!(processing_pool(&drive, platform_version), 100);
+        assert!(credits_are_balanced(&drive, platform_version));
+    }
+
+    #[test]
+    fn should_merge_a_credit_and_a_debit_of_one_indebted_identity_into_one_net_write() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let identity_id = indebted_identity(&drive, [1; 32], 100, platform_version);
+
+        // A credit of 300 and a debit of 7 in one batch: each converted alone would read the
+        // committed balance, and one balance write would replace the other
+        drive
+            .apply_drive_operations(
+                vec![
+                    DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits {
+                        amount: 293,
+                    }),
+                    DriveOperation::IdentityOperation(
+                        IdentityOperationType::AddToIdentityBalance {
+                            identity_id,
+                            added_balance: 300,
+                        },
+                    ),
+                    DriveOperation::IdentityOperation(
+                        IdentityOperationType::RemoveFromIdentityBalance {
+                            identity_id,
+                            balance_to_remove: 7,
+                        },
+                    ),
+                ],
+                true,
+                &block_info(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to apply the batch");
+
+        assert_eq!(balance(&drive, identity_id, platform_version), 193);
         assert_eq!(debt(&drive, identity_id, platform_version), 0);
         assert_eq!(processing_pool(&drive, platform_version), 100);
         assert!(credits_are_balanced(&drive, platform_version));

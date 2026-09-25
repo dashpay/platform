@@ -225,82 +225,17 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
-    use crate::drive::Drive;
-    use crate::error::Error;
+    use crate::drive::identity::update::methods::debt_test_helpers::{
+        balance, debt_test_block_info as block_info, indebted_identity, processing_pool,
+    };
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use crate::util::test_helpers::test_utils::identities::create_test_identity;
-    use dpp::block::block_info::BlockInfo;
-    use dpp::block::epoch::Epoch;
     use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
     use dpp::fee::fee_result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
     use dpp::fee::fee_result::{BalanceChange, FeeResult};
     use dpp::fee::Credits;
-    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::version::PlatformVersion;
     use nohash_hasher::IntMap;
     use std::collections::BTreeMap;
-
-    const EPOCH_INDEX: u16 = 2;
-
-    fn block_info() -> BlockInfo {
-        BlockInfo::default_with_epoch(Epoch::new(EPOCH_INDEX).expect("a valid epoch index"))
-    }
-
-    fn processing_pool(drive: &Drive, platform_version: &PlatformVersion) -> Credits {
-        match drive.get_epoch_processing_credits_for_distribution(
-            &Epoch::new(EPOCH_INDEX).expect("a valid epoch index"),
-            None,
-            platform_version,
-        ) {
-            Ok(credits) => credits,
-            Err(Error::GroveDB(error))
-                if matches!(error.as_ref(), grovedb::Error::PathKeyNotFound(_)) =>
-            {
-                0
-            }
-            Err(error) => panic!("expected to read the processing fee pool: {error}"),
-        }
-    }
-
-    fn balance(
-        drive: &Drive,
-        identity_id: [u8; 32],
-        platform_version: &PlatformVersion,
-    ) -> Credits {
-        drive
-            .fetch_identity_balance(identity_id, None, platform_version)
-            .expect("expected to fetch the balance")
-            .expect("expected the identity to have a balance")
-    }
-
-    /// An identity with an empty balance that owes `owed` credits
-    fn indebted_identity(
-        drive: &Drive,
-        id: [u8; 32],
-        owed: Credits,
-        platform_version: &PlatformVersion,
-    ) -> [u8; 32] {
-        let identity =
-            create_test_identity(drive, id, Some(u64::from(id[0])), None, platform_version)
-                .expect("expected an identity");
-        let debt_operation = drive
-            .update_identity_negative_credit_operation(
-                identity.id().to_buffer(),
-                owed,
-                platform_version,
-            )
-            .expect("expected a debt operation");
-        drive
-            .apply_batch_low_level_drive_operations(
-                None,
-                None,
-                vec![debt_operation],
-                &mut vec![],
-                &platform_version.drive,
-            )
-            .expect("expected to store the debt");
-        identity.id().to_buffer()
-    }
 
     fn refunds(entries: [([u8; 32], Credits); 2]) -> FeeRefunds {
         let refunds_per_epoch_by_identifier: CreditsPerEpochByIdentifier =

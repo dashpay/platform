@@ -42,14 +42,6 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        // Only `add_to_identity_balance_operations` 1 (protocol version 14) produces one, so no
-        // batch of an earlier version meets this
-        if LowLevelDriveOperation::holds_repaid_identity_debt(&batch_operations) {
-            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                "a repaid identity debt must be routed to the processing fee pool before its \
-                 batch is applied",
-            )));
-        }
         match drive_version
             .methods
             .operations
@@ -62,13 +54,24 @@ impl Drive {
                 drive_operations,
                 drive_version,
             ),
-            1 => self.apply_batch_low_level_drive_operations_v1(
-                estimated_costs_only_with_layer_info,
-                transaction,
-                batch_operations,
-                drive_operations,
-                drive_version,
-            ),
+            1 => {
+                // Only `add_to_identity_balance_operations` 1 produces one, which the same
+                // protocol version (14) selects as this generation, so the batches of earlier
+                // versions are not scanned
+                if LowLevelDriveOperation::holds_repaid_identity_debt(&batch_operations) {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a repaid identity debt must be routed to the processing fee pool \
+                         before its batch is applied",
+                    )));
+                }
+                self.apply_batch_low_level_drive_operations_v1(
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    batch_operations,
+                    drive_operations,
+                    drive_version,
+                )
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_batch_low_level_drive_operations".to_string(),
                 known_versions: vec![0, 1],

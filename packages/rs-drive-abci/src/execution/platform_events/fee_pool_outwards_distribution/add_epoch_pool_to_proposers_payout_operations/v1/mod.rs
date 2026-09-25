@@ -32,7 +32,9 @@ impl<C> Platform<C> {
     /// that repay a recipient's debt to the processing fee pool of the block's epoch, after the
     /// batch's own fee distribution. A plain grove batch cannot carry them, and generation 0,
     /// which converted with `convert_drive_operations_to_grove_operations`, left them in no
-    /// balance the credit sum counts.
+    /// balance the credit sum counts. A share whose `payToId` has no balance is skipped and
+    /// stays with its masternode, and each share is capped at what is left of the masternode's
+    /// payout, so neither fails the batch that ends the block.
     pub(super) fn add_epoch_pool_to_proposers_payout_operations_v1(
         &self,
         unpaid_epoch: &UnpaidEpoch,
@@ -112,6 +114,20 @@ impl<C> Platform<C> {
                     .get_identifier("payToId")
                     .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
+                // A share naming an identity that has no balance stays with its masternode:
+                // crediting it would fail the batch that ends the block
+                if self
+                    .drive
+                    .fetch_identity_balance(
+                        pay_to_id.to_buffer(),
+                        Some(transaction),
+                        platform_version,
+                    )?
+                    .is_none()
+                {
+                    continue;
+                }
+
                 // TODO this shouldn't be a percentage we need to update masternode share contract
                 let share_percentage: u64 = document
                     .properties()
@@ -126,12 +142,14 @@ impl<C> Platform<C> {
                         ))
                     })?;
 
+                // Shares above 100% in total get what is left, not a failed payout
                 let share_payout = total_masternode_payout
                     .checked_mul(share_percentage)
                     .and_then(|a| a.checked_div(10000))
                     .ok_or(Error::Execution(ExecutionError::Overflow(
                         "overflow when calculating reward share",
-                    )))?;
+                    )))?
+                    .min(masternode_payout_leftover);
 
                 // update masternode reward that would be paid later
                 masternode_payout_leftover = masternode_payout_leftover
@@ -605,7 +623,15 @@ mod tests {
             // Each masternode proposed one of the epoch's two blocks, so its reward is half the
             // pools, and its share half of that
             let share = (storage_fees + processing_fees) / proposers_count as u64 / 2;
+            // Both shares landed and the debt was repaid once: the balance holds the rest, and
+            // the balance less the debt is the same number, so no debt is left
             let shared_recipient_balance = platform
+                .drive
+                .fetch_identity_balance(shared_recipient, Some(&transaction), platform_version)
+                .expect("expected the balance")
+                .expect("expected the identity");
+            assert_eq!(shared_recipient_balance, 2 * share - owed);
+            let shared_recipient_balance_less_debt = platform
                 .drive
                 .fetch_identity_balance_include_debt(
                     shared_recipient,
@@ -614,7 +640,10 @@ mod tests {
                 )
                 .expect("expected the balance")
                 .expect("expected the identity");
-            assert_eq!(shared_recipient_balance, (2 * share - owed) as i64);
+            assert_eq!(
+                shared_recipient_balance_less_debt,
+                (2 * share - owed) as i64
+            );
 
             let next_epoch_processing_fees = platform
                 .drive
@@ -625,6 +654,157 @@ mod tests {
                 )
                 .expect("expected the next epoch's processing fees");
             assert_eq!(next_epoch_processing_fees, owed);
+        }
+
+        #[test]
+        fn should_keep_a_share_without_a_recipient_and_cap_a_share_above_the_reward() {
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let platform_read_guard = platform.state.load();
+            let platform_version = platform_read_guard
+                .current_platform_version()
+                .expect("platform_version");
+            let transaction = platform.drive.grove.start_transaction();
+
+            let contract = platform.create_mn_shares_contract(Some(&transaction), platform_version);
+
+            let proposers_count = 2u16;
+            let processing_fees = 10000;
+            let storage_fees = 10000;
+
+            let unpaid_epoch_tree = Epoch::new(0).unwrap();
+            let next_epoch_tree = Epoch::new(1).unwrap();
+
+            let mut batch = GroveDbOpBatch::new();
+            unpaid_epoch_tree.add_init_current_operations(
+                platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected a fee multiplier"),
+                1,
+                1,
+                1,
+                platform_version.protocol_version,
+                &mut batch,
+            );
+            batch.push(
+                unpaid_epoch_tree
+                    .update_processing_fee_pool_operation(processing_fees)
+                    .expect("should add operation"),
+            );
+            batch.push(
+                unpaid_epoch_tree
+                    .update_storage_fee_pool_operation(storage_fees)
+                    .expect("should add operation"),
+            );
+            next_epoch_tree.add_init_current_operations(
+                platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected a fee multiplier"),
+                proposers_count as u64 + 1,
+                1,
+                10,
+                platform_version.protocol_version,
+                &mut batch,
+            );
+            platform
+                .drive
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+                .expect("should apply batch");
+
+            let pro_tx_hashes =
+                create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
+                    &platform.drive,
+                    &unpaid_epoch_tree,
+                    proposers_count,
+                    Some(68),
+                    Some(&transaction),
+                    platform_version,
+                );
+
+            // The first masternode's share names no identity; the second's claims 120% of its
+            // reward for one recipient
+            insert_reward_share(
+                &platform,
+                &contract,
+                pro_tx_hashes[0],
+                [9; 32],
+                5000,
+                &transaction,
+                platform_version,
+            );
+            let recipient = create_test_identity(
+                &platform.drive,
+                [7; 32],
+                Some(7),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected the recipient")
+            .id()
+            .to_buffer();
+            insert_reward_share(
+                &platform,
+                &contract,
+                pro_tx_hashes[1],
+                recipient,
+                12000,
+                &transaction,
+                platform_version,
+            );
+
+            let unpaid_epoch = UnpaidEpochV0 {
+                epoch_index: 0,
+                start_block_height: 1,
+                next_epoch_start_block_height: 1 + proposers_count as u64,
+                start_block_core_height: 1,
+                next_unpaid_epoch_index: 0,
+                next_epoch_start_block_core_height: 1,
+                epoch_start_time: 0,
+                protocol_version: platform_version.protocol_version,
+                fee_multiplier: 0,
+            };
+
+            let mut batch = vec![];
+            platform
+                .add_epoch_pool_to_proposers_payout_operations_v1(
+                    &unpaid_epoch.into(),
+                    0,
+                    &transaction,
+                    &mut batch,
+                    platform_version,
+                )
+                .expect("should distribute fees");
+            platform
+                .drive
+                .apply_drive_operations(
+                    batch,
+                    true,
+                    &BlockInfo::default_with_epoch(next_epoch_tree),
+                    Some(&transaction),
+                    platform_version,
+                    None,
+                )
+                .expect("should apply batch");
+
+            // Each masternode's reward is half the pools
+            let reward = (storage_fees + processing_fees) / proposers_count as u64;
+            let balances = platform
+                .drive
+                .fetch_identities_balances(
+                    &vec![pro_tx_hashes[0], pro_tx_hashes[1], recipient],
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the balances");
+            // The first masternode kept its whole reward, the second's recipient got all of it
+            // and the last proposer the rest of the pools (nothing)
+            assert_eq!(balances.get(&pro_tx_hashes[0]), Some(&reward));
+            assert_eq!(balances.get(&recipient), Some(&reward));
+            assert_eq!(balances.get(&pro_tx_hashes[1]), Some(&0));
         }
     }
 }
