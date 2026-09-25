@@ -387,9 +387,9 @@ gas *and* the fees they would owe; one that insisted and falls short is the
 same unpaid refusal as before (40222), and one that only preferred hands the
 gas and the fees back to the signer. The gas is estimated for the payer:
 first with the sponsor paying, then, when the sponsor does not pay, with the
-signer paying. Fee validation and execution ask the sponsor question through
-one function (`gas_sponsor_pays`), execution on the estimate fee validation
-returns, so they always name the same payer. The contract owner never pays the `owner` part:
+signer paying. Fee validation settles the payer through one function
+(`gas_sponsor_pays`) and hands it to execution, which charges that payer, so
+they always name the same one. The contract owner never pays the `owner` part:
 it would travel through the owner pot back to them and only cost writes. A
 sponsor is always the contract owner, so a sponsored action pays into the
 moderators pot only, which a contract that sponsors gas should price in. The
@@ -409,8 +409,11 @@ its price, a contested document its voting fund, and a sale pays a contract
 owner who may be sponsoring the gas. A balance operation computes the new
 balance from the one committed before its batch and GroveDB keeps only the
 last write of a key, so `apply_drive_operations` (generation 1, protocol
-version 14) merges every write of one identity balance or one fee pot in a
-batch into a single net operation. The fee pools and the proposers see
+version 14) merges every write of one identity balance, one fee pot or one
+prefunded specialized balance in a batch into a single net operation. Token
+writes cannot be merged that way (a transfer writes two balances, a mint or a
+burn a balance and the supply), so a batch that writes one token balance or
+supply twice is refused; no state transition makes one. The fee pools and the proposers see
 exactly what they saw before. The
 pots sit under the `PreFundedSpecializedBalances` root sum tree, which the
 per-block total credits check already sums, so the credits stay accounted for

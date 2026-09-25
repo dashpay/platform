@@ -1540,15 +1540,14 @@ mod action_fee_tests {
             .expect("expected to take credits from the contract owner");
     }
 
-    /// Execution asks `gas_sponsor_pays` again on the estimate fee validation returns. A
-    /// purchase from a third party that owes only a moderators part is estimated lower with the
-    /// buyer paying, whose fee merges into the price leaving them, than with the sponsor paying,
-    /// whose fee is a write of its own. A sponsor one credit short of their own estimate is
-    /// passed over by fee validation, which then returns the sponsor's estimate rather than the
-    /// buyer's lower one the sponsor would cover, so execution passes them over too and charges
-    /// the buyer.
+    /// Execution charges the payer fee validation settled on. A purchase from a third party
+    /// that owes only a moderators part is estimated lower with the buyer paying, whose fee
+    /// merges into the price leaving them, than with the sponsor paying, whose fee is a write
+    /// of its own. A sponsor one credit short of their own estimate is passed over by fee
+    /// validation, which returns the buyer's lower estimate: the sponsor would cover that one,
+    /// so asking the sponsor question again on it would charge them. Execution charges the buyer.
     #[tokio::test]
-    async fn should_return_the_passed_over_sponsors_estimate_when_it_exceeds_the_buyers() {
+    async fn should_charge_the_buyer_when_the_sponsor_covers_only_the_buyers_estimate() {
         let (mut setup, card) = card_for_sale(
             Seller::User,
             platform_value!({
@@ -1628,12 +1627,14 @@ mod action_fee_tests {
             short_of_paying,
             "the passed over sponsor pays nothing"
         );
-        assert_eq!(
-            estimated_fees
-                .as_ref()
-                .map(|estimate| estimate.total_base_fee()),
-            Some(sponsor_estimate),
-            "fee validation returns the estimate the sponsor could not cover"
+        let buyer_estimate = estimated_fees
+            .as_ref()
+            .map(|estimate| estimate.total_base_fee())
+            .expect("expected fee validation to return an estimate");
+        assert!(
+            buyer_estimate < sponsor_estimate
+                && buyer_estimate + MODERATORS_PART <= short_of_paying,
+            "expected fee validation to return the buyer's estimate, which the sponsor covers"
         );
         let gas = fee_result.total_base_fee();
         let refunded_to_seller = fee_result

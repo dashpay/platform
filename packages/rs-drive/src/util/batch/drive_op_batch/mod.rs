@@ -54,7 +54,7 @@ use crate::util::batch::drive_op_batch::finalize_task::{
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use dpp::identifier::Identifier;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// A converter that will get Drive Operations from High Level Operations
 pub trait DriveLowLevelOperationConverter {
@@ -365,8 +365,8 @@ impl DriveOperation<'_> {
             .fold(0u64, |total, amount| total.saturating_add(amount))
     }
 
-    /// Merges every write of one identity balance, and every write of one contract fee pot,
-    /// into a single net operation.
+    /// Merges every write of one identity balance, of one contract fee pot, and of one
+    /// prefunded specialized balance, into a single net operation.
     ///
     /// Each of these operations computes the new value from the one committed before its
     /// batch, and GroveDB keeps only the last write of a key, so two of them in one batch lose
@@ -404,17 +404,87 @@ impl DriveOperation<'_> {
         }
         Ok(merged)
     }
+
+    /// Refuses a batch whose token operations write one identity's balance of a token, or
+    /// one token's total supply, more than once.
+    ///
+    /// These writes compute the new value from the one committed before the batch too, but a
+    /// transfer writes two balances and a mint or a burn a balance and the supply, so they
+    /// cannot be merged into operations of their own kinds. No state transition makes two of
+    /// them on one key: a batch carries one transition, and each writes a key at most once. A
+    /// batch that did would lose all but the last write, so it is refused instead.
+    pub fn refuse_repeated_token_balance_writes(operations: &[Self]) -> Result<(), Error> {
+        let mut written = BTreeSet::new();
+        for key in operations.iter().flat_map(token_balance_writes) {
+            if !written.insert(key) {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "a batch writes one token balance or token supply more than once",
+                )));
+            }
+        }
+        Ok(())
+    }
 }
 
-/// A key an identity balance or a contract fee pot operation writes
+/// A key an identity balance, a contract fee pot or a prefunded specialized balance operation
+/// writes
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum BalanceKey {
     Identity([u8; 32]),
     FeePot(Identifier, ContractFeePot),
+    PrefundedSpecializedBalance(Identifier),
+}
+
+/// A key a token operation writes: an identity's balance of a token, or a token's total supply
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum TokenBalanceKey {
+    Holder(Identifier, Identifier),
+    Supply(Identifier),
+}
+
+/// The keys `operation` writes if it is a token operation that moves tokens
+fn token_balance_writes(operation: &DriveOperation) -> Vec<TokenBalanceKey> {
+    let DriveOperation::TokenOperation(operation) = operation else {
+        return vec![];
+    };
+    match operation {
+        TokenOperationType::TokenBurn {
+            token_id,
+            identity_balance_holder_id,
+            ..
+        }
+        | TokenOperationType::TokenMint {
+            token_id,
+            identity_balance_holder_id,
+            ..
+        } => vec![
+            TokenBalanceKey::Holder(*token_id, *identity_balance_holder_id),
+            TokenBalanceKey::Supply(*token_id),
+        ],
+        TokenOperationType::TokenMintMany {
+            token_id,
+            recipients,
+            ..
+        } => recipients
+            .iter()
+            .map(|(recipient_id, _)| TokenBalanceKey::Holder(*token_id, *recipient_id))
+            .chain([TokenBalanceKey::Supply(*token_id)])
+            .collect(),
+        TokenOperationType::TokenTransfer {
+            token_id,
+            sender_id,
+            recipient_id,
+            ..
+        } => vec![
+            TokenBalanceKey::Holder(*token_id, *sender_id),
+            TokenBalanceKey::Holder(*token_id, *recipient_id),
+        ],
+        _ => vec![],
+    }
 }
 
 /// The key `operation` writes and the signed change it makes there, if it is an identity
-/// balance or contract fee pot operation
+/// balance, contract fee pot or prefunded specialized balance operation
 fn balance_write(operation: &DriveOperation) -> Option<(BalanceKey, i128)> {
     match operation {
         DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
@@ -438,6 +508,24 @@ fn balance_write(operation: &DriveOperation) -> Option<(BalanceKey, i128)> {
             pot,
             amount,
         }) => Some((BalanceKey::FeePot(*contract_id, *pot), -(*amount as i128))),
+        DriveOperation::PrefundedSpecializedBalanceOperation(
+            PrefundedSpecializedBalanceOperationType::CreateNewPrefundedBalance {
+                prefunded_specialized_balance_id,
+                add_balance,
+            },
+        ) => Some((
+            BalanceKey::PrefundedSpecializedBalance(*prefunded_specialized_balance_id),
+            *add_balance as i128,
+        )),
+        DriveOperation::PrefundedSpecializedBalanceOperation(
+            PrefundedSpecializedBalanceOperationType::DeductFromPrefundedBalance {
+                prefunded_specialized_balance_id,
+                remove_balance,
+            },
+        ) => Some((
+            BalanceKey::PrefundedSpecializedBalance(*prefunded_specialized_balance_id),
+            -(*remove_balance as i128),
+        )),
         _ => None,
     }
 }
@@ -478,6 +566,23 @@ fn net_balance_write<'a>(key: BalanceKey, net: i128) -> Result<Option<DriveOpera
                 pot,
                 amount,
             })
+        }
+        // Adds to the balance, creating it when it does not exist yet.
+        (BalanceKey::PrefundedSpecializedBalance(prefunded_specialized_balance_id), true) => {
+            DriveOperation::PrefundedSpecializedBalanceOperation(
+                PrefundedSpecializedBalanceOperationType::CreateNewPrefundedBalance {
+                    prefunded_specialized_balance_id,
+                    add_balance: amount,
+                },
+            )
+        }
+        (BalanceKey::PrefundedSpecializedBalance(prefunded_specialized_balance_id), false) => {
+            DriveOperation::PrefundedSpecializedBalanceOperation(
+                PrefundedSpecializedBalanceOperationType::DeductFromPrefundedBalance {
+                    prefunded_specialized_balance_id,
+                    remove_balance: amount,
+                },
+            )
         }
     }))
 }
@@ -1471,6 +1576,93 @@ mod tests {
                 ]
             )
         );
+    }
+
+    fn fund_vote_poll(add_balance: Credits) -> DriveOperation<'static> {
+        DriveOperation::PrefundedSpecializedBalanceOperation(
+            PrefundedSpecializedBalanceOperationType::CreateNewPrefundedBalance {
+                prefunded_specialized_balance_id: Identifier::new([8; 32]),
+                add_balance,
+            },
+        )
+    }
+
+    fn pay_from_vote_poll(remove_balance: Credits) -> DriveOperation<'static> {
+        DriveOperation::PrefundedSpecializedBalanceOperation(
+            PrefundedSpecializedBalanceOperationType::DeductFromPrefundedBalance {
+                prefunded_specialized_balance_id: Identifier::new([8; 32]),
+                remove_balance,
+            },
+        )
+    }
+
+    #[test]
+    fn should_merge_the_writes_of_one_prefunded_specialized_balance() {
+        assert_eq!(
+            merged(vec![pay_from_vote_poll(3), pay_from_vote_poll(4)]),
+            format!("{:?}", vec![pay_from_vote_poll(7)])
+        );
+        assert_eq!(
+            merged(vec![fund_vote_poll(10), pay_from_vote_poll(4)]),
+            format!("{:?}", vec![fund_vote_poll(6)])
+        );
+    }
+
+    fn token(position: u8) -> Identifier {
+        Identifier::new([20 + position; 32])
+    }
+
+    fn transfer(from: u8, to: u8) -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenTransfer {
+            token_id: token(0),
+            sender_id: Identifier::new([from; 32]),
+            recipient_id: Identifier::new([to; 32]),
+            amount: 5,
+        })
+    }
+
+    fn burn(token_position: u8, holder: u8) -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenBurn {
+            token_id: token(token_position),
+            identity_balance_holder_id: Identifier::new([holder; 32]),
+            burn_amount: 5,
+        })
+    }
+
+    fn mint(token_position: u8, holder: u8) -> DriveOperation<'static> {
+        DriveOperation::TokenOperation(TokenOperationType::TokenMint {
+            token_id: token(token_position),
+            identity_balance_holder_id: Identifier::new([holder; 32]),
+            mint_amount: 5,
+            allow_first_mint: false,
+            allow_saturation: false,
+        })
+    }
+
+    #[test]
+    fn should_refuse_a_batch_that_writes_one_token_balance_or_supply_twice() {
+        // The sender of a transfer burns too: their balance is written twice.
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            transfer(1, 2),
+            burn(0, 1)
+        ])
+        .is_err());
+        // A mint and a burn of one token, by different holders: its supply is written twice.
+        assert!(
+            DriveOperation::refuse_repeated_token_balance_writes(&[mint(0, 1), burn(0, 2)])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn should_admit_token_writes_that_each_touch_their_own_keys() {
+        assert!(DriveOperation::refuse_repeated_token_balance_writes(&[
+            transfer(1, 2),
+            mint(1, 1),
+            burn(2, 2),
+            add(1, 10),
+        ])
+        .is_ok());
     }
 
     #[test]

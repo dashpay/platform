@@ -47,11 +47,10 @@ pub(in crate::execution::platform_events::state_transition_processing) fn requir
         .saturating_add(user_fee_increase_amount)
 }
 
-/// Whether the gas sponsor pays: their balance covers the estimated gas and the document action
-/// fees they would owe. Whoever pays the gas pays the action fees, so there is one question and
-/// fee validation and execution both ask it here: validation on the gas estimated with the
-/// sponsor paying, execution on the estimate validation returns, which gives the same answer.
-pub(in crate::execution::platform_events::state_transition_processing) fn gas_sponsor_pays(
+/// Whether the gas sponsor pays: their balance covers the gas estimated with them paying and the
+/// document action fees they owe. Whoever pays the gas pays the action fees, so this is the one
+/// question; execution charges whoever fee validation settled on by it ([`SettledFees`]).
+fn gas_sponsor_pays(
     gas_sponsor: &ResolvedGasSponsor,
     required_gas: Credits,
     action_fees: &[ResolvedDocumentActionFee],
@@ -73,10 +72,51 @@ fn required_from_gas_sponsor(
     Ok(required_gas.saturating_add(action_fees_total(&gas_sponsor.identity_id, action_fees)?))
 }
 
+/// What fee validation settled on for an event: the gas estimated for the payer, and the gas
+/// sponsor who pays it and the document action fees, if one does. Execution charges this payer
+/// rather than asking again, so fee validation and execution never name different payers.
+#[derive(Debug, Clone)]
+pub(in crate::execution::platform_events::state_transition_processing) struct SettledFees {
+    /// The gas estimated for the payer
+    pub estimated_fee_result: FeeResult,
+    /// The gas sponsor who pays; `None` when the identity pays
+    pub paying_sponsor: Option<ResolvedGasSponsor>,
+}
+
+impl SettledFees {
+    fn paid_by_the_identity(estimated_fee_result: FeeResult) -> Self {
+        SettledFees {
+            estimated_fee_result,
+            paying_sponsor: None,
+        }
+    }
+}
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
+    /// Fee validation v1, as [`Platform::settle_fees_of_event_v1`] settles it, with the payer
+    /// left out.
+    pub(super) fn validate_fees_of_event_v1(
+        &self,
+        event: &ExecutionEvent,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+        previous_fee_versions: &CachedEpochIndexFeeVersions,
+    ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
+        Ok(self
+            .settle_fees_of_event_v1(
+                event,
+                block_info,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+            )?
+            .map(|settled_fees| settled_fees.estimated_fee_result))
+    }
+
     /// v1 enforces, on top of the v0 balance check, what identity signature validation and the
     /// batch transformer recorded on the event from protocol version 14:
     ///
@@ -102,15 +142,18 @@ where
     /// and at execution with the block's own time.
     ///
     /// Every event with no signing key limits, no gas sponsor and no action fees is validated
-    /// by v0.
-    pub(super) fn validate_fees_of_event_v1(
+    /// by v0, and paid by its identity.
+    ///
+    /// It returns the payer it settles on with the estimate: `execute_event` 1, of the same
+    /// generation (both are selected by `DRIVE_ABCI_METHOD_VERSIONS_V10`), charges that payer.
+    pub(in crate::execution::platform_events::state_transition_processing) fn settle_fees_of_event_v1(
         &self,
         event: &ExecutionEvent,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
-    ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
+    ) -> Result<ConsensusValidationResult<SettledFees>, Error> {
         let ExecutionEvent::Paid {
             identity,
             removed_balance,
@@ -124,36 +167,48 @@ where
             ..
         } = event
         else {
-            return self.validate_fees_of_event_v0(
-                event,
-                block_info,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            );
+            return Ok(self
+                .validate_fees_of_event_v0(
+                    event,
+                    block_info,
+                    transaction,
+                    platform_version,
+                    previous_fee_versions,
+                )?
+                .map(SettledFees::paid_by_the_identity));
+        };
+
+        // A refusal: nobody is charged, so it names no sponsor.
+        let refused = |estimated_fee_result: FeeResult, error: ConsensusError| {
+            ConsensusValidationResult::new_with_data_and_errors(
+                SettledFees::paid_by_the_identity(estimated_fee_result),
+                vec![error],
+            )
         };
 
         if signing_key_limits.is_none() && gas_sponsor.is_none() && action_fees.is_empty() {
-            return self.validate_fees_of_event_v0(
-                event,
-                block_info,
-                transaction,
-                platform_version,
-                previous_fee_versions,
-            );
+            return Ok(self
+                .validate_fees_of_event_v0(
+                    event,
+                    block_info,
+                    transaction,
+                    platform_version,
+                    previous_fee_versions,
+                )?
+                .map(SettledFees::paid_by_the_identity));
         }
 
         if let Some(signing_key_limits) = signing_key_limits {
             if let Some(expires_at) = signing_key_limits.expires_at {
                 if block_info.time_ms >= expires_at {
-                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    return Ok(refused(
                         FeeResult::default(),
-                        vec![PublicKeyExpiredError::new(
+                        PublicKeyExpiredError::new(
                             signing_key_limits.key_id,
                             expires_at,
                             block_info.time_ms,
                         )
-                        .into()],
+                        .into(),
                     ));
                 }
             }
@@ -203,12 +258,12 @@ where
                 .saturating_add(additional_fixed_fee_cost.unwrap_or_default())
         };
         let insufficient_balance = |estimated_fee_result: FeeResult, required: Credits| {
-            ConsensusValidationResult::new_with_data_and_errors(
+            refused(
                 estimated_fee_result,
-                vec![StateError::IdentityInsufficientBalanceError(
+                StateError::IdentityInsufficientBalanceError(
                     IdentityInsufficientBalanceError::new(identity.id, balance, required),
                 )
-                .into()],
+                .into(),
             )
         };
         // The refusal of a budgeted signing key with less than `required_budget` left.
@@ -237,34 +292,32 @@ where
 
         // The sponsor is judged on the batch as it runs when they pay: estimated with the
         // action fees they owe, never an owner part, since a sponsor is the contract owner.
-        let mut passed_over_sponsor_estimate = None;
         if let Some(gas_sponsor) = gas_sponsor {
             let (estimated_fee_result, _) = estimate_paid_by(gas_sponsor.identity_id)?;
             let required_balance = required_gas(&estimated_fee_result);
             if gas_sponsor_pays(gas_sponsor, required_balance, action_fees)? {
                 // The key's budget only has to cover the principal.
                 return Ok(match key_budget_exceeded(principal) {
-                    Some(error) => ConsensusValidationResult::new_with_data_and_errors(
+                    Some(error) => refused(estimated_fee_result, error),
+                    None => ConsensusValidationResult::new_with_data(SettledFees {
                         estimated_fee_result,
-                        vec![error],
-                    ),
-                    None => ConsensusValidationResult::new_with_data(estimated_fee_result),
+                        paying_sponsor: Some(*gas_sponsor),
+                    }),
                 });
             }
             if gas_sponsor.strict {
-                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                return Ok(refused(
                     estimated_fee_result,
-                    vec![StateError::GasSponsorInsufficientBalanceError(
+                    StateError::GasSponsorInsufficientBalanceError(
                         GasSponsorInsufficientBalanceError::new(
                             gas_sponsor.identity_id,
                             gas_sponsor.balance,
                             required_from_gas_sponsor(gas_sponsor, required_balance, action_fees)?,
                         ),
                     )
-                    .into()],
+                    .into(),
                 ));
             }
-            passed_over_sponsor_estimate = Some(estimated_fee_result);
         }
 
         // The identity pays the gas, and with it the action fees it owes. Those are known
@@ -273,7 +326,7 @@ where
         let balance_after_principal_operation = balance - principal;
         if balance_after_principal_operation < identity_action_fees {
             return Ok(insufficient_balance(
-                passed_over_sponsor_estimate.unwrap_or_default(),
+                FeeResult::default(),
                 principal.saturating_add(identity_action_fees),
             ));
         }
@@ -293,26 +346,11 @@ where
             *additional_fixed_fee_cost,
             user_fee_increase_amount,
         )) {
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                estimated_fee_result,
-                vec![error],
-            ));
+            return Ok(refused(estimated_fee_result, error));
         }
 
-        // Execution asks `gas_sponsor_pays` again on the estimate returned here. The identity's
-        // can be the smaller one (its action fees merge into its principal, the sponsor's are a
-        // write of their own), so the sponsor's is returned then, and execution passes the
-        // sponsor over as validation did.
-        let estimated_fee_result = match passed_over_sponsor_estimate {
-            Some(sponsor_estimate)
-                if sponsor_estimate.total_base_fee() > estimated_fee_result.total_base_fee() =>
-            {
-                sponsor_estimate
-            }
-            _ => estimated_fee_result,
-        };
         Ok(ConsensusValidationResult::new_with_data(
-            estimated_fee_result,
+            SettledFees::paid_by_the_identity(estimated_fee_result),
         ))
     }
 }

@@ -388,9 +388,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     only for an action that executes: `validate_fees_of_event` 1 and
 ///     `execute_event` 1 (`DRIVE_ABCI_METHOD_VERSIONS_V10`) settle the payer
 ///     and move the credits with the batch's own operations, outside the fee;
-///     `apply_drive_operations` 1 merges every write of one identity balance
-///     or one fee pot in a batch into one, so a fee leaving the balance a
-///     purchase price or a voting fund also leaves takes both.
+///     `apply_drive_operations` 1 merges every write of one identity balance,
+///     fee pot or prefunded specialized balance in a batch into one, so a fee
+///     leaving the balance a purchase price or a voting fund also leaves takes
+///     both, and refuses a batch writing one token balance or supply twice.
+///     Fee validation estimates for the payer it settles on and hands that
+///     payer to `execute_event` 1.
 ///     `DRIVE_CONTRACT_METHOD_VERSIONS_V4` gains the `fee_pots` method table:
 ///     the pots are sum items under two sum trees of the prefunded specialized
 ///     balances (`[40, 64]` and `[40, 192]`), which `create_initial_state_structure`
@@ -1189,7 +1192,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance or fee pot in a batch merged into one); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
