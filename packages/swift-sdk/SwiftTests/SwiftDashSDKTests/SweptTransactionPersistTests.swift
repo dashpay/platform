@@ -3414,4 +3414,87 @@ final class SweptTransactionPersistTests: XCTestCase {
             "no claim on a dead parent's output survives the batch, released or not"
         )
     }
+
+    /// The batch `abandon_plan` builds for a chain the network proved dead
+    /// (rust-dashcore#961's abandon, mirrored through the sweep channel):
+    /// every input the chain took from outside itself is released,
+    /// `superseded_by` is the chain's own root and there is no winner height.
+    /// Nothing may be held — a hold would be attributed to the root, a
+    /// transaction that no longer exists, and nothing could ever resolve it.
+    ///
+    /// Shape of ticket 32347: root R spends a real coin A and leaves change
+    /// R:0; child C spends that change plus another real coin B and leaves
+    /// change C:0.
+    func testAnAbandonedChainFreesItsOutsideInputsAndHoldsNothing() throws {
+        let (handler, container) = try makeHandler()
+        let rootTxid = Data(repeating: 0xE1, count: 32)
+        let childTxid = Data(repeating: 0xE2, count: 32)
+
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        let funding = PersistentTransaction(
+            txid: fundingTxid,
+            transactionData: Data(repeating: 0x04, count: 10),
+            context: 2,
+            blockHeight: 100,
+            netAmount: 140_000
+        )
+        let root = loserRow(txid: rootTxid, spending: [(txid: fundingTxid, vout: 0)], netAmount: -40_000)
+        let child = loserRow(
+            txid: childTxid,
+            spending: [(txid: rootTxid, vout: 0), (txid: fundingTxid, vout: 1)],
+            netAmount: -30_000
+        )
+        context.insert(funding)
+        context.insert(root)
+        context.insert(child)
+
+        // The real coins, claimed by the chain but never flipped spent — the
+        // chain never reached a block.
+        let coinA = PersistentTxo(transaction: funding, vout: 0, amount: 100_000, address: "yFundAddr", height: 100)
+        coinA.walletId = walletId
+        coinA.spendingTransaction = root
+        context.insert(coinA)
+        let coinB = PersistentTxo(transaction: funding, vout: 1, amount: 40_000, address: "yFundAddr", height: 100)
+        coinB.walletId = walletId
+        coinB.spendingTransaction = child
+        context.insert(coinB)
+
+        // The phantom change: the root's, spent by the child, and the child's.
+        let rootChange = PersistentTxo(transaction: root, vout: 0, amount: 60_000, address: "yChangeAddr", height: 0)
+        rootChange.walletId = walletId
+        rootChange.spendingTransaction = child
+        context.insert(rootChange)
+        let childChange = PersistentTxo(transaction: child, vout: 0, amount: 70_000, address: "yChangeAddr", height: 0)
+        childChange.walletId = walletId
+        context.insert(childChange)
+        try context.save()
+
+        XCTAssertTrue(sweep(handler, [Batch(
+            losers: [rootTxid, childTxid],
+            winner: rootTxid,
+            winnerMinedHeight: nil,
+            released: [(txid: fundingTxid, vout: 0), (txid: fundingTxid, vout: 1)]
+        )]))
+
+        XCTAssertNil(transaction(container, txid: rootTxid), "the root row is gone")
+        XCTAssertNil(transaction(container, txid: childTxid), "the child row is gone")
+        XCTAssertNil(txo(container, txid: rootTxid, vout: 0), "the root's change is gone")
+        XCTAssertNil(txo(container, txid: childTxid, vout: 0), "the child's change is gone")
+
+        for vout: UInt32 in [0, 1] {
+            let coin = try XCTUnwrap(txo(container, txid: fundingTxid, vout: vout), "real coin \(vout) stays")
+            XCTAssertFalse(coin.isSpent, "real coin \(vout) comes back spendable")
+            XCTAssertNil(coin.spendingTransaction, "real coin \(vout) keeps no link to the dead chain")
+            XCTAssertNil(coin.supersededByTxid, "real coin \(vout) is not held under the root")
+        }
+
+        let verify = ModelContext(container)
+        let tombstones = try verify.fetch(FetchDescriptor<PersistentPendingInput>())
+            .filter { $0.isSweptTombstone || $0.spendingTxid == rootTxid }
+        XCTAssertTrue(tombstones.isEmpty, "an abandon must never leave a hold attributed to the root")
+        let heldByRoot = try verify.fetch(FetchDescriptor<PersistentTxo>())
+            .filter { $0.supersededByTxid == rootTxid }
+        XCTAssertTrue(heldByRoot.isEmpty, "no coin may be held under the abandoned root")
+    }
 }
