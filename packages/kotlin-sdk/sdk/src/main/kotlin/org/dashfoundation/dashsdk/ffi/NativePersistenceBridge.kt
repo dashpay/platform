@@ -437,6 +437,35 @@ abstract class NativePersistenceBridge {
      */
     open fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = 0
 
+    /**
+     * The wallet's DashPay coreHeight backfill record — the durable half of
+     * the contact rescan guard (dashpay/platform#4302). Fired inside the
+     * round, after the wallet changeset header, on every round whose
+     * changeset carries a record; the rescan sweep writes it on the SAME
+     * round as the lowered `syncedHeight` it belongs with, so a handler that
+     * stores both holds a record that only ever vouches for a cursor it also
+     * stored. Descriptor `([BII[BI)I`.
+     *
+     * Whole-record semantics: replace what the wallet row holds, never
+     * merge. [covered] is ONE flat `byte[]` of `68 * coveredCount` bytes —
+     * per contact the owner identity id (32), the contact identity id (32)
+     * and the height it is covered from (u32, little-endian) — the same
+     * packing the sweep slot uses for its txids. Store it as an opaque blob
+     * and hand it back unchanged on [WalletRestoreData.dashPayBackfillCovered];
+     * only native reads it.
+     *
+     * Purely additive: an implementation that ignores it keeps today's
+     * behaviour — the backfill re-fires on every launch, re-walking every
+     * filter from the earliest contact's core height. Slow, never lossy.
+     */
+    open fun onWalletChangesetDashPayBackfill(
+        walletId: ByteArray,
+        floor: Int,
+        rewoundFrom: Int,
+        covered: ByteArray,
+        coveredCount: Int,
+    ): Int = 0
+
     // ── Identities ────────────────────────────────────────────────────
 
     /**
@@ -968,6 +997,29 @@ class WalletRestoreData(
      * `loadWalletList`.
      */
     @JvmField val lastAppliedChainLockBytes: ByteArray,
+    /**
+     * Whether the wallet row holds a DashPay coreHeight backfill record
+     * (dashpay/platform#4302). `false` for a wallet that never rewound for a
+     * contact or a row persisted before the record existed; native then
+     * ignores the three fields below, and the first rescan sweep behaves as
+     * it always did and writes one. Mirror of
+     * `WalletRestoreEntryFFI.has_dashpay_backfill`.
+     */
+    @JvmField val hasDashPayBackfill: Boolean = false,
+    /** Lowest height the backfill rewound the cursor to. */
+    @JvmField val dashPayBackfillFloor: Int = 0,
+    /**
+     * Highest cursor the backfill rewound from — the height the scan climbs
+     * back to for the backfill to be complete.
+     */
+    @JvmField val dashPayBackfillRewoundFrom: Int = 0,
+    /**
+     * The record's cover set, exactly as [NativePersistenceBridge.onWalletChangesetDashPayBackfill]
+     * delivered it: `68` bytes per covered contact. Native re-packs it into
+     * a `DashPayBackfillCoveredContactFFI` array; a blob that is not a whole
+     * number of entries is read as no record.
+     */
+    @JvmField val dashPayBackfillCovered: ByteArray = ByteArray(0),
 )
 
 /**

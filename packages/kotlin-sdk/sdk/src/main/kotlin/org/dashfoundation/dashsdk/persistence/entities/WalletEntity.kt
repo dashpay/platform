@@ -68,6 +68,20 @@ data class WalletEntity(
      * has been persisted".
      */
     val lastAppliedChainLockHeight: Int? = null,
+    /**
+     * DashPay coreHeight backfill record (dashpay/platform#4302), delivered
+     * whole by `onWalletChangesetDashPayBackfill` on the same round as the
+     * lowered `syncedHeight` it belongs with, and handed back unchanged on
+     * `loadWalletList`. All three NULL (the pre-migration reading) means no
+     * record: native re-runs the backfill once and writes one. `floor` is the
+     * lowest height the backfill rewound to, `rewoundFrom` the cursor it
+     * rewound from — the scan is complete once `syncedHeight` climbs back
+     * past it — and `covered` the opaque cover set (68 bytes per contact:
+     * owner id, contact id, covered-from height) only native reads.
+     */
+    val dashPayBackfillFloor: Int? = null,
+    val dashPayBackfillRewoundFrom: Int? = null,
+    val dashPayBackfillCovered: ByteArray? = null,
     val isImported: Boolean = false,
     val createdAt: Date = Date(),
     val lastUpdated: Date = Date(),

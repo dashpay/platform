@@ -233,15 +233,16 @@ class DashDatabaseTest {
     }
 
     @Test
-    fun schemaIsAtVersion14WithTheSweepHoldIndexes() = runTest {
+    fun schemaIsAtVersion15WithTheSweepHoldIndexes() = runTest {
         // The sweep-hold columns land in ONE migration (10 → 11), with the
         // two `pending_inputs` indexes the sweep's claimed-row lookup
         // (`spendingTxid`) and the end-of-round collector
         // (`walletId, isSweptTombstone, winnerMinedHeight`) rely on.
         // 11 → 12 adds the identity key usage limits columns on top,
-        // 12 → 13 the contract bounds kind, and 13 → 14 the token
-        // once-per-identity distribution block.
-        assertEquals(14, db.openHelper.readableDatabase.version)
+        // 12 → 13 the contract bounds kind, 13 → 14 the token
+        // once-per-identity distribution block, and 14 → 15 the DashPay
+        // backfill record columns on `wallets`.
+        assertEquals(15, db.openHelper.readableDatabase.version)
         val indexes = mutableSetOf<String>()
         db.openHelper.readableDatabase.query("PRAGMA index_list('pending_inputs')").use { c ->
             val nameColumn = c.getColumnIndexOrThrow("name")
@@ -291,6 +292,38 @@ class DashDatabaseTest {
             }
         }
         assertTrue(found)
+    }
+
+    @Test
+    fun shouldHaveNullableDashPayBackfillColumnsOnWallets() = runTest {
+        // Version 15 (14 → 15): all three nullable with no default, so a
+        // legacy row reads back as "no record" and native rewinds once.
+        val expected = mapOf(
+            "dashPayBackfillFloor" to "INTEGER",
+            "dashPayBackfillRewoundFrom" to "INTEGER",
+            "dashPayBackfillCovered" to "BLOB",
+        )
+        val found = mutableMapOf<String, String>()
+        db.openHelper.readableDatabase.query("PRAGMA table_info('wallets')").use { c ->
+            val name = c.getColumnIndexOrThrow("name")
+            val type = c.getColumnIndexOrThrow("type")
+            val notNull = c.getColumnIndexOrThrow("notnull")
+            val default = c.getColumnIndexOrThrow("dflt_value")
+            while (c.moveToNext()) {
+                val column = c.getString(name)
+                if (column !in expected) continue
+                found[column] = c.getString(type)
+                assertEquals(column, 0, c.getInt(notNull))
+                assertTrue(column, c.isNull(default))
+            }
+        }
+        assertEquals(expected, found)
+
+        db.walletDao().upsert(WalletEntity(walletId = walletId, networkRaw = 1))
+        val legacy = db.walletDao().getByWalletId(walletId)!!
+        assertNull(legacy.dashPayBackfillFloor)
+        assertNull(legacy.dashPayBackfillRewoundFrom)
+        assertNull(legacy.dashPayBackfillCovered)
     }
 
     @Test

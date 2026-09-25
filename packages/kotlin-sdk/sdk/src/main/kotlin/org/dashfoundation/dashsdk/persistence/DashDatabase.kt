@@ -161,9 +161,20 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * contract's `oncePerIdentityDistribution` block as JSON, so the claim
  * screen can offer the third distribution kind. NULL for every pre-existing
  * row; the next contract materialization fills it in.
+ *
+ * Version 15 (durable DashPay backfill, dashpay/platform#4302): adds the
+ * nullable `wallets.dashPayBackfillFloor`, `wallets.dashPayBackfillRewoundFrom`
+ * and `wallets.dashPayBackfillCovered` columns — the record native writes
+ * through `onWalletChangesetDashPayBackfill` on the same round as the lowered
+ * `syncedHeight` it belongs with, and reads back on `loadWalletList`. The
+ * contact rescan used to guard against re-lowering the cursor in memory only,
+ * while the cursor it lowers is durable, so every fresh process rewound again
+ * and re-walked every filter from the earliest contact's core height. All
+ * three NULL (every pre-migration row) means no record: native rewinds once
+ * more, writes one, and never again for the contacts it covers.
  */
 @Database(
-    version = 14,
+    version = 15,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -680,6 +691,21 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v14 -> v15: additive nullable `wallets.dashPayBackfillFloor`,
+         * `wallets.dashPayBackfillRewoundFrom` and
+         * `wallets.dashPayBackfillCovered`, see the version-15 class doc
+         * above. NULL for every pre-existing row — no record on file, so the
+         * next rescan sweep behaves exactly as before and writes one.
+         */
+        val MIGRATION_14_15: Migration = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `wallets` ADD COLUMN `dashPayBackfillFloor` INTEGER")
+                db.execSQL("ALTER TABLE `wallets` ADD COLUMN `dashPayBackfillRewoundFrom` INTEGER")
+                db.execSQL("ALTER TABLE `wallets` ADD COLUMN `dashPayBackfillCovered` BLOB")
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -701,6 +727,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_11_12,
                     MIGRATION_12_13,
                     MIGRATION_13_14,
+                    MIGRATION_14_15,
                 )
                 .build()
 

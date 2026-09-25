@@ -6727,6 +6727,156 @@ class PlatformWalletPersistenceHandlerTest {
         chainLockHeightRound(handler, 600)
         assertEquals(600, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
     }
+    /** One packed cover-set entry: owner id ‖ contact id ‖ covered-from (LE u32). */
+    private fun backfillEntry(owner: Byte, contact: Byte, coveredFrom: Int): ByteArray =
+        ByteArray(32) { owner } + ByteArray(32) { contact } + byteArrayOf(
+            (coveredFrom and 0xFF).toByte(),
+            ((coveredFrom shr 8) and 0xFF).toByte(),
+            ((coveredFrom shr 16) and 0xFF).toByte(),
+            ((coveredFrom shr 24) and 0xFF).toByte(),
+        )
+
+    /**
+     * dashpay/platform#4302: the DashPay backfill record is a whole-record
+     * replace of the three `wallets.dashPayBackfill*` columns, written on
+     * the same round as the lowered `syncedHeight` the rescan carries. A
+     * later record replaces the earlier one outright — a contact the new
+     * record no longer lists is gone, never merged back — and the cover set
+     * is stored byte-for-byte so native reads back exactly what it wrote.
+     */
+    @Test
+    fun onWalletChangesetDashPayBackfillReplacesTheRecordOnTheWalletRow() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val row = db.walletDao().getByWalletId(walletId)!!
+        assertNull("no record until the slot fires", row.dashPayBackfillFloor)
+        assertNull(row.dashPayBackfillRewoundFrom)
+        assertNull(row.dashPayBackfillCovered)
+
+        val first = backfillEntry(1, 2, 2_167_092) + backfillEntry(1, 3, 2_300_000)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetHeader(
+            walletId = walletId,
+            hasSyncedHeight = true,
+            syncedHeight = 2_167_092,
+            hasBalance = false,
+            confirmedDelta = 0,
+            unconfirmedDelta = 0,
+            immatureDelta = 0,
+            lockedDelta = 0,
+            lastAppliedChainLockBytes = ByteArray(0),
+        )
+        assertEquals(
+            0,
+            handler.onWalletChangesetDashPayBackfill(walletId, 2_167_092, 2_537_092, first, 2),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val stored = db.walletDao().getByWalletId(walletId)!!
+        assertEquals("the lowered cursor lands with the record", 2_167_092, stored.syncedHeight)
+        assertEquals(2_167_092, stored.dashPayBackfillFloor)
+        assertEquals(2_537_092, stored.dashPayBackfillRewoundFrom)
+        assertTrue(first.contentEquals(stored.dashPayBackfillCovered))
+
+        // A later record replaces the whole cover set.
+        val second = backfillEntry(1, 2, 2_167_092)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetDashPayBackfill(walletId, 2_100_000, 2_600_000, second, 1)
+        handler.onChangesetEnd(walletId, success = true)
+        val replaced = db.walletDao().getByWalletId(walletId)!!
+        assertEquals(2_100_000, replaced.dashPayBackfillFloor)
+        assertEquals(2_600_000, replaced.dashPayBackfillRewoundFrom)
+        assertTrue(second.contentEquals(replaced.dashPayBackfillCovered))
+        assertEquals("sibling columns are untouched", 2_167_092, replaced.syncedHeight)
+    }
+
+    /**
+     * The record vouches for the cursor written in its round, so a round
+     * that rolls back must take the record with it: a persisted record over
+     * a cursor still at its high-water would tell native the backfill
+     * resumed when it never started — the lossy direction. A malformed cover
+     * set (not a whole number of 68-byte entries) is refused outright.
+     */
+    @Test
+    fun onWalletChangesetDashPayBackfillRollsBackWithItsRoundAndRefusesATornCoverSet() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetHeader(
+            walletId = walletId,
+            hasSyncedHeight = true,
+            syncedHeight = 2_537_092,
+            hasBalance = false,
+            confirmedDelta = 0,
+            unconfirmedDelta = 0,
+            immatureDelta = 0,
+            lockedDelta = 0,
+            lastAppliedChainLockBytes = ByteArray(0),
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetHeader(
+            walletId = walletId,
+            hasSyncedHeight = true,
+            syncedHeight = 2_167_092,
+            hasBalance = false,
+            confirmedDelta = 0,
+            unconfirmedDelta = 0,
+            immatureDelta = 0,
+            lockedDelta = 0,
+            lastAppliedChainLockBytes = ByteArray(0),
+        )
+        handler.onWalletChangesetDashPayBackfill(
+            walletId, 2_167_092, 2_537_092, backfillEntry(1, 2, 2_167_092), 1,
+        )
+        handler.onChangesetEnd(walletId, success = false)
+
+        val row = db.walletDao().getByWalletId(walletId)!!
+        assertEquals("the rolled-back cursor stays at its committed value", 2_537_092, row.syncedHeight)
+        assertNull("the rolled-back record never lands", row.dashPayBackfillFloor)
+        assertNull(row.dashPayBackfillRewoundFrom)
+        assertNull(row.dashPayBackfillCovered)
+
+        handler.onChangesetBegin(walletId)
+        val rc = handler.onWalletChangesetDashPayBackfill(
+            walletId, 2_167_092, 2_537_092, backfillEntry(1, 2, 2_167_092).copyOf(67), 1,
+        )
+        handler.onChangesetEnd(walletId, success = rc == 0)
+        assertTrue("a torn cover set is refused", rc != 0)
+        assertNull(db.walletDao().getByWalletId(walletId)!!.dashPayBackfillFloor)
+    }
+
+    /**
+     * The restore side of dashpay/platform#4302: a stored record comes back
+     * on `loadWalletList` exactly as written, and a wallet with no record
+     * (every pre-migration row) reports none, so native rewinds once for it
+     * as it always did.
+     */
+    @Test
+    fun loadWalletListRoundTripsTheDashPayBackfillRecord() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+
+        val before = handler.onLoadWalletList().single()
+        assertFalse("no record on a fresh wallet", before.hasDashPayBackfill)
+        assertEquals(0, before.dashPayBackfillFloor)
+        assertEquals(0, before.dashPayBackfillRewoundFrom)
+        assertEquals(0, before.dashPayBackfillCovered.size)
+
+        val covered = backfillEntry(1, 2, 2_167_092) + backfillEntry(1, 3, 2_300_000)
+        handler.onChangesetBegin(walletId)
+        handler.onWalletChangesetDashPayBackfill(walletId, 2_167_092, 2_537_092, covered, 2)
+        handler.onChangesetEnd(walletId, success = true)
+
+        val after = handler.onLoadWalletList().single()
+        assertTrue(after.hasDashPayBackfill)
+        assertEquals(2_167_092, after.dashPayBackfillFloor)
+        assertEquals(2_537_092, after.dashPayBackfillRewoundFrom)
+        assertTrue(covered.contentEquals(after.dashPayBackfillCovered))
+    }
+
 }
 
 /**
