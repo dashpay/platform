@@ -3,7 +3,6 @@ mod action_validation;
 mod advanced_structure;
 mod data_triggers;
 mod identity_contract_nonce;
-mod is_allowed;
 mod state;
 mod transformer;
 
