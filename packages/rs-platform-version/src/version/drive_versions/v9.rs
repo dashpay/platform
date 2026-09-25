@@ -123,7 +123,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4, // changed: document_from_action generation 1 stamps built documents with the contract version (create assigns, replace re-assigns; paired with document serialization format 3)
         batch_operations: DriveBatchOperationsMethodVersion {
             convert_drive_operations_to_grove_operations: 0,
-            apply_drive_operations: 1, // changed: a batch carrying a storage refund forfeiture (a moderator's document deletion) refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch is merged into one, and a batch writing one token balance or supply twice is refused
+            apply_drive_operations: 1, // changed: a batch carrying a storage refund forfeiture (a moderator's document deletion) refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch is merged into one, a batch writing one token balance or supply twice is refused, and repaid identity debt goes to the processing fee pool
         },
         platform_state: DrivePlatformStateMethodVersions {
             fetch_platform_state_bytes: 0,

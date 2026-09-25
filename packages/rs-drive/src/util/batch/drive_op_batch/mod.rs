@@ -376,11 +376,24 @@ impl DriveOperation<'_> {
     /// of the first one on its key, and a balance or pot the writes leave as it was gets none.
     /// A key written once keeps its operation untouched.
     pub fn merge_balance_writes(operations: Vec<Self>) -> Result<Vec<Self>, Error> {
+        // Most batches make at most one such write: nothing to merge, and no map to build.
+        if operations
+            .iter()
+            .filter(|operation| balance_write(operation).is_some())
+            .nth(1)
+            .is_none()
+        {
+            return Ok(operations);
+        }
         let mut writes: BTreeMap<BalanceKey, (usize, i128)> = BTreeMap::new();
         for (key, change) in operations.iter().filter_map(balance_write) {
             let (count, net) = writes.entry(key).or_default();
             *count += 1;
-            *net += change;
+            *net = net
+                .checked_add(change)
+                .ok_or(Error::Fee(FeeError::Overflow(
+                    "the writes one batch makes to one balance overflow",
+                )))?;
         }
         if writes.values().all(|(count, _)| *count == 1) {
             return Ok(operations);

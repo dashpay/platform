@@ -1128,6 +1128,29 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     but the four
 ///     new Drive method slots, `0` at every version.
 ///
+/// 42. **Repaid identity debt reaches the processing fee pool**: an identity
+///     whose fee the balance could not fully cover keeps the unpaid processing
+///     part as a debt (its negative credit balance), and credits it receives
+///     while its balance is empty still repay that debt first. The repaid part
+///     now goes to the processing fee pool of the epoch it is repaid in, where
+///     the unpaid fee would have gone; before, it reached no balance the credit
+///     sum counts. `add_to_identity_balance` 1 marks it with a
+///     `LowLevelDriveOperation::RepaidIdentityDebt`, and every apply routes it:
+///     `apply_drive_operations` 1 writes it to the pool after the batch (so it
+///     adds to the end of block fee distribution the same batch may write,
+///     unbilled), `apply_balance_change_from_fee_to_identity` 1, which now takes
+///     the block info, writes it in its own batch (the fee paid is unchanged),
+///     and `add_epoch_pool_to_proposers_payout_operations` 1 hands the epoch
+///     payouts to the block's `apply_drive_operations` instead of converting
+///     them to a plain grove batch, skips a share whose `payToId` has no
+///     balance and caps each share at what is left of its masternode's payout.
+///     An apply that meets one it does not route fails (`CorruptedCodeExecution`)
+///     instead of dropping it. `apply_drive_operations` 1 also merges every
+///     credit and debit one batch makes to an identity's balance into one net
+///     write: each converts against the balance committed before the batch, so
+///     a second write replaced the first and two credits to an indebted
+///     identity repaid its debt twice.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -1192,7 +1215,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit

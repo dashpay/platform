@@ -57,6 +57,16 @@ impl Drive {
     /// no balance and lets a merged removal take up to the largest balance there can be; fee
     /// validation estimates for the payer it settles on, and refuses an identity that cannot
     /// fund what it owes before estimating, so no merged removal it estimates takes more.
+    ///
+    /// Credits the batch adds to an identity that repay its debt
+    /// ([`LowLevelDriveOperation::RepaidIdentityDebt`], from `add_to_identity_balance_operations`
+    /// 1) go to the processing fee pool of the block's epoch once the batch applied: the debt
+    /// stood for processing fees that never reached a pool, and otherwise the credits would
+    /// reach no balance the credit sum counts. The pool write reads the state the batch left,
+    /// so it adds to a pool write the batch made itself (the fee distribution at the end of a
+    /// block) instead of racing it, and it is not billed. An estimate reads no debt and repays
+    /// none. The balance writes are merged before the batch is converted, so two credits to an
+    /// indebted identity repay its debt once, as one net credit.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v1(
         &self,
@@ -117,6 +127,9 @@ impl Drive {
             );
         }
 
+        let repaid_identity_debt =
+            LowLevelDriveOperation::take_repaid_identity_debt(&mut low_level_operations)?;
+
         let mut cost_operations = vec![];
 
         self.apply_batch_low_level_drive_operations(
@@ -125,6 +138,12 @@ impl Drive {
             low_level_operations,
             &mut cost_operations,
             &platform_version.drive,
+        )?;
+        self.apply_repaid_identity_debt_to_processing_pool(
+            repaid_identity_debt,
+            &block_info.epoch,
+            transaction,
+            platform_version,
         )?;
         if let Some(owned_transaction) = owned_transaction {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
