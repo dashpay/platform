@@ -27,7 +27,10 @@ mod token_selling_tests {
             // PROTOCOL_VERSION_14: 27_400 credits more in fees — genesis system
             // documents now carry the contract-version stamp, shifting
             // byte-billed subtree reads
-            699_868_045_440, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            // +740 per document write from protocol version 14: the contract's version item is
+            // one more node to rehash. +8_420 from direct purchase state validation 1, which
+            // reads the total supply even though the token sets no max supply.
+            699_868_037_020,
         )
         .await;
     }
