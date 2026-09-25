@@ -1,6 +1,7 @@
-use crate::util::batch::DriveOperation;
+use crate::util::batch::{DriveOperation, IdentityOperationType};
 
 use crate::drive::Drive;
+use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
@@ -17,7 +18,8 @@ use crate::util::batch::drive_op_batch::finalize_task::{
     DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
-use std::collections::HashMap;
+use dpp::fee::Credits;
+use std::collections::{BTreeMap, HashMap};
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
@@ -51,7 +53,10 @@ impl Drive {
     /// reach no balance the credit sum counts. The pool write reads the state the batch left,
     /// so it adds to a pool write the batch made itself (the fee distribution at the end of a
     /// block) instead of racing it, and it is not billed. An estimate reads no debt and repays
-    /// none.
+    /// none. Every credit the batch makes to one identity is merged into one first
+    /// ([`merge_identity_credits`]): each is converted against the balance and debt committed
+    /// before the batch, so two credits to an indebted identity would both repay the same debt,
+    /// and the later balance write would replace the earlier one.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v1(
         &self,
@@ -62,6 +67,7 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
+        let operations = merge_identity_credits(operations)?;
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
@@ -164,6 +170,66 @@ impl Drive {
             previous_fee_versions,
         )
     }
+}
+
+/// Merges every `AddToIdentityBalance` of one identity in `operations` into one crediting their
+/// sum, in the place of the first. A batch that credits each identity once is returned as it
+/// is. Each credit is converted against the balance and debt committed before the batch, and a
+/// batch keeps only the last write of a key, so unmerged, two credits to one identity would keep
+/// only the later balance write, and to an indebted one would each report repaying the same
+/// debt. The merged credit repays it once, from the sum.
+fn merge_identity_credits(
+    operations: Vec<DriveOperation<'_>>,
+) -> Result<Vec<DriveOperation<'_>>, Error> {
+    let mut credits: BTreeMap<[u8; 32], (usize, Credits)> = BTreeMap::new();
+    for operation in &operations {
+        if let DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
+            identity_id,
+            added_balance,
+        }) = operation
+        {
+            let (count, total) = credits.entry(*identity_id).or_default();
+            *count += 1;
+            *total = total
+                .checked_add(*added_balance)
+                .ok_or(Error::Fee(FeeError::Overflow(
+                    "the credits one batch makes to an identity overflow",
+                )))?;
+        }
+    }
+    if credits.values().all(|(count, _)| *count == 1) {
+        return Ok(operations);
+    }
+    let mut merged = Vec::with_capacity(operations.len());
+    for operation in operations {
+        let credited = match &operation {
+            DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
+                identity_id,
+                ..
+            }) => Some(*identity_id),
+            _ => None,
+        };
+        let Some(identity_id) = credited else {
+            merged.push(operation);
+            continue;
+        };
+        match credits.get_mut(&identity_id) {
+            Some((1, _)) => merged.push(operation),
+            // The first credit of an identity credited more than once: the merged one goes
+            // here, and the entry is marked done so the later ones are dropped
+            Some((count, total)) if *count > 1 => {
+                merged.push(DriveOperation::IdentityOperation(
+                    IdentityOperationType::AddToIdentityBalance {
+                        identity_id,
+                        added_balance: *total,
+                    },
+                ));
+                *count = 0;
+            }
+            _ => {}
+        }
+    }
+    Ok(merged)
 }
 
 /// Turns every removal attributed to an identity into a removal attributed to nobody: the same

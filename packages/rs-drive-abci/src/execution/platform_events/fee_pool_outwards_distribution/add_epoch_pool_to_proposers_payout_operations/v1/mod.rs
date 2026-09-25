@@ -186,12 +186,26 @@ mod tests {
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::DataContract;
+        use dpp::document::{Document, DocumentV0, INITIAL_REVISION};
+        use dpp::platform_value::Value;
+        use dpp::system_data_contracts::masternode_reward_shares_contract::v1::document_types;
         use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
         use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::util::batch::GroveDbOpBatch;
-        use drive::util::test_helpers::test_utils::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+        use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+        use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+        use drive::util::storage_flags::StorageFlags;
+        use drive::util::test_helpers::test_utils::identities::{
+            create_test_identity,
+            create_test_masternode_identities_and_add_them_as_epoch_block_proposers,
+        };
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
+        use std::borrow::Cow;
 
         #[test]
         fn should_pay_proposers_and_shares_and_credit_a_repaid_debt_to_the_block_epochs_pool() {
@@ -385,6 +399,223 @@ mod tests {
             }
 
             // The repaid part reached the processing fee pool of the block's epoch
+            let next_epoch_processing_fees = platform
+                .drive
+                .get_epoch_processing_credits_for_distribution(
+                    &next_epoch_tree,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the next epoch's processing fees");
+            assert_eq!(next_epoch_processing_fees, owed);
+        }
+
+        /// Writes a reward share of `masternode` paying `percentage` (of 10000) to `pay_to`
+        fn insert_reward_share(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            contract: &DataContract,
+            masternode: [u8; 32],
+            pay_to: [u8; 32],
+            percentage: u16,
+            transaction: &Transaction,
+            platform_version: &PlatformVersion,
+        ) {
+            let document: Document = DocumentV0 {
+                id: Identifier::random(),
+                owner_id: Identifier::new(masternode),
+                properties: BTreeMap::from([
+                    ("payToId".to_string(), Value::Bytes(pay_to.to_vec())),
+                    ("percentage".to_string(), percentage.into()),
+                ]),
+                revision: Some(INITIAL_REVISION),
+                ..Default::default()
+            }
+            .into();
+            let document_type = contract
+                .document_type_for_name(document_types::reward_share::NAME)
+                .expect("expected the reward share document type");
+            platform
+                .drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                &document,
+                                Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
+                            )),
+                            owner_id: None,
+                        },
+                        contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::genesis(),
+                    true,
+                    Some(transaction),
+                    platform_version,
+                    None,
+                )
+                .expect("expected to insert the reward share");
+        }
+
+        #[test]
+        fn should_repay_a_shared_recipients_debt_once_from_every_share_one_payout_pays_it() {
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let platform_read_guard = platform.state.load();
+            let platform_version = platform_read_guard
+                .current_platform_version()
+                .expect("platform_version");
+            let transaction = platform.drive.grove.start_transaction();
+
+            let contract = platform.create_mn_shares_contract(Some(&transaction), platform_version);
+
+            let proposers_count = 2u16;
+            let processing_fees = 10000;
+            let storage_fees = 10000;
+
+            let unpaid_epoch_tree = Epoch::new(0).unwrap();
+            let next_epoch_tree = Epoch::new(1).unwrap();
+
+            let mut batch = GroveDbOpBatch::new();
+            unpaid_epoch_tree.add_init_current_operations(
+                platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected a fee multiplier"),
+                1,
+                1,
+                1,
+                platform_version.protocol_version,
+                &mut batch,
+            );
+            batch.push(
+                unpaid_epoch_tree
+                    .update_processing_fee_pool_operation(processing_fees)
+                    .expect("should add operation"),
+            );
+            batch.push(
+                unpaid_epoch_tree
+                    .update_storage_fee_pool_operation(storage_fees)
+                    .expect("should add operation"),
+            );
+            next_epoch_tree.add_init_current_operations(
+                platform_version
+                    .fee_version
+                    .uses_version_fee_multiplier_permille
+                    .expect("expected a fee multiplier"),
+                proposers_count as u64 + 1,
+                1,
+                10,
+                platform_version.protocol_version,
+                &mut batch,
+            );
+            platform
+                .drive
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+                .expect("should apply batch");
+
+            let pro_tx_hashes =
+                create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
+                    &platform.drive,
+                    &unpaid_epoch_tree,
+                    proposers_count,
+                    Some(68),
+                    Some(&transaction),
+                    platform_version,
+                );
+
+            // Both masternodes pay half their reward to the same recipient, who owes 7 credits.
+            // A masternode's payout reads one reward share, so the recipient is paid once by each
+            let shared_recipient = create_test_identity(
+                &platform.drive,
+                [7; 32],
+                Some(7),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected the shared recipient")
+            .id()
+            .to_buffer();
+            for masternode in &pro_tx_hashes {
+                insert_reward_share(
+                    &platform,
+                    &contract,
+                    *masternode,
+                    shared_recipient,
+                    5000,
+                    &transaction,
+                    platform_version,
+                );
+            }
+            let owed = 7;
+            let debt_operation = platform
+                .drive
+                .update_identity_negative_credit_operation(shared_recipient, owed, platform_version)
+                .expect("expected a debt operation");
+            platform
+                .drive
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    Some(&transaction),
+                    vec![debt_operation],
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("expected to store the debt");
+
+            let unpaid_epoch = UnpaidEpochV0 {
+                epoch_index: 0,
+                start_block_height: 1,
+                // One block per proposer, so each masternode's reward is its share of the epoch
+                next_epoch_start_block_height: 1 + proposers_count as u64,
+                start_block_core_height: 1,
+                next_unpaid_epoch_index: 0,
+                next_epoch_start_block_core_height: 1,
+                epoch_start_time: 0,
+                protocol_version: platform_version.protocol_version,
+                fee_multiplier: 0,
+            };
+
+            let mut batch = vec![];
+            platform
+                .add_epoch_pool_to_proposers_payout_operations_v1(
+                    &unpaid_epoch.into(),
+                    0,
+                    &transaction,
+                    &mut batch,
+                    platform_version,
+                )
+                .expect("should distribute fees");
+
+            platform
+                .drive
+                .apply_drive_operations(
+                    batch,
+                    true,
+                    &BlockInfo::default_with_epoch(next_epoch_tree),
+                    Some(&transaction),
+                    platform_version,
+                    None,
+                )
+                .expect("should apply batch");
+
+            // Each masternode proposed one of the epoch's two blocks, so its reward is half the
+            // pools, and its share half of that
+            let share = (storage_fees + processing_fees) / proposers_count as u64 / 2;
+            let shared_recipient_balance = platform
+                .drive
+                .fetch_identity_balance_include_debt(
+                    shared_recipient,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected the balance")
+                .expect("expected the identity");
+            assert_eq!(shared_recipient_balance, (2 * share - owed) as i64);
+
             let next_epoch_processing_fees = platform
                 .drive
                 .get_epoch_processing_credits_for_distribution(
