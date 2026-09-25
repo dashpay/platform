@@ -1266,14 +1266,30 @@ mod action_fee_tests {
         })
     }
 
-    /// What the contract owner asks for the card they put up for sale: 0.01 Dash
+    /// What the seller asks for the card they put up for sale: 0.01 Dash
     const CARD_PRICE: Credits = 1_000_000_000;
 
-    /// The card game of the sponsorship tests with a card the contract owner created and put
-    /// up for sale, committed so that check tx sees it, and the card as a purchase of it
-    /// carries it. A purchase charges an action fee of `owner_part` and `MODERATORS_PART` to
-    /// whoever pays the gas, and its token cost offers that the contract owner pays it.
-    async fn card_for_sale(owner_part: Credits) -> (Sponsorship, Document) {
+    /// Who creates the card and puts it up for sale
+    #[derive(Clone, Copy)]
+    enum Seller {
+        ContractOwner,
+        User,
+    }
+
+    /// A purchase fee of `owner_part` for the contract owner and `MODERATORS_PART` for the
+    /// moderation team
+    fn purchase_fee(owner_part: Credits) -> Value {
+        platform_value!({
+            "pricing": "fixed",
+            "purchase": {"owner": owner_part, "moderators": MODERATORS_PART},
+        })
+    }
+
+    /// The card game of the sponsorship tests with a card `seller` created and put up for
+    /// sale, committed so that check tx sees it, and the card as a purchase of it carries it.
+    /// A purchase charges `purchase_fee` to whoever pays the gas, and its token cost offers
+    /// that the contract owner pays it.
+    async fn card_for_sale(seller: Seller, purchase_fee: Value) -> (Sponsorship, Document) {
         let setup = Sponsorship::build_customized(
             PlatformVersion::latest(),
             GasFeesPaidBy::DocumentOwner,
@@ -1297,24 +1313,27 @@ mod action_fee_tests {
                     .expect("expected the purchase token cost to be set")
                     .set_value("gasFeesPaidBy", offered.into())
                     .expect("expected to offer that the contract owner pays the gas");
-                declare_action_fees(
-                    contract,
-                    "card",
-                    platform_value!({
-                        "pricing": "fixed",
-                        "purchase": {"owner": owner_part, "moderators": MODERATORS_PART},
-                    }),
-                    true,
-                );
+                declare_action_fees(contract, "card", purchase_fee, true);
             },
         );
-        // The contract owner pays for their card in gold and for its price in the second
-        // token, like anybody else.
-        add_tokens_to_identity_in(&setup, 15);
+        let (seller, seller_key, seller_signer) = match seller {
+            Seller::ContractOwner => {
+                // The contract owner pays for their card in gold like anybody else; the user
+                // holds gold from the start.
+                add_tokens_to_identity_in(&setup, 15);
+                (
+                    &setup.contract_owner,
+                    &setup.contract_owner_key,
+                    &setup.contract_owner_signer,
+                )
+            }
+            Seller::User => (&setup.user, &setup.user_key, &setup.user_signer),
+        };
+        // The price costs the second token.
         add_tokens_to_identity(
             &setup.platform,
             calculate_token_id(setup.contract.id().as_bytes(), 1).into(),
-            setup.contract_owner.id(),
+            seller.id(),
             1,
         );
         let card_type = setup
@@ -1324,16 +1343,21 @@ mod action_fee_tests {
 
         let tx = setup.platform.drive.grove.start_transaction();
         let creation = setup
-            .card_creation_by_the_contract_owner(GasFeesPaidBy::DocumentOwner)
+            .card_creation_by(
+                seller,
+                seller_key,
+                seller_signer,
+                Some(GasFeesPaidBy::DocumentOwner),
+            )
             .await;
         assert_matches!(setup.process(&creation, &tx), SuccessfulExecution { .. });
-        let (mut card, _) = setup.card_of(&setup.contract_owner);
+        let (mut card, _) = setup.card_of(seller);
         card.bump_revision();
         let price_update = BatchTransition::new_document_update_price_transition_from_document(
             card.clone(),
             card_type,
             CARD_PRICE,
-            &setup.contract_owner_key,
+            seller_key,
             3,
             0,
             Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
@@ -1343,7 +1367,7 @@ mod action_fee_tests {
                 maximum_token_cost: Some(1),
                 gas_fees_paid_by: GasFeesPaidBy::DocumentOwner,
             })),
-            &setup.contract_owner_signer,
+            seller_signer,
             setup.platform_version,
             None,
         )
@@ -1370,6 +1394,23 @@ mod action_fee_tests {
         card: Document,
         requested: GasFeesPaidBy,
     ) -> StateTransition {
+        purchase_by(
+            setup,
+            card,
+            (&setup.user, &setup.user_key, &setup.user_signer),
+            requested,
+        )
+        .await
+    }
+
+    /// `buyer`'s purchase of `card`, with their first identity contract nonce, asking
+    /// `requested` for the gas
+    async fn purchase_by(
+        setup: &Sponsorship,
+        card: Document,
+        (buyer, buyer_key, buyer_signer): (&Identity, &IdentityPublicKey, &SimpleSigner),
+        requested: GasFeesPaidBy,
+    ) -> StateTransition {
         let card_type = setup
             .contract
             .document_type_for_name("card")
@@ -1377,9 +1418,9 @@ mod action_fee_tests {
         BatchTransition::new_document_purchase_transition_from_document(
             card,
             card_type,
-            setup.user.id(),
+            buyer.id(),
             CARD_PRICE,
-            &setup.user_key,
+            buyer_key,
             2,
             0,
             Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
@@ -1389,7 +1430,7 @@ mod action_fee_tests {
                 maximum_token_cost: Some(3),
                 gas_fees_paid_by: requested,
             })),
-            &setup.user_signer,
+            buyer_signer,
             setup.platform_version,
             agreeing_to(card_type, DocumentTransitionActionType::Purchase),
         )
@@ -1401,7 +1442,7 @@ mod action_fee_tests {
     /// action fee leaves the same balance: the buyer pays both, and the credits only move.
     #[tokio::test]
     async fn should_charge_the_buyer_both_the_price_and_the_purchase_fee() {
-        let (setup, card) = card_for_sale(OWNER_PART).await;
+        let (setup, card) = card_for_sale(Seller::ContractOwner, purchase_fee(OWNER_PART)).await;
         let purchase = purchase_of(&setup, card, GasFeesPaidBy::DocumentOwner).await;
         assert_check_tx_valid_at_all_levels(
             &setup.platform,
@@ -1461,13 +1502,167 @@ mod action_fee_tests {
         purchase_from_a_seller_who_sponsors_the_gas(MAX_CREDITS - MODERATORS_PART - 1).await;
     }
 
+    /// The gas fee validation estimates for `transition` when a block executes it, and whether
+    /// the contract owner paid it, read off an execution in a transaction that is then thrown
+    /// away. Check tx estimates differently: it does not run a batch's state validation.
+    fn estimated_at_execution(
+        setup: &Sponsorship,
+        transition: &StateTransition,
+    ) -> (Credits, bool) {
+        let tx = setup.platform.drive.grove.start_transaction();
+        let owner_before = setup.credits(&setup.contract_owner, &tx);
+        match setup.process(transition, &tx) {
+            SuccessfulExecution {
+                estimated_fees: Some(estimated_fees),
+                ..
+            } => (
+                estimated_fees.total_base_fee(),
+                setup.credits(&setup.contract_owner, &tx) < owner_before,
+            ),
+            other => panic!("expected an execution with an estimated fee, got {other:?}"),
+        }
+    }
+
+    /// Takes `credits` out of the contract owner's committed balance
+    fn take_from_the_contract_owner(setup: &Sponsorship, credits: Credits) {
+        setup
+            .platform
+            .drive
+            .remove_from_identity_balance(
+                setup.contract_owner.id().to_buffer(),
+                credits,
+                &BlockInfo::default(),
+                true,
+                None,
+                setup.platform_version,
+                None,
+            )
+            .expect("expected to take credits from the contract owner");
+    }
+
+    /// Execution asks `gas_sponsor_pays` again on the estimate fee validation returns. A
+    /// purchase from a third party that owes only a moderators part is estimated lower with the
+    /// buyer paying, whose fee merges into the price leaving them, than with the sponsor paying,
+    /// whose fee is a write of its own. A sponsor one credit short of their own estimate is
+    /// passed over by fee validation, which then returns the sponsor's estimate rather than the
+    /// buyer's lower one the sponsor would cover, so execution passes them over too and charges
+    /// the buyer.
+    #[tokio::test]
+    async fn should_return_the_passed_over_sponsors_estimate_when_it_exceeds_the_buyers() {
+        let (mut setup, card) = card_for_sale(
+            Seller::User,
+            platform_value!({
+                "pricing": "fixed",
+                "purchase": {"moderators": MODERATORS_PART},
+            }),
+        )
+        .await;
+        let (buyer, buyer_signer, buyer_key) =
+            setup_identity(&mut setup.platform, 777, dash_to_credits!(0.1));
+        add_tokens_to_identity(
+            &setup.platform,
+            calculate_token_id(setup.contract.id().as_bytes(), 0).into(),
+            buyer.id(),
+            3,
+        );
+        let purchase = purchase_by(
+            &setup,
+            card,
+            (&buyer, &buyer_key, &buyer_signer),
+            GasFeesPaidBy::PreferContractOwner,
+        )
+        .await;
+
+        // Settle the contract owner on a balance that covers the gas estimated with them paying
+        // and the moderators part with nothing to spare. That gas includes reading their
+        // balance, which costs less as the balance shrinks, so it is estimated again at each
+        // balance left, with the owner paying, until the two agree.
+        let mut owner_balance = {
+            let tx = setup.platform.drive.grove.start_transaction();
+            setup.credits(&setup.contract_owner, &tx)
+        };
+        let mut sponsor_estimate = None;
+        for _ in 0..5 {
+            let (estimate, sponsor_paid) = estimated_at_execution(&setup, &purchase);
+            assert!(
+                sponsor_paid,
+                "expected the contract owner to pay with {owner_balance}"
+            );
+            let just_enough = estimate + MODERATORS_PART;
+            if just_enough == owner_balance {
+                sponsor_estimate = Some(estimate);
+                break;
+            }
+            take_from_the_contract_owner(&setup, owner_balance - just_enough);
+            owner_balance = just_enough;
+        }
+        let sponsor_estimate =
+            sponsor_estimate.expect("expected the contract owner's balance to settle");
+        // One credit less, and the owner falls short of paying.
+        take_from_the_contract_owner(&setup, 1);
+        let short_of_paying = owner_balance - 1;
+        assert_check_tx_valid_at_all_levels(
+            &setup.platform,
+            &purchase
+                .serialize_to_bytes()
+                .expect("expected to serialize"),
+            "a purchase whose preferred sponsor falls one credit short",
+        );
+
+        let tx = setup.platform.drive.grove.start_transaction();
+        let buyer_before = balance_of(&setup.platform, &buyer, &tx, setup.platform_version);
+        let seller_before = setup.credits(&setup.user, &tx);
+
+        let result = setup.process(&purchase, &tx);
+
+        let SuccessfulExecution {
+            fee_result,
+            estimated_fees,
+            ..
+        } = &result
+        else {
+            panic!("expected the purchase to execute, got {result:?}");
+        };
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            short_of_paying,
+            "the passed over sponsor pays nothing"
+        );
+        assert_eq!(
+            estimated_fees
+                .as_ref()
+                .map(|estimate| estimate.total_base_fee()),
+            Some(sponsor_estimate),
+            "fee validation returns the estimate the sponsor could not cover"
+        );
+        let gas = fee_result.total_base_fee();
+        let refunded_to_seller = fee_result
+            .fee_refunds
+            .calculate_refunds_amount_for_identity(setup.user.id())
+            .unwrap_or_default();
+        assert_eq!(
+            balance_of(&setup.platform, &buyer, &tx, setup.platform_version),
+            buyer_before - CARD_PRICE - MODERATORS_PART - gas,
+            "the buyer pays the price, the fee and the gas"
+        );
+        assert_eq!(
+            setup.credits(&setup.user, &tx),
+            seller_before + CARD_PRICE + refunded_to_seller
+        );
+        assert_eq!(pots(&setup, &tx), (0, MODERATORS_PART));
+    }
+
     /// A buyer who pays the gas owes the price and the whole purchase fee, which fee validation
     /// knows without an estimate. When no balance could fund them, the purchase is refused
     /// unpaid for an insufficient balance before anything is estimated, rather than failing an
     /// estimate that would merge them into one removal no balance covers.
     #[tokio::test]
     async fn should_refuse_unpaid_a_buyer_who_cannot_fund_the_price_and_the_purchase_fee() {
-        let (setup, card) = card_for_sale(MAX_CREDITS - MODERATORS_PART - 1).await;
+        let (setup, card) = card_for_sale(
+            Seller::ContractOwner,
+            purchase_fee(MAX_CREDITS - MODERATORS_PART - 1),
+        )
+        .await;
         let purchase = purchase_of(&setup, card, GasFeesPaidBy::DocumentOwner).await;
         assert_eq!(
             setup.check_tx(&purchase),
@@ -1486,7 +1681,7 @@ mod action_fee_tests {
     /// The user buys the card for sale, with an owner part of `owner_part`, from the contract
     /// owner, who sponsors the gas; checks it through check tx and what execution moves
     async fn purchase_from_a_seller_who_sponsors_the_gas(owner_part: Credits) {
-        let (setup, card) = card_for_sale(owner_part).await;
+        let (setup, card) = card_for_sale(Seller::ContractOwner, purchase_fee(owner_part)).await;
         let purchase = purchase_of(&setup, card, GasFeesPaidBy::ContractOwner).await;
         assert_check_tx_valid_at_all_levels(
             &setup.platform,
