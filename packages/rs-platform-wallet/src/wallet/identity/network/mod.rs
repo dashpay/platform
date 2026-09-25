@@ -21,10 +21,14 @@
 
 // Core handle + identity-lifecycle operations.
 /// Page size for the per-identity DPNS username query. Matches Platform's
-/// maximum query limit (`drive::config::DEFAULT_MAX_QUERY_LIMIT`), so a
-/// shorter result is the identity's complete owned set and only a full page
-/// may be truncated — see `ManagedIdentity::apply_fetched_dpns_names`.
+/// maximum query limit (`drive::config::DEFAULT_MAX_QUERY_LIMIT`).
 pub(crate) const DPNS_USERNAMES_PAGE_LIMIT: u32 = 100;
+
+/// Pages read per identity before giving up on completeness. Paging ends as
+/// soon as a page comes back short (the complete owned set); reaching this
+/// bound means the result is only a lower bound and is merged, never used to
+/// drop names — see `ManagedIdentity::apply_fetched_dpns_names`.
+pub(crate) const DPNS_USERNAMES_MAX_PAGES: usize = 10;
 
 mod balance;
 mod contract;

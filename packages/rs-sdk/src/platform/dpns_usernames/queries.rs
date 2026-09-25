@@ -1,6 +1,7 @@
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::{Document, FetchMany};
 use crate::{Error, Sdk};
+use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
 use dpp::document::DocumentV0Getters;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
@@ -77,6 +78,61 @@ impl Sdk {
         }
 
         Ok(usernames)
+    }
+
+    /// Get every DPNS username associated with `identity_id`, paging through
+    /// the `records.identity` index `page_limit` documents at a time.
+    ///
+    /// Returns the usernames and whether the set is known to be complete:
+    /// `true` once a page comes back shorter than `page_limit`, `false` when
+    /// `max_pages` full pages were read without reaching the end (the caller
+    /// must then treat the result as a lower bound, not the owned set).
+    /// Documents that do not parse as DPNS domains are skipped, as in
+    /// [`Self::get_dpns_usernames_by_identity`].
+    pub async fn get_all_dpns_usernames_by_identity(
+        &self,
+        identity_id: Identifier,
+        page_limit: u32,
+        max_pages: usize,
+    ) -> Result<(Vec<DpnsUsername>, bool), Error> {
+        let dpns_contract = self.fetch_dpns_contract().await?;
+        let mut usernames = Vec::new();
+        let mut start_after: Option<Identifier> = None;
+        for _ in 0..max_pages {
+            let query = DocumentQuery {
+                select: drive::query::SelectProjection::documents(),
+                data_contract: dpns_contract.clone(),
+                document_type_name: "domain".to_string(),
+                where_clauses: vec![WhereClause {
+                    field: "records.identity".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(identity_id.to_buffer()),
+                }],
+                time_range_clauses: vec![],
+                sub_queries: vec![],
+                group_by: vec![],
+                having: vec![],
+                order_by_clauses: vec![],
+                limit: page_limit,
+                offset: None,
+                start: start_after.map(|id| Start::StartAfter(id.to_vec())),
+            };
+            let documents = Document::fetch_many(self, query).await?;
+            let page_len = documents.len();
+            let last_id = documents.keys().last().copied();
+            usernames.extend(
+                documents
+                    .into_values()
+                    .flatten()
+                    .filter_map(Self::document_to_dpns_username),
+            );
+            match next_dpns_page(page_len, page_limit, last_id) {
+                DpnsPageStep::Complete => return Ok((usernames, true)),
+                DpnsPageStep::Continue(cursor) => start_after = Some(cursor),
+                DpnsPageStep::Unknown => return Ok((usernames, false)),
+            }
+        }
+        Ok((usernames, false))
     }
 
     /// Check if a DPNS username is available
@@ -197,5 +253,54 @@ impl Sdk {
             owner_id: doc.owner_id(),
             records_identity_id,
         })
+    }
+}
+
+/// What to do after one page of a paged DPNS username query.
+#[derive(Debug, PartialEq, Eq)]
+enum DpnsPageStep {
+    /// A short page: the whole set has been read.
+    Complete,
+    /// A full page: continue after this document id.
+    Continue(Identifier),
+    /// A full page without a cursor: completeness cannot be established.
+    Unknown,
+}
+
+fn next_dpns_page(page_len: usize, page_limit: u32, last_id: Option<Identifier>) -> DpnsPageStep {
+    if page_len < page_limit as usize {
+        DpnsPageStep::Complete
+    } else if let Some(id) = last_id {
+        DpnsPageStep::Continue(id)
+    } else {
+        DpnsPageStep::Unknown
+    }
+}
+
+#[cfg(test)]
+mod paging_tests {
+    use super::*;
+
+    #[test]
+    fn a_short_page_completes_the_set() {
+        assert_eq!(next_dpns_page(0, 100, None), DpnsPageStep::Complete);
+        assert_eq!(
+            next_dpns_page(99, 100, Some(Identifier::from([1u8; 32]))),
+            DpnsPageStep::Complete
+        );
+    }
+
+    #[test]
+    fn a_full_page_continues_after_its_last_document() {
+        let last = Identifier::from([7u8; 32]);
+        assert_eq!(
+            next_dpns_page(100, 100, Some(last)),
+            DpnsPageStep::Continue(last)
+        );
+    }
+
+    #[test]
+    fn a_full_page_without_a_cursor_is_not_complete() {
+        assert_eq!(next_dpns_page(100, 100, None), DpnsPageStep::Unknown);
     }
 }

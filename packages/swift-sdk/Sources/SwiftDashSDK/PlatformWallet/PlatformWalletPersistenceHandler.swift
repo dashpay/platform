@@ -3789,9 +3789,35 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // before the in-memory list is whole), and resetting the pick on
         // one lost it for good. Readers skip a pick that is no longer owned
         // — see `PersistentIdentity.displayName`.
+        //
+        // A pick the snapshot omits and that has no row anywhere on the
+        // network (stored before rows existed) gets a not-owned row, so the
+        // omission is recorded instead of the pick being trusted as
+        // unhydrated. A later snapshot carrying the name owns the row again.
+        if let pick = identityRow.mainDpnsName, !pick.isEmpty,
+           let pickedLabel, !canonicalLabels.contains(pickedLabel) {
+            let pickDescriptor = FetchDescriptor<PersistentDPNSName>(
+                predicate: #Predicate {
+                    $0.networkRaw == networkRaw
+                        && $0.normalizedParentDomainName == normalizedParentDomainName
+                        && $0.normalizedLabel == pickedLabel
+                }
+            )
+            if ((try? backgroundContext.fetch(pickDescriptor)) ?? []).isEmpty {
+                let row = PersistentDPNSName(
+                    identity: identityRow,
+                    label: pick,
+                    parentDomainName: parentDomainName
+                )
+                row.isOwned = false
+                backgroundContext.insert(row)
+            }
+        }
+
+        // The SDK's own display cache: kept on an owned name, including when
+        // it was never set (a pick alone does not fill it).
         let fallbackLabel = names.first?.label
-        if let displayed = identityRow.dpnsName,
-           !canonicalLabels.contains(PersistentDPNSName.normalize(displayed)) {
+        if identityRow.dpnsName.map({ !canonicalLabels.contains(PersistentDPNSName.normalize($0)) }) ?? true {
             identityRow.dpnsName = fallbackLabel
         }
     }

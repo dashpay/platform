@@ -185,6 +185,50 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertEqual(reread.ownedMainDpnsName, "Alice")
     }
 
+    /// A departed pick with no display cache (`dpnsName` never set — a pick
+    /// alone does not fill it) still falls back to another owned name.
+    func testDisplayFallsBackToAnOwnedNameWhenTheDisplayCacheIsNil() throws {
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10), ("Bob", 20)])
+        let context = ModelContext(container)
+        XCTAssertTrue(PersistentIdentity.updateMainDpnsName(
+            in: context, identityId: ownerId, mainDpnsName: "Alice"))
+        try XCTUnwrap(PersistentIdentity.fetch(in: context, identityId: ownerId)).dpnsName = nil
+        try context.save()
+
+        applyIdentitySnapshot(id: ownerId, names: [("Bob", 20)])
+
+        let identity = try XCTUnwrap(PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        XCTAssertEqual(identity.mainDpnsName, "Alice")
+        XCTAssertNil(identity.ownedMainDpnsName)
+        XCTAssertEqual(identity.dpnsName, "Bob")
+        XCTAssertEqual(identity.displayName, "Bob")
+    }
+
+    /// A pick stored without any name row (older data) is not trusted as
+    /// unhydrated once an authoritative snapshot omits it, and comes back
+    /// when a snapshot carries it again.
+    func testScalarOnlyPickOmittedBySnapshotIsNotDisplayed() throws {
+        let context = ModelContext(container)
+        context.insert(PersistentIdentity(
+            identityId: ownerId,
+            isLocal: false,
+            mainDpnsName: "Alice",
+            network: .testnet
+        ))
+        try context.save()
+
+        applyIdentitySnapshot(id: ownerId, names: [])
+        var identity = try XCTUnwrap(PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        XCTAssertEqual(identity.mainDpnsName, "Alice")
+        XCTAssertNil(identity.ownedMainDpnsName)
+        XCTAssertNotEqual(identity.displayName, "Alice")
+
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10)])
+        identity = try XCTUnwrap(PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        XCTAssertEqual(identity.ownedMainDpnsName, "Alice")
+        XCTAssertEqual(identity.displayName, "Alice")
+    }
+
     /// A snapshot that momentarily lacks the picked name (a cold start adds
     /// names before the in-memory list is whole) must not replace the pick.
     func testMainNamePickSurvivesAnIncompleteSnapshot() throws {

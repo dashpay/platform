@@ -312,9 +312,9 @@ impl IdentityWallet {
     /// [`ManagedIdentity.dpns_names`](crate::wallet::identity::ManagedIdentity)
     /// cache with them.
     ///
-    /// A result shorter than the page limit is the complete owned set and
-    /// replaces the cache (names that left drop out); a full page may be
-    /// truncated and is only merged — see
+    /// The query pages until a page comes back short; that complete owned
+    /// set replaces the cache (names that left drop out). If the page bound
+    /// is reached first the result is only a lower bound and is merged — see
     /// `ManagedIdentity::apply_fetched_dpns_names`. Known labels keep their
     /// timestamp; new labels get an
     /// `acquired_at` timestamp of best-effort wall-clock millis —
@@ -332,18 +332,21 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<u32, PlatformWalletError> {
-        let usernames = self
+        let (usernames, complete) = self
             .sdk
-            .get_dpns_usernames_by_identity(*identity_id, Some(super::DPNS_USERNAMES_PAGE_LIMIT))
+            .get_all_dpns_usernames_by_identity(
+                *identity_id,
+                super::DPNS_USERNAMES_PAGE_LIMIT,
+                super::DPNS_USERNAMES_MAX_PAGES,
+            )
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to fetch DPNS usernames for identity {identity_id}: {e}",
                 ))
             })?;
-        // A short page is the complete owned set: it also drops names that
-        // left, and an empty one clears the list.
-        let complete = usernames.len() < super::DPNS_USERNAMES_PAGE_LIMIT as usize;
+        // The complete owned set also drops names that left, and an empty
+        // one clears the list; an unfinished paging only adds.
 
         let acquired_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
