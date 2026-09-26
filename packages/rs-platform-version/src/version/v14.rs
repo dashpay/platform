@@ -1182,6 +1182,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     1 also ignores the lock tally of a contest resolved without locking. No
 ///     table moves: both generations are selected by this version alone.
 ///
+/// 46. **A raw state transition is exactly one encoded transition**:
+///     `decode_raw_state_transitions` 1 (`DRIVE_ABCI_METHOD_VERSIONS_V10`)
+///     decodes with `StateTransition::deserialize_from_bytes_untrusted_exact_in_version`,
+///     so bytes left over after the transition are an invalid encoding
+///     (`SerializedObjectParsingError`, 10002), refused unpaid in `check_tx` and
+///     in block processing. Version 0 ignored them, so the transition with
+///     anything appended executed as the original under another transaction
+///     hash. Version 1 also reports a transition whose version is not active
+///     as `StateTransitionNotActiveError` (10603) instead of a decode failure.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

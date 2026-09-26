@@ -19,6 +19,7 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 /// expired entries of the credit inflows sum tree the net daily withdrawal limit reads, and
 /// bumps `rebroadcast_expired_withdrawal_documents` to 2 so an expired withdrawal whose
 /// payout is below Core's dust threshold is marked FAILED instead of re-signed forever.
+/// `decode_raw_state_transitions` 1 refuses bytes left over after a raw state transition.
 /// Everything else matches `DRIVE_ABCI_METHOD_VERSIONS_V9`.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
@@ -117,7 +118,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         // unchanged from V9: v1 since v13 (records the balance effects of paid-INVALID /
         // unsuccessful-paid transitions)
         process_validation_result: 1,
-        decode_raw_state_transitions: 0,
+        decode_raw_state_transitions: 1, // changed: refuses bytes left over after a raw state transition
         validate_fees_of_event: 1, // changed: refuses an expired signing key and a spend the signing key's remaining budget does not cover, and judges a sponsored document batch's fee against its gas sponsor's balance
         store_address_balances_to_recent_block_storage: Some(0),
         cleanup_recent_block_storage_address_balances: Some(0),

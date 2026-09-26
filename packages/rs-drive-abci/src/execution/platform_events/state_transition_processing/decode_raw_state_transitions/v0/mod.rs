@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_decode_empty_state_transitions() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_decode_oversized_state_transition() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_decode_invalid_bytes_state_transition() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_decode_multiple_mixed_state_transitions() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -245,7 +245,7 @@ mod tests {
     /// `InvalidEncoding` or `FailedToDecode`, never an oversized error.
     #[test]
     fn test_decode_empty_bytes_is_not_oversized() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -273,7 +273,7 @@ mod tests {
     /// fields silently.
     #[test]
     fn test_decode_oversized_state_transition_reports_correct_sizes() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn test_decode_state_transition_at_exact_max_size_is_not_rejected_as_oversized() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
