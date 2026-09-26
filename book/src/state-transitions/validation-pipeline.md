@@ -48,8 +48,10 @@ Let us walk through the full pipeline, stage by stage.
 
 Some state transition types are only available starting from a certain protocol version.
 For example, address-based transitions like `IdentityCreateFromAddresses` require
-protocol version 11 or higher. The first check asks: is this transition type even
-permitted on the current network?
+protocol version 11 or higher, and the shielded-pool transitions require protocol
+version 12 or higher (the constants live in
+`packages/rs-platform-version/src/version/feature_initial_protocol_versions.rs`).
+The first check asks: is this transition type even permitted on the current network?
 
 ```rust
 if state_transition.has_is_allowed_validation()? {

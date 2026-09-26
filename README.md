@@ -46,8 +46,10 @@ Schema-based specifications that describe the structure and validation rules for
 their application data. The network stores, indexes, and enforces these schemas
 directly. Applications interact with the platform through structured data reads
 and writes (called **state transitions**) rather than arbitrary code execution.
-Smart contract support is planned for Platform v4.0 (targeted for mainnet in
-2027).
+Smart-contract execution (DashVM: Rust contracts compiled to WebAssembly and
+run on Wasmtime) is in development for Platform 5.0. The plan and the design
+decisions are tracked in
+[dashpay/platform#4626](https://github.com/dashpay/platform/issues/4626).
 
 ### How Dash Platform compares
 
@@ -60,7 +62,7 @@ Smart contract support is planned for Platform v4.0 (targeted for mainnet in
 | **State proofs** | Merkle-Patricia proofs | No native proofs | **GroveDB Merkle proofs for every query** |
 | **Light client trust** | Needs sync committee | Trusts RPC provider | **Cryptographic proof per response -- same security as a full node** |
 | **Data model** | Account / key-value | Account / key-value | **Structured documents with secondary indexes** |
-| **Smart contracts** | **Yes (Solidity / Vyper on EVM)** | **Yes (Rust / C on SVM)** | Coming in v4.0 |
+| **Smart contracts** | **Yes (Solidity / Vyper on EVM)** | **Yes (Rust / C on SVM)** | In development for 5.0 (Rust on WebAssembly) |
 
 The standout difference is light client verification. Most chains either offer
 no state proofs (Solana) or give proofs that are expensive to verify
@@ -170,7 +172,9 @@ are located in the [packages](./packages) directory. Key packages include:
 - **rs-sdk** -- Rust SDK for building applications on Dash Platform
 - **wasm-sdk** / **wasm-dpp2** -- WebAssembly bindings for browser-based
   applications
-- **rs-sdk-ffi** / **swift-sdk** -- FFI layer and iOS/Swift SDK
+- **rs-sdk-ffi** / **rs-platform-wallet-ffi** / **rs-unified-sdk-ffi** /
+  **rs-unified-sdk-jni** -- FFI and JNI layers under the mobile SDKs
+- **swift-sdk** / **kotlin-sdk** -- iOS/Swift SDK and Android/Kotlin SDK
 - **js-evo-sdk** -- JavaScript SDK
 - **dashmate** -- Node management and local development tool
 - **dapi** / **rs-dapi** -- Decentralized API server implementations
@@ -181,8 +185,8 @@ are located in the [packages](./packages) directory. Key packages include:
 |-----|--------|---------|
 | **Rust** | Available now | [`rs-sdk`](./packages/rs-sdk) |
 | **JavaScript** | Available now | [`js-evo-sdk`](./packages/js-evo-sdk) |
-| **iOS (Swift)** | Coming in v3.1 | [`swift-sdk`](./packages/swift-sdk) |
-| **Android** | Coming in v3.2 | -- |
+| **iOS (Swift)** | Available; built from source with `build_ios.sh` (Swift Package Manager, iOS 18+ / macOS 15+) | [`swift-sdk`](./packages/swift-sdk) |
+| **Android (Kotlin)** | Available; shipped as an AAR asset on each platform GitHub release | [`kotlin-sdk`](./packages/kotlin-sdk) |
 
 For details on choosing an SDK and what each one provides, see the
 [SDK Support](https://dashpay.github.io/platform/sdk-support.html) chapter in

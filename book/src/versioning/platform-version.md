@@ -59,19 +59,19 @@ function version so that execution is deterministic.
 ## The Version Array
 
 Each protocol version gets its own constant, defined in a separate file. At
-the time of writing, the platform has twelve versions:
+the time of writing, the platform has fourteen versions:
 
 ```rust
 // packages/rs-platform-version/src/version/mod.rs
 
 pub type ProtocolVersion = u32;
 
-pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_12;
+pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_14;
 pub const INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1;
 pub const ALL_VERSIONS: RangeInclusive<ProtocolVersion> = 1..=LATEST_VERSION;
 ```
 
-These twelve snapshots are collected into a single static array in
+These fourteen snapshots are collected into a single static array in
 `protocol_version.rs`:
 
 ```rust
@@ -88,14 +88,16 @@ pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[
     PLATFORM_V10,
     PLATFORM_V11,
     PLATFORM_V12,
+    PLATFORM_V13,
+    PLATFORM_V14,
 ];
 
-pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V12;
+pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V14;
 pub const DESIRED_PLATFORM_VERSION: &PlatformVersion = LATEST_PLATFORM_VERSION;
 ```
 
 The array is indexed by protocol version number minus one (since versions are
-1-indexed). `PLATFORM_V1` sits at index 0, `PLATFORM_V12` at index 11. This
+1-indexed). `PLATFORM_V1` sits at index 0, `PLATFORM_V14` at index 13. This
 simple layout is what makes the `get` function so fast.
 
 ## What a Version Snapshot Looks Like
@@ -115,7 +117,7 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
         methods: DRIVE_ABCI_METHOD_VERSIONS_V1,
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V1,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1,
-        query: DRIVE_ABCI_QUERY_VERSIONS_V1,
+        query: DRIVE_ABCI_QUERY_VERSIONS_V0,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
@@ -143,45 +145,47 @@ pub const PLATFORM_V1: PlatformVersion = PlatformVersion {
 };
 ```
 
-Now compare with `PLATFORM_V12`, the latest at the time of writing:
+Now compare with `PLATFORM_V14`, the latest at the time of writing:
 
 ```rust
-// packages/rs-platform-version/src/version/v12.rs
+// packages/rs-platform-version/src/version/v14.rs
 
-pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
-    protocol_version: PROTOCOL_VERSION_12,
-    drive: DRIVE_VERSION_V6,          // was V1
+pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
+    protocol_version: PROTOCOL_VERSION_14,
+    drive: DRIVE_VERSION_V9,          // was V1
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V7,   // was V1
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V7, // was V1
-        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,     // was V1
-        query: DRIVE_ABCI_QUERY_VERSIONS_V1,
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V10,  // was V1
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // was V1
+        withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,      // was V1
+        query: DRIVE_ABCI_QUERY_VERSIONS_V3,      // was V0
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
-        validation: DPP_VALIDATION_VERSIONS_V2,  // was V1
+        validation: DPP_VALIDATION_VERSIONS_V5,  // was V1
         state_transitions: STATE_TRANSITION_VERSIONS_V3, // was V1
-        contract_versions: CONTRACT_VERSIONS_V3,         // was V1
-        document_versions: DOCUMENT_VERSIONS_V3,         // was V1
+        contract_versions: CONTRACT_VERSIONS_V6,         // was V1
+        document_versions: DOCUMENT_VERSIONS_V4,         // was V1
         // ... other fields, some still V1, some bumped
-        methods: DPP_METHOD_VERSIONS_V2,                 // was V1
+        methods: DPP_METHOD_VERSIONS_V3,                 // was V1
         factory_versions: DPP_FACTORY_VERSIONS_V1,
         // ...
     },
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // was V1
     fee_version: FEE_VERSION2,   // was VERSION1
+    system_limits: SYSTEM_LIMITS_V4,  // was V1
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,  // was 0
     },
-    // ...
 };
 ```
 
-Notice how only some subsystem versions change between V1 and V12. The query
-versions stayed at V1 across all twelve protocol versions because the query
-logic never changed. The ABCI method versions, on the other hand, went from
-V1 all the way to V7 -- seven revisions of the block processing logic.
+Notice how only some subsystem versions change between V1 and V14. The query
+versions stayed at V0 for the first eleven protocol versions because the query
+logic never changed, then moved to V1 at V12 and V3 at V14. The ABCI method
+versions, on the other hand, went from V1 all the way to V10 -- ten revisions
+of the block processing logic.
 
 This is the power of the snapshot model: **each subsystem version evolves at
 its own pace.** A new protocol version does not require bumping everything. You
@@ -209,8 +213,8 @@ impl PlatformVersion {
 }
 ```
 
-This is a simple array lookup. Protocol version 1 maps to index 0, version 12
-to index 11. If the version number is out of range, you get a clear error. No
+This is a simple array lookup. Protocol version 1 maps to index 0, version 14
+to index 13. If the version number is out of range, you get a clear error. No
 hash maps, no runtime registration, no dynamic dispatch -- just a static array
 of compile-time constants.
 
@@ -324,9 +328,9 @@ Three reasons:
 
 The cost is verbosity. Each new platform version file is large and repetitive.
 But this is a deliberate trade-off: the system favors **correctness and
-auditability** over conciseness. When you read `PLATFORM_V12`, you can see
+auditability** over conciseness. When you read `PLATFORM_V14`, you can see
 every single version number in one place. There is no mystery about what
-version 12 means.
+version 14 means.
 
 ## Rules
 
@@ -345,7 +349,7 @@ version 12 means.
   a reason.
 - Never add a new field to `PlatformVersion` without also updating every
   `PLATFORM_V*` constant. The compiler will enforce this, but be aware that
-  the fix is updating twelve files, not one.
+  the fix is updating every registered version file (fourteen today), not one.
 - Never use `PlatformVersion::latest()` in consensus-critical code paths.
   Always use the version from the current platform state, obtained via
   `platform_state.current_platform_version()`. The "latest" version is what

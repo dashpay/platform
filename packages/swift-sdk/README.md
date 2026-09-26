@@ -16,23 +16,30 @@ See also: iOS Simulator MCP usage and Codex config in [IOS_SIMULATOR_MCP.md](./I
 
 ### Requirements
 
-- iOS 13.0+
-- Xcode 12.0+
-- Swift 5.3+
+- iOS 18.0+ or macOS 15.0+ (see `Package.swift`)
+- Xcode with Swift 6 tools (`swift-tools-version: 6.0`)
+- The Rust workspace toolchain, for building the native framework
 
 ### Building
 
-1. Build the Rust library:
+1. Build the native framework. The script builds the `rs-unified-sdk-ffi` crate
+   for the requested Apple targets and assembles `DashSDKFFI.xcframework` in
+   this directory:
 ```bash
 cd packages/swift-sdk
-cargo build --release
+./build_ios.sh --target sim        # release profile is the default
+./build_ios.sh --target all        # device, simulator and macOS slices
 ```
 
-2. The build will generate a static library that can be linked with your iOS project.
+2. The Swift package's `DashSDKFFI` binary target points at that xcframework.
+   The platform release workflow (`.github/workflows/release-swift-sdk.yml`)
+   builds and attaches versioned xcframework zips to platform GitHub releases
+   when it runs; building locally is the supported path today.
 
 ### Integration
 
-1. Add the generated library to your Xcode project
+1. Add this package (`packages/swift-sdk`) as a Swift Package Manager
+   dependency of your app or open it in Xcode
 2. Import the Swift module:
 ```swift
 import SwiftDashSDK
@@ -325,20 +332,25 @@ guard let identity = swift_dash_identity_fetch(sdk, identityId) else {
 
 ## Testing
 
-The Swift SDK uses compilation verification and Swift integration testing:
+`Package.swift` defines two test targets: `SwiftDashSDKTests` (offline,
+hermetic) and `SwiftDashSDKIntegrationTests` (against a local dashmate devnet,
+gated by `RUN_INTEGRATION_TESTS=1`). The package tests run on macOS, so the
+xcframework needs the macOS slice:
 
 ```bash
-# Verify compilation
-cargo build -p swift-sdk
+cd packages/swift-sdk
 
-# Run unit tests
-cargo test -p swift-sdk --lib
+# Build the simulator and macOS slices, run the package tests and the
+# SwiftExampleApp test bundle on a simulator (what CI runs)
+./run_tests.sh
 
-# Check symbol exports
-nm -g target/debug/libswift_sdk.a | grep swift_dash_
+# Or by hand
+./build_ios.sh --target tests --profile dev
+swift test
+
+# Integration tests: restarts a local dashmate devnet, then runs the gated target
+./run_integration_tests.sh
 ```
-
-For comprehensive testing, integrate the compiled library into an iOS project with XCTest suites.
 
 ## Example App
 
@@ -422,20 +434,24 @@ enum DashError: Error {
 
 ## Building the Library
 
-To build the library:
+To build the native framework:
 
 ```bash
-cargo build --release -p swift-sdk
+cd packages/swift-sdk
+./build_ios.sh --target sim
 ```
 
-This will generate both static and dynamic libraries that can be linked with iOS applications.
+This builds `rs-unified-sdk-ffi` for the requested targets (`ios`, `sim`, `mac`
+or `all`) and produces `DashSDKFFI.xcframework`, which the Swift package
+consumes as a binary target. Use `--profile dev` only for local iteration;
+debug assertions abort the host app.
 
 ## Integration with iOS Projects
 
-1. Build the library using the command above
-2. Include the generated header file in your Xcode project
-3. Link against the generated library
-4. Use the C functions directly from Swift
+1. Build the framework using the command above
+2. Add `packages/swift-sdk` as a Swift Package Manager dependency
+3. `import SwiftDashSDK`; the package links the framework and exposes the C
+   symbols through its Swift wrappers, so no header copying is needed
 
 ## Thread Safety
 

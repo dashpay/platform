@@ -304,7 +304,10 @@ know that the binary is too old to handle the active protocol version.
 
 Let us walk through the exact steps to add a v1 implementation of a method
 that currently only has v0. We will use a fictional example:
-`my_grove_operation`.
+`my_grove_operation`. The version constants in the excerpts below
+(`DRIVE_VERSION_V7`, `PLATFORM_V13`) are illustrative and do not describe the
+recorded history of those versions; the real `PLATFORM_V13` uses
+`DRIVE_VERSION_V8`, and the current latest is `PLATFORM_V14`.
 
 ### Step 1: Write the new implementation
 
@@ -448,7 +451,7 @@ fn test_my_grove_operation_v1() {
 
 This is a lot of steps, but each one is mechanical and the compiler guides you
 through most of it. If you add a field to a version struct and forget to set it
-in one of the twelve (now thirteen) platform version constants, the build fails.
+in one of the registered platform version constants (fourteen today), the build fails.
 
 ## Passing Version References
 
@@ -477,10 +480,10 @@ Here is how the version flows through a real execution path:
 Block arrives from Tenderdash
     |
     v
-PlatformState has the current protocol_version (e.g., 12)
+PlatformState has the current protocol_version (e.g., 14)
     |
     v
-PlatformVersion::get(12) -> &PLATFORM_V12
+PlatformVersion::get(14) -> &PLATFORM_V14
     |
     v
 process_raw_state_transitions(&platform_version)
