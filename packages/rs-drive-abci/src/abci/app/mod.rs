@@ -10,6 +10,7 @@ pub mod execution_result;
 mod full;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::platform_types::withdrawal::unsigned_withdrawal_txs_by_round::UnsignedWithdrawalTxsByRound;
 use crate::rpc::core::DefaultCoreRPC;
 #[cfg(test)]
 pub(crate) use check_tx::error_into_status;
@@ -40,4 +41,8 @@ pub trait TransactionalApplication<'a> {
 pub trait BlockExecutionApplication {
     /// Returns the current block execution context
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>>;
+
+    /// Returns the unsigned withdrawal transactions of every proposal accepted at the current
+    /// height, by round, which vote extensions are verified against
+    fn unsigned_withdrawal_txs_by_round(&self) -> &RwLock<UnsignedWithdrawalTxsByRound>;
 }

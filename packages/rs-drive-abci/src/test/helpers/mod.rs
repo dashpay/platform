@@ -8,6 +8,9 @@ pub mod fee_pools;
 pub mod setup;
 #[cfg(test)]
 pub mod state_mutation_guard;
+/// Withdrawal fixtures
+#[cfg(test)]
+pub mod withdrawals;
 // TODO: Move tests to appropriate place
 
 #[cfg(test)]
