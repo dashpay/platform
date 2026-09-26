@@ -187,9 +187,11 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             settings,
         )
         .await?;
-        already_known_is_delivered(state_transition.broadcast(sdk, settings).await)?;
-
-        Self::wait_for_response(sdk, state_transition, settings).await
+        let broadcast = state_transition.broadcast(sdk, settings).await;
+        broadcast_then_wait(broadcast, state_transition, |st| {
+            Self::wait_for_response(sdk, st, settings)
+        })
+        .await
     }
 
     #[cfg(feature = "core_key_wallet")]
@@ -242,9 +244,11 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
             settings,
         )
         .await?;
-        already_known_is_delivered(state_transition.broadcast(sdk, settings).await)?;
-
-        Self::wait_for_response(sdk, state_transition, settings).await
+        let broadcast = state_transition.broadcast(sdk, settings).await;
+        broadcast_then_wait(broadcast, state_transition, |st| {
+            Self::wait_for_response(sdk, st, settings)
+        })
+        .await
     }
 
     async fn put_with_address_funding<AS: Signer<PlatformAddress> + Send + Sync>(
@@ -307,6 +311,25 @@ fn already_known_is_delivered(broadcast: Result<(), Error>) -> Result<(), Error>
         }
         other => other,
     }
+}
+
+/// After an identity create's broadcast, wait for its result — the step both
+/// `put_to_platform_and_wait_for_response_*` variants share, with the wait
+/// injected so it can be tested without a Platform: the same signed
+/// transition is waited for after a delivered broadcast, including one DAPI
+/// reports as already known, and nothing is waited for after any other
+/// broadcast failure.
+async fn broadcast_then_wait<W, WFut>(
+    broadcast: Result<(), Error>,
+    state_transition: StateTransition,
+    wait: W,
+) -> Result<Identity, Error>
+where
+    W: FnOnce(StateTransition) -> WFut,
+    WFut: std::future::Future<Output = Result<Identity, Error>>,
+{
+    already_known_is_delivered(broadcast)?;
+    wait(state_transition).await
 }
 
 /// Build and structurally validate the identity create, without broadcasting.
@@ -456,6 +479,85 @@ mod tests {
             "state transition already in mempool".to_string(),
         ));
         assert!(already_known_is_delivered(broadcast).is_ok());
+    }
+
+    fn signed_create() -> StateTransition {
+        use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+        StateTransition::IdentityCreate(
+            IdentityCreateTransitionV0 {
+                signature: vec![7; 65].into(),
+                ..Default::default()
+            }
+            .into(),
+        )
+    }
+
+    fn created() -> Identity {
+        use dpp::identity::v0::IdentityV0;
+        Identity::V0(IdentityV0 {
+            id: dpp::prelude::Identifier::from([9; 32]),
+            public_keys: Default::default(),
+            balance: 1,
+            revision: 0,
+        })
+    }
+
+    #[tokio::test]
+    async fn should_wait_for_the_same_transition_after_an_already_known_broadcast() {
+        let submitted = signed_create();
+        let waited_for = std::sync::Mutex::new(None);
+        let result = broadcast_then_wait(
+            Err(Error::AlreadyExists(
+                "tx already exists in cache".to_string(),
+            )),
+            submitted.clone(),
+            |st| {
+                *waited_for.lock().unwrap() = Some(st);
+                async { Ok(created()) }
+            },
+        )
+        .await;
+        assert_eq!(
+            result.unwrap(),
+            created(),
+            "the wait's identity is the result"
+        );
+        assert_eq!(
+            waited_for.lock().unwrap().as_ref(),
+            Some(&submitted),
+            "the wait must be for the transition that was broadcast"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_return_the_wait_rejection_after_an_already_known_broadcast() {
+        let result = broadcast_then_wait(
+            Err(Error::AlreadyExists(
+                "state transition already in mempool".to_string(),
+            )),
+            signed_create(),
+            |_| async { Err(Error::Generic("rejected by Platform".to_string())) },
+        )
+        .await;
+        assert!(
+            matches!(result, Err(Error::Generic(message)) if message == "rejected by Platform")
+        );
+    }
+
+    #[tokio::test]
+    async fn should_not_wait_after_any_other_broadcast_failure() {
+        let waited = std::sync::atomic::AtomicBool::new(false);
+        let result = broadcast_then_wait(
+            Err(Error::Generic("broadcast rejected".to_string())),
+            signed_create(),
+            |_| {
+                waited.store(true, std::sync::atomic::Ordering::SeqCst);
+                async { Ok(created()) }
+            },
+        )
+        .await;
+        assert!(matches!(result, Err(Error::Generic(_))));
+        assert!(!waited.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     #[test]
