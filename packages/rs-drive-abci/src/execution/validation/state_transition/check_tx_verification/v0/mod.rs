@@ -116,7 +116,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
             if state_transition.has_is_allowed_validation()? {
-                let result = state_transition.validate_is_allowed(platform, platform_version)?;
+                let result = state_transition.validate_is_allowed(platform_version)?;
 
                 if !result.is_valid() {
                     return Ok(

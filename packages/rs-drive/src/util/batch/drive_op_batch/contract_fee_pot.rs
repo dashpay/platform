@@ -17,8 +17,8 @@ use std::collections::HashMap;
 /// one also moves the same credits out of, or into, identity balances.
 #[derive(Clone, Debug)]
 pub enum ContractFeePotOperationType {
-    /// Adds credits to a pot. A batch carries at most one of these per contract and pot: the
-    /// new total is computed from the committed one.
+    /// Adds credits to a pot. The new total is computed from the committed one, so
+    /// `apply_drive_operations` merges every write of one pot in a batch into one.
     AddToPot {
         /// The contract the pot belongs to.
         contract_id: Identifier,

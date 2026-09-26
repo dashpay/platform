@@ -53,7 +53,7 @@ permitted on the current network?
 
 ```rust
 if state_transition.has_is_allowed_validation()? {
-    let result = state_transition.validate_is_allowed(platform, platform_version)?;
+    let result = state_transition.validate_is_allowed(platform_version)?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::new_with_errors(result.errors));
     }
@@ -66,17 +66,15 @@ The trait is defined in
 ```rust
 pub(crate) trait StateTransitionIsAllowedValidationV0 {
     fn has_is_allowed_validation(&self) -> Result<bool, Error>;
-    fn validate_is_allowed<C: CoreRPCLike>(
+    fn validate_is_allowed(
         &self,
-        platform: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error>;
 }
 ```
 
-Transitions like `DataContractCreate` and `IdentityCreate` skip this check entirely
-(they have always been allowed). The `Batch` transition has its own is_allowed logic
-because certain token operations may be gated.
+Transitions available since protocol version 1, like `DataContractCreate`,
+`IdentityCreate` and `Batch`, skip this check entirely.
 
 ## Stage 2: Identity Signature Verification
 

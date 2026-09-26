@@ -428,3 +428,235 @@ fn allow_setting_keyword_is_inert_below_generation_3_without_validation() {
         "meta-schema v2 must reject the immutableAllowSetting keyword"
     );
 }
+
+// ── immutableAllowSetting on a deletableDocument reference ──────────────
+
+/// A replace may clear a `deletableDocument` reference held by an immutable
+/// top-level property once its target is deleted, since every replace
+/// re-validates it. Settable while absent as well, the property would take a
+/// first-time set right after that clear, and the frozen reference would
+/// point at another document, so generation 3 refuses the pair under full
+/// validation. The refusal sits with the other immutable `deletableDocument`
+/// refusals, which are `validation` feature code, as `validate_update` is.
+#[cfg(feature = "validation")]
+mod deletable_document_reference {
+    use super::*;
+    use crate::block::block_info::BlockInfo;
+    use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
+    use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+    use crate::data_contract::serialized_version::DataContractInSerializationFormat;
+    use crate::data_contract::DataContract;
+
+    const REFUSAL: &str = "lists \"pinnedId\" in `immutableAllowSetting`, but it is a \
+                           deletableDocument reference";
+
+    fn deletable_draft() -> Value {
+        platform_value!({ "type": "deletableDocument", "documentType": "draft" })
+    }
+
+    /// A mutable `post` whose optional top-level `pinnedId` refers to another
+    /// document by id through `refers_to`, with the given `immutable` and
+    /// `immutableAllowSetting` lists.
+    fn post_schema_with_pinned_reference(
+        refers_to: Value,
+        immutable: Value,
+        allow_setting: Value,
+    ) -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "author": { "type": "string", "maxLength": 63, "position": 0 },
+                "pinnedId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": refers_to,
+                    "position": 1
+                }
+            },
+            "required": ["author"],
+            "immutable": immutable,
+            "immutableAllowSetting": allow_setting,
+            "additionalProperties": false
+        })
+    }
+
+    /// The sequence this closes: `pinnedId` set to draft A, A deleted, a
+    /// replace clears `pinnedId` (a dead immutable reference may be cleared),
+    /// and the next replace sets it to draft B, a first-time set the
+    /// allowance admits. Refused as a consensus error, so a registration or
+    /// update carrying it fails deterministically.
+    #[test]
+    fn should_refuse_allow_setting_on_a_deletable_document_reference() {
+        let schema = post_schema_with_pinned_reference(
+            deletable_draft(),
+            platform_value!(["author", "pinnedId"]),
+            platform_value!(["pinnedId"]),
+        );
+
+        match parse_dispatched(schema.clone(), PlatformVersion::latest(), true) {
+            Err(ProtocolError::ConsensusError(error)) => match *error {
+                ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(message),
+                )) => assert!(
+                    message.contains(REFUSAL),
+                    "expected {REFUSAL:?} in the error, got: {message}"
+                ),
+                other => panic!("expected InvalidContractStructure, got {other:?}"),
+            },
+            other => panic!("expected a consensus error, got {other:?}"),
+        }
+
+        // A registration rule: a stored contract is re-parsed without it and
+        // stays readable
+        let stored = parse_dispatched(schema, PlatformVersion::latest(), false)
+            .expect("the non-validating path records the declaration without judging it");
+        assert_eq!(
+            stored.immutable_fields_allow_setting(),
+            &names(&["pinnedId"])
+        );
+    }
+
+    /// Without the allowance the reference is frozen at creation, and the
+    /// clear is its one way out once its target is deleted.
+    #[test]
+    fn should_admit_an_immutable_deletable_document_reference_that_is_not_settable() {
+        let document_type = parse_dispatched(
+            post_schema_with_pinned_reference(
+                deletable_draft(),
+                platform_value!(["author", "pinnedId"]),
+                platform_value!([]),
+            ),
+            PlatformVersion::latest(),
+            true,
+        )
+        .expect("an immutable top-level deletableDocument reference registers");
+
+        assert_eq!(
+            document_type.immutable_fields(),
+            &names(&["author", "pinnedId"])
+        );
+        assert!(document_type.immutable_fields_allow_setting().is_empty());
+    }
+
+    /// The clear exists for a `deletableDocument` reference by id only. A
+    /// permanent document and an identity are never deleted, so a reference
+    /// to either is never cleared and stays frozen once set.
+    #[test]
+    fn should_admit_allow_setting_on_a_reference_that_is_never_cleared() {
+        for refers_to in [
+            platform_value!({ "type": "permanentDocument", "documentType": "article" }),
+            platform_value!({ "type": "identity" }),
+        ] {
+            let document_type = parse_dispatched(
+                post_schema_with_pinned_reference(
+                    refers_to.clone(),
+                    platform_value!(["author", "pinnedId"]),
+                    platform_value!(["pinnedId"]),
+                ),
+                PlatformVersion::latest(),
+                true,
+            )
+            .unwrap_or_else(|error| {
+                panic!("{refers_to:?} under immutableAllowSetting should register: {error}")
+            });
+
+            assert_eq!(
+                document_type.immutable_fields_allow_setting(),
+                &names(&["pinnedId"])
+            );
+        }
+    }
+
+    /// A contract at `version` with a deletable `draft` type and a `post`
+    /// whose `pinnedId` refers to a draft by id, the post's `immutable` and
+    /// `immutableAllowSetting` lists as given.
+    fn pinned_contract(
+        version: u32,
+        immutable: Value,
+        allow_setting: Value,
+        platform_version: &PlatformVersion,
+    ) -> DataContractInSerializationFormat {
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("default config available on this platform version");
+        let draft = platform_value!({
+            "type": "object",
+            "properties": {
+                "body": { "type": "string", "maxLength": 500, "position": 0 }
+            },
+            "additionalProperties": false
+        });
+
+        DataContractInSerializationFormatV0 {
+            id: Identifier::new([7; 32]),
+            config,
+            version,
+            owner_id: Identifier::new([8; 32]),
+            schema_defs: None,
+            document_schemas: BTreeMap::from([
+                ("draft".to_string(), draft),
+                (
+                    "post".to_string(),
+                    post_schema_with_pinned_reference(deletable_draft(), immutable, allow_setting),
+                ),
+            ]),
+        }
+        .into()
+    }
+
+    /// `validate_update` 1 lets `immutableAllowSetting` gain a property that
+    /// becomes immutable in the same update, so an update can reach the pair
+    /// too. The update transition parses the whole new contract under full
+    /// validation, as a registration does, and that parse refuses it.
+    #[test]
+    fn should_refuse_an_update_making_a_deletable_document_reference_settable_once() {
+        let platform_version = PlatformVersion::latest();
+
+        let registered = DataContract::try_from_platform_versioned(
+            pinned_contract(
+                1,
+                platform_value!(["author"]),
+                platform_value!([]),
+                platform_version,
+            ),
+            true,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("the contract registers with a mutable deletableDocument reference");
+
+        // Freezes `pinnedId` and lets it be set once, in one update
+        let update = pinned_contract(
+            2,
+            platform_value!(["author", "pinnedId"]),
+            platform_value!(["pinnedId"]),
+            platform_version,
+        );
+
+        // The update rules alone admit it (parsed without the registration
+        // rules to get that far), so the parse is what stops it
+        let unchecked = DataContract::try_from_platform_versioned(
+            update.clone(),
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("the non-validating parse records the lists as declared");
+        let result = registered
+            .validate_update(&unchecked, &BlockInfo::default(), platform_version)
+            .expect("the update is judged");
+        assert!(
+            result.is_valid(),
+            "a newly immutable property may arrive with the allowance: {:?}",
+            result.errors
+        );
+
+        expect_structure_error(
+            DataContract::try_from_platform_versioned(update, true, &mut vec![], platform_version),
+            REFUSAL,
+        );
+    }
+}

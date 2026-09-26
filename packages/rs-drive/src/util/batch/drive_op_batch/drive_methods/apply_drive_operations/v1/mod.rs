@@ -43,6 +43,30 @@ impl Drive {
     /// for them gets nothing back, and the credits stay in the storage pools they were
     /// distributed to. An estimate carries no refund to begin with, so `check_tx` sees the
     /// same fee with or without the forfeiture.
+    ///
+    /// Every write of one identity balance, one contract fee pot or one prefunded specialized
+    /// balance is also merged into one ([`DriveOperation::merge_balance_writes`]): each
+    /// computes the new value from the one committed before the batch, so a second write in the
+    /// same batch would replace the first and the credits would no longer add up. Token writes
+    /// cannot be merged the same way, so a batch that writes one token balance or token supply
+    /// twice is refused ([`DriveOperation::refuse_repeated_token_balance_writes`]); no state
+    /// transition makes one. A batch that writes each key once is applied exactly as by
+    /// generation 0.
+    ///
+    /// An estimate is merged the same way, so it prices the batch execution applies. It reads
+    /// no balance and lets a merged removal take up to the largest balance there can be; fee
+    /// validation estimates for the payer it settles on, and refuses an identity that cannot
+    /// fund what it owes before estimating, so no merged removal it estimates takes more.
+    ///
+    /// Credits the batch adds to an identity that repay its debt
+    /// ([`LowLevelDriveOperation::RepaidIdentityDebt`], from `add_to_identity_balance_operations`
+    /// 1) go to the processing fee pool of the block's epoch once the batch applied: the debt
+    /// stood for processing fees that never reached a pool, and otherwise the credits would
+    /// reach no balance the credit sum counts. The pool write reads the state the batch left,
+    /// so it adds to a pool write the batch made itself (the fee distribution at the end of a
+    /// block) instead of racing it, and it is not billed. An estimate reads no debt and repays
+    /// none. The balance writes are merged before the batch is converted, so two credits to an
+    /// indebted identity repay its debt once, as one net credit.
     #[inline(always)]
     pub(crate) fn apply_drive_operations_v1(
         &self,
@@ -53,6 +77,8 @@ impl Drive {
         platform_version: &PlatformVersion,
         previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
+        DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
+        let operations = DriveOperation::merge_balance_writes(operations)?;
         if operations.is_empty() {
             return Ok(FeeResult::default());
         }
@@ -101,6 +127,9 @@ impl Drive {
             );
         }
 
+        let repaid_identity_debt =
+            LowLevelDriveOperation::take_repaid_identity_debt(&mut low_level_operations)?;
+
         let mut cost_operations = vec![];
 
         self.apply_batch_low_level_drive_operations(
@@ -109,6 +138,12 @@ impl Drive {
             low_level_operations,
             &mut cost_operations,
             &platform_version.drive,
+        )?;
+        self.apply_repaid_identity_debt_to_processing_pool(
+            repaid_identity_debt,
+            &block_info.epoch,
+            transaction,
+            platform_version,
         )?;
         if let Some(owned_transaction) = owned_transaction {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
