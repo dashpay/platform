@@ -107,6 +107,10 @@ impl PlatformWalletInfo {
             invitations: _,
             dpns_name_states,
             identity_scan_state,
+            // The backfill record is persistence-only here: the reconcile
+            // sweep mutates `PlatformWalletInfo::dashpay_backfill` directly
+            // and the start-state path restores it at load. No replay hook.
+            dashpay_backfill: _,
             // Registration-round metadata / per-account specs /
             // per-pool snapshots are persistence-only — the
             // canonical in-memory wallet state is built up at
@@ -440,6 +444,7 @@ mod tests {
             tracked_asset_locks: BTreeMap::new(),
             observed_input_conflicts: Default::default(),
             dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
         }
     }
 

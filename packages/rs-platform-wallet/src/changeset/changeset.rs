@@ -34,6 +34,7 @@ use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
+use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
 use crate::changeset::identity_scan_state::IdentityScanStateEntry;
 use crate::wallet::platform_wallet::WalletId;
 
@@ -2153,6 +2154,20 @@ pub struct PlatformWalletChangeSet {
     /// scan is retried inside its own launch — but honouring the verdict
     /// across launches needs the host slot.
     pub identity_scan_state: Option<IdentityScanStateEntry>,
+    /// Durable record of the DashPay coreHeight backfill — which receival
+    /// contacts the historical rescan covers, from which height each, and
+    /// the extent of the rescan. Written by `reconcile_dashpay_rescan` on the
+    /// same round as the lowered `core.synced_height` it belongs with, and
+    /// read back through
+    /// [`ClientWalletStartState::dashpay_backfill`](crate::changeset::ClientWalletStartState::dashpay_backfill)
+    /// so a fresh process does not rewind for a contact the previous one
+    /// already rewound for (dashpay/platform#4302). Every write carries the
+    /// whole record, so merge is last-write-wins. See [`DashPayBackfillRecord`].
+    ///
+    /// Durability caveat, the same one `identity_scan_state` carries: a host
+    /// that has not adopted the slot keeps today's behaviour — the backfill
+    /// re-fires on every launch — which is slow but never lossy.
+    pub dashpay_backfill: Option<DashPayBackfillRecord>,
     /// Per-account registration entries emitted at registration / on
     /// later `add_account` calls. See [`AccountRegistrationEntry`] for
     /// the merge policy (plain `Vec::extend`, dedup is the apply-side
@@ -2304,6 +2319,11 @@ impl Merge for PlatformWalletChangeSet {
                 None => scan,
             });
         }
+        // Backfill record: every write is a whole snapshot, so the later
+        // one wins outright.
+        if let Some(record) = other.dashpay_backfill {
+            self.dashpay_backfill = Some(record);
+        }
         // Per-account specs and address-pool snapshots: append-only.
         // See the type docstrings for the rationale (registration
         // round emits each key once; snapshots are whole-pool, so
@@ -2340,6 +2360,7 @@ impl Merge for PlatformWalletChangeSet {
                 .is_none_or(|m| m.is_empty())
             && self.wallet_metadata.is_none()
             && self.identity_scan_state.is_none()
+            && self.dashpay_backfill.is_none()
             && self.account_registrations.is_empty()
             && self.provider_key_account_registrations.is_empty()
             && self.account_address_pools.is_empty()

@@ -144,6 +144,10 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         invitations,
         dpns_name_states,
         identity_scan_state,
+        // Not persisted by this backend yet (see `ClientWalletStartState::
+        // dashpay_backfill` on the load side): the record rides the FFI
+        // hosts' wallet row only, so it touches no domain here.
+        dashpay_backfill: _,
         #[cfg(feature = "shielded")]
         shielded,
         #[cfg(not(feature = "shielded"))]

@@ -836,13 +836,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// `synced_height` may regress here: that is safe because it is the
     /// filter-scan checkpoint, decoupled from the monotonic
-    /// `last_processed_height`, and every persisted sync cursor is
-    /// monotonic-max guarded (see `reconcile_dashpay_rescan`'s note), so a
-    /// transient rewind cannot corrupt state or persist a lower cursor.
+    /// `last_processed_height`, so a transient rewind cannot corrupt state.
     ///
     /// The rewound checkpoint lives only in the in-memory `WalletManager`; this
-    /// call does not persist it. If the process dies before the rescan finishes,
-    /// the host must issue this request again after restart. Requires SPV
+    /// call does not persist it — though the host will persist every height
+    /// the rescan then climbs through, so a relaunch resumes the climb from
+    /// wherever it got to rather than from the high-water. If the process dies
+    /// before the rescan finishes and the host wants it restarted from
+    /// `from_height`, it must issue this request again after restart. Requires SPV
     /// running for an immediate effect; otherwise it takes effect when SPV next
     /// starts in the same process and its filter loop first ticks.
     ///
@@ -1946,6 +1947,7 @@ mod txo_inventory_tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
             observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
