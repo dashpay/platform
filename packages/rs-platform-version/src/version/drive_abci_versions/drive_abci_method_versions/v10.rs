@@ -20,6 +20,8 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 /// bumps `rebroadcast_expired_withdrawal_documents` to 2 so an expired withdrawal whose
 /// payout is below Core's dust threshold is marked FAILED instead of re-signed forever.
 /// `decode_raw_state_transitions` 1 refuses bytes left over after a raw state transition.
+/// `add_distribute_storage_fee_to_epochs_operations` 1 claws each pending storage refund back
+/// from the epochs it was priced for.
 /// Everything else matches `DRIVE_ABCI_METHOD_VERSIONS_V9`.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
@@ -80,7 +82,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     },
     fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions {
         add_distribute_block_fees_into_pools_operations: 0,
-        add_distribute_storage_fee_to_epochs_operations: 0,
+        add_distribute_storage_fee_to_epochs_operations: 1, // changed in v14: claws each pending refund back from the epochs it was priced for
     },
     fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions {
         add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: 1,
