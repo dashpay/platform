@@ -2185,7 +2185,7 @@ extension ManagedPlatformWallet {
         /// contact-bootstrap precondition (may be nil even when `hasInviter`).
         public let inviterUsername: String?
         /// Always 0: the amount isn't in the link (it carries the funding txid,
-        /// not the proof) and is only known after the tx is fetched at claim time.
+        /// not the proof). Read it with ``invitationClaimStatus(uri:)``.
         public let amountDuffs: UInt64
         /// Always 0: the legacy link carries no expiry field.
         public let expiryUnix: UInt32
@@ -2207,7 +2207,9 @@ extension ManagedPlatformWallet {
         public let amountDuffs: UInt64
         /// The claim would submit an InstantSend proof.
         public let isInstant: Bool
-        /// The funding transaction is chain-locked.
+        /// The funding transaction is chain-locked. `false` together with
+        /// `isInstant == false` is a ChainLock-only invitation that cannot be
+        /// claimed until its funding transaction is chain-locked.
         public let isChainLocked: Bool
         /// An identity already exists at `prospectiveIdentityId` — the
         /// invitation was claimed. `false` does NOT prove the voucher is
@@ -2403,26 +2405,31 @@ extension ManagedPlatformWallet {
     /// transaction is refetched to locate the credit output the voucher
     /// controls. It claims nothing and mutates no wallet state.
     ///
-    /// Throws on anything undetermined — wrong network, a funding tx that has
-    /// not propagated, transport failure. Callers must treat a throw as
-    /// "proceed", never as an answer either way.
+    /// Two throws are definitive: a malformed link (`invalidParameter`) and a
+    /// link for the other network (`invalidNetwork`) can never be claimed by
+    /// this wallet. Every other throw is undetermined (a funding tx that has
+    /// not propagated, transport failure) and must be treated as "proceed",
+    /// never as an answer either way.
     public func invitationProspectiveIdentityId(uri: String) async throws -> Data {
-        let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) { () -> Data in
-            var idTuple: (
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
-            ) = (
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-            )
-            let result = uri.withCString { uriPtr in
-                platform_wallet_invitation_prospective_identity_id(handle, uriPtr, &idTuple)
+        // `self` stays alive for the whole call: a deinit mid-call would
+        // destroy the handle the FFI is still using.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> Data in
+            try withExtendedLifetime(self) {
+                var idTuple: (
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+                ) = (
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+                )
+                let result = uri.withCString { uriPtr in
+                    platform_wallet_invitation_prospective_identity_id(handle, uriPtr, &idTuple)
+                }
+                try result.check()
+                return withUnsafeBytes(of: idTuple) { Data($0) }
             }
-            try result.check()
-            return withUnsafeBytes(of: idTuple) { Data($0) }
         }.value
     }
 
@@ -2435,20 +2442,23 @@ extension ManagedPlatformWallet {
     /// undetermined (not propagated yet, transport failure) and must not be
     /// read as an answer either way.
     public func invitationClaimStatus(uri: String) async throws -> InvitationClaimStatus {
-        let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) { () -> InvitationClaimStatus in
-            var out = InvitationClaimStatusFFI()
-            let result = uri.withCString { uriPtr in
-                platform_wallet_invitation_claim_status(handle, uriPtr, &out)
+        // `self` stays alive for the whole call (up to ~12 s of funding-tx
+        // retries): a deinit mid-call would destroy the handle in use.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> InvitationClaimStatus in
+            try withExtendedLifetime(self) {
+                var out = InvitationClaimStatusFFI()
+                let result = uri.withCString { uriPtr in
+                    platform_wallet_invitation_claim_status(handle, uriPtr, &out)
+                }
+                try result.check()
+                return InvitationClaimStatus(
+                    prospectiveIdentityId: withUnsafeBytes(of: out.prospective_identity_id) { Data($0) },
+                    amountDuffs: out.amount_duffs,
+                    isInstant: out.is_instant,
+                    isChainLocked: out.is_chain_locked,
+                    alreadyClaimed: out.already_claimed
+                )
             }
-            try result.check()
-            return InvitationClaimStatus(
-                prospectiveIdentityId: withUnsafeBytes(of: out.prospective_identity_id) { Data($0) },
-                amountDuffs: out.amount_duffs,
-                isInstant: out.is_instant,
-                isChainLocked: out.is_chain_locked,
-                alreadyClaimed: out.already_claimed
-            )
         }.value
     }
 
