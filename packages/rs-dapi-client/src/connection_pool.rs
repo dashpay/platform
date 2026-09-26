@@ -17,7 +17,30 @@ use crate::{
 /// Cloning the pool will create a new reference to the same pool.
 #[derive(Debug, Clone)]
 pub struct ConnectionPool {
-    inner: Arc<Mutex<LruCache<String, PoolItem>>>,
+    inner: Arc<Mutex<PoolState>>,
+}
+
+#[derive(Debug)]
+struct PoolState {
+    connections: LruCache<PoolKey, Pooled>,
+    /// Generation of the connection pooled most recently.
+    generation: u64,
+}
+
+/// A pooled connection and the generation it was pooled at.
+#[derive(Debug)]
+struct Pooled {
+    generation: u64,
+    item: PoolItem,
+}
+
+/// Identity of a pooled connection: the client type, the node, and the
+/// connection-affecting settings (`None` when none were given).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PoolKey {
+    prefix: PoolPrefix,
+    uri: String,
+    connection: Option<String>,
 }
 
 impl ConnectionPool {
@@ -29,9 +52,10 @@ impl ConnectionPool {
     /// Panics if the capacity is zero.
     pub fn new(capacity: usize) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(LruCache::new(
-                capacity.try_into().expect("must be non-zero"),
-            ))),
+            inner: Arc::new(Mutex::new(PoolState {
+                connections: LruCache::new(capacity.try_into().expect("must be non-zero")),
+                generation: 0,
+            })),
         }
     }
 }
@@ -56,7 +80,12 @@ impl ConnectionPool {
         settings: Option<&AppliedRequestSettings>,
     ) -> Option<PoolItem> {
         let key = Self::key(prefix, uri, settings);
-        self.inner.lock().expect("must lock").get(&key).cloned()
+        self.inner
+            .lock()
+            .expect("must lock")
+            .connections
+            .get(&key)
+            .map(|pooled| pooled.item.clone())
     }
 
     /// Get value from cache or create it using provided closure.
@@ -74,38 +103,110 @@ impl ConnectionPool {
         settings: Option<&AppliedRequestSettings>,
         create: impl FnOnce() -> Result<PoolItem, E>,
     ) -> Result<PoolItem, E> {
-        if let Some(cli) = self.get(prefix, uri, settings) {
-            return Ok(cli);
+        self.get_or_create_with_generation(prefix, uri, settings, create)
+            .map(|(item, _)| item)
+    }
+
+    /// Like [ConnectionPool::get_or_create], and also returns the generation
+    /// the returned connection was pooled at (see [ConnectionPool::generation]).
+    ///
+    /// The generation is read under the same lock that finds or stores the
+    /// connection, so it is the returned connection's own even when other
+    /// threads replace it right afterwards.
+    pub fn get_or_create_with_generation<E>(
+        &self,
+        prefix: PoolPrefix,
+        uri: &Uri,
+        settings: Option<&AppliedRequestSettings>,
+        create: impl FnOnce() -> Result<PoolItem, E>,
+    ) -> Result<(PoolItem, u64), E> {
+        let key = Self::key(prefix, uri, settings);
+        let cached = self
+            .inner
+            .lock()
+            .expect("must lock")
+            .connections
+            .get(&key)
+            .map(|pooled| (pooled.item.clone(), pooled.generation));
+        if let Some(cached) = cached {
+            return Ok(cached);
         }
 
-        let cli = create();
-        if let Ok(cli) = &cli {
-            self.put(uri, settings, cli.clone());
-        }
-        cli
+        let item = create()?;
+        let generation = self.put_with_generation(uri, settings, item.clone());
+        Ok((item, generation))
     }
 
     /// Put item into the pool for the given uri and settings.
     pub fn put(&self, uri: &Uri, settings: Option<&AppliedRequestSettings>, value: PoolItem) {
+        self.put_with_generation(uri, settings, value);
+    }
+
+    /// Put item into the pool and return the generation it was pooled at.
+    fn put_with_generation(
+        &self,
+        uri: &Uri,
+        settings: Option<&AppliedRequestSettings>,
+        value: PoolItem,
+    ) -> u64 {
         let key = Self::key(&value, uri, settings);
-        self.inner.lock().expect("must lock").put(key, value);
+        let mut state = self.inner.lock().expect("must lock");
+        state.generation += 1;
+        let generation = state.generation;
+        state.connections.put(
+            key,
+            Pooled {
+                generation,
+                item: value,
+            },
+        );
+        generation
+    }
+
+    /// Generation of the connection pooled most recently. Every connection
+    /// put into the pool afterwards gets a higher generation.
+    pub fn generation(&self) -> u64 {
+        self.inner.lock().expect("must lock").generation
+    }
+
+    /// Drop every connection to `uri` pooled at or before `generation`,
+    /// whatever its prefix and connection settings.
+    ///
+    /// A request that misses its deadline may have been sent over a half-open
+    /// connection: the network path died after the request left, and nothing
+    /// on the idle channel would ever notice. Keeping it pooled would stall
+    /// the next request sent to the same node, so the executor evicts it and
+    /// the next request dials a fresh connection.
+    ///
+    /// Connections pooled after `generation` stay. They were dialed after the
+    /// timed-out attempt took its connection, for example by a concurrent
+    /// request that already timed out on the same node and reconnected.
+    pub fn remove_uri(&self, uri: &Uri, generation: u64) {
+        let uri = uri.to_string();
+        let mut state = self.inner.lock().expect("must lock");
+        let stale: Vec<PoolKey> = state
+            .connections
+            .iter()
+            .filter(|(key, pooled)| key.uri == uri && pooled.generation <= generation)
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in stale {
+            state.connections.pop(&key);
+        }
     }
 
     fn key<C: Into<PoolPrefix>>(
         class: C,
         uri: &Uri,
         settings: Option<&AppliedRequestSettings>,
-    ) -> String {
-        let prefix: PoolPrefix = class.into();
+    ) -> PoolKey {
         // Only connection-affecting settings participate in the key (see
         // `AppliedRequestSettings::connection_key`), so requests differing only
         // in per-request knobs (timeout, retries, banning) share a connection.
-        // The settings segment is always present (and contains no `:`), so the
-        // two branches cannot produce colliding shapes even for a URI whose
-        // path mimics a key fragment.
-        match settings {
-            Some(settings) => format!("{}:{}:{}", prefix, uri, settings.connection_key()),
-            None => format!("{}:{}:none", prefix, uri),
+        PoolKey {
+            prefix: class.into(),
+            uri: uri.to_string(),
+            connection: settings.map(AppliedRequestSettings::connection_key),
         }
     }
 }
@@ -161,6 +262,7 @@ impl From<PoolItem> for CoreGrpcClient {
 }
 
 /// Prefix for the item in the pool. Used to distinguish between Core and Platform clients.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PoolPrefix {
     Core,
     Platform,
@@ -397,6 +499,106 @@ mod tests {
         // Platform prefix should find it
         let result = pool.get(PoolPrefix::Platform, &uri, None);
         assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn should_remove_every_pooled_connection_to_an_uri() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+        let longer_port = Uri::from_str("http://127.0.0.1:30001").unwrap();
+        let connect_timeout = RequestSettings {
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+
+        pool.put(&uri, None, make_platform_pool_item());
+        pool.put(&uri, None, make_core_pool_item());
+        pool.put(&uri, Some(&connect_timeout), make_platform_pool_item());
+        pool.put(&longer_port, None, make_platform_pool_item());
+
+        pool.remove_uri(&uri, pool.generation());
+
+        assert!(pool.get(PoolPrefix::Platform, &uri, None).is_none());
+        assert!(pool.get(PoolPrefix::Core, &uri, None).is_none());
+        assert!(pool
+            .get(PoolPrefix::Platform, &uri, Some(&connect_timeout))
+            .is_none());
+        assert!(
+            pool.get(PoolPrefix::Platform, &longer_port, None).is_some(),
+            "a URI that merely starts with the evicted one must stay pooled"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_remove_only_the_exact_uri_when_another_extends_it_past_a_colon() {
+        let cases = [
+            ("http://node", "http://node:443"),
+            ("http://node/grpc", "http://node/grpc:8080"),
+        ];
+        for (evicted, kept) in cases {
+            let pool = ConnectionPool::new(10);
+            let evicted = Uri::from_str(evicted).unwrap();
+            let kept = Uri::from_str(kept).unwrap();
+            pool.put(&evicted, None, make_platform_pool_item());
+            pool.put(&kept, None, make_platform_pool_item());
+
+            pool.remove_uri(&evicted, pool.generation());
+
+            assert!(
+                pool.get(PoolPrefix::Platform, &evicted, None).is_none(),
+                "{evicted} must be evicted"
+            );
+            assert!(
+                pool.get(PoolPrefix::Platform, &kept, None).is_some(),
+                "{kept} must stay pooled when {evicted} is evicted"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_keep_connections_pooled_after_the_given_generation() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+        pool.put(&uri, None, make_platform_pool_item());
+        let used_by_attempt = pool.generation();
+        // Replaced after the attempt took its connection.
+        pool.put(&uri, None, make_platform_pool_item());
+
+        pool.remove_uri(&uri, used_by_attempt);
+        assert!(
+            pool.get(PoolPrefix::Platform, &uri, None).is_some(),
+            "a connection pooled after the given generation must stay"
+        );
+
+        pool.remove_uri(&uri, pool.generation());
+        assert!(pool.get(PoolPrefix::Platform, &uri, None).is_none());
+    }
+
+    #[tokio::test]
+    async fn should_return_the_generation_of_the_connection_it_takes() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+
+        let (_, created) = pool
+            .get_or_create_with_generation(PoolPrefix::Platform, &uri, None, || {
+                Ok::<_, String>(make_platform_pool_item())
+            })
+            .unwrap();
+        assert_eq!(created, pool.generation());
+
+        let (_, taken) = pool
+            .get_or_create_with_generation(PoolPrefix::Platform, &uri, None, || {
+                Err("the pooled connection must be reused".to_string())
+            })
+            .unwrap();
+        pool.put(&uri, None, make_platform_pool_item());
+
+        assert_eq!(taken, created);
+        assert!(
+            taken < pool.generation(),
+            "a replacement pooled afterwards must get a higher generation"
+        );
     }
 
     #[tokio::test]

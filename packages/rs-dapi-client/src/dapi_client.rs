@@ -4,6 +4,8 @@ use dapi_grpc::mock::Mockable;
 use dapi_grpc::tonic::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
+#[cfg(not(target_arch = "wasm32"))]
+use dapi_grpc::tonic::Status;
 use std::fmt::{Debug, Display};
 use std::time::Duration;
 use tracing::Instrument;
@@ -709,6 +711,325 @@ mod tests {
         let display = format!("{}", err);
         assert!(display.contains("address list error"));
     }
+
+    /// Executor-level coverage for evicting the pooled connection of a node
+    /// whose attempt missed its deadline.
+    #[cfg(not(target_arch = "wasm32"))]
+    mod deadline_pool_eviction {
+        use super::*;
+        use crate::connection_pool::{PoolItem, PoolPrefix};
+        use crate::transport::{BoxFuture, PlatformGrpcClient};
+        use crate::Uri;
+        use dapi_grpc::tonic::transport::Channel;
+        use dapi_grpc::tonic::Code;
+        use std::sync::{Arc, Mutex};
+
+        /// Takes its connection from the executor's pool, as the real gRPC
+        /// clients do, so the pool holds an entry for every node dialed.
+        struct PooledClient {
+            uri: Uri,
+        }
+
+        impl PooledClient {
+            fn pooled(
+                uri: Uri,
+                settings: Option<&AppliedRequestSettings>,
+                pool: &ConnectionPool,
+            ) -> Result<Self, TransportError> {
+                pool.get_or_create(PoolPrefix::Platform, &uri, settings, || {
+                    Ok::<_, TransportError>(PoolItem::Platform(PlatformGrpcClient::new(
+                        Channel::builder(uri.clone()).connect_lazy(),
+                    )))
+                })?;
+                Ok(Self { uri })
+            }
+        }
+
+        impl TransportClient for PooledClient {
+            fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
+                Self::pooled(uri, None, pool)
+            }
+
+            fn with_uri_and_settings(
+                uri: Uri,
+                settings: &AppliedRequestSettings,
+                pool: &ConnectionPool,
+            ) -> Result<Self, TransportError> {
+                Self::pooled(uri, Some(settings), pool)
+            }
+        }
+
+        #[derive(Debug)]
+        struct Pong;
+
+        impl Mockable for Pong {}
+
+        /// Never answers on the first node it is sent to; answers at once
+        /// everywhere else.
+        #[derive(Clone, Debug, Default)]
+        struct StallFirstRequest {
+            stalled: Arc<Mutex<Option<Uri>>>,
+        }
+
+        impl Mockable for StallFirstRequest {}
+
+        impl TransportRequest for StallFirstRequest {
+            type Client = PooledClient;
+            type Response = Pong;
+
+            const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
+
+            fn method_name(&self) -> &'static str {
+                "stall_first"
+            }
+
+            fn execute_transport<'c>(
+                self,
+                client: &'c mut Self::Client,
+                _settings: &AppliedRequestSettings,
+            ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
+                let mut stalled = self.stalled.lock().expect("stall lock");
+                let target = stalled.get_or_insert_with(|| client.uri.clone());
+                if *target == client.uri {
+                    Box::pin(futures::future::pending())
+                } else {
+                    Box::pin(async { Ok(Pong) })
+                }
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn should_evict_the_pooled_connection_of_a_node_that_missed_its_deadline() {
+            let request = StallFirstRequest::default();
+            let client = DapiClient::new(
+                "http://127.0.0.1:10001,http://127.0.0.1:10002"
+                    .parse()
+                    .expect("valid address list"),
+                RequestSettings::default(),
+            );
+
+            let response = client
+                .execute(request.clone(), RequestSettings::default())
+                .await
+                .expect("the other node must answer");
+
+            let stalled = request
+                .stalled
+                .lock()
+                .expect("stall lock")
+                .clone()
+                .expect("a node stalled");
+            // The executor's applied settings for these defaults (no CA
+            // certificate) produce the same pool key.
+            let settings = RequestSettings::default().finalize();
+            assert!(
+                client
+                    .pool
+                    .get(PoolPrefix::Platform, &stalled, Some(&settings))
+                    .is_none(),
+                "the stalled node's connection must be evicted"
+            );
+            assert!(
+                client
+                    .pool
+                    .get(
+                        PoolPrefix::Platform,
+                        response.address.uri(),
+                        Some(&settings)
+                    )
+                    .is_some(),
+                "the healthy node's connection must stay pooled"
+            );
+        }
+
+        /// Replaces its node's pooled connection, as a concurrent request
+        /// that timed out on the node and reconnected would, then never
+        /// answers.
+        #[derive(Clone, Debug)]
+        struct ReplaceConnectionThenStall {
+            pool: ConnectionPool,
+        }
+
+        impl Mockable for ReplaceConnectionThenStall {}
+
+        impl TransportRequest for ReplaceConnectionThenStall {
+            type Client = PooledClient;
+            type Response = Pong;
+
+            const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
+
+            fn method_name(&self) -> &'static str {
+                "replace_connection_then_stall"
+            }
+
+            fn execute_transport<'c>(
+                self,
+                client: &'c mut Self::Client,
+                settings: &AppliedRequestSettings,
+            ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
+                self.pool.put(
+                    &client.uri,
+                    Some(settings),
+                    PoolItem::Platform(PlatformGrpcClient::new(
+                        Channel::builder(client.uri.clone()).connect_lazy(),
+                    )),
+                );
+                Box::pin(futures::future::pending())
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn should_keep_a_connection_pooled_after_the_attempt_took_its_own() {
+            let client = DapiClient::new(
+                "http://127.0.0.1:10001"
+                    .parse()
+                    .expect("valid address list"),
+                RequestSettings {
+                    retries: Some(0),
+                    ..RequestSettings::default()
+                },
+            );
+            let request = ReplaceConnectionThenStall {
+                pool: client.pool.clone(),
+            };
+
+            let error = client
+                .execute(request, RequestSettings::default())
+                .await
+                .expect_err("the only node never answers");
+
+            assert!(
+                matches!(
+                    &error.inner,
+                    DapiClientError::Transport(TransportError::Grpc(status))
+                        if status.code() == Code::DeadlineExceeded
+                ),
+                "expected DeadlineExceeded, got {:?}",
+                error.inner
+            );
+            let uri = error.address.expect("the attempted node").uri().clone();
+            let settings = RequestSettings::default().finalize();
+            assert!(
+                client
+                    .pool
+                    .get(PoolPrefix::Platform, &uri, Some(&settings))
+                    .is_some(),
+                "a connection pooled after the attempt took its own must stay pooled"
+            );
+        }
+
+        /// Takes its node's pooled connection, which another worker replaces
+        /// before the constructor returns.
+        struct ReplacedWhileBuildingClient;
+
+        impl ReplacedWhileBuildingClient {
+            fn build(
+                uri: Uri,
+                settings: Option<&AppliedRequestSettings>,
+                pool: &ConnectionPool,
+            ) -> Result<(Self, u64), TransportError> {
+                let connect = || {
+                    Ok::<_, TransportError>(PoolItem::Platform(PlatformGrpcClient::new(
+                        Channel::builder(uri.clone()).connect_lazy(),
+                    )))
+                };
+                let (_, generation) = pool.get_or_create_with_generation(
+                    PoolPrefix::Platform,
+                    &uri,
+                    settings,
+                    connect,
+                )?;
+                // What a concurrent request that timed out and reconnected
+                // would pool.
+                pool.put(&uri, settings, connect()?);
+                Ok((Self, generation))
+            }
+        }
+
+        impl TransportClient for ReplacedWhileBuildingClient {
+            fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
+                Self::build(uri, None, pool).map(|(client, _)| client)
+            }
+
+            fn with_uri_and_settings(
+                uri: Uri,
+                settings: &AppliedRequestSettings,
+                pool: &ConnectionPool,
+            ) -> Result<Self, TransportError> {
+                Self::build(uri, Some(settings), pool).map(|(client, _)| client)
+            }
+
+            fn with_uri_and_settings_and_generation(
+                uri: Uri,
+                settings: &AppliedRequestSettings,
+                pool: &ConnectionPool,
+            ) -> Result<(Self, u64), TransportError> {
+                Self::build(uri, Some(settings), pool)
+            }
+        }
+
+        /// Never answers.
+        #[derive(Clone, Debug)]
+        struct StallOnReplacedConnection;
+
+        impl Mockable for StallOnReplacedConnection {}
+
+        impl TransportRequest for StallOnReplacedConnection {
+            type Client = ReplacedWhileBuildingClient;
+            type Response = Pong;
+
+            const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
+
+            fn method_name(&self) -> &'static str {
+                "stall_on_replaced_connection"
+            }
+
+            fn execute_transport<'c>(
+                self,
+                _client: &'c mut Self::Client,
+                _settings: &AppliedRequestSettings,
+            ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
+                Box::pin(futures::future::pending())
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn should_keep_a_connection_pooled_while_the_client_was_being_built() {
+            let client = DapiClient::new(
+                "http://127.0.0.1:10001"
+                    .parse()
+                    .expect("valid address list"),
+                RequestSettings {
+                    retries: Some(0),
+                    ..RequestSettings::default()
+                },
+            );
+
+            let error = client
+                .execute(StallOnReplacedConnection, RequestSettings::default())
+                .await
+                .expect_err("the only node never answers");
+
+            assert!(
+                matches!(
+                    &error.inner,
+                    DapiClientError::Transport(TransportError::Grpc(status))
+                        if status.code() == Code::DeadlineExceeded
+                ),
+                "expected DeadlineExceeded, got {:?}",
+                error.inner
+            );
+            let uri = error.address.expect("the attempted node").uri().clone();
+            let settings = RequestSettings::default().finalize();
+            assert!(
+                client
+                    .pool
+                    .get(PoolPrefix::Platform, &uri, Some(&settings))
+                    .is_some(),
+                "a connection pooled while the attempt's client was being built must stay pooled"
+            );
+        }
+    }
 }
 
 #[async_trait]
@@ -789,13 +1110,17 @@ impl DapiRequestExecutor for DapiClient {
                 let response_name = request.response_name();
 
                 // Try to create transport client
-                let transport_client_result = R::Client::with_uri_and_settings(
+                let transport_client_result = R::Client::with_uri_and_settings_and_generation(
                     address.uri().clone(),
                     &applied_settings,
                     &self.pool,
                 );
 
-                let mut transport_client = match transport_client_result {
+                // `pool_generation` is the pool generation of the connection
+                // this attempt uses. A deadline eviction below keeps
+                // connections pooled later: a concurrent request may already
+                // have evicted this one and reconnected.
+                let (mut transport_client, pool_generation) = match transport_client_result {
                     Ok(client) => client,
                     Err(transport_error) => {
                         let can_retry_error = transport_error.can_retry();
@@ -834,15 +1159,36 @@ impl DapiRequestExecutor for DapiClient {
                 };
 
                 // Execute the transport request
-                let result = transport_request
+                let attempt = transport_request
                     .execute_transport(&mut transport_client, &applied_settings)
                     .instrument(tracing::trace_span!(
                         "execute_request",
                         ?address,
                         settings = ?applied_settings,
                         method = request.method_name(),
-                    ))
-                    .await;
+                    ));
+                // tonic enforces the `grpc-timeout` header only until the
+                // response headers arrive; reading the body has no limit, so an
+                // attempt over a half-open connection would never return. Bound
+                // the whole attempt, and drop the pooled connection it used.
+                #[cfg(not(target_arch = "wasm32"))]
+                let result = match applied_settings.attempt_deadline() {
+                    Some(deadline) => match tokio::time::timeout(deadline, attempt).await {
+                        Ok(result) => result,
+                        Err(_) => {
+                            self.pool.remove_uri(address.uri(), pool_generation);
+                            Err(TransportError::Grpc(Status::deadline_exceeded(format!(
+                                "no complete response within {deadline:?}"
+                            ))))
+                        }
+                    },
+                    None => attempt.await,
+                };
+                #[cfg(target_arch = "wasm32")]
+                let result = {
+                    let _ = pool_generation;
+                    attempt.await
+                };
 
                 let execution_result = match result {
                     Ok(response) => {
