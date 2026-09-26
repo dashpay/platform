@@ -34,7 +34,9 @@ pub struct ContactRequest {
     /// Auto accept proof (optional)
     pub auto_accept_proof: Option<Vec<u8>>,
 
-    /// Core height when the contact request was created
+    /// Platform-assigned `$createdAtCoreBlockHeight` of the request document.
+    ///
+    /// Trusted as a scan checkpoint because Platform, not the sender, sets it.
     pub core_height_created_at: CoreBlockHeight,
 
     /// Timestamp when the contact request was created (milliseconds)

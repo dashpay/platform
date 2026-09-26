@@ -79,6 +79,28 @@ pub struct DashPayState {
     /// High-water mark for the sent direction (`$ownerId == me`).
     pub(super) high_water_sent_ms: Option<u64>,
 
+    /// Lowest Platform-assigned `$createdAtCoreBlockHeight` among OUR sent
+    /// `contactRequest` docs to each recipient seen by a sweep this process.
+    ///
+    /// Every request to one recipient carries the same receiving xpub, so this
+    /// is the earliest height a payment to it can appear at — the receiving
+    /// account's scan checkpoint. The tracked outgoing request is only the
+    /// newest one, so its height can be too high.
+    ///
+    /// In-memory only (never persisted), like [`Self::high_water_sent_ms`]:
+    /// that cursor resets on cold start, so each process's first successful
+    /// sent fetch returns every sent doc and refills this map. Only sweeps fill
+    /// it, because replayed or live-sent state knows only the newest request.
+    /// Until [`Self::sent_sweep_completed`] is set the map is not
+    /// authoritative, and `reconcile_dashpay_rescan` defers contacts missing
+    /// from it.
+    pub(super) earliest_sent_core_heights: BTreeMap<Identifier, u32>,
+
+    /// Whether a sync sweep fetched and ingested this identity's sent requests
+    /// this process, filling [`Self::earliest_sent_core_heights`].
+    /// In-memory only: a cold start clears it along with the map.
+    pub(super) sent_sweep_completed: bool,
+
     /// DashPay profile (display name, bio, avatar, public message)
     /// published via the DashPay data contract. `None` until the
     /// profile has been fetched or set.
@@ -126,19 +148,22 @@ pub struct DashPayState {
     /// `sync_contact_profiles`; public-data only (never `contactInfo`-derived).
     pub contact_profiles: BTreeMap<Identifier, ContactProfileEntry>,
 
-    /// Contacts for which a historical L1 rescan has already been triggered this
-    /// process lifetime (DIP-15 §12.6 coreHeight backfill). When the rescan
-    /// reconcile lowers the wallet's SPV `synced_height` to a contact's funding
-    /// height so the filter manager re-scans for payments that landed before the
-    /// receival address was watched, the contact is recorded here so the
-    /// recurring sweep does not re-lower the height every pass — which would
-    /// reset the in-flight backfill and prevent it from ever completing.
+    /// Contacts whose receival account's historical L1 rescan has already been
+    /// scheduled this process lifetime (DIP-15 §12.6 backfill). Registering the
+    /// account, or the rescan reconcile lowering the wallet's SPV
+    /// `synced_height` to the account's scan checkpoint, records the contact
+    /// here so the recurring sweep does not re-lower the height every pass —
+    /// which would reset the in-flight backfill and prevent it from ever
+    /// completing. Only a change to OUR outgoing requests (the sole input of
+    /// that checkpoint) clears the mark: a new outgoing request, or a sweep
+    /// finding an older sent doc than the checkpoint already applied. The
+    /// contact's own requests never clear it.
     ///
     /// In-memory only (never persisted): a relaunch clears it, and because
     /// `synced_height` is restored at its monotonic high-water, an interrupted
     /// backfill is re-triggered on the next launch — self-healing. The cost of
-    /// that reset is one historical re-match per launch while any contact is
-    /// funded below the tip; the compact filters are reused from disk (not
+    /// that reset is one historical re-match per launch while any contact's
+    /// checkpoint is below the tip; the compact filters are reused from disk (not
     /// re-downloaded), so it is cheap. A persisted breadcrumb could make the
     /// backfill durable across a crash if that ever becomes necessary.
     pub rescan_triggered: BTreeSet<Identifier>,
@@ -197,5 +222,25 @@ impl DashPayState {
     /// session.
     pub fn high_water_sent_ms(&self) -> Option<u64> {
         self.high_water_sent_ms
+    }
+
+    /// Our tracked outgoing request to `contact`: the established contact's
+    /// outgoing side, else a pending sent request.
+    pub fn outgoing_request(&self, contact: &Identifier) -> Option<&ContactRequest> {
+        self.established_contacts
+            .get(contact)
+            .map(|established| &established.outgoing_request)
+            .or_else(|| self.sent_contact_requests.get(contact))
+    }
+
+    /// Whether a sent-request sweep completed this process; see the field doc.
+    pub fn sent_sweep_completed(&self) -> bool {
+        self.sent_sweep_completed
+    }
+
+    /// Earliest `$createdAtCoreBlockHeight` a sweep saw this process among our
+    /// sent requests to `recipient`; see the field doc.
+    pub fn earliest_sent_core_height(&self, recipient: &Identifier) -> Option<u32> {
+        self.earliest_sent_core_heights.get(recipient).copied()
     }
 }
