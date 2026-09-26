@@ -9,7 +9,7 @@ use std::time::Duration;
 use tracing::Instrument;
 
 use crate::address_list::AddressListError;
-use crate::connection_pool::ConnectionPool;
+use crate::connection_pool::{ConnectionPool, DEFAULT_POOL_CAPACITY};
 use crate::request_settings::AppliedRequestSettings;
 use crate::transport::{self, TransportError};
 use crate::{
@@ -117,14 +117,18 @@ pub struct DapiClient {
 
 impl DapiClient {
     /// Initialize new [DapiClient] and optionally override default settings.
+    ///
+    /// `address_list` may be empty; addresses added later to the shared list
+    /// (or a clone of it) are used by this client.
     pub fn new(address_list: AddressList, settings: RequestSettings) -> Self {
-        // multiply by 3 as we need to store core and platform addresses, and we want some spare capacity just in case
-        let address_count = 3 * address_list.len();
+        // multiply by 3 as we need to store core and platform addresses, and we want some spare capacity just in case;
+        // never go below the default, as the list can be empty and addresses can be added later
+        let pool_capacity = (3 * address_list.len()).max(DEFAULT_POOL_CAPACITY);
 
         Self {
             address_list,
             settings,
-            pool: ConnectionPool::new(address_count),
+            pool: ConnectionPool::new(pool_capacity),
             #[cfg(feature = "dump")]
             dump_dir: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -279,6 +283,25 @@ mod tests {
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
         }
+    }
+
+    #[tokio::test]
+    async fn test_new_with_empty_address_list() {
+        let client = DapiClient::new(AddressList::new(), RequestSettings::default());
+        assert!(client.address_list().is_empty());
+
+        let request = dapi_grpc::platform::v0::GetIdentityRequest::default();
+        let err = client
+            .execute(request, RequestSettings::default())
+            .await
+            .expect_err("no addresses to execute the request on");
+        assert!(matches!(err.inner, DapiClientError::NoAvailableAddresses));
+
+        // The address list is shared, so addresses added later are visible to the client.
+        let mut address_list = client.address_list().clone();
+        assert!(address_list.add(mock_address()));
+        assert_eq!(client.get_live_addresses(), vec![mock_address()]);
+        // Execution on the added address: tests/empty_address_list.rs.
     }
 
     #[test]
