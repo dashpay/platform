@@ -1,7 +1,9 @@
 import * as glob from 'glob';
 import { TEMPLATES_DIR } from '../constants.js';
+import ensureTenderdashNodeKey from '../tenderdash/ensureTenderdashNodeKey.js';
 
 /**
+ * @param {renderTemplate} renderTemplate
  * @return {renderServiceTemplates}
  */
 export default function renderServiceTemplatesFactory(renderTemplate) {
@@ -14,6 +16,9 @@ export default function renderServiceTemplatesFactory(renderTemplate) {
    * @return {Object<string,string>}
    */
   function renderServiceTemplates(config) {
+    // Prevent node_key.json from containing the literal string "null".
+    ensureTenderdashNodeKey(config);
+
     const templatePaths = glob.sync(`${TEMPLATES_DIR}/**/*.dot`, {
       ignore: {
         // Ignore manual rendered templates
