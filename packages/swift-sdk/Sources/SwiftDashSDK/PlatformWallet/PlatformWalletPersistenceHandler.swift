@@ -3768,7 +3768,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         previousOwner.mainDpnsName = nil
                     }
                     if previousOwner.dpnsName.map(PersistentDPNSName.normalize) == normalizedLabel {
-                        previousOwner.dpnsName = nil
+                        // Fall back to another name the old owner still
+                        // owns, as the snapshot's own fallback does for the
+                        // identity it describes — no snapshot for the old
+                        // owner may follow to repair it.
+                        previousOwner.dpnsName = previousOwner.dpnsNames
+                            .filter { $0.isOwned && $0.normalizedLabel != normalizedLabel }
+                            .sorted { ($0.acquiredAt, $0.label) < ($1.acquiredAt, $1.label) }
+                            .first?.label
                     }
                     existing.identity = identityRow
                     existing.lastUpdated = Date()

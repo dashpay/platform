@@ -417,8 +417,9 @@ impl IdentityWallet {
     /// Iterates every identity in the [`IdentityManager`], queries Platform
     /// for its current DPNS usernames, and reconciles the stored
     /// `dpns_names` list with them, persisting at most one snapshot per
-    /// identity: a complete result replaces the list (departed names drop
-    /// out), a full, possibly truncated page only adds — see
+    /// identity: for an identity the wallet only watches, a complete result
+    /// replaces the list (departed names drop out); wallet-owned identities
+    /// and a possibly truncated result only add — see
     /// `ManagedIdentity::apply_fetched_dpns_names`.
     pub async fn refresh_dpns_names(&self) -> Result<(), PlatformWalletError> {
         use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
