@@ -20,12 +20,13 @@ use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchr
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::rehydrate::{
-    apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+    build_wallet, restore_core_address_pools, snapshot_matches_manifest,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
 use crate::sqlite::util::safe_cast;
+use platform_wallet::changeset::Merge;
 
 /// Persisted-but-not-rehydrated areas, surfaced in the structured
 /// `tracing::info!` summary on every `load()`.
@@ -1321,6 +1322,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
+            .union(PersistenceCapabilities::CORE_WALLET_SNAPSHOTS)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
         #[cfg(feature = "shielded")]
         {
@@ -1455,11 +1457,9 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// and counted on [`last_load_degradation`](Self::last_load_degradation)
     /// instead, and the persister is read-only for the rest of its life.
     ///
-    /// Two sites degrade in **both** policies because their signal cannot
-    /// distinguish corruption from a healthy wallet: a used address whose
-    /// owner is not one of this wallet's funds accounts, and a restored
-    /// address that does not resolve against its account xpub. Both re-warm
-    /// on the next sync and the balance total is exact regardless.
+    /// A used address whose owner is not a funds account is counted as
+    /// degraded in either policy. Invalid Core snapshots and address-pool rows
+    /// that disagree with their account keys fail wallet restoration.
     ///
     /// **Query budget.** Platform addresses load via grouped bulk scans
     /// (constant), but the keyless per-wallet payload is a fan-out: one
@@ -1515,7 +1515,12 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        let conn = self.conn().map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        // All tables and checkpoints must describe one committed state, including with external writers.
+        let conn = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)
+            .map_err(WalletStorageError::from)
+            .map_err(PersistenceError::from)?;
         let ctx = LoadCtx::new(self.config.load_policy);
         // Cleared up front so a failed load never leaves the previous load's
         // snapshot behind, masquerading as this one's verdict.
@@ -1591,6 +1596,9 @@ impl PlatformWalletPersistence for SqlitePersister {
         ctx.add_unimplemented_rows(
             count_unimplemented_rows(&conn).map_err(PersistenceError::from)?,
         );
+        conn.commit()
+            .map_err(WalletStorageError::from)
+            .map_err(PersistenceError::from)?;
         let degradation = ctx.degradation();
         tracing::info!(
             wallets_seen,
@@ -1702,9 +1710,6 @@ fn load_one_wallet(
 
     let account_manifest =
         schema::accounts::load_state(conn, &wallet_id, ctx).map_err(PersistenceError::from)?;
-    let (core_state, utxo_accounts) =
-        schema::core_state::load_state(conn, &wallet_id, network, ctx)
-            .map_err(PersistenceError::from)?;
     // Pre-keyed rehydration: each `ManagedIdentity` leaves the loader
     // already carrying its own public keys + contact state (matching
     // the FFI persister), so signing works immediately post-load
@@ -1770,12 +1775,6 @@ fn load_one_wallet(
         union
     };
 
-    // Reconstruct a populated `ManagedWalletInfo` from typed rows:
-    // rebuild the wallet watch-only from the manifest, then layer the
-    // persisted core-state projection (UTXOs, sync watermarks,
-    // chainlock, used-address pool depth) onto it. The manager consumes
-    // this directly — the old skeleton + core_state replay fallback is
-    // gone.
     let wallet = if account_manifest.is_empty() {
         // No accounts of any kind for this wallet. An empty manifest
         // is NOT necessarily an orphaned row: a platform-only wallet — a
@@ -1809,46 +1808,21 @@ fn load_one_wallet(
             ))
         })?
     };
-    // TODO(insert-wallet-id-recompute): confirm whether key_wallet's
-    // insert_wallet recomputes wallet_id — see PR's existing Deferred
-    // #3992 note. Both construction paths above hand it the persisted
-    // id; if the manager derives its own instead, a rehydrated wallet
-    // could be filed under an id that no longer matches its rows.
-    // Answering it needs the key-wallet crate, not this repo.
-    let mut wallet_info = key_wallet::wallet::managed_wallet_info::ManagedWalletInfo::from_wallet(
-        &wallet,
-        birth_height,
-    );
-    // Provider key-material accounts hold no funds, so only the ECDSA
-    // half feeds the UTXO/balance projection here. The platform-node
-    // pre-derived-key pool is restored separately below.
-    apply_persisted_core_state(
+    // Legacy rows lack spend lifecycle state, so Core resumes from the wallet birthday.
+    let fresh_info = key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet, birth_height);
+    let mut wallet_info = schema::core_wallet_snapshots::load(conn, &wallet_id)
+        .map_err(PersistenceError::from)?
+        .filter(|snapshot| snapshot_matches_manifest(snapshot, &fresh_info))
+        .unwrap_or(fresh_info);
+    restore_core_address_pools(
         &mut wallet_info,
-        &account_manifest.ecdsa,
-        &core_state,
-        &utxo_accounts,
+        conn,
+        &wallet_id,
+        &account_manifest,
         &used_core_addresses,
         ctx,
     )
-    .map_err(|e| {
-        PersistenceError::backend(format!(
-            "core-state rehydration failed for {}: {e}",
-            hex::encode(wallet_id)
-        ))
-    })?;
-    if account_manifest
-        .provider
-        .iter()
-        .any(|entry| entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys)
-    {
-        restore_provider_platform_node_pool(&mut wallet_info, conn, &wallet_id, network, ctx)
-            .map_err(|e| {
-                PersistenceError::backend(format!(
-                    "platform-node pool rehydration failed for {}: {e}",
-                    hex::encode(wallet_id)
-                ))
-            })?;
-    }
+    .map_err(PersistenceError::from)?;
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,
@@ -2196,6 +2170,14 @@ fn apply_changeset_to_tx(
     if let Some(core) = cs.core.as_ref() {
         schema::core_state::apply(tx, wallet_id, core)?;
     }
+    schema::core_wallet_snapshots::apply(
+        tx,
+        wallet_id,
+        cs.core_wallet_snapshot.as_ref(),
+        cs.core.as_ref().is_some_and(|core| !core.is_empty())
+            || !cs.account_registrations.is_empty()
+            || !cs.provider_key_account_registrations.is_empty(),
+    )?;
     #[cfg(feature = "shielded")]
     if let Some(shielded) = cs.shielded.as_ref() {
         schema::shielded_viewing_keys::apply(tx, wallet_id, shielded)?;
@@ -2386,9 +2368,7 @@ mod tests {
             "asset_locks",
             "contacts",
             "core_address_pool",
-            "core_instant_locks",
-            "core_sync_state",
-            "core_transactions",
+            "core_wallet_snapshots",
             "core_utxos",
             "identities",
             "identity_keys",
@@ -2402,6 +2382,9 @@ mod tests {
         // Not rehydrated by `load()`, but read on demand by a production
         // entry point, so the state is reachable rather than abandoned.
         const READ_BY_A_DEDICATED_API: &[&str] = &[
+            "core_instant_locks",    // core_state::load_state
+            "core_sync_state",       // core_state::load_state
+            "core_transactions",     // core_state::load_state
             "dpns_name_states",      // get_dpns_name_state
             "meta_contact",          // the kv object store
             "meta_data_versions",    // schema::versions

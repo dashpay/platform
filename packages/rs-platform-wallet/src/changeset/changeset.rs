@@ -1,8 +1,8 @@
 //! Changeset types for delta-based wallet persistence.
 //!
 //! Every wallet mutation produces a [`PlatformWalletChangeSet`] delta that
-//! is applied to in-memory state and persisted atomically. No full-state
-//! snapshots — only deltas.
+//! is applied to in-memory state and persisted atomically. Opted-in backends
+//! also receive complete Core wallet snapshots at coherent event boundaries.
 //!
 //! # Shape
 //!
@@ -32,6 +32,7 @@ use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
 use crate::changeset::identity_scan_state::IdentityScanStateEntry;
@@ -119,9 +120,8 @@ pub struct CoreChangeSet {
     /// account's bucket so the per-account transaction callback still
     /// writes the tx↔account involvement join for payload-only
     /// matches (provider owner/voting keys) that restart restoration
-    /// depends on. Persisters that resolve accounts another way
-    /// (SQLite looks the address up in `core_derived_addresses`) can
-    /// ignore this field.
+    /// depends on. SQLite also persists these slices for accurate
+    /// per-account transaction history after restart.
     ///
     /// Merge coalesces by `(txid, account_type)` newest-wins, mirroring
     /// the wallet-level coalesce on `records`.
@@ -305,10 +305,11 @@ pub struct CoreChangeSet {
 /// Why the engine did not credit a `Received` / `Change` output of a
 /// record it emitted — see [`CoreChangeSet::utxo_credit_verdicts`].
 ///
-/// A persister may treat [`Self::ObservedSpent`] and [`Self::Doomed`] as
-/// positive evidence that the coin is not spendable and store its row as
-/// spent; [`Self::Uncredited`] carries no context and only says "do not
-/// hand this coin back as unspent on a re-delivery".
+/// [`Self::ObservedSpent`] is durable spend evidence. [`Self::Doomed`]
+/// suppresses this delivery but is not evidence that the output itself was
+/// spent; a persister removes a stale unspent row but retains independent
+/// spent evidence. A later authoritative confirmation can make it spendable.
+/// [`Self::Uncredited`] only says not to credit this delivery.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum UtxoCreditVerdict {
@@ -320,8 +321,8 @@ pub enum UtxoCreditVerdict {
         height: u32,
     },
     /// Not in `utxos`: the record is an unconfirmed transaction one of
-    /// whose inputs a block already spent, so it can never confirm and
-    /// nothing it created was credited (`doomed_by_a_settled_spend`).
+    /// whose inputs a block already spent, so this candidate cannot confirm
+    /// and nothing it created was credited (`doomed_by_a_settled_spend`).
     Doomed,
     /// Not in `utxos` for a reason the bridge cannot name — an account-level
     /// spent mark, a spend, an abandon or a sweep between emit and drain.
@@ -2106,6 +2107,13 @@ pub struct PlatformWalletChangeSet {
     /// transaction records, UTXO add/remove, height checkpoints, IS-lock
     /// updates for non-final records.
     pub core: Option<CoreChangeSet>,
+    /// Complete Core wallet state captured together with this batch's events.
+    /// Newer snapshots replace older ones; subsequent Core deltas or account
+    /// registrations without a snapshot invalidate it. Pool-only changes are
+    /// applied over the snapshot by the backend. Stored separately from the
+    /// changeset's wire representation by snapshot-capable backends.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub core_wallet_snapshot: Option<ManagedWalletInfo>,
     /// Identity changes (registered, updated).
     pub identities: Option<IdentityChangeSet>,
     /// Identity key changes (public keys + private-key storage) keyed
@@ -2262,6 +2270,13 @@ impl From<DpnsNameStateChangeSet> for PlatformWalletChangeSet {
 
 impl Merge for PlatformWalletChangeSet {
     fn merge(&mut self, other: Self) {
+        if other.core_wallet_snapshot.is_some()
+            || !other.core.is_empty()
+            || !other.account_registrations.is_empty()
+            || !other.provider_key_account_registrations.is_empty()
+        {
+            self.core_wallet_snapshot = other.core_wallet_snapshot;
+        }
         // `CoreChangeSet` implements `Merge`; delegate via the
         // `Option<T>: Merge` blanket impl from this crate's merge module.
         self.core.merge(other.core);
@@ -2325,6 +2340,7 @@ impl Merge for PlatformWalletChangeSet {
 
     fn is_empty(&self) -> bool {
         let core_empty = self.core.is_empty()
+            && self.core_wallet_snapshot.is_none()
             && self.identities.is_empty()
             && self.identity_keys.is_empty()
             && self.contacts.is_empty()
@@ -2346,6 +2362,85 @@ impl Merge for PlatformWalletChangeSet {
             && self.pending_contact_crypto_added.is_empty()
             && self.pending_contact_crypto_cleared.is_empty();
         core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
+    }
+}
+
+#[cfg(test)]
+mod core_snapshot_tests {
+    use super::*;
+    use key_wallet::wallet::ManagedWalletInfo;
+
+    fn snapshot(height: u32) -> PlatformWalletChangeSet {
+        let mut info = ManagedWalletInfo::new(Network::Testnet, [7; 32]);
+        info.metadata.synced_height = height;
+        PlatformWalletChangeSet {
+            core_wallet_snapshot: Some(info),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn core_snapshot_merge_replaces_and_invalidates_only_for_core_deltas() {
+        let mut changes = snapshot(10);
+        assert!(!changes.is_empty(), "a snapshot alone must reach storage");
+        changes.merge(snapshot(20));
+        changes.merge(PlatformWalletChangeSet {
+            account_address_pools: vec![AccountAddressPoolEntry {
+                account_type: AccountType::Standard {
+                    index: 0,
+                    standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+                },
+                pool_type: AddressPoolType::External,
+                addresses: vec![],
+            }],
+            ..Default::default()
+        });
+        changes.merge(PlatformWalletChangeSet {
+            core: Some(CoreChangeSet::default()),
+            ..Default::default()
+        });
+        assert_eq!(
+            changes
+                .core_wallet_snapshot
+                .as_ref()
+                .unwrap()
+                .metadata
+                .synced_height,
+            20
+        );
+        changes.merge(PlatformWalletChangeSet {
+            core: Some(CoreChangeSet {
+                synced_height: Some(30),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        assert!(
+            changes.core_wallet_snapshot.is_none(),
+            "a later Core delta cannot retain an older snapshot"
+        );
+        changes.merge(snapshot(40));
+        assert_eq!(
+            changes.core_wallet_snapshot.unwrap().metadata.synced_height,
+            40
+        );
+    }
+
+    #[test]
+    fn core_snapshot_merge_invalidates_when_an_account_is_registered() {
+        let mut changes = snapshot(10);
+        let ctx = key_wallet::test_utils::TestWalletContext::new_random();
+        changes.merge(PlatformWalletChangeSet {
+            account_registrations: vec![AccountRegistrationEntry {
+                account_type: AccountType::Standard {
+                    index: 0,
+                    standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+                },
+                account_xpub: ctx.xpub,
+            }],
+            ..Default::default()
+        });
+        assert!(changes.core_wallet_snapshot.is_none());
     }
 }
 

@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Fixed
+
+- Preserve complete Core wallet state across SQLite restarts so spent coins and InstantSend conflicts remain resolved. Reject snapshots containing an InstantLock for the wrong transaction. Legacy databases resynchronize Core while retaining accounts, addresses, and Platform data.
+
 ## [4.2.0-beta.4](https://github.com/dashpay/platform/compare/v4.2.0-beta.3...v4.2.0-beta.4) (2026-09-24)
 
 

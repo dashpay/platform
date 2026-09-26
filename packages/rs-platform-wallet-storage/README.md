@@ -78,13 +78,23 @@ runs migrations and migrating a structurally corrupt file only deepens the
 damage. Recovery also refuses `auto_backup_dir = None`, so the rescue
 attempt always keeps a rollback point.
 
-Two sites degrade under *both* policies, because their signal cannot
-distinguish corruption from a healthy wallet: a used address whose owner is
-not one of the wallet's funds accounts (what a masternode-operator wallet
-looks like — provider accounts are not funds accounts), and a restored
-address that does not resolve against its account xpub (foreign, or
-legitimately sparse past the bounded-work cap). Both re-warm on the next
-sync; the balance total is exact regardless.
+Core state is saved as a versioned `ManagedWalletInfo` snapshot in the same
+transaction as the event's SQL projections. The event bridge captures queued
+events and wallet state under one manager read lock. On restart, this preserves
+spend tracking and finality state, preventing already-spent coins from returning
+to the available balance. Address-pool rows overlay the snapshot monotonically
+so later derived, used, or reserved addresses remain protected against reuse.
+
+Databases without a Core snapshot restart Core synchronization from the wallet's
+birth height. Accounts, saved addresses, and Platform data remain intact; old
+Core transaction rows and checkpoints are retained but do not initialize the
+Core engine. A later Core change without a matching snapshot invalidates the
+saved snapshot and likewise requires a rescan. Corrupt snapshots, unknown format
+versions, and incompatible upstream serialization layouts fail wallet loading
+instead of silently falling back to legacy rows.
+
+`load()` reads all wallet data from one SQLite transaction, so another
+connection's commits cannot mix different wallet states.
 
 `LoadDegradation` also reports `unimplemented_rows`: rows sitting in tables
 `load()` has no reader for. Those are intact, merely unread, so they never

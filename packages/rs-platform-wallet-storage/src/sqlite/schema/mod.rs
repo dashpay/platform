@@ -12,6 +12,7 @@ pub mod blob;
 pub mod contacts;
 pub mod core_pool;
 pub mod core_state;
+pub(crate) mod core_wallet_snapshots;
 pub mod dashpay;
 pub mod dpns_name_states;
 pub mod identities;

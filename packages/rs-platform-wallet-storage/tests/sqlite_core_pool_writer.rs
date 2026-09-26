@@ -1206,3 +1206,90 @@ fn typed_pool_key_at_fresh_index_succeeds() {
         fresh.public_key
     );
 }
+
+#[test]
+fn typed_pool_reads_are_scoped_to_the_full_account_identity() {
+    use platform_wallet_storage::sqlite::schema::core_pool::load_typed_pool_entries;
+    let (persister, _tmp, _path) = fresh_persister();
+    let wallet_id = wid(0xE3);
+    ensure_wallet_meta(&persister, &wallet_id);
+    let address = external_infos(0xE3).remove(0);
+    let account = |index| AccountType::Standard {
+        index,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![
+                    pool_entry(account(0), AddressPoolType::External, vec![address.clone()]),
+                    pool_entry(account(1), AddressPoolType::External, vec![address]),
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let conn = persister.lock_conn_for_test();
+    for index in [0, 1] {
+        let rows = load_typed_pool_entries(
+            &conn,
+            &wallet_id,
+            &account(index),
+            AddressPoolType::External,
+        )
+        .unwrap();
+        assert_eq!(
+            rows.len(),
+            1,
+            "a sibling account must not contribute pool rows"
+        );
+    }
+}
+
+#[test]
+fn provider_pool_overlay_rejects_a_different_key_at_an_existing_snapshot_index() {
+    use platform_wallet::wallet::provider_key_at_index::{
+        derive_platform_node_public_keys, populate_platform_node_pool,
+    };
+    use platform_wallet_storage::sqlite::rehydrate::restore_core_address_pools;
+    use platform_wallet_storage::sqlite::schema::accounts::AccountManifest;
+    use platform_wallet_storage::LoadCtx;
+    let wallet = Wallet::from_seed_bytes(
+        [0xE7; 64],
+        Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let mut snapshot = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let keys = derive_platform_node_public_keys(&wallet, Network::Testnet, 1).unwrap();
+    populate_platform_node_pool(&mut snapshot, &keys, Network::Testnet).unwrap();
+    let before = bincode::serde::encode_to_vec(&snapshot, bincode::config::standard()).unwrap();
+    let (persister, _tmp, _path) = fresh_persister();
+    ensure_wallet_meta(&persister, &wallet.wallet_id);
+    persister
+        .store(
+            wallet.wallet_id,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![provider_platform_pool_entry(vec![
+                    typed_platform_node_info(0xE8, 0, 0xE9),
+                ])],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let error = restore_core_address_pools(
+        &mut snapshot,
+        &persister.lock_conn_for_test(),
+        &wallet.wallet_id,
+        &AccountManifest::default(),
+        &Default::default(),
+        &LoadCtx::strict(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, WalletStorageError::BlobDecode { .. }));
+    assert_eq!(
+        bincode::serde::encode_to_vec(&snapshot, bincode::config::standard()).unwrap(),
+        before
+    );
+}
