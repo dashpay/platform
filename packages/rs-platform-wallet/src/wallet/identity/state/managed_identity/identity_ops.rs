@@ -85,7 +85,6 @@ impl ManagedIdentity {
             status: Default::default(),
             dpns_names: Vec::new(),
             contested_dpns_names: Vec::new(),
-            pending_dpns_departures: Vec::new(),
             wallet_id: None,
             dashpay: Default::default(),
         }
@@ -107,7 +106,6 @@ impl ManagedIdentity {
             status: Default::default(),
             dpns_names: Vec::new(),
             contested_dpns_names: Vec::new(),
-            pending_dpns_departures: Vec::new(),
             wallet_id: None,
             dashpay: Default::default(),
         }
@@ -277,33 +275,26 @@ impl ManagedIdentity {
     /// labels are new.
     ///
     /// `complete` says the fetch returned the identity's whole owned set (the
-    /// paged query reached a short page). Then the list is replaced with
-    /// it — departed names drop out, an empty result clears the list — while
-    /// labels already known keep their `acquired_at`, and nothing is
-    /// persisted when the list is unchanged. A partial fetch (the page bound
-    /// was hit) cannot prove that a missing label left, so it only merges new labels
-    /// ([`Self::merge_dpns_names`]). Either way one snapshot at most.
+    /// paged query reached a short page). For an identity the wallet only
+    /// watches (no `wallet_id`) the list is then replaced with it — departed
+    /// names drop out, an empty result clears the list — while labels
+    /// already known keep their `acquired_at`, and nothing is persisted when
+    /// the list is unchanged.
+    ///
+    /// A wallet-owned identity only ever merges new labels
+    /// ([`Self::merge_dpns_names`]): the DPNS marketplace sweep discovers its
+    /// departures from this list and classifies them (sale, transfer,
+    /// deletion), so a username fetch must not remove a label first. A
+    /// partial fetch (the page bound was hit) cannot prove that a missing
+    /// label left, so it only merges too. Either way one snapshot at most.
     pub fn apply_fetched_dpns_names(
         &mut self,
         names: Vec<DpnsNameInfo>,
         complete: bool,
         persister: &WalletPersister,
     ) -> u32 {
-        if !complete {
+        if !complete || self.wallet_id.is_some() {
             return self.merge_dpns_names(names, persister);
-        }
-        // Labels this complete set no longer carries left the identity;
-        // queue them for the marketplace sweep before pruning (see
-        // `pending_dpns_departures`).
-        for known in &self.dpns_names {
-            let departed = !names.iter().any(|name| name.label == known.label);
-            let queued = self
-                .pending_dpns_departures
-                .iter()
-                .any(|pending| pending.label == known.label);
-            if departed && !queued {
-                self.pending_dpns_departures.push(known.clone());
-            }
         }
         // Known labels still owned, in their existing order, then new ones.
         let mut next: Vec<DpnsNameInfo> = self
@@ -324,19 +315,6 @@ impl ManagedIdentity {
             self.set_dpns_names(next, persister);
         }
         added
-    }
-
-    /// Labels dropped by a complete username fetch and not yet classified
-    /// by the marketplace sweep.
-    pub fn pending_dpns_departures(&self) -> &[DpnsNameInfo] {
-        &self.pending_dpns_departures
-    }
-
-    /// Forget queued departures for `labels` once the marketplace sweep has
-    /// taken them over (or seen them owned again).
-    pub(crate) fn clear_pending_dpns_departures(&mut self, labels: &[String]) {
-        self.pending_dpns_departures
-            .retain(|pending| !labels.contains(&pending.label));
     }
 
     /// Replace the DPNS-name list wholesale.
@@ -853,38 +831,37 @@ mod tests {
         );
     }
 
-    /// A complete fetch queues every label it prunes for the marketplace
-    /// sweep (once); a partial fetch prunes nothing and queues nothing; a
-    /// cleared label leaves the queue.
+    /// Re-fetching the same complete set (even in another order, with fresh
+    /// timestamps) changes nothing and stores nothing.
+    /// A wallet-owned identity never loses a label to a username fetch,
+    /// complete or not: the marketplace sweep discovers its departures from
+    /// this list, so pruning here would erase the only trigger.
     #[test]
-    fn complete_dpns_fetch_queues_pruned_labels_for_the_marketplace_sweep() {
+    fn complete_dpns_fetch_on_a_wallet_identity_only_adds() {
         let (mut managed, _persister, p) = dpns_test_identity();
+        managed.wallet_id = Some([0xAB; 32]);
         managed.set_dpns_names(
             vec![dpns_name("alice", Some(10)), dpns_name("bob", Some(20))],
             &p,
         );
 
-        managed.apply_fetched_dpns_names(vec![dpns_name("carol", None)], false, &p);
-        assert!(managed.pending_dpns_departures().is_empty());
-
-        managed.apply_fetched_dpns_names(vec![dpns_name("carol", None)], true, &p);
-        managed.apply_fetched_dpns_names(vec![dpns_name("carol", None)], true, &p);
-        let queued: Vec<&str> = managed
-            .pending_dpns_departures()
+        let added = managed.apply_fetched_dpns_names(vec![dpns_name("carol", None)], true, &p);
+        assert_eq!(added, 1);
+        let labels: Vec<&str> = managed
+            .dpns_names
             .iter()
             .map(|n| n.label.as_str())
             .collect();
-        assert_eq!(queued, ["alice", "bob"]);
+        assert_eq!(labels, ["alice", "bob", "carol"]);
 
-        managed.clear_pending_dpns_departures(&["alice".to_string()]);
+        assert_eq!(managed.apply_fetched_dpns_names(Vec::new(), true, &p), 0);
         assert_eq!(
-            managed.pending_dpns_departures(),
-            [dpns_name("bob", Some(20))]
+            managed.dpns_names.len(),
+            3,
+            "an empty complete fetch prunes nothing"
         );
     }
 
-    /// Re-fetching the same complete set (even in another order, with fresh
-    /// timestamps) changes nothing and stores nothing.
     #[test]
     fn unchanged_complete_dpns_fetch_stores_nothing() {
         let (mut managed, persister, p) = dpns_test_identity();

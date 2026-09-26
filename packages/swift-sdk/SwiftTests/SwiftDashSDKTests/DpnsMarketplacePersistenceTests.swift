@@ -340,6 +340,35 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         ).isEmpty)
     }
 
+    /// A transfer clears the previous owner's selection of the moved name;
+    /// its display cache falls back to another name it still owns, since no
+    /// snapshot for the previous owner may follow.
+    func testPreviousOwnerFallsBackToAnotherOwnedNameAfterTransfer() throws {
+        let context = ModelContext(container)
+        let oldOwner = PersistentIdentity(
+            identityId: ownerId,
+            isLocal: false,
+            dpnsName: "Alice",
+            mainDpnsName: "Alice",
+            network: .testnet
+        )
+        let nextOwner = PersistentIdentity(identityId: nextOwnerId, isLocal: false, network: .testnet)
+        context.insert(oldOwner)
+        context.insert(nextOwner)
+        context.insert(PersistentDPNSName(identity: oldOwner, label: "Alice", acquiredAt: 10))
+        context.insert(PersistentDPNSName(identity: oldOwner, label: "Bob", acquiredAt: 20))
+        try context.save()
+
+        applyIdentitySnapshot(id: nextOwnerId, names: [("Alice", 30)])
+
+        let readContext = ModelContext(container)
+        let previous = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
+        XCTAssertNil(previous.mainDpnsName)
+        XCTAssertEqual(previous.dpnsName, "Bob")
+        XCTAssertEqual(previous.displayName, "Bob")
+        XCTAssertEqual(previous.dpnsNames.map(\.label), ["Bob"])
+    }
+
     func testSameWalletTransferRebindsSingleCanonicalRowToNewOwner() throws {
         let documentId = Data(repeating: 0x36, count: 32).toBase58String()
         let context = ModelContext(container)

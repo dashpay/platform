@@ -312,9 +312,11 @@ impl IdentityWallet {
     /// [`ManagedIdentity.dpns_names`](crate::wallet::identity::ManagedIdentity)
     /// cache with them.
     ///
-    /// The query pages until a page comes back short; that complete owned
-    /// set replaces the cache (names that left drop out). If the page bound
-    /// is reached first the result is only a lower bound and is merged — see
+    /// The query pages until a page comes back short. For an identity the
+    /// wallet only watches, that complete owned set replaces the cache (names
+    /// that left drop out); a wallet-owned identity only gains labels, since
+    /// the marketplace sweep owns its departures. If the page bound is
+    /// reached first the result is only a lower bound and is merged — see
     /// `ManagedIdentity::apply_fetched_dpns_names`. Known labels keep their
     /// timestamp; new labels get an
     /// `acquired_at` timestamp of best-effort wall-clock millis —
@@ -345,8 +347,8 @@ impl IdentityWallet {
                     "Failed to fetch DPNS usernames for identity {identity_id}: {e}",
                 ))
             })?;
-        // The complete owned set also drops names that left, and an empty
-        // one clears the list; an unfinished paging only adds.
+        // See `apply_fetched_dpns_names`: only a watched identity's complete
+        // set drops names; wallet-owned identities and unfinished paging add.
 
         let acquired_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
