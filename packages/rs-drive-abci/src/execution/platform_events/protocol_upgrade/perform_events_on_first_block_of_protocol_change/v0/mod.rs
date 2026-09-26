@@ -119,6 +119,10 @@ impl<C> Platform<C> {
             self.transition_to_version_14(block_info, transaction, platform_version)?;
         }
 
+        if previous_protocol_version < 17 && platform_version.protocol_version >= 17 {
+            self.transition_to_version_17(transaction, platform_version)?;
+        }
+
         Ok(())
     }
 
@@ -738,6 +742,34 @@ impl<C> Platform<C> {
 
         Ok(())
     }
+
+    /// When transitioning to version 17 we add the contract credits root sum
+    /// tree. Contract credit buckets live under it as
+    /// `contract_id (SumTree) / bucket_key (SumItem)`, and its aggregate is
+    /// the sixth term of the credit conservation equation from this version.
+    ///
+    /// CONSENSUS-CRITICAL: the genesis path
+    /// (`Drive::create_initial_state_structure_v4`) inserts the same empty sum
+    /// tree as a standalone root insert, so a fresh genesis-v17 node and an
+    /// in-place-upgraded v17 node hold a byte-identical `[ContractCredits]`
+    /// element. The insert is idempotent so a retried block after a rejected
+    /// proposal leaves the tree exactly as the first attempt would have.
+    fn transition_to_version_17(
+        &self,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.drive.grove_insert_if_not_exists(
+            SubtreePath::empty(),
+            &[RootTree::ContractCredits as u8],
+            Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -746,11 +778,25 @@ mod tests {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::{
+        CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+    };
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::platform_value::Bytes32;
     use dpp::version::PlatformVersion;
     use drive::drive::shielded::paths::{
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
         SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
     };
+    use drive::grovedb::TransactionArg;
+    use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+    use std::collections::BTreeMap;
 
     /// Recursively compares the GroveDB subtree rooted at `root_path` between
     /// two platforms and returns a list of human-readable differences (empty ⇒
@@ -780,7 +826,7 @@ mod tests {
 
         fn read_level(
             platform: &crate::platform_types::platform::Platform<crate::rpc::core::MockCoreRPCLike>,
-            txn: drive::grovedb::TransactionArg,
+            txn: TransactionArg,
             path: &[Vec<u8>],
         ) -> std::collections::BTreeMap<Vec<u8>, Element> {
             let mut q = Query::new();
@@ -2640,6 +2686,451 @@ mod tests {
              node (sequential path). v11 is ALREADY ACTIVATED on the live network — do NOT change \
              v11 construction to make this pass; surface and analyze the discrepancy.\n{}",
             diffs.join("\n"),
+        );
+    }
+
+    /// CONSENSUS-CRITICAL equivalence guard for the v16 -> v17 boundary.
+    ///
+    /// The `[ContractCredits]` root element is built two ways that MUST be
+    /// byte-identical:
+    ///
+    ///  * GENESIS path: a node that state-syncs a fresh v17 chain runs the real
+    ///    `Drive::create_initial_state_structure_v4`, which inserts the empty
+    ///    sum tree as a standalone root insert.
+    ///  * UPGRADE path: a node already on v16 runs the real
+    ///    `Platform::transition_to_version_17` at the activation block, which
+    ///    inserts the same element with an insert-if-not-exists.
+    ///
+    /// Both the root element itself and the (empty) subtree under it are
+    /// compared, so a flag, a tree type or a stray child on either side fails
+    /// here. The named subtree is compared rather than the whole-DB root hash
+    /// for the reason given on `collect_subtree_diffs`.
+    #[test]
+    fn test_genesis_v17_and_upgrade_to_v17_build_identical_contract_credits_tree() {
+        let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
+        let grove_version = &platform_version_17.drive.grove_version;
+
+        // ---- Platform A: REAL fresh genesis at protocol v17. -----------------
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(17)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // ---- Platform B: REAL v16 genesis, then REAL transition_to_version_17.
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(16)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // Sanity: a genuine v16 genesis must NOT contain ContractCredits yet.
+        let contract_credits_root_pre = platform_b
+            .drive
+            .grove
+            .get(
+                SubtreePath::empty(),
+                &[RootTree::ContractCredits as u8],
+                None,
+                grove_version,
+            )
+            .unwrap();
+        assert!(
+            contract_credits_root_pre.is_err(),
+            "v16 genesis must not contain ContractCredits before the upgrade; got {:?}",
+            contract_credits_root_pre
+        );
+
+        let txn_b = platform_b.drive.grove.start_transaction();
+        platform_b
+            .transition_to_version_17(&txn_b, platform_version_17)
+            .expect("upgrade: transition_to_version_17 should succeed");
+
+        let element_a = platform_a
+            .drive
+            .grove
+            .get(
+                SubtreePath::empty(),
+                &[RootTree::ContractCredits as u8],
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("genesis: [ContractCredits] element");
+        let element_b = platform_b
+            .drive
+            .grove
+            .get(
+                SubtreePath::empty(),
+                &[RootTree::ContractCredits as u8],
+                Some(&txn_b),
+                grove_version,
+            )
+            .unwrap()
+            .expect("upgrade: [ContractCredits] element");
+        assert_eq!(
+            element_a,
+            Element::empty_sum_tree(),
+            "genesis must create an empty sum tree without flags"
+        );
+        assert_eq!(
+            element_a, element_b,
+            "CONSENSUS FORK: the [ContractCredits] root element differs between a fresh \
+             genesis-v17 node and an in-place-upgraded v17 node"
+        );
+
+        let diffs = collect_subtree_diffs(
+            &platform_a,
+            &platform_b,
+            &txn_b,
+            vec![vec![RootTree::ContractCredits as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "CONSENSUS FORK: the [ContractCredits] subtree differs between a fresh genesis-v17 \
+             node and an in-place-upgraded v17 node.\n{}",
+            diffs.join("\n"),
+        );
+    }
+
+    /// The v17 calculator reads the new root tree as a sixth term, so the
+    /// equation must still hold on a chain that upgraded into v17 with an
+    /// empty tree, and the frozen v16 calculator must keep ignoring it.
+    #[test]
+    fn should_pass_credit_conservation_after_upgrade_to_v17() {
+        let platform_version_16 = PlatformVersion::get(16).expect("expected v16");
+        let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
+
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(16)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .transition_to_version_17(&transaction, platform_version_17)
+            .expect("expected the transition to succeed");
+
+        let total_at_17 = platform
+            .drive
+            .calculate_total_credits_balance(Some(&transaction), &platform_version_17.drive)
+            .expect("expected to calculate the total credits balance at v17");
+        assert_eq!(total_at_17.total_in_contract_credits, 0);
+        assert!(total_at_17.ok().expect("no overflow"));
+
+        let total_at_16 = platform
+            .drive
+            .calculate_total_credits_balance(Some(&transaction), &platform_version_16.drive)
+            .expect("expected to calculate the total credits balance at v16");
+        assert_eq!(total_at_16.total_in_contract_credits, 0);
+        assert!(total_at_16.ok().expect("no overflow"));
+    }
+
+    /// Drives the v16 -> v17 boundary through the public
+    /// `perform_events_on_first_block_of_protocol_change` dispatcher on a
+    /// populated state, the way `run_block_proposal` does, including the
+    /// rejected-proposal shape where the transaction that ran the hook is
+    /// dropped and a later round runs it again.
+    #[test]
+    fn should_activate_the_contract_credits_root_through_the_protocol_change_hook() {
+        let platform_version_16 = PlatformVersion::get(16).expect("expected v16");
+        let platform_version_17 = PlatformVersion::get(17).expect("expected v17");
+        let grove_version = &platform_version_17.drive.grove_version;
+
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(16)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_state = platform.state.load();
+
+        // Populate the committed state at v16: an identity with a balance
+        // backed by system credits, and a document, so the root Merk is not
+        // the bare genesis shape and conservation has non-zero terms.
+        let mut rng = StdRng::seed_from_u64(1704);
+        let balance: Credits = 1_000_000_000;
+        let (master_key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+            0,
+            &mut rng,
+            platform_version_16,
+        )
+        .expect("expected a master key");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::random_with_rng(&mut rng),
+            public_keys: BTreeMap::from([(0, master_key)]),
+            balance,
+            revision: 0,
+        }
+        .into();
+        platform
+            .drive
+            .add_to_system_credits(balance, None, platform_version_16)
+            .expect("expected to add to system credits");
+        platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version_16,
+            )
+            .expect("expected to add the identity");
+
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version_16)
+            .expect("expected the dashpay contract");
+        let profile = dashpay
+            .document_type_for_name("profile")
+            .expect("expected the profile document type");
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let document = profile
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version_16,
+            )
+            .expect("expected a random profile document");
+        platform
+            .drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &dashpay,
+                    document_type: profile,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version_16,
+                None,
+            )
+            .expect("expected to insert the document");
+
+        let root_absent = |transaction: TransactionArg| {
+            platform
+                .drive
+                .grove
+                .get(
+                    SubtreePath::empty(),
+                    &[RootTree::ContractCredits as u8],
+                    transaction,
+                    grove_version,
+                )
+                .unwrap()
+                .is_err()
+        };
+        let committed_root_hash = || {
+            platform
+                .drive
+                .grove
+                .root_hash(None, grove_version)
+                .unwrap()
+                .expect("expected the committed root hash")
+        };
+
+        assert!(root_absent(None), "a v16 chain must not hold the root yet");
+        let pre_upgrade_root_hash = committed_root_hash();
+
+        let block_info = BlockInfo {
+            time_ms: 2_000_000,
+            height: 200,
+            core_height: 200,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // Round 1: the hook runs inside a transaction that is then dropped,
+        // as happens when the proposal that carried the upgrade is rejected.
+        {
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &platform_state,
+                    &block_info,
+                    &transaction,
+                    16,
+                    platform_version_17,
+                )
+                .expect("expected the protocol change events to succeed");
+
+            let element = platform
+                .drive
+                .grove
+                .get(
+                    SubtreePath::empty(),
+                    &[RootTree::ContractCredits as u8],
+                    Some(&transaction),
+                    grove_version,
+                )
+                .unwrap()
+                .expect("the root must exist inside the upgrading transaction");
+            assert_eq!(element, Element::empty_sum_tree());
+
+            let total = platform
+                .drive
+                .calculate_total_credits_balance(Some(&transaction), &platform_version_17.drive)
+                .expect("expected to calculate the total credits balance");
+            assert_eq!(total.total_in_contract_credits, 0);
+            assert_eq!(total.total_identity_balances, balance as i64);
+            assert!(total.ok().expect("no overflow"));
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_identity_balance(
+                        identity.id().to_buffer(),
+                        Some(&transaction),
+                        platform_version_17,
+                    )
+                    .expect("expected to fetch the identity balance"),
+                Some(balance),
+                "the upgrade must not touch identity balances"
+            );
+
+            platform
+                .drive
+                .grove
+                .rollback_transaction(&transaction)
+                .expect("expected to roll back the rejected round");
+        }
+        assert_eq!(
+            committed_root_hash(),
+            pre_upgrade_root_hash,
+            "a rejected round must leave the committed state untouched"
+        );
+        assert!(root_absent(None));
+
+        // Round 2: the retry a validator performs after the rejected round.
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &block_info,
+                &transaction,
+                16,
+                platform_version_17,
+            )
+            .expect("expected the protocol change events to succeed on retry");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit the upgrade");
+
+        assert!(!root_absent(None), "the committed state must hold the root");
+        let committed_upgraded_root_hash = committed_root_hash();
+        assert_ne!(committed_upgraded_root_hash, pre_upgrade_root_hash);
+
+        let genesis_17 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(17)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let read_transaction = platform.drive.grove.start_transaction();
+        assert_eq!(
+            platform
+                .drive
+                .grove
+                .get(
+                    SubtreePath::empty(),
+                    &[RootTree::ContractCredits as u8],
+                    Some(&read_transaction),
+                    grove_version,
+                )
+                .unwrap()
+                .expect("the committed root element"),
+            genesis_17
+                .drive
+                .grove
+                .get(
+                    SubtreePath::empty(),
+                    &[RootTree::ContractCredits as u8],
+                    None,
+                    grove_version,
+                )
+                .unwrap()
+                .expect("the genesis root element"),
+            "the upgraded root element must match the genesis-v17 one"
+        );
+        let diffs = collect_subtree_diffs(
+            &genesis_17,
+            &platform,
+            &read_transaction,
+            vec![vec![RootTree::ContractCredits as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "the committed [ContractCredits] subtree must match a genesis-v17 one.\n{}",
+            diffs.join("\n"),
+        );
+        drop(read_transaction);
+
+        let total = platform
+            .drive
+            .calculate_total_credits_balance(None, &platform_version_17.drive)
+            .expect("expected to calculate the total credits balance");
+        assert_eq!(total.total_in_contract_credits, 0);
+        assert!(total.ok().expect("no overflow"));
+
+        // Round 3: running the hook once more must be a no-op.
+        let transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &block_info,
+                &transaction,
+                16,
+                platform_version_17,
+            )
+            .expect("expected the protocol change events to be idempotent");
+        assert_eq!(
+            platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), grove_version)
+                .unwrap()
+                .expect("expected the root hash"),
+            committed_upgraded_root_hash,
+            "a third run must not change the state"
+        );
+        drop(transaction);
+
+        // Negative control: a block that stays at v17 must not create anything.
+        let steady = TestPlatformBuilder::new()
+            .with_initial_protocol_version(16)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let steady_state = steady.state.load();
+        let transaction = steady.drive.grove.start_transaction();
+        steady
+            .perform_events_on_first_block_of_protocol_change(
+                &steady_state,
+                &block_info,
+                &transaction,
+                17,
+                platform_version_17,
+            )
+            .expect("expected no events for a same-version block");
+        assert!(
+            steady
+                .drive
+                .grove
+                .get(
+                    SubtreePath::empty(),
+                    &[RootTree::ContractCredits as u8],
+                    Some(&transaction),
+                    grove_version,
+                )
+                .unwrap()
+                .is_err(),
+            "the guard must not fire when the previous version is already 17"
         );
     }
 }

@@ -181,8 +181,13 @@ pub struct Drive {
 //       Tokens 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
 //       /      \                           /                     \                                         /                           \                            /                          \
 //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  AddressBalances 56              SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
-//                                     /                          /
-//                           Saved Block Transactions 36       ShieldedBalances 52
+//                                     /                          /                                                                                          \
+//                           Saved Block Transactions 36       ShieldedBalances 52                                                                        ContractCredits 100
+//
+// The diagram shows the intended balanced shape. Keys added after genesis of
+// an earlier protocol version (ShieldedBalances 52, ContractCredits 100) are
+// placed by AVL rebalancing at insertion time, so their exact depth depends
+// on the insertion order that the initialization and upgrade paths share.
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -228,6 +233,15 @@ pub enum RootTree {
     Votes = 112,
     /// Group actions
     GroupActions = 88,
+    /// Contract credits: one sum subtree per contract holding its credit
+    /// buckets as sum items. An ordinary sum tree so the root aggregate is
+    /// the total of live contract credits; a wiped contract's subtree is
+    /// wrapped in a not-summed element and contributes nothing here.
+    ///
+    /// The key value is provisional: the allocation register leaves new
+    /// root keys unallocated, and 100 was chosen as a free value near the
+    /// other balance trees.
+    ContractCredits = 100,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -254,6 +268,7 @@ impl fmt::Display for RootTree {
             RootTree::Versions => "Versions",
             RootTree::Votes => "Votes",
             RootTree::GroupActions => "GroupActions",
+            RootTree::ContractCredits => "ContractCredits",
         };
         write!(f, "{}", variant_name)
     }
@@ -299,6 +314,7 @@ impl TryFrom<u8> for RootTree {
             16 => Ok(RootTree::Tokens),
             120 => Ok(RootTree::Versions),
             112 => Ok(RootTree::Votes),
+            100 => Ok(RootTree::ContractCredits),
             _ => Err(Error::Drive(DriveError::NotSupported(
                 "unknown root tree item",
             ))),
@@ -327,6 +343,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Versions => &[120],
             RootTree::Votes => &[112],
             RootTree::GroupActions => &[88],
+            RootTree::ContractCredits => &[100],
         }
     }
 }

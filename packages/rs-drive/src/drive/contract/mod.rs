@@ -5,6 +5,9 @@
 
 #[cfg(feature = "server")]
 mod apply;
+/// Contract credit balances: the contract credits root tree and its paths
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod balances;
 #[cfg(feature = "server")]
 mod contract_fetch_info;
 #[cfg(feature = "server")]

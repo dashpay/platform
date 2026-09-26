@@ -363,7 +363,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 588840);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 590320); // 588840 before v17: ContractCredits (100) became the left child of Misc (104), so the system credits write hashes one more child
 
         platform
             .drive
@@ -382,7 +382,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 149993606160); // about 0.5 Dash starting balance + 1 Dash asset lock top up
+        assert_eq!(identity_balance, 149993604680); // about 0.5 Dash starting balance + 1 Dash asset lock top up; 149993606160 before v17
     }
 
     /// Regression for the proposer-side mint accounting: a minting transition (an asset-lock
