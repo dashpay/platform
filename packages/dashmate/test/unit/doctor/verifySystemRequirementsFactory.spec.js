@@ -1,5 +1,6 @@
 import verifySystemRequirementsFactory from '../../../src/doctor/verifySystemRequirementsFactory.js';
 import Problem from '../../../src/doctor/Problem.js';
+import { SEVERITY } from '../../../src/doctor/Prescription.js';
 
 describe('verifySystemRequirementsFactory', () => {
   let verifySystemRequirements;
@@ -129,6 +130,53 @@ describe('verifySystemRequirementsFactory', () => {
       expect(problems).to.have.lengthOf(1);
       expect(problems[0]).to.be.an.instanceOf(Problem);
       expect(problems[0].getDescription()).to.include('50.00GB of available disk space detected');
+    });
+
+    it('should add headroom for state sync snapshots', () => {
+      const systemInfo = {
+        diskSpace: { available: 12 * 1024 ** 3 },
+      };
+
+      // 12GB clears the 5GB override on its own...
+      const problems = verifySystemRequirements(systemInfo, false, {
+        diskSpace: 5,
+      });
+
+      expect(problems).to.have.lengthOf(0);
+
+      // ...but not with the snapshot headroom on top
+      const problemsWithSnapshots = verifySystemRequirements(systemInfo, false, {
+        diskSpace: 5,
+        stateSyncSnapshotsEnabled: true,
+      });
+
+      expect(problemsWithSnapshots).to.have.lengthOf(1);
+      expect(problemsWithSnapshots[0].getDescription())
+        .to.include('At least 15GB is required (including 10GB headroom for state sync snapshots)');
+    });
+
+    it('should not downgrade severity when snapshot headroom widens the requirement', () => {
+      const systemInfo = {
+        diskSpace: { available: 2 * 1024 ** 3 },
+      };
+
+      // 3GB short of the 5GB base minimum: HIGH
+      const problems = verifySystemRequirements(systemInfo, false, {
+        diskSpace: 5,
+      });
+
+      expect(problems).to.have.lengthOf(1);
+      expect(problems[0].getSeverity()).to.equal(SEVERITY.HIGH);
+
+      // The 10GB headroom widens the deficit to 13GB, which must stay HIGH
+      // rather than fall over the 5GB near-threshold cutoff into MEDIUM
+      const problemsWithSnapshots = verifySystemRequirements(systemInfo, false, {
+        diskSpace: 5,
+        stateSyncSnapshotsEnabled: true,
+      });
+
+      expect(problemsWithSnapshots).to.have.lengthOf(1);
+      expect(problemsWithSnapshots[0].getSeverity()).to.equal(SEVERITY.HIGH);
     });
   });
 

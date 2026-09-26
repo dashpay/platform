@@ -22,6 +22,18 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
       diskIO,
     } = samples.getSystemInfo();
 
+    let stateSyncSnapshotsEnabled = false;
+    try {
+      const config = samples.getDashmateConfig();
+
+      // Gate on Platform being enabled: a Core-only node keeps the base
+      // snapshot default of true, but Drive isn't running to create them
+      stateSyncSnapshotsEnabled = config.get('platform.enable') === true
+        && config.get('platform.drive.abci.stateSync.snapshots.enabled') === true;
+    } catch {
+      // A config collected by an older dashmate has no state sync options
+    }
+
     // System requirements
     const problems = verifySystemRequirements(
       {
@@ -33,6 +45,7 @@ export default function analyseSystemResourcesFactory(verifySystemRequirements) 
       samples.getDashmateConfig().get('platform.enable'),
       {
         diskSpace: 5,
+        stateSyncSnapshotsEnabled,
       },
     );
 
