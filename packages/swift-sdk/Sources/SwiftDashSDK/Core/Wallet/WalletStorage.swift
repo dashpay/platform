@@ -26,6 +26,11 @@ import Security
 ///   with the original name/description after a reinstall.
 /// * Enumeration of stored wallet ids (used by the orphan-mnemonic
 ///   recovery flow in `ContentView`).
+/// * A non-secret per-wallet presence marker at
+///   `wallet.present.<64-char-hex-walletId>` under the sibling
+///   service `<keychainService>.presence`, readable after the first
+///   unlock so a locked device can still answer "does a wallet
+///   exist?" — see [`walletPresence()`](x-source-tag://walletPresence).
 /// * Biometric-protected seed stash at `wallet.biometric` — not yet
 ///   wired to a caller but kept because it's a different category
 ///   (hardware-protected rather than a legacy PIN construct).
@@ -57,6 +62,24 @@ public class WalletStorage {
     public static let metadataAccountPrefix = "wallet.metadata"
     private let biometricKeychainAccount = "wallet.biometric"
 
+    /// Keychain service for the per-wallet presence markers:
+    /// `<keychainService>.presence`.
+    ///
+    /// A sibling service rather than `keychainService` itself on purpose.
+    /// The markers are `AfterFirstUnlock` while every other per-wallet item
+    /// is `WhenUnlocked`, and a service-wide `SecItemCopyMatching` over a
+    /// mix of the two behaves badly on a locked device whichever way
+    /// securityd resolves it: fail the whole query and the marker is
+    /// unreadable exactly when it is needed; drop the locked rows and
+    /// `listWalletIdsWithMnemonic()` would return an empty inventory
+    /// instead of an error. Keeping each service homogeneous keeps both
+    /// answers honest. Derived from `keychainService` so the
+    /// `DASH_KEYCHAIN_SERVICE` override applies to both.
+    public static let presenceKeychainService = "\(keychainService).presence"
+    /// Base account string used to build per-wallet presence-marker
+    /// accounts via `perWalletPresenceMarkerAccount(for:)`.
+    public static let presenceMarkerAccountPrefix = "wallet.present"
+
     public init() {}
 
     // MARK: - Per-Wallet Mnemonic Storage
@@ -71,24 +94,49 @@ public class WalletStorage {
     }
 
     /// Store a mnemonic keyed by wallet id.
+    ///
+    /// Also maintains the wallet's presence marker (see `walletPresence()`)
+    /// under the invariant *marker ⇒ a mnemonic was stored*. The steps run
+    /// in the one order that keeps it across an interruption at any
+    /// point: the marker comes off before the old mnemonic is deleted,
+    /// and goes back on only after the new mnemonic is in place. A
+    /// process killed in between leaves at most a mnemonic without a
+    /// marker — the one direction of drift the presence read repairs —
+    /// never a marker without a mnemonic. For the same reason a failed
+    /// trailing marker write is not an error here: the mnemonic *is*
+    /// stored, and the next `walletPresence()` call on an unlocked
+    /// device backfills the marker.
     public func storeMnemonic(_ mnemonic: String, for walletId: Data) throws {
-        let data = Data(mnemonic.utf8)
-        let account = perWalletMnemonicAccount(for: walletId)
+        Self.mutationLock.lock()
+        defer { Self.mutationLock.unlock() }
 
-        let deleteQuery: [String: Any] = [
+        try deletePresenceMarker(for: walletId)
+        try deleteMnemonicItem(for: walletId)
+        try addMnemonicItem(Data(mnemonic.utf8), for: walletId)
+        try? storePresenceMarker(for: walletId)
+    }
+
+    /// Raw delete of the mnemonic item. Idempotent. Overridable so tests
+    /// can observe the order of the keychain steps without a keychain.
+    func deleteMnemonicItem(for walletId: Data) throws {
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: perWalletMnemonicAccount(for: walletId)
         ]
-        let deleteStatus = SecItemDelete(deleteQuery as CFDictionary)
-        guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
-            throw WalletStorageError.keychainError(deleteStatus)
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw WalletStorageError.keychainError(status)
         }
+    }
 
+    /// Raw add of the mnemonic item; the caller has deleted any previous
+    /// one so the `kSecAttrAccessible` value is rewritten on every save.
+    func addMnemonicItem(_ data: Data, for walletId: Data) throws {
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: perWalletMnemonicAccount(for: walletId),
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
@@ -221,30 +269,44 @@ public class WalletStorage {
     }
 
     /// Delete a mnemonic keyed by wallet id. Idempotent.
+    ///
+    /// The presence marker comes off first and the mnemonic second, so a
+    /// process killed between the two steps — or a mnemonic delete that
+    /// throws — leaves at most a mnemonic without a marker, which the next
+    /// unlocked presence read re-marks; never a marker without a mnemonic,
+    /// which a locked read would trust. The lock `walletPresence()` shares
+    /// keeps a presence read from backfilling the marker between the two
+    /// steps.
     public func deleteMnemonic(for walletId: Data) throws {
-        let account = perWalletMnemonicAccount(for: walletId)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: account
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw WalletStorageError.keychainError(status)
-        }
+        Self.mutationLock.lock()
+        defer { Self.mutationLock.unlock() }
+
+        try deletePresenceMarker(for: walletId)
+        try deleteMnemonicItem(for: walletId)
     }
 
     /// Enumerate all wallet ids with a stored mnemonic.
     ///
     /// Reads every `kSecClassGenericPassword` entry under
-    /// `org.dash.wallet`, keeps those whose account starts with
+    /// `keychainService`, keeps those whose account starts with
     /// `wallet.mnemonic.` followed by a 64-character lowercase hex
     /// string, and decodes the suffix back into 32-byte wallet ids.
-    /// Returns an empty array if the keychain has none.
+    /// Returns an empty array if the keychain has none. Throws while the
+    /// device is locked (the items are `WhenUnlocked`); see
+    /// `walletPresence()` for the question that has to be answered then.
     public func listWalletIdsWithMnemonic() throws -> [Data] {
+        try listWalletIds(service: keychainService, accountPrefix: mnemonicKeychainAccount)
+    }
+
+    /// Wallet ids encoded in the accounts of every generic-password item
+    /// under `service` whose account is `<accountPrefix>.<64-hex>`.
+    /// `errSecItemNotFound` is an empty list; any other failure is thrown
+    /// as `keychainError` so "nothing there" and "could not look" stay
+    /// distinguishable.
+    private func listWalletIds(service: String, accountPrefix: String) throws -> [Data] {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
+            kSecAttrService as String: service,
             kSecMatchLimit as String: kSecMatchLimitAll,
             kSecReturnAttributes as String: true
         ]
@@ -258,7 +320,7 @@ public class WalletStorage {
         }
         guard let items = result as? [[String: Any]] else { return [] }
 
-        let prefix = "\(mnemonicKeychainAccount)."
+        let prefix = "\(accountPrefix)."
         var walletIds: [Data] = []
         for item in items {
             guard let account = item[kSecAttrAccount as String] as? String,
@@ -268,6 +330,181 @@ public class WalletStorage {
             walletIds.append(walletId)
         }
         return walletIds
+    }
+
+    // MARK: - Wallet Presence Marker
+    //
+    // The mnemonic and metadata items are `WhenUnlockedThisDeviceOnly`, so
+    // a process launched while the device is locked (a background app
+    // refresh, a silent push) cannot even enumerate them: the inventory
+    // read fails and a naive caller concludes "no wallet" and shows the
+    // setup screen. The marker is the durable, non-secret answer to that
+    // one question.
+    //
+    // Invariant: marker ⇒ a mnemonic was stored for that id. The marker
+    // is maintained only inside `storeMnemonic` / `deleteMnemonic`, in an
+    // order that keeps the invariant across an interruption at any step
+    // (the marker goes on last and comes off first), and
+    // the three entry points that touch both items share one process-wide
+    // lock so a presence read cannot interleave with a write or delete
+    // (`PlatformWalletManager.deleteWallet` uses its own `WalletStorage`
+    // instance; the lock is static for that reason). Drift is therefore
+    // only ever a mnemonic *without* a marker — a wallet stored before the
+    // marker existed, a trailing marker write that failed — and every
+    // presence read made while the inventory is readable repairs it, in
+    // both directions: it rewrites the marker set to match the inventory.
+    //
+    // Security trade-off: `AfterFirstUnlockThisDeviceOnly` means anyone
+    // who can query this app's keychain after the first unlock since
+    // boot learns that a wallet exists here, and its 32-byte wallet id.
+    // The id is a hash, not key material; it identifies nothing outside
+    // this app and unlocks nothing. Like the mnemonic it stays in the
+    // keychain across a reinstall (which is why this is not a
+    // `UserDefaults` flag) and never syncs to iCloud.
+
+    /// Serialises `storeMnemonic`, `deleteMnemonic` and `walletPresence()`
+    /// across every `WalletStorage` instance in the process. Held only
+    /// around keychain calls; never taken by the item-level helpers.
+    private static let mutationLock = NSLock()
+
+    private func perWalletPresenceMarkerAccount(for walletId: Data) -> String {
+        let hex = walletId.map { String(format: "%02x", $0) }.joined()
+        return "\(Self.presenceMarkerAccountPrefix).\(hex)"
+    }
+
+    /// Write (or rewrite) the presence marker for `walletId`. A lifecycle
+    /// step of `storeMnemonic` and of the reconciliation in
+    /// `walletPresence()`, not an SDK operation: a marker written on its
+    /// own would assert a wallet that may not exist. Delete-then-add like
+    /// the other writers so the accessibility class is re-applied on
+    /// every write. The payload is the wallet id itself — no secret.
+    func storePresenceMarker(for walletId: Data) throws {
+        let account = perWalletPresenceMarkerAccount(for: walletId)
+
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.presenceKeychainService,
+            kSecAttrAccount as String: account
+        ]
+        let deleteStatus = SecItemDelete(deleteQuery as CFDictionary)
+        guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
+            throw WalletStorageError.keychainError(deleteStatus)
+        }
+
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.presenceKeychainService,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: walletId,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw WalletStorageError.keychainError(status)
+        }
+    }
+
+    /// Delete the presence marker for `walletId`. Idempotent. A lifecycle
+    /// step of `storeMnemonic`, `deleteMnemonic` and the reconciliation in
+    /// `walletPresence()`; not an SDK operation.
+    func deletePresenceMarker(for walletId: Data) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.presenceKeychainService,
+            kSecAttrAccount as String: perWalletPresenceMarkerAccount(for: walletId)
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw WalletStorageError.keychainError(status)
+        }
+    }
+
+    /// Wallet ids that carry a presence marker. Readable once the device
+    /// has been unlocked since boot, locked or not. Empty means "no
+    /// marker", which is *not* "no wallet" — see `walletPresence()`.
+    /// Throws `keychainError` before the first unlock or on any other
+    /// lookup failure.
+    public func markedWalletIds() throws -> [Data] {
+        try listWalletIds(
+            service: Self.presenceKeychainService,
+            accountPrefix: Self.presenceMarkerAccountPrefix
+        )
+    }
+
+    /// Three-way answer to "does this app hold at least one wallet?".
+    public enum WalletPresence: Sendable, Equatable {
+        /// The mnemonic inventory was readable and non-empty, or it was
+        /// unreadable and at least one wallet id is marked.
+        case present
+        /// The mnemonic inventory was readable and empty. The only verdict
+        /// on which a setup screen may be shown.
+        case absent
+        /// Could not tell: the marker set was unreadable (before the first
+        /// unlock, `errSecInteractionNotAllowed`, …) or it was empty and
+        /// the inventory was unreadable (a locked device with wallets
+        /// stored before the marker existed). Says nothing about whether
+        /// a wallet exists; decide later, not now.
+        case unknown(OSStatus)
+    }
+
+    /// Whether at least one wallet exists, answerable on a locked device.
+    ///
+    /// The mnemonic inventory is the source of truth whenever it can be
+    /// read; the marker set stands in for it only while it cannot:
+    ///
+    /// 1. `markedWalletIds()` unreadable → `.unknown(status)`.
+    /// 2. `listWalletIdsWithMnemonic()` readable → verdict from it
+    ///    (`.present` / `.absent`), and the marker set is reconciled to
+    ///    it: a marker is written for every inventoried id without one
+    ///    (wallets stored before the marker existed backfill themselves
+    ///    on the first unlocked read) and any marker without a mnemonic
+    ///    is removed. Best effort; a failed write or delete changes
+    ///    nothing about the verdict.
+    /// 3. Inventory unreadable → marker set non-empty is `.present`,
+    ///    empty is `.unknown(status)`.
+    ///
+    /// Invariant for callers: marker present ⇒ a mnemonic was stored for
+    /// that id; a missing marker on its own never means "no wallet" — only
+    /// a readable, empty inventory does.
+    ///
+    /// - Tag: walletPresence
+    public func walletPresence() -> WalletPresence {
+        Self.mutationLock.lock()
+        defer { Self.mutationLock.unlock() }
+
+        let marked: [Data]
+        do {
+            marked = try markedWalletIds()
+        } catch {
+            return .unknown(Self.status(of: error))
+        }
+
+        let inventory: [Data]
+        do {
+            inventory = try listWalletIdsWithMnemonic()
+        } catch {
+            return marked.isEmpty ? .unknown(Self.status(of: error)) : .present
+        }
+
+        let markedSet = Set(marked)
+        let inventorySet = Set(inventory)
+        for walletId in inventory where !markedSet.contains(walletId) {
+            try? storePresenceMarker(for: walletId)
+        }
+        for walletId in marked where !inventorySet.contains(walletId) {
+            try? deletePresenceMarker(for: walletId)
+        }
+        return inventory.isEmpty ? .absent : .present
+    }
+
+    /// The `OSStatus` behind a `WalletStorageError.keychainError`; anything
+    /// else (an override that throws its own error) maps to
+    /// `errSecInternalError` so `unknown` still carries *a* status.
+    private static func status(of error: Error) -> OSStatus {
+        if case WalletStorageError.keychainError(let status) = error {
+            return status
+        }
+        return errSecInternalError
     }
 
     // MARK: - Per-Wallet Metadata Storage
