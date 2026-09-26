@@ -6,6 +6,7 @@
 
 use crate::config::{PlatformConfig, PlatformTestConfig};
 use crate::execution::check_tx::CheckTxLevel;
+use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
@@ -25,6 +26,7 @@ use dpp::serialization::PlatformSerializable;
 use dpp::shielded::builder::OrchardProver;
 use dpp::shielded::SerializedAction;
 use dpp::state_transition::StateTransition;
+use dpp::version::ProtocolVersion;
 use dpp::ProtocolError;
 use drive::drive::shielded::paths::{
     shielded_credit_pool_anchors_path, shielded_credit_pool_notes_path,
@@ -438,6 +440,189 @@ pub fn setup_platform() -> TempPlatform<MockCoreRPCLike> {
         .with_latest_protocol_version()
         .build_with_mock_rpc()
         .set_genesis_state()
+}
+
+/// [`setup_platform`] at `protocol_version` instead of the latest one, so that validation reads
+/// the tables of that version from the platform state.
+pub fn setup_platform_at_protocol_version(
+    protocol_version: ProtocolVersion,
+) -> TempPlatform<MockCoreRPCLike> {
+    let platform_config = PlatformConfig {
+        testing_configs: PlatformTestConfig {
+            disable_instant_lock_signature_verification: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    TestPlatformBuilder::new()
+        .with_config(platform_config)
+        .with_initial_protocol_version(protocol_version)
+        .build_with_mock_rpc()
+        .set_genesis_state()
+}
+
+/// [`process_transition`] with the block transaction COMMITTED, so that a later transition and
+/// the reads of the test see what the transition wrote.
+pub fn process_transition_and_commit(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    transition: StateTransition,
+    platform_version: &PlatformVersion,
+) -> StateTransitionsProcessingResult {
+    let transition_bytes = transition
+        .serialize_to_bytes()
+        .expect("should serialize transition");
+    let platform_state = platform.state.load();
+    let transaction = platform.drive.grove.start_transaction();
+
+    let result = platform
+        .platform
+        .process_raw_state_transitions(
+            &vec![transition_bytes],
+            &platform_state,
+            &BlockInfo::default(),
+            &transaction,
+            platform_version,
+            false,
+            None,
+        )
+        .expect("expected to process state transition");
+    platform
+        .drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("expected to commit transaction");
+    result
+}
+
+/// Whether `nullifier` is recorded in the committed nullifier tree of the shielded pool.
+pub fn has_recorded_nullifier(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    nullifier: &[u8; 32],
+) -> bool {
+    platform
+        .drive
+        .has_nullifier(nullifier, None, &mut vec![], PlatformVersion::latest())
+        .expect("expected to read the nullifier tree")
+}
+
+/// The fields of a proven outputs-only Orchard bundle, ready to put into a `Shield`,
+/// `ShieldFromAssetLock` or `ShieldFromIdentity` transition.
+#[derive(Clone)]
+pub struct OutputsOnlyBundle {
+    /// The serialized actions; each reveals the nullifier of a dummy spend.
+    pub actions: Vec<SerializedAction>,
+    /// The amount entering the pool (the negated value balance).
+    pub amount: u64,
+    /// The anchor of the empty tree.
+    pub anchor: [u8; 32],
+    /// The Halo 2 proof.
+    pub proof: Vec<u8>,
+    /// The binding signature.
+    pub binding_signature: [u8; 64],
+}
+
+impl OutputsOnlyBundle {
+    /// The nullifiers the actions reveal.
+    pub fn nullifiers(&self) -> Vec<[u8; 32]> {
+        self.actions.iter().map(|action| action.nullifier).collect()
+    }
+}
+
+/// Builds and proves an outputs-only bundle paying `value` to a fixed recipient, with no extra
+/// sighash data. Orchard pads it to two actions. Only the protocol versions that do not bind these
+/// bundles accept one: from the version that does, use `build_outputs_only_bundle_bound` with the
+/// funder's binding, or the bundle verifies nowhere.
+pub fn build_outputs_only_bundle(value: u64) -> OutputsOnlyBundle {
+    build_outputs_only_bundle_bound(value, &[])
+}
+
+/// Builds and proves an outputs-only bundle paying `value` to a fixed recipient, committing
+/// `extra_sighash_data` — the binding that ties the bundle to the addresses, identity or asset lock
+/// funding it, so it cannot be lifted into a transition funded by anything else. Orchard pads it to
+/// two actions.
+pub fn build_outputs_only_bundle_bound(value: u64, extra_sighash_data: &[u8]) -> OutputsOnlyBundle {
+    use grovedb_commitment_tree::{
+        Anchor, Builder, BundleType, Flags as OrchardFlags, FullViewingKey, NoteValue, Scope,
+        SpendingKey,
+    };
+    use rand::rngs::OsRng;
+
+    let mut rng = OsRng;
+    let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+    let recipient = FullViewingKey::from(&sk).address_at(0u32, Scope::External);
+
+    let mut builder = Builder::<DashMemo>::new(
+        BundleType::Transactional {
+            flags: OrchardFlags::SPENDS_DISABLED,
+            bundle_required: false,
+        },
+        Anchor::empty_tree(),
+    );
+    builder
+        .add_output(None, recipient, NoteValue::from_raw(value), [0u8; 36])
+        .unwrap();
+    let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+    let sighash = compute_platform_sighash(&bundle_commitment, extra_sighash_data);
+    let proven = unauthorized
+        .create_proof(get_proving_key(), &mut rng)
+        .unwrap();
+    let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+    let (actions, _flags, value_balance, anchor, proof, binding_signature) =
+        serialize_authorized_bundle_with_flags(&bundle);
+    assert!(value_balance < 0, "value must enter the pool");
+    OutputsOnlyBundle {
+        actions,
+        amount: value_balance.unsigned_abs(),
+        anchor,
+        proof,
+        binding_signature,
+    }
+}
+
+/// The consensus errors the transform every shielded transfer runs returns for a transfer
+/// revealing `nullifier`.
+///
+/// The transfer carries dummy proof bytes: block processing verifies the proof in the stateless
+/// step before this transform, and no one can prove a spend of a note whose nullifier is a
+/// shield's dummy-spend nullifier, so the spend-side nullifier check is reached here directly.
+/// Records an anchor for the transfer to name first; its fee is 0 so the pool covers it.
+pub fn shielded_transfer_errors_revealing(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    nullifier: [u8; 32],
+) -> Vec<ConsensusError> {
+    use crate::execution::validation::state_transition::shielded_transfer::StateTransitionShieldedTransferTransitionActionTransformer;
+    use crate::platform_types::platform::PlatformRef;
+    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+    use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
+
+    let anchor = [42u8; 32];
+    insert_anchor_into_state(platform, &anchor);
+
+    let mut action = create_dummy_serialized_action();
+    action.nullifier = nullifier;
+    let transfer = ShieldedTransferTransition::V0(ShieldedTransferTransitionV0 {
+        actions: vec![action],
+        value_balance: 0,
+        anchor,
+        proof: vec![0u8; 100],
+        binding_signature: [0u8; 64],
+    });
+
+    let platform_state = platform.state.load();
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &platform_state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
+    transfer
+        .transform_into_action_for_shielded_transfer_transition(&platform_ref, None)
+        .expect("expected the transfer transform to run")
+        .errors
 }
 
 /// Execute a state transition through the full processing pipeline and return the result.

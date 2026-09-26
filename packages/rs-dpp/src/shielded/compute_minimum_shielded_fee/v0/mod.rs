@@ -1,7 +1,8 @@
 use crate::fee::Credits;
 use crate::shielded::{
-    SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES, SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES,
-    SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES, SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
+    SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES, SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES,
+    SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES, SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES,
+    SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
 };
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -15,9 +16,10 @@ use platform_version::version::PlatformVersion;
 /// `processing_fee` that prices the MARGINAL verification work each additional action adds to the
 /// bundle (a larger bundle is a larger circuit and a longer batch verification). For spend-bearing
 /// transitions that marginal work includes the per-action RedPallas spend-auth signature
-/// verification and nullifier check; output-only entry transitions (Shield / ShieldFromAssetLock)
-/// do no spends or nullifier checks, but each output action still enlarges the proof and so carries
-/// the same per-action processing charge.
+/// verification and nullifier check; output-only entry transitions (Shield / ShieldFromAssetLock /
+/// ShieldFromIdentity) do no spends, but each output action still enlarges the proof and so carries
+/// the same per-action processing charge, which from protocol version 14 also prices the check of
+/// the nullifier the action reveals.
 ///
 /// It carries **no storage term**: storage is the real cost of the note/nullifier writes and is
 /// metered separately by GroveDB.
@@ -195,13 +197,17 @@ pub fn compute_shielded_unshield_fee_v0(
 /// v0 of the `ShieldFromIdentity` **admission floor**:
 ///
 ///   `floor = compute_minimum_shielded_fee_v0(num_actions)
-///            + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES × (disk + processing) credits/byte`
+///            + (num_actions × SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES
+///               + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES) × (disk + processing) credits/byte`
 ///
-/// [`compute_minimum_shielded_fee_v0`] plus one flat component for the identity-side writes
-/// (the nonce and balance rewrites), built the same way as
-/// [`compute_shielded_unshield_fee_v0`]'s address-write component: the writes' replace-only tree
-/// work (they add no storage) folded into a flat effective-byte figure with headroom, see
-/// `SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES`. The transition's real fee is metered at
+/// [`compute_minimum_shielded_fee_v0`] plus a per-action component for the metered processing of
+/// the note and nullifier writes that the per-action allowance (sized for a spend's booked
+/// storage) does not price, see `SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES`, plus one flat
+/// component for the identity-side work (the nonce and balance rewrites and the reads around
+/// them), built the same way as [`compute_shielded_unshield_fee_v0`]'s address-write component,
+/// see `SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES`. `ShieldFromIdentity` is refused by
+/// `is_allowed` before protocol version 14, so this formula has never been applied at an earlier
+/// version, and its components were sized in place. The transition's real fee is metered at
 /// execution; this floor is the conservative stand-in the stateless balance pre-check uses so
 /// that a short identity is refused before the Orchard proof is verified, and the client-side
 /// estimate of the total fee.
@@ -222,8 +228,14 @@ pub fn compute_shielded_identity_balance_write_fee_v0(
         .ok_or(ProtocolError::Overflow(
             "shielded storage per-byte rate overflow",
         ))?;
-    let identity_write_fee = SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES
-        .checked_mul(per_byte_rate)
+    let action_write_bytes = (num_actions as u64)
+        .checked_mul(SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity action write bytes overflow",
+        ))?;
+    let identity_write_fee = action_write_bytes
+        .checked_add(SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES)
+        .and_then(|bytes| bytes.checked_mul(per_byte_rate))
         .ok_or(ProtocolError::Overflow(
             "shielded identity balance write fee overflow",
         ))?;
@@ -364,8 +376,9 @@ mod tests {
     /// version's own constant tables, and must decompose as
     /// `compute_fee + num_actions × storage_allowance` — the component split the pool-paid
     /// booking and the fee-floor tests rely on.
-    /// The `ShieldFromIdentity` admission floor is the minimum fee plus the flat
-    /// identity-write allowance at the storage rate, and strictly above the compute fee.
+    /// The `ShieldFromIdentity` admission floor is the minimum fee plus the per-action write
+    /// allowance and the flat identity-write allowance at the storage rate, and strictly above
+    /// the compute fee.
     #[test]
     fn compute_shielded_identity_balance_write_fee_v0_adds_identity_write_allowance() {
         let platform_version = PlatformVersion::latest();
@@ -382,7 +395,10 @@ mod tests {
                 .expect("compute");
             assert_eq!(
                 floor,
-                minimum + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES * per_byte_rate
+                minimum
+                    + (num_actions as u64 * SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES
+                        + SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES)
+                        * per_byte_rate
             );
             assert!(floor > compute);
         }

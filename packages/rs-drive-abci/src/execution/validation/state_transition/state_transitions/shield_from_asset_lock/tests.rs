@@ -775,6 +775,383 @@ mod tests {
     }
 
     // ==========================================
+    // NULLIFIER TESTS (every revealed nullifier is recorded once)
+    // ==========================================
+
+    mod nullifiers {
+        use super::*;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            build_outputs_only_bundle, build_outputs_only_bundle_bound, has_recorded_nullifier,
+            process_transition_and_commit, setup_platform_at_protocol_version,
+            shielded_transfer_errors_revealing, OutputsOnlyBundle,
+        };
+        use std::sync::OnceLock;
+
+        /// A shield funded by a fresh asset lock drawn from `seed`, its bundle proved against that
+        /// lock. The sighash binds the lock's identifier, so the proved bundle verifies under no
+        /// other lock and each test has to prove its own. Returns the transition together with the
+        /// nullifiers its actions reveal.
+        fn bound_shield(
+            seed: u64,
+            platform_version: &PlatformVersion,
+        ) -> (StateTransition, Vec<[u8; 32]>) {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let extra_sighash_data =
+                shield_from_asset_lock_extra_sighash_data(&asset_lock_proof, platform_version)
+                    .expect("the binding of the funding asset lock");
+            let bundle = build_outputs_only_bundle_bound(5_000, &extra_sighash_data);
+            let nullifiers = bundle.nullifiers();
+            let transition = create_signed_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                bundle.actions,
+                bundle.amount,
+                bundle.anchor,
+                bundle.proof,
+                bundle.binding_signature,
+            );
+            (transition, nullifiers)
+        }
+
+        /// A shield whose actions reveal `nullifiers`, with unprovable proof bytes. The nullifier
+        /// check runs before the proof, so a bundle meant to be refused for its nullifier never
+        /// reaches verification and needs no binding to reach the check.
+        fn unprovable_shield_revealing(seed: u64, nullifiers: &[[u8; 32]]) -> StateTransition {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let actions = nullifiers
+                .iter()
+                .map(|nullifier| SerializedAction {
+                    nullifier: *nullifier,
+                    ..create_dummy_serialized_action()
+                })
+                .collect();
+            create_signed_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                actions,
+                5_000,
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+            )
+        }
+
+        /// One proven, unbound bundle shared by the protocol-version-13 test: 13 binds nothing, so
+        /// there one bundle still verifies under any asset lock.
+        fn unbound_bundle() -> &'static OutputsOnlyBundle {
+            static BUNDLE: OnceLock<OutputsOnlyBundle> = OnceLock::new();
+            BUNDLE.get_or_init(|| build_outputs_only_bundle(5_000))
+        }
+
+        /// A version 0 shield of `bundle` from a fresh asset lock drawn from `seed`. Version 0 is
+        /// what protocol version 13 admits, and it binds nothing.
+        fn signed_shield_v0(seed: u64, bundle: &OutputsOnlyBundle) -> StateTransition {
+            use dpp::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
+
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let surplus_output = Some(dpp::address_funds::PlatformAddress::P2pkh([0x33; 20]));
+            let body = |signature: BinaryData| ShieldFromAssetLockTransitionV0 {
+                asset_lock_proof: asset_lock_proof.clone(),
+                actions: bundle.actions.clone(),
+                value_balance: bundle.amount,
+                anchor: bundle.anchor,
+                proof: bundle.proof.clone(),
+                binding_signature: bundle.binding_signature,
+                surplus_output,
+                signature,
+            };
+            let unsigned: StateTransition = body(Default::default()).into();
+            let signable_bytes = unsigned
+                .signable_bytes()
+                .expect("should compute signable bytes");
+            let signature = dpp::dashcore::signer::sign(&signable_bytes, &asset_lock_pk).unwrap();
+            body(BinaryData::new(signature.to_vec())).into()
+        }
+
+        /// Two dummy actions revealing the same nullifier, with unprovable proof bytes.
+        fn shield_repeating_a_nullifier_inside_the_bundle() -> StateTransition {
+            let mut rng = StdRng::seed_from_u64(9);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            create_signed_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                vec![
+                    create_dummy_serialized_action(),
+                    create_dummy_serialized_action(),
+                ],
+                5000,
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
+            )
+        }
+
+        #[test]
+        fn should_record_the_nullifiers_a_shield_reveals() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let (st, nullifiers) = bound_shield(1, platform_version);
+            let result = process_transition_and_commit(&platform, st, platform_version);
+
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            for nullifier in nullifiers {
+                assert!(
+                    has_recorded_nullifier(&platform, &nullifier),
+                    "every nullifier the shield reveals must be recorded"
+                );
+            }
+        }
+
+        #[test]
+        fn should_refuse_a_shield_repeating_a_recorded_nullifier() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let (first, nullifiers) = bound_shield(1, platform_version);
+            let result = process_transition_and_commit(&platform, first, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            // A second shield, from a second asset lock, revealing the nullifiers the first
+            // recorded. Its bundle cannot be the first's — the sighash binds the lock that funds
+            // it — but it does not have to be: the nullifier is refused before the proof is read.
+            let repeat = unprovable_shield_revealing(2, &nullifiers);
+            let result = process_transition_and_commit(&platform, repeat, platform_version);
+
+            let first_nullifier = nullifiers[0];
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))
+                )] if e.nullifier() == first_nullifier
+            );
+        }
+
+        /// The check runs before the proof, so the unprovable bundle is refused for its nullifier,
+        /// unpaid, instead of burning the asset lock for its proof.
+        #[test]
+        fn should_refuse_a_nullifier_repeated_inside_the_bundle() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let result = process_transition(
+                &platform,
+                shield_repeating_a_nullifier_inside_the_bundle(),
+                platform_version,
+            );
+
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))
+                )] if e.nullifier() == create_dummy_serialized_action().nullifier
+            );
+        }
+
+        #[test]
+        fn should_refuse_a_spend_revealing_a_nullifier_a_shield_recorded() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let (st, nullifiers) = bound_shield(1, platform_version);
+            let result = process_transition_and_commit(&platform, st, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            assert!(
+                shielded_transfer_errors_revealing(&platform, [0xEE; 32]).is_empty(),
+                "a spend revealing an unrecorded nullifier passes the spend-side check"
+            );
+            let recorded = nullifiers[1];
+            assert_matches!(
+                shielded_transfer_errors_revealing(&platform, recorded).as_slice(),
+                [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
+                    if e.nullifier() == recorded
+            );
+        }
+
+        /// The flat `pool_fee` (`compute_minimum_shielded_fee` + the asset-lock base cost) must
+        /// still cover the estimated cost `validate_fees_of_event` checks it against, now that the
+        /// operations also record one nullifier per action. Checked at every action count up to
+        /// `max_shielded_transition_actions` (the 20 KiB size limit stops real transitions near 6),
+        /// with the signature verification the transform meters over a maximum-size transition.
+        #[test]
+        fn should_cover_the_recorded_nullifiers_with_the_flat_pool_fee() {
+            use crate::execution::types::execution_event::ExecutionEvent;
+            use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
+            use crate::execution::types::execution_operation::{
+                ValidationOperation, SHA256_BLOCK_SIZE,
+            };
+            use crate::execution::types::state_transition_execution_context::{
+                StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+            };
+            use dpp::block::block_info::BlockInfo;
+            use dpp::block::epoch::Epoch;
+            use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+            use dpp::identity::KeyType;
+            use dpp::shielded::compute_minimum_shielded_fee;
+            use dpp::state_transition::StateTransitionEstimatedFeeValidation;
+            use dpp::version::DefaultForPlatformVersion;
+            use drive::state_transition_action::shielded::shield_from_asset_lock::v0::ShieldFromAssetLockTransitionActionV0;
+            use drive::state_transition_action::shielded::shield_from_asset_lock::ShieldFromAssetLockTransitionAction;
+            use drive::state_transition_action::shielded::ShieldedActionNote;
+            use drive::state_transition_action::StateTransitionAction;
+            use drive::util::batch::drive_op_batch::ShieldedPoolOperationType;
+            use drive::util::batch::DriveOperation;
+
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            let StateTransition::ShieldFromAssetLock(transition) =
+                shield_repeating_a_nullifier_inside_the_bundle()
+            else {
+                panic!("expected a shield from asset lock");
+            };
+            let asset_lock_base_cost = transition
+                .calculate_min_required_fee(platform_version)
+                .expect("asset lock base cost");
+            let max_actions = platform_version
+                .system_limits
+                .max_shielded_transition_actions as usize;
+            let signable_blocks = (platform_version.system_limits.max_state_transition_size
+                / SHA256_BLOCK_SIZE as u64) as u16;
+
+            for num_actions in 1..=max_actions {
+                let notes: Vec<ShieldedActionNote> = (0..num_actions as u8)
+                    .map(|i| ShieldedActionNote {
+                        nullifier: [i; 32],
+                        cmx: [i.wrapping_add(100); 32],
+                        cv_net: [i.wrapping_add(200); 32],
+                        encrypted_note: vec![0x77; 216],
+                    })
+                    .collect();
+                let pool_fee = compute_minimum_shielded_fee(num_actions, platform_version)
+                    .expect("shielded fee")
+                    + asset_lock_base_cost;
+                let shield_amount = 5_000;
+                let action = ShieldFromAssetLockTransitionAction::V0(
+                    ShieldFromAssetLockTransitionActionV0 {
+                        asset_lock_outpoint: [num_actions as u8; 36],
+                        asset_lock_value_to_be_consumed: shield_amount + pool_fee,
+                        signable_bytes_hasher: [0; 32],
+                        shield_amount,
+                        notes,
+                        current_total_balance: 0,
+                        surplus_output: None,
+                        surplus_amount: 0,
+                    },
+                );
+
+                let mut execution_context =
+                    StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                        .expect("execution context");
+                execution_context.add_operation(ValidationOperation::DoubleSha256(signable_blocks));
+                execution_context.add_operation(ValidationOperation::SignatureVerification(
+                    SignatureVerificationOperation::new(KeyType::ECDSA_HASH160),
+                ));
+                let event = ExecutionEvent::create_from_state_transition_action(
+                    StateTransitionAction::ShieldFromAssetLockAction(action),
+                    None,
+                    &Epoch::new(0).expect("epoch"),
+                    execution_context,
+                    platform_version,
+                )
+                .expect("execution event");
+                let ExecutionEvent::PaidFromAssetLockToPool { ref operations, .. } = event else {
+                    panic!("expected a PaidFromAssetLockToPool event");
+                };
+                assert!(
+                    operations.iter().any(|op| matches!(
+                        op,
+                        DriveOperation::ShieldedPoolOperation(
+                            ShieldedPoolOperationType::InsertNullifiers { .. }
+                        )
+                    )),
+                    "the event records the nullifiers"
+                );
+
+                let result = platform
+                    .platform
+                    .validate_fees_of_event(
+                        &event,
+                        &BlockInfo::default(),
+                        None,
+                        platform_version,
+                        &CachedEpochIndexFeeVersions::new(),
+                    )
+                    .expect("fee validation runs");
+                assert!(
+                    result.is_valid(),
+                    "{num_actions} actions: the pool fee {pool_fee} must cover the estimate: {:?}",
+                    result.errors
+                );
+            }
+        }
+
+        #[test]
+        fn should_neither_record_nor_check_nullifiers_before_protocol_version_14() {
+            let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+            let platform = setup_platform_at_protocol_version(13);
+            let bundle = unbound_bundle();
+
+            let first = signed_shield_v0(1, bundle);
+            let result = process_transition_and_commit(&platform, first, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            for nullifier in bundle.nullifiers() {
+                assert!(
+                    !has_recorded_nullifier(&platform, &nullifier),
+                    "protocol version 13 records no shield nullifier"
+                );
+            }
+
+            let repeat = signed_shield_v0(2, bundle);
+            let result = process_transition_and_commit(&platform, repeat, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "protocol version 13 accepts a repeated shield"
+            );
+
+            // Without the check, the unprovable bundle reaches its proof and pays the penalty.
+            let repeated_inside = OutputsOnlyBundle {
+                actions: vec![
+                    create_dummy_serialized_action(),
+                    create_dummy_serialized_action(),
+                ],
+                amount: 5_000,
+                anchor: [42u8; 32],
+                proof: vec![0u8; 100],
+                binding_signature: [0u8; 64],
+            };
+            let result = process_transition(
+                &platform,
+                signed_shield_v0(9, &repeated_inside),
+                platform_version,
+            );
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                    ..
+                }]
+            );
+        }
+    }
+
+    // ==========================================
     // SECURITY AUDIT TESTS
     // ==========================================
 

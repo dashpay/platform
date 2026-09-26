@@ -16,6 +16,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::shield::transform_into_action::v0::ShieldStateTransitionTransformIntoActionValidationV0;
+use crate::execution::validation::state_transition::shield::transform_into_action::v1::ShieldStateTransitionTransformIntoActionValidationV1;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
@@ -60,9 +61,17 @@ impl StateTransitionShieldTransitionActionTransformer for ShieldTransition {
                 execution_context,
                 platform_version,
             ),
+            1 => self.transform_into_action_v1(
+                platform.drive,
+                tx,
+                inputs_with_remaining_balance,
+                block_info,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "shield transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

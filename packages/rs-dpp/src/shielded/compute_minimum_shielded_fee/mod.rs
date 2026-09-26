@@ -140,10 +140,12 @@ pub fn compute_shielded_unshield_fee(
 }
 
 /// Computes the conservative **admission floor** (in credits) of a shielded transition that also
-/// writes an identity balance (`ShieldFromIdentity`): [`compute_minimum_shielded_fee`] plus the
-/// flat identity-write component (`SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES` effective bytes
-/// at the per-byte storage rate: the nonce and balance rewrites' replace-only tree work, folded
-/// into one flat figure like the other shielded components).
+/// writes an identity balance (`ShieldFromIdentity`): [`compute_minimum_shielded_fee`] plus a
+/// per-action write component (`SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES` effective bytes per
+/// action: the metered processing of the note and nullifier writes the per-action allowance does
+/// not price) and the flat identity-side component (`SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES`
+/// effective bytes: the nonce and balance rewrites and the reads around them), both at the
+/// per-byte storage rate and folded into flat figures like the other shielded components.
 ///
 /// The transition's authoritative fee is metered at execution; this floor stands in for it where
 /// state is not yet available, so that an identity that could not pay the complete fee is refused
