@@ -1,0 +1,57 @@
+[package]
+name = "dash-platform-cxx"
+version.workspace = true
+authors = ["Dash Core Group <dev@dash.org>"]
+edition = "2021"
+rust-version.workspace = true
+license = "MIT"
+description = "CXX shell over dash-sdk for C++ embedders that supply their own trust context and signing keys"
+
+[lib]
+name = "dash_platform_cxx"
+crate-type = ["staticlib", "rlib"]
+
+[features]
+default = []
+# dash-sdk's mock transport, for tests that replay recorded proved responses
+# through the same client code an embedder runs. Never enabled by embedders.
+mocks = ["dash-sdk/mocks"]
+
+[dependencies]
+cxx = "1.0"
+dash-sdk = { path = "../rs-sdk", default-features = false, features = [
+  "dpns-contract",
+  "dashpay-contract",
+  "core_key_wallet",
+] }
+platform-encryption = { path = "../rs-platform-encryption" }
+tokio = { version = "1.40", features = ["rt-multi-thread", "net", "time"] }
+futures = "0.3"
+async-trait = "0.1"
+zeroize = "1.8"
+hex = "0.4"
+
+[build-dependencies]
+cxx-build = "1.0"
+
+[dev-dependencies]
+dash-platform-cxx = { path = ".", features = ["mocks"] }
+# The replay suite (`tests/replay.rs`) proves a real Drive state and
+# quorum-signs it the way an evonode does; the builder suite
+# (`tests/builders.rs`) checks the shell's transitions byte for byte against
+# dpp's in-process private-key constructions.
+drive = { path = "../rs-drive", default-features = false, features = [
+  "full",
+  "verify",
+] }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+  "bls-signatures",
+  "fixtures-and-mocks",
+  "random-public-keys",
+] }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v1.8.0", features = [
+  "crypto",
+], default-features = false }
+simple-signer = { path = "../simple-signer" }
+serde_json = "1"
+test-case = "3.3.1"

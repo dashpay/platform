@@ -153,6 +153,11 @@ dash-sdk: &sdk
   - *dapi_client
   - *drive
 
+dash-platform-cxx:
+  - packages/rs-platform-cxx/**
+  - *sdk
+  - *platform_encryption
+
 rs-sdk-ffi: &sdk_ffi
   - packages/rs-sdk-ffi/**
   - *simple-signer
