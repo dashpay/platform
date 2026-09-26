@@ -76,9 +76,13 @@ impl Drive {
             let action_id = Identifier::from_bytes(last_path_component)?;
 
             match element {
+                // Drive wrote these actions itself, so they are read without
+                // the budget `GroupAction` sets for proofs, as every v4.1
+                // binary reads them. That budget counts memory claimed from
+                // length prefixes, not bytes, and refused valid stored actions.
                 Item(value, ..) => Ok((
                     action_id,
-                    GroupAction::deserialize_from_bytes_trusted(&value)?,
+                    GroupAction::deserialize_from_bytes_trusted_no_limit(&value)?,
                 )),
                 _ => Err(Error::Drive(DriveError::CorruptedDriveState(
                     "element should be an item representing the group action".to_string(),
@@ -96,6 +100,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
     use dpp::data_contract::config::v0::DataContractConfigV0;
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::group::v0::GroupV0;
@@ -109,11 +114,30 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
+    use dpp::tests::fixtures::get_token_conventions_with_localizations_fixture;
     use dpp::tokens::token_event::TokenEvent;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
     fn setup_with_one_active_action() -> (crate::drive::Drive, Identifier, Identifier, Identifier) {
+        let (drive, contract_id, action_id, proposer_id, _) =
+            setup_with_one_active_action_event(|proposer_id| {
+                TokenEvent::Mint(100, proposer_id, None)
+            });
+        (drive, contract_id, action_id, proposer_id)
+    }
+
+    /// A drive holding one active action whose event `event` builds from the
+    /// proposer's id.
+    fn setup_with_one_active_action_event(
+        event: impl FnOnce(Identifier) -> TokenEvent,
+    ) -> (
+        crate::drive::Drive,
+        Identifier,
+        Identifier,
+        Identifier,
+        GroupAction,
+    ) {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
@@ -175,14 +199,14 @@ mod tests {
             contract_id,
             proposer_id: id_1,
             token_contract_position: 0,
-            event: GroupActionEvent::TokenEvent(TokenEvent::Mint(100, id_1, None)),
+            event: GroupActionEvent::TokenEvent(event(id_1)),
         });
 
         drive
             .add_group_action(
                 contract_id,
                 0,
-                Some(action),
+                Some(action.clone()),
                 false,
                 action_id,
                 id_1,
@@ -194,7 +218,7 @@ mod tests {
             )
             .expect("add group action");
 
-        (drive, contract_id, action_id, id_1)
+        (drive, contract_id, action_id, id_1, action)
     }
 
     #[test]
@@ -282,5 +306,36 @@ mod tests {
 
         assert_eq!(infos.len(), 1);
         assert!(!ops.is_empty(), "path query should record operations");
+    }
+
+    /// The server's list query reads the actions Drive stored without the
+    /// budget proofs decode under. A conventions change with 1,250 valid
+    /// localizations claims 100,000 bytes for its map at the length prefix;
+    /// that budget refused it, and with it every page that included it.
+    #[test]
+    fn should_list_a_stored_conventions_change_with_1250_localizations() {
+        let (drive, contract_id, action_id, _, action) = setup_with_one_active_action_event(|_| {
+            TokenEvent::ConfigUpdate(
+                TokenConfigurationChangeItem::Conventions(
+                    get_token_conventions_with_localizations_fixture(1_250),
+                ),
+                None,
+            )
+        });
+        let platform_version = PlatformVersion::latest();
+
+        let infos = drive
+            .fetch_action_infos(
+                contract_id,
+                0,
+                GroupActionStatus::ActionActive,
+                None,
+                Some(10),
+                None,
+                platform_version,
+            )
+            .expect("expected to list the stored actions");
+
+        assert_eq!(infos, BTreeMap::from([(action_id, action)]));
     }
 }
