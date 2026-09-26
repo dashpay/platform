@@ -1,9 +1,8 @@
+use crate::data_contract::json::contract_json_value;
 use crate::sdk::SDKWrapper;
 use crate::{DashSDKError, DashSDKErrorCode, DataContractHandle, FFIError, SDKHandle};
-use dash_sdk::dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dash_sdk::dpp::data_contract::DataContractWithSerialization;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::version::TryIntoPlatformVersioned;
 use dash_sdk::platform::{Fetch, Identifier};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -108,27 +107,10 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_with_serialization(
             // Always create a handle since we have the contract
             let handle = Some(Box::into_raw(Box::new(contract.clone())) as *mut DataContractHandle);
 
-            // Prepare JSON if requested
+            // Prepare JSON if requested, rendered at the SDK's network
+            // protocol version so it matches the proof-verified fetch.
             let json = if return_json {
-                // Serialize at the SDK's network protocol version (not the
-                // process-global current/latest) so the JSON matches the
-                // proof-verified fetch. Mirrors DataContract's own serde with
-                // the version pinned to `wrapper.sdk.version()`.
-                let platform_version = wrapper.sdk.version();
-                let format: DataContractInSerializationFormat =
-                    match contract.try_into_platform_versioned(platform_version) {
-                        Ok(format) => format,
-                        Err(e) => {
-                            return DashSDKDataContractFetchResult::error(DashSDKError::new(
-                                DashSDKErrorCode::SerializationError,
-                                format!(
-                                    "Failed to convert contract to its serialization format: {}",
-                                    e
-                                ),
-                            ))
-                        }
-                    };
-                match serde_json::to_value(&format) {
+                match contract_json_value(&contract, wrapper.sdk.version()) {
                     Ok(json_value) => match serde_json::to_string(&json_value) {
                         Ok(json_string) => match CString::new(json_string) {
                             Ok(c_str) => Some(c_str.into_raw()),
@@ -142,12 +124,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_with_serialization(
                             return DashSDKDataContractFetchResult::error(FFIError::from(e).into())
                         }
                     },
-                    Err(e) => {
-                        return DashSDKDataContractFetchResult::error(DashSDKError::new(
-                            DashSDKErrorCode::SerializationError,
-                            format!("Failed to convert contract to JSON: {}", e),
-                        ))
-                    }
+                    Err(e) => return DashSDKDataContractFetchResult::error(e),
                 }
             } else {
                 None
