@@ -1,5 +1,6 @@
 use crate::consensus::basic::state_transition::ShieldedInvalidValueBalanceError;
 use crate::consensus::basic::BasicError;
+use crate::shielded::SerializedAction;
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 use crate::state_transition::state_transitions::shielded::common_validation::{
     validate_actions_count, validate_anchor_not_zero, validate_encrypted_note_sizes,
@@ -14,61 +15,75 @@ impl StateTransitionStructureValidation for ShieldFromAssetLockTransitionV0 {
         &self,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
-        // Actions count must be in [1, max]
-        let result = validate_actions_count(
+        validate_shield_from_asset_lock_structure(
             &self.actions,
-            platform_version
-                .system_limits
-                .max_shielded_transition_actions,
-        );
-        if !result.is_valid() {
-            return result;
-        }
-
-        // Each action's encrypted_note must be exactly ENCRYPTED_NOTE_SIZE bytes
-        let result = validate_encrypted_note_sizes(&self.actions);
-        if !result.is_valid() {
-            return result;
-        }
-
-        // value_balance must be > 0 (credits flowing into pool)
-        if self.value_balance == 0 {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::ShieldedInvalidValueBalanceError(
-                    ShieldedInvalidValueBalanceError::new(
-                        "shield_from_asset_lock value_balance must be greater than 0".to_string(),
-                    ),
-                )
-                .into(),
-            );
-        }
-
-        // value_balance must fit in i64 (Orchard protocol uses i64 internally)
-        if self.value_balance > i64::MAX as u64 {
-            return SimpleConsensusValidationResult::new_with_error(
-                BasicError::ShieldedInvalidValueBalanceError(
-                    ShieldedInvalidValueBalanceError::new(
-                        "shield_from_asset_lock value_balance exceeds i64::MAX".to_string(),
-                    ),
-                )
-                .into(),
-            );
-        }
-
-        // Proof must not be empty
-        let result = validate_proof_not_empty(&self.proof);
-        if !result.is_valid() {
-            return result;
-        }
-
-        // Anchor must not be all zeros
-        let result = validate_anchor_not_zero(&self.anchor);
-        if !result.is_valid() {
-            return result;
-        }
-
-        SimpleConsensusValidationResult::new()
+            self.value_balance,
+            &self.proof,
+            &self.anchor,
+            platform_version,
+        )
     }
+}
+
+/// The structure rules of a `ShieldFromAssetLock`, shared by every transition version: the
+/// versions differ only in the preimage their bundle is proved against, not in their fields.
+pub(in crate::state_transition::state_transitions::shielded::shield_from_asset_lock_transition) fn validate_shield_from_asset_lock_structure(
+    actions: &[SerializedAction],
+    value_balance: u64,
+    proof: &[u8],
+    anchor: &[u8; 32],
+    platform_version: &PlatformVersion,
+) -> SimpleConsensusValidationResult {
+    // Actions count must be in [1, max]
+    let result = validate_actions_count(
+        actions,
+        platform_version
+            .system_limits
+            .max_shielded_transition_actions,
+    );
+    if !result.is_valid() {
+        return result;
+    }
+
+    // Each action's encrypted_note must be exactly ENCRYPTED_NOTE_SIZE bytes
+    let result = validate_encrypted_note_sizes(actions);
+    if !result.is_valid() {
+        return result;
+    }
+
+    // value_balance must be > 0 (credits flowing into pool)
+    if value_balance == 0 {
+        return SimpleConsensusValidationResult::new_with_error(
+            BasicError::ShieldedInvalidValueBalanceError(ShieldedInvalidValueBalanceError::new(
+                "shield_from_asset_lock value_balance must be greater than 0".to_string(),
+            ))
+            .into(),
+        );
+    }
+
+    // value_balance must fit in i64 (Orchard protocol uses i64 internally)
+    if value_balance > i64::MAX as u64 {
+        return SimpleConsensusValidationResult::new_with_error(
+            BasicError::ShieldedInvalidValueBalanceError(ShieldedInvalidValueBalanceError::new(
+                "shield_from_asset_lock value_balance exceeds i64::MAX".to_string(),
+            ))
+            .into(),
+        );
+    }
+
+    // Proof must not be empty
+    let result = validate_proof_not_empty(proof);
+    if !result.is_valid() {
+        return result;
+    }
+
+    // Anchor must not be all zeros
+    let result = validate_anchor_not_zero(anchor);
+    if !result.is_valid() {
+        return result;
+    }
+
+    SimpleConsensusValidationResult::new()
 }
 
 #[cfg(test)]

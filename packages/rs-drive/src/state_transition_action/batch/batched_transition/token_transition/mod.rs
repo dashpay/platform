@@ -29,6 +29,27 @@ pub mod token_direct_purchase_transition_action;
 /// token_set_price_for_direct_purchase_transition_action
 pub mod token_set_price_for_direct_purchase_transition_action;
 
+/// token_shield_transition_action
+pub mod token_shield_transition_action;
+
+/// token_shielded_transfer_transition_action
+pub mod token_shielded_transfer_transition_action;
+
+/// token_unshield_transition_action
+pub mod token_unshield_transition_action;
+
+/// Mint straight into the token shielded pool
+pub mod token_mint_to_pool_transition_action;
+
+/// Burn of notes held in the token shielded pool
+pub mod token_burn_from_pool_transition_action;
+
+/// Distribution claim paid into the token shielded pool
+pub mod token_claim_to_pool_transition_action;
+
+/// Direct purchase paid into the token shielded pool
+pub mod token_direct_purchase_to_pool_transition_action;
+
 use derive_more::From;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -56,6 +77,13 @@ use crate::state_transition_action::batch::batched_transition::token_transition:
 use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::{TokenClaimTransitionAction, TokenClaimTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::{TokenDirectPurchaseTransitionAction, TokenDirectPurchaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_set_price_for_direct_purchase_transition_action::{TokenSetPriceForDirectPurchaseTransitionAction, TokenSetPriceForDirectPurchaseTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_shield_transition_action::{TokenShieldTransitionAction, TokenShieldTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_shielded_transfer_transition_action::{TokenShieldedTransferTransitionAction, TokenShieldedTransferTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_unshield_transition_action::{TokenUnshieldTransitionAction, TokenUnshieldTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_mint_to_pool_transition_action::{TokenMintToPoolTransitionAction, TokenMintToPoolTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_from_pool_transition_action::{TokenBurnFromPoolTransitionAction, TokenBurnFromPoolTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::{TokenClaimToPoolTransitionAction, TokenClaimToPoolTransitionActionAccessorsV0};
+use crate::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::{TokenDirectPurchaseToPoolTransitionAction, TokenDirectPurchaseToPoolTransitionActionAccessorsV0};
 
 /// token action
 #[derive(Debug, Clone, From)]
@@ -82,6 +110,20 @@ pub enum TokenTransitionAction {
     DirectPurchaseAction(TokenDirectPurchaseTransitionAction),
     /// sets the price for direct purchase of the token
     SetPriceForDirectPurchaseAction(TokenSetPriceForDirectPurchaseTransitionAction),
+    /// identity token balance -> token shielded pool
+    ShieldAction(TokenShieldTransitionAction),
+    /// token shielded pool -> identity token balance
+    UnshieldAction(TokenUnshieldTransitionAction),
+    /// transfer inside the token shielded pool
+    ShieldedTransferAction(TokenShieldedTransferTransitionAction),
+    /// mint straight into the token shielded pool
+    MintToPoolAction(TokenMintToPoolTransitionAction),
+    /// burn notes held in the token shielded pool
+    BurnFromPoolAction(TokenBurnFromPoolTransitionAction),
+    /// distribution claim paid into the token shielded pool
+    ClaimToPoolAction(TokenClaimToPoolTransitionAction),
+    /// direct purchase paid into the token shielded pool
+    DirectPurchaseToPoolAction(TokenDirectPurchaseToPoolTransitionAction),
 }
 
 impl TokenTransitionAction {
@@ -99,6 +141,13 @@ impl TokenTransitionAction {
             TokenTransitionAction::ConfigUpdateAction(action) => action.base(),
             TokenTransitionAction::DirectPurchaseAction(action) => action.base(),
             TokenTransitionAction::SetPriceForDirectPurchaseAction(action) => action.base(),
+            TokenTransitionAction::ShieldAction(action) => action.base(),
+            TokenTransitionAction::UnshieldAction(action) => action.base(),
+            TokenTransitionAction::ShieldedTransferAction(action) => action.base(),
+            TokenTransitionAction::MintToPoolAction(action) => action.base(),
+            TokenTransitionAction::BurnFromPoolAction(action) => action.base(),
+            TokenTransitionAction::ClaimToPoolAction(action) => action.base(),
+            TokenTransitionAction::DirectPurchaseToPoolAction(action) => action.base(),
         }
     }
 
@@ -116,6 +165,13 @@ impl TokenTransitionAction {
             TokenTransitionAction::ConfigUpdateAction(action) => action.base_owned(),
             TokenTransitionAction::DirectPurchaseAction(action) => action.base_owned(),
             TokenTransitionAction::SetPriceForDirectPurchaseAction(action) => action.base_owned(),
+            TokenTransitionAction::ShieldAction(action) => action.base_owned(),
+            TokenTransitionAction::UnshieldAction(action) => action.base_owned(),
+            TokenTransitionAction::ShieldedTransferAction(action) => action.base_owned(),
+            TokenTransitionAction::MintToPoolAction(action) => action.base_owned(),
+            TokenTransitionAction::BurnFromPoolAction(action) => action.base_owned(),
+            TokenTransitionAction::ClaimToPoolAction(action) => action.base_owned(),
+            TokenTransitionAction::DirectPurchaseToPoolAction(action) => action.base_owned(),
         }
     }
 
@@ -133,6 +189,13 @@ impl TokenTransitionAction {
             TokenTransitionAction::ConfigUpdateAction(_) => "configUpdate",
             TokenTransitionAction::DirectPurchaseAction(_) => "directPurchase",
             TokenTransitionAction::SetPriceForDirectPurchaseAction(_) => "directPricing",
+            TokenTransitionAction::ShieldAction(_) => "shield",
+            TokenTransitionAction::UnshieldAction(_) => "unshield",
+            TokenTransitionAction::ShieldedTransferAction(_) => "shieldedTransfer",
+            TokenTransitionAction::MintToPoolAction(_) => "mintToPool",
+            TokenTransitionAction::BurnFromPoolAction(_) => "burnFromPool",
+            TokenTransitionAction::ClaimToPoolAction(_) => "claimToPool",
+            TokenTransitionAction::DirectPurchaseToPoolAction(_) => "directPurchaseToPool",
         }
     }
 
@@ -196,6 +259,44 @@ impl TokenTransitionAction {
             TokenTransitionAction::SetPriceForDirectPurchaseAction(_) => {
                 Ok(keeps_history.keeps_direct_pricing_history())
             }
+            // Shielded token operations never write history: the token history contract has
+            // no document types for them and a shielded transfer has nothing public to record.
+            TokenTransitionAction::ShieldAction(_)
+            | TokenTransitionAction::UnshieldAction(_)
+            | TokenTransitionAction::ShieldedTransferAction(_)
+            | TokenTransitionAction::MintToPoolAction(_)
+            | TokenTransitionAction::BurnFromPoolAction(_)
+            | TokenTransitionAction::ClaimToPoolAction(_)
+            | TokenTransitionAction::DirectPurchaseToPoolAction(_) => Ok(false),
         }
     }
+}
+
+/// The batched action a token transition becomes when it fails its transform: a bump of the
+/// owner's contract nonce carrying `errors`, returned with the fee accrued so far so the
+/// failure is paid.
+pub(crate) fn bump_with_errors(
+    base: &dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition,
+    owner_id: dpp::identifier::Identifier,
+    user_fee_increase: dpp::prelude::UserFeeIncrease,
+    errors: Vec<dpp::consensus::ConsensusError>,
+    fee_result: dpp::fee::fee_result::FeeResult,
+) -> (
+    dpp::prelude::ConsensusValidationResult<
+        crate::state_transition_action::batch::BatchedTransitionAction,
+    >,
+    dpp::fee::fee_result::FeeResult,
+) {
+    let bump_action = crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+        base,
+        owner_id,
+        user_fee_increase,
+    );
+    (
+        dpp::prelude::ConsensusValidationResult::new_with_data_and_errors(
+            crate::state_transition_action::batch::BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+            errors,
+        ),
+        fee_result,
+    )
 }

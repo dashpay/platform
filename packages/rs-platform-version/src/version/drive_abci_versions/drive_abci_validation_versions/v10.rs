@@ -244,7 +244,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 document_transfer_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_purchase_transition_structure_validation: 0, // unchanged: v0 gained the `distinctFrom: $ownerId` judgement in place, inert before this version
                 document_update_price_transition_structure_validation: 0,
-                document_base_transition_state_validation: 0,
+                document_base_transition_state_validation: 1, // changed: a document token cost may be paid from the token shielded pool
                 document_create_transition_state_validation: 2,
                 document_delete_transition_state_validation: 0,
                 document_index_only_delete_transition_state_validation: 0,
@@ -278,6 +278,20 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 token_direct_purchase_transition_state_validation: 1, // changed: `i64::MAX` bounds the total supply when no max supply is set
                 token_set_price_for_direct_purchase_transition_structure_validation: 0,
                 token_set_price_for_direct_purchase_transition_state_validation: 0,
+                token_shield_transition_structure_validation: 0,
+                token_shield_transition_state_validation: 0,
+                token_mint_to_pool_transition_structure_validation: 0,
+                token_mint_to_pool_transition_state_validation: 0,
+                token_burn_from_pool_transition_structure_validation: 0,
+                token_burn_from_pool_transition_state_validation: 0,
+                token_claim_to_pool_transition_structure_validation: 0,
+                token_claim_to_pool_transition_state_validation: 0,
+                token_direct_purchase_to_pool_transition_structure_validation: 0,
+                token_direct_purchase_to_pool_transition_state_validation: 0,
+                token_unshield_transition_structure_validation: 0,
+                token_unshield_transition_state_validation: 0,
+                token_shielded_transfer_transition_structure_validation: 0,
+                token_shielded_transfer_transition_state_validation: 0,
             },
             identity_create_from_addresses_state_transition:
                 DriveAbciStateTransitionValidationVersion {
@@ -351,7 +365,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 1, // changed: nullifier checks
+                transform_into_action: 1, // changed: the bundle's sighash binds its kind tag and the asset lock it is funded from, and the nullifiers its actions reveal are checked against the bundle and the state and then recorded
             },
             shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -387,6 +401,33 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                     state: 0,
                     transform_into_action: 0,
                 },
+            token_shielded_transfer_with_shielded_fee_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_unshield_with_shielded_fee_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_purchase_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: Some(0),
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
         },
         has_nonce_validation: 1,
         has_address_witness_validation: 0,
@@ -407,6 +448,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             maximum_vote_polls_to_process: 2,
             maximum_contenders_to_consider: 100,
             minimum_pool_notes_for_outgoing: 250,
+            minimum_token_pool_notes_for_outgoing: 0,
             shielded_anchor_retention_blocks: 1000,
             shielded_anchor_pruning_interval: 100,
             // Rebalanced for protocol 14: one Halo 2 bundle verification is

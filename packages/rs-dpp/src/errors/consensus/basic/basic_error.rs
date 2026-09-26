@@ -39,10 +39,10 @@ use crate::consensus::basic::data_contract::{
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
     NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError,
     RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
-    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
-    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
-    UnknownTransferableTypeError,
+    TokenShieldedPoolIncompatibleRulesError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
+    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
+    UnknownTradeModeError, UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -831,6 +831,9 @@ pub enum BasicError {
     // A document breaking a rule of its type's `propertyConstraints` (protocol version 14).
     #[error(transparent)]
     DocumentPropertyConstraintViolatedError(DocumentPropertyConstraintViolatedError),
+
+    #[error(transparent)]
+    TokenShieldedPoolIncompatibleRulesError(TokenShieldedPoolIncompatibleRulesError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -974,6 +977,14 @@ mod tests {
                 )
             )),
             199
+        );
+        // A token opting into a shielded pool keeps no freeze rules (protocol version 14): the
+        // tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::TokenShieldedPoolIncompatibleRulesError(
+                TokenShieldedPoolIncompatibleRulesError::new(0, "freezeRules".to_string())
+            )),
+            200
         );
     }
 }

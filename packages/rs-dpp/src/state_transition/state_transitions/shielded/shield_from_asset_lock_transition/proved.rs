@@ -16,12 +16,14 @@ impl AssetLockProved for ShieldFromAssetLockTransition {
     ) -> Result<(), ProtocolError> {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.set_asset_lock_proof(asset_lock_proof),
+            ShieldFromAssetLockTransition::V1(v1) => v1.set_asset_lock_proof(asset_lock_proof),
         }
     }
 
     fn asset_lock_proof(&self) -> &AssetLockProof {
         match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.asset_lock_proof(),
+            ShieldFromAssetLockTransition::V1(v1) => v1.asset_lock_proof(),
         }
     }
 }

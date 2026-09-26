@@ -3578,6 +3578,20 @@ message GetGroupActionsResponse {
       optional string public_note = 3; // Public note
     }
 
+    // Mint straight into the token's shielded pool (protocol version 14+)
+    message MintToPoolEvent {
+      uint64 amount = 1;               // Amount minted into the pool
+      bytes actions_digest = 2;        // Digest of the Orchard actions every signer commits to
+      optional string public_note = 3; // Public note
+    }
+
+    // Burn of notes held in the token's shielded pool (protocol version 14+)
+    message BurnFromPoolEvent {
+      uint64 amount = 1;               // Amount destroyed
+      bytes actions_digest = 2;        // Digest of the Orchard actions every signer commits to
+      optional string public_note = 3; // Public note
+    }
+
     // Event associated with this action
     message GroupActionEvent {
       oneof event_type {
@@ -3617,6 +3631,8 @@ message GetGroupActionsResponse {
             7; // Token configuration update details
         UpdateDirectPurchasePriceEvent update_price =
             8; // Updating the token direct selling price
+        MintToPoolEvent mint_to_pool = 9;     // Mint into the token shielded pool
+        BurnFromPoolEvent burn_from_pool = 10; // Burn from the token shielded pool
       }
     }
 
@@ -3850,11 +3866,15 @@ message GetRecentCompactedAddressBalanceChangesResponse {
 
 // --- Shielded Pool Queries ---
 
+// Every shielded pool query below targets the credit shielded pool unless `token_id` is set,
+// in which case it targets that token's own shielded pool (protocol version 14+; the 32-byte
+// token id). Responses have the same shape for both pools.
 message GetShieldedEncryptedNotesRequest {
   message GetShieldedEncryptedNotesRequestV0 {
     uint64 start_index = 1;
     uint32 count = 2;
     bool prove = 3;
+    optional bytes token_id = 4; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedEncryptedNotesRequestV0 v0 = 1; }
 }
@@ -3882,6 +3902,7 @@ message GetShieldedEncryptedNotesResponse {
 message GetShieldedAnchorsRequest {
   message GetShieldedAnchorsRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedAnchorsRequestV0 v0 = 1; }
 }
@@ -3903,6 +3924,7 @@ message GetShieldedAnchorsResponse {
 message GetMostRecentShieldedAnchorRequest {
   message GetMostRecentShieldedAnchorRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetMostRecentShieldedAnchorRequestV0 v0 = 1; }
 }
@@ -3921,6 +3943,7 @@ message GetMostRecentShieldedAnchorResponse {
 message GetShieldedPoolStateRequest {
   message GetShieldedPoolStateRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedPoolStateRequestV0 v0 = 1; }
 }
@@ -3946,6 +3969,7 @@ message GetShieldedPoolStateResponse {
 message GetShieldedNotesCountRequest {
   message GetShieldedNotesCountRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedNotesCountRequestV0 v0 = 1; }
 }
@@ -3965,6 +3989,7 @@ message GetShieldedNullifiersRequest {
   message GetShieldedNullifiersRequestV0 {
     repeated bytes nullifiers = 1;
     bool prove = 2;
+    optional bytes token_id = 3; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedNullifiersRequestV0 v0 = 1; }
 }

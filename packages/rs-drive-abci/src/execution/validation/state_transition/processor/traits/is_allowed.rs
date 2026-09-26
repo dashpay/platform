@@ -1,14 +1,26 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
+use dpp::data_contract::associated_token::token_configuration::validate_token_configurations;
+use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
+use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 use dpp::version::feature_initial_protocol_versions::{
     ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION, CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION,
     CONTRACT_USER_MODERATION_INITIAL_PROTOCOL_VERSION,
     IDENTITY_KEY_LIMITS_UPDATE_INITIAL_PROTOCOL_VERSION,
     IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
     SHIELDED_POOL_INITIAL_PROTOCOL_VERSION, SHIELD_FROM_IDENTITY_INITIAL_PROTOCOL_VERSION,
+    TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
 };
 use dpp::version::PlatformVersion;
 
@@ -26,7 +38,8 @@ pub(crate) trait StateTransitionIsAllowedValidationV0 {
 impl StateTransitionIsAllowedValidationV0 for StateTransition {
     fn has_is_allowed_validation(&self) -> Result<bool, Error> {
         match self {
-            StateTransition::IdentityTopUpFromAddresses(_)
+            StateTransition::Batch(_)
+            | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
@@ -35,6 +48,9 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::Shield(_)
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::IdentityTopUpFromShieldedPool(_)
+            | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
             | StateTransition::ShieldedWithdrawal(_)
@@ -43,10 +59,19 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::ContractUserModeration(_)
             | StateTransition::ContractFeeClaim(_) => Ok(true),
-            StateTransition::Batch(_)
-            | StateTransition::DataContractCreate(_)
-            | StateTransition::DataContractUpdate(_)
-            | StateTransition::IdentityCreate(_)
+            // Newly decoded token formats need an unpaid activation check even while the
+            // older contract basic-structure generations remain frozen.
+            StateTransition::DataContractCreate(st) => Ok(st
+                .data_contract()
+                .tokens()
+                .values()
+                .any(|configuration| configuration.format_version() > 0)),
+            StateTransition::DataContractUpdate(st) => Ok(st
+                .data_contract()
+                .tokens()
+                .values()
+                .any(|configuration| configuration.format_version() > 0)),
+            StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityUpdate(_)
@@ -59,7 +84,91 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error> {
+        let contract = match self {
+            StateTransition::DataContractCreate(st) => Some(st.data_contract()),
+            StateTransition::DataContractUpdate(st) => Some(st.data_contract()),
+            _ => None,
+        };
+        if let Some(contract) = contract {
+            // The pre-activation gate: a token configuration format the protocol version does
+            // not admit is refused unpaid, whatever the frozen basic structure generations do.
+            return Ok(validate_token_configurations(
+                contract.tokens(),
+                platform_version,
+            ));
+        }
         match self {
+            StateTransition::Batch(st) => {
+                // Token shielded pools (the batch transitions that use them, a document token
+                // cost paid from one and the configuration items of a pool's threshold) are a
+                // protocol-version feature, not a table-versioned validator, so the gate is
+                // applied to the batch as a whole rather than to one of its transitions.
+                if platform_version.protocol_version < TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                {
+                    if let Some(transition) =
+                        st.transitions_iter()
+                            .find_map(|transition| match transition {
+                                BatchedTransitionRef::Token(TokenTransition::Shield(_)) => {
+                                    Some("TokenShield")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::Unshield(_)) => {
+                                    Some("TokenUnshield")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(
+                                    _,
+                                )) => Some("TokenShieldedTransfer"),
+                                BatchedTransitionRef::Token(TokenTransition::MintToPool(_)) => {
+                                    Some("TokenMintToPool")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::BurnFromPool(_)) => {
+                                    Some("TokenBurnFromPool")
+                                }
+                                BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => {
+                                    Some("TokenClaimToPool")
+                                }
+                                BatchedTransitionRef::Token(
+                                    TokenTransition::DirectPurchaseToPool(_),
+                                ) => Some("TokenDirectPurchaseToPool"),
+                                // Only a token with a pool has an outgoing notes threshold,
+                                // and software older than it cannot decode these items.
+                                BatchedTransitionRef::Token(TokenTransition::ConfigUpdate(
+                                    config_update,
+                                )) if matches!(
+                                    config_update.update_token_configuration_item(),
+                                    TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_)
+                                        | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(_)
+                                        | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_)
+                                ) =>
+                                {
+                                    Some("TokenConfigUpdateMinimumPoolNotesForOutgoing")
+                                }
+                                BatchedTransitionRef::Document(document_transition)
+                                    if document_transition
+                                        .base()
+                                        .token_payment_info_ref()
+                                        .as_ref()
+                                        .is_some_and(|info| info.shielded_payment().is_some()) =>
+                                {
+                                    Some("DocumentShieldedTokenPayment")
+                                }
+                                _ => None,
+                            })
+                    {
+                        return Ok(ConsensusValidationResult::new_with_errors(vec![
+                            StateTransitionNotActiveError::new(
+                                transition,
+                                platform_version.protocol_version,
+                                TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                            )
+                            .into(),
+                        ]));
+                    }
+                }
+                // The batch's own `is_allowed` covered contested documents before a target
+                // epoch and was removed upstream once those were allowed; the version gate above
+                // is all a batch needs here now.
+                Ok(ConsensusValidationResult::new())
+            }
             StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
@@ -109,6 +218,23 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                             self.state_transition_type().to_string(),
                             platform_version.protocol_version,
                             IDENTITY_TOP_UP_FROM_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                        )
+                        .into(),
+                    ]))
+                }
+            }
+            StateTransition::TokenShieldedTransferWithShieldedFee(_)
+            | StateTransition::TokenUnshieldWithShieldedFee(_)
+            | StateTransition::TokenPurchaseFromShieldedPool(_) => {
+                if platform_version.protocol_version >= TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
+                {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type().to_string(),
+                            platform_version.protocol_version,
+                            TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
                         )
                         .into(),
                     ]))

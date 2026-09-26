@@ -22,7 +22,10 @@ pub const CONTRACT_FEE_CLAIM_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
 /// version 14 and registered at genesis from that version on; below it the contract does
 /// not exist and lookups must report it absent.
 pub const APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
-
+/// Token shielded pools (per-token Orchard pools behind `TokenConfigurationV1::has_shielded_pool`,
+/// with the batch token transitions that shield, unshield, transfer, mint, burn, claim and
+/// purchase into or out of them) activate with protocol version 14.
+pub const TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION: ProtocolVersion = 14;
 /// The moderation charters system contract is written to state by the upgrade to protocol
 /// version 14 and registered at genesis from that version on; below it the contract does not
 /// exist and lookups must report it absent.

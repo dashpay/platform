@@ -19,9 +19,21 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Credits, Error> {
         let pool_path = shielded_credit_pool_path();
+        self.read_pool_total_balance_v0(&pool_path, transaction, drive_operations, platform_version)
+    }
+
+    /// Reads the total balance SumItem of the pool at `pool_path`, whichever shielded pool
+    /// (credit or token) it is. Returns 0 if the key does not exist yet.
+    pub(in crate::drive) fn read_pool_total_balance_v0(
+        &self,
+        pool_path: &[&[u8]],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<u64, Error> {
         Ok(self
             .grove_get_raw_value_u64_from_encoded_var_vec(
-                (&pool_path).into(),
+                pool_path.into(),
                 &[SHIELDED_TOTAL_BALANCE_KEY],
                 DirectQueryType::StatefulDirectQuery,
                 transaction,

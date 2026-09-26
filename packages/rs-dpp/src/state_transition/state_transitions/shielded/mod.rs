@@ -6,4 +6,7 @@ pub mod shield_from_identity_transition;
 pub mod shield_transition;
 pub mod shielded_transfer_transition;
 pub mod shielded_withdrawal_transition;
+pub mod token_purchase_from_shielded_pool_transition;
+pub mod token_shielded_transfer_with_shielded_fee_transition;
+pub mod token_unshield_with_shielded_fee_transition;
 pub mod unshield_transition;

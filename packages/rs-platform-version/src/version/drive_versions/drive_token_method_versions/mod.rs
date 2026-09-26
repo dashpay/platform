@@ -20,6 +20,16 @@ pub struct DriveTokenDistributionMethodVersions {
     pub mark_pre_programmed_release_as_distributed: FeatureVersion,
     pub add_once_per_identity_distribution: FeatureVersion,
     pub mark_once_per_identity_release_as_distributed: FeatureVersion,
+    /// The tokens an evonode earns from an `EvonodesByParticipation` perpetual distribution
+    /// over one claim, and the moment the claim pays through.
+    /// v0: reads the finalized epochs of the claim up to the query bound and evaluates the
+    ///     whole claimed range, so a claim reaching past the epochs it read failed as an
+    ///     internal error or, for a fixed amount, applied the share of the epochs read to the
+    ///     whole range.
+    /// v1: pays only through the last whole cycle it read, reading at least one whole cycle,
+    ///     and counts an epoch without finalized info below the last one read as an epoch
+    ///     without blocks.
+    pub evonode_participation_rewards: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -75,4 +85,17 @@ pub struct DriveTokenUpdateMethodVersions {
     pub unfreeze: FeatureVersion,
     pub apply_status: FeatureVersion,
     pub perpetual_distribution_next_event_for_identity_id: FeatureVersion,
+    /// Creates the per-token shielded pool subtree when a token with `has_shielded_pool` is
+    /// registered.
+    pub create_token_shielded_pool_trees: FeatureVersion,
+    /// Identity token balance -> token shielded pool.
+    pub shield: FeatureVersion,
+    /// Token shielded pool -> identity token balance.
+    pub unshield: FeatureVersion,
+    /// Pool-internal token transfer.
+    pub shielded_transfer: FeatureVersion,
+    /// Mint straight into the token shielded pool (supply and pool balance both grow).
+    pub mint_to_pool: FeatureVersion,
+    /// Burn notes held in the token shielded pool (pool balance and supply both shrink).
+    pub burn_from_pool: FeatureVersion,
 }

@@ -613,7 +613,7 @@ impl Drive {
             }
             StateTransition::ShieldFromAssetLock(st) => {
                 use dpp::identity::state_transition::AssetLockProved;
-                use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+                use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
 
                 let outpoint = st.asset_lock_proof().out_point().ok_or_else(|| {
                     Error::Proof(ProofError::InvalidTransition(
@@ -630,9 +630,7 @@ impl Drive {
                     grovedb::SizedQuery::new(query, Some(1), None),
                 );
 
-                // No accessor trait exposes `surplus_output`, so read it directly off the V0 body.
-                let ShieldFromAssetLockTransition::V0(v0) = st;
-                match &v0.surplus_output {
+                match st.surplus_output() {
                     Some(surplus_address) => {
                         // Mirror the Unshield arm: also prove the balance of the signed
                         // surplus-output address so a light client can confirm the surplus
@@ -686,6 +684,31 @@ impl Drive {
                     vec![&nullifier_pq, &identity_pq],
                     &platform_version.drive.grove_version,
                 )?
+            }
+            // The token bundle's spent nullifiers in the token pool bind the exact actions of
+            // this transfer.
+            StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
+                use crate::drive::shielded::paths::token_shielded_pool_nullifiers_path_query;
+                use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
+
+                let nullifiers: Vec<[u8; 32]> = st.token_nullifiers();
+                token_shielded_pool_nullifiers_path_query(st.token_id().to_buffer(), &nullifiers)
+            }
+            // The recipient's token balance after the unshield.
+            StateTransition::TokenUnshieldWithShieldedFee(st) => {
+                use dpp::state_transition::token_unshield_with_shielded_fee_transition::accessors::TokenUnshieldWithShieldedFeeTransitionAccessorsV0;
+
+                Drive::token_balance_for_identity_id_query(
+                    st.token_id().to_buffer(),
+                    st.recipient_id().to_buffer(),
+                )
+            }
+            // The token pool's total balance after the notes were minted into it.
+            StateTransition::TokenPurchaseFromShieldedPool(st) => {
+                use crate::drive::shielded::paths::token_shielded_pool_state_path_query;
+                use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
+
+                token_shielded_pool_state_path_query(st.token_id().to_buffer())
             }
             StateTransition::IdentityTopUpFromShieldedPool(st) => {
                 use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;

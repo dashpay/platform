@@ -21,6 +21,8 @@ use crate::identity::IdentityPublicKey;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
+#[cfg(feature = "state-transition-signing")]
+use crate::shielded::OrchardBundleParams;
 use crate::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
@@ -674,6 +676,407 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_transfer_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_shield_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        bundle: OrchardBundleParams,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                BatchTransitionV1::new_token_shield_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    amount,
+                    bundle,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_shield_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_mint_to_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        bundle: OrchardBundleParams,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                BatchTransitionV1::new_token_mint_to_pool_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    amount,
+                    bundle,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_mint_to_pool_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_burn_from_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        bundle: OrchardBundleParams,
+        public_note: Option<String>,
+        using_group_info: Option<GroupStateTransitionInfoStatus>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                BatchTransitionV1::new_token_burn_from_pool_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    amount,
+                    bundle,
+                    public_note,
+                    using_group_info,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_burn_from_pool_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_claim_to_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        distribution_type: TokenDistributionType,
+        claim_up_to: Option<u64>,
+        bundle: OrchardBundleParams,
+        public_note: Option<String>,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                BatchTransitionV1::new_token_claim_to_pool_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    distribution_type,
+                    claim_up_to,
+                    bundle,
+                    public_note,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_claim_to_pool_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_direct_purchase_to_pool_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        token_count: TokenAmount,
+        total_agreed_price: Credits,
+        bundle: OrchardBundleParams,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                BatchTransitionV1::new_token_direct_purchase_to_pool_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    token_count,
+                    total_agreed_price,
+                    bundle,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_direct_purchase_to_pool_transition"
+                    .to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_unshield_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        amount: TokenAmount,
+        recipient_id: Identifier,
+        bundle: OrchardBundleParams,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                BatchTransitionV1::new_token_unshield_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    amount,
+                    recipient_id,
+                    bundle,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_unshield_transition".to_string(),
+                known_versions: vec![1],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    async fn new_token_shielded_transfer_transition<S: Signer<IdentityPublicKey>>(
+        token_id: Identifier,
+        owner_id: Identifier,
+        data_contract_id: Identifier,
+        token_contract_position: u16,
+        bundle: OrchardBundleParams,
+        identity_public_key: &IdentityPublicKey,
+        identity_contract_nonce: IdentityNonce,
+        user_fee_increase: UserFeeIncrease,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        options: Option<StateTransitionCreationOptions>,
+    ) -> Result<StateTransition, ProtocolError> {
+        let resolved_options = options.unwrap_or_default();
+        match resolved_options.batch_feature_version.unwrap_or(
+            platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .batch_state_transition
+                .default_current_version,
+        ) {
+            1 | 0
+                if platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .batch_state_transition
+                    .max_version
+                    >= 1 =>
+            {
+                BatchTransitionV1::new_token_shielded_transfer_transition(
+                    token_id,
+                    owner_id,
+                    data_contract_id,
+                    token_contract_position,
+                    bundle,
+                    identity_public_key,
+                    identity_contract_nonce,
+                    user_fee_increase,
+                    signer,
+                    platform_version,
+                    options,
+                )
+                .await
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentsBatchTransition::new_token_shielded_transfer_transition"
+                    .to_string(),
                 known_versions: vec![1],
                 received: version,
             }),

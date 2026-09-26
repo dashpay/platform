@@ -98,7 +98,7 @@ use crate::consensus::state::identity::missing_transfer_key_error::MissingTransf
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError, TokenShieldedPoolNotEnabledError, TokenShieldedPaymentAmountMismatchError, TokenShieldedPaymentNotRequiredError};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -621,6 +621,18 @@ pub enum StateError {
     // 14).
     #[error(transparent)]
     ModerationReasonNotListedError(ModerationReasonNotListedError),
+
+    // NOTE: `StateError` is bincode-encoded positionally, so a new variant MUST be appended at
+    // the tail: inserting mid-enum shifts the wire discriminant of every variant after it and
+    // mis-decodes errors already encoded. The error code in `codes.rs` is independent of order.
+    #[error(transparent)]
+    TokenShieldedPoolNotEnabledError(TokenShieldedPoolNotEnabledError),
+
+    #[error(transparent)]
+    TokenShieldedPaymentAmountMismatchError(TokenShieldedPaymentAmountMismatchError),
+
+    #[error(transparent)]
+    TokenShieldedPaymentNotRequiredError(TokenShieldedPaymentNotRequiredError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1289,6 +1301,7 @@ mod tests {
             )),
             149
         );
+
         // A seated moderation team's action names a reason its proposal lists (protocol
         // version 14): the tail of the enum.
         assert_eq!(
@@ -1296,6 +1309,33 @@ mod tests {
                 ModerationReasonNotListedError::new(group_id, identity_id, None)
             )),
             150
+        );
+        // Token shielded pools (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::TokenShieldedPoolNotEnabledError(
+                TokenShieldedPoolNotEnabledError::new(Identifier::from([1; 32]))
+            )),
+            151
+        );
+        assert_eq!(
+            discriminant_of(StateError::TokenShieldedPaymentAmountMismatchError(
+                TokenShieldedPaymentAmountMismatchError::new(
+                    Identifier::from([1; 32]),
+                    10,
+                    9,
+                    "create".to_string(),
+                )
+            )),
+            152
+        );
+        assert_eq!(
+            discriminant_of(StateError::TokenShieldedPaymentNotRequiredError(
+                TokenShieldedPaymentNotRequiredError::new(
+                    Identifier::from([1; 32]),
+                    "create".to_string(),
+                )
+            )),
+            153
         );
     }
 }

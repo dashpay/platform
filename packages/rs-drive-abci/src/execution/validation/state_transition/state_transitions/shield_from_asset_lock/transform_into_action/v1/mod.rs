@@ -25,7 +25,7 @@ use dpp::consensus::state::state_error::StateError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{signer, ScriptBuf, Txid};
 use dpp::fee::Credits;
-use dpp::shielded::compute_minimum_shielded_fee;
+use dpp::shielded::{compute_minimum_shielded_fee, shield_from_asset_lock_extra_sighash_data};
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::identity::KeyType;
 use dpp::platform_value::{Bytes32, Bytes36};
@@ -55,16 +55,18 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
 impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
     for ShieldFromAssetLockTransition
 {
-    /// Version 0, plus the nullifier checks every spend runs (Step 8b): each action of an
-    /// outputs-only bundle still reveals a nullifier (that of a dummy spend, which becomes the
-    /// new note's `rho`), and the action's operations record it, so a nullifier repeated inside
-    /// the bundle or already recorded by an earlier spend or shield is refused with
-    /// `NullifierAlreadySpentError`.
+    /// Version 0's checks plus two additions. The bundle's sighash binds its kind tag and the
+    /// asset lock it is funded from, so proved bytes cannot be re-wrapped around an asset lock of
+    /// someone else's (Step 9). And every nullifier the bundle reveals is checked and recorded
+    /// (Step 8b): each action of an outputs-only bundle still reveals a nullifier, that of a dummy
+    /// spend, which becomes the new note's `rho`, and the action's operations record it, so a
+    /// nullifier repeated inside the bundle or already recorded by an earlier spend or shield is
+    /// refused with `NullifierAlreadySpentError`.
     ///
-    /// The check runs after the asset lock, its signature, the funding floor and the fee cap
-    /// have passed, so a re-broadcast of an executed transition still reports its consumed
-    /// asset lock, and before the Orchard proof, so the refusal costs no proof verification.
-    /// Like the fee cap refusal it is unpaid: the asset lock stays unconsumed.
+    /// The nullifier check runs after the asset lock, its signature, the funding floor and the fee
+    /// cap have passed, so a re-broadcast of an executed transition still reports its consumed
+    /// asset lock, and before the Orchard proof, so the refusal costs no proof verification. Like
+    /// the fee cap refusal it is unpaid: the asset lock stays unconsumed.
     fn transform_into_action_v1<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -76,9 +78,14 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
+        // Only transition version 1 reaches this generation: protocol version 14 refuses version 0
+        // when it decodes the transition (`StateTransition::active_version_range`), uncharged and
+        // with its asset lock unspent. The version 0 arms below exist because the enum has them.
+
         // Step 1: Get the shield amount (value_balance is u64, the amount entering the pool)
         let shield_amount: Credits = match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.value_balance,
+            ShieldFromAssetLockTransition::V1(v1) => v1.value_balance,
         };
 
         // Step 3: Calculate minimum required fee from platform_version.
@@ -98,6 +105,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
         let albc = required_balance;
         let num_actions = match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.actions.len(),
+            ShieldFromAssetLockTransition::V1(v1) => v1.actions.len(),
         };
         let shielded_fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
         let pool_fee =
@@ -271,6 +279,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
 
         let surplus_output = match self {
             ShieldFromAssetLockTransition::V0(v0) => &v0.surplus_output,
+            ShieldFromAssetLockTransition::V1(v1) => &v1.surplus_output,
         };
 
         // When no surplus_output is set, the surplus is donated to the fee pools — but only up to
@@ -303,6 +312,9 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
             ShieldFromAssetLockTransition::V0(v0) => {
                 v0.actions.iter().map(|action| action.nullifier).collect()
             }
+            ShieldFromAssetLockTransition::V1(v1) => {
+                v1.actions.iter().map(|action| action.nullifier).collect()
+            }
         };
         if let Some(consensus_error) = validate_nullifiers(
             platform.drive,
@@ -315,7 +327,8 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
         }
 
         // CheckTx admits the expensive proof only after the asset lock, its
-        // signature, funding, fee cap, and current pool state have all passed.
+        // signature, funding, fee cap, current pool state and nullifiers have
+        // all passed.
         // Proposal and block processing pass `None` and retain the existing
         // penalty action when proof verification fails.
         let _check_tx_permit = match check_tx_proof_verifier {
@@ -326,14 +339,26 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
         };
 
         // Step 9: Verify Orchard ZK proof via reconstruct_and_verify_bundle()
-        // Use EMPTY extra_sighash_data -- no transparent binding needed since
-        // the asset lock proof authenticates the source of funds.
+        // The asset lock signature authenticates this transition, but the bundle itself carries
+        // no anchor and says nothing about who proved it, so anybody could re-wrap the proved
+        // bytes around an asset lock of their own. The sighash therefore binds the kind and the
+        // funding asset lock, whose outpoint structure validation has already established.
+        let extra_sighash_data = shield_from_asset_lock_extra_sighash_data(
+            AssetLockProved::asset_lock_proof(self),
+            platform_version,
+        )?;
         let (actions, anchor, proof, binding_signature) = match self {
             ShieldFromAssetLockTransition::V0(v0) => (
                 &v0.actions,
                 &v0.anchor,
                 v0.proof.as_slice(),
                 &v0.binding_signature,
+            ),
+            ShieldFromAssetLockTransition::V1(v1) => (
+                &v1.actions,
+                &v1.anchor,
+                v1.proof.as_slice(),
+                &v1.binding_signature,
             ),
         };
 
@@ -344,7 +369,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV1
             anchor,
             proof,
             binding_signature,
-            &[], // No transparent fields to bind for shield_from_asset_lock
+            &extra_sighash_data,
         ) {
             // Step 10: ZK proof failed -- consume asset lock with penalty (PartiallyUseAssetLockAction)
             let penalty = platform_version

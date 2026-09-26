@@ -317,6 +317,10 @@ impl TokenConfigurationV0 {
                     action_taker,
                     goal,
                 ),
+            // A V0 configuration has no shielded pool and so no threshold for anyone to change.
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(_)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_) => false,
         }
     }
 }

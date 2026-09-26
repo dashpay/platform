@@ -38,6 +38,28 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<VerifiedShieldedEncryptedNote>, u64), Error> {
+        Self::verify_pool_encrypted_notes_v0(
+            proof,
+            shielded_credit_pool_path_vec(),
+            start_index,
+            count,
+            max_elements,
+            verify_subset_of_proof,
+            platform_version,
+        )
+    }
+
+    /// Verifies an encrypted-notes proof against the notes tree of the pool at `pool_path`,
+    /// whichever shielded pool (credit or token) it is.
+    pub(super) fn verify_pool_encrypted_notes_v0(
+        proof: &[u8],
+        pool_path: Vec<Vec<u8>>,
+        start_index: u64,
+        count: u32,
+        max_elements: u32,
+        verify_subset_of_proof: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, Vec<VerifiedShieldedEncryptedNote>, u64), Error> {
         if max_elements == 0 {
             return Err(Error::Drive(DriveError::CorruptedElementType(
                 "max_elements must be greater than zero",
@@ -78,7 +100,7 @@ impl Drive {
         );
 
         let path_query = PathQuery {
-            path: shielded_credit_pool_path_vec(),
+            path: pool_path.clone(),
             query: SizedQuery {
                 query: Query {
                     read_mode: None,
@@ -163,7 +185,7 @@ impl Drive {
         // `verify_subset_of_proof`) because this element query is, by
         // construction, a sub-portion of the larger proof.
         let count_path_query = PathQuery {
-            path: shielded_credit_pool_path_vec(),
+            path: pool_path.clone(),
             query: SizedQuery {
                 query: Query::new_single_key(vec![SHIELDED_NOTES_KEY]),
                 limit: Some(1),

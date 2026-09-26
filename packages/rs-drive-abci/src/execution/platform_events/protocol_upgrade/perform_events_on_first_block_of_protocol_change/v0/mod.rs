@@ -835,6 +835,13 @@ impl<C> Platform<C> {
         self.drive
             .insert_contract_fee_pot_trees(Some(transaction), platform_version)?;
 
+        // Token shielded pools root: the BigSumTree under the Tokens tree that holds one Orchard
+        // pool per token opting in (`TokenConfigurationV1::has_shielded_pool`).
+        // CONSENSUS-CRITICAL: the genesis path (`Drive::create_initial_state_structure_v4`) calls
+        // the same helper, so a chain born at this version and one upgraded to it build a
+        // byte-identical `[Tokens]` subtree.
+        self.drive
+            .insert_token_shielded_pools_root_tree(Some(transaction), platform_version)?;
         Ok(())
     }
 }
@@ -851,6 +858,7 @@ mod tests {
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
         SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
     };
+    use drive::drive::tokens::paths::TOKEN_SHIELDED_POOLS_KEY;
 
     /// Recursively compares the GroveDB subtree rooted at `root_path` between
     /// two platforms and returns a list of human-readable differences (empty ⇒
@@ -3244,6 +3252,59 @@ mod tests {
         );
     }
 
+    /// The token shielded pools root is built by two paths that must coincide byte for byte:
+    /// `Drive::create_initial_state_structure_v4` at a v14 genesis and
+    /// `transition_to_version_14` on a chain upgraded from v13.
+    #[test]
+    fn test_genesis_v14_and_upgrade_to_v14_build_identical_token_shielded_pools_root() {
+        let platform_version_14 = PlatformVersion::get(14).expect("expected v14");
+
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // A genuine v13 genesis must not contain the pools root yet.
+        {
+            let txn = platform_b.drive.grove.start_transaction();
+            let tokens_path: [&[u8]; 1] = [&[RootTree::Tokens as u8]];
+            let pools_root_pre = platform_b.drive.grove.get(
+                SubtreePath::from(&tokens_path[..]),
+                &[TOKEN_SHIELDED_POOLS_KEY],
+                Some(&txn),
+                &platform_version_14.drive.grove_version,
+            );
+            assert!(
+                pools_root_pre.value.is_err(),
+                "v13 genesis must not contain the token shielded pools root before the upgrade; got {:?}",
+                pools_root_pre.value
+            );
+        }
+
+        let txn_b = platform_b.drive.grove.start_transaction();
+        platform_b
+            .transition_to_version_14(&BlockInfo::default(), &txn_b, platform_version_14)
+            .expect("upgrade: transition_to_version_14 should succeed");
+
+        let diffs = collect_subtree_diffs(
+            &platform_a,
+            &platform_b,
+            &txn_b,
+            vec![vec![RootTree::Tokens as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "CONSENSUS FORK: the [Tokens] subtree differs between a fresh genesis-v14 node and an \
+             in-place-upgraded v14 node.\n{}",
+            diffs.join("\n"),
+        );
+    }
+
     /// CONSENSUS-CRITICAL equivalence guard for the v11→v12 boundary.
     ///
     /// The `[ShieldedBalances]` subtree is built two ways that MUST be
@@ -3254,12 +3315,12 @@ mod tests {
     ///  * UPGRADE path — a node already on v11 runs the real
     ///    `Platform::transition_to_version_12` at the activation block.
     ///
-    /// Before the fix these diverged: genesis built the pool via a sorted
-    /// `GroveDbOpBatch`, which roots the parent Merk at the batch's median key
-    /// `[160]`; the upgrade built it with sequential breadth-first inserts, which
-    /// root it at `[128]` (the intended NOTES-at-root layout). Two different
-    /// subtree shapes ⇒ a state-synced v12 node and an in-place-upgraded v12 node
-    /// would compute different app hashes at the boundary block and fork.
+    /// Genesis builds the pool through a sorted `GroveDbOpBatch`, which roots the parent
+    /// Merk at the batch's median key `[160]`; sequential breadth-first inserts root it at
+    /// `[128]`, the intended NOTES-at-root layout. Two different subtree shapes mean a
+    /// state-synced node and an in-place-upgraded node compute different app hashes at the
+    /// boundary block and fork, so both paths go through the shared
+    /// `Drive::insert_shielded_pool_structure`.
     ///
     /// This test drives the REAL production functions (not a hand-rebuilt batch)
     /// — Platform A is a genuine genesis-v12, Platform B is a genuine genesis-v11
@@ -3276,11 +3337,6 @@ mod tests {
     /// the shielded pool is constructed and would pollute a whole-DB comparison.
     /// The diagnostic that localized the original bug confirmed the shielded
     /// subtree was the ONLY construction-driven divergence.
-    ///
-    /// RED before the fix (genesis pool root `[160]` ≠ upgrade pool root `[128]`,
-    /// plus a cascade of differing child hashes), GREEN after (both `[128]`,
-    /// because both paths now call the shared
-    /// `Drive::insert_shielded_pool_structure`).
     #[test]
     fn test_genesis_v12_and_upgrade_to_v12_build_identical_shielded_pool() {
         let platform_version_12 = PlatformVersion::get(12).expect("expected v12");

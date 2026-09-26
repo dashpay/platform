@@ -250,6 +250,7 @@ GPBObjCClassDeclaration(GetGroupActionsRequest_StartAtActionId);
 GPBObjCClassDeclaration(GetGroupActionsResponse);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnEvent);
+GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_ContractEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_ContractUpdateEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_DestroyFrozenFundsEvent);
@@ -261,6 +262,7 @@ GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupA
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActions);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_MintEvent);
+GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent);
 GPBObjCClassDeclaration(GetGroupActionsResponse_GetGroupActionsResponseV0_UnfreezeEvent);
@@ -26990,6 +26992,142 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPur
 
 @end
 
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent
+
+@implementation GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent
+
+@dynamic amount;
+@dynamic actionsDigest;
+@dynamic hasPublicNote, publicNote;
+
+typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *actionsDigest;
+  NSString *publicNote;
+  uint64_t amount;
+} GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "amount",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent_FieldNumber_Amount,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_, amount),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "actionsDigest",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent_FieldNumber_ActionsDigest,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_, actionsDigest),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "publicNote",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent_FieldNumber_PublicNote,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_, publicNote),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeString,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent
+
+@implementation GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent
+
+@dynamic amount;
+@dynamic actionsDigest;
+@dynamic hasPublicNote, publicNote;
+
+typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *actionsDigest;
+  NSString *publicNote;
+  uint64_t amount;
+} GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "amount",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent_FieldNumber_Amount,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_, amount),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "actionsDigest",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent_FieldNumber_ActionsDigest,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_, actionsDigest),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "publicNote",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent_FieldNumber_PublicNote,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_, publicNote),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeString,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent
 
 @implementation GetGroupActionsResponse_GetGroupActionsResponseV0_GroupActionEvent
@@ -27291,6 +27429,8 @@ void GetGroupActionsResponse_GetGroupActionsResponseV0_ContractEvent_ClearTypeOn
 @dynamic emergencyAction;
 @dynamic tokenConfigUpdate;
 @dynamic updatePrice;
+@dynamic mintToPool;
+@dynamic burnFromPool;
 
 typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_ {
   uint32_t _has_storage_[2];
@@ -27302,6 +27442,8 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__sto
   GetGroupActionsResponse_GetGroupActionsResponseV0_EmergencyActionEvent *emergencyAction;
   GetGroupActionsResponse_GetGroupActionsResponseV0_TokenConfigUpdateEvent *tokenConfigUpdate;
   GetGroupActionsResponse_GetGroupActionsResponseV0_UpdateDirectPurchasePriceEvent *updatePrice;
+  GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent *mintToPool;
+  GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent *burnFromPool;
 } GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_;
 
 // This method is threadsafe because it is initially called
@@ -27379,6 +27521,24 @@ typedef struct GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__sto
         .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_UpdatePrice,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_, updatePrice),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "mintToPool",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0_MintToPoolEvent),
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_MintToPool,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_, mintToPool),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "burnFromPool",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnFromPoolEvent),
+        .number = GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent_FieldNumber_BurnFromPool,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetGroupActionsResponse_GetGroupActionsResponseV0_TokenEvent__storage_, burnFromPool),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
@@ -30084,10 +30244,12 @@ void GetShieldedEncryptedNotesRequest_ClearVersionOneOfCase(GetShieldedEncrypted
 @dynamic startIndex;
 @dynamic count;
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_ {
   uint32_t _has_storage_[1];
   uint32_t count;
+  NSData *tokenId;
   uint64_t startIndex;
 } GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_;
 
@@ -30123,6 +30285,15 @@ typedef struct GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequest
         .offset = 3,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0_FieldNumber_TokenId,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetShieldedEncryptedNotesRequest_GetShieldedEncryptedNotesRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -30468,9 +30639,11 @@ void GetShieldedAnchorsRequest_ClearVersionOneOfCase(GetShieldedAnchorsRequest *
 @implementation GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0
 
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_ {
   uint32_t _has_storage_[1];
+  NSData *tokenId;
 } GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -30487,6 +30660,15 @@ typedef struct GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_ {
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0_FieldNumber_TokenId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetShieldedAnchorsRequest_GetShieldedAnchorsRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -30753,9 +30935,11 @@ void GetMostRecentShieldedAnchorRequest_ClearVersionOneOfCase(GetMostRecentShiel
 @implementation GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0
 
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0__storage_ {
   uint32_t _has_storage_[1];
+  NSData *tokenId;
 } GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -30772,6 +30956,15 @@ typedef struct GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorReq
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0_FieldNumber_TokenId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -30992,9 +31185,11 @@ void GetShieldedPoolStateRequest_ClearVersionOneOfCase(GetShieldedPoolStateReque
 @implementation GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0
 
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storage_ {
   uint32_t _has_storage_[1];
+  NSData *tokenId;
 } GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -31011,6 +31206,15 @@ typedef struct GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storag
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0_FieldNumber_TokenId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetShieldedPoolStateRequest_GetShieldedPoolStateRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -31231,9 +31435,11 @@ void GetShieldedNotesCountRequest_ClearVersionOneOfCase(GetShieldedNotesCountReq
 @implementation GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0
 
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0__storage_ {
   uint32_t _has_storage_[1];
+  NSData *tokenId;
 } GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -31250,6 +31456,15 @@ typedef struct GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0__stor
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber_TokenId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -31471,10 +31686,12 @@ void GetShieldedNullifiersRequest_ClearVersionOneOfCase(GetShieldedNullifiersReq
 
 @dynamic nullifiersArray, nullifiersArray_Count;
 @dynamic prove;
+@dynamic hasTokenId, tokenId;
 
 typedef struct GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *nullifiersArray;
+  NSData *tokenId;
 } GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -31500,6 +31717,15 @@ typedef struct GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__stor
         .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "tokenId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0_FieldNumber_TokenId,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0__storage_, tokenId),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =

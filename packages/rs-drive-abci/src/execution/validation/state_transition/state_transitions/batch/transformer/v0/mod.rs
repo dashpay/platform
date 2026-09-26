@@ -49,7 +49,11 @@ use dpp::consensus::state::document::document_incorrect_purchase_price_error::Do
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
+use dpp::shielded::compute_shielded_verification_fee;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
+use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::{Revision, UserFeeIncrease};
 use dpp::validation::SimpleConsensusValidationResult;
@@ -92,6 +96,13 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::TokenMintTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::TokenClaimTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::TokenDirectPurchaseTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_shield_transition_action::TokenShieldTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_shielded_transfer_transition_action::TokenShieldedTransferTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_unshield_transition_action::TokenUnshieldTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_to_pool_transition_action::TokenMintToPoolTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_burn_from_pool_transition_action::TokenBurnFromPoolTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_set_price_for_direct_purchase_transition_action::TokenSetPriceForDirectPurchaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
@@ -742,6 +753,76 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 Ok(batched_action)
             }
+            TokenTransition::Shield(token_shield) => {
+                let (batched_action, fee_result) = TokenShieldTransitionAction::try_from_borrowed_token_shield_transition_with_contract_lookup(drive, owner_id, token_shield, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::MintToPool(token_mint_to_pool) => {
+                let (batched_action, fee_result) = TokenMintToPoolTransitionAction::try_from_borrowed_token_mint_to_pool_transition_with_contract_lookup(drive, owner_id, token_mint_to_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::BurnFromPool(token_burn_from_pool) => {
+                let (batched_action, fee_result) = TokenBurnFromPoolTransitionAction::try_from_borrowed_token_burn_from_pool_transition_with_contract_lookup(drive, owner_id, token_burn_from_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::ClaimToPool(token_claim_to_pool) => {
+                let (batched_action, fee_result) = TokenClaimToPoolTransitionAction::try_from_borrowed_token_claim_to_pool_transition_with_contract_lookup(drive, owner_id, token_claim_to_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::DirectPurchaseToPool(token_direct_purchase_to_pool) => {
+                let (batched_action, fee_result) = TokenDirectPurchaseToPoolTransitionAction::try_from_borrowed_token_direct_purchase_to_pool_transition_with_contract_lookup(drive, owner_id, token_direct_purchase_to_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::Unshield(token_unshield) => {
+                let (batched_action, fee_result) = TokenUnshieldTransitionAction::try_from_borrowed_token_unshield_transition_with_contract_lookup(drive, owner_id, token_unshield, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::ShieldedTransfer(token_shielded_transfer) => {
+                let (batched_action, fee_result) = TokenShieldedTransferTransitionAction::try_from_borrowed_token_shielded_transfer_transition_with_contract_lookup(drive, owner_id, token_shielded_transfer, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
         }
     }
 
@@ -788,6 +869,27 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error> {
+        // A token cost paid out of the token's shielded pool carries an Orchard bundle whose
+        // Halo 2 verification and per-action work GroveDB cannot meter: charged here, before
+        // anything can fail, so CheckTx admission and block execution price it identically and
+        // a rejected document still pays for the proof it made the validators check.
+        if let Some(payment) = transition
+            .base()
+            .token_payment_info_ref()
+            .as_ref()
+            .and_then(|token_payment_info| token_payment_info.shielded_payment())
+        {
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+                FeeResult {
+                    processing_fee: compute_shielded_verification_fee(
+                        payment.actions.len(),
+                        platform_version,
+                    )?,
+                    ..Default::default()
+                },
+            ));
+        }
+
         if let Some(max_depth) = platform_version.system_limits.max_document_value_depth {
             if let Some(actual_depth) = transition.first_data_depth_exceeding(max_depth as usize) {
                 return Self::failed_per_transition_action(

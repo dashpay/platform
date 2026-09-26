@@ -18,11 +18,13 @@ mod tests {
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
     use dpp::dashcore::{Network, PrivateKey};
+    use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
     use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::platform_value::BinaryData;
     use dpp::serialization::{PlatformSerializable, Signable};
-    use dpp::shielded::SerializedAction;
+    use dpp::shielded::{shield_from_asset_lock_extra_sighash_data, SerializedAction};
     use dpp::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
+    use dpp::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
     use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
@@ -136,7 +138,7 @@ mod tests {
         binding_signature: [u8; 64],
     ) -> StateTransition {
         // Create unsigned transition to compute signable bytes
-        let unsigned = ShieldFromAssetLockTransitionV0 {
+        let unsigned = ShieldFromAssetLockTransitionV1 {
             asset_lock_proof: asset_lock_proof.clone(),
             actions: actions.clone(),
             value_balance,
@@ -161,8 +163,8 @@ mod tests {
         let signature =
             dpp::dashcore::signer::sign(&signable_bytes, asset_lock_private_key).unwrap();
 
-        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(
-            ShieldFromAssetLockTransitionV0 {
+        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(
+            ShieldFromAssetLockTransitionV1 {
                 asset_lock_proof,
                 actions,
                 value_balance,
@@ -189,7 +191,7 @@ mod tests {
         binding_signature: [u8; 64],
     ) -> StateTransition {
         // Create unsigned transition to compute signable bytes
-        let unsigned = ShieldFromAssetLockTransitionV0 {
+        let unsigned = ShieldFromAssetLockTransitionV1 {
             asset_lock_proof: asset_lock_proof.clone(),
             actions: actions.clone(),
             value_balance,
@@ -208,8 +210,8 @@ mod tests {
         let signature =
             dpp::dashcore::signer::sign(&signable_bytes, asset_lock_private_key).unwrap();
 
-        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(
-            ShieldFromAssetLockTransitionV0 {
+        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(
+            ShieldFromAssetLockTransitionV1 {
                 asset_lock_proof,
                 actions,
                 value_balance,
@@ -232,8 +234,8 @@ mod tests {
         proof: Vec<u8>,
         binding_signature: [u8; 64],
     ) -> StateTransition {
-        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(
-            ShieldFromAssetLockTransitionV0 {
+        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(
+            ShieldFromAssetLockTransitionV1 {
                 asset_lock_proof,
                 actions,
                 value_balance,
@@ -244,6 +246,20 @@ mod tests {
                 signature: BinaryData::new(vec![0u8; 65]), // dummy signature
             },
         ))
+    }
+
+    /// The Orchard sighash consensus checks a `ShieldFromAssetLock` funded by `asset_lock_proof`
+    /// against. The bundle binds the asset lock, so a fixture has to create the lock before it
+    /// proves the bundle.
+    fn shield_from_asset_lock_sighash(
+        bundle_commitment: &[u8; 32],
+        asset_lock_proof: &AssetLockProof,
+        platform_version: &PlatformVersion,
+    ) -> [u8; 32] {
+        let extra_sighash_data =
+            shield_from_asset_lock_extra_sighash_data(asset_lock_proof, platform_version)
+                .expect("shield from asset lock sighash data");
+        compute_platform_sighash(bundle_commitment, &extra_sighash_data)
     }
 
     // (Orchard ProvingKey and serialize_authorized_bundle are now shared
@@ -567,7 +583,7 @@ mod tests {
 
             // Build transition with a completely zeroed (invalid) signature
             let transition = StateTransition::ShieldFromAssetLock(
-                ShieldFromAssetLockTransition::V0(ShieldFromAssetLockTransitionV0 {
+                ShieldFromAssetLockTransition::V1(ShieldFromAssetLockTransitionV1 {
                     asset_lock_proof,
                     actions: vec![create_dummy_serialized_action()],
                     value_balance: 5000,
@@ -676,8 +692,11 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            // No extra_sighash_data for shield_from_asset_lock (empty, like shield)
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_from_asset_lock_sighash(
+                &bundle_commitment,
+                &asset_lock_proof,
+                platform_version,
+            );
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
@@ -1135,7 +1154,11 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_from_asset_lock_sighash(
+                &bundle_commitment,
+                &asset_lock_proof,
+                platform_version,
+            );
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
@@ -1204,7 +1227,11 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_from_asset_lock_sighash(
+                &bundle_commitment,
+                &asset_lock_proof,
+                platform_version,
+            );
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
@@ -1296,7 +1323,11 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_from_asset_lock_sighash(
+                &bundle_commitment,
+                &asset_lock_proof,
+                platform_version,
+            );
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
@@ -1477,7 +1508,11 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_from_asset_lock_sighash(
+                &bundle_commitment,
+                &asset_lock_proof,
+                platform_version,
+            );
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
@@ -1669,7 +1704,7 @@ mod tests {
             // number of duffs.
             const SHIELD_VALUE_BASE: u64 = 1_000_000;
 
-            let mut build_bundle = |shield_value: u64| {
+            let mut build_bundle = |shield_value: u64, asset_lock_proof: &AssetLockProof| {
                 let mut builder = Builder::<DashMemo>::new(
                     BundleType::Transactional {
                         flags: OrchardFlags::SPENDS_DISABLED,
@@ -1687,14 +1722,22 @@ mod tests {
                     .unwrap();
                 let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
                 let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-                let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+                let sighash = shield_from_asset_lock_sighash(
+                    &bundle_commitment,
+                    asset_lock_proof,
+                    platform_version,
+                );
                 let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
                 let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
                 serialize_authorized_bundle_with_flags(&bundle)
             };
 
-            // Probe to learn the (value-independent) action count, then the pool fee.
-            let (probe_actions, _, _, _, _, _) = build_bundle(SHIELD_VALUE_BASE);
+            // Probe to learn the (value-independent) action count, then the pool fee. The probe
+            // is never submitted, so any lock will do for its binding.
+            let (probe_actions, _, _, _, _, _) = build_bundle(
+                SHIELD_VALUE_BASE,
+                &instant_asset_lock_proof_fixture(None, None),
+            );
             let num_actions = probe_actions.len();
             let shielded_fee = compute_minimum_shielded_fee(num_actions, platform_version)
                 .expect("should compute minimum shielded fee");
@@ -1718,18 +1761,20 @@ mod tests {
                 % CREDITS_PER_DUFF;
             let shield_value = SHIELD_VALUE_BASE + correction;
 
-            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                build_bundle(shield_value);
-            assert!(value_balance < 0);
-            let shield_amount = (-value_balance) as u64;
-
-            let lock_credits = cap + shield_amount + pool_fee;
+            let lock_credits = cap + shield_value + pool_fee;
             assert_eq!(lock_credits % CREDITS_PER_DUFF, 0);
             let lock_amount_duffs = lock_credits / CREDITS_PER_DUFF;
 
+            // The bundle binds the asset lock that funds it, so the lock comes first.
             let mut rng = StdRng::seed_from_u64(567);
             let (asset_lock_proof, asset_lock_pk) =
                 create_asset_lock_proof_with_key_and_amount(&mut rng, lock_amount_duffs);
+
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_bundle(shield_value, &asset_lock_proof);
+            assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
+            assert_eq!(shield_amount, shield_value);
 
             let transition = create_signed_shield_from_asset_lock_transition_no_surplus(
                 asset_lock_proof,
@@ -1874,6 +1919,8 @@ mod tests {
         /// (Real proving — uses the cached `get_proving_key`, so each build is a few seconds.)
         fn build_valid_shield_bundle(
             shield_value: u64,
+            asset_lock_proof: &AssetLockProof,
+            platform_version: &PlatformVersion,
         ) -> (
             Vec<SerializedAction>,
             u64,
@@ -1909,8 +1956,11 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            // No extra_sighash_data for shield_from_asset_lock (empty, like shield).
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_from_asset_lock_sighash(
+                &bundle_commitment,
+                asset_lock_proof,
+                platform_version,
+            );
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
@@ -1936,14 +1986,15 @@ mod tests {
         }
 
         /// Pieces needed to drive a boundary case end-to-end: a valid bundle whose surplus lands
-        /// exactly on `target_surplus`, plus the asset-lock funding (in duffs) that achieves it.
+        /// exactly on `target_surplus`, plus the asset lock (and its key) funded to achieve it.
         struct BoundaryCase {
             actions: Vec<SerializedAction>,
             shield_amount: u64,
             anchor: [u8; 32],
             proof: Vec<u8>,
             binding_signature: [u8; 64],
-            lock_amount_duffs: u64,
+            asset_lock_proof: AssetLockProof,
+            asset_lock_pk: Vec<u8>,
         }
 
         /// Build a valid `ShieldFromAssetLock` bundle and matching asset-lock funding such that the
@@ -1956,8 +2007,9 @@ mod tests {
         ///   1. Build a probe bundle to learn the (value-independent) action count → `pool_fee`.
         ///   2. Pick `shield_value ≡ −(target_surplus + pool_fee) (mod CREDITS_PER_DUFF)` so that
         ///      `target_surplus + shield_value + pool_fee` is an exact number of duffs.
-        ///   3. Rebuild the bundle with that `shield_value` (the action count is independent of the
-        ///      value, so `pool_fee` is unchanged) and derive the funding `amount_duffs`.
+        ///   3. Derive the funding `amount_duffs`, create the asset lock, and rebuild the bundle
+        ///      with that `shield_value`, bound to that lock (the action count is independent of
+        ///      the value, so `pool_fee` is unchanged).
         fn build_boundary_case(
             target_surplus: u64,
             platform_version: &PlatformVersion,
@@ -1965,8 +2017,13 @@ mod tests {
             // A round base shield value, comfortably positive after the modular correction below.
             const SHIELD_VALUE_BASE: u64 = 1_000_000;
 
-            // Step 1: probe to learn the action count and thus the pool fee.
-            let (_, _, probe_num_actions, _, _, _) = build_valid_shield_bundle(SHIELD_VALUE_BASE);
+            // Step 1: probe to learn the action count and thus the pool fee. The probe is never
+            // submitted, so any lock will do for its binding.
+            let (_, _, probe_num_actions, _, _, _) = build_valid_shield_bundle(
+                SHIELD_VALUE_BASE,
+                &instant_asset_lock_proof_fixture(None, None),
+                platform_version,
+            );
             let pool_fee = pool_fee_for_actions(probe_num_actions, platform_version);
 
             // Step 2: choose `shield_value` so the required lock value is a whole number of duffs.
@@ -1975,21 +2032,25 @@ mod tests {
                 % CREDITS_PER_DUFF;
             let shield_value = SHIELD_VALUE_BASE + correction;
 
-            // Step 3: build the real bundle and derive the funding.
-            let (actions, shield_amount, num_actions, anchor, proof, binding_signature) =
-                build_valid_shield_bundle(shield_value);
-            assert_eq!(
-                num_actions, probe_num_actions,
-                "action count must not depend on the shielded value"
-            );
-
-            let lock_credits = target_surplus + shield_amount + pool_fee;
+            // Step 3: derive the funding, create the lock the bundle binds, then build the real
+            // bundle.
+            let lock_credits = target_surplus + shield_value + pool_fee;
             assert_eq!(
                 lock_credits % CREDITS_PER_DUFF,
                 0,
                 "lock value must be a whole number of duffs"
             );
             let lock_amount_duffs = lock_credits / CREDITS_PER_DUFF;
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) =
+                create_asset_lock_proof_with_key_and_amount(&mut rng, lock_amount_duffs);
+
+            let (actions, shield_amount, num_actions, anchor, proof, binding_signature) =
+                build_valid_shield_bundle(shield_value, &asset_lock_proof, platform_version);
+            assert_eq!(
+                num_actions, probe_num_actions,
+                "action count must not depend on the shielded value"
+            );
 
             // The surplus the transform will compute (`lock_credits − shield_amount − pool_fee`)
             // lands exactly on the target by construction.
@@ -2005,7 +2066,8 @@ mod tests {
                 anchor,
                 proof,
                 binding_signature,
-                lock_amount_duffs,
+                asset_lock_proof,
+                asset_lock_pk,
             }
         }
 
@@ -2027,13 +2089,9 @@ mod tests {
             let cap = implicit_fee_cap(platform_version);
             let case = build_boundary_case(cap, platform_version);
 
-            let mut rng = StdRng::seed_from_u64(567);
-            let (asset_lock_proof, asset_lock_pk) =
-                create_asset_lock_proof_with_key_and_amount(&mut rng, case.lock_amount_duffs);
-
             let transition = create_signed_shield_from_asset_lock_transition_no_surplus(
-                asset_lock_proof,
-                &asset_lock_pk,
+                case.asset_lock_proof,
+                &case.asset_lock_pk,
                 case.actions,
                 case.shield_amount,
                 case.anchor,
@@ -2059,13 +2117,9 @@ mod tests {
             let cap = implicit_fee_cap(platform_version);
             let case = build_boundary_case(cap + 1, platform_version);
 
-            let mut rng = StdRng::seed_from_u64(567);
-            let (asset_lock_proof, asset_lock_pk) =
-                create_asset_lock_proof_with_key_and_amount(&mut rng, case.lock_amount_duffs);
-
             let transition = create_signed_shield_from_asset_lock_transition_no_surplus(
-                asset_lock_proof,
-                &asset_lock_pk,
+                case.asset_lock_proof,
+                &case.asset_lock_pk,
                 case.actions,
                 case.shield_amount,
                 case.anchor,
@@ -2142,9 +2196,12 @@ mod tests {
             shielded_fee.checked_add(albc).expect("pool fee overflow")
         }
 
-        /// Build a real, valid single-output Orchard shield bundle of `shield_value` credits.
+        /// Build a real, valid single-output Orchard shield bundle of `shield_value` credits, bound
+        /// to the asset lock that will fund it.
         fn build_valid_shield_bundle(
             shield_value: u64,
+            asset_lock_proof: &AssetLockProof,
+            platform_version: &PlatformVersion,
         ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
             let mut orchard_rng = OsRng;
             let pk = get_proving_key();
@@ -2171,7 +2228,11 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_from_asset_lock_sighash(
+                &bundle_commitment,
+                asset_lock_proof,
+                platform_version,
+            );
             let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
             let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
 
@@ -2222,7 +2283,7 @@ mod tests {
 
             let shield_value = 5_000u64;
             let (actions, shield_amount, anchor_bytes, proof_bytes, binding_sig) =
-                build_valid_shield_bundle(shield_value);
+                build_valid_shield_bundle(shield_value, &asset_lock_proof, platform_version);
 
             // Production fee + the consumed lock value, so we can pin the surplus exactly.
             let pool_fee = pool_fee_for_actions(actions.len(), platform_version);
@@ -2335,29 +2396,35 @@ mod tests {
             // Probe to learn the action count → pool_fee, then choose `shield_value` so the required
             // lock value is a whole number of duffs (the fixture quantises funding to duffs).
             const SHIELD_VALUE_BASE: u64 = 1_000_000;
-            let (probe_actions, _, _, _, _) = build_valid_shield_bundle(SHIELD_VALUE_BASE);
+            // The probe is never submitted, so any lock will do for its binding.
+            let (probe_actions, _, _, _, _) = build_valid_shield_bundle(
+                SHIELD_VALUE_BASE,
+                &instant_asset_lock_proof_fixture(None, None),
+                platform_version,
+            );
             let pool_fee = pool_fee_for_actions(probe_actions.len(), platform_version);
             let correction = (CREDITS_PER_DUFF
                 - ((cap + SHIELD_VALUE_BASE + pool_fee) % CREDITS_PER_DUFF))
                 % CREDITS_PER_DUFF;
             let shield_value = SHIELD_VALUE_BASE + correction;
 
-            let (actions, shield_amount, anchor_bytes, proof_bytes, binding_sig) =
-                build_valid_shield_bundle(shield_value);
-
-            let consumed = cap + shield_amount + pool_fee;
+            let consumed = cap + shield_value + pool_fee;
             assert_eq!(
                 consumed % CREDITS_PER_DUFF,
                 0,
                 "lock value must be a whole number of duffs"
             );
             let lock_amount_duffs = consumed / CREDITS_PER_DUFF;
-            // The surplus the transform computes lands exactly on the cap by construction.
-            assert_eq!(consumed - shield_amount - pool_fee, cap);
 
+            // The bundle binds the asset lock that funds it, so the lock comes first.
             let mut rng = StdRng::seed_from_u64(567);
             let (asset_lock_proof, asset_lock_pk) =
                 create_asset_lock_proof_with_key_and_amount(&mut rng, lock_amount_duffs);
+
+            let (actions, shield_amount, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_shield_bundle(shield_value, &asset_lock_proof, platform_version);
+            // The surplus the transform computes lands exactly on the cap by construction.
+            assert_eq!(consumed - shield_amount - pool_fee, cap);
 
             let transition = create_signed_shield_from_asset_lock_transition_no_surplus(
                 asset_lock_proof,
@@ -2412,6 +2479,405 @@ mod tests {
                 consumed,
                 "platform total must rise by exactly the consumed asset-lock value"
             );
+        }
+    }
+
+    // ==========================================
+    // Bundle binding
+    // ==========================================
+
+    /// The bundle's sighash binds its kind and the asset lock that funds it, from protocol
+    /// version 14 on, through `transform_into_action` v1. Every negative test here starts from a
+    /// transition the public builder made and shows it admitted by CheckTx and executed first, so
+    /// a refusal that follows is about where the bundle was moved, not about the bundle.
+    mod bundle_binding {
+        use super::*;
+        use crate::config::{PlatformConfig, PlatformTestConfig};
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            check_tx_errors, setup_address_with_balance, test_orchard_recipient, TestAddressSigner,
+            TestOrchardProver,
+        };
+        use crate::platform_types::platform::PlatformRef;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+        use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
+        use dpp::asset_lock::StoredAssetLockInfo;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::fee::fee_result::FeeResult;
+        use dpp::platform_value::Bytes36;
+        use dpp::shielded::builder::{
+            build_shield_from_asset_lock_transition, build_shield_transition,
+        };
+        use dpp::state_transition::shield_transition::ShieldTransition;
+        use std::collections::BTreeMap;
+
+        const SHIELD_AMOUNT: u64 = 5_000;
+
+        fn builder_made_shield_from_asset_lock(
+            asset_lock_proof: AssetLockProof,
+            asset_lock_key: &[u8],
+            platform_version: &PlatformVersion,
+        ) -> StateTransition {
+            build_shield_from_asset_lock_transition(
+                &test_orchard_recipient(),
+                SHIELD_AMOUNT,
+                asset_lock_proof,
+                asset_lock_key,
+                &TestOrchardProver,
+                [0u8; 36],
+                None,
+                // The fixture lock holds 1 Dash, far past the implicit fee cap, so the surplus
+                // needs somewhere to go.
+                Some(PlatformAddress::P2pkh([0x33; 20])),
+                0,
+                platform_version,
+            )
+            .expect("client-built shield from asset lock")
+        }
+
+        fn assert_admitted_and_executed(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) {
+            let admission = check_tx_errors(platform, transition);
+            assert!(admission.is_empty(), "CheckTx must admit it: {admission:?}");
+            assert_matches!(
+                process_transition(platform, transition.clone(), platform_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        /// Refused for its proof at admission, and in the block as a paid failure that burns
+        /// part of the lock.
+        fn assert_refused_for_its_proof(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) {
+            let admission = check_tx_errors(platform, transition);
+            assert!(
+                admission.iter().any(|error| matches!(
+                    error,
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )),
+                "CheckTx must refuse it for its proof: {admission:?}"
+            );
+            assert_matches!(
+                process_transition(platform, transition.clone(), platform_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::InvalidShieldedProofError(_)),
+                    ..
+                }]
+            );
+        }
+
+        /// Somebody funds a transition of their own with their own asset lock and wraps it around
+        /// a bundle proved for somebody else's lock. Without the lock in the sighash its proof
+        /// verifies and a second note with the same nullifier lands in the pool.
+        #[test]
+        fn should_refuse_a_bundle_resubmitted_under_another_asset_lock() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            let mut rng = StdRng::seed_from_u64(40);
+            let (victim_lock, victim_key) = create_asset_lock_proof_with_key(&mut rng);
+            let (copier_lock, copier_key) = create_asset_lock_proof_with_key(&mut rng);
+            assert_ne!(
+                victim_lock.create_identifier().expect("identifier"),
+                copier_lock.create_identifier().expect("identifier"),
+                "the two locks must be different owners"
+            );
+
+            let shield =
+                builder_made_shield_from_asset_lock(victim_lock, &victim_key, platform_version);
+            // Positive control: the builder's bundle is what both CheckTx and the block accept.
+            assert_admitted_and_executed(&platform, &shield, platform_version);
+
+            let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(proven)) =
+                &shield
+            else {
+                panic!("expected a shield from asset lock transition");
+            };
+            let copy = create_signed_shield_from_asset_lock_transition(
+                copier_lock,
+                &copier_key,
+                proven.actions.clone(),
+                proven.value_balance,
+                proven.anchor,
+                proven.proof.clone(),
+                proven.binding_signature,
+            );
+
+            assert_refused_for_its_proof(&platform, &copy, platform_version);
+        }
+
+        /// A `Shield` bundle and a `ShieldFromAssetLock` bundle are indistinguishable to the proof:
+        /// same flags, same empty-tree anchor, same value balance. Moving one into the other kind
+        /// must fail on the kind and the owner it binds.
+        #[tokio::test]
+        async fn should_refuse_a_shield_bundle_resubmitted_as_a_shield_from_asset_lock() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let mut signer = TestAddressSigner::new();
+            let funding = signer.add_p2pkh([41u8; 32]);
+            setup_address_with_balance(&mut platform, funding, 0, dash_to_credits!(1.0));
+            let mut inputs = BTreeMap::new();
+            inputs.insert(funding, (1, SHIELD_AMOUNT + dash_to_credits!(0.01)));
+            let shield = build_shield_transition(
+                &test_orchard_recipient(),
+                SHIELD_AMOUNT,
+                inputs,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                &signer,
+                0,
+                &TestOrchardProver,
+                [0u8; 36],
+                None,
+                platform_version,
+            )
+            .await
+            .expect("client-built shield");
+            // Positive control: the bundle is valid for the kind it was proved for.
+            assert!(check_tx_errors(&platform, &shield).is_empty());
+            assert_matches!(
+                process_transition(&platform, shield.clone(), platform_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            let StateTransition::Shield(ShieldTransition::V0(proven)) = &shield else {
+                panic!("expected a shield transition");
+            };
+            let mut rng = StdRng::seed_from_u64(42);
+            let (copier_lock, copier_key) = create_asset_lock_proof_with_key(&mut rng);
+            let copy = create_signed_shield_from_asset_lock_transition(
+                copier_lock,
+                &copier_key,
+                proven.actions.clone(),
+                proven.amount,
+                proven.anchor,
+                proven.proof.clone(),
+                proven.binding_signature,
+            );
+
+            assert_refused_for_its_proof(&platform, &copy, platform_version);
+        }
+
+        fn platform_at(protocol_version: u32) -> TempPlatform<MockCoreRPCLike> {
+            TestPlatformBuilder::new()
+                .with_config(PlatformConfig {
+                    testing_configs: PlatformTestConfig {
+                        disable_instant_lock_signature_verification: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state()
+        }
+
+        /// Protocol versions 12 and 13 shipped `ShieldFromAssetLock` with a transform that binds
+        /// nothing, and they still select it through validation versions V8 and V9: the binding
+        /// lives in `transform_into_action` v1, which only V10, protocol version 14, selects. So
+        /// at 12 and 13 a client building for that version gets an unbound bundle that is
+        /// accepted, and a bundle bound the way 14 binds it is refused, exactly as those versions
+        /// always have.
+        #[test]
+        fn should_keep_the_unbound_bundle_at_protocol_versions_12_and_13() {
+            for protocol_version in [12u32, 13] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("known protocol version");
+                let platform = platform_at(protocol_version);
+                let mut rng = StdRng::seed_from_u64(43 + protocol_version as u64);
+
+                let (lock, key) = create_asset_lock_proof_with_key(&mut rng);
+                let shield = builder_made_shield_from_asset_lock(lock, &key, platform_version);
+                assert_admitted_and_executed(&platform, &shield, platform_version);
+
+                // 12 and 13 admit only transition version 0, so the bundle the latest builder
+                // proves is re-signed as one: what is left to show is that their transform
+                // checks it against an empty preimage and refuses it for its proof.
+                let (lock, key) = create_asset_lock_proof_with_key(&mut rng);
+                let bound = as_version_0(
+                    &builder_made_shield_from_asset_lock(lock, &key, PlatformVersion::latest()),
+                    &key,
+                );
+                assert_refused_for_its_proof(&platform, &bound, platform_version);
+            }
+        }
+
+        /// Re-signs a version 1 transition's fields, bundle included, as transition version 0.
+        fn as_version_0(transition: &StateTransition, asset_lock_key: &[u8]) -> StateTransition {
+            let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(v1)) =
+                transition
+            else {
+                panic!("expected a version 1 shield from asset lock transition");
+            };
+            let mut v0 = ShieldFromAssetLockTransitionV0 {
+                asset_lock_proof: v1.asset_lock_proof.clone(),
+                actions: v1.actions.clone(),
+                value_balance: v1.value_balance,
+                anchor: v1.anchor,
+                proof: v1.proof.clone(),
+                binding_signature: v1.binding_signature,
+                surplus_output: v1.surplus_output,
+                signature: Default::default(),
+            };
+            let unsigned: StateTransition = v0.clone().into();
+            let signable_bytes = unsigned.signable_bytes().expect("signable bytes");
+            let signature =
+                dpp::dashcore::signer::sign(&signable_bytes, asset_lock_key).expect("sign");
+            v0.signature = BinaryData::new(signature.to_vec());
+            v0.into()
+        }
+
+        /// A version 0 transition built for protocol version 13 (so its bundle binds nothing)
+        /// and still waiting when 14 activates must be refused at 14 on its version byte: before
+        /// any proof work, uncharged, with its asset lock left unspent. Verifying its unbound
+        /// bundle against the bound preimage instead would burn the proof-failure penalty from
+        /// an honest lock. The sender then resubmits as version 1 from the same lock and loses
+        /// nothing.
+        #[test]
+        fn should_refuse_a_version_0_at_protocol_version_14_without_touching_its_asset_lock() {
+            let platform_version = PlatformVersion::latest();
+            assert_eq!(platform_version.protocol_version, 14);
+            let platform = setup_platform();
+            let mut rng = StdRng::seed_from_u64(44);
+            let (lock, key) = create_asset_lock_proof_with_key(&mut rng);
+            let outpoint = Bytes36::new(lock.out_point().expect("outpoint").into());
+
+            let waiting = builder_made_shield_from_asset_lock(
+                lock.clone(),
+                &key,
+                PlatformVersion::get(13).expect("protocol version 13"),
+            );
+            assert!(matches!(
+                waiting,
+                StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(_))
+            ));
+            let raw = waiting.serialize_to_bytes().expect("serialize");
+
+            // A block carrying it: refused, charged nothing, the lock left unspent.
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let pool_before = platform
+                .drive
+                .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], platform_version)
+                .expect("pool balance");
+            let in_block = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![raw.clone()],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("processing must not be a block-level error");
+            let penalties = in_block.invalid_paid_count();
+            let fees = in_block.aggregated_fees().clone();
+            let lock_info = platform
+                .drive
+                .fetch_asset_lock_outpoint_info(
+                    &outpoint,
+                    Some(&transaction),
+                    &platform_version.drive,
+                )
+                .expect("asset lock info");
+            let pool_after = platform
+                .drive
+                .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], platform_version)
+                .expect("pool balance");
+            let observed = format!(
+                "penalties charged {penalties}, fees {fees:?}, asset lock {lock_info:?}, results \
+                 {:?}",
+                in_block.execution_results()
+            );
+            assert_eq!(penalties, 0, "no penalty may be charged: {observed}");
+            assert_eq!(
+                lock_info,
+                StoredAssetLockInfo::NotPresent,
+                "the asset lock must be left unspent: {observed}"
+            );
+            assert_eq!(
+                fees,
+                FeeResult::default(),
+                "nothing may be paid for it: {observed}"
+            );
+            assert_eq!(pool_after, pool_before, "nothing may enter the pool");
+            // The bytes decode fine — only the version is outside its active range — so the
+            // submitter is owed a coded answer and the transition is dropped from the block
+            // unpaid instead of being counted as an internal error. Version 0 was accepted up
+            // to protocol version 13, and that is the boundary reported: the active range was
+            // missed from above, so naming its start would point at a version the chain is
+            // already past.
+            assert_matches!(
+                in_block.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)),
+                )] if error.state_transition_type() == "ShieldFromAssetLock"
+                    && error.current_protocol_version() == platform_version.protocol_version
+                    && error.required_protocol_version() == 13,
+                "a version 0 is refused unpaid and dropped from the block: {observed}"
+            );
+
+            // The same lock still funds the resubmission as version 1, in the same block.
+            let resubmitted = builder_made_shield_from_asset_lock(lock, &key, platform_version);
+            let in_block = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![resubmitted.serialize_to_bytes().expect("serialize")],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("processing must not be a block-level error");
+            assert_matches!(
+                in_block.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "the lock the refused version 0 named must still be spendable"
+            );
+
+            // Admission refuses it on the version byte while decoding, before any validation:
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            // Both the first check and the recheck that evicts a version 0 admitted at 13 from
+            // the mempool once 14 is active.
+            for level in [CheckTxLevel::FirstTimeCheck, CheckTxLevel::Recheck] {
+                let admission = platform
+                    .check_tx(&raw, level, &platform_ref, platform_version)
+                    .expect(
+                        "a version outside its active range is a coded refusal, not a node error",
+                    );
+                assert!(
+                    !admission.is_valid(),
+                    "CheckTx ({level:?}) must refuse version 0, got {admission:?}"
+                );
+                assert_matches!(
+                    admission.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::StateTransitionNotActiveError(error),
+                    )] if error.state_transition_type() == "ShieldFromAssetLock",
+                    "CheckTx ({level:?}) must name the version as not active"
+                );
+            }
         }
     }
 }

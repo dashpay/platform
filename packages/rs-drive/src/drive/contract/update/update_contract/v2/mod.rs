@@ -18,6 +18,7 @@ use crate::error::contract::DataContractError;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
@@ -327,6 +328,19 @@ impl Drive {
                     platform_version,
                 )?;
             }
+
+            // The token's own Orchard pool, as `insert_contract` creates it for the tokens of
+            // a new contract. A token is new to the contract exactly once, so a token that
+            // already owns a pool never reaches here and its pool is never recreated.
+            if configuration.has_shielded_pool() {
+                batch_operations.extend(self.create_token_shielded_pool_trees_operations(
+                    token_id.to_buffer(),
+                    true,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?);
+            }
         }
 
         // The removal records tree of every document type the update adds that moderators may
@@ -444,6 +458,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
     use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
     use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
@@ -1170,6 +1185,149 @@ mod tests {
                 (Some(BASE_SUPPLY), Some(BASE_SUPPLY)),
                 "token at position {position}"
             );
+        }
+    }
+
+    #[test]
+    fn should_create_token_pools_only_from_protocol_14_for_registration_and_updates() {
+        for platform_version in [PlatformVersion::get(13).unwrap(), PlatformVersion::latest()] {
+            for add_by_update in [false, true] {
+                let drive = setup_drive_with_initial_state_structure(None);
+                let mut contract =
+                    get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+                        .data_contract_owned();
+                contract.config_mut().set_readonly(false);
+
+                if add_by_update {
+                    drive
+                        .apply_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            true,
+                            StorageFlags::optional_default_as_cow(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("insert initial contract without tokens");
+                    contract.increment_version();
+                }
+
+                let mut configuration = TokenConfiguration::V0(
+                    TokenConfigurationV0::default_most_restrictive().with_base_supply(100),
+                );
+                configuration.set_has_shielded_pool(true);
+                contract.set_tokens(BTreeMap::from([(0, configuration)]));
+                // The fee estimate CheckTx runs (apply = false) goes through the stateless
+                // insert path and must price the pool once, while it is still to be created.
+                let estimate_before_pool = if add_by_update {
+                    drive
+                        .update_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            false,
+                            None,
+                            platform_version,
+                            None,
+                        )
+                        .expect("estimate adding a pooled token through contract update")
+                } else {
+                    drive
+                        .apply_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            false,
+                            StorageFlags::optional_default_as_cow(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("estimate registering a pooled token contract")
+                };
+                assert!(estimate_before_pool.processing_fee > 0);
+                if add_by_update {
+                    drive
+                        .update_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            true,
+                            None,
+                            platform_version,
+                            None,
+                        )
+                        .expect("add token through contract update");
+                } else {
+                    drive
+                        .apply_contract(
+                            &contract,
+                            BlockInfo::default(),
+                            true,
+                            StorageFlags::optional_default_as_cow(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("register token contract");
+                }
+
+                let token_id = contract.token_id(0).expect("token id").to_buffer();
+                assert_eq!(
+                    drive
+                        .has_token_shielded_pool(token_id, None, &mut vec![], platform_version)
+                        .expect("check token pool"),
+                    platform_version.protocol_version >= 14,
+                );
+                // Minting the base supply of a token an update adds is itself generation 2:
+                // the shipped update path leaves it at zero, while registration has always
+                // minted it.
+                let expected_supply = if add_by_update && platform_version.protocol_version < 14 {
+                    Some(0)
+                } else {
+                    Some(100)
+                };
+                assert_eq!(
+                    drive
+                        .fetch_token_total_supply(token_id, None, platform_version)
+                        .expect("read total supply"),
+                    expected_supply
+                );
+
+                // Updating an existing token must not recreate its pool or mint its supply again,
+                // and its estimate must not price the pool the token already owns.
+                contract.increment_version();
+                let estimate_with_pool = drive
+                    .update_contract(
+                        &contract,
+                        BlockInfo::default(),
+                        false,
+                        None,
+                        platform_version,
+                        None,
+                    )
+                    .expect("estimate updating a contract whose token owns a pool");
+                assert!(estimate_with_pool.processing_fee > 0);
+                if platform_version.protocol_version >= 14 {
+                    assert!(
+                        estimate_with_pool.storage_fee < estimate_before_pool.storage_fee,
+                        "an existing pool must not be priced again: {} vs {}",
+                        estimate_with_pool.storage_fee,
+                        estimate_before_pool.storage_fee
+                    );
+                }
+                drive
+                    .update_contract(
+                        &contract,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                        None,
+                    )
+                    .expect("update existing token without recreating storage");
+                assert_eq!(
+                    drive
+                        .fetch_token_total_supply(token_id, None, platform_version)
+                        .expect("read unchanged total supply"),
+                    expected_supply
+                );
+            }
         }
     }
 }

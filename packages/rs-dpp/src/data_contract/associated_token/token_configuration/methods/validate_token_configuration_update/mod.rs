@@ -9,6 +9,7 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 mod v0;
+mod v1;
 
 impl TokenConfiguration {
     pub fn validate_token_config_update(
@@ -33,9 +34,16 @@ impl TokenConfiguration {
                 action_taker,
                 goal,
             )),
+            1 => Ok(self.validate_token_config_update_v1(
+                new_config,
+                contract_owner_id,
+                groups,
+                action_taker,
+                goal,
+            )),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_token_config_update".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }

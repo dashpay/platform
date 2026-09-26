@@ -52,6 +52,12 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         unfreeze: 0,
         apply_status: 0,
         perpetual_distribution_next_event_for_identity_id: 0,
+        create_token_shielded_pool_trees: 0,
+        shield: 0,
+        unshield: 0,
+        shielded_transfer: 0,
+        mint_to_pool: 0,
+        burn_from_pool: 0,
     },
     calculate_total_tokens_balance: 0,
     distribution: DriveTokenDistributionMethodVersions {
@@ -61,5 +67,6 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         mark_pre_programmed_release_as_distributed: 0,
         add_once_per_identity_distribution: 0,
         mark_once_per_identity_release_as_distributed: 0,
+        evonode_participation_rewards: 0,
     },
 };

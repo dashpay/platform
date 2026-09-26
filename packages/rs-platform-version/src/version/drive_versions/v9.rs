@@ -109,7 +109,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         },
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V3, // changed in v9: a document batch proof carries the owner's balance (verify state transition v1)
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V2, // changed in v9: v1 withdrawal-by-transaction-index query builder (structural, identical lowering)
-        token: DRIVE_TOKEN_METHOD_VERSIONS_V2, // changed in v9: add_pre_programmed_distributions v1 queues the release-time tree shared by a contract's tokens once
+        token: DRIVE_TOKEN_METHOD_VERSIONS_V2, // changed in v9: add_pre_programmed_distributions v1 queues the release-time tree shared by a contract's tokens once; evonode_participation_rewards v1 pays an evonode's claim only through the epochs it read
         platform_system: DrivePlatformSystemMethodVersions {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
                 for_total_system_credits_update: 0,

@@ -944,6 +944,203 @@
                 ]
               }
             ]
+          },
+          {
+            "id": "tokens.shielded_pools",
+            "key": {
+              "type": "fixed",
+              "hex": "e0",
+              "label": "TokenShieldedPools",
+              "constant": "TOKEN_SHIELDED_POOLS_KEY"
+            },
+            "kinds": [
+              "BigSumTree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/tokens/paths.rs",
+            "book": "data-model/token-shielded-pools.md",
+            "description": "The shielded balances of tokens that enable an Orchard pool.",
+            "children": [
+              {
+                "id": "tokens.shielded_pools.token",
+                "key": {
+                  "type": "dynamic",
+                  "name": "token_id",
+                  "matcher": {
+                    "type": "len",
+                    "len": 32
+                  },
+                  "encoding": "identifier32",
+                  "description": "The token id"
+                },
+                "kinds": [
+                  "SumTree"
+                ],
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                "description": "The Orchard pool for one token.",
+                "children": [
+                  {
+                    "id": "tokens.shielded_pools.token.total_balance",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "20",
+                      "label": "TotalBalance",
+                      "constant": "SHIELDED_TOTAL_BALANCE_KEY"
+                    },
+                    "kinds": [
+                      "SumItem"
+                    ],
+                    "value": "token amount",
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                    "description": "Every token in the pool.",
+                    "children": []
+                  },
+                  {
+                    "id": "tokens.shielded_pools.token.nullifiers",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "40",
+                      "label": "Nullifiers",
+                      "constant": "SHIELDED_NULLIFIERS_KEY"
+                    },
+                    "kinds": [
+                      "ProvableCountTree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                    "description": "The nullifier of every spent note, so none is spent twice.",
+                    "children": [
+                      {
+                        "id": "tokens.shielded_pools.token.nullifiers.nullifier",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "nullifier",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "hash32",
+                          "description": "The nullifier"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "empty",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                        "description": "One spent note.",
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tokens.shielded_pools.token.anchors_by_height",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "60",
+                      "label": "AnchorsByHeight",
+                      "constant": "SHIELDED_ANCHORS_BY_HEIGHT_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                    "description": "The commitment tree anchor after each block that added notes, for pruning old anchors.",
+                    "children": [
+                      {
+                        "id": "tokens.shielded_pools.token.anchors_by_height.height",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "block_height",
+                          "matcher": {
+                            "type": "len",
+                            "len": 8
+                          },
+                          "encoding": "u64_be",
+                          "description": "The block height"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "the anchor, 32 bytes",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                        "description": "The anchor at that height.",
+                        "children": []
+                      }
+                    ]
+                  },
+                  {
+                    "id": "tokens.shielded_pools.token.notes",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "80",
+                      "label": "Notes",
+                      "constant": "SHIELDED_NOTES_KEY"
+                    },
+                    "kinds": [
+                      "CommitmentTree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                    "description": "Every note ever added to the pool. Read by every wallet sync.",
+                    "opaque": "Note commitments with their encrypted notes in a bulk append tree, plus the Sinsemilla frontier the anchors are computed from.",
+                    "children": []
+                  },
+                  {
+                    "id": "tokens.shielded_pools.token.anchors_in_pool",
+                    "key": {
+                      "type": "fixed",
+                      "hex": "c0",
+                      "label": "AnchorsInPool",
+                      "constant": "SHIELDED_ANCHORS_IN_POOL_KEY"
+                    },
+                    "kinds": [
+                      "Tree"
+                    ],
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                    "description": "The anchors a spend may still prove against.",
+                    "children": [
+                      {
+                        "id": "tokens.shielded_pools.token.anchors_in_pool.anchor",
+                        "key": {
+                          "type": "dynamic",
+                          "name": "anchor",
+                          "matcher": {
+                            "type": "len",
+                            "len": 32
+                          },
+                          "encoding": "hash32",
+                          "description": "The anchor"
+                        },
+                        "kinds": [
+                          "Item"
+                        ],
+                        "value": "the block height, u64 big endian",
+                        "since": 14,
+                        "presence": "always",
+                        "source": "packages/rs-drive/src/drive/shielded/paths.rs",
+                        "description": "One valid anchor.",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
           }
         ]
       },
@@ -5530,6 +5727,9 @@
           "hex": "c0",
           "left": {
             "hex": "a0"
+          },
+          "right": {
+            "hex": "e0"
           }
         }
       }
@@ -5567,6 +5767,24 @@
         },
         "right": {
           "hex": "c0"
+        }
+      }
+    },
+    "tokens.shielded_pools.token": {
+      "origin": "fixture token_shielded_pool@14",
+      "tree": {
+        "hex": "60",
+        "left": {
+          "hex": "40",
+          "left": {
+            "hex": "20"
+          }
+        },
+        "right": {
+          "hex": "c0",
+          "left": {
+            "hex": "80"
+          }
         }
       }
     },

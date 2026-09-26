@@ -23,6 +23,7 @@ pub const DPP_VALIDATION_VERSIONS_V5: DPPValidationVersions = DPPValidationVersi
     data_contract: DataContractValidationVersions {
         validate_config_update: 2,
         validate_once_per_identity_distribution: Some(0),
+        validate_token_config_update: 1,
         ..DPP_VALIDATION_VERSIONS_V4.data_contract
     },
     document_type: DocumentTypeValidationVersions {

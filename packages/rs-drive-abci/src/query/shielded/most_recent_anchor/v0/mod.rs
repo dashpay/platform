@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::response_metadata::CheckpointUsed;
+use crate::query::shielded::ShieldedPoolSelector;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_most_recent_shielded_anchor_request::GetMostRecentShieldedAnchorRequestV0;
 use dapi_grpc::platform::v0::get_most_recent_shielded_anchor_response::{
@@ -10,7 +11,6 @@ use dapi_grpc::platform::v0::get_most_recent_shielded_anchor_response::{
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::shielded::paths::shielded_latest_recorded_anchor_path_query;
 use drive::error::drive::DriveError;
 use drive::grovedb::query_result_type::QueryResultType;
 use drive::grovedb::Element;
@@ -27,11 +27,16 @@ impl<C> Platform<C> {
     /// recorded an anchor yet on this chain.
     pub(super) fn query_most_recent_shielded_anchor_v0(
         &self,
-        GetMostRecentShieldedAnchorRequestV0 { prove }: GetMostRecentShieldedAnchorRequestV0,
+        GetMostRecentShieldedAnchorRequestV0 { prove, token_id }: GetMostRecentShieldedAnchorRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetMostRecentShieldedAnchorResponseV0>, Error> {
-        let path_query = shielded_latest_recorded_anchor_path_query();
+        let pool = match ShieldedPoolSelector::from_request(token_id, platform_version) {
+            Ok(pool) => pool,
+            Err(error) => return Ok(QueryValidationResult::new_with_error(error)),
+        };
+
+        let path_query = pool.latest_recorded_anchor_path_query();
 
         let response = if prove {
             let proof = check_validation_result_with_data!(self.drive.grove_get_proved_path_query(

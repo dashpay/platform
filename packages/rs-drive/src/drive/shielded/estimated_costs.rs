@@ -14,16 +14,16 @@ use std::collections::HashMap;
 /// Average size of a note value: 32 cmx + 32 rho + 32 cv_net + 216 encrypted note = 312 bytes
 /// (encrypted note = 32 epk + 104 enc_ciphertext + 80 out_ciphertext, using DashMemo 36-byte memos)
 /// The cmx, rho, and cv_net are prepended by GroveDB's commitment_tree_insert_op for client retrieval.
-const AVERAGE_NOTE_VALUE_SIZE: u32 = 312;
+pub(in crate::drive) const AVERAGE_NOTE_VALUE_SIZE: u32 = 312;
 
 /// Size of a nullifier key (32 bytes)
-const NULLIFIER_KEY_SIZE: u8 = 32;
+pub(in crate::drive) const NULLIFIER_KEY_SIZE: u8 = 32;
 
 /// Size of an anchor key (32 bytes)
-const ANCHOR_KEY_SIZE: u8 = 32;
+pub(in crate::drive) const ANCHOR_KEY_SIZE: u8 = 32;
 
 /// Size of an anchor value (u64 big-endian block height = 8 bytes)
-const ANCHOR_VALUE_SIZE: u32 = 8;
+pub(in crate::drive) const ANCHOR_VALUE_SIZE: u32 = 8;
 
 impl Drive {
     /// Adds estimation costs for shielded pool operations.
