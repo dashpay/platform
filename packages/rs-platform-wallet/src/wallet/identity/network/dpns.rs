@@ -307,13 +307,18 @@ impl IdentityWallet {
         })
     }
 
-    /// Fetch all DPNS usernames owned by `identity_id` from Platform
-    /// and merge them into the local
+    /// Fetch the DPNS usernames owned by `identity_id` from Platform
+    /// and reconcile the local
     /// [`ManagedIdentity.dpns_names`](crate::wallet::identity::ManagedIdentity)
-    /// cache.
+    /// cache with them.
     ///
-    /// Skips labels that are already in the cache, so repeated syncs
-    /// don't emit duplicate entries. New labels get an
+    /// The query pages until a page comes back short. For an identity the
+    /// wallet only watches, that complete owned set replaces the cache (names
+    /// that left drop out); a wallet-owned identity only gains labels, since
+    /// the marketplace sweep owns its departures. If the page bound is
+    /// reached first the result is only a lower bound and is merged — see
+    /// `ManagedIdentity::apply_fetched_dpns_names`. Known labels keep their
+    /// timestamp; new labels get an
     /// `acquired_at` timestamp of best-effort wall-clock millis —
     /// DPNS documents carry their own `$createdAt` but
     /// `DpnsUsername` doesn't surface it on the query result today.
@@ -329,26 +334,28 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<u32, PlatformWalletError> {
-        let usernames = self
+        let (usernames, complete) = self
             .sdk
-            .get_dpns_usernames_by_identity(*identity_id, None)
+            .get_all_dpns_usernames_by_identity(
+                *identity_id,
+                super::DPNS_USERNAMES_PAGE_LIMIT,
+                super::DPNS_USERNAMES_MAX_PAGES,
+            )
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to fetch DPNS usernames for identity {identity_id}: {e}",
                 ))
             })?;
-
-        if usernames.is_empty() {
-            return Ok(0);
-        }
+        // See `apply_fetched_dpns_names`: only a watched identity's complete
+        // set drops names; wallet-owned identities and unfinished paging add.
 
         let acquired_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .ok();
 
-        let mut added = 0u32;
+        let added;
         {
             let mut wm = self.wallet_manager.write().await;
             let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
@@ -357,23 +364,18 @@ impl IdentityWallet {
             let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
                 return Ok(0);
             };
-            for username in usernames {
-                if managed
-                    .dpns_names
-                    .iter()
-                    .any(|existing| existing.label == username.label)
-                {
-                    continue;
-                }
-                managed.add_dpns_name(
-                    DpnsNameInfo {
+            // One snapshot for the whole fetch — see `apply_fetched_dpns_names`.
+            added = managed.apply_fetched_dpns_names(
+                usernames
+                    .into_iter()
+                    .map(|username| DpnsNameInfo {
                         label: username.label,
                         acquired_at,
-                    },
-                    &self.persister,
-                );
-                added += 1;
-            }
+                    })
+                    .collect(),
+                complete,
+                &self.persister,
+            );
         }
         Ok(added)
     }

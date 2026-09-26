@@ -1,5 +1,6 @@
 import XCTest
 import SwiftData
+import DashSDKFFI
 @testable import SwiftDashSDK
 
 final class DpnsMarketplacePersistenceTests: XCTestCase {
@@ -56,6 +57,42 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
     }
 
+    /// A cold restore hands Rust every OWNED name the store knows, so the
+    /// in-memory list is never empty/truncated before the first complete
+    /// fetch: a capped fetch can then only add, and no snapshot reads an
+    /// owned pick outside the fetched prefix as departed. Rows retained as
+    /// not owned stay out of the restored list.
+    func testColdRestoreCarriesEveryOwnedNameToRust() throws {
+        let context = ModelContext(container)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        context.insert(wallet)
+        let account = PersistentAccount(
+            wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "Standard")
+        account.accountExtendedPubKeyBytes = Data(repeating: 0x30, count: 78)
+        context.insert(account)
+        let identity = PersistentIdentity(
+            identityId: ownerId, mainDpnsName: "Carol", network: .testnet)
+        identity.wallet = wallet
+        context.insert(identity)
+        for (label, acquiredAt, owned) in [
+            ("Bob", UInt64(20), true), ("Alice", 10, true), ("Carol", 30, true), ("Dave", 5, false),
+        ] {
+            let row = PersistentDPNSName(identity: identity, label: label, acquiredAt: acquiredAt)
+            row.isOwned = owned
+            context.insert(row)
+        }
+        try context.save()
+
+        let loaded = handler.loadWalletList()
+        XCTAssertFalse(loaded.errored)
+        let entries = try XCTUnwrap(loaded.entries)
+        defer { handler.loadWalletListFree(entries: UnsafeRawPointer(entries)) }
+        let restored = try XCTUnwrap(entries[0].identities)[0]
+        let names = try XCTUnwrap(restored.dpns_names)
+        let labels = (0..<Int(restored.dpns_names_count)).map { String(cString: names[$0]!) }
+        XCTAssertEqual(labels, ["Alice", "Bob", "Carol"])
+    }
+
     func testMarketplaceColumnsHaveMigrationSafeDefaults() {
         let identity = PersistentIdentity(
             identityId: ownerId,
@@ -93,7 +130,8 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         try context.save()
 
         // Alice leaves the canonical owned set. Keep its marketplace history,
-        // while Bob becomes the fallback display/main name.
+        // while Bob becomes the fallback display name. The main-name pick
+        // stays as the user wrote it; readers skip it once it is not owned.
         handler.beginChangeset(walletId: walletId)
         handler.persistIdentities(
             walletId: walletId,
@@ -130,11 +168,13 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         )
         XCTAssertEqual(owned.map(\.label), ["Bob"])
         var identity = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
-        XCTAssertEqual(identity.mainDpnsName, "Bob")
+        XCTAssertEqual(identity.mainDpnsName, "Alice")
+        XCTAssertNil(identity.ownedMainDpnsName)
         XCTAssertEqual(identity.dpnsName, "Bob")
+        XCTAssertEqual(identity.displayName, "Bob")
 
         // An empty canonical snapshot removes Bob (cache-only), keeps Alice's
-        // sold history, and clears stale scalar selections.
+        // sold history, and clears the stale display scalar.
         applyIdentitySnapshot(id: ownerId, names: [])
         readContext = ModelContext(container)
         owned = try readContext.fetch(
@@ -152,8 +192,97 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertEqual(allRows.first?.documentUpdatedAtMs, 12)
         XCTAssertEqual(allRows.first?.documentTransferredAtMs, 13)
         identity = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
-        XCTAssertNil(identity.mainDpnsName)
+        XCTAssertNil(identity.ownedMainDpnsName)
         XCTAssertNil(identity.dpnsName)
+    }
+
+    /// A pick with no marketplace history that leaves the owned set keeps its
+    /// row (not owned), so an identity left with no other names does not read
+    /// as unhydrated and resurface the departed pick.
+    func testDepartedCacheOnlyPickIsNotDisplayed() throws {
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10)])
+        let context = ModelContext(container)
+        XCTAssertTrue(PersistentIdentity.updateMainDpnsName(
+            in: context, identityId: ownerId, mainDpnsName: "Alice"))
+        try context.save()
+
+        applyIdentitySnapshot(id: ownerId, names: [])
+
+        let readContext = ModelContext(container)
+        let identity = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
+        XCTAssertEqual(identity.mainDpnsName, "Alice")
+        XCTAssertEqual(identity.dpnsNames.map(\.label), ["Alice"])
+        XCTAssertEqual(identity.dpnsNames.first?.isOwned, false)
+        XCTAssertNil(identity.ownedMainDpnsName)
+        XCTAssertNotEqual(identity.displayName, "Alice")
+
+        // Owning it again brings the pick back.
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10)])
+        let reread = try XCTUnwrap(PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        XCTAssertEqual(reread.ownedMainDpnsName, "Alice")
+    }
+
+    /// A departed pick with no display cache (`dpnsName` never set — a pick
+    /// alone does not fill it) still falls back to another owned name.
+    func testDisplayFallsBackToAnOwnedNameWhenTheDisplayCacheIsNil() throws {
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10), ("Bob", 20)])
+        let context = ModelContext(container)
+        XCTAssertTrue(PersistentIdentity.updateMainDpnsName(
+            in: context, identityId: ownerId, mainDpnsName: "Alice"))
+        try XCTUnwrap(PersistentIdentity.fetch(in: context, identityId: ownerId)).dpnsName = nil
+        try context.save()
+
+        applyIdentitySnapshot(id: ownerId, names: [("Bob", 20)])
+
+        let identity = try XCTUnwrap(PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        XCTAssertEqual(identity.mainDpnsName, "Alice")
+        XCTAssertNil(identity.ownedMainDpnsName)
+        XCTAssertEqual(identity.dpnsName, "Bob")
+        XCTAssertEqual(identity.displayName, "Bob")
+    }
+
+    /// A pick stored without any name row (older data) is not trusted as
+    /// unhydrated once an authoritative snapshot omits it, and comes back
+    /// when a snapshot carries it again.
+    func testScalarOnlyPickOmittedBySnapshotIsNotDisplayed() throws {
+        let context = ModelContext(container)
+        context.insert(PersistentIdentity(
+            identityId: ownerId,
+            isLocal: false,
+            mainDpnsName: "Alice",
+            network: .testnet
+        ))
+        try context.save()
+
+        applyIdentitySnapshot(id: ownerId, names: [])
+        var identity = try XCTUnwrap(PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        XCTAssertEqual(identity.mainDpnsName, "Alice")
+        XCTAssertNil(identity.ownedMainDpnsName)
+        XCTAssertNotEqual(identity.displayName, "Alice")
+
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10)])
+        identity = try XCTUnwrap(PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        XCTAssertEqual(identity.ownedMainDpnsName, "Alice")
+        XCTAssertEqual(identity.displayName, "Alice")
+    }
+
+    /// A snapshot that momentarily lacks the picked name (a cold start adds
+    /// names before the in-memory list is whole) must not replace the pick.
+    func testMainNamePickSurvivesAnIncompleteSnapshot() throws {
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10), ("Bob", 20)])
+        let context = ModelContext(container)
+        XCTAssertTrue(PersistentIdentity.updateMainDpnsName(
+            in: context, identityId: ownerId, mainDpnsName: "Bob"))
+        try context.save()
+
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 30)])
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 30), ("Bob", 30)])
+
+        let readContext = ModelContext(container)
+        let identity = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
+        XCTAssertEqual(identity.mainDpnsName, "Bob")
+        XCTAssertEqual(identity.ownedMainDpnsName, "Bob")
+        XCTAssertEqual(identity.displayName, "Bob")
     }
 
     func testMarketplaceCallbackCannotRestoreOwnershipRemovedByCanonicalSnapshot() throws {
@@ -211,10 +340,44 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         ).isEmpty)
     }
 
+    /// A transfer clears the previous owner's selection of the moved name;
+    /// its display cache falls back to another name it still owns, since no
+    /// snapshot for the previous owner may follow.
+    func testPreviousOwnerFallsBackToAnotherOwnedNameAfterTransfer() throws {
+        let context = ModelContext(container)
+        let oldOwner = PersistentIdentity(
+            identityId: ownerId,
+            isLocal: false,
+            dpnsName: "Alice",
+            mainDpnsName: "Alice",
+            network: .testnet
+        )
+        let nextOwner = PersistentIdentity(identityId: nextOwnerId, isLocal: false, network: .testnet)
+        context.insert(oldOwner)
+        context.insert(nextOwner)
+        context.insert(PersistentDPNSName(identity: oldOwner, label: "Alice", acquiredAt: 10))
+        context.insert(PersistentDPNSName(identity: oldOwner, label: "Bob", acquiredAt: 20))
+        try context.save()
+
+        applyIdentitySnapshot(id: nextOwnerId, names: [("Alice", 30)])
+
+        let readContext = ModelContext(container)
+        let previous = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
+        XCTAssertNil(previous.mainDpnsName)
+        XCTAssertEqual(previous.dpnsName, "Bob")
+        XCTAssertEqual(previous.displayName, "Bob")
+        XCTAssertEqual(previous.dpnsNames.map(\.label), ["Bob"])
+    }
+
     func testSameWalletTransferRebindsSingleCanonicalRowToNewOwner() throws {
         let documentId = Data(repeating: 0x36, count: 32).toBase58String()
         let context = ModelContext(container)
-        let oldOwner = PersistentIdentity(identityId: ownerId, isLocal: false, network: .testnet)
+        let oldOwner = PersistentIdentity(
+            identityId: ownerId,
+            isLocal: false,
+            mainDpnsName: "Alice",
+            network: .testnet
+        )
         let nextOwner = PersistentIdentity(
             identityId: nextOwnerId,
             isLocal: false,
@@ -276,6 +439,25 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
                 predicate: PersistentDPNSName.predicate(identityId: nextOwnerId)
             )
         ).map(\.label), ["Alice"])
+
+        // The rebind clears the old owner's pick of the transferred name.
+        let previous = try XCTUnwrap(PersistentIdentity.fetch(in: readContext, identityId: ownerId))
+        XCTAssertNil(previous.mainDpnsName)
+        XCTAssertTrue(previous.dpnsNames.isEmpty)
+        XCTAssertNil(previous.ownedMainDpnsName)
+        XCTAssertNotEqual(previous.displayName, "Alice")
+
+        // Even once the recipient's row is gone (its wallet deleted), the old
+        // owner has no stale pick left to resurface.
+        let deleteContext = ModelContext(container)
+        for row in try deleteContext.fetch(FetchDescriptor<PersistentDPNSName>()) {
+            deleteContext.delete(row)
+        }
+        try deleteContext.save()
+        let afterDelete = try XCTUnwrap(
+            PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        XCTAssertNil(afterDelete.ownedMainDpnsName)
+        XCTAssertNotEqual(afterDelete.displayName, "Alice")
     }
 
     func testMarketplaceRemovalClearsOnlyMarketplaceColumns() throws {

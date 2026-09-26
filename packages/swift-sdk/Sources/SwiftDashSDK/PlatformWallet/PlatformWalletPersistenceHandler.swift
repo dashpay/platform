@@ -3711,13 +3711,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let previouslyAssociatedRows =
             (try? backgroundContext.fetch(ownedRowsDescriptor)) ?? Array(identityRow.dpnsNames)
 
+        let pickedLabel = identityRow.mainDpnsName.map(PersistentDPNSName.normalize)
         for row in previouslyAssociatedRows
         where !canonicalLabels.contains(row.normalizedLabel) {
             row.isOwned = false
             row.lastUpdated = Date()
-            if row.documentIdBase58 == nil {
+            if row.documentIdBase58 == nil && row.normalizedLabel != pickedLabel {
                 // No marketplace history is attached, so this is only a stale
-                // label-cache row and can be removed entirely.
+                // label-cache row and can be removed entirely. The picked
+                // name's row stays, marked not owned, so readers can tell a
+                // departed pick from an identity that has no rows yet.
                 backgroundContext.delete(row)
             }
         }
@@ -3755,6 +3758,25 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // transfers, and the unique constraint is per-network,
                 // so the row stays but the owner pointer moves.
                 if existing.identity !== identityRow {
+                    // The rebind is positive evidence the name left the
+                    // previous owner, so its selections of that name go too
+                    // — unlike a label merely missing from a snapshot. Once
+                    // the row moves, the old owner has nothing left to check
+                    // a stale pick against.
+                    let previousOwner = existing.identity
+                    if previousOwner.mainDpnsName.map(PersistentDPNSName.normalize) == normalizedLabel {
+                        previousOwner.mainDpnsName = nil
+                    }
+                    if previousOwner.dpnsName.map(PersistentDPNSName.normalize) == normalizedLabel {
+                        // Fall back to another name the old owner still
+                        // owns, as the snapshot's own fallback does for the
+                        // identity it describes — no snapshot for the old
+                        // owner may follow to repair it.
+                        previousOwner.dpnsName = previousOwner.dpnsNames
+                            .filter { $0.isOwned && $0.normalizedLabel != normalizedLabel }
+                            .sorted { ($0.acquiredAt, $0.label) < ($1.acquiredAt, $1.label) }
+                            .first?.label
+                    }
                     existing.identity = identityRow
                     existing.lastUpdated = Date()
                 }
@@ -3769,13 +3791,40 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
         }
 
-        let fallbackLabel = names.first?.label
-        if let selected = identityRow.mainDpnsName,
-           !canonicalLabels.contains(PersistentDPNSName.normalize(selected)) {
-            identityRow.mainDpnsName = fallbackLabel
+        // `mainDpnsName` is the user's pick and is never rewritten here: a
+        // snapshot can be momentarily incomplete (a cold start adds names
+        // before the in-memory list is whole), and resetting the pick on
+        // one lost it for good. Readers skip a pick that is no longer owned
+        // — see `PersistentIdentity.displayName`.
+        //
+        // A pick the snapshot omits and that has no row anywhere on the
+        // network (stored before rows existed) gets a not-owned row, so the
+        // omission is recorded instead of the pick being trusted as
+        // unhydrated. A later snapshot carrying the name owns the row again.
+        if let pick = identityRow.mainDpnsName, !pick.isEmpty,
+           let pickedLabel, !canonicalLabels.contains(pickedLabel) {
+            let pickDescriptor = FetchDescriptor<PersistentDPNSName>(
+                predicate: #Predicate {
+                    $0.networkRaw == networkRaw
+                        && $0.normalizedParentDomainName == normalizedParentDomainName
+                        && $0.normalizedLabel == pickedLabel
+                }
+            )
+            if ((try? backgroundContext.fetch(pickDescriptor)) ?? []).isEmpty {
+                let row = PersistentDPNSName(
+                    identity: identityRow,
+                    label: pick,
+                    parentDomainName: parentDomainName
+                )
+                row.isOwned = false
+                backgroundContext.insert(row)
+            }
         }
-        if let displayed = identityRow.dpnsName,
-           !canonicalLabels.contains(PersistentDPNSName.normalize(displayed)) {
+
+        // The SDK's own display cache: kept on an owned name, including when
+        // it was never set (a pick alone does not fill it).
+        let fallbackLabel = names.first?.label
+        if identityRow.dpnsName.map({ !canonicalLabels.contains(PersistentDPNSName.normalize($0)) }) ?? true {
             identityRow.dpnsName = fallbackLabel
         }
     }
@@ -8160,12 +8209,33 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // identity changeset path.
             entry.status = 0
 
-            // DPNS names — currently empty. Wiring is here so a
-            // future query against `PersistentDpnsName` rows (or a
-            // dedicated array column on the identity) drops in
-            // without touching the FFI plumbing.
-            entry.dpns_names = nil
-            entry.dpns_names_count = 0
+            // DPNS names — the identity's OWNED label rows, so Rust's
+            // `ManagedIdentity.dpns_names` starts with every name already
+            // known instead of empty. A capped (partial) username fetch
+            // then only adds to that list, and no snapshot emitted before
+            // the next complete fetch carries a truncated owned set that
+            // `upsertDPNSNames` would read as departures. Rows retained as
+            // not owned (departed names, a picked name the last snapshot
+            // omitted) are not restored. Order: oldest acquisition first,
+            // then label, so the restored list is deterministic.
+            let ownedLabels = identity.dpnsNames
+                .filter { $0.isOwned }
+                .sorted { ($0.acquiredAt, $0.label) < ($1.acquiredAt, $1.label) }
+                .map(\.label)
+            if ownedLabels.isEmpty {
+                entry.dpns_names = nil
+                entry.dpns_names_count = 0
+            } else {
+                let labelArray = UnsafeMutablePointer<UnsafePointer<CChar>?>.allocate(
+                    capacity: ownedLabels.count
+                )
+                for (i, label) in ownedLabels.enumerated() {
+                    labelArray[i] = UnsafePointer(duplicateCString(label, allocation: allocation))
+                }
+                allocation.cStringPointerArrays.append((labelArray, ownedLabels.count))
+                entry.dpns_names = UnsafePointer(labelArray)
+                entry.dpns_names_count = UInt(ownedLabels.count)
+            }
             entry.contested_dpns_names = nil
             entry.contested_dpns_names_count = 0
 

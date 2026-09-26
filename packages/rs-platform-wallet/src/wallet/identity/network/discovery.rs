@@ -582,10 +582,14 @@ impl IdentityWallet {
             let identity_id = identity.id();
             match self
                 .sdk
-                .get_dpns_usernames_by_identity(identity_id, None)
+                .get_all_dpns_usernames_by_identity(
+                    identity_id,
+                    super::DPNS_USERNAMES_PAGE_LIMIT,
+                    super::DPNS_USERNAMES_MAX_PAGES,
+                )
                 .await
             {
-                Ok(usernames) => {
+                Ok((usernames, complete)) => {
                     let mut wm_guard = self.wallet_manager.write().await;
                     let info_guard =
                         wm_guard
@@ -599,15 +603,18 @@ impl IdentityWallet {
                         .identity_manager
                         .managed_identity_mut(&identity_id)
                     {
-                        for username in usernames {
-                            managed.add_dpns_name(
-                                DpnsNameInfo {
+                        // Complete once paging reached a short page — see `apply_fetched_dpns_names`.
+                        managed.apply_fetched_dpns_names(
+                            usernames
+                                .into_iter()
+                                .map(|username| DpnsNameInfo {
                                     label: username.label,
                                     acquired_at: None,
-                                },
-                                &self.persister,
-                            );
-                        }
+                                })
+                                .collect(),
+                            complete,
+                            &self.persister,
+                        );
                     }
                 }
                 Err(e) => {

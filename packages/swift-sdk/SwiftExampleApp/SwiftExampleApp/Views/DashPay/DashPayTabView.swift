@@ -339,7 +339,7 @@ struct DashPayTabView: View {
                         // resolved set so this prompt hides on the next render.
                         // The Rust register path only upserts `PersistentDPNSName`
                         // relationship rows — not the scalar `dpnsName` /
-                        // `mainDpnsName` this prompt (and the header) read — so
+                        // `ownedMainDpnsName` this prompt (and the header) read — so
                         // without this the CTA would linger until the next
                         // identity switch or app-foreground re-check.
                         RegisterNameView(identity: identity, onRegistered: { label in
@@ -609,7 +609,7 @@ struct DashPayTabView: View {
 
     /// Menu rows show "DPNS name → truncated id".
     private func pickerLabel(for identity: PersistentIdentity) -> String {
-        if let name = identity.mainDpnsName ?? identity.dpnsName, !name.isEmpty {
+        if let name = identity.ownedMainDpnsName ?? identity.dpnsName, !name.isEmpty {
             return name
         }
         if let alias = identity.alias, !alias.isEmpty {
@@ -636,7 +636,7 @@ struct DashPayTabView: View {
                         Text(headerDisplayName(identity: identity, profile: profile))
                             .font(.headline)
                             .foregroundColor(.primary)
-                        if let dpns = identity.mainDpnsName ?? identity.dpnsName {
+                        if let dpns = identity.ownedMainDpnsName ?? identity.dpnsName {
                             Text(dpns)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -705,7 +705,7 @@ struct DashPayTabView: View {
     /// display name is cosmetic and not searchable.
     @ViewBuilder
     private func usernamePromptCard(identity: PersistentIdentity) -> some View {
-        let hasName = (identity.mainDpnsName ?? identity.dpnsName)
+        let hasName = (identity.ownedMainDpnsName ?? identity.dpnsName)
             .map { !$0.isEmpty } ?? false
         if !hasName, usernameResolvedIds.contains(identity.identityId) {
             Button {
@@ -783,7 +783,7 @@ struct DashPayTabView: View {
            !name.isEmpty {
             return name
         }
-        if let dpns = identity.mainDpnsName ?? identity.dpnsName {
+        if let dpns = identity.ownedMainDpnsName ?? identity.dpnsName {
             return dpns
         }
         return String(identity.identityIdBase58.prefix(12)) + "…"
@@ -833,7 +833,7 @@ struct DashPayTabView: View {
     /// DPNS fetch in `IdentitiesView`.
     private func resolveUsernameIfNeeded(for identity: PersistentIdentity?) async {
         guard let identity else { return }
-        if let name = identity.mainDpnsName ?? identity.dpnsName, !name.isEmpty {
+        if let name = identity.ownedMainDpnsName ?? identity.dpnsName, !name.isEmpty {
             return
         }
         guard let sdk = appState.sdk else { return }

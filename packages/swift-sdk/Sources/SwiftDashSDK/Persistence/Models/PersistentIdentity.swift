@@ -246,21 +246,53 @@ public final class PersistentIdentity {
         publicKeys.compactMap { $0.toIdentityPublicKey() }
     }
 
-    /// User-facing short name. Priority: `alias` → `mainDpnsName`
-    /// → `dpnsName` → truncated hex id. Mirrors the old
-    /// `IdentityModel.displayName` extension so views that read
-    /// this don't change behavior post-migration.
+    /// User-facing short name. Priority: `alias` → `ownedMainDpnsName`
+    /// (the user's pick while it is still owned) → `dpnsName` → truncated
+    /// hex id.
     public var displayName: String {
         if let alias = alias, !alias.isEmpty {
             return alias
         }
-        if let mainDpnsName = mainDpnsName, !mainDpnsName.isEmpty {
+        if let mainDpnsName = ownedMainDpnsName {
             return mainDpnsName
         }
         if let dpnsName = dpnsName, !dpnsName.isEmpty {
             return dpnsName
         }
         return String(identityIdString.prefix(12)) + "..."
+    }
+
+    /// The user's `mainDpnsName` pick while the identity still owns it — the
+    /// value every display surface should use. `mainDpnsName` itself is the
+    /// stored selection, kept as written: a sold or transferred name stays
+    /// there, and is skipped here once its label row is no longer owned (the
+    /// persister keeps the picked name's row for exactly this check). With
+    /// no label rows at all, the identity has not been hydrated yet and the
+    /// pick is trusted — unless the label's row, unique per network, now
+    /// belongs to another identity: a transfer within the wallet rebinds it,
+    /// leaving the old owner with no rows.
+    public var ownedMainDpnsName: String? {
+        guard let mainDpnsName, !mainDpnsName.isEmpty else { return nil }
+        let normalized = PersistentDPNSName.normalize(mainDpnsName)
+        let names = dpnsNames
+        guard names.isEmpty else {
+            return names.contains { $0.isOwned && $0.normalizedLabel == normalized } ? mainDpnsName : nil
+        }
+        guard let context = modelContext else { return mainDpnsName }
+        let networkRaw = networkRaw
+        let parent = PersistentDPNSName.normalize("dash")
+        var descriptor = FetchDescriptor<PersistentDPNSName>(
+            predicate: #Predicate {
+                $0.networkRaw == networkRaw
+                    && $0.normalizedParentDomainName == parent
+                    && $0.normalizedLabel == normalized
+            }
+        )
+        descriptor.fetchLimit = 1
+        if let row = try? context.fetch(descriptor).first, row.identity.identityId != identityId {
+            return nil
+        }
+        return mainDpnsName
     }
 
     public var identityTypeEnum: IdentityType {
