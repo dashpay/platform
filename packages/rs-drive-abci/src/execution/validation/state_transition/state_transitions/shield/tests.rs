@@ -1431,22 +1431,24 @@ mod tests {
             BUNDLE.get_or_init(|| build_outputs_only_bundle(5_000))
         }
 
-        /// A shield from `address` at `nonce`, its bundle proved against those inputs. The sighash
-        /// binds the funding addresses, their nonces and the credits they pay, so the bundle
-        /// verifies under no other input set and each test proves its own. Returns the transition
-        /// and the nullifiers its actions reveal.
-        async fn bound_shield(
-            signer: &TestAddressSigner,
+        /// A bundle proved against the addresses that fund the shield. `shield_funding_digest_v0`
+        /// hashes the input addresses and nothing else — neither the nonce nor the credits — so the
+        /// bundle verifies under no other set of funders, while one bundle still serves several
+        /// shields from the same funder.
+        fn bound_bundle(
             address: PlatformAddress,
-            nonce: AddressNonce,
             platform_version: &PlatformVersion,
-        ) -> (StateTransition, Vec<[u8; 32]>) {
-            // `signed_shield` derives the inputs from the amount the bundle pays, and the binding
-            // covers those inputs, so the amount is fixed here rather than read back off a bundle
-            // that would have to exist first.
+        ) -> OutputsOnlyBundle {
+            // `signed_shield` derives the inputs from the amount the bundle pays, so the amount is
+            // fixed here rather than read back off a bundle that would have to exist first. The
+            // nonce below reaches no hash; it is here because the map the digest reads is keyed
+            // this way.
             const SHIELDED: u64 = 5_000;
             let mut inputs = BTreeMap::new();
-            inputs.insert(address, (nonce, SHIELDED + dash_to_credits!(0.01)));
+            inputs.insert(
+                address,
+                (1 as AddressNonce, SHIELDED + dash_to_credits!(0.01)),
+            );
             let extra_sighash_data = shield_extra_sighash_data(&inputs, platform_version)
                 .expect("the binding of the funding inputs");
             let bundle = build_outputs_only_bundle_bound(SHIELDED, &extra_sighash_data);
@@ -1454,11 +1456,7 @@ mod tests {
                 bundle.amount, SHIELDED,
                 "the inputs signed_shield derives must be the ones the bundle is bound to"
             );
-            let nullifiers = bundle.nullifiers();
-            (
-                signed_shield(signer, address, nonce, &bundle).await,
-                nullifiers,
-            )
+            bundle
         }
 
         /// A shield of `bundle` from `address` at `nonce`, signed by `signer`.
@@ -1573,14 +1571,15 @@ mod tests {
             let mut platform = setup_platform();
             let (signer, address) = funded_address(&mut platform);
 
-            let (st, nullifiers) = bound_shield(&signer, address, 1, platform_version).await;
+            let bundle = bound_bundle(address, platform_version);
+            let st = signed_shield(&signer, address, 1, &bundle).await;
             let result = process_transition_and_commit(&platform, st, platform_version);
 
             assert_matches!(
                 result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
-            for nullifier in nullifiers {
+            for nullifier in bundle.nullifiers() {
                 assert!(
                     has_recorded_nullifier(&platform, &nullifier),
                     "every nullifier the shield reveals must be recorded"
@@ -1594,25 +1593,27 @@ mod tests {
             let mut platform = setup_platform();
             let (signer, address) = funded_address(&mut platform);
 
-            let (first, nullifiers) = bound_shield(&signer, address, 1, platform_version).await;
+            let bundle = bound_bundle(address, platform_version);
+            let first = signed_shield(&signer, address, 1, &bundle).await;
             let result = process_transition_and_commit(&platform, first, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
-            // A second shield revealing what the first recorded. It cannot carry the first's
-            // bundle — the sighash binds the inputs that fund it — so the repeat is shown to the
-            // transform, which is where the state check lives and where block processing reaches
-            // it after the stateless proof step.
-            let first_nullifier = nullifiers[0];
-            let result = transform_shield_revealing(&platform, platform_version, &nullifiers);
+            // The same bundle again under the next address nonce: the same note, the same
+            // nullifiers. The binding does not stop this — it covers the funding addresses, not
+            // the transition carrying them — so the repeat travels the whole block path and the
+            // recorded nullifier is what refuses it.
+            let repeat = signed_shield(&signer, address, 2, &bundle).await;
+            let result = process_transition_and_commit(&platform, repeat, platform_version);
 
-            assert!(!result.has_data(), "no action for a refused shield");
+            let first_nullifier = bundle.nullifiers()[0];
             assert_matches!(
-                result.errors.as_slice(),
-                [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
-                    if e.nullifier() == first_nullifier
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))
+                )] if e.nullifier() == first_nullifier
             );
         }
 
@@ -1639,7 +1640,8 @@ mod tests {
             let mut platform = setup_platform();
             let (signer, address) = funded_address(&mut platform);
 
-            let (st, nullifiers) = bound_shield(&signer, address, 1, platform_version).await;
+            let bundle = bound_bundle(address, platform_version);
+            let st = signed_shield(&signer, address, 1, &bundle).await;
             let result = process_transition_and_commit(&platform, st, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
@@ -1650,7 +1652,7 @@ mod tests {
                 shielded_transfer_errors_revealing(&platform, [0xEE; 32]).is_empty(),
                 "a spend revealing an unrecorded nullifier passes the spend-side check"
             );
-            let recorded = nullifiers[1];
+            let recorded = bundle.nullifiers()[1];
             assert_matches!(
                 shielded_transfer_errors_revealing(&platform, recorded).as_slice(),
                 [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
