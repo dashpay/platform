@@ -1021,9 +1021,38 @@ fn batch_carries_a_version_2_document_base(batch_transition: &BatchTransition) -
 }
 
 impl StateTransition {
-    #[allow(unused_variables)]
+    /// Decodes a transition from bytes that arrived from outside this node and refuses one
+    /// whose version is not active at `platform_version`. Bytes left over after the transition
+    /// are ignored; [`Self::deserialize_from_bytes_untrusted_exact_in_version`] refuses them.
     pub fn deserialize_from_bytes_untrusted_in_version(
         bytes: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        Self::decode_untrusted_in_version(
+            bytes,
+            StateTransition::deserialize_from_bytes_untrusted,
+            platform_version,
+        )
+    }
+
+    /// [`Self::deserialize_from_bytes_untrusted_in_version`] that also refuses bytes left over
+    /// after the transition, as a `PlatformDeserializationError`. Leftover bytes are checked
+    /// before the transition's active version range.
+    pub fn deserialize_from_bytes_untrusted_exact_in_version(
+        bytes: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        Self::decode_untrusted_in_version(
+            bytes,
+            StateTransition::deserialize_from_bytes_untrusted_exact,
+            platform_version,
+        )
+    }
+
+    #[allow(unused_variables)]
+    fn decode_untrusted_in_version(
+        bytes: &[u8],
+        decode: fn(&[u8]) -> Result<Self, ProtocolError>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let max_value_depth = platform_version
@@ -1031,9 +1060,7 @@ impl StateTransition {
             .max_document_value_depth
             .map(usize::from);
         let state_transition =
-            platform_value::with_value_decode_depth_limit(max_value_depth, || {
-                StateTransition::deserialize_from_bytes_untrusted(bytes)
-            })?;
+            platform_value::with_value_decode_depth_limit(max_value_depth, || decode(bytes))?;
         #[cfg(all(feature = "state-transitions", feature = "validation"))]
         {
             let active_version_range = state_transition.active_version_range();
@@ -2701,6 +2728,48 @@ mod tests {
     }
 
     #[test]
+    fn should_refuse_bytes_after_the_transition_only_in_the_exact_in_version_decoder() {
+        use crate::serialization::PlatformSerializable;
+        let original = sample_transfer_st();
+        let bytes =
+            PlatformSerializable::serialize_to_bytes(&original).expect("serialize succeeds");
+        let platform_version = PlatformVersion::latest();
+
+        assert_eq!(
+            StateTransition::deserialize_from_bytes_untrusted_exact_in_version(
+                &bytes,
+                platform_version
+            )
+            .expect("the exact bytes decode"),
+            original
+        );
+
+        for left_over in [1usize, 100] {
+            let mut padded = bytes.clone();
+            padded.extend(std::iter::repeat_n(0xAB, left_over));
+
+            assert_eq!(
+                StateTransition::deserialize_from_bytes_untrusted_in_version(
+                    &padded,
+                    platform_version
+                )
+                .expect("the loose decoder ignores the suffix"),
+                original
+            );
+            match StateTransition::deserialize_from_bytes_untrusted_exact_in_version(
+                &padded,
+                platform_version,
+            ) {
+                Err(ProtocolError::PlatformDeserializationError(message)) => assert!(
+                    message.contains(&format!("{left_over} bytes left over")),
+                    "unexpected message: {message}"
+                ),
+                other => panic!("expected a deserialization error, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn test_transaction_id_is_deterministic() {
         let st = sample_transfer_st();
         let a = st.transaction_id().expect("hash should succeed");
@@ -3790,6 +3859,26 @@ mod tests {
             }
             other => panic!("expected StateTransitionIsNotActiveError, got {other:?}"),
         }
+    }
+
+    /// The exact decoder keeps the active version check: exact bytes of a transition that is
+    /// not active yet are refused as not active, not as left over bytes.
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
+    #[test]
+    fn should_refuse_an_inactive_transition_in_the_exact_in_version_decoder() {
+        use crate::serialization::PlatformSerializable;
+
+        // ShieldedTransfer has active_version_range = 12..=LATEST_VERSION.
+        let bytes = PlatformSerializable::serialize_to_bytes(&sample_shielded_transfer_st())
+            .expect("serialize succeeds");
+        let low_version = PlatformVersion::get(1).expect("platform version 1 exists");
+
+        assert!(matches!(
+            StateTransition::deserialize_from_bytes_untrusted_exact_in_version(&bytes, low_version),
+            Err(ProtocolError::StateTransitionError(
+                crate::state_transition::errors::StateTransitionError::StateTransitionIsNotActiveError { .. }
+            ))
+        ));
     }
 
     // A version 1 data contract create carries contract groups, which only exist from
