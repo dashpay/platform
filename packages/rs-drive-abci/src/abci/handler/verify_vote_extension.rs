@@ -1,13 +1,12 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication};
 use crate::error::Error;
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::ExtendVoteExtension;
 
-/// Verifies that another validator's precommit asks for signatures on the withdrawal
-/// transactions this node would sign for the same block.
+/// Verifies that another validator's precommit asks for signatures on exactly the withdrawal
+/// transactions this node built for the same block.
 ///
 /// Tenderdash asks about every non-nil precommit of another validator at the height it is
 /// deciding, whatever the round, and drops the vote when it is rejected.
@@ -32,27 +31,6 @@ where
     let height: u64 = height as u64;
     let round: u32 = round as u32;
 
-    // The height being decided is the one after our last committed block
-    let platform = app.platform();
-    let current_height = platform
-        .state
-        .load()
-        .last_committed_known_block_height_or(platform.config.abci.genesis_height.saturating_sub(1))
-        .saturating_add(1);
-
-    if height != current_height {
-        tracing::warn!(
-            "votes extensions for height: {}, round: {} are rejected because we are at height: {}",
-            height,
-            round,
-            current_height,
-        );
-
-        return Ok(proto::ResponseVerifyVoteExtension {
-            status: VerifyStatus::Reject.into(),
-        });
-    }
-
     // Each round of a height has its own proposal, and its withdrawal transactions carry that
     // proposal's chain-locked core height as their request height. A later round whose proposer
     // saw a newer chain lock asks validators to sign different transactions, so a vote is
@@ -61,25 +39,26 @@ where
 
     let Some(expected_withdrawals) = withdrawals_by_round.get(height, round, &hash) else {
         // We have not accepted the block this vote is for: its proposal has not reached us yet,
-        // we skipped its round, or we are catching up. We cannot tell what the validator should
-        // have signed, and the ABCI++ spec requires every correct validator's extensions to be
-        // accepted, so we accept rather than drop a vote Tenderdash may need to commit.
+        // or it belongs to another height. We reject it, because nothing else we could check
+        // tells an honest vote from one a relaying peer altered. The block signature does not
+        // cover vote extensions, and ours carry a sign request id that binds them to neither
+        // height nor round, so any peer can drop some or all of a precommit's extensions, or
+        // swap in the same validator's extensions from another round, and the vote still
+        // verifies. Counting such votes could let extensions other than the block's reach the
+        // recovery threshold, and the commit they form would then fail in `finalize_block`.
         //
-        // This cannot get a withdrawal signed that we would not have built. Tenderdash checked
-        // the validator's signatures before asking. We only ever add our own signature share in
-        // `extend_vote`, for the block we precommit. Tenderdash recovers a threshold signature
-        // only from votes carrying identical extensions that hold the quorum's threshold of
-        // voting power, and `finalize_block` matches the recovered extensions against our own
-        // withdrawal transactions before broadcasting them.
+        // A dropped vote is not lost for good: a peer that learns we lack it can send it again
+        // once we have accepted the block, and a node that falls behind catches up through the
+        // commit.
         tracing::debug!(
             block_hash = hex::encode(&hash),
-            "votes extensions for height: {}, round: {} are accepted without comparison because we have not accepted a proposal for that block",
+            "votes extensions for height: {}, round: {} are rejected because we have not accepted a proposal for that block",
             height,
             round,
         );
 
         return Ok(proto::ResponseVerifyVoteExtension {
-            status: VerifyStatus::Accept.into(),
+            status: VerifyStatus::Reject.into(),
         });
     };
 
@@ -119,6 +98,7 @@ mod tests {
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use crate::test::helpers::withdrawals::unsigned_withdrawal_transactions;
 
+    const HEIGHT: u64 = 10;
     const ROUND_0_BLOCK: [u8; 32] = [0xA0; 32];
     const ROUND_1_BLOCK: [u8; 32] = [0xA1; 32];
     const ROUND_0_CORE_HEIGHT: u32 = 1000;
@@ -130,13 +110,16 @@ mod tests {
             .build_with_mock_rpc()
     }
 
-    /// The height a platform with no committed block is deciding
-    fn current_height(platform: &TempPlatform<MockCoreRPCLike>) -> u64 {
-        platform.config.abci.genesis_height
-    }
-
     fn extensions(transactions: &UnsignedWithdrawalTxs) -> Vec<ExtendVoteExtension> {
         transactions.into()
+    }
+
+    fn round_0_extensions() -> Vec<ExtendVoteExtension> {
+        extensions(&unsigned_withdrawal_transactions(ROUND_0_CORE_HEIGHT))
+    }
+
+    fn round_1_extensions() -> Vec<ExtendVoteExtension> {
+        extensions(&unsigned_withdrawal_transactions(ROUND_1_CORE_HEIGHT))
     }
 
     fn verify(
@@ -159,33 +142,30 @@ mod tests {
             .status
     }
 
-    /// Rounds 0 and 1 of the current height accepted, at different chain-locked core heights
-    fn accept_two_rounds(app: &FullAbciApplication<MockCoreRPCLike>, height: u64) {
-        let mut by_round = app.unsigned_withdrawal_txs_by_round.write().unwrap();
-        by_round.insert(
-            height,
-            0,
-            ROUND_0_BLOCK,
-            unsigned_withdrawal_transactions(ROUND_0_CORE_HEIGHT),
-        );
-        by_round.insert(
-            height,
-            1,
-            ROUND_1_BLOCK,
-            unsigned_withdrawal_transactions(ROUND_1_CORE_HEIGHT),
-        );
+    /// Round 0 accepted at `HEIGHT`, at `ROUND_0_CORE_HEIGHT`
+    fn accept_round_0(app: &FullAbciApplication<MockCoreRPCLike>) {
+        app.unsigned_withdrawal_txs_by_round
+            .write()
+            .unwrap()
+            .insert(
+                HEIGHT,
+                0,
+                ROUND_0_BLOCK,
+                unsigned_withdrawal_transactions(ROUND_0_CORE_HEIGHT),
+            );
     }
 
-    #[test]
-    fn should_reject_a_vote_for_another_height() {
-        let platform = platform();
-        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        let height = current_height(&platform);
-
-        assert_eq!(
-            verify(&app, height + 1, 0, ROUND_0_BLOCK, vec![]),
-            VerifyStatus::Reject as i32
-        );
+    /// Round 1 accepted at `HEIGHT`, at the newer `ROUND_1_CORE_HEIGHT`
+    fn accept_round_1(app: &FullAbciApplication<MockCoreRPCLike>) {
+        app.unsigned_withdrawal_txs_by_round
+            .write()
+            .unwrap()
+            .insert(
+                HEIGHT,
+                1,
+                ROUND_1_BLOCK,
+                unsigned_withdrawal_transactions(ROUND_1_CORE_HEIGHT),
+            );
     }
 
     /// Round 1 was proposed at a newer chain-locked core height than round 0, and this node
@@ -195,22 +175,21 @@ mod tests {
     fn should_accept_a_vote_for_an_earlier_round_at_an_older_core_height() {
         let platform = platform();
         let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        let height = current_height(&platform);
-        accept_two_rounds(&app, height);
+        accept_round_0(&app);
+        accept_round_1(&app);
 
-        let round_0_extensions = extensions(&unsigned_withdrawal_transactions(ROUND_0_CORE_HEIGHT));
-        let round_1_extensions = extensions(&unsigned_withdrawal_transactions(ROUND_1_CORE_HEIGHT));
         assert_ne!(
-            round_0_extensions, round_1_extensions,
+            round_0_extensions(),
+            round_1_extensions(),
             "test premise: the request height makes the two rounds' extensions differ"
         );
 
         assert_eq!(
-            verify(&app, height, 0, ROUND_0_BLOCK, round_0_extensions),
+            verify(&app, HEIGHT, 0, ROUND_0_BLOCK, round_0_extensions()),
             VerifyStatus::Accept as i32
         );
         assert_eq!(
-            verify(&app, height, 1, ROUND_1_BLOCK, round_1_extensions),
+            verify(&app, HEIGHT, 1, ROUND_1_BLOCK, round_1_extensions()),
             VerifyStatus::Accept as i32
         );
     }
@@ -219,18 +198,12 @@ mod tests {
     fn should_reject_a_vote_whose_withdrawals_differ_from_its_round() {
         let platform = platform();
         let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        let height = current_height(&platform);
-        accept_two_rounds(&app, height);
+        accept_round_0(&app);
+        accept_round_1(&app);
 
         // Round 1's withdrawal transactions in a round 0 vote
         assert_eq!(
-            verify(
-                &app,
-                height,
-                0,
-                ROUND_0_BLOCK,
-                extensions(&unsigned_withdrawal_transactions(ROUND_1_CORE_HEIGHT)),
-            ),
+            verify(&app, HEIGHT, 0, ROUND_0_BLOCK, round_1_extensions()),
             VerifyStatus::Reject as i32
         );
 
@@ -238,7 +211,7 @@ mod tests {
         assert_eq!(
             verify(
                 &app,
-                height,
+                HEIGHT,
                 0,
                 ROUND_0_BLOCK,
                 vec![ExtendVoteExtension {
@@ -250,9 +223,31 @@ mod tests {
             VerifyStatus::Reject as i32
         );
 
-        // No withdrawals at all
+        // Extensions stripped by a relaying peer, entirely or in part
         assert_eq!(
-            verify(&app, height, 0, ROUND_0_BLOCK, vec![]),
+            verify(&app, HEIGHT, 0, ROUND_0_BLOCK, vec![]),
+            VerifyStatus::Reject as i32
+        );
+        assert_eq!(
+            verify(
+                &app,
+                HEIGHT,
+                0,
+                ROUND_0_BLOCK,
+                round_0_extensions().into_iter().take(1).collect(),
+            ),
+            VerifyStatus::Reject as i32
+        );
+
+        // The right extensions in another order
+        assert_eq!(
+            verify(
+                &app,
+                HEIGHT,
+                0,
+                ROUND_0_BLOCK,
+                round_0_extensions().into_iter().rev().collect(),
+            ),
             VerifyStatus::Reject as i32
         );
     }
@@ -261,131 +256,79 @@ mod tests {
     fn should_accept_matching_empty_withdrawals() {
         let platform = platform();
         let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        let height = current_height(&platform);
         app.unsigned_withdrawal_txs_by_round
             .write()
             .unwrap()
-            .insert(height, 0, ROUND_0_BLOCK, UnsignedWithdrawalTxs::default());
+            .insert(HEIGHT, 0, ROUND_0_BLOCK, UnsignedWithdrawalTxs::default());
 
         assert_eq!(
-            verify(&app, height, 0, ROUND_0_BLOCK, vec![]),
+            verify(&app, HEIGHT, 0, ROUND_0_BLOCK, vec![]),
             VerifyStatus::Accept as i32
         );
         assert_eq!(
-            verify(
-                &app,
-                height,
-                0,
-                ROUND_0_BLOCK,
-                extensions(&unsigned_withdrawal_transactions(ROUND_0_CORE_HEIGHT)),
-            ),
+            verify(&app, HEIGHT, 0, ROUND_0_BLOCK, round_0_extensions()),
             VerifyStatus::Reject as i32
         );
     }
 
-    /// A vote for a round whose proposal this node has not accepted cannot be compared with
-    /// anything, so it is accepted.
+    /// Only round 0 is accepted. Nothing tells an honest round 1 vote from one whose
+    /// extensions a relaying peer stripped, or replaced with the same validator's round 0
+    /// extensions, whose signatures are bound to neither height nor round. The last case
+    /// matches the only proposal this node processed, and used to be accepted.
     #[test]
-    fn should_accept_a_vote_for_a_round_this_node_has_not_processed() {
+    fn should_reject_a_vote_for_a_round_this_node_has_not_accepted() {
         let platform = platform();
         let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        let height = current_height(&platform);
-        app.unsigned_withdrawal_txs_by_round
-            .write()
-            .unwrap()
-            .insert(
-                height,
-                0,
-                ROUND_0_BLOCK,
-                unsigned_withdrawal_transactions(ROUND_0_CORE_HEIGHT),
-            );
+        accept_round_0(&app);
 
-        assert_eq!(
-            verify(
-                &app,
-                height,
-                1,
-                ROUND_1_BLOCK,
-                extensions(&unsigned_withdrawal_transactions(ROUND_1_CORE_HEIGHT)),
-            ),
-            VerifyStatus::Accept as i32
-        );
+        for vote_extensions in [round_1_extensions(), vec![], round_0_extensions()] {
+            assert_eq!(
+                verify(&app, HEIGHT, 1, ROUND_1_BLOCK, vote_extensions),
+                VerifyStatus::Reject as i32
+            );
+        }
     }
 
     /// The same holds for a block other than the one this node accepted in that round.
     #[test]
-    fn should_accept_a_vote_for_a_block_this_node_has_not_processed() {
+    fn should_reject_a_vote_for_a_block_this_node_has_not_accepted() {
         let platform = platform();
         let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        let height = current_height(&platform);
-        app.unsigned_withdrawal_txs_by_round
-            .write()
-            .unwrap()
-            .insert(
-                height,
-                0,
-                ROUND_0_BLOCK,
-                unsigned_withdrawal_transactions(ROUND_0_CORE_HEIGHT),
-            );
+        accept_round_0(&app);
 
         assert_eq!(
-            verify(
-                &app,
-                height,
-                0,
-                ROUND_1_BLOCK,
-                extensions(&unsigned_withdrawal_transactions(ROUND_1_CORE_HEIGHT)),
-            ),
-            VerifyStatus::Accept as i32
+            verify(&app, HEIGHT, 0, ROUND_1_BLOCK, round_0_extensions()),
+            VerifyStatus::Reject as i32
         );
     }
 
-    /// Before this node processes any proposal of the height, for example while the first
+    /// Before this node accepts any proposal of the height, for example while the first
     /// proposal is still on its way or right after a restart.
     #[test]
-    fn should_accept_a_vote_before_any_proposal_of_the_height_is_accepted() {
+    fn should_reject_a_vote_before_any_proposal_of_the_height_is_accepted() {
         let platform = platform();
         let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        let height = current_height(&platform);
 
-        assert_eq!(
-            verify(
-                &app,
-                height,
-                0,
-                ROUND_0_BLOCK,
-                extensions(&unsigned_withdrawal_transactions(ROUND_0_CORE_HEIGHT)),
-            ),
-            VerifyStatus::Accept as i32
-        );
+        for vote_extensions in [round_0_extensions(), vec![]] {
+            assert_eq!(
+                verify(&app, HEIGHT, 0, ROUND_0_BLOCK, vote_extensions),
+                VerifyStatus::Reject as i32
+            );
+        }
     }
 
-    /// Withdrawals kept for a height that has since been committed say nothing about the next
-    /// one.
+    /// Withdrawals kept for one height say nothing about another.
     #[test]
-    fn should_not_compare_with_the_withdrawals_of_another_height() {
+    fn should_reject_a_vote_for_another_height() {
         let platform = platform();
         let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        let height = current_height(&platform);
-        app.unsigned_withdrawal_txs_by_round
-            .write()
-            .unwrap()
-            .insert(
-                height - 1,
-                0,
-                ROUND_0_BLOCK,
-                unsigned_withdrawal_transactions(ROUND_0_CORE_HEIGHT),
-            );
+        accept_round_0(&app);
 
-        assert_eq!(
-            verify(
-                &app,
-                height,
-                0,
-                ROUND_0_BLOCK,
-                extensions(&unsigned_withdrawal_transactions(ROUND_1_CORE_HEIGHT)),
-            ),
-            VerifyStatus::Accept as i32
-        );
+        for height in [HEIGHT - 1, HEIGHT + 1] {
+            assert_eq!(
+                verify(&app, height, 0, ROUND_0_BLOCK, round_0_extensions()),
+                VerifyStatus::Reject as i32
+            );
+        }
     }
 }

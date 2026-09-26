@@ -5,7 +5,8 @@
 //! When a new chain lock arrives between two rounds, the later proposal asks for signatures on
 //! different transactions. Precommits of the earlier round are still valid and can still arrive
 //! after this node processed the later proposal, so each vote must be verified against the
-//! proposal of its own round.
+//! proposal of its own round. A vote for a block this node has not accepted cannot be checked,
+//! since a relaying peer can strip its extensions or swap in another round's, and is rejected.
 #[cfg(test)]
 mod tests {
     use crate::execution::run_chain_for_strategy;
@@ -218,8 +219,8 @@ mod tests {
 
     /// Round 0 is processed at the last chain-locked core height, then round 1 at a newer one.
     /// A round 0 precommit is still accepted afterwards, which it was not when every vote was
-    /// compared with the last proposal processed, and a vote whose withdrawals differ from its
-    /// own round's is still rejected.
+    /// compared with the last proposal processed. A vote whose withdrawals differ from its own
+    /// round's is rejected, and so is a vote for a round not processed yet.
     #[tokio::test]
     async fn should_verify_each_rounds_vote_extensions_against_its_own_withdrawals() {
         let config = config();
@@ -255,6 +256,20 @@ mod tests {
             .expect("expected to process the round 0 proposal");
         assert_eq!(response.status, ProposalStatus::Accept as i32);
         let round_0_extensions = extend_vote(&outcome, &round_0);
+
+        // Before round 1 is processed, a round 1 precommit carrying the same validator's round 0
+        // extensions verifies in Tenderdash, as their signatures are bound to neither height nor
+        // round, and matches the only proposal this node processed. It must still be rejected.
+        assert_eq!(
+            verify(&outcome, &round_1, round_0_extensions.clone()),
+            VerifyStatus::Reject as i32,
+            "a vote for a round this node has not accepted must be rejected"
+        );
+        assert_eq!(
+            verify(&outcome, &round_0, vec![]),
+            VerifyStatus::Reject as i32,
+            "a round 0 precommit whose extensions were stripped must be rejected"
+        );
 
         let response = outcome
             .abci_app
