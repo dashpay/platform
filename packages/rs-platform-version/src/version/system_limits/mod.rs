@@ -202,6 +202,14 @@ pub struct SystemLimits {
     // For other distributions we much calculate at each cycle the rewards, so we don't want to
     // do this that much
     pub max_token_redemption_cycles: u32,
+    /// Most finalized epochs one `EvonodesByParticipation` perpetual distribution claim reads
+    /// to weigh the claimant's participation, unless one cycle of the distribution spans more
+    /// epochs, in which case the claim reads that one whole cycle. The claim pays only through
+    /// the last whole cycle it read, so an evonode further behind is paid over several claims.
+    /// Read by `evonode_participation_rewards` v1 (protocol version 14); 100 in every table,
+    /// the bound the read was held to before (`drive_abci.query.max_returned_elements`), which
+    /// v0 keeps reading.
+    pub max_evonode_reward_claim_epochs: u16,
     pub max_shielded_transition_actions: u16,
     /// Maximum overlap factor (`range / step`) a `timeRange` index transform
     /// may declare, enforced at contract registration.

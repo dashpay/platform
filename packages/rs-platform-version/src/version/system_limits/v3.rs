@@ -47,6 +47,7 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     contract_document_restore_window_ms: 604_800_000,        // 7 days
     max_contract_moderation_added_moderators: 15,
     max_token_redemption_cycles: 128,
+    max_evonode_reward_claim_epochs: 100,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
     // top of the 408 B serialized action), so a transition's on-wire size is
     // ~2,681 B per action + ~2,930 B fixed (measured: 2 actions → 8,294 B,
