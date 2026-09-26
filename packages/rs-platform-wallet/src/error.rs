@@ -67,6 +67,15 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
+    /// A DashPay invitation link's voucher key is for the other network (a
+    /// testnet link opened in a mainnet wallet, or the reverse). Definitive:
+    /// the claim refuses the link before any network work.
+    #[error("invitation is for the {invitation:?} network but this wallet is on {wallet:?}")]
+    InvitationNetworkMismatch {
+        invitation: Network,
+        wallet: Network,
+    },
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing
