@@ -267,6 +267,28 @@ fn should_cap_the_time_to_live_at_registration_only() {
 }
 
 #[test]
+fn should_refuse_a_time_to_live_under_the_floor_at_registration_only() {
+    // A document the cleanup deletes before its writer fetches the proof of its create
+    // would fail that proof: registration keeps every time to live above the floor.
+    let min = PlatformVersion::latest()
+        .system_limits
+        .min_document_ttl_seconds
+        .expect("protocol version 14 has a floor");
+    let document_type =
+        parse(note_schema(platform_value!({ "ttl": min })), true).expect("the floor parses");
+    assert_eq!(document_type.documents_ttl_seconds(), Some(min));
+
+    assert_refused_naming(
+        parse(note_schema(platform_value!({ "ttl": min - 1 })), true),
+        &["ttl", "shortest time to live"],
+    );
+    // A stored contract is read back without the registration limits.
+    let stored = parse(note_schema(platform_value!({ "ttl": 60 })), false)
+        .expect("the stored path does not apply the floor");
+    assert_eq!(stored.documents_ttl_seconds(), Some(60));
+}
+
+#[test]
 fn should_allow_a_time_to_live_with_every_owner_and_moderation_feature() {
     // Transfers and trades hand over what is left of a document's life; moderators delete
     // it early; a mutable type replaces it without moving its expiry.

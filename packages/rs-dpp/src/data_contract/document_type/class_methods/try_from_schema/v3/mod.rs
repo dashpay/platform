@@ -328,8 +328,8 @@ fn try_from_schema_generation_3(
     let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
     let can_be_deleted_by_moderators = common::parse_can_be_deleted_by_moderators_keyword(&schema)?;
     let can_be_deleted_by_moderators_for =
-        common::parse_can_be_deleted_by_moderators_for_keyword(&schema)?;
-    let documents_ttl = common::parse_documents_ttl_keyword(&schema)?;
+        common::parse_seconds_keyword(&schema, property_names::CAN_BE_DELETED_BY_MODERATORS_FOR)?;
+    let documents_ttl = common::parse_seconds_keyword(&schema, property_names::TTL)?;
     let immutable_fields =
         common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
     let immutable_fields_allow_setting = common::parse_property_name_list_keyword(

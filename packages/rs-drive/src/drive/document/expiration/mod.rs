@@ -11,7 +11,8 @@
 //! `max_document_expirations_per_block` expired documents, oldest first
 //! ([`Drive::remove_expired_documents`]). Deleting such a document any other way (its owner,
 //! a moderator) removes its entry in the same batch, so an entry exists exactly while its
-//! document does.
+//! document does. The last entry of an expiry time takes the tree of that time with it, so
+//! every tree of an expiry time holds at least one entry.
 //!
 //! A document of such a type is written without storage flags and refunds nothing when it
 //! goes. Its bytes, its index entries' and its expiration entry's, are priced for the time
@@ -31,7 +32,7 @@ pub mod pricing;
 mod remove_document_expiration_operations;
 mod remove_expired_documents;
 
-pub use fetch_expired_documents::{ExpiredDocument, ExpiredDocuments};
+pub use fetch_expired_documents::ExpiredDocument;
 pub use remove_expired_documents::RemovedExpiredDocuments;
 
 use crate::error::drive::DriveError;

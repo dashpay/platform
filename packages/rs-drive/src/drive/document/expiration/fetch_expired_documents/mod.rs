@@ -22,32 +22,21 @@ pub struct ExpiredDocument {
     pub document_type_name: String,
 }
 
-/// What [`Drive::fetch_expired_documents`] found: the expired documents in the order they
-/// expired, and every expiry time it read the documents of.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ExpiredDocuments {
-    /// The expired documents, oldest first, then by id, at most the limit asked for
-    pub documents: Vec<ExpiredDocument>,
-    /// Every expiry time whose tree was read, oldest first, those holding no document
-    /// included (their documents deleted some other way). The tree of each one found empty
-    /// once `documents` are gone can be dropped.
-    pub expiry_times: Vec<TimestampMillis>,
-}
-
 impl Drive {
     /// Reads the documents whose time to live has passed at `block_time_ms` from the documents
-    /// expirations tree: oldest expiry time first, at most `limit` documents and at most `limit`
-    /// expiry times.
+    /// expirations tree: oldest expiry time first, then by id, at most `limit` of them. Every
+    /// tree of an expiry time holds at least one entry (the last entry removed takes its tree
+    /// with it), so the read visits at most `limit` trees.
     ///
     /// # Parameters
     /// - `block_time_ms`: documents expiring at or before this time have expired.
-    /// - `limit`: the most documents, and the most expiry times, to read.
+    /// - `limit`: the most documents to read.
     /// - `transaction`: the transaction to read in.
-    /// - `drive_operations`: receives the costs of the reads.
+    /// - `drive_operations`: receives the costs of the read.
     /// - `platform_version`: selects the method version.
     ///
     /// # Returns
-    /// The expired documents and the expiry times read.
+    /// The expired documents, oldest first.
     pub fn fetch_expired_documents(
         &self,
         block_time_ms: TimestampMillis,
@@ -55,7 +44,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<ExpiredDocuments, Error> {
+    ) -> Result<Vec<ExpiredDocument>, Error> {
         match platform_version
             .drive
             .methods

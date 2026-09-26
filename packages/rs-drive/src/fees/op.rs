@@ -260,9 +260,9 @@ pub enum EphemeralPricing {
     DocumentTtl {
         /// Credits per added byte
         credit_per_byte: Credits,
-        /// Whether the amount enters the storage fee pool (a lifetime of at
-        /// least the schedule's `processing_route_below_epochs`) rather than
-        /// the processing fees
+        /// Whether the amount enters the storage fee pool (a document type
+        /// whose `ttl` spans at least the schedule's
+        /// `processing_route_below_epochs`) rather than the processing fees
         storage_pool: bool,
     },
 }
@@ -332,8 +332,8 @@ impl LowLevelDriveOperation {
                     // The writes of a document whose type declares a `ttl`:
                     // each added byte costs the price of the document's
                     // remaining lifetime, into the storage pool or the
-                    // processing fees as resolved when the document was
-                    // written. Processing is billed as for any batch.
+                    // processing fees as its type's `ttl` decides.
+                    // Processing is billed as for any batch.
                     let bytes_fee = (cost.storage_cost.added_bytes as u64)
                         .checked_mul(credit_per_byte)
                         .ok_or(Error::Fee(FeeError::Overflow(
@@ -358,16 +358,8 @@ impl LowLevelDriveOperation {
                     // could only come from an element someone else paid for;
                     // its bytes leave the system all the same and no refund
                     // is owed through this batch, whose writes refund nothing.
-                    let removed_bytes_from_system = match cost.storage_cost.removed_bytes {
-                        NoStorageRemoval => 0,
-                        BasicStorageRemoval(amount) => amount,
-                        SectionedStorageRemoval(removal_per_epoch_by_identifier) => {
-                            removal_per_epoch_by_identifier
-                                .values()
-                                .flat_map(|per_epoch| per_epoch.values())
-                                .fold(0u32, |total, bytes| total.saturating_add(*bytes))
-                        }
-                    };
+                    let removed_bytes_from_system =
+                        cost.storage_cost.removed_bytes.total_removed_bytes();
                     Ok(FeeResult {
                         storage_fee,
                         processing_fee,

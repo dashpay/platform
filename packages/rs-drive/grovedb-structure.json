@@ -3972,7 +3972,7 @@
                 "since": 14,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/document/expiration/paths.rs",
-                "description": "The documents expiring at one time: created in one block by types of one time to live. Dropped by the cleanup once empty.",
+                "description": "The documents expiring at one time: created in one block by types of one time to live. Removed with its last entry.",
                 "children": [
                   {
                     "id": "misc.documents_expirations.expiry_time.document",

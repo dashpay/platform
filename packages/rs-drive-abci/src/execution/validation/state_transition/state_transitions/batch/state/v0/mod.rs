@@ -15,6 +15,7 @@ use drive::state_transition_action::system::bump_identity_data_contract_nonce_ac
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::common::validate_document_not_expired::validate_batched_action_not_expired;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_index_only_delete_transition_action::DocumentIndexOnlyDeleteTransitionActionValidation;
@@ -117,7 +118,14 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
 
         // Next we need to validate the structure of all actions (this means with the data contract)
         for transition in state_transition_action.transitions_take() {
+            // A document whose type declares a `ttl` is no longer replaced, transferred, bought
+            // or repriced once that has passed, whatever else the action gets right. Added in
+            // place in this shipped generation: only a document type parsed from the `ttl`
+            // keyword, which no protocol version before 14 reads, has a time to live, so
+            // before 14 this passes every action without reading anything.
+            let expiry_result = validate_batched_action_not_expired(&transition, block_info)?;
             let transition_validation_result = match &transition {
+                _ if !expiry_result.is_valid() => expiry_result,
                 BatchedTransitionAction::DocumentAction(document_action) => match document_action {
                     DocumentTransitionAction::CreateAction(create_action) => create_action
                         .validate_state(

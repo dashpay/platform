@@ -27,11 +27,10 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CAN_BE_DELETED_BY_MODERATORS_FOR,
-    CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY,
-    DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY,
-    KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
-    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE, TTL,
+    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE,
+    DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
+    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
+    RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -2119,12 +2118,13 @@ pub(super) fn apply_can_be_deleted_by_moderators(
     Ok(())
 }
 
-/// Reads the doctype-level `canBeDeletedByModeratorsFor` keyword, a number of
-/// seconds, before the core parse consumes `schema`. Its shape is enforced here
-/// and not left to the meta-schema: a stored contract is read without one, and
-/// no doctype-level keyword of this generation is read more leniently there.
-pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
+/// Reads a doctype-level keyword holding a number of seconds (`canBeDeletedByModeratorsFor`,
+/// `ttl`) before the core parse consumes `schema`. Its shape is enforced here and not left
+/// to the meta-schema: a stored contract is read without one, and no doctype-level keyword
+/// of this generation is read more leniently there.
+pub(super) fn parse_seconds_keyword(
     schema: &Value,
+    keyword: &str,
 ) -> Result<Option<u32>, ProtocolError> {
     // A schema that is not an object carries no keyword. Like every other
     // doctype-level keyword read before the core parser, this one must not be
@@ -2135,7 +2135,7 @@ pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
         return Ok(None);
     };
 
-    Value::inner_optional_integer_value::<u32>(schema_map, CAN_BE_DELETED_BY_MODERATORS_FOR)
+    Value::inner_optional_integer_value::<u32>(schema_map, keyword)
         .map_err(consensus_or_protocol_value_error)
 }
 
@@ -2209,21 +2209,6 @@ pub(super) fn apply_can_be_deleted_by_moderators_for(
     Ok(())
 }
 
-/// Reads the doctype-level `ttl` keyword, a number of seconds, before the core parse
-/// consumes `schema`. Its shape is enforced here and not left to the meta-schema, like
-/// [`parse_can_be_deleted_by_moderators_for_keyword`]: a stored contract is read without
-/// one, and no doctype-level keyword of this generation is read more leniently there.
-pub(super) fn parse_documents_ttl_keyword(schema: &Value) -> Result<Option<u32>, ProtocolError> {
-    // A schema that is not an object carries no keyword, and the core parser's refusal of
-    // such a schema must stay the one reported.
-    let Ok(schema_map) = schema.to_map() else {
-        return Ok(None);
-    };
-
-    Value::inner_optional_integer_value::<u32>(schema_map, TTL)
-        .map_err(consensus_or_protocol_value_error)
-}
-
 /// Applies the `ttl` keyword and checks what it requires.
 ///
 /// The platform deletes every document of the type once `$createdAt` plus `ttl`
@@ -2239,13 +2224,15 @@ pub(super) fn parse_documents_ttl_keyword(schema: &Value) -> Result<Option<u32>,
 ///   poll, outside the documents tree, until the poll awards it, keeping its `$createdAt`
 ///   from the create, so it could expire before it exists;
 /// - the time to live is at least a second, and under full validation (a contract being
-///   registered or updated) at most `max_document_ttl_seconds`.
+///   registered or updated) at least `min_document_ttl_seconds` and at most
+///   `max_document_ttl_seconds`. The floor keeps a document in state well past the moment
+///   its writer fetches the proof of its create, which proves it present.
 ///
-/// What may point at the type follows from `documents_can_disappear`: a
-/// `permanentDocument`, lookup or list element reference may not target it, a
-/// `deletableDocument` reference may.
+/// What may point at the type follows from `documents_can_disappear`: a `permanentDocument`
+/// or list element reference may not target it; a `deletableDocument` reference may, and so
+/// may a lookup, which names the kind of document it resolves to (`deletableDocument`).
 ///
-/// The rules other than the cap hold for every contract that could be stored (the keyword
+/// The rules other than the bounds hold for every contract that could be stored (the keyword
 /// arrives with protocol version 14), so they are not skipped when a stored contract is
 /// read back. Runs after `apply_index_only`, whose flag it reads.
 pub(super) fn apply_documents_ttl(
@@ -2272,6 +2259,15 @@ pub(super) fn apply_documents_ttl(
         )));
     }
     if full_validation {
+        if let Some(min_seconds) = platform_version.system_limits.min_document_ttl_seconds {
+            if seconds < min_seconds {
+                return Err(structure_error(format!(
+                    "document type \"{}\" sets `ttl: {}`, below the shortest time to live a \
+                     document type may declare, {} seconds",
+                    name, seconds, min_seconds,
+                )));
+            }
+        }
         if let Some(max_seconds) = platform_version.system_limits.max_document_ttl_seconds {
             if seconds > max_seconds {
                 return Err(structure_error(format!(

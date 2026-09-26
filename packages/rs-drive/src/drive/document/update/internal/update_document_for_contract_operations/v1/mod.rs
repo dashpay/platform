@@ -916,7 +916,8 @@ impl Drive {
                     document.created_at(),
                     ttl_seconds,
                     block_info.time_ms,
-                ),
+                )?,
+                ttl_seconds,
                 self.config.epoch_time_length_s,
                 &platform_version.fee_version,
             )?;

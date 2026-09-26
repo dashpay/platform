@@ -679,7 +679,7 @@ fn delete_post_by_moderator<'a>(
     contract: &'a DataContract,
     document_id: Identifier,
 ) -> DriveOperation<'a> {
-    DocumentOperation(DocumentOperationType::DeleteDocumentByModerator {
+    DocumentOperation(DocumentOperationType::ForceDeleteDocument {
         document_id,
         contract_info: DataContractInfo::BorrowedDataContract(contract),
         document_type_info: DocumentTypeInfo::DocumentTypeName(POST.to_string()),

@@ -103,23 +103,13 @@ pub enum DocumentOperationType<'a> {
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
     },
-    /// Deletes a document on behalf of the contract's moderators. `canBeDeleted` rules what a
-    /// document's own owner may do, so it is not consulted here: the caller has checked that
-    /// the document type sets `canBeDeletedByModerators`. A document type that keeps history
-    /// is still refused, as the keyword is on such a type.
-    DeleteDocumentByModerator {
-        /// The document id
-        document_id: Identifier,
-        /// Data Contract info to potentially be resolved if needed
-        contract_info: DataContractInfo<'a>,
-        /// Document type
-        document_type_info: DocumentTypeInfo<'a>,
-    },
-    /// Deletes a document whose type declares a `ttl` once it has passed, on the platform's
-    /// behalf after a block's state transitions (protocol version 14). Like a moderator's
-    /// deletion, `canBeDeleted` is not consulted: it rules what the document's own owner may
-    /// do. The deletion removes the document's expirations tree entry with it.
-    DeleteExpiredDocument {
+    /// Deletes a document without consulting `canBeDeleted`, which rules what the document's
+    /// own owner may do. Used for a deletion on behalf of the contract's moderators (the
+    /// caller has checked that the document type sets `canBeDeletedByModerators`) and for the
+    /// platform's deletion of a document whose type declares a `ttl` once it has passed
+    /// (protocol version 14), which also removes the document's expirations tree entry. A
+    /// document type that keeps history is still refused, as both keywords are on such a type.
+    ForceDeleteDocument {
         /// The document id
         document_id: Identifier,
         /// Data Contract info to potentially be resolved if needed
@@ -233,12 +223,7 @@ impl DocumentOperationType<'_> {
                 document_type_info,
                 ..
             }
-            | Self::DeleteDocumentByModerator {
-                contract_info,
-                document_type_info,
-                ..
-            }
-            | Self::DeleteExpiredDocument {
+            | Self::ForceDeleteDocument {
                 contract_info,
                 document_type_info,
                 ..
@@ -480,35 +465,7 @@ impl DocumentOperationType<'_> {
                     platform_version,
                 )
             }
-            DocumentOperationType::DeleteDocumentByModerator {
-                document_id,
-                contract_info,
-                document_type_info,
-            } => {
-                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-                let contract_resolved_info = contract_info.resolve(
-                    drive,
-                    block_info,
-                    transaction,
-                    &mut drive_operations,
-                    platform_version,
-                )?;
-                let contract = contract_resolved_info.as_ref();
-                let document_type = document_type_info.resolve(contract)?;
-
-                // The deletion a document's own owner runs, without its `canBeDeleted` guard.
-                drive.force_delete_document_for_contract_operations(
-                    document_id,
-                    contract,
-                    document_type,
-                    None,
-                    estimated_costs_only_with_layer_info,
-                    block_info.time_ms,
-                    transaction,
-                    platform_version,
-                )
-            }
-            DocumentOperationType::DeleteExpiredDocument {
+            DocumentOperationType::ForceDeleteDocument {
                 document_id,
                 contract_info,
                 document_type_info,

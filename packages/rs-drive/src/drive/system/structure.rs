@@ -60,8 +60,8 @@ pub(crate) fn structure() -> StructureNode {
                 .lazy()
                 .describe(
                     "The documents expiring at one time: created in one block \
-                     by types of one time to live. Dropped by the cleanup once \
-                     empty.",
+                     by types of one time to live. Removed with its last \
+                     entry.",
                 )
                 .child(
                     StructureNode::identifier("document", "document_id", "The document id")

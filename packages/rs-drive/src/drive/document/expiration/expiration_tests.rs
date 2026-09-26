@@ -120,6 +120,25 @@ fn insert(
     document: &Document,
     apply: bool,
 ) -> FeeResult {
+    insert_at_version(
+        drive,
+        contract,
+        document_type_name,
+        document,
+        apply,
+        PlatformVersion::latest(),
+    )
+}
+
+/// [`insert`] under a given platform version, a changed fee schedule for one.
+fn insert_at_version(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type_name: &str,
+    document: &Document,
+    apply: bool,
+    platform_version: &PlatformVersion,
+) -> FeeResult {
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
@@ -136,7 +155,7 @@ fn insert(
             block_at(document.created_at().expect("created at")),
             apply,
             None,
-            PlatformVersion::latest(),
+            platform_version,
             None,
         )
         .expect("document inserts")
@@ -233,14 +252,13 @@ fn should_index_a_document_with_a_time_to_live_by_its_expiry() {
     let early = drive
         .fetch_expired_documents(expires_at - 1, 128, None, &mut vec![], platform_version)
         .expect("fetch");
-    assert!(early.documents.is_empty(), "nothing has expired a ms early");
+    assert!(early.is_empty(), "nothing has expired a ms early");
     let due = drive
         .fetch_expired_documents(expires_at, 128, None, &mut vec![], platform_version)
         .expect("fetch");
-    assert_eq!(due.documents.len(), 1);
-    assert_eq!(due.documents[0].document_id, document.id());
-    assert_eq!(due.documents[0].expires_at_ms, expires_at);
-    assert_eq!(due.expiry_times, vec![expires_at]);
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].document_id, document.id());
+    assert_eq!(due[0].expires_at_ms, expires_at);
 
     // A document of the type without a `ttl` gets no entry.
     let memo = note(2, START_MS, "memo");
@@ -248,7 +266,7 @@ fn should_index_a_document_with_a_time_to_live_by_its_expiry() {
     let due = drive
         .fetch_expired_documents(u64::MAX, 128, None, &mut vec![], platform_version)
         .expect("fetch");
-    assert_eq!(due.documents.len(), 1);
+    assert_eq!(due.len(), 1);
 }
 
 #[test]
@@ -312,7 +330,6 @@ fn should_delete_expired_documents_oldest_first_and_drop_their_trees() {
         RemovedExpiredDocuments {
             deleted_documents: 2,
             orphaned_entries: 0,
-            dropped_expiry_times: 2,
         }
     );
     assert!(stored_document(&drive, &contract, "note", documents[0].id()).is_none());
@@ -363,16 +380,14 @@ fn should_delete_at_most_the_limit_per_run_and_keep_a_partly_drained_tree() {
 
     let first = remove_expired(&drive, expires_at, 2);
     assert_eq!(first.deleted_documents, 2);
-    assert_eq!(first.dropped_expiry_times, 0);
     assert!(expiry_tree_exists(&drive, expires_at));
 
     let second = remove_expired(&drive, expires_at, 2);
     assert_eq!(second.deleted_documents, 2);
-    assert_eq!(second.dropped_expiry_times, 0);
+    assert!(expiry_tree_exists(&drive, expires_at));
 
     let third = remove_expired(&drive, expires_at, 2);
     assert_eq!(third.deleted_documents, 1);
-    assert_eq!(third.dropped_expiry_times, 1);
     assert!(!expiry_tree_exists(&drive, expires_at));
 
     assert_eq!(
@@ -405,18 +420,74 @@ fn should_remove_the_entry_when_the_owner_deletes_the_document() {
         "a document with a time to live refunds nothing"
     );
     assert!(entry_element(&drive, expires_at, document.id()).is_none());
-
-    // The emptied tree of its expiry time is dropped by the cleanup when it comes due.
-    assert!(expiry_tree_exists(&drive, expires_at));
+    // Its entry was the last of its expiry time, so the tree of that time went with it.
+    assert!(!expiry_tree_exists(&drive, expires_at));
     assert_eq!(
         remove_expired(&drive, expires_at, 128),
-        RemovedExpiredDocuments {
-            deleted_documents: 0,
-            orphaned_entries: 0,
-            dropped_expiry_times: 1,
-        }
+        RemovedExpiredDocuments::default()
     );
+}
+
+#[test]
+fn should_keep_the_tree_of_an_expiry_time_until_its_last_entry_goes() {
+    let (drive, contract) = setup(TWO_WEEKS_S);
+    let expires_at = START_MS + u64::from(TWO_WEEKS_S) * 1000;
+    let first = note(1, START_MS, "first");
+    let second = note(2, START_MS, "second");
+    insert(&drive, &contract, "note", &first, true);
+    insert(&drive, &contract, "note", &second, true);
+    let delete = |document: &Document| {
+        drive
+            .delete_document_for_contract(
+                document.id(),
+                &contract,
+                "note",
+                block_at(START_MS + 60_000),
+                true,
+                None,
+                PlatformVersion::latest(),
+                None,
+            )
+            .expect("the owner deletes");
+    };
+
+    delete(&first);
+    assert!(expiry_tree_exists(&drive, expires_at));
+    assert!(entry_element(&drive, expires_at, second.id()).is_some());
+    delete(&second);
     assert!(!expiry_tree_exists(&drive, expires_at));
+}
+
+#[test]
+fn should_not_let_documents_deleted_early_delay_the_ones_that_expire() {
+    // Each owner deletion takes its expiry time's tree with it, so the documents deleted
+    // early leave nothing the cleanup would read ahead of a document that is due.
+    let (drive, contract) = setup(TWO_WEEKS_S);
+    let ttl_ms = u64::from(TWO_WEEKS_S) * 1000;
+    let documents: Vec<Document> = (0..4u64)
+        .map(|i| note(1 + i as u8, START_MS + i * 1000, &format!("note {i}")))
+        .collect();
+    for document in &documents {
+        insert(&drive, &contract, "note", document, true);
+    }
+    for document in &documents[..3] {
+        drive
+            .delete_document_for_contract(
+                document.id(),
+                &contract,
+                "note",
+                block_at(START_MS + 60_000),
+                true,
+                None,
+                PlatformVersion::latest(),
+                None,
+            )
+            .expect("the owner deletes");
+    }
+
+    let removed = remove_expired(&drive, START_MS + 3000 + ttl_ms, 1);
+    assert_eq!(removed.deleted_documents, 1);
+    assert!(stored_document(&drive, &contract, "note", documents[3].id()).is_none());
 }
 
 #[test]
@@ -543,7 +614,6 @@ fn should_remove_an_entry_whose_document_is_gone() {
         RemovedExpiredDocuments {
             deleted_documents: 0,
             orphaned_entries: 1,
-            dropped_expiry_times: 1,
         }
     );
     assert!(!expiry_tree_exists(&drive, expires_at));
@@ -578,8 +648,29 @@ fn should_price_a_short_lived_document_into_processing_and_prepay_its_deletion()
                 .cleanup_processing_cost_per_index_level,
         "two single-property indexes are two index levels"
     );
-    assert!(
-        note_fee.processing_fee > cleanup_fee,
+    // The same create under a schedule whose deletion costs nothing: the difference is the
+    // prepaid deletion, exactly.
+    let mut free_deletion = platform_version.clone();
+    free_deletion
+        .fee_version
+        .document_ttl
+        .cleanup_base_processing_cost = 0;
+    free_deletion
+        .fee_version
+        .document_ttl
+        .cleanup_processing_cost_per_index_level = 0;
+    let (other_drive, other_contract) = setup(3_600);
+    let without_prepay = insert_at_version(
+        &other_drive,
+        &other_contract,
+        "note",
+        &note(1, START_MS, "hello"),
+        true,
+        &free_deletion,
+    );
+    assert_eq!(
+        note_fee.processing_fee - without_prepay.processing_fee,
+        cleanup_fee,
         "the processing fee carries the prepaid deletion"
     );
     assert!(
@@ -593,13 +684,13 @@ fn should_price_a_long_lived_document_into_the_storage_pool() {
     let (drive, contract) = setup(31_536_000);
     let note_fee = insert(&drive, &contract, "note", &note(1, START_MS, "hello"), true);
     let memo_fee = insert(&drive, &contract, "memo", &note(2, START_MS, "hello"), true);
-    let per_epoch = PlatformVersion::latest()
+    let per_period = PlatformVersion::latest()
         .fee_version
         .document_ttl
-        .credit_per_byte_per_epoch;
-    // A year of 365 days is exactly 40 epochs of 9.125 days.
+        .credit_per_byte_per_period;
+    // A year of 365 days is exactly 40 pricing periods of 9.125 days.
     assert!(note_fee.storage_fee > 0);
-    assert_eq!(note_fee.storage_fee % (40 * per_epoch), 0);
+    assert_eq!(note_fee.storage_fee % (40 * per_period), 0);
     assert!(note_fee.storage_fee < memo_fee.storage_fee);
 }
 

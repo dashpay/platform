@@ -3707,9 +3707,28 @@ async fn should_refuse_to_restore_a_post_whose_time_to_live_has_passed() {
     assert_success(&setup.process(&delete, &transaction));
     setup.commit(transaction);
 
-    // At the post's expiry, well inside the restore window: refused, paid, nothing restored.
+    // The deletion took the post's expirations tree entry with it.
     let expires_at = BLOCK_TIME_MS + 3_600_000;
+    let expiring = |transaction: &Transaction| {
+        setup
+            .platform
+            .drive
+            .fetch_expired_documents(
+                expires_at,
+                128,
+                Some(transaction),
+                &mut vec![],
+                PlatformVersion::latest(),
+            )
+            .expect("expected to read the expirations")
+            .into_iter()
+            .map(|expired| expired.document_id)
+            .collect::<Vec<_>>()
+    };
+
+    // At the post's expiry, well inside the restore window: refused, paid, nothing restored.
     let transaction = setup.platform.drive.grove.start_transaction();
+    assert!(expiring(&transaction).is_empty());
     let too_late = setup
         .moderate(&setup.owner, restore_action(POST, bytes.clone()))
         .await;
@@ -3737,6 +3756,8 @@ async fn should_refuse_to_restore_a_post_whose_time_to_live_has_passed() {
         setup.stored_document(POST, post.id(), Some(&transaction)),
         Some(stored)
     );
+    // Back with its entry, keyed by its original expiry: the cleanup still deletes it then.
+    assert_eq!(expiring(&transaction), vec![post.id()]);
 }
 
 #[tokio::test]

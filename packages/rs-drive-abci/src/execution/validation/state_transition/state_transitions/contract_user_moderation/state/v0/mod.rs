@@ -744,7 +744,7 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
         document_id,
         document.created_at(),
         block_info,
-    )
+    )?
     .errors
     .into_iter()
     .next()

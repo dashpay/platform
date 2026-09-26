@@ -5,10 +5,11 @@ use crate::version::fee::document_ttl::{DocumentTtlFeeTier, FeeDocumentTtlVersio
 ///
 /// The per-byte prices are pro rata of the first year of perpetual storage: 27,000 credits
 /// per byte (`storage_disk_usage_credit_per_byte`), of which the distribution table pays 5%
-/// out in the first year (40 epochs of about 9.125 days), so about 3.7 credits per byte per
-/// day and 33.75 per byte per epoch, rounded up. A document of a one-year `ttl` therefore
-/// pays about what a permanent document deleted after a year keeps paying net of its
-/// refund.
+/// out in the first year (40 mainnet epochs of 9.125 days), so about 3.7 credits per byte per
+/// day and 33.75 per byte per 9.125 day period, rounded up. A document of a one-year `ttl`
+/// therefore pays about what a permanent document deleted after a year keeps paying net of
+/// its refund. The period is mainnet's epoch length, fixed here so a network configured
+/// with shorter epochs does not multiply the price.
 pub const FEE_DOCUMENT_TTL_VERSION1: FeeDocumentTtlVersion = FeeDocumentTtlVersion {
     tiers: [
         DocumentTtlFeeTier {
@@ -32,7 +33,8 @@ pub const FEE_DOCUMENT_TTL_VERSION1: FeeDocumentTtlVersion = FeeDocumentTtlVersi
             credit_per_byte: 26,
         },
     ],
-    credit_per_byte_per_epoch: 34,
+    credit_per_byte_per_period: 34,
+    pricing_period_seconds: 788_400, // 9.125 days, mainnet's epoch length
     processing_route_below_epochs: 2,
     // Measured on protocol version 14 (drive `delete_document_for_contract` of a document of
     // a type with a `ttl`, averaged over ten documents): about 1.53M credits of processing with

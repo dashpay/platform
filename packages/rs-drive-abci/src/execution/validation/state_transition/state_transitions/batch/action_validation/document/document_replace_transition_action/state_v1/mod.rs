@@ -12,7 +12,6 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 };
 
 use crate::error::Error;
-use crate::execution::validation::state_transition::common::validate_document_not_expired::validate_document_not_expired;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::DocumentReferenceValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::state_v0::DocumentReplaceTransitionActionStateValidationV0;
@@ -83,20 +82,6 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
         let document_type = contract_fetch_info
             .contract
             .document_type_for_name(document_type_name)?;
-
-        // A document whose type declares a `ttl` is no longer replaced once it has expired,
-        // judged from its own `$createdAt`, which the action carries unchanged.
-        let expiry_result = validate_document_not_expired(
-            contract_fetch_info.contract.id(),
-            document_type,
-            self.base().id(),
-            self.created_at(),
-            block_info,
-        );
-        if !expiry_result.is_valid() {
-            return Ok(expiry_result);
-        }
-
         let immutable_fields = document_type.immutable_fields();
         if !immutable_fields.is_empty() {
             let allow_setting = document_type.immutable_fields_allow_setting();

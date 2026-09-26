@@ -19,6 +19,9 @@ mod document_ttl_tests {
     use dpp::prelude::{DataContract, IdentityNonce};
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use drive::drive::document::expiration::paths::{
+        documents_expirations_path_vec, encode_expiration_time,
+    };
     use drive::drive::document::expiration::pricing::document_expiration_cleanup_fee;
     use drive::drive::RootTree;
     use drive::grovedb::Element;
@@ -421,7 +424,6 @@ mod document_ttl_tests {
                 .drive
                 .fetch_expired_documents(time_ms, 128, None, &mut vec![], PlatformVersion::latest())
                 .expect("expected to read the expirations")
-                .documents
                 .into_iter()
                 .map(|expired| expired.document_id)
                 .collect()
@@ -480,11 +482,18 @@ mod document_ttl_tests {
             &PlatformVersion::latest().fee_version,
         )
         .expect("expected the cleanup fee");
+        // The note's own processing, its bytes' hour of storage included, stays near the
+        // memo's; on top of it the note prepays its deletion. Drive's expiration tests pin
+        // the prepaid amount exactly.
+        let prepaid = note_fee
+            .processing_fee
+            .checked_sub(memo_fee.processing_fee)
+            .expect("the note pays more processing than the memo");
         assert!(
-            note_fee.processing_fee > memo_fee.processing_fee,
-            "the note prepays its deletion as processing"
+            prepaid.abs_diff(cleanup_fee) <= 100_000,
+            "the note prepays its deletion as processing: {prepaid} beyond the memo, the \
+             deletion costs {cleanup_fee}"
         );
-        assert!(note_fee.processing_fee - memo_fee.processing_fee <= cleanup_fee + 100_000);
         assert!(
             note_fee.total_base_fee() < memo_fee.total_base_fee(),
             "an hour of storage costs less than perpetual storage"
@@ -612,8 +621,19 @@ mod document_ttl_tests {
             fixture.expiring_at(u64::MAX).is_empty(),
             "the deletion removes the document's expirations tree entry"
         );
-
-        // The cleanup at its expiry finds only the emptied tree, and drops it.
-        fixture.expire(START_MS + HOUR_S * 1000);
+        // It was the last entry of its expiry time, so the tree of that time went with it.
+        let expiry_tree = fixture
+            .platform
+            .drive
+            .grove_get_raw_optional(
+                documents_expirations_path_vec().as_slice().into(),
+                &encode_expiration_time(START_MS + HOUR_S * 1000),
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &PlatformVersion::latest().drive,
+            )
+            .expect("expected to read the expirations tree");
+        assert!(expiry_tree.is_none());
     }
 }

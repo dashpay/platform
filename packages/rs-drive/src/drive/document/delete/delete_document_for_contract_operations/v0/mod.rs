@@ -242,6 +242,7 @@ impl Drive {
                 expires_at_ms,
                 entry_value_size,
                 estimated_costs_only_with_layer_info,
+                &previous_batch_operations,
                 transaction,
                 &mut batch_operations,
                 platform_version,

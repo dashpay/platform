@@ -18,7 +18,8 @@ pub const DEFAULT_QUERY_LIMIT: u16 = 100;
 pub const DEFAULT_MAX_QUERY_LIMIT: u16 = 100;
 /// Default maximum number of contracts in cache
 pub const DEFAULT_DATA_CONTRACTS_CACHE_SIZE: u64 = 500;
-/// The default length of an epoch in seconds, the node's `ExecutionConfig` default
+/// The default length of an epoch in seconds: mainnet's, and the node's `ExecutionConfig`
+/// default
 pub const DEFAULT_EPOCH_TIME_LENGTH_S: u64 = 788400;
 
 #[derive(Clone, Debug)]

@@ -386,14 +386,25 @@ where
         #[cfg(debug_assertions)]
         phases.end_phase("store_address_balances_to_recent_block_storage");
 
-        // Clean up expired compacted address balance entries, then delete documents whose time
-        // to live has passed (protocol version 14): after the block's state transitions, so
-        // every transition of the block still saw them, and before fees are processed and the
-        // app hash is taken.
-        self.clean_up_expired_state(&block_info, transaction, platform_version)?;
+        // Clean up expired compacted address balance entries
+        self.cleanup_recent_block_storage_address_balances(
+            &block_info,
+            transaction,
+            platform_version,
+        )?;
 
         #[cfg(debug_assertions)]
-        phases.end_phase("clean_up_expired_state");
+        phases.end_phase("cleanup_recent_block_storage_address_balances");
+
+        // Delete documents whose time to live has passed: after the block's state transitions,
+        // so every transition of the block still saw them, and before fees are processed and
+        // the app hash is taken. Added in place in this shipped generation: `expire_documents`
+        // is `None` in the method tables of every protocol version before 14, where the call
+        // returns without reading or writing anything.
+        self.expire_documents(&block_info, transaction, platform_version)?;
+
+        #[cfg(debug_assertions)]
+        phases.end_phase("expire_documents");
 
         // Record shielded pool anchor if the commitment tree changed this block.
         // This stores block_height → anchor_bytes so shielded transactions can

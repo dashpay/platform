@@ -32,7 +32,11 @@ impl Drive {
     /// index bound to the inserted document type through a refersTo
     /// declaration, the insert also creates that index's dynamic trees for
     /// entries referencing this document — see
-    /// `add_preallocated_index_tree_operations`. Everything else matches v0.
+    /// `add_preallocated_index_tree_operations`. It also handles document
+    /// types with a `ttl`: their documents are written without storage flags,
+    /// get an entry in the documents expirations tree, pay for their bytes by
+    /// the time they will live and prepay their deletion (see
+    /// `add_document_ttl_operations`). Everything else matches v0.
     #[inline(always)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_document_for_contract_operations_v1(
@@ -196,7 +200,6 @@ impl Drive {
             batch_operations = self.add_document_ttl_operations(
                 &document_and_contract_info,
                 ttl_seconds,
-                override_document,
                 block_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
@@ -231,15 +234,14 @@ impl Drive {
     /// `document_ttl_pricing`), and adds the processing its deletion will cost
     /// (`document_expiration_cleanup_fee`), paid now since nobody pays when it expires.
     ///
-    /// A dry run that overrides an existing document is the update path estimating a replace
-    /// through this insert (see `update_document_for_contract_operations`): a replace writes no
-    /// entry and prepays no deletion, so only the lifetime pricing applies to it.
+    /// A dry run estimates every change of a document as this insert, a replace included
+    /// (see `update_document_for_contract_operations`). The replace writes no entry and
+    /// prepays no deletion, so its estimate counts both anyway: an upper bound.
     #[allow(clippy::too_many_arguments)]
     fn add_document_ttl_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         ttl_seconds: u32,
-        override_document: bool,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -266,28 +268,25 @@ impl Drive {
             // A worst-case estimate without a document: it would be created now.
             None => (None, None),
         };
-        let estimates_a_replace =
-            override_document && estimated_costs_only_with_layer_info.is_some();
         let expires_at_ms =
             document_expires_at(created_at.unwrap_or(block_info.time_ms), ttl_seconds)?;
-        if !estimates_a_replace {
-            self.add_document_expiration_operations(
-                document_id,
-                &DocumentExpirationEntry {
-                    contract_id: contract.id(),
-                    document_type_name: document_type.name().clone(),
-                },
-                expires_at_ms,
-                estimated_costs_only_with_layer_info,
-                previous_batch_operations,
-                transaction,
-                &mut batch_operations,
-                platform_version,
-            )?;
-        }
+        self.add_document_expiration_operations(
+            document_id,
+            &DocumentExpirationEntry {
+                contract_id: contract.id(),
+                document_type_name: document_type.name().clone(),
+            },
+            expires_at_ms,
+            estimated_costs_only_with_layer_info,
+            previous_batch_operations,
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
 
         let pricing = document_ttl_pricing(
-            document_remaining_lifetime_ms(created_at, ttl_seconds, block_info.time_ms),
+            document_remaining_lifetime_ms(created_at, ttl_seconds, block_info.time_ms)?,
+            ttl_seconds,
             self.config.epoch_time_length_s,
             &platform_version.fee_version,
         )?;
@@ -295,15 +294,13 @@ impl Drive {
             .into_iter()
             .map(|operation| operation.retag_document_ttl(pricing))
             .collect();
-        if !estimates_a_replace {
-            batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(FeeResult {
-                processing_fee: document_expiration_cleanup_fee(
-                    document_type,
-                    &platform_version.fee_version,
-                )?,
-                ..Default::default()
-            }));
-        }
+        batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(FeeResult {
+            processing_fee: document_expiration_cleanup_fee(
+                document_type,
+                &platform_version.fee_version,
+            )?,
+            ..Default::default()
+        }));
         Ok(batch_operations)
     }
 }

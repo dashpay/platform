@@ -357,7 +357,8 @@ mod tests {
         assert_eq!(outcome.identities.len(), 100);
     }
 
-    #[tokio::test]
+    #[stack_size(4 * 1024 * 1024)]
+    #[test]
     async fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {

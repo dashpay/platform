@@ -11,21 +11,24 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
-    /// Gathers the operation removing a document's entry from the documents expirations tree.
-    /// The tree of its expiry time stays even when this empties it: the cleanup after a block's
-    /// state transitions drops the empty trees it reaches.
+    /// Gathers the operations removing a document's entry from the documents expirations
+    /// tree, and the tree of its expiry time with it when that was its last entry: no tree of
+    /// an expiry time is ever left empty, so every one the cleanup reads holds a document.
+    /// Entries the rest of the batch removes or adds under the same time count.
     ///
     /// # Parameters
     /// - `document_id`: the document's id.
     /// - `expires_at_ms`: when the document expires, the key of the tree holding its entry.
     /// - `entry_value_size`: the size of the entry's value, for a dry run.
-    /// - `estimated_costs_only_with_layer_info`: set in a dry run.
+    /// - `estimated_costs_only_with_layer_info`: set in a dry run, which prices the removal
+    ///   of the tree too.
+    /// - `check_existing_operations`: the operations of the rest of the batch.
     /// - `transaction`: the transaction to read in.
-    /// - `batch_operations`: receives the operation.
+    /// - `batch_operations`: receives the operations.
     /// - `platform_version`: selects the method version.
     ///
     /// # Returns
-    /// `Ok(())` once the operation is queued.
+    /// `Ok(())` once the operations are queued.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn remove_document_expiration_operations(
         &self,
@@ -35,6 +38,7 @@ impl Drive {
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        check_existing_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -51,6 +55,7 @@ impl Drive {
                 expires_at_ms,
                 entry_value_size,
                 estimated_costs_only_with_layer_info,
+                check_existing_operations,
                 transaction,
                 batch_operations,
                 platform_version,

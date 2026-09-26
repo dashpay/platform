@@ -38,11 +38,13 @@ impl Drive {
         // document row and its permanent index entries without their TTL'd
         // entries. Span them with one owned transaction instead and commit
         // only after every batch applied.
-        let batch_count = usize::from(!grove_db_operations.is_empty())
-            + ephemeral_batches
-                .iter()
-                .filter(|(_, operations)| !operations.is_empty())
-                .count();
+        //
+        // The split yields no empty ephemeral batch: each is opened by its first operation.
+        // One batch per pricing rule was added in place in this shipped generation: before
+        // protocol version 14 no operation is tagged ephemeral (neither a `timeRange` index's
+        // `ttl` nor a document type's `ttl` parses there), so the split yields the standing
+        // batch alone and it applies exactly as before.
+        let batch_count = usize::from(!grove_db_operations.is_empty()) + ephemeral_batches.len();
         let owned_transaction = (transaction.is_none()
             && estimated_costs_only_with_layer_info.is_none()
             && batch_count > 1)
@@ -64,9 +66,6 @@ impl Drive {
         for ((pricing, ephemeral_grove_db_operations), ephemeral_layer_info) in
             ephemeral_batches.into_iter().zip(ephemeral_layer_infos)
         {
-            if ephemeral_grove_db_operations.is_empty() {
-                continue;
-            }
             let mut ephemeral_cost_operations: Vec<LowLevelDriveOperation> = vec![];
             self.apply_batch_grovedb_operations(
                 ephemeral_layer_info,

@@ -853,10 +853,12 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use dpp::version::PlatformVersion;
+    use drive::drive::document::expiration::paths::DOCUMENTS_EXPIRATIONS_KEY;
     use drive::drive::shielded::paths::{
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
         SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
     };
+    use drive::util::grove_operations::DirectQueryType;
 
     /// Recursively compares the GroveDB subtree rooted at `root_path` between
     /// two platforms and returns a list of human-readable differences (empty ⇒
@@ -2137,11 +2139,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transition_to_version_14_creates_the_documents_expirations_tree() {
-        use drive::drive::document::expiration::paths::DOCUMENTS_EXPIRATIONS_KEY;
-        use drive::drive::system::misc_path;
-        use drive::util::grove_operations::DirectQueryType;
-
+    fn should_create_the_documents_expirations_tree_on_transition_to_version_14() {
         let platform_version = PlatformVersion::latest();
         let born_at_14 = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
