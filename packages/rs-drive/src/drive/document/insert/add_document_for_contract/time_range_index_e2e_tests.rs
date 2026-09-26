@@ -27,9 +27,11 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
+use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -4236,6 +4238,10 @@ fn ttl_index_bytes_bill_to_processing_without_refunds() {
     );
 
     let doc_id = make_doc().id();
+    // The standing twin's index bytes carry owner flags, so pricing their
+    // removal needs the fee history of the removing block, as every
+    // production caller passes.
+    let fee_history: CachedEpochIndexFeeVersions = BTreeMap::from([(0, FeeVersion::first())]);
     let delete = |contract: &DataContract| -> FeeResult {
         drive
             .delete_document_for_contract(
@@ -4246,7 +4252,7 @@ fn ttl_index_bytes_bill_to_processing_without_refunds() {
                 true,
                 None,
                 platform_version,
-                None,
+                Some(&fee_history),
             )
             .expect("delete document")
     };

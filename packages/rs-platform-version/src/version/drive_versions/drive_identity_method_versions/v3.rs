@@ -1,0 +1,188 @@
+use crate::version::drive_versions::drive_identity_method_versions::{
+    DriveIdentityContractInfoMethodVersions, DriveIdentityCostEstimationMethodVersions,
+    DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchFullIdentityMethodVersions,
+    DriveIdentityFetchMethodVersions, DriveIdentityFetchPartialIdentityMethodVersions,
+    DriveIdentityFetchPublicKeyHashesMethodVersions, DriveIdentityInsertMethodVersions,
+    DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysBudgetMethodVersions,
+    DriveIdentityKeysFetchMethodVersions, DriveIdentityKeysInsertMethodVersions,
+    DriveIdentityKeysMethodVersions, DriveIdentityKeysProveMethodVersions,
+    DriveIdentityMethodVersions, DriveIdentityProveMethodVersions,
+    DriveIdentityUpdateMethodVersions, DriveIdentityWithdrawalDocumentMethodVersions,
+    DriveIdentityWithdrawalMethodVersions, DriveIdentityWithdrawalTransactionIndexMethodVersions,
+    DriveIdentityWithdrawalTransactionMethodVersions,
+    DriveIdentityWithdrawalTransactionQueueMethodVersions,
+};
+
+/// V3 is protocol version 15's identity-method table. It differs from V2 in
+/// one slot:
+///
+/// * `update.credit_storage_refunds_to_owners` `None -> Some(0)`: the
+///   primitive that credits each recorded owner of a storage refund and
+///   reports the amount whose owner has no balance element, so a block
+///   lifecycle path (or, later, the state transition refund path) can route
+///   that amount to the current epoch's processing pool instead of halting.
+///   No key or permission is consulted on any route: a frozen but existing
+///   owner is credited, an owner without a balance is settled into the pool.
+///   Nothing before v15 settles refunds outside a state transition, so V1 and
+///   V2 keep the slot `None`.
+pub const DRIVE_IDENTITY_METHOD_VERSIONS_V3: DriveIdentityMethodVersions =
+    DriveIdentityMethodVersions {
+        fetch: DriveIdentityFetchMethodVersions {
+            public_key_hashes: DriveIdentityFetchPublicKeyHashesMethodVersions {
+                fetch_full_identities_by_unique_public_key_hashes: 0,
+                fetch_full_identity_by_unique_public_key_hash: 0,
+                fetch_identity_id_by_unique_public_key_hash: 0,
+                fetch_identity_ids_by_non_unique_public_key_hash: 0,
+                fetch_identity_ids_by_unique_public_key_hashes: 0,
+                fetch_serialized_full_identity_by_unique_public_key_hash: 0,
+                has_any_of_unique_public_key_hashes: 0,
+                has_non_unique_public_key_hash: 0,
+                has_non_unique_public_key_hash_already_for_identity: 0,
+                has_unique_public_key_hash: 0,
+                fetch_full_identity_by_non_unique_public_key_hash: 0,
+            },
+            attributes: DriveIdentityFetchAttributesMethodVersions {
+                revision: 0,
+                nonce: 0,
+                identity_contract_nonce: 0,
+                balance: 0,
+                balance_include_debt: 0,
+                negative_balance: 0,
+            },
+            partial_identity: DriveIdentityFetchPartialIdentityMethodVersions {
+                fetch_identity_revision_with_keys: 0,
+                fetch_identity_balance_with_keys: 0,
+                fetch_identity_balance_with_keys_and_revision: 0,
+                fetch_identity_with_balance: 0,
+                fetch_identity_keys: 0,
+            },
+            full_identity: DriveIdentityFetchFullIdentityMethodVersions {
+                fetch_full_identity: Some(0),
+                fetch_full_identities: Some(0),
+            },
+        },
+        prove: DriveIdentityProveMethodVersions {
+            full_identity: 0,
+            full_identities: 0,
+            identity_nonce: 0,
+            identity_contract_nonce: 0,
+            identities_contract_keys: 0,
+            prove_full_identities_by_unique_public_key_hashes: 0,
+            prove_full_identity_by_unique_public_key_hash: 0,
+            prove_identity_id_by_unique_public_key_hash: 0,
+            prove_identity_ids_by_unique_public_key_hashes: 0,
+            prove_full_identity_by_non_unique_public_key_hash: 0,
+        },
+        keys: DriveIdentityKeysMethodVersions {
+            fetch: DriveIdentityKeysFetchMethodVersions {
+                fetch_all_current_identity_keys: 0,
+                fetch_all_identity_keys: 0,
+                fetch_identities_all_keys: 0,
+                fetch_identity_keys: 0,
+                fetch_identities_contract_keys: 0,
+            },
+            prove: DriveIdentityKeysProveMethodVersions {
+                prove_identities_all_keys: 0,
+                prove_identity_keys: 0,
+            },
+            insert: DriveIdentityKeysInsertMethodVersions {
+                create_key_tree_with_keys: 0,
+                create_new_identity_key_query_trees: 0,
+                insert_key_searchable_references: 0,
+                insert_key_to_storage: 0,
+                insert_new_non_unique_key: 1,
+                insert_new_unique_key: 1,
+                replace_key_in_storage: 0,
+            },
+            insert_key_hash_identity_reference:
+                DriveIdentityKeyHashesToIdentityInsertMethodVersions {
+                    add_estimation_costs_for_insert_non_unique_public_key_hash_reference: 0,
+                    add_estimation_costs_for_insert_unique_public_key_hash_reference: 0,
+                    insert_non_unique_public_key_hash_reference_to_identity: 0,
+                    insert_reference_to_non_unique_key: 0,
+                    insert_reference_to_unique_key: 0,
+                    insert_unique_public_key_hash_reference_to_identity: 0,
+                },
+            budget: DriveIdentityKeysBudgetMethodVersions {
+                insert_identity_key_budget: Some(0),
+                fetch_identity_key_remaining_budget: Some(0),
+                deduct_from_identity_key_budget: Some(0),
+                add_estimation_costs_for_key_budgets: Some(0),
+                fetch_identity_keys_remaining_budgets: Some(0),
+                prove_identity_keys_remaining_budgets: Some(0),
+                add_to_identity_key_budget: Some(0),
+            },
+        },
+        update: DriveIdentityUpdateMethodVersions {
+            update_identity_revision: 0,
+            merge_identity_nonce: 0,
+            update_identity_negative_credit_operation: 0,
+            initialize_identity_revision: 0,
+            disable_identity_keys: 1,
+            re_enable_identity_keys: 0,
+            add_new_non_unique_keys_to_identity: 0,
+            add_new_unique_keys_to_identity: 0,
+            add_new_keys_to_identity: 0,
+            insert_identity_balance: 0,
+            initialize_negative_identity_balance: 0,
+            add_to_identity_balance: 0,
+            add_to_previous_balance: 0,
+            apply_balance_change_from_fee_to_identity: 0,
+            remove_from_identity_balance: 0,
+            refresh_identity_key_reference_operations: 0,
+            update_identity_key_limits: Some(0),
+            credit_storage_refunds_to_owners: Some(0), // new in v15: credits recorded refund owners, reports the unrouted amount for the processing pool
+        },
+        insert: DriveIdentityInsertMethodVersions {
+            add_new_identity: 0,
+        },
+        contract_info: DriveIdentityContractInfoMethodVersions {
+            add_potential_contract_info_for_contract_bounded_key: 1,
+            refresh_potential_contract_info_key_references: 1,
+            merge_identity_contract_nonce: 0,
+        },
+        cost_estimation: DriveIdentityCostEstimationMethodVersions {
+            for_authentication_keys_security_level_in_key_reference_tree: 0,
+            for_balances: 0,
+            for_token_balances: 0,
+            for_token_total_supply: 0,
+            for_contract_info: 0,
+            for_contract_info_group: 0,
+            for_contract_info_group_keys: 0,
+            for_contract_info_group_key_purpose: 0,
+            for_keys_for_identity_id: 0,
+            for_negative_credit: 0,
+            for_purpose_in_key_reference_tree: 0,
+            for_root_key_reference_tree: 0,
+            for_update_revision: 0,
+            for_token_identity_infos: 0,
+            for_token_perpetual_distribution: 0,
+            for_token_once_per_identity_distribution: 0,
+            for_token_pre_programmed_distribution: 0,
+            for_root_token_ms_interval_distribution: 0,
+            for_token_selling_prices: 0,
+            for_token_contract_infos: 0,
+        },
+        withdrawals: DriveIdentityWithdrawalMethodVersions {
+            document: DriveIdentityWithdrawalDocumentMethodVersions {
+                fetch_oldest_withdrawal_documents_by_status: 0,
+                find_withdrawal_documents_by_status_and_transaction_indices: 1,
+            },
+            transaction: DriveIdentityWithdrawalTransactionMethodVersions {
+                index: DriveIdentityWithdrawalTransactionIndexMethodVersions {
+                    fetch_next_withdrawal_transaction_index: 0,
+                    add_update_next_withdrawal_transaction_index_operation: 0,
+                },
+                queue: DriveIdentityWithdrawalTransactionQueueMethodVersions {
+                    add_enqueue_untied_withdrawal_transaction_operations: 0,
+                    dequeue_untied_withdrawal_transactions: 0,
+                    remove_broadcasted_withdrawal_transactions_after_completion_operations: 0,
+                    move_broadcasted_withdrawal_transactions_back_to_queue_operations: 0,
+                },
+            },
+            calculate_current_withdrawal_limit: 1, // changed in v14: daily maximum is a percentage of the total credits a day ago plus the credit inflows of the last 25 hours
+            record_total_credits_history: Some(0), // new in v14: total credits history for the day-lagged daily withdrawal limit
+            fetch_total_credits_in_platform_a_day_ago: Some(0), // new in v14
+            record_credit_inflows: Some(0), // new in v14: credit inflows sum tree for the net daily withdrawal limit
+        },
+    };

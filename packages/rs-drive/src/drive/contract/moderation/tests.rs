@@ -6,6 +6,10 @@ use crate::drive::contract::paths::{
     CONTRACT_VERSION_KEY, CONTRACT_WARNINGS_KEY,
 };
 use crate::drive::{Drive, RootTree};
+use crate::error::drive::DriveError;
+use crate::error::Error;
+use crate::util::batch::drive_op_batch::ContractModerationOperationType;
+use crate::util::batch::DriveOperation;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
@@ -17,10 +21,14 @@ use dpp::data_contract::config::moderation::{
     ContractWarning,
 };
 use dpp::data_contract::DataContract;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
+use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::tests::fixtures::get_data_contract_fixture;
+use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 use grovedb::Element;
+use std::collections::BTreeMap;
 
 fn reason(text: &str) -> ContractModerationReason {
     ContractModerationReason::from_text(text)
@@ -88,6 +96,121 @@ fn insert(drive: &Drive, contract: &DataContract, platform_version: &PlatformVer
     drive
         .insert_contract(contract, BlockInfo::default(), true, None, platform_version)
         .expect("expected to insert the contract");
+}
+
+/// Removing an entry, or replacing one with a shorter reason, frees bytes flagged with the
+/// moderator that paid for them, and pricing that removal needs the fee history of the
+/// removing block. Production applies moderation through `apply_drive_operations`, which
+/// forwards the block's history; the tests below take the same funnel for those calls.
+fn fee_history() -> CachedEpochIndexFeeVersions {
+    BTreeMap::from([(0, FeeVersion::first())])
+}
+
+fn apply_moderation(
+    drive: &Drive,
+    operation: ContractModerationOperationType,
+    block_info: &BlockInfo,
+    apply: bool,
+    platform_version: &PlatformVersion,
+) -> Result<FeeResult, Error> {
+    let history = fee_history();
+    drive.apply_drive_operations(
+        vec![DriveOperation::ContractModerationOperation(operation)],
+        apply,
+        block_info,
+        None,
+        platform_version,
+        Some(&history),
+    )
+}
+
+fn unban(
+    drive: &Drive,
+    contract_id: Identifier,
+    identity_id: Identifier,
+    block_info: &BlockInfo,
+    apply: bool,
+    platform_version: &PlatformVersion,
+) -> Result<FeeResult, Error> {
+    apply_moderation(
+        drive,
+        ContractModerationOperationType::RemoveBan {
+            contract_id,
+            identity_id,
+        },
+        block_info,
+        apply,
+        platform_version,
+    )
+}
+
+fn unsuspend(
+    drive: &Drive,
+    contract_id: Identifier,
+    identity_id: Identifier,
+    block_info: &BlockInfo,
+    apply: bool,
+    platform_version: &PlatformVersion,
+) -> Result<FeeResult, Error> {
+    apply_moderation(
+        drive,
+        ContractModerationOperationType::RemoveSuspension {
+            contract_id,
+            identity_id,
+        },
+        block_info,
+        apply,
+        platform_version,
+    )
+}
+
+fn unwarn(
+    drive: &Drive,
+    contract_id: Identifier,
+    identity_id: Identifier,
+    block_info: &BlockInfo,
+    apply: bool,
+    platform_version: &PlatformVersion,
+) -> Result<FeeResult, Error> {
+    apply_moderation(
+        drive,
+        ContractModerationOperationType::RemoveWarnings {
+            contract_id,
+            identity_id,
+        },
+        block_info,
+        apply,
+        platform_version,
+    )
+}
+
+/// Replaces the identity's existing suspension entry.
+#[allow(clippy::too_many_arguments)]
+fn resuspend(
+    drive: &Drive,
+    contract_id: Identifier,
+    identity_id: Identifier,
+    until: u64,
+    reason: &ContractModerationReason,
+    moderator_id: Identifier,
+    block_info: &BlockInfo,
+    apply: bool,
+    platform_version: &PlatformVersion,
+) -> Result<FeeResult, Error> {
+    apply_moderation(
+        drive,
+        ContractModerationOperationType::AddSuspension {
+            contract_id,
+            identity_id,
+            until,
+            reason: reason.clone(),
+            replaces_existing: true,
+            moderator_id,
+        },
+        block_info,
+        apply,
+        platform_version,
+    )
 }
 
 fn has_list_tree(drive: &Drive, contract_id: Identifier, key: u8) -> bool {
@@ -326,16 +449,15 @@ fn should_ban_and_unban_and_prove_the_status_and_the_entries() {
         }],
     );
 
-    let fee = drive
-        .remove_contract_ban(
-            contract_id,
-            target,
-            &BlockInfo::default(),
-            true,
-            None,
-            platform_version,
-        )
-        .expect("expected to unban");
+    let fee = unban(
+        &drive,
+        contract_id,
+        target,
+        &BlockInfo::default(),
+        true,
+        platform_version,
+    )
+    .expect("expected to unban");
     assert!(
         fee.fee_refunds
             .calculate_refunds_amount_for_identity(moderator)
@@ -433,16 +555,15 @@ fn should_suspend_replace_and_unsuspend() {
         }],
     );
 
-    drive
-        .remove_contract_suspension(
-            contract_id,
-            target,
-            &BlockInfo::default(),
-            true,
-            None,
-            platform_version,
-        )
-        .expect("expected to unsuspend");
+    unsuspend(
+        &drive,
+        contract_id,
+        target,
+        &BlockInfo::default(),
+        true,
+        platform_version,
+    )
+    .expect("expected to unsuspend");
     assert_status(
         &drive,
         contract_id,
@@ -523,48 +644,44 @@ fn should_estimate_before_applying_every_writer() {
         "suspension storage"
     );
 
-    let estimated = drive
-        .remove_contract_suspension(
-            contract_id,
-            target,
-            &block_info,
-            false,
-            None,
-            platform_version,
-        )
-        .expect("expected to estimate an unsuspend");
+    let estimated = unsuspend(
+        &drive,
+        contract_id,
+        target,
+        &block_info,
+        false,
+        platform_version,
+    )
+    .expect("expected to estimate an unsuspend");
     assert!(estimated.processing_fee > 0);
-    drive
-        .remove_contract_suspension(
-            contract_id,
-            target,
-            &block_info,
-            true,
-            None,
-            platform_version,
-        )
-        .expect("expected to unsuspend");
-    let estimated = drive
-        .remove_contract_ban(
-            contract_id,
-            target,
-            &block_info,
-            false,
-            None,
-            platform_version,
-        )
-        .expect("expected to estimate an unban");
+    unsuspend(
+        &drive,
+        contract_id,
+        target,
+        &block_info,
+        true,
+        platform_version,
+    )
+    .expect("expected to unsuspend");
+    let estimated = unban(
+        &drive,
+        contract_id,
+        target,
+        &block_info,
+        false,
+        platform_version,
+    )
+    .expect("expected to estimate an unban");
     assert!(estimated.processing_fee > 0);
-    drive
-        .remove_contract_ban(
-            contract_id,
-            target,
-            &block_info,
-            true,
-            None,
-            platform_version,
-        )
-        .expect("expected to unban");
+    unban(
+        &drive,
+        contract_id,
+        target,
+        &block_info,
+        true,
+        platform_version,
+    )
+    .expect("expected to unban");
     assert_status(
         &drive,
         contract_id,
@@ -678,24 +795,21 @@ fn should_refund_the_first_moderator_when_another_replaces_the_suspension() {
     // Another moderator, a later epoch, a reason of the same length. The entry keeps its size,
     // so the replacement stores nothing new, and the storage stays the first moderator's.
     let later = BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch 3"));
-    let fee = drive
-        .add_contract_suspension(
-            contract_id,
-            target,
-            20,
-            &reason("flooding"),
-            true,
-            second_moderator,
-            &later,
-            true,
-            None,
-            platform_version,
-        )
-        .expect("expected to replace the suspension");
+    let fee = resuspend(
+        &drive,
+        contract_id,
+        target,
+        20,
+        &reason("flooding"),
+        second_moderator,
+        &later,
+        true,
+        platform_version,
+    )
+    .expect("expected to replace the suspension");
     assert_eq!(fee.storage_fee, 0, "a same-size replacement stores nothing");
 
-    let fee = drive
-        .remove_contract_suspension(contract_id, target, &later, true, None, platform_version)
+    let fee = unsuspend(&drive, contract_id, target, &later, true, platform_version)
         .expect("expected to unsuspend");
     assert!(
         fee.fee_refunds
@@ -742,20 +856,18 @@ fn should_bill_the_replacing_moderator_for_a_longer_reason() {
     // the replacement does not fail on the two owners.
     let later = BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch 3"));
     let longer = reason(&"flooding ".repeat(40));
-    let second_fee = drive
-        .add_contract_suspension(
-            contract_id,
-            target,
-            20,
-            &longer,
-            true,
-            second_moderator,
-            &later,
-            true,
-            None,
-            platform_version,
-        )
-        .expect("expected to replace the suspension with a longer reason");
+    let second_fee = resuspend(
+        &drive,
+        contract_id,
+        target,
+        20,
+        &longer,
+        second_moderator,
+        &later,
+        true,
+        platform_version,
+    )
+    .expect("expected to replace the suspension with a longer reason");
     assert!(second_fee.storage_fee > 0, "the added bytes are stored");
     assert!(
         second_fee.storage_fee > first_fee.storage_fee,
@@ -777,8 +889,7 @@ fn should_bill_the_replacing_moderator_for_a_longer_reason() {
     );
 
     // The entry, and the refund of its removal, passed to the moderator that replaced it.
-    let fee = drive
-        .remove_contract_suspension(contract_id, target, &later, true, None, platform_version)
+    let fee = unsuspend(&drive, contract_id, target, &later, true, platform_version)
         .expect("expected to unsuspend");
     assert!(
         fee.fee_refunds
@@ -823,20 +934,18 @@ fn should_keep_a_shorter_replacement_with_the_first_moderator() {
     // Another moderator, a later epoch, a shorter reason: nothing is added, the removed bytes
     // go back to the moderator that paid for them, and the entry stays that moderator's.
     let later = BlockInfo::default_with_epoch(Epoch::new(3).expect("epoch 3"));
-    let fee = drive
-        .add_contract_suspension(
-            contract_id,
-            target,
-            20,
-            &reason("flooding"),
-            true,
-            second_moderator,
-            &later,
-            true,
-            None,
-            platform_version,
-        )
-        .expect("expected to replace the suspension with a shorter reason");
+    let fee = resuspend(
+        &drive,
+        contract_id,
+        target,
+        20,
+        &reason("flooding"),
+        second_moderator,
+        &later,
+        true,
+        platform_version,
+    )
+    .expect("expected to replace the suspension with a shorter reason");
     assert_eq!(fee.storage_fee, 0, "a shorter replacement stores nothing");
     assert!(
         fee.fee_refunds
@@ -856,8 +965,7 @@ fn should_keep_a_shorter_replacement_with_the_first_moderator() {
         suspended_until(20, "flooding"),
     );
 
-    let fee = drive
-        .remove_contract_suspension(contract_id, target, &later, true, None, platform_version)
+    let fee = unsuspend(&drive, contract_id, target, &later, true, platform_version)
         .expect("expected to unsuspend");
     assert!(
         fee.fee_refunds
@@ -888,20 +996,35 @@ fn should_not_estimate_a_replacement_below_what_it_costs() {
         let moderator = contract.owner_id();
         let target = identity(0x54);
         let suspend = |until: u64, length: usize, replaces_existing: bool, apply: bool| {
-            drive
-                .add_contract_suspension(
+            if replaces_existing {
+                resuspend(
+                    &drive,
                     contract_id,
                     target,
                     until,
                     &reason(&"x".repeat(length)),
-                    replaces_existing,
                     moderator,
                     &BlockInfo::default(),
                     apply,
-                    None,
                     platform_version,
                 )
-                .expect("expected to suspend")
+                .expect("expected to replace the suspension")
+            } else {
+                drive
+                    .add_contract_suspension(
+                        contract_id,
+                        target,
+                        until,
+                        &reason(&"x".repeat(length)),
+                        false,
+                        moderator,
+                        &BlockInfo::default(),
+                        apply,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to suspend")
+            }
         };
 
         suspend(10, from, false, true);
@@ -1133,8 +1256,7 @@ fn should_warn_accumulate_clear_and_prove_the_status_and_the_entries() {
         }],
     );
 
-    let fee = drive
-        .remove_contract_warnings(contract_id, target, &later, true, None, platform_version)
+    let fee = unwarn(&drive, contract_id, target, &later, true, platform_version)
         .expect("expected to clear the warnings");
     assert!(
         fee.fee_refunds
@@ -1309,4 +1431,181 @@ fn should_keep_the_documents_on_top_of_the_contract_subtree_and_the_banlist_on_t
             "banlist {banlist}, suspensions {suspensions}, warnings {warnings}"
         );
     }
+}
+
+#[test]
+fn should_leave_a_ban_in_place_when_the_bare_wrapper_cannot_price_its_removal() {
+    // The bare wrapper passes no fee history. Removing a moderator-flagged entry
+    // needs it from protocol version 15, and the wrapper now prices before it commits
+    // its owned transaction, so the rejected removal leaves the entry exactly as it
+    // was. The frozen generation at protocol version 14 still prices and removes it.
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = moderated_contract_keeping(true, true, true);
+    insert(&drive, &contract, platform_version);
+    let contract_id = contract.id();
+    let moderator = contract.owner_id();
+    let target = identity(0x61);
+
+    drive
+        .add_contract_ban(
+            contract_id,
+            target,
+            &reason("spam"),
+            moderator,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to ban");
+    drive
+        .add_contract_suspension(
+            contract_id,
+            target,
+            10,
+            &reason("flooding"),
+            false,
+            moderator,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to suspend");
+    drive
+        .add_contract_warning(
+            contract_id,
+            target,
+            &[warning(1, "spam")],
+            false,
+            moderator,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to warn");
+    let before = root_hash(&drive, platform_version);
+
+    for result in [
+        drive.remove_contract_warnings(
+            contract_id,
+            target,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        ),
+        drive.remove_contract_ban(
+            contract_id,
+            target,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        ),
+        drive.remove_contract_suspension(
+            contract_id,
+            target,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        ),
+        drive.add_contract_suspension(
+            contract_id,
+            target,
+            20,
+            &reason("f"),
+            true,
+            moderator,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        ),
+    ] {
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "freeing flagged bytes without a fee history must be rejected, got {:?}",
+            result
+        );
+    }
+    assert_eq!(
+        root_hash(&drive, platform_version),
+        before,
+        "a rejected removal must not persist"
+    );
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &[
+            ContractModerationList::Banlist,
+            ContractModerationList::Suspensions,
+            ContractModerationList::Warnings,
+        ],
+        ContractModerationStatus {
+            ban: Some(ContractBan {
+                reason: reason("spam"),
+            }),
+            suspension: Some(ContractSuspension {
+                until: 10,
+                reason: reason("flooding"),
+            }),
+            warnings: vec![warning(1, "spam")],
+        },
+    );
+
+    // Estimation writes nothing and needs no history at any version.
+    let estimated = drive
+        .remove_contract_ban(
+            contract_id,
+            target,
+            &BlockInfo::default(),
+            false,
+            None,
+            platform_version,
+        )
+        .expect("expected to estimate an unban");
+    assert!(estimated.processing_fee > 0);
+    assert_eq!(root_hash(&drive, platform_version), before);
+
+    let frozen_platform_version = PlatformVersion::get(14).expect("protocol version 14");
+    let drive = setup_drive_with_initial_state_structure(Some(frozen_platform_version));
+    let contract = moderated_contract(true, false);
+    insert(&drive, &contract, frozen_platform_version);
+    drive
+        .add_contract_ban(
+            contract.id(),
+            target,
+            &reason("spam"),
+            contract.owner_id(),
+            &BlockInfo::default(),
+            true,
+            None,
+            frozen_platform_version,
+        )
+        .expect("expected to ban");
+    drive
+        .remove_contract_ban(
+            contract.id(),
+            target,
+            &BlockInfo::default(),
+            true,
+            None,
+            frozen_platform_version,
+        )
+        .expect("protocol version 14 prices the shipped shortcut without a history");
+    assert_status(
+        &drive,
+        contract.id(),
+        target,
+        &[ContractModerationList::Banlist],
+        ContractModerationStatus::default(),
+    );
 }

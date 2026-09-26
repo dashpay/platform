@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::util::storage_flags::StorageFlags;
 
@@ -68,9 +69,21 @@ impl Drive {
                 platform_version,
                 previous_fee_versions,
             ),
+            1 => self.update_document_for_contract_v1(
+                document,
+                contract,
+                document_type,
+                owner_id,
+                block_info,
+                apply,
+                storage_flags,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_document_for_contract".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

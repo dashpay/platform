@@ -74,7 +74,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::Document;
+    use dpp::document::{Document, DocumentV0Getters};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::identifier::Identifier;
@@ -856,6 +856,172 @@ mod tests {
                 Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to be able to delete the document");
+    }
+
+    /// Deleting an owner-flagged document without the fee history is rejected from
+    /// protocol version 15, and the public wrapper, owning its transaction when the caller
+    /// passes none, rejects it before anything is written: the document is still there and
+    /// the root hash is unchanged. Protocol version 14 still deletes it.
+    #[test]
+    fn should_leave_a_document_in_place_when_the_wrapper_cannot_price_its_removal() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-reduced.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(platform_version),
+        );
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+        let owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, owner_id)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: Some(owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+        let root_hash = |drive: &Drive| {
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected a root hash")
+        };
+        let before = root_hash(&drive);
+
+        let result = drive.delete_document_for_contract(
+            person_document.id(),
+            &contract,
+            "person",
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "deleting owner-flagged bytes without a fee history must be rejected, got {:?}",
+            result
+        );
+        assert_eq!(
+            root_hash(&drive),
+            before,
+            "a rejected delete must not persist"
+        );
+        let query = DriveDocumentQuery::from_sql_expr(
+            "select * from person where firstName = 'Samuel' order by firstName asc limit 100",
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+        assert_eq!(results.len(), 1, "the document is still there");
+
+        // The same delete with the block's history is priced, refunds the owner and commits.
+        let fee_result = drive
+            .delete_document_for_contract(
+                person_document.id(),
+                &contract,
+                "person",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect("expected to delete the document with the fee history");
+        assert!(fee_result.fee_refunds.get(&owner_id).is_some());
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+        assert!(results.is_empty(), "the delete was committed");
+
+        // Protocol version 14 prices the shipped shortcut without a history and commits.
+        let frozen_platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(frozen_platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-reduced.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(frozen_platform_version),
+        );
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(owner_id.into()),
+            document_type,
+            frozen_platform_version,
+        )
+        .expect("expected to get document");
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, owner_id)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: Some(owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                frozen_platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+        drive
+            .delete_document_for_contract(
+                person_document.id(),
+                &contract,
+                "person",
+                BlockInfo::default(),
+                true,
+                None,
+                frozen_platform_version,
+                None,
+            )
+            .expect("protocol version 14 prices the shipped shortcut without a history");
     }
 
     #[test]
