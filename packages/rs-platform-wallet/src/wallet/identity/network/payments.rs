@@ -1753,6 +1753,7 @@ mod tests {
     //! 3. Reconcile must be idempotent and never clobber an existing
     //!    entry for the same txid.
 
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
@@ -3787,6 +3788,199 @@ mod tests {
             1_560_740,
             "rebuilding every outbound account on a cold start must leave the cursor at the tip"
         );
+    }
+
+    /// Contacts discovered only after the scan has passed their request
+    /// heights. Registration never moves the cursor on this tree; the
+    /// reconcile pass then rewinds exactly once and writes the record with
+    /// the real pair — the floor and the cursor it rewound from — on the
+    /// round that lowers the cursor. A kill mid-climb then resumes from the
+    /// persisted cursor: the drain's re-registrations are no-ops, the pass
+    /// has nothing to build, the reconcile does not rewind, and the record
+    /// still reads pending with its pair intact.
+    #[tokio::test]
+    async fn late_discovered_contacts_rewind_once_and_a_mid_climb_kill_resumes_from_the_cursor() {
+        use crate::wallet::identity::network::contact_requests::external_account_needs_rebuild;
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contacts: Vec<Identifier> = (1..=8u8).map(|b| Identifier::from([b; 32])).collect();
+        let shared_key = [0x55u8; 32];
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                .expect("add owner");
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed");
+            for (i, contact) in contacts.iter().enumerate() {
+                let height = 1_226_329 + (i as u32) * 5_000;
+                let outgoing =
+                    ContactRequest::new(owner, *contact, 0, 0, 0, vec![0u8; 96], height, 0);
+                let ciphertext = encrypted_contact_xpub(&owner, contact, &shared_key);
+                let incoming = ContactRequest::new(*contact, owner, 0, 0, 7, ciphertext, height, 0);
+                managed.apply_established_contact(EstablishedContact::new(
+                    *contact, outgoing, incoming,
+                ));
+            }
+        }
+        // The scan is already at the tip when the contacts are discovered.
+        set_synced_height(&manager, wallet_id, 1_560_731).await;
+        persister.stores.lock().unwrap().clear();
+
+        let mut lowering_rounds = 0usize;
+        for contact in &contacts {
+            let before = persister.stores.lock().unwrap().len();
+            iw.dashpay()
+                .register_contact_account(&owner, contact, 0, test_receiving_xpub(&owner, contact))
+                .await
+                .expect("register receival");
+            let encrypted = encrypted_contact_xpub(&owner, contact, &shared_key);
+            iw.dashpay()
+                .register_external_contact_account(
+                    &owner,
+                    &bare_identity(contact.to_buffer()),
+                    &encrypted,
+                    zeroize::Zeroizing::new(shared_key),
+                )
+                .await
+                .expect("register outbound");
+            iw.dashpay()
+                .note_external_account_registered(&owner, contact, &encrypted)
+                .await;
+            let stores = persister.stores.lock().unwrap();
+            lowering_rounds += stores[before..]
+                .iter()
+                .filter(|(_, cs)| {
+                    cs.core
+                        .as_ref()
+                        .and_then(|core| core.synced_height)
+                        .is_some()
+                })
+                .count();
+        }
+        assert_eq!(
+            lowering_rounds, 0,
+            "registration never moves the cursor on this tree"
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 1_560_731);
+        // The reconcile pass is what rewinds: once, to the earliest request
+        // height, recording every contact on the round that lowers the cursor.
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile"),
+            Some(1_226_329)
+        );
+        assert_eq!(synced_height(&manager, wallet_id).await, 1_226_329);
+        {
+            let stores = persister.stores.lock().unwrap();
+            let lowering = stores
+                .iter()
+                .find(|(_, cs)| {
+                    cs.core
+                        .as_ref()
+                        .and_then(|core| core.synced_height)
+                        .is_some()
+                })
+                .map(|(_, cs)| cs)
+                .expect("the lowering round");
+            assert_eq!(
+                lowering.core.as_ref().and_then(|core| core.synced_height),
+                Some(1_226_329)
+            );
+            let record = lowering
+                .dashpay_backfill
+                .as_ref()
+                .expect("the lowering round carries the record");
+            assert_eq!(
+                (record.floor, record.rewound_from),
+                (1_226_329, 1_560_731),
+                "the real pair: the floor and the cursor it rewound from"
+            );
+            // The last record written covers every contact, pair unchanged.
+            let last = last_stored_record(&stores)
+                .unwrap()
+                .dashpay_backfill
+                .as_ref()
+                .unwrap();
+            assert_eq!((last.floor, last.rewound_from), (1_226_329, 1_560_731));
+            for contact in &contacts {
+                assert!(last.covered_from(&owner, contact).is_some());
+            }
+        }
+
+        // Killed mid-climb: the host persisted the cursor at 1_400_000.
+        let snapshot = reload_snapshot(&manager, wallet_id, owner, 1_400_000, None).await;
+        let (restarted, restarted_persister, _) = reload(snapshot).await;
+        let restored = restarted.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let wm = restarted.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let managed = info.identity_manager.managed_identity(&owner).unwrap();
+            for contact in &contacts {
+                assert!(!external_account_needs_rebuild(
+                    &managed.dashpay().established_contacts()[contact],
+                    true
+                ));
+            }
+            assert!(
+                crate::wallet::identity::network::dashpay_view::DashPayView::<
+                    crate::broadcaster::SpvBroadcaster,
+                >::collect_account_build_candidates(info, &owner)
+                .is_empty()
+            );
+            assert!(info.dashpay_backfill.is_pending(1_400_000));
+        }
+        // A drain that re-registers anyway is a no-op on accounts on file.
+        for contact in &contacts {
+            restored
+                .identity()
+                .dashpay()
+                .register_contact_account(&owner, contact, 0, test_receiving_xpub(&owner, contact))
+                .await
+                .expect("idempotent re-registration");
+        }
+        assert_eq!(
+            restored
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile"),
+            None
+        );
+        assert_eq!(
+            synced_height_of(&restarted, wallet_id).await,
+            1_400_000,
+            "the climb resumes from the persisted cursor"
+        );
+        assert!(
+            restarted_persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(_, cs)| cs
+                    .core
+                    .as_ref()
+                    .and_then(|core| core.synced_height)
+                    .is_none()),
+            "nothing lowers the cursor on the cold start"
+        );
+        let wm = restarted.wallet_manager.read().await;
+        let record = &wm.get_wallet_info(&wallet_id).unwrap().dashpay_backfill;
+        assert_eq!((record.floor, record.rewound_from), (1_226_329, 1_560_731));
+        assert!(record.is_pending(1_400_000));
+        assert!(record.is_complete(1_560_731));
     }
 
     async fn synced_height_of(
