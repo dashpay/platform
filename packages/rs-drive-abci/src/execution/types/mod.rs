@@ -1,3 +1,5 @@
+/// The per-block ledger of smart-contract computation
+pub mod block_computation_budget;
 /// The block execution context
 pub mod block_execution_context;
 /// A structure representing block fees
