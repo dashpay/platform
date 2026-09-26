@@ -68,6 +68,12 @@ use crate::version::system_limits::SystemLimits;
 ///   (`max_property_constraint_nodes`), both backfilled into the earlier tables, whose
 ///   parsers never read them. The rules read no state, so these two bound the arithmetic
 ///   one document write causes.
+/// * Document expiry (protocol version 14): a document type may declare a `ttl` of at least
+///   one hour (`min_document_ttl_seconds`) and at most one year (`max_document_ttl_seconds`),
+///   and the platform deletes at most 128 expired documents per block
+///   (`max_document_expirations_per_block`), all joined this table in place while protocol
+///   version 14 was unreleased. `None` or 0 in the earlier tables, whose parsers never read
+///   the keyword and whose blocks never run the cleanup.
 /// * Moderation charters (protocol version 14): an elected moderation declaration lets a
 ///   seated team's leader add at most 15 members (`max_contract_moderation_added_moderators`),
 ///   which joined this table in place while protocol version 14 was unreleased. A charter's
@@ -125,5 +131,8 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_time_range_overlap_factor: Some(24),
     max_time_range_ttl_seconds: Some(604_800), // one week
     min_time_range_ttl_drop_operations_per_write: Some(32),
+    min_document_ttl_seconds: Some(3_600), // document ttl (new in v14): one hour
+    max_document_ttl_seconds: Some(31_536_000), // document ttl (new in v14): one year of 365 days
+    max_document_expirations_per_block: 128, // document ttl (new in v14): expired documents deleted per block
     minimum_grovedb_proof_envelope_version: 1, // clients reject legacy V0 GroveDB proof envelopes from v14
 };

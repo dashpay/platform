@@ -66,6 +66,14 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate that the type keeps its time to live (the keyword arrives with
+        // protocol version 14, the only version selecting this generation)
+        let result = self.validate_documents_ttl_unchanged(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate that index definitions are unchanged
         let result = self.validate_index_definitions_unchanged(new_document_type);
 
@@ -306,6 +314,43 @@ impl DocumentTypeRef<'_> {
                     "document type can not change whether its documents can be deleted by moderators: changing from {} to {}",
                     self.documents_can_be_deleted_by_moderators(),
                     new_document_type.documents_can_be_deleted_by_moderators()
+                ),
+            )
+            .into(),
+        )
+    }
+
+    /// A document type's time to live is fixed when the type is created. Every document
+    /// already stored has its expiry indexed from the time to live it was written with, and
+    /// paid for that lifetime: adding a `ttl` would leave the stored documents without an
+    /// entry the cleanup could find, removing it would leave entries deleting documents
+    /// the type says live forever, and changing it would move expiries nobody paid for.
+    /// The schema compatibility differ has no rule for the key, so this check has to run
+    /// before it. A document type added by an update declares `ttl` freely.
+    fn validate_documents_ttl_unchanged(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        let (old_ttl, new_ttl) = (
+            self.documents_ttl_seconds(),
+            new_document_type.documents_ttl_seconds(),
+        );
+        if old_ttl == new_ttl {
+            return SimpleConsensusValidationResult::new();
+        }
+        let describe = |ttl: Option<u32>| {
+            ttl.map_or("no time to live".to_string(), |seconds| {
+                format!("{seconds} seconds")
+            })
+        };
+        SimpleConsensusValidationResult::new_with_error(
+            DocumentTypeUpdateError::new(
+                self.data_contract_id(),
+                self.name(),
+                format!(
+                    "document type can not change the time to live of its documents: changing from {} to {}",
+                    describe(old_ttl),
+                    describe(new_ttl)
                 ),
             )
             .into(),
@@ -731,6 +776,77 @@ mod tests {
                 .expect("validate_update should not error");
             let expected = format!(
                 "document type can not change for how long after a document's last modification moderators can delete it: changing from {from} to {to}"
+            );
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message() == expected
+            );
+        }
+
+        // Unchanged, it passes.
+        let result = make_document_type(Some(86400))
+            .as_ref()
+            .validate_update(
+                make_document_type(Some(86400)).as_ref(),
+                2,
+                platform_version,
+            )
+            .expect("validate_update should not error");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn should_return_invalid_result_when_the_time_to_live_is_changed() {
+        let platform_version = PlatformVersion::latest();
+        let data_contract_id = Identifier::random();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        let make_document_type = |ttl: Option<u32>| {
+            let mut schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                },
+                "required": ["$createdAt"],
+                "additionalProperties": false,
+            });
+            if let Some(seconds) = ttl {
+                schema
+                    .insert("ttl".to_string(), seconds.into())
+                    .expect("expected to set the time to live");
+            }
+            DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                "note",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("document type should parse")
+        };
+
+        // Stored documents carry the expiry they were written and paid with: adding,
+        // removing, lengthening and shortening the time to live are all refused, before the
+        // schema compatibility differ, which has no rule for the key.
+        for (old_ttl, new_ttl, from, to) in [
+            (Some(86400), Some(172800), "86400 seconds", "172800 seconds"),
+            (Some(86400), Some(3600), "86400 seconds", "3600 seconds"),
+            (Some(86400), None, "86400 seconds", "no time to live"),
+            (None, Some(86400), "no time to live", "86400 seconds"),
+        ] {
+            let result = make_document_type(old_ttl)
+                .as_ref()
+                .validate_update(make_document_type(new_ttl).as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            let expected = format!(
+                "document type can not change the time to live of its documents: changing from {from} to {to}"
             );
             assert_matches!(
                 result.errors.as_slice(),

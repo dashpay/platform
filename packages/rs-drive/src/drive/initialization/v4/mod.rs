@@ -104,6 +104,12 @@ impl Drive {
         // sequence of inserts on both node populations.
         self.insert_contract_fee_pot_trees(transaction, platform_version)?;
 
+        // Documents expirations tree (protocol version 14): under `Misc`, it indexes every
+        // document of a type declaring a `ttl` by the time it expires. After the batch apply,
+        // which creates `Misc`, and through the same helper as the upgrade path
+        // (`Platform::transition_to_version_14`), in the same position: last.
+        self.insert_documents_expirations_tree(transaction, platform_version)?;
+
         Ok(())
     }
 }

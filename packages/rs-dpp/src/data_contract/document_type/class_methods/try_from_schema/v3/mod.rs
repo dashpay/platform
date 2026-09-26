@@ -328,7 +328,8 @@ fn try_from_schema_generation_3(
     let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
     let can_be_deleted_by_moderators = common::parse_can_be_deleted_by_moderators_keyword(&schema)?;
     let can_be_deleted_by_moderators_for =
-        common::parse_can_be_deleted_by_moderators_for_keyword(&schema)?;
+        common::parse_seconds_keyword(&schema, property_names::CAN_BE_DELETED_BY_MODERATORS_FOR)?;
+    let documents_ttl = common::parse_seconds_keyword(&schema, property_names::TTL)?;
     let immutable_fields =
         common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
     let immutable_fields_allow_setting = common::parse_property_name_list_keyword(
@@ -497,6 +498,14 @@ fn try_from_schema_generation_3(
         &mut v2,
         can_be_deleted_by_moderators_for,
         name,
+    )?;
+    // After `apply_index_only`: `ttl` is refused on an indexOnly type.
+    common::apply_documents_ttl(
+        &mut v2,
+        documents_ttl,
+        name,
+        full_validation,
+        platform_version,
     )?;
 
     // The flags are read from the parsed result (not the raw schema) so
@@ -995,6 +1004,8 @@ impl DocumentType {
     }
 }
 
+#[cfg(test)]
+mod documents_ttl_tests;
 #[cfg(test)]
 mod immutable_tests;
 #[cfg(test)]

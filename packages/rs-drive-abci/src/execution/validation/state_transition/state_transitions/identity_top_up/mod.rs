@@ -259,16 +259,18 @@ mod tests {
     fn test_identity_top_up_validation_latest_version() {
         run_test_identity_top_up_validation_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            588840,
-            149993606160,
+            // PROTOCOL_VERSION_14: 4,960 credits less, see the protocol version 13 twin
+            583880,
+            149993611120,
         );
     }
 
-    /// PROTOCOL_VERSION_13: the same fee as at the latest version. v14 adds the
-    /// `ContractGroups` root tree at key 124, under the `Versions` node that no fee-bearing
-    /// transition rewrites, so the asset lock outpoint write costs the same on both sides of
-    /// the boundary; this pin is what fails if a root tree ever lands under the asset lock
-    /// path. Pinned so v13 chain history stays bit-for-bit reproducible.
+    /// PROTOCOL_VERSION_13: 4,960 credits more processing than at the latest version. v14
+    /// adds the documents expirations tree under `Misc` (key `E`), beside the total system
+    /// credits item this transition rewrites, and the extra key reshapes the `Misc` Merk
+    /// the write rehashes. v14's `ContractGroups` root tree (key 124) sits under the
+    /// `Versions` node no fee-bearing transition rewrites and changes nothing here. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
     #[test]
     fn test_identity_top_up_validation_protocol_version_13() {
         run_test_identity_top_up_validation_at_protocol_version(13, 588840, 149993606160);

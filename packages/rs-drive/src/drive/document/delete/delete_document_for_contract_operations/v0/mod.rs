@@ -1,3 +1,5 @@
+use crate::drive::document::expiration::pricing::document_expires_at;
+use crate::drive::document::expiration::DocumentExpirationEntry;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use grovedb::batch::KeyInfoPath;
 
@@ -14,12 +16,14 @@ use crate::util::object_size_info::DocumentInfo::{
 use crate::util::storage_flags::StorageFlags;
 
 use dpp::data_contract::DataContract;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 
 use crate::drive::Drive;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
-use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::util::object_size_info::{
+    DocumentAndContractInfo, DocumentInfoV0Methods, OwnedDocumentInfo,
+};
 
 use crate::error::drive::DriveError;
 
@@ -206,6 +210,44 @@ impl Drive {
             &mut batch_operations,
             platform_version,
         )?;
+
+        // A document whose type declares a `ttl` has an entry in the documents expirations
+        // tree, keyed by when it expires: it goes with the document, whoever deletes it (its
+        // owner, a moderator, or the expiry cleanup). In place in this shipped generation:
+        // `documents_ttl_seconds` is `Some` only on a document type parsed by generation 3
+        // from a `ttl` keyword, which only protocol version 14 reads and every earlier
+        // meta-schema refuses, so no protocol version before 14 reaches this branch.
+        if let Some(ttl_seconds) = document_type.documents_ttl_seconds() {
+            let entry_value_size =
+                DocumentExpirationEntry::serialized_size(document_type.name().as_str());
+            let expires_at_ms = match document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_borrowed_document()
+            {
+                Some(document) => {
+                    let created_at = document.created_at().ok_or(Error::Drive(
+                        DriveError::CorruptedDriveState(
+                            "a document of a type with a time to live has no creation time"
+                                .to_string(),
+                        ),
+                    ))?;
+                    document_expires_at(created_at, ttl_seconds)?
+                }
+                // A worst-case estimate has no document: any time key prices the same.
+                None => document_expires_at(block_time_ms, ttl_seconds)?,
+            };
+            self.remove_document_expiration_operations(
+                document_id.to_buffer(),
+                expires_at_ms,
+                entry_value_size,
+                estimated_costs_only_with_layer_info,
+                &previous_batch_operations,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+        }
         Ok(batch_operations)
     }
 }

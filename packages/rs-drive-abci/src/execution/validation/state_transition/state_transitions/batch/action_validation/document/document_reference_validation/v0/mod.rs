@@ -979,10 +979,9 @@ fn validate_reference_target_v0(
             // admits only document types whose documents CAN be deleted:
             // the referenced document must exist now, and may be deleted
             // later. Deletable means by anyone, the contract's moderators
-            // included (`canBeDeletedByModerators`), as at contract
-            // registration
-            let target_is_deletable = referenced_document_type.documents_can_be_deleted()
-                || referenced_document_type.documents_can_be_deleted_by_moderators();
+            // included (`canBeDeletedByModerators`), and the platform
+            // for a type declaring a `ttl`, as at contract registration
+            let target_is_deletable = referenced_document_type.documents_can_disappear();
             if permanent && target_is_deletable {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentTypeDeletableError::new(

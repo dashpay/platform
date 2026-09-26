@@ -154,8 +154,12 @@ impl<C> Platform<C> {
             }
         };
 
+        // The epoch length is the execution config's; Drive prices documents with a time to
+        // live by it, so it gets the same value rather than a setting of its own.
+        let mut drive_config = config.drive.clone();
+        drive_config.epoch_time_length_s = config.execution.epoch_time_length_s;
         let (drive, current_platform_version) =
-            Drive::open(&config.db_path, Some(config.drive.clone())).map_err(Error::Drive)?;
+            Drive::open(&config.db_path, Some(drive_config)).map_err(Error::Drive)?;
 
         // Finish any TTL bucket-drop reclamation a crash interrupted
         // (grovedb#848 / PR #849): committed redo records survive restarts,

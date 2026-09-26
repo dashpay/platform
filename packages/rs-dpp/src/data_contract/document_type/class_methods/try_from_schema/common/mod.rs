@@ -27,11 +27,10 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CAN_BE_DELETED_BY_MODERATORS_FOR,
-    CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY,
-    DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY,
-    KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
-    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE,
+    DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
+    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
+    RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -2119,12 +2118,13 @@ pub(super) fn apply_can_be_deleted_by_moderators(
     Ok(())
 }
 
-/// Reads the doctype-level `canBeDeletedByModeratorsFor` keyword, a number of
-/// seconds, before the core parse consumes `schema`. Its shape is enforced here
-/// and not left to the meta-schema: a stored contract is read without one, and
-/// no doctype-level keyword of this generation is read more leniently there.
-pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
+/// Reads a doctype-level keyword holding a number of seconds (`canBeDeletedByModeratorsFor`,
+/// `ttl`) before the core parse consumes `schema`. Its shape is enforced here and not left
+/// to the meta-schema: a stored contract is read without one, and no doctype-level keyword
+/// of this generation is read more leniently there.
+pub(super) fn parse_seconds_keyword(
     schema: &Value,
+    keyword: &str,
 ) -> Result<Option<u32>, ProtocolError> {
     // A schema that is not an object carries no keyword. Like every other
     // doctype-level keyword read before the core parser, this one must not be
@@ -2135,7 +2135,7 @@ pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
         return Ok(None);
     };
 
-    Value::inner_optional_integer_value::<u32>(schema_map, CAN_BE_DELETED_BY_MODERATORS_FOR)
+    Value::inner_optional_integer_value::<u32>(schema_map, keyword)
         .map_err(consensus_or_protocol_value_error)
 }
 
@@ -2206,6 +2206,113 @@ pub(super) fn apply_can_be_deleted_by_moderators_for(
     }
 
     document_type.documents_can_be_deleted_by_moderators_for = Some(seconds);
+    Ok(())
+}
+
+/// Applies the `ttl` keyword and checks what it requires.
+///
+/// The platform deletes every document of the type once `$createdAt` plus `ttl`
+/// seconds has passed, finding it through the expirations tree entry written when the
+/// document was created, so:
+/// - the type must require `$createdAt`: a document's expiry is computed from it when it
+///   is written, replaced and deleted, and it is set from block time, so nothing the
+///   writer sends moves it;
+/// - the type must not keep history: the storage layer refuses to delete a document whose
+///   type keeps history;
+/// - the type must not be indexOnly: such a document has no stored row to delete by id;
+/// - the type must not have a contested index: a contested document waits in its vote
+///   poll, outside the documents tree, until the poll awards it, keeping its `$createdAt`
+///   from the create, so it could expire before it exists;
+/// - the time to live is at least a second, and under full validation (a contract being
+///   registered or updated) at least `min_document_ttl_seconds` and at most
+///   `max_document_ttl_seconds`. The floor keeps a document in state well past the moment
+///   its writer fetches the proof of its create, which proves it present.
+///
+/// What may point at the type follows from `documents_can_disappear`: a `permanentDocument`
+/// or list element reference may not target it; a `deletableDocument` reference may, and so
+/// may a lookup, which names the kind of document it resolves to (`deletableDocument`).
+///
+/// The rules other than the bounds hold for every contract that could be stored (the keyword
+/// arrives with protocol version 14), so they are not skipped when a stored contract is
+/// read back. Runs after `apply_index_only`, whose flag it reads.
+pub(super) fn apply_documents_ttl(
+    document_type: &mut DocumentTypeV2,
+    ttl_seconds: Option<u32>,
+    name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(seconds) = ttl_seconds else {
+        return Ok(());
+    };
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if seconds == 0 {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `ttl: 0`: a time to live lasts at least one second \
+             (leave `ttl` out for documents that live until someone deletes them)",
+            name,
+        )));
+    }
+    if full_validation {
+        if let Some(min_seconds) = platform_version.system_limits.min_document_ttl_seconds {
+            if seconds < min_seconds {
+                return Err(structure_error(format!(
+                    "document type \"{}\" sets `ttl: {}`, below the shortest time to live a \
+                     document type may declare, {} seconds",
+                    name, seconds, min_seconds,
+                )));
+            }
+        }
+        if let Some(max_seconds) = platform_version.system_limits.max_document_ttl_seconds {
+            if seconds > max_seconds {
+                return Err(structure_error(format!(
+                    "document type \"{}\" sets `ttl: {}`, above the longest time to live a \
+                     document type may declare, {} seconds",
+                    name, seconds, max_seconds,
+                )));
+            }
+        }
+    }
+    if !document_type.required_fields.contains(CREATED_AT) {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `ttl`, which is counted from a document's creation: \
+             list `$createdAt` in `required`",
+            name,
+        )));
+    }
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets both `documentsKeepHistory: true` and `ttl`, but the \
+             storage layer refuses to delete a document whose type keeps history",
+            name,
+        )));
+    }
+    if document_type.index_only {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must not set `ttl`: there is no stored row the \
+             platform could delete by id",
+            name,
+        )));
+    }
+    if document_type
+        .indices
+        .values()
+        .any(|index| index.contested_index.is_some())
+    {
+        return Err(structure_error(format!(
+            "document type \"{}\" has a contested index and must not set `ttl`: a contested \
+             document waits in its vote poll until the poll awards it, and could expire \
+             before it is stored",
+            name,
+        )));
+    }
+
+    document_type.documents_ttl_seconds = Some(seconds);
     Ok(())
 }
 

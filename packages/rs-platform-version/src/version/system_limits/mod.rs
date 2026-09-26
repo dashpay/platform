@@ -244,6 +244,33 @@ pub struct SystemLimits {
     /// including shared grids and deep suffixes. Each drop is O(1).
     /// `None` disables cleanup on versions predating the `ttl` key.
     pub min_time_range_ttl_drop_operations_per_write: Option<u16>,
+    /// Minimum time to live, in seconds, a document type may declare with its `ttl`
+    /// keyword, enforced when a contract is registered or updated (full validation only,
+    /// like `max_document_ttl_seconds`). A document the cleanup deletes before its writer
+    /// has fetched the proof of its create would fail that proof's verification (it proves
+    /// the document present); the floor keeps every document well past that point. Read by
+    /// document type parser generation 3 (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the keyword.
+    pub min_document_ttl_seconds: Option<u32>,
+    /// Maximum time to live, in seconds, a document type may declare with its `ttl`
+    /// keyword, enforced when a contract is registered or updated (full validation only,
+    /// like `max_typed_array_items`). Documents of a type with a `ttl` are deleted by the
+    /// platform once `$createdAt + ttl` has passed; the cap bounds how long the flagless,
+    /// prepaid storage of such a document can live, which is what the per-period price of
+    /// the fee schedule's `document_ttl` group is calibrated for. Read by document type
+    /// parser generation 3 (protocol version 14), the only generation that parses `ttl`.
+    ///
+    /// `None` preserves the behavior of protocol versions that predate the keyword
+    /// (nothing to bound: it does not parse there).
+    pub max_document_ttl_seconds: Option<u32>,
+    /// Maximum number of expired documents the platform deletes in one block, after the
+    /// block's state transitions (`expire_documents` v0). Expirations beyond it wait for
+    /// the next block, oldest first. Bounds the unbilled work the cleanup adds to a block.
+    ///
+    /// 0 on protocol versions that predate document expiry, where the event does not run
+    /// (`expire_documents` is `None` in their method tables).
+    pub max_document_expirations_per_block: u16,
     /// Lowest GroveDB proof envelope version a client accepts from a
     /// current-state response.
     ///

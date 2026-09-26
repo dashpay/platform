@@ -169,7 +169,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         // marker makes the batch refund nobody: the document's owner forfeits
                         // the storage fee.
                         operations.push(DocumentOperation(
-                            DocumentOperationType::DeleteDocumentByModerator {
+                            DocumentOperationType::ForceDeleteDocument {
                                 document_id,
                                 contract_info: DataContractInfo::DataContractFetchInfo(
                                     data_contract_fetch_info,

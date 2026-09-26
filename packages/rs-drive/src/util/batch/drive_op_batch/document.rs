@@ -103,11 +103,13 @@ pub enum DocumentOperationType<'a> {
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
     },
-    /// Deletes a document on behalf of the contract's moderators. `canBeDeleted` rules what a
-    /// document's own owner may do, so it is not consulted here: the caller has checked that
-    /// the document type sets `canBeDeletedByModerators`. A document type that keeps history
-    /// is still refused, as the keyword is on such a type.
-    DeleteDocumentByModerator {
+    /// Deletes a document without consulting `canBeDeleted`, which rules what the document's
+    /// own owner may do. Used for a deletion on behalf of the contract's moderators (the
+    /// caller has checked that the document type sets `canBeDeletedByModerators`) and for the
+    /// platform's deletion of a document whose type declares a `ttl` once it has passed
+    /// (protocol version 14), which also removes the document's expirations tree entry. A
+    /// document type that keeps history is still refused, as both keywords are on such a type.
+    ForceDeleteDocument {
         /// The document id
         document_id: Identifier,
         /// Data Contract info to potentially be resolved if needed
@@ -221,7 +223,7 @@ impl DocumentOperationType<'_> {
                 document_type_info,
                 ..
             }
-            | Self::DeleteDocumentByModerator {
+            | Self::ForceDeleteDocument {
                 contract_info,
                 document_type_info,
                 ..
@@ -463,7 +465,7 @@ impl DocumentOperationType<'_> {
                     platform_version,
                 )
             }
-            DocumentOperationType::DeleteDocumentByModerator {
+            DocumentOperationType::ForceDeleteDocument {
                 document_id,
                 contract_info,
                 document_type_info,
@@ -479,7 +481,8 @@ impl DocumentOperationType<'_> {
                 let contract = contract_resolved_info.as_ref();
                 let document_type = document_type_info.resolve(contract)?;
 
-                // The deletion a document's own owner runs, without its `canBeDeleted` guard.
+                // The deletion a document's own owner runs, without its `canBeDeleted` guard;
+                // it removes the expirations tree entry of a type with a `ttl` itself.
                 drive.force_delete_document_for_contract_operations(
                     document_id,
                     contract,

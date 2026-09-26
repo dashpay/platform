@@ -29,8 +29,10 @@ mod token_selling_tests {
             // byte-billed subtree reads
             // +740 per document write from protocol version 14: the contract's version item is
             // one more node to rehash. +8_420 from direct purchase state validation 1, which
-            // reads the total supply even though the token sets no max supply.
-            699_868_037_020,
+            // reads the total supply even though the token sets no max supply. 12_820 credits
+            // less in fees: the documents expirations tree joins `Misc` beside the token
+            // supplies tree the purchase rewrites, reshaping the `Misc` Merk
+            699_868_049_840,
         )
         .await;
     }

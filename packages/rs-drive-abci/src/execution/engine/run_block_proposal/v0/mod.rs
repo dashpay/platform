@@ -396,6 +396,16 @@ where
         #[cfg(debug_assertions)]
         phases.end_phase("cleanup_recent_block_storage_address_balances");
 
+        // Delete documents whose time to live has passed: after the block's state transitions,
+        // so every transition of the block still saw them, and before fees are processed and
+        // the app hash is taken. Added in place in this shipped generation: `expire_documents`
+        // is `None` in the method tables of every protocol version before 14, where the call
+        // returns without reading or writing anything.
+        self.expire_documents(&block_info, transaction, platform_version)?;
+
+        #[cfg(debug_assertions)]
+        phases.end_phase("expire_documents");
+
         // Record shielded pool anchor if the commitment tree changed this block.
         // This stores block_height → anchor_bytes so shielded transactions can
         // reference a recent anchor for spend authorization.

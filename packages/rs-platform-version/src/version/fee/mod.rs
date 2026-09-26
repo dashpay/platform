@@ -2,6 +2,8 @@ use crate::error::PlatformVersionError;
 use crate::version::fee::data_contract_registration::v1::FEE_DATA_CONTRACT_REGISTRATION_VERSION1;
 use crate::version::fee::data_contract_registration::FeeDataContractRegistrationVersion;
 use crate::version::fee::data_contract_validation::FeeDataContractValidationVersion;
+use crate::version::fee::document_ttl::v1::FEE_DOCUMENT_TTL_VERSION1;
+use crate::version::fee::document_ttl::FeeDocumentTtlVersion;
 use crate::version::fee::hashing::v1::FEE_HASHING_VERSION1;
 use crate::version::fee::hashing::{FeeHashingVersion, FeeHashingVersionBeforeVersion11};
 use crate::version::fee::processing::{
@@ -20,6 +22,7 @@ use bincode::{Decode, Encode};
 
 pub mod data_contract_registration;
 mod data_contract_validation;
+pub mod document_ttl;
 mod hashing;
 mod processing;
 pub mod signature;
@@ -47,6 +50,10 @@ pub struct FeeVersion {
     pub data_contract_registration: FeeDataContractRegistrationVersion,
     pub state_transition_min_fees: StateTransitionMinFees,
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
+    /// Fees of documents whose document type declares a `ttl` (read from protocol
+    /// version 14). Platform states store only `fee_version_number`, so this field does
+    /// not touch any stored format; `FeeVersionFieldsBeforeVersion4` must not gain it.
+    pub document_ttl: FeeDocumentTtlVersion,
 }
 
 impl FeeVersion {
@@ -146,6 +153,8 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
                 value.state_transition_min_fees,
             ),
             vote_resolution_fund_fees: value.vote_resolution_fund_fees.into(),
+            // Pre-4.2 tables predate the document `ttl` keyword; the group is unread there.
+            document_ttl: FEE_DOCUMENT_TTL_VERSION1,
         }
     }
 }

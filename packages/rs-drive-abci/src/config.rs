@@ -6,7 +6,7 @@ use dpp::dashcore::Network;
 use dpp::dashcore_rpc::json::QuorumType;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
-use drive::config::DriveConfig;
+use drive::config::{DriveConfig, DEFAULT_EPOCH_TIME_LENGTH_S};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
 
@@ -623,7 +623,7 @@ impl ExecutionConfig {
     }
 
     fn default_epoch_time_length_s() -> u64 {
-        788400
+        DEFAULT_EPOCH_TIME_LENGTH_S
     }
 }
 
