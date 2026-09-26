@@ -24,6 +24,8 @@ use crate::fees::op::LowLevelDriveOperation::{
     FunctionOperation, GroveOperation, PreCalculatedFeeResult, RepaidIdentityDebt,
 };
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+#[cfg(test)]
+use crate::util::grove_operations::pending_grove_operations::count_copied_pending_grove_operations;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
@@ -443,7 +445,7 @@ impl LowLevelDriveOperation {
     pub fn grovedb_operations_batch(
         insert_operations: &[LowLevelDriveOperation],
     ) -> GroveDbOpBatch {
-        let operations = insert_operations
+        let operations: Vec<QualifiedGroveDbOp> = insert_operations
             .iter()
             .filter_map(|op| match op {
                 GroveOperation(grovedb_op) | EphemeralGroveOperation(grovedb_op) => {
@@ -452,6 +454,8 @@ impl LowLevelDriveOperation {
                 _ => None,
             })
             .collect();
+        #[cfg(test)]
+        count_copied_pending_grove_operations(operations.len());
         GroveDbOpBatch::from_operations(operations)
     }
 

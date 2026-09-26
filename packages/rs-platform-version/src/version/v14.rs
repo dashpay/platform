@@ -1192,7 +1192,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     hash. Version 1 also reports a transition whose version is not active
 ///     as `StateTransitionNotActiveError` (10603) instead of a decode failure.
 ///
-/// 47. **Every revealed nullifier is recorded once**: each action of an
+/// 47. **A storage refund is clawed back from the epochs it was priced for**:
+///     removing data in epoch E refunds its owner the shares of epochs E+1
+///     onward, and the refund waits for the next epoch change to be taken out of
+///     the epoch storage pools. `add_distribute_storage_fee_to_epochs_operations`
+///     1 (`DRIVE_ABCI_METHOD_VERSIONS_V10`) restores and subtracts it from the
+///     epoch after the previous block's epoch, the one every pending refund was
+///     priced in, so each of those epochs gives back its own share. The shares
+///     of epochs that closed before the current one, skipped by a halt, and the
+///     rounding leftovers come out of the current epoch. Version 0 started from
+///     the epoch after the current one, so the current epoch kept most of its
+///     refunded share and the later epochs gave back more than theirs. The
+///     total taken out equals the refund in both.
+///
+/// 48. **Every revealed nullifier is recorded once**: each action of an
 ///     outputs-only Orchard bundle reveals a nullifier (that of a dummy spend,
 ///     which becomes the new note's `rho`). The spends already recorded and
 ///     checked theirs; now `Shield`, `ShieldFromAssetLock` and
