@@ -1,3 +1,7 @@
+// These tests exercise the native profile: patch diffing and the thread-local
+// decode depth scope only exist with `std`. The allocation-only profile has its
+// own integration test in `alloc_profile.rs`.
+#![cfg(feature = "std")]
 #![allow(clippy::approx_constant)]
 #![allow(clippy::op_ref)]
 

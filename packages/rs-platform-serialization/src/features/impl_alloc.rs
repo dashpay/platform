@@ -10,6 +10,7 @@ use alloc::{
     collections::*,
     rc::Rc,
     string::String,
+    vec,
     vec::Vec,
 };
 use bincode::config::Config;
