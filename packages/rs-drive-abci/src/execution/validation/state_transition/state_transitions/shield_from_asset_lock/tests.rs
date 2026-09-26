@@ -2507,16 +2507,17 @@ mod tests {
             assert_eq!(pool_after, pool_before, "nothing may enter the pool");
             // The bytes decode fine — only the version is outside its active range — so the
             // submitter is owed a coded answer and the transition is dropped from the block
-            // unpaid instead of being counted as an internal error. The error's
-            // `required_protocol_version` is the start of that active range, which names nothing
-            // to move to once a version has been superseded, so what is pinned here is the answer
-            // the submitter receives.
+            // unpaid instead of being counted as an internal error. Version 0 was accepted up
+            // to protocol version 13, and that is the boundary reported: the active range was
+            // missed from above, so naming its start would point at a version the chain is
+            // already past.
             assert_matches!(
                 in_block.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)),
                 )] if error.state_transition_type() == "ShieldFromAssetLock"
-                    && error.current_protocol_version() == platform_version.protocol_version,
+                    && error.current_protocol_version() == platform_version.protocol_version
+                    && error.required_protocol_version() == 13,
                 "a version 0 is refused unpaid and dropped from the block: {observed}"
             );
 

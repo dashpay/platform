@@ -113,10 +113,21 @@ where
                                     current_protocol_version,
                                 },
                             ) => {
+                                // The range can be missed from either side. Below its start, the
+                                // start is the version to reach. Above its end, the end is the
+                                // last protocol version that accepted these bytes; naming the
+                                // start there would point at a version the chain is already past.
+                                let boundary =
+                                    if current_protocol_version > *active_version_range.end() {
+                                        *active_version_range.end()
+                                    } else {
+                                        *active_version_range.start()
+                                    };
+
                                 let consensus_error = StateTransitionNotActiveError::new(
                                     state_transition_type,
                                     current_protocol_version,
-                                    *active_version_range.start(),
+                                    boundary,
                                 )
                                 .into();
 
