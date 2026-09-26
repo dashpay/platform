@@ -4,7 +4,6 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::str::FromStr;
 
-use dashcore::secp256k1::Secp256k1;
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use key_wallet::mnemonic::Mnemonic;
 use zeroize::Zeroizing;
@@ -90,16 +89,15 @@ pub unsafe extern "C" fn platform_wallet_derive_ext_priv_key_from_mnemonic(
 
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(network, &*seed));
 
-    let secp = Secp256k1::new();
-    let derived = unwrap_result_or_return!(master.derive_priv(&secp, &path));
+    let derived = unwrap_result_or_return!(master.derive_priv(&path));
 
-    let secret = Zeroizing::new(derived.private_key.secret_bytes());
+    let secret = Zeroizing::new(derived.private_key.to_secret_bytes());
     std::ptr::copy_nonoverlapping(secret.as_ptr(), out_secret_key, 32);
 
     std::ptr::copy_nonoverlapping(derived.chain_code.as_ref().as_ptr(), out_chain_code, 32);
 
     if !out_public_key.is_null() {
-        let pubkey_bytes = derived.private_key.public_key(&secp).serialize();
+        let pubkey_bytes = derived.private_key.public_key().serialize();
         std::ptr::copy_nonoverlapping(pubkey_bytes.as_ptr(), out_public_key, 33);
     }
 

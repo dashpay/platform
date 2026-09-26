@@ -37,7 +37,7 @@ use dashcore::blsful::{
 };
 use dashcore::ed25519_dalek::SigningKey;
 use dashcore::hashes::{hash160, Hash};
-use dashcore::secp256k1::{PublicKey as SecpPublicKey, Secp256k1, SecretKey as SecpSecretKey};
+use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey as SecpSecretKey};
 use dashcore::{Network, PlatformNodeId, PrivateKey};
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -223,7 +223,7 @@ fn is_mainnet(network: Network) -> bool {
 /// only when below the group order; ed25519 accepts any 32 bytes as a seed.
 fn secret_candidates(bytes: &[u8; 32]) -> Vec<MasternodeLocatorInput> {
     let mut out = Vec::with_capacity(3);
-    if SecpSecretKey::from_slice(bytes).is_ok() {
+    if SecpSecretKey::from_secret_bytes(*bytes).is_ok() {
         out.push(MasternodeLocatorInput::Secret(LocatorSecret::Ecdsa {
             secret: Zeroizing::new(*bytes),
             compressed: true,
@@ -314,7 +314,7 @@ pub fn parse_locator_input(
         }
         return Ok(ParsedLocatorInput {
             candidates: vec![MasternodeLocatorInput::Secret(LocatorSecret::Ecdsa {
-                secret: Zeroizing::new(key.inner.secret_bytes()),
+                secret: Zeroizing::new(key.inner.to_secret_bytes()),
                 compressed: key.compressed,
             })],
         });
@@ -353,8 +353,8 @@ pub fn parse_locator_input(
 /// hash160 of the secp256k1 public key for `secret`, or `None` when the
 /// scalar is out of range.
 pub fn ecdsa_key_id(secret: &[u8; 32], compressed: bool) -> Option<[u8; 20]> {
-    let sk = SecpSecretKey::from_slice(secret).ok()?;
-    let pk = SecpPublicKey::from_secret_key(&Secp256k1::signing_only(), &sk);
+    let sk = SecpSecretKey::from_secret_bytes(*secret).ok()?;
+    let pk = SecpPublicKey::from_secret_key(&sk);
     let bytes: Vec<u8> = if compressed {
         pk.serialize().to_vec()
     } else {
@@ -1135,10 +1135,7 @@ mod tests {
     #[test]
     fn ecdsa_key_id_matches_dashcore_address_hash() {
         let key = PrivateKey::from_byte_array(&SECP_SECRET, Network::Mainnet).unwrap();
-        let expected: [u8; 20] = key
-            .public_key(&Secp256k1::new())
-            .pubkey_hash()
-            .to_byte_array();
+        let expected: [u8; 20] = key.public_key().pubkey_hash().to_byte_array();
         assert_eq!(secp_key_id(), expected);
         assert_ne!(
             ecdsa_key_id(&SECP_SECRET, false).unwrap(),

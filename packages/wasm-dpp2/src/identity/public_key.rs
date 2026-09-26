@@ -14,7 +14,6 @@ use crate::utils::{
 };
 use crate::version::PlatformVersionLikeJs;
 use dpp::dashcore::Network;
-use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
 use dpp::fee::Credits;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
@@ -397,11 +396,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name = "getPublicKeyHash")]
     pub fn public_key_hash(&self) -> WasmDppResult<String> {
-        let hash = self
-            .0
-            .public_key_hash()?
-            .to_vec()
-            .to_hex_string(Case::Lower);
+        let hash = hex::encode(self.0.public_key_hash()?);
 
         Ok(hash)
     }

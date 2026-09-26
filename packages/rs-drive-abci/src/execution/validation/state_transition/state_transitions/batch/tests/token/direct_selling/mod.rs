@@ -9,7 +9,6 @@ mod token_selling_tests {
     use super::*;
 
     use dpp::{
-        dashcore::secp256k1::hashes::hex::{Case, DisplayHex},
         prelude::{DataContract, Identity, IdentityPublicKey},
         tokens::token_pricing_schedule::TokenPricingSchedule,
     };
@@ -638,7 +637,7 @@ mod token_selling_tests {
                 expected_price,
                 format!(
                     "price in proof mismatch for token {}",
-                    token_id.to_hex_string(Case::Lower)
+                    hex::encode(token_id)
                 )
                 .as_str(),
             );
@@ -648,11 +647,7 @@ mod token_selling_tests {
                 fetched_prices.clone(),
                 token_id,
                 expected_price,
-                format!(
-                    "fetched price mismatch for token {}",
-                    token_id.to_hex_string(Case::Lower)
-                )
-                .as_str(),
+                format!("fetched price mismatch for token {}", hex::encode(token_id)).as_str(),
             );
         }
     }

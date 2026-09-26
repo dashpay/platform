@@ -940,7 +940,7 @@ mod tests {
     use dpp::dashcore::{Network, TxOut};
 
     fn voucher_secret() -> SecretKey {
-        SecretKey::from_slice(&[0x11u8; 32]).unwrap()
+        SecretKey::from_secret_bytes([0x11u8; 32]).unwrap()
     }
 
     /// An asset-lock tx whose single credit output pays the voucher key.
@@ -1071,7 +1071,7 @@ mod tests {
     #[test]
     fn prospective_id_follows_the_selected_credit_output() {
         let key = voucher_secret();
-        let decoy = SecretKey::from_slice(&[0x22u8; 32]).unwrap();
+        let decoy = SecretKey::from_secret_bytes([0x22u8; 32]).unwrap();
         let payload = AssetLockPayload {
             version: 1,
             credit_outputs: vec![

@@ -88,7 +88,7 @@ pub unsafe fn parse_private_key(
     private_key_bytes: *const [u8; 32],
 ) -> Result<PrivateKey, FFIError> {
     let key_bytes = *private_key_bytes;
-    let secret_key = dashcore::secp256k1::SecretKey::from_byte_array(&key_bytes)
+    let secret_key = dashcore::secp256k1::SecretKey::from_secret_bytes(key_bytes)
         .map_err(|e| FFIError::InternalError(format!("Invalid private key: {}", e)))?;
     Ok(PrivateKey::new(secret_key, Network::Mainnet))
 }

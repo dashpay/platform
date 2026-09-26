@@ -1142,7 +1142,6 @@ impl PlatformPaymentAddressProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::secp256k1::Secp256k1;
     use key_wallet::bip32::ExtendedPrivKey;
     use key_wallet::Network;
     use key_wallet_manager::WalletManager;
@@ -1151,10 +1150,9 @@ mod tests {
     const ACCOUNT: u32 = 0;
 
     fn test_xpub() -> ExtendedPubKey {
-        let secp = Secp256k1::new();
         let seed = [42u8; 32];
         let xprv = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master xprv");
-        ExtendedPubKey::from_priv(&secp, &xprv)
+        ExtendedPubKey::from_priv(&xprv)
     }
 
     fn p2pkh(byte: u8) -> PlatformP2PKHAddress {

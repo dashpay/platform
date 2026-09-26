@@ -21,23 +21,21 @@ pub fn derive_shared_key_ecdh(private_key: &SecretKey, public_key: &PublicKey) -
     let shared_secret = SharedSecret::new(public_key, private_key);
 
     let mut key = [0u8; 32];
-    key.copy_from_slice(shared_secret.as_ref());
+    key.copy_from_slice(shared_secret.as_secret_bytes());
     key
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1::rand::thread_rng;
-    use secp256k1::Secp256k1;
+    use secp256k1::generate_keypair;
+    use secp256k1::rand::rng;
 
     #[test]
     fn test_ecdh_key_derivation() {
-        let secp = Secp256k1::new();
-
         // Generate two key pairs
-        let (secret1, public1) = secp.generate_keypair(&mut thread_rng());
-        let (secret2, public2) = secp.generate_keypair(&mut thread_rng());
+        let (secret1, public1) = generate_keypair(&mut rng());
+        let (secret2, public2) = generate_keypair(&mut rng());
 
         // Derive shared keys from both sides
         let shared1 = derive_shared_key_ecdh(&secret1, &public2);
@@ -55,14 +53,13 @@ mod tests {
     /// (b) the exact compressed-y-prefix-‖-x preimage convention.
     #[test]
     fn ecdh_matches_sha256_y_parity_prefix_convention() {
-        use secp256k1::{Scalar, Secp256k1};
+        use secp256k1::Scalar;
         use sha2::{Digest, Sha256};
 
-        let secp = Secp256k1::new();
-        let priv_a = SecretKey::from_slice(&[0xC0u8; 32]).expect("valid scalar");
-        let priv_b = SecretKey::from_slice(&[0x0Du8; 32]).expect("valid scalar");
-        let pub_a = PublicKey::from_secret_key(&secp, &priv_a);
-        let pub_b = PublicKey::from_secret_key(&secp, &priv_b);
+        let priv_a = SecretKey::from_secret_bytes([0xC0u8; 32]).expect("valid scalar");
+        let priv_b = SecretKey::from_secret_bytes([0x0Du8; 32]).expect("valid scalar");
+        let pub_a = PublicKey::from_secret_key(&priv_a);
+        let pub_b = PublicKey::from_secret_key(&priv_b);
 
         let ab = derive_shared_key_ecdh(&priv_a, &pub_b);
         let ba = derive_shared_key_ecdh(&priv_b, &pub_a);
@@ -73,7 +70,7 @@ mod tests {
         // SHA256( (0x02 | (P.y & 1)) ‖ P.x ). Pins that it's the compressed-y
         // prefix + x, NOT x‖y or some other layout.
         let scalar_a = Scalar::from_be_bytes([0xC0u8; 32]).expect("scalar in range");
-        let shared_point = pub_b.mul_tweak(&secp, &scalar_a).expect("point mul");
+        let shared_point = pub_b.mul_tweak(&scalar_a).expect("point mul");
         let uncompressed = shared_point.serialize_uncompressed(); // 0x04 ‖ x(32) ‖ y(32)
         let prefix = 0x02u8 | (uncompressed[64] & 1); // y parity from the last y byte
         let mut preimage = Vec::with_capacity(33);

@@ -7,7 +7,6 @@ use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::address::Payload;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::hashes::{sha256d, Hash};
-use dashcore::key::Secp256k1;
 use dashcore::secp256k1::ecdsa::RecoverableSignature;
 use dashcore::secp256k1::Message;
 use dashcore::signer::CompactSignature;
@@ -243,8 +242,7 @@ impl From<&PrivateKey> for PlatformAddress {
     /// The address is derived as: P2PKH(Hash160(compressed_public_key))
     /// where Hash160 = RIPEMD160(SHA256(x)), which is the standard Bitcoin P2PKH derivation.
     fn from(private_key: &PrivateKey) -> Self {
-        let secp = Secp256k1::new();
-        let pubkey_hash = private_key.public_key(&secp).pubkey_hash();
+        let pubkey_hash = private_key.public_key().pubkey_hash();
         PlatformAddress::P2pkh(*pubkey_hash.as_byte_array())
     }
 }
@@ -551,7 +549,6 @@ impl PlatformAddress {
 
                 let signable_bytes_hash = sha256d::Hash::hash(signable_bytes).to_byte_array();
                 let msg = Message::from_digest(signable_bytes_hash);
-                let secp = Secp256k1::new();
 
                 while sig_idx < valid_signatures.len() && pubkey_idx < pubkeys.len() {
                     signature_verifications += 1;
@@ -570,10 +567,7 @@ impl PlatformAddress {
                         ProtocolError::AddressWitnessError(format!("Invalid public key: {}", e))
                     })?;
 
-                    if secp
-                        .verify_ecdsa(&msg, &sig.to_standard(), &pub_key.inner)
-                        .is_ok()
-                    {
+                    if sig.to_standard().verify(msg, &pub_key.inner).is_ok() {
                         matched += 1;
                         sig_idx += 1;
                     }
@@ -794,7 +788,7 @@ mod tests {
     use super::*;
     use dashcore::blockdata::opcodes::all::*;
     use dashcore::hashes::Hash;
-    use dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey};
+    use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
     use dashcore::PublicKey;
     use platform_value::BinaryData;
 
@@ -818,16 +812,15 @@ mod tests {
 
     /// Helper to create a keypair from a 32-byte seed
     fn create_keypair(seed: [u8; 32]) -> (RawSecretKey, PublicKey) {
-        let secp = Secp256k1::new();
-        let secret_key = RawSecretKey::from_byte_array(&seed).expect("valid secret key");
-        let raw_public_key = RawPublicKey::from_secret_key(&secp, &secret_key);
+        let secret_key = RawSecretKey::from_secret_bytes(seed).expect("valid secret key");
+        let raw_public_key = RawPublicKey::from_secret_key(&secret_key);
         let public_key = PublicKey::new(raw_public_key);
         (secret_key, public_key)
     }
 
     /// Helper to sign data with a secret key
     fn sign_data(data: &[u8], secret_key: &RawSecretKey) -> Vec<u8> {
-        dashcore::signer::sign(data, secret_key.as_ref())
+        dashcore::signer::sign(data, secret_key.as_secret_bytes())
             .expect("signing should succeed")
             .to_vec()
     }

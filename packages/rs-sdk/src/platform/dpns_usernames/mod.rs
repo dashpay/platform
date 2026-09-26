@@ -147,8 +147,8 @@ impl Sdk {
             .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?;
 
         // Generate the preorder salt
-        let mut rng = StdRng::from_entropy();
-        let salt: [u8; 32] = rng.gen();
+        let mut rng = StdRng::from_os_rng();
+        let salt: [u8; 32] = rng.random();
 
         // The id of a new document commits to the identity contract nonce of
         // its create transition, so it only exists once `put_to_platform` has

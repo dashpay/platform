@@ -148,9 +148,9 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                             (document, entropy)
                         }
                         None => {
-                            let mut rng = StdRng::from_entropy();
+                            let mut rng = StdRng::from_os_rng();
                             let mut document = document;
-                            let entropy = rng.gen::<[u8; 32]>();
+                            let entropy = rng.random::<[u8; 32]>();
                             document.set_id(Document::generate_document_id(
                                 &document_type.data_contract_id(),
                                 &document.owner_id(),

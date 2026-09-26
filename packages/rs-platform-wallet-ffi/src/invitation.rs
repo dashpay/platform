@@ -747,7 +747,7 @@ mod tests {
     /// unknown wallet is looked up, and no signer/network work is attempted.
     #[test]
     fn claim_invitation_rejects_duplicate_key_ids_before_wallet_lookup() {
-        let voucher = SecretKey::from_slice(&[0x11u8; 32]).expect("valid scalar");
+        let voucher = SecretKey::from_secret_bytes([0x11u8; 32]).expect("valid scalar");
         let wif = PrivateKey::new(voucher, Network::Testnet).to_wif();
         let uri =
             std::ffi::CString::new(format!("dashpay://invite?assetlocktx=aa&pk={wif}")).unwrap();

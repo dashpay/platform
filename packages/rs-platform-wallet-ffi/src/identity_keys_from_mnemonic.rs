@@ -2,7 +2,6 @@
 
 use std::ffi::CString;
 
-use dashcore::secp256k1::Secp256k1;
 use dashcore::PrivateKey as DashPrivateKey;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dip9::{
@@ -319,7 +318,6 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
 
     let kw_network: Network = network.into();
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
-    let secp = Secp256k1::new();
 
     let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(key_count as usize);
 
@@ -347,7 +345,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             }
         };
 
-        let derived = match master.derive_priv(&secp, &path) {
+        let derived = match master.derive_priv(&path) {
             Ok(d) => d,
             Err(e) => {
                 cleanup(rows);
@@ -360,7 +358,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
                 );
             }
         };
-        let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
+        let extended_pub = ExtendedPubKey::from_priv(&derived);
         let public_key = extended_pub.public_key;
 
         let path_cstring = match CString::new(path.to_string()) {
@@ -404,7 +402,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             public_key: pub_ptr,
             public_key_len: pub_len,
             private_key_wif: wif_cstring.into_raw(),
-            private_key_bytes: derived.private_key.secret_bytes(),
+            private_key_bytes: derived.private_key.to_secret_bytes(),
         });
     }
 
