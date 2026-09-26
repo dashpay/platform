@@ -3,7 +3,6 @@ pub(in crate::execution::validation::state_transition::state_transitions) mod ac
 mod advanced_structure;
 mod data_triggers;
 mod identity_contract_nonce;
-mod is_allowed;
 mod state;
 mod transformer;
 

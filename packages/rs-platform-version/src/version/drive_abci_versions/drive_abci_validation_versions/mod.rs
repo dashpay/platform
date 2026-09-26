@@ -248,7 +248,6 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     /// `fetch_documents_for_transitions_knowing_contract_and_document_type`.
     pub fetch_document_with_id: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
-    pub is_allowed: FeatureVersion,
     /// Version of the signer's minimum balance pre-check of a batch, which runs before its data
     /// contracts are loaded. v0 requires the principal plus a fee minimum per transition from
     /// the signer; v1 requires only the principal from a batch that asks the contract owner to

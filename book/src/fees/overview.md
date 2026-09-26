@@ -385,9 +385,11 @@ cannot make a transition signed against the old one pay the new one.
 contract owner when they sponsor the gas. A sponsor's balance has to cover the
 gas *and* the fees they would owe; one that insisted and falls short is the
 same unpaid refusal as before (40222), and one that only preferred hands the
-gas and the fees back to the signer. Fee validation and execution ask that one
-question through one function (`gas_sponsor_pays`), on one estimate, so they
-always name the same payer. The contract owner never pays the `owner` part:
+gas and the fees back to the signer. The gas is estimated for the payer:
+first with the sponsor paying, then, when the sponsor does not pay, with the
+signer paying. Fee validation settles the payer through one function
+(`gas_sponsor_pays`) and hands it to execution, which charges that payer, so
+they always name the same one. The contract owner never pays the `owner` part:
 it would travel through the owner pot back to them and only cost writes. A
 sponsor is always the contract owner, so a sponsored action pays into the
 moderators pot only, which a contract that sponsors gas should price in. The
@@ -402,7 +404,17 @@ ran.
 
 **The fee is not part of the `FeeResult`.** It moves as balance operations in
 the batch's own operation list: one removal from the payer, one addition per
-pot. The fee pools and the proposers see exactly what they saw before. The
+pot. The transition may already write the payer's balance: a purchase moves
+its price, a contested document its voting fund, and a sale pays a contract
+owner who may be sponsoring the gas. A balance operation computes the new
+balance from the one committed before its batch and GroveDB keeps only the
+last write of a key, so `apply_drive_operations` (generation 1, protocol
+version 14) merges every write of one identity balance, one fee pot or one
+prefunded specialized balance in a batch into a single net operation. Token
+writes cannot be merged that way (a transfer writes two balances, a mint or a
+burn a balance and the supply), so a batch that writes one token balance or
+supply twice is refused; no state transition makes one. The fee pools and the proposers see
+exactly what they saw before. The
 pots sit under the `PreFundedSpecializedBalances` root sum tree, which the
 per-block total credits check already sums, so the credits stay accounted for
 while they wait to be claimed.

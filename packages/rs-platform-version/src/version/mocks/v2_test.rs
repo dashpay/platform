@@ -603,6 +603,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         contract_document_restore_window_ms: 604_800_000,
         max_contract_moderation_added_moderators: 15,
         max_token_redemption_cycles: 128,
+        max_evonode_reward_claim_epochs: 100,
         max_shielded_transition_actions: 16,
         max_token_pool_notes_for_outgoing: 250,
         max_time_range_overlap_factor: None,

@@ -3,6 +3,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::ContestedIndexResolution;
 use dpp::document::DocumentV0Getters;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
@@ -60,6 +61,14 @@ where
                         ) => {
                             let document_type =
                                 resolved_contested_document_resource_vote_poll.document_type()?;
+                            // A contest on an index resolved without locking always has a
+                            // winner, whatever its lock tally holds
+                            let locking_allowed = resolved_contested_document_resource_vote_poll
+                                .index()?
+                                .contested_index
+                                .as_ref()
+                                .map(|contested| contested.resolution)
+                                != Some(ContestedIndexResolution::MasternodeVoteNoLocking);
                             // let's see who actually won
                             let result = self.tally_votes_for_contested_document_resource_vote_poll(
                                 (&resolved_contested_document_resource_vote_poll).into(),
@@ -142,7 +151,9 @@ where
                             let winner_info = if let Some(top_contender) = maybe_top_contender {
                                 // let's check to make sure the lock votes didn't win it
                                 // if the lock is tied with the top contender the top contender gets it
-                                if result.locked_vote_tally > top_contender.final_vote_tally {
+                                if locking_allowed
+                                    && result.locked_vote_tally > top_contender.final_vote_tally
+                                {
                                     // the record will show it's locked
                                     ContestedDocumentVotePollWinnerInfo::Locked
                                 } else {

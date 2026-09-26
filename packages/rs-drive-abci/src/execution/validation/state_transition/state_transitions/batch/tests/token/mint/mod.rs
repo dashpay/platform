@@ -841,24 +841,81 @@ mod token_mint_tests {
             assert_eq!(total_supply, Some(1000));
         }
 
+        /// A token's total supply is stored in a sum item, so `i64::MAX` bounds it even when
+        /// the token configures no max supply. Minting 1 onto an `i64::MAX` supply is refused
+        /// in state validation as a paid consensus error that reports `i64::MAX` as the max
+        /// supply.
         #[tokio::test]
-        async fn test_token_mint_with_max_i64_base_supply_then_overflow_returns_internal_error_without_mutating_supply(
+        async fn test_token_mint_past_i64_max_supply_without_max_supply_is_paid_consensus_error() {
+            let (results, paid) = run_token_mint_of_one_onto_an_i64_max_supply_at_protocol_version(
+                PlatformVersion::latest().protocol_version,
+                None,
+            )
+            .await;
+            assert_mint_refused_at_the_i64_max_ceiling(&results);
+            assert!(paid, "the refused mint must be charged");
+        }
+
+        /// A configured max supply above `i64::MAX` is capped there: minting 1 onto an
+        /// `i64::MAX` supply is refused although it stays under the configured value.
+        #[tokio::test]
+        async fn test_token_mint_past_i64_max_supply_with_a_higher_max_supply_is_paid_consensus_error(
         ) {
-            // CHARACTERIZATION TEST (current behavior, not the desired long-term API).
-            //
-            // A contract may be created with base_supply == i64::MAX (the largest value
-            // that passes the Drive sum-item guard). A subsequent mint of 1 would push the
-            // supply past i64::MAX. With max_supply == None there is no validation-layer
-            // guard, so this is only caught by the low-level Drive checked_add and surfaces
-            // as an InternalError (the "corrupted execution" class) rather than a graceful
-            // consensus rejection — while leaving supply unmutated.
-            //
-            // This test pins that current shape. When a validation-layer guard is added
-            // (tracked separately), this test SHOULD break: that is the signal to update it
-            // from the characterized-current behavior to the new graceful-rejection behavior.
-            let platform_version = PlatformVersion::latest();
+            let (results, paid) = run_token_mint_of_one_onto_an_i64_max_supply_at_protocol_version(
+                PlatformVersion::latest().protocol_version,
+                Some(u64::MAX),
+            )
+            .await;
+            assert_mint_refused_at_the_i64_max_ceiling(&results);
+            assert!(paid, "the refused mint must be charged");
+        }
+
+        /// PROTOCOL_VERSION_13: mint state validation 0 checks only a configured max supply,
+        /// and `i64::MAX + 1` is under `u64::MAX`, so the same mint passes validation and
+        /// fails in execution on the Drive sum item's overflow guard. That is an internal
+        /// error, which charges nothing. Pinned so v13 replay is unchanged.
+        #[tokio::test]
+        async fn test_token_mint_past_i64_max_supply_is_internal_error_protocol_version_13() {
+            for max_supply in [None, Some(u64::MAX)] {
+                let (results, paid) =
+                    run_token_mint_of_one_onto_an_i64_max_supply_at_protocol_version(
+                        13, max_supply,
+                    )
+                    .await;
+                assert_matches!(
+                    results.as_slice(),
+                    [StateTransitionExecutionResult::InternalError(message)]
+                        if message.contains("overflow total supply"),
+                    "max supply {max_supply:?}"
+                );
+                assert!(!paid, "an internal error charges nothing");
+            }
+        }
+
+        fn assert_mint_refused_at_the_i64_max_ceiling(results: &[StateTransitionExecutionResult]) {
+            let [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(err)),
+                ..
+            }] = results
+            else {
+                panic!("expected a paid TokenMintPastMaxSupplyError, got {results:?}");
+            };
+            assert_eq!(err.amount(), 1);
+            assert_eq!(err.current_supply(), i64::MAX as u64);
+            assert_eq!(err.max_supply(), i64::MAX as u64);
+        }
+
+        /// Creates a token whose base supply is `i64::MAX`, with the given max supply, and
+        /// mints 1 more. Asserts the total supply is unchanged and returns the execution
+        /// results and whether the minter was charged.
+        async fn run_token_mint_of_one_onto_an_i64_max_supply_at_protocol_version(
+            protocol_version: dpp::version::ProtocolVersion,
+            max_supply: Option<u64>,
+        ) -> (Vec<StateTransitionExecutionResult>, bool) {
+            let platform_version = PlatformVersion::get(protocol_version)
+                .expect("expected platform version for the requested protocol_version");
             let mut platform = TestPlatformBuilder::new()
-                .with_latest_protocol_version()
+                .with_initial_protocol_version(protocol_version)
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -875,6 +932,7 @@ mod token_mint_tests {
                 identity.id(),
                 Some(move |token_configuration: &mut TokenConfiguration| {
                     token_configuration.set_base_supply(base);
+                    token_configuration.set_max_supply(max_supply);
                 }),
                 None,
                 None,
@@ -882,12 +940,10 @@ mod token_mint_tests {
                 platform_version,
             );
 
-            // Creation initializes the supply to i64::MAX.
-            let total_supply_before = platform
+            let balance_before = platform
                 .drive
-                .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
-                .expect("expected to fetch total supply");
-            assert_eq!(total_supply_before, Some(base));
+                .fetch_identity_balance(identity.id().to_buffer(), None, platform_version)
+                .expect("expected to fetch credit balance");
 
             let mint_transition = BatchTransition::new_token_mint_transition(
                 token_id,
@@ -927,25 +983,6 @@ mod token_mint_tests {
                 )
                 .expect("expected to process state transition");
 
-            // Minting 1 past an i64::MAX supply is caught by the Drive sum-item guard
-            // (checked_add in add_to_token_total_supply_operations_v0). With
-            // max_supply == None there is no graceful consensus-level rejection, so it
-            // surfaces as an InternalError carrying the Drive overflow message rather
-            // than a clean PaidConsensusError. We assert that concrete shape (not merely
-            // "not successful") so the test fails loudly if the surfaced result changes.
-            let results = processing_result.execution_results();
-            assert_matches!(
-                results.as_slice(),
-                [StateTransitionExecutionResult::InternalError(_)]
-            );
-            let StateTransitionExecutionResult::InternalError(message) = &results[0] else {
-                unreachable!("asserted InternalError above");
-            };
-            assert!(
-                message.contains("overflow total supply"),
-                "expected the Drive overflow guard message, got: {message}"
-            );
-
             platform
                 .drive
                 .grove
@@ -953,12 +990,21 @@ mod token_mint_tests {
                 .unwrap()
                 .expect("expected to commit transaction");
 
-            // Supply must be unchanged.
             let total_supply_after = platform
                 .drive
                 .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
                 .expect("expected to fetch total supply");
             assert_eq!(total_supply_after, Some(base));
+
+            let balance_after = platform
+                .drive
+                .fetch_identity_balance(identity.id().to_buffer(), None, platform_version)
+                .expect("expected to fetch credit balance");
+
+            (
+                processing_result.execution_results().to_vec(),
+                balance_after < balance_before,
+            )
         }
 
         // NOTE: the base_supply > max_supply creation gap is documented by a real

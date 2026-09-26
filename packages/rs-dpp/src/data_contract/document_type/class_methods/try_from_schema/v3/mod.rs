@@ -520,6 +520,7 @@ fn try_from_schema_generation_3(
         validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
+        validate_no_immutable_contract_owner_requirements(&v2, name)?;
         validate_transient_fields(&v2, name)?;
         validate_no_transient_index_properties(&v2, name)?;
     }
@@ -817,6 +818,60 @@ fn validate_reference_count(
     Ok(())
 }
 
+/// An `immutable` property may not hold a `contract` reference whose
+/// `contractRequirements` carry an `owner` requirement when the document type's
+/// documents can be transferred or traded. The requirement relates the
+/// referenced contract's owner to the owner writing the document, and on such
+/// a type every replace re-checks it: after a transfer or a purchase an owner
+/// who does not meet it could not replace the document, and the immutable
+/// property could not be repointed at a contract it does meet. That holds
+/// wherever the reference sits under the immutable property (the property
+/// itself, inside an immutable object, the elements of a typed array) and for
+/// both `self` and `other`. On a type whose documents cannot change owner the
+/// requirement is never re-checked, so the pair is admitted there.
+#[cfg(feature = "validation")]
+fn validate_no_immutable_contract_owner_requirements(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !owner_can_change(DocumentTypeRef::V2(document_type)) {
+        return Ok(());
+    }
+    for (path, property) in document_type.flattened_properties() {
+        let Some(reference) = property.property_type.reference() else {
+            continue;
+        };
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        let carries_owner_requirement = target.leaves().into_iter().any(|leaf| {
+            matches!(
+                leaf,
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements,
+                } if contract_requirements.owner.is_some()
+            )
+        });
+        if !carries_owner_requirement {
+            continue;
+        }
+        let top_level = path.split('.').next().unwrap_or(path);
+        if document_type.immutable_fields.contains(top_level) {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
+                     a contract reference with an `owner` requirement and the type's documents can \
+                     be transferred or traded: every replace re-checks the requirement against the \
+                     owner writing it, so an owner who does not meet it could never replace the \
+                     document, nor repoint the reference. Leave the property mutable, or drop the \
+                     owner requirement",
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// An `immutable` property may not hold a `deletableDocument` reference the
 /// replace state validation could not clear: a typed array of them, at the
 /// top level or inside an immutable object, a single one inside an immutable
@@ -828,6 +883,16 @@ fn validate_reference_count(
 /// top-level property: a replace may remove it once its target is gone, an
 /// exception that reads the one identifier the removed top-level property
 /// held, which neither a list nor an object gives it.
+///
+/// That property may not also be listed under `immutableAllowSetting`. Once
+/// the reference is cleared the stored document has no value for it, so the
+/// allowance would let the next replace set it again, to another document,
+/// as a first-time set: the frozen reference would be repointed. The pair is
+/// refused here rather than by refusing the clear at write time, since
+/// without the clear a document whose target is deleted could never be
+/// replaced again. Every other `deletableDocument` form is refused on any
+/// immutable property, and an `immutableAllowSetting` entry is always
+/// immutable, so no deletableDocument reference can be set once.
 #[cfg(feature = "validation")]
 fn validate_no_immutable_deletable_element_references(
     document_type: &DocumentTypeV2,
@@ -860,8 +925,20 @@ fn validate_no_immutable_deletable_element_references(
         let top_level = path.split('.').next().unwrap_or(path);
         let is_list = matches!(reference, PropertyReference::Elements { .. });
         // A single reference by id that is itself the immutable property can be
-        // cleared once its target is gone
+        // cleared once its target is gone, so it may not also be settable while
+        // absent: the clear makes it absent again
         if !deletable_lookup && !is_list && top_level == path {
+            if document_type.immutable_fields_allow_setting.contains(path) {
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "document type \"{name}\" lists \"{path}\" in `immutableAllowSetting`, \
+                         but it is a deletableDocument reference: a replace may clear it once \
+                         its target is deleted, and the next replace could then set it to \
+                         another document. Use a permanentDocument reference, or leave it out \
+                         of immutableAllowSetting",
+                    )),
+                ));
+            }
             continue;
         }
         if document_type.immutable_fields.contains(top_level) {

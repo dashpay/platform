@@ -102,11 +102,12 @@ pub struct SystemLimits {
     /// * A token shielded pool leans on the cap twice, and neither is visible from the pool's
     ///   own code. Its balance write is absolute rather than a delta, so two pool operations in
     ///   one batch would silently discard the first — value lost on every node, no disagreement
-    ///   to notice. And an outputs-only bundle binds neither owner nor anchor, so the same
-    ///   authorized bytes can sit in two shields of one batch: state validation runs per
-    ///   transition against the transaction before any operation applies, so the second cannot
-    ///   see the first's pending insert, and the within-bundle check is scoped to one action
-    ///   set. The two inserts are then byte-identical in path, key and value, which a node
+    ///   to notice. And an outputs-only bundle's sighash binds the owner, but nothing that
+    ///   tells one of that owner's transitions from another, while its anchor is never checked
+    ///   against a pool at all — so the same authorized bytes can sit in two shields of one
+    ///   batch: state validation runs per transition against the transaction before any
+    ///   operation applies, so the second cannot see the first's pending insert, and the
+    ///   within-bundle check is scoped to one action set. The two inserts are then byte-identical in path, key and value, which a node
     ///   running the shipped batching default folds in silence while a node verifying batch
     ///   consistency refuses — the two disagree on one block and neither shows why. Raising the
     ///   cap means batch-scoped nullifier deduplication and a delta-based pool balance write,
@@ -215,6 +216,14 @@ pub struct SystemLimits {
     // For other distributions we much calculate at each cycle the rewards, so we don't want to
     // do this that much
     pub max_token_redemption_cycles: u32,
+    /// Most finalized epochs one `EvonodesByParticipation` perpetual distribution claim reads
+    /// to weigh the claimant's participation, unless one cycle of the distribution spans more
+    /// epochs, in which case the claim reads that one whole cycle. The claim pays only through
+    /// the last whole cycle it read, so an evonode further behind is paid over several claims.
+    /// Read by `evonode_participation_rewards` v1 (protocol version 14); 100 in every table,
+    /// the bound the read was held to before (`drive_abci.query.max_returned_elements`), which
+    /// v0 keeps reading.
+    pub max_evonode_reward_claim_epochs: u16,
     pub max_shielded_transition_actions: u16,
     /// Highest `minimumPoolNotesForOutgoing` a token's configuration may set. The threshold
     /// refuses outflows from the token's shielded pool while the pool holds fewer notes, so

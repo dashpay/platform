@@ -5,8 +5,6 @@ use grovedb::TransactionArg;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::EpochIndex;
-use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
-use dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::token::{InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimWrongClaimant, TokenOncePerIdentityDistributionAlreadyClaimedError};
@@ -484,7 +482,8 @@ pub(crate) fn resolve_token_claim(
                     platform_version,
                 )?;
 
-            let (recipient, amount) = match perpetual_distribution.distribution_recipient() {
+            let (recipient, amount, paid_through_moment) =
+                match perpetual_distribution.distribution_recipient() {
                     TokenDistributionRecipient::ContractOwner => (
                         TokenDistributionResolvedRecipient::ContractOwnerIdentity(
                             base_action.data_contract_fetch_info().contract.owner_id(),
@@ -498,6 +497,7 @@ pub(crate) fn resolve_token_claim(
                                 None,
                                 platform_version,
                             )?,
+                        max_cycle_moment,
                     ),
                     TokenDistributionRecipient::Identity(identifier) => (
                         TokenDistributionResolvedRecipient::Identity(identifier),
@@ -510,6 +510,7 @@ pub(crate) fn resolve_token_claim(
                                 None,
                                 platform_version,
                             )?,
+                        max_cycle_moment,
                     ),
                     TokenDistributionRecipient::EvonodesByParticipation => {
                         let RewardDistributionMoment::EpochBasedMoment(epoch_index) =
@@ -520,64 +521,22 @@ pub(crate) fn resolve_token_claim(
                             )));
                         };
 
-                        let epochs: BTreeMap<EpochIndex, FinalizedEpochInfo> = drive
-                            .get_finalized_epoch_infos(
-                                epoch_index,
-                                true,
-                                block_info.epoch.index,
-                                false,
-                                transaction,
-                                platform_version,
-                            )?;
-
-                        let rewards = perpetual_distribution
-                            .distribution_type()
-                            .rewards_in_interval(
+                        let (rewards, paid_through_moment) = drive
+                            .evonode_participation_rewards(
+                                owner_id,
+                                perpetual_distribution.distribution_type(),
                                 contract_creation_cycle_start,
-                                start_from_moment_for_distribution,
+                                epoch_index,
                                 max_cycle_moment,
-                                Some(|range_epoch_index: RangeInclusive<EpochIndex>| {
-                                    if range_epoch_index.start() == range_epoch_index.end() {
-                                        epochs.get(range_epoch_index.start()).map(|epoch_info| RewardRatio {
-                                            numerator: epoch_info
-                                                .block_proposers()
-                                                .get(&owner_id)
-                                                .copied()
-                                                .unwrap_or_default(),
-                                            denominator: epoch_info.total_blocks_in_epoch(),
-                                        })
-                                    } else {
-                                        let mut total_blocks = 0;
-                                        let mut total_proposed_blocks = 0;
-
-                                        for epoch_index in range_epoch_index {
-                                            if let Some(epoch_info) = epochs.get(&epoch_index) {
-                                                total_blocks += epoch_info.total_blocks_in_epoch();
-                                                total_proposed_blocks += epoch_info
-                                                    .block_proposers()
-                                                    .get(&owner_id)
-                                                    .copied()
-                                                    .unwrap_or_default();
-                                            }
-                                        }
-
-                                        // Return ratio if we have non-zero total blocks
-                                        if total_blocks > 0 {
-                                            Some(RewardRatio {
-                                                numerator: total_proposed_blocks,
-                                                denominator: total_blocks,
-                                            })
-                                        } else {
-                                            None
-                                        }
-                                    }
-                                }),
+                                block_info,
+                                transaction,
                                 platform_version,
                             )?;
 
                         (
                             TokenDistributionResolvedRecipient::Evonode(owner_id),
                             rewards,
+                            paid_through_moment,
                         )
                     }
                 };
@@ -597,7 +556,7 @@ pub(crate) fn resolve_token_claim(
 
             (
                 amount,
-                TokenDistributionInfo::Perpetual(max_cycle_moment, recipient),
+                TokenDistributionInfo::Perpetual(paid_through_moment, recipient),
             )
         }
         TokenDistributionType::OncePerIdentity => {

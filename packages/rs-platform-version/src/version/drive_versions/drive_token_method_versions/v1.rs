@@ -67,5 +67,6 @@ pub const DRIVE_TOKEN_METHOD_VERSIONS_V1: DriveTokenMethodVersions = DriveTokenM
         mark_pre_programmed_release_as_distributed: 0,
         add_once_per_identity_distribution: 0,
         mark_once_per_identity_release_as_distributed: 0,
+        evonode_participation_rewards: 0,
     },
 };

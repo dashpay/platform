@@ -257,14 +257,17 @@ where
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
+    use crate::execution::check_tx::CheckTxResult;
     use crate::platform_types::event_execution_result::EventExecutionResult::{
         SuccessfulPaidExecution, UnpaidConsensusExecutionError, UnsuccessfulPaidExecution,
     };
     use crate::platform_types::platform_state::PlatformStateV0Methods;
-    use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::SignatureError;
+    use dpp::validation::ValidationResult;
     use simple_signer::signer::SimpleSigner;
 
     use dpp::consensus::ConsensusError;
@@ -300,7 +303,7 @@ mod tests {
         get_dashpay_contract_fixture, get_dpns_data_contract_fixture,
         instant_asset_lock_proof_fixture,
     };
-    use dpp::version::PlatformVersion;
+    use dpp::version::{PlatformVersion, ProtocolVersion};
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
     use crate::execution::validation::state_transition::tests::{
@@ -4553,5 +4556,184 @@ mod tests {
         )
         .expect("expected to check tx");
         assert!(recheck_result.is_valid());
+    }
+
+    /// A platform at `protocol_version` holding one identity, and that identity's serialized,
+    /// signed DashPay contract create.
+    fn platform_with_signed_data_contract_create(
+        protocol_version: ProtocolVersion,
+    ) -> (TempPlatform<MockCoreRPCLike>, Vec<u8>, Identifier) {
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
+            .build_with_mock_rpc();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected a platform version");
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::new([7; 32]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 25_000_000_000, // 0.25 Dash
+            revision: 0,
+        }
+        .into();
+        let identity_id = identity.id();
+
+        let dashpay = get_dashpay_contract_fixture(Some(identity_id), 1, protocol_version);
+        let mut create_contract_state_transition: StateTransition = dashpay
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        (platform, serialized, identity_id)
+    }
+
+    /// `raw` followed by `left_over` bytes.
+    fn with_left_over_bytes(raw: &[u8], left_over: usize) -> Vec<u8> {
+        let mut padded = raw.to_vec();
+        padded.extend(std::iter::repeat_n(0u8, left_over));
+        padded
+    }
+
+    /// Runs `raw` through `check_tx` and, in a transaction that is dropped afterwards, through
+    /// block processing, returning the check result, the execution result and the identity's
+    /// balance after processing.
+    fn check_and_process(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        raw: &[u8],
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> (
+        ValidationResult<CheckTxResult, ConsensusError>,
+        StateTransitionExecutionResult,
+        u64,
+    ) {
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let check_result = platform
+            .check_tx(raw, FirstTimeCheck, &platform_ref, platform_version)
+            .expect("expected to check tx");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[raw.to_vec()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+        let balance = platform
+            .drive
+            .fetch_identity_balance(
+                identity_id.to_buffer(),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch the balance")
+            .expect("expected the identity to exist");
+
+        let [execution_result] = processing_result.execution_results().as_slice() else {
+            panic!("expected one execution result");
+        };
+        (check_result, execution_result.clone(), balance)
+    }
+
+    // Each variant gets its own platform: processing a create caches the contract in Drive's
+    // block cache, which outlives the dropped transaction.
+    #[test]
+    fn should_refuse_bytes_after_a_state_transition_unpaid_from_protocol_version_14() {
+        let platform_version = PlatformVersion::latest();
+        let (platform, serialized, identity_id) =
+            platform_with_signed_data_contract_create(platform_version.protocol_version);
+
+        let (check_result, execution_result, _) =
+            check_and_process(&platform, &serialized, identity_id, platform_version);
+        assert_eq!(check_result.errors.as_slice(), &[]);
+        assert_matches!(
+            execution_result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        for left_over in [1, 100] {
+            let (platform, serialized, identity_id) =
+                platform_with_signed_data_contract_create(platform_version.protocol_version);
+            let padded = with_left_over_bytes(&serialized, left_over);
+            let (check_result, execution_result, balance) =
+                check_and_process(&platform, &padded, identity_id, platform_version);
+
+            assert_matches!(
+                check_result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::SerializedObjectParsingError(_)
+                )]
+            );
+            assert_eq!(check_result.data.expect("check tx data").fee_result, None);
+            assert_matches!(
+                execution_result,
+                StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::SerializedObjectParsingError(_)
+                ))
+            );
+            assert_eq!(balance, 25_000_000_000, "nothing is charged");
+        }
+    }
+
+    /// Protocol version 13 keeps decoding a transition with bytes after it as the transition
+    /// alone, and executes it.
+    #[test]
+    fn should_accept_bytes_after_a_state_transition_at_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+
+        for left_over in [0, 1, 100] {
+            let (platform, serialized, identity_id) =
+                platform_with_signed_data_contract_create(platform_version.protocol_version);
+            let raw = with_left_over_bytes(&serialized, left_over);
+            let (check_result, execution_result, balance) =
+                check_and_process(&platform, &raw, identity_id, platform_version);
+
+            assert_eq!(check_result.errors.as_slice(), &[]);
+            assert_matches!(
+                execution_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            assert!(balance < 25_000_000_000, "the create is paid");
+        }
     }
 }

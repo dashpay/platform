@@ -1,7 +1,5 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::data_contract::associated_token::token_configuration::validate_token_configurations;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
@@ -31,9 +29,8 @@ pub(crate) trait StateTransitionIsAllowedValidationV0 {
     /// This means we should validate is state transition is allowed
     fn has_is_allowed_validation(&self) -> Result<bool, Error>;
     /// Preliminary validation for a state transition
-    fn validate_is_allowed<C: CoreRPCLike>(
+    fn validate_is_allowed(
         &self,
-        platform: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error>;
 }
@@ -83,9 +80,8 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
         }
     }
 
-    fn validate_is_allowed<C: CoreRPCLike>(
+    fn validate_is_allowed(
         &self,
-        platform: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error> {
         let contract = match self {
@@ -106,7 +102,7 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                 // Token shielded pools (the batch transitions that use them, a document token
                 // cost paid from one and the configuration items of a pool's threshold) are a
                 // protocol-version feature, not a table-versioned validator, so the gate is
-                // applied to the batch as a whole before its own `is_allowed` runs.
+                // applied to the batch as a whole rather than to one of its transitions.
                 if platform_version.protocol_version < TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION
                 {
                     if let Some(transition) =
@@ -168,7 +164,10 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                         ]));
                     }
                 }
-                st.validate_is_allowed(platform, platform_version)
+                // The batch's own `is_allowed` covered contested documents before a target
+                // epoch and was removed upstream once those were allowed; the version gate above
+                // is all a batch needs here now.
+                Ok(ConsensusValidationResult::new())
             }
             StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
@@ -468,7 +467,6 @@ mod tests {
     /// Returns all state transitions grouped by expected `has_is_allowed_validation` result.
     fn transitions_requiring_allowed_validation() -> Vec<StateTransition> {
         vec![
-            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
             StateTransition::IdentityTopUpFromAddresses(IdentityTopUpFromAddressesTransition::V0(
                 IdentityTopUpFromAddressesTransitionV0::default(),
             )),
@@ -504,6 +502,7 @@ mod tests {
 
     fn transitions_not_requiring_allowed_validation() -> Vec<StateTransition> {
         vec![
+            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
             make_data_contract_create_st(),
             make_data_contract_update_st(),
             StateTransition::IdentityCreate(IdentityCreateTransition::V0(

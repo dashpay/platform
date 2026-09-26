@@ -64,8 +64,8 @@ pub(crate) mod gas_sponsorship_tests {
         pub(crate) contract: DataContract,
         gold_token_id: Identifier,
         pub(crate) contract_owner: Identity,
-        contract_owner_signer: SimpleSigner,
-        contract_owner_key: IdentityPublicKey,
+        pub(crate) contract_owner_signer: SimpleSigner,
+        pub(crate) contract_owner_key: IdentityPublicKey,
         pub(crate) user: Identity,
         pub(crate) user_signer: SimpleSigner,
         pub(crate) user_key: IdentityPublicKey,
@@ -493,24 +493,13 @@ pub(crate) mod gas_sponsorship_tests {
             block_info: &BlockInfo,
             tx: &drive::grovedb::Transaction,
         ) -> StateTransitionExecutionResult {
-            let platform_version = self.platform_version;
-            let state = self.platform.state.load();
-            let result = self
-                .platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![transition
-                        .serialize_to_bytes()
-                        .expect("expected to serialize")],
-                    &state,
-                    block_info,
-                    tx,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process the state transition");
-            result.execution_results()[0].clone()
+            process_alone(
+                &self.platform,
+                transition,
+                block_info,
+                tx,
+                self.platform_version,
+            )
         }
 
         pub(crate) fn check_tx(&self, transition: &StateTransition) -> Vec<u32> {
@@ -547,11 +536,7 @@ pub(crate) mod gas_sponsorship_tests {
             identity: &Identity,
             tx: &drive::grovedb::Transaction,
         ) -> Credits {
-            self.platform
-                .drive
-                .fetch_identity_balance(identity.id().to_buffer(), Some(tx), self.platform_version)
-                .expect("expected to fetch the balance")
-                .expect("expected a balance")
+            balance_of(&self.platform, identity, tx, self.platform_version)
         }
 
         fn gold(&self, identity: &Identity, tx: &drive::grovedb::Transaction) -> TokenAmount {
@@ -566,6 +551,46 @@ pub(crate) mod gas_sponsorship_tests {
                 .expect("expected to fetch the token balance")
                 .unwrap_or_default()
         }
+    }
+
+    /// Processes `transition` as the only state transition of the block `block_info` describes,
+    /// in `tx`
+    pub(crate) fn process_alone(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        transition: &StateTransition,
+        block_info: &BlockInfo,
+        tx: &drive::grovedb::Transaction,
+        platform_version: &PlatformVersion,
+    ) -> StateTransitionExecutionResult {
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition
+                    .serialize_to_bytes()
+                    .expect("expected to serialize")],
+                &platform.state.load(),
+                block_info,
+                tx,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process the state transition");
+        result.execution_results()[0].clone()
+    }
+
+    /// The balance of `identity` in `tx`
+    pub(crate) fn balance_of(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        identity: &Identity,
+        tx: &drive::grovedb::Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        platform
+            .drive
+            .fetch_identity_balance(identity.id().to_buffer(), Some(tx), platform_version)
+            .expect("expected to fetch the balance")
+            .expect("expected a balance")
     }
 
     pub(crate) fn total_fee(result: &StateTransitionExecutionResult) -> Credits {

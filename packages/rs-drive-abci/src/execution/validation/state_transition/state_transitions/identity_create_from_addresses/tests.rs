@@ -12339,4 +12339,178 @@ mod tests {
             }
         }
     }
+
+    // ==========================================
+    // INPUT LIMIT BEFORE WITNESS VALIDATION
+    // ==========================================
+
+    mod input_limit_before_witnesses {
+        use super::*;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+
+        /// The latest protocol version and the last released one, which both check the input
+        /// limit before any witness.
+        fn platform_versions() -> [&'static PlatformVersion; 2] {
+            [
+                PlatformVersion::latest(),
+                PlatformVersion::get(13).expect("expected protocol version 13"),
+            ]
+        }
+
+        fn setup_platform(platform_version: &PlatformVersion) -> TempPlatform<MockCoreRPCLike> {
+            TestPlatformBuilder::new()
+                .with_config(PlatformConfig::default())
+                .with_initial_protocol_version(platform_version.protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state()
+        }
+
+        /// An identity created from `input_count` funded addresses with every input signed.
+        /// With `invalid_first_witness` the witness of the first input is replaced by one that
+        /// does not verify.
+        async fn identity_create_from_inputs(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            input_count: u8,
+            invalid_first_witness: bool,
+            platform_version: &PlatformVersion,
+        ) -> Vec<u8> {
+            let mut rng = StdRng::seed_from_u64(567);
+            let mut address_signer = TestAddressSigner::new();
+            let mut inputs = BTreeMap::new();
+            for i in 1..=input_count {
+                let address = address_signer.add_p2pkh([i; 32]);
+                setup_address_with_balance(platform, address, 0, dash_to_credits!(1.0));
+                inputs.insert(address, (1, dash_to_credits!(0.1)));
+            }
+
+            let (identity, identity_signer) =
+                create_identity_with_keys([50u8; 32], &mut rng, platform_version);
+            let mut transition = create_signed_identity_create_from_addresses_transition(
+                &identity,
+                &address_signer,
+                &identity_signer,
+                inputs,
+                None,
+                None,
+                platform_version,
+            )
+            .await;
+
+            if invalid_first_witness {
+                let StateTransition::IdentityCreateFromAddresses(
+                    IdentityCreateFromAddressesTransition::V0(v0),
+                ) = &mut transition
+                else {
+                    panic!("expected an identity create from addresses");
+                };
+                v0.input_witnesses[0] = create_dummy_witness();
+            }
+
+            transition.serialize_to_bytes().expect("should serialize")
+        }
+
+        fn process(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            raw_tx: &[u8],
+            platform_version: &PlatformVersion,
+        ) -> StateTransitionExecutionResult {
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .platform
+                .process_raw_state_transitions(
+                    &[raw_tx.to_vec()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition")
+                .into_execution_results()
+                .remove(0)
+        }
+
+        #[tokio::test]
+        async fn should_refuse_17_inputs_with_an_invalid_first_witness_on_the_input_limit() {
+            for platform_version in platform_versions() {
+                let mut platform = setup_platform(platform_version);
+                let raw_tx =
+                    identity_create_from_inputs(&mut platform, 17, true, platform_version).await;
+
+                // Had the witnesses been verified first, the first one would have been refused
+                // with a signature error.
+                assert_matches!(
+                    run_check_tx(&platform, &raw_tx, platform_version).errors.as_slice(),
+                    [ConsensusError::BasicError(BasicError::TransitionOverMaxInputsError(e))]
+                        if e.actual_inputs() == 17 && e.max_inputs() == 16,
+                    "check tx at protocol version {}",
+                    platform_version.protocol_version
+                );
+                assert_matches!(
+                    process(&platform, &raw_tx, platform_version),
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(BasicError::TransitionOverMaxInputsError(e))
+                    ) if e.actual_inputs() == 17 && e.max_inputs() == 16,
+                    "processing at protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_accept_16_inputs_with_valid_witnesses() {
+            for platform_version in platform_versions() {
+                let mut platform = setup_platform(platform_version);
+                let raw_tx =
+                    identity_create_from_inputs(&mut platform, 16, false, platform_version).await;
+
+                let errors = run_check_tx(&platform, &raw_tx, platform_version).errors;
+                assert!(
+                    errors.is_empty(),
+                    "check tx at protocol version {}: {:?}",
+                    platform_version.protocol_version,
+                    errors
+                );
+                assert_matches!(
+                    process(&platform, &raw_tx, platform_version),
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "processing at protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_refuse_16_inputs_with_an_invalid_first_witness_on_the_signature() {
+            for platform_version in platform_versions() {
+                let mut platform = setup_platform(platform_version);
+                let raw_tx =
+                    identity_create_from_inputs(&mut platform, 16, true, platform_version).await;
+
+                assert_matches!(
+                    run_check_tx(&platform, &raw_tx, platform_version)
+                        .errors
+                        .as_slice(),
+                    [ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError(_)
+                    )],
+                    "check tx at protocol version {}",
+                    platform_version.protocol_version
+                );
+                assert_matches!(
+                    process(&platform, &raw_tx, platform_version),
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::SignatureError(
+                            SignatureError::InvalidStateTransitionSignatureError(_)
+                        )
+                    ),
+                    "processing at protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
 }

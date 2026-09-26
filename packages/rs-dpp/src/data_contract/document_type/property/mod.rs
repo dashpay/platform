@@ -232,7 +232,11 @@ pub struct ByteArrayPropertySizes {
 /// requirements when the referring document is written, against the contract it has already
 /// fetched for the existence check and the write itself (its owner and block time), so a
 /// requirement costs no further read. An unmet one refuses the write with
-/// `ReferencedContractRequirementNotMetError` (40135).
+/// `ReferencedContractRequirementNotMetError` (40135). A replace re-checks them when it changes
+/// the reference. The `owner` requirement is judged against the writer, which a transfer or a
+/// purchase changes without any write, so on a document type whose documents can be transferred
+/// or traded a declaration carrying one is re-checked on every replace, whole; the other
+/// requirements are facts about the referenced contract and never bring a reference back.
 #[derive(
     Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
 )]
@@ -253,6 +257,8 @@ pub struct ContractReferenceRequirements {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub minimum_seconds_since_update: Option<u32>,
     /// Who must own the referenced contract, relative to the writer of the referring document.
+    /// The writer of every write: on a document type whose documents can change owner, every
+    /// replace re-checks it against the owner writing the replace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<ContractReferenceOwner>,
     /// Whether the referenced contract must be read-only (its config's `readonly`), a

@@ -150,7 +150,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
                         reject_data_trigger: 0,
                     },
                 },
-                is_allowed: 0,
                 identity_minimum_balance_pre_check: 0,
                 document_create_transition_structure_validation: 0,
                 document_delete_transition_structure_validation: 0,

@@ -2199,9 +2199,7 @@ mod tests {
         use dpp::shielded::builder::{
             build_shield_from_asset_lock_transition, build_shield_transition,
         };
-        use dpp::state_transition::errors::StateTransitionError;
         use dpp::state_transition::shield_transition::ShieldTransition;
-        use dpp::ProtocolError;
         use std::collections::BTreeMap;
 
         const SHIELD_AMOUNT: u64 = 5_000;
@@ -2507,10 +2505,19 @@ mod tests {
                 "nothing may be paid for it: {observed}"
             );
             assert_eq!(pool_after, pool_before, "nothing may enter the pool");
+            // The bytes decode fine — only the version is outside its active range — so the
+            // submitter is owed a coded answer and the transition is dropped from the block
+            // unpaid instead of being counted as an internal error. The error's
+            // `required_protocol_version` is the start of that active range, which names nothing
+            // to move to once a version has been superseded, so what is pinned here is the answer
+            // the submitter receives.
             assert_matches!(
                 in_block.execution_results().as_slice(),
-                [StateTransitionExecutionResult::InternalError(_)],
-                "a version 0 is dropped from the block, not executed"
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)),
+                )] if error.state_transition_type() == "ShieldFromAssetLock"
+                    && error.current_protocol_version() == platform_version.protocol_version,
+                "a version 0 is refused unpaid and dropped from the block: {observed}"
             );
 
             // The same lock still funds the resubmission as version 1, in the same block.
@@ -2543,17 +2550,21 @@ mod tests {
             // Both the first check and the recheck that evicts a version 0 admitted at 13 from
             // the mempool once 14 is active.
             for level in [CheckTxLevel::FirstTimeCheck, CheckTxLevel::Recheck] {
-                let admission = platform.check_tx(&raw, level, &platform_ref, platform_version);
+                let admission = platform
+                    .check_tx(&raw, level, &platform_ref, platform_version)
+                    .expect(
+                        "a version outside its active range is a coded refusal, not a node error",
+                    );
                 assert!(
-                    matches!(
-                        &admission,
-                        Err(crate::error::Error::Protocol(
-                            ProtocolError::StateTransitionError(
-                                StateTransitionError::StateTransitionIsNotActiveError { .. }
-                            )
-                        ))
-                    ),
-                    "CheckTx ({level:?}) must refuse version 0 as not active, got {admission:?}"
+                    !admission.is_valid(),
+                    "CheckTx ({level:?}) must refuse version 0, got {admission:?}"
+                );
+                assert_matches!(
+                    admission.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::StateTransitionNotActiveError(error),
+                    )] if error.state_transition_type() == "ShieldFromAssetLock",
+                    "CheckTx ({level:?}) must name the version as not active"
                 );
             }
         }
