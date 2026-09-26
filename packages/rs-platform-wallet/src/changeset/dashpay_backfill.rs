@@ -88,11 +88,11 @@ pub struct DashPayBackfillCoveredContact {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DashPayBackfillRecord {
     /// Lowest height a backfill rewound the cursor to. Meaningless while
-    /// `covered` is empty.
+    /// [`has_extent`](Self::has_extent) is false.
     pub floor: u32,
     /// Highest cursor a backfill rewound from — the height the scan has to
-    /// climb back to for the backfill to be complete. Meaningless while
-    /// `covered` is empty.
+    /// climb back to for the backfill to be complete. `0` while no pass has
+    /// rewound anything ([`has_extent`](Self::has_extent)).
     pub rewound_from: u32,
     /// Receival contacts the backfill covers, sorted by `(owner, contact)`,
     /// at most one entry per pair.
@@ -122,15 +122,23 @@ impl DashPayBackfillRecord {
             .is_some_and(|covered_from| checkpoint >= covered_from)
     }
 
+    /// Whether a backfill ever rewound the cursor, i.e. whether `floor` /
+    /// `rewound_from` describe anything. A record whose every contact was
+    /// forward-covered has entries but no extent, and `rewound_from == 0`
+    /// cannot come from a real rewind (a checkpoint is never below 0).
+    pub fn has_extent(&self) -> bool {
+        self.rewound_from > 0
+    }
+
     /// The backfill is still climbing back to the cursor it rewound from.
     pub fn is_pending(&self, synced_height: u32) -> bool {
-        !self.is_empty() && synced_height < self.rewound_from
+        self.has_extent() && synced_height < self.rewound_from
     }
 
     /// The scan has climbed back past the cursor the backfill rewound from,
     /// so every block in `[floor, rewound_from]` has been re-matched.
     pub fn is_complete(&self, synced_height: u32) -> bool {
-        !self.is_empty() && synced_height >= self.rewound_from
+        self.has_extent() && synced_height >= self.rewound_from
     }
 
     /// Fold one reconcile pass into the record.
@@ -171,13 +179,18 @@ impl DashPayBackfillRecord {
                 }
             }
         }
-        if self.covered.is_empty() {
+        // The extent describes real rewinds only. A pass that rewound nothing
+        // (every contact forward-covered, or already covered) says nothing
+        // about how far a backfill reached, so it must not invent one from
+        // the cursor it happened to run at — on a record that had no extent
+        // yet that would make `floor == rewound_from == cursor`, which reads
+        // complete at any later cursor and measures nothing.
+        let Some(pass_floor) = floor else {
             return changed;
-        }
-        // A first record takes the pass's extent as-is; a later pass can only
+        };
+        // A first rewind takes the pass's extent as-is; a later one can only
         // widen it — deeper floor, higher climb target.
-        let pass_floor = floor.unwrap_or(synced_height_before);
-        let (new_floor, new_rewound_from) = if was_empty {
+        let (new_floor, new_rewound_from) = if was_empty || !self.has_extent() {
             (pass_floor, synced_height_before)
         } else {
             (
@@ -298,6 +311,26 @@ mod tests {
 
         // An unchanged replay is reported as such.
         assert!(!record.record_pass(1_500, None, [(id(1), id(5), 1_700)]));
+    }
+
+    /// A pass that rewound nothing must not invent an extent from the cursor
+    /// it ran at: on the device that produced `floor == rewound_from ==
+    /// 1251329` — the cursor of a later pass — which read complete at any
+    /// later cursor. The first real rewind then sets the extent.
+    #[test]
+    fn a_forward_only_pass_on_an_empty_record_leaves_no_extent() {
+        let mut record = DashPayBackfillRecord::default();
+        assert!(record.record_pass(1_251_329, None, [(id(1), id(2), 1_300_000)]));
+        assert!(!record.has_extent());
+        assert!(!record.is_pending(1_000));
+        assert!(!record.is_complete(2_000_000));
+        assert!(record.covers(&id(1), &id(2), 1_300_000));
+
+        assert!(record.record_pass(1_560_731, Some(1_226_329), [(id(1), id(3), 1_226_329)]));
+        assert!(record.has_extent());
+        assert_eq!((record.floor, record.rewound_from), (1_226_329, 1_560_731));
+        assert!(record.is_pending(1_251_329));
+        assert!(record.is_complete(1_560_731));
     }
 
     #[test]

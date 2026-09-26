@@ -2809,6 +2809,9 @@ mod tests {
             .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
             .await
             .expect("register receival account");
+        // An account on file that the record does not know (see
+        // `forget_recorded_coverage`).
+        forget_recorded_coverage(&manager, wallet_id, owner, contact).await;
 
         {
             let mut wm = iw.wallet_manager.write().await;
@@ -2901,6 +2904,29 @@ mod tests {
             .managed_identity_mut(&owner)
             .expect("managed")
             .apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
+        // Registration records its own coverage now. These fixtures exercise
+        // the reconcile's rewind path, which serves accounts persisted before
+        // the record existed (and hosts that do not store it), so model that:
+        // the account is on file, the record does not know it.
+        info.dashpay_backfill
+            .retain(|o, c| (o, c) != (&owner, &contact));
+    }
+
+    /// Drop `(owner, contact)` from the wallet's backfill record — the shape
+    /// of an account registered before the record existed, or by a host
+    /// that does not persist it — so the reconcile's own rewind path is what
+    /// a test exercises.
+    async fn forget_recorded_coverage(
+        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+        wallet_id: WalletId,
+        owner: Identifier,
+        contact: Identifier,
+    ) {
+        let mut wm = manager.wallet_manager.write().await;
+        wm.get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .dashpay_backfill
+            .retain(|o, c| (o, c) != (&owner, &contact));
     }
 
     async fn set_synced_height(
@@ -3491,14 +3517,46 @@ mod tests {
         );
     }
 
-    /// Registering the account of an already-established contact marks it in
-    /// memory without a reconcile pass ever seeing it as a candidate. The
-    /// next pass must still write it into the record — with no rewind, since
-    /// registration already lowered the cursor for it — or the following
-    /// launch rewinds for it once more.
+    /// A contact's compact receiving xpub encrypted under `shared_key` — the
+    /// wire shape a contact sends us — so `register_external_contact_account`
+    /// can be driven without a signer.
+    fn encrypted_contact_xpub(
+        owner: &Identifier,
+        contact: &Identifier,
+        shared_key: &[u8; 32],
+    ) -> Vec<u8> {
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("mnemonic")
+            .to_seed("");
+        let w = key_wallet::wallet::Wallet::from_seed_bytes(
+            seed,
+            Network::Testnet,
+            WalletAccountCreationOptions::None,
+        )
+        .expect("seed wallet");
+        let compact = crate::wallet::identity::crypto::dip14::derive_contact_xpub(
+            &w,
+            Network::Testnet,
+            0,
+            owner,
+            contact,
+        )
+        .expect("derive a valid compact xpub")
+        .compact
+        .to_bytes();
+        platform_encryption::encrypt_extended_public_key(shared_key, &[0x11u8; 16], &compact)
+    }
+
+    /// The outbound `DashpayExternalAccount` is watch-only and never
+    /// receives, so registering (or rebuilding) it must not move the
+    /// filter-scan cursor. Every cold start whose host does not persist
+    /// `external_account_reference` tears the account down and rebuilds it;
+    /// on a tree where that rebuild also rewound the cursor it re-walked
+    /// every filter from the earliest contact's request height per launch
+    /// (dashpay/platform#4302, the topple relaunch). Pin the invariant so a
+    /// registration-time rewind (#4740) cannot pick the outbound account up.
     #[tokio::test]
-    async fn rescan_records_a_contact_registration_marked_in_memory_so_a_reload_does_not_rewind_for_it(
-    ) {
+    async fn external_account_registration_leaves_the_scan_cursor_untouched() {
         use crate::wallet::identity::{ContactRequest, EstablishedContact};
 
         let (manager, persister, wallet_id) = make_wallet().await;
@@ -3513,63 +3571,222 @@ mod tests {
             info.identity_manager
                 .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
                 .expect("add owner");
-            let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0);
-            let incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 100, 0);
+            let outgoing =
+                ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 1_226_329, 0);
+            let incoming =
+                ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 1_226_329, 0);
             info.identity_manager
                 .managed_identity_mut(&owner)
                 .expect("managed")
                 .apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
-            info.core_wallet.update_synced_height(1_000);
+            info.core_wallet.update_synced_height(1_560_740);
         }
-        // Established first, registered second: registration lowers the
-        // cursor to the checkpoint and marks the contact in memory.
-        iw.dashpay()
-            .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
-            .await
-            .expect("register receival account");
-        assert_eq!(synced_height(&manager, wallet_id).await, 100);
-        persister.stores.lock().unwrap().clear();
 
+        let shared_key = [0x55u8; 32];
+        let encrypted = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let registration = iw
+            .dashpay()
+            .register_external_contact_account(
+                &owner,
+                &bare_identity(contact.to_buffer()),
+                &encrypted,
+                zeroize::Zeroizing::new(shared_key),
+            )
+            .await
+            .expect("register the outbound account");
+        assert_eq!(
+            registration,
+            crate::wallet::identity::network::contacts::ExternalAccountRegistration::Built
+        );
+        assert_eq!(
+            synced_height(&manager, wallet_id).await,
+            1_560_740,
+            "an outbound account never receives: building it must not rewind the scan"
+        );
+    }
+
+    /// The observed relaunch, end to end (dashpay/platform#4302, topple on
+    /// int23): a restore with established contacts, both accounts persisted,
+    /// the cursor at the tip and a record covering every contact. With the
+    /// outbound-account marker restored, the contact pass finds nothing to
+    /// rebuild; without it (a host that does not carry the marker) the
+    /// rebuild still leaves the cursor alone; and the reconcile pass after
+    /// either leaves the cursor at the tip.
+    #[tokio::test]
+    async fn a_cold_start_with_persisted_accounts_and_record_leaves_the_cursor_at_the_tip() {
+        use crate::wallet::identity::network::contact_requests::external_account_needs_rebuild;
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+        use key_wallet::account::account_collection::DashpayAccountKey;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contacts: Vec<Identifier> = (1..=8u8).map(|b| Identifier::from([b; 32])).collect();
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                .expect("add owner");
+            let managed = info
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed");
+            for (i, contact) in contacts.iter().enumerate() {
+                let height = 1_226_329 + (i as u32) * 5_000;
+                let outgoing =
+                    ContactRequest::new(owner, *contact, 0, 0, 0, vec![0u8; 96], height, 0);
+                // The incoming request carries the ciphertext the outbound
+                // account is built from, so the marker stamp accepts it.
+                let ciphertext = encrypted_contact_xpub(&owner, contact, &[0x55u8; 32]);
+                let incoming = ContactRequest::new(*contact, owner, 0, 0, 7, ciphertext, height, 0);
+                managed.apply_established_contact(EstablishedContact::new(
+                    *contact, outgoing, incoming,
+                ));
+            }
+        }
+        // First session: the scan is at the tip when the contacts arrive.
+        // Registration never moves the cursor here; the reconcile pass then
+        // rewinds once to the earliest request height and records every
+        // contact, every outbound registration stamps the marker, and the scan
+        // climbs back to the tip.
+        set_synced_height(&manager, wallet_id, 1_560_740).await;
+        let shared_key = [0x55u8; 32];
+        for contact in &contacts {
+            iw.dashpay()
+                .register_contact_account(&owner, contact, 0, test_receiving_xpub(&owner, contact))
+                .await
+                .expect("register receival");
+            let encrypted = encrypted_contact_xpub(&owner, contact, &shared_key);
+            iw.dashpay()
+                .register_external_contact_account(
+                    &owner,
+                    &bare_identity(contact.to_buffer()),
+                    &encrypted,
+                    zeroize::Zeroizing::new(shared_key),
+                )
+                .await
+                .expect("register outbound");
+            iw.dashpay()
+                .note_external_account_registered(&owner, contact, &encrypted)
+                .await;
+        }
+        assert_eq!(
+            synced_height(&manager, wallet_id).await,
+            1_560_740,
+            "registration alone never moves the cursor"
+        );
         assert_eq!(
             iw.dashpay()
                 .reconcile_dashpay_rescan()
                 .await
-                .expect("pass after registration"),
-            None,
-            "registration already lowered the cursor; the pass must not rewind again"
+                .expect("first reconcile"),
+            Some(1_226_329)
         );
+        set_synced_height(&manager, wallet_id, 1_560_740).await;
+
+        // The host persisted everything: accounts, contacts with the marker,
+        // the record, the cursor at the tip. Cold start.
+        let snapshot = reload_snapshot(&manager, wallet_id, owner, 1_560_740, None).await;
+        let (restarted, _, _) = reload(snapshot).await;
         {
-            let stores = persister.stores.lock().unwrap();
-            let round = last_stored_record(&stores).expect("the pass must record the contact");
+            let wm = restarted.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let managed = info.identity_manager.managed_identity(&owner).unwrap();
+            for contact in &contacts {
+                let established = managed.dashpay().established_contacts()[contact].clone();
+                assert_eq!(established.external_account_reference, Some(7));
+                assert!(
+                    !external_account_needs_rebuild(&established, true),
+                    "a restored marker must not read as a rotation"
+                );
+            }
             assert!(
-                round.core.is_none(),
-                "no rewind fired, so the round carries no cursor"
-            );
-            assert_eq!(
-                round
-                    .dashpay_backfill
-                    .as_ref()
-                    .unwrap()
-                    .covered_from(&owner, &contact),
-                Some(100)
+                crate::wallet::identity::network::dashpay_view::DashPayView::<
+                    crate::broadcaster::SpvBroadcaster,
+                >::collect_account_build_candidates(info, &owner)
+                .is_empty(),
+                "both accounts persisted: the contact pass has nothing to build"
             );
         }
-
-        let snapshot = reload_snapshot(&manager, wallet_id, owner, 400, None).await;
-        let (restarted, _, _) = reload(snapshot).await;
+        let restored = restarted.get_wallet(&wallet_id).await.expect("wallet");
         assert_eq!(
-            restarted
-                .get_wallet(&wallet_id)
-                .await
-                .expect("wallet")
+            restored
                 .identity()
                 .dashpay()
                 .reconcile_dashpay_rescan()
                 .await
-                .expect("pass after reload"),
+                .expect("reconcile"),
             None
         );
-        assert_eq!(synced_height_of(&restarted, wallet_id).await, 400);
+        assert_eq!(synced_height_of(&restarted, wallet_id).await, 1_560_740);
+
+        // A host that did not carry the marker: the pass tears the outbound
+        // accounts down and the drain rebuilds them — and even that must not
+        // move the cursor any more.
+        let mut bare = reload_snapshot(&manager, wallet_id, owner, 1_560_740, None).await;
+        for contact in &contacts {
+            let established = bare.identities[&0].dashpay().established_contacts()[contact].clone();
+            let mut stripped = established.clone();
+            stripped.external_account_reference = None;
+            bare.identities
+                .get_mut(&0)
+                .unwrap()
+                .apply_established_contact(stripped);
+            assert!(external_account_needs_rebuild(
+                &bare.identities[&0].dashpay().established_contacts()[contact],
+                true
+            ));
+        }
+        let (restarted, _, _) = reload(bare).await;
+        let restored = restarted.get_wallet(&wallet_id).await.expect("wallet");
+        for contact in &contacts {
+            {
+                let mut wm = restarted.wallet_manager.write().await;
+                let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).unwrap();
+                let key = DashpayAccountKey {
+                    index: 0,
+                    user_identity_id: owner.to_buffer(),
+                    friend_identity_id: contact.to_buffer(),
+                };
+                wallet.accounts.dashpay_external_accounts.remove(&key);
+                info.core_wallet
+                    .accounts
+                    .dashpay_external_accounts
+                    .remove(&key);
+            }
+            let encrypted = encrypted_contact_xpub(&owner, contact, &shared_key);
+            assert_eq!(
+                restored
+                    .identity()
+                    .dashpay()
+                    .register_external_contact_account(
+                        &owner,
+                        &bare_identity(contact.to_buffer()),
+                        &encrypted,
+                        zeroize::Zeroizing::new(shared_key),
+                    )
+                    .await
+                    .expect("rebuild outbound"),
+                crate::wallet::identity::network::contacts::ExternalAccountRegistration::Built
+            );
+        }
+        assert_eq!(
+            restored
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile"),
+            None
+        );
+        assert_eq!(
+            synced_height_of(&restarted, wallet_id).await,
+            1_560_740,
+            "rebuilding every outbound account on a cold start must leave the cursor at the tip"
+        );
     }
 
     async fn synced_height_of(
