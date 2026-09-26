@@ -23,7 +23,6 @@ use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
     data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters},
 };
-use drive::query::drive_document_count_query::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT;
 use drive::query::validate_and_canonicalize_where_clauses;
 use drive::query::{
     CountMode, DocumentCountMode, DriveDocumentCountQuery, SelectFunction, WhereClause,
@@ -96,67 +95,28 @@ fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_verifier::Erro
 }
 
 /// The outer-walk limit a carrier-aggregate COUNT proof was produced
-/// with, derived from the request the way the server's COUNT
-/// dispatcher derives it (`RangeAggregateCarrierProof` arm of
-/// `execute_document_count_request`).
+/// with, via the helper the server's COUNT dispatcher uses
+/// ([`DriveDocumentCountQuery::carrier_aggregate_outer_limit`]), so
+/// the two cannot drift. The SDK's `0` means "unset".
 ///
-/// Two shapes share the carrier proof primitive and they treat the
-/// request limit differently:
-///
-/// - **Range-outer (G8)** — two range clauses on distinct fields
-///   (`brand > X AND color > Y`, `group_by = [brand]`). The server
-///   caps the outer walk at the compile-time
-///   [`MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`]: an unset limit is
-///   lowered to the cap, an explicit limit up to the cap passes
-///   through, and anything above it is refused with `InvalidLimit`.
-/// - **In-outer (G7)** — one `In` and one range clause. The `In`
-///   array already bounds the walk, so the server keeps `None` and
-///   refuses every explicit limit.
-///
-/// The value returned here lands in the reconstructed
-/// `SizedQuery::limit`. On the G8 shape it decides where the merk
-/// walker expects the prover to have stopped, so passing `None`
-/// where the server used `Some(10)` makes an honest proof fail with
-/// "proof is missing data" as soon as the outer range holds more
-/// than ten keys. The limits the server refuses are refused here
-/// too, before any proof bytes are inspected, so a request the
-/// server would never have answered cannot be paired with a proof
-/// for a narrower one.
+/// The value lands in the reconstructed `SizedQuery::limit`. On the
+/// range-outer (G8) shape it decides where the merk walker expects
+/// the prover to have stopped, so passing `None` where the server
+/// used `Some(10)` makes an honest proof fail with "proof is missing
+/// data" as soon as the outer range holds more than ten keys. The
+/// limits the server refuses are refused here too, before any proof
+/// bytes are inspected, so a request the server would never have
+/// answered cannot be paired with a proof for a narrower one.
 fn carrier_walk_limit(
     where_clauses: &[WhereClause],
     limit: u32,
 ) -> Result<Option<u16>, drive_proof_verifier::Error> {
-    let has_outer_range = where_clauses
-        .iter()
-        .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
-        .count()
-        == 2;
-    if has_outer_range {
-        if limit == 0 {
-            return Ok(Some(MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT));
+    let limit = (limit != 0).then_some(limit);
+    DriveDocumentCountQuery::carrier_aggregate_outer_limit(where_clauses, limit).map_err(|e| {
+        drive_proof_verifier::Error::RequestError {
+            error: format!("the server refuses this carrier-aggregate COUNT limit: {e}"),
         }
-        if limit > u32::from(MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT) {
-            return Err(drive_proof_verifier::Error::RequestError {
-                error: format!(
-                    "limit {limit} exceeds the carrier-aggregate range-outer cap of \
-                     {MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT}; the server refuses such \
-                     requests, so no proof can belong to this query"
-                ),
-            });
-        }
-        // `limit <= MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` fits in u16.
-        Ok(Some(limit as u16))
-    } else if limit == 0 {
-        Ok(None)
-    } else {
-        Err(drive_proof_verifier::Error::RequestError {
-            error: format!(
-                "limit {limit} on a carrier-aggregate In-outer COUNT; the In array bounds \
-                 the walk and the server refuses an explicit limit here, so no proof can \
-                 belong to this query"
-            ),
-        })
-    }
+    })
 }
 
 /// Verify a count-shape proof and return per-branch entries.
@@ -799,6 +759,8 @@ mod tests {
     /// to `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` (never `None`),
     /// explicit limits pass through up to the cap, and anything
     /// above the cap is refused before a proof is looked at.
+    /// Also covers `0` as the SDK's "unset" sentinel: it must reach the
+    /// shared helper as `None`, not as the `Some(0)` the server refuses.
     #[test]
     fn carrier_walk_limit_mirrors_dispatcher_on_range_outer_shape() {
         let clauses = vec![
@@ -813,7 +775,7 @@ mod tests {
                 value: Value::Text("b".to_string()),
             },
         ];
-        let cap = MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT;
+        let cap = drive::query::drive_document_count_query::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT;
 
         assert_eq!(
             carrier_walk_limit(&clauses, 0).unwrap(),
@@ -828,10 +790,7 @@ mod tests {
 
         match carrier_walk_limit(&clauses, u32::from(cap) + 1) {
             Err(drive_proof_verifier::Error::RequestError { error }) => {
-                assert!(
-                    error.contains("range-outer cap"),
-                    "unexpected error: {error}"
-                )
+                assert!(error.contains("range-outer"), "unexpected error: {error}")
             }
             other => panic!("expected RequestError, got {other:?}"),
         }

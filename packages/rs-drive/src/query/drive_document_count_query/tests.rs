@@ -4678,7 +4678,9 @@ mod at_chain_value_tree_counts {
 /// This is the round trip the SDK's `RangeAggregateCarrierProof` arm
 /// performs. It pins three things:
 ///
-/// 1. The dispatcher lowers an unset limit to the cap (not `None`).
+/// 1. The dispatcher lowers an unset limit to the cap (not `None`),
+///    through [`DriveDocumentCountQuery::carrier_aggregate_outer_limit`],
+///    the helper the SDK verifier derives its limit from too.
 /// 2. Verifying with the cap succeeds and returns exactly `cap`
 ///    entries even though more outer keys match.
 /// 3. Verifying the same bytes with `limit: None` fails — the shape
@@ -4843,10 +4845,16 @@ fn test_range_outer_carrier_proof_verifies_with_capped_limit_not_none() {
         where_clauses: clauses,
     };
 
-    // The limit the dispatcher actually used: verification succeeds
-    // and yields exactly `cap` entries, one per walked outer key.
+    // The limit the verifier derives through the helper the
+    // dispatcher shares with it: the cap, not `None`. Verification
+    // succeeds and yields exactly `cap` entries, one per walked outer
+    // key.
+    let verifier_limit =
+        DriveDocumentCountQuery::carrier_aggregate_outer_limit(&count_query.where_clauses, None)
+            .expect("an unset limit is valid on the range-outer shape");
+    assert_eq!(verifier_limit, Some(cap));
     let (_root_hash, entries) = count_query
-        .verify_carrier_aggregate_count_proof(&proof_bytes, Some(cap), true, platform_version)
+        .verify_carrier_aggregate_count_proof(&proof_bytes, verifier_limit, true, platform_version)
         .expect("an honest G8 proof must verify with the dispatcher's capped limit");
     assert_eq!(
         entries.len(),
