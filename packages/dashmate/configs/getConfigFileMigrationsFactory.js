@@ -1729,6 +1729,43 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '5.0.0': (configFile) => {
+        // Protocol version 17 lets the contract create and update transitions carry up to
+        // 32 MiB of contract code. Tenderdash's per-transaction and RPC body limits are
+        // node-local and were hard-coded in the template until now; they become options with
+        // defaults sized for that envelope, and the peer bandwidth caps rise so a maximal
+        // transaction gossips in seconds rather than tens of seconds. An operator-tuned
+        // bandwidth cap is left alone.
+        const previousBaseSendRate = 5120000;
+        const previousBaseRecvRate = 5120000;
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const tenderdash = options.platform?.drive?.tenderdash;
+            if (!tenderdash) {
+              return;
+            }
+
+            if (tenderdash.mempool && tenderdash.mempool.maxTxBytes === undefined) {
+              tenderdash.mempool.maxTxBytes = base.getStored('platform.drive.tenderdash.mempool.maxTxBytes');
+            }
+
+            if (tenderdash.rpc && tenderdash.rpc.maxBodyBytes === undefined) {
+              tenderdash.rpc.maxBodyBytes = base.getStored('platform.drive.tenderdash.rpc.maxBodyBytes');
+            }
+
+            if (tenderdash.p2p) {
+              if (tenderdash.p2p.sendRate === previousBaseSendRate) {
+                tenderdash.p2p.sendRate = base.getStored('platform.drive.tenderdash.p2p.sendRate');
+              }
+              if (tenderdash.p2p.recvRate === previousBaseRecvRate) {
+                tenderdash.p2p.recvRate = base.getStored('platform.drive.tenderdash.p2p.recvRate');
+              }
+            }
+          });
+
+        return configFile;
+      },
       '4.1.1': (configFile) => {
         // The drive and rs-dapi tags are derived from the package version, and
         // the migration that re-pins them no longer fires for a config already

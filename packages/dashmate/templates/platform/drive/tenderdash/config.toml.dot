@@ -222,7 +222,7 @@ timeout-broadcast-tx-commit = "10s"
 timeout-broadcast-tx = "{{=it.platform.drive.tenderdash.rpc.timeoutBroadcastTx}}"
 
 # Maximum size of request body, in bytes
-max-body-bytes = 1000000
+max-body-bytes = {{= it.platform.drive.tenderdash.rpc.maxBodyBytes }}
 
 # Maximum size of request header, in bytes
 max-header-bytes = 1048576
@@ -386,7 +386,7 @@ tx-recv-rate-punish-peer = false
 
 # Maximum size of a single transaction.
 # NOTE: the max size of a tx transmitted over the network is {max-tx-bytes}.
-max-tx-bytes = 20480
+max-tx-bytes = {{= it.platform.drive.tenderdash.mempool.maxTxBytes }}
 
 # Maximum size of a batch of transactions to send to a peer
 # Including space needed by encoding (one varint per transaction).

@@ -2,6 +2,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -13,8 +14,40 @@ pub struct SystemLimits {
     pub max_document_value_depth: Option<u16>,
     /// Max size of a state transition in bytes.
     ///
-    /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config
+    /// The cap of every ordinary state transition family, compared with the raw length before
+    /// any decode (`decode_raw_state_transitions` v0 for every family; v1 for every family
+    /// except the contract-code capable ones, which read
+    /// `max_contract_code_state_transition_size` instead).
+    ///
+    /// NOTE: The Tenderdash `max-tx-bytes` in the node config must be at least the largest
+    /// family cap of the active protocol version, so a transaction Drive would accept is never
+    /// dropped by the mempool first. Up to protocol version 16 every family shares this value;
+    /// from 17 the contract-code cap is the larger one.
     pub max_state_transition_size: u64,
+    /// Max raw size in bytes of a contract create or update transition in a generation that
+    /// can carry a code bundle (`DataContractCreateTransition::V1` and
+    /// `DataContractUpdateTransition::V1`), detected from the wire prefix by
+    /// `StateTransition::peek_envelope_kind` before the bytes are decoded. Read by
+    /// `decode_raw_state_transitions` v1, the `getProofs` v1 query and the DAPI broadcast
+    /// pre-filter; `None` for the protocol versions that predate those generations, where the
+    /// contract families are bounded by `max_state_transition_size` like every other one.
+    /// Versioned: see `max_contract_code_state_transition_size` in each `SYSTEM_LIMITS_V*`.
+    pub max_contract_code_state_transition_size: Option<u64>,
+    /// The bincode decode budget (`with_limit`) used to decode a contract-code capable
+    /// envelope. Distinct from the wire cap above: bincode charges the allocation claims of the
+    /// `Value` containers a contract schema decodes into against this budget as well as the
+    /// encoded bytes, so it must leave headroom above the wire cap. Every ordinary family keeps
+    /// the shipped decode of `StateTransition::deserialize_from_bytes`, which applies no
+    /// bincode budget (see `StateTransitionDecodeBudget::Historical` in `dpp`). Must be one of
+    /// the budgets `StateTransition::deserialize_from_bytes_with_budget` supports; `None`
+    /// before the contract-code generations exist.
+    pub max_contract_code_state_transition_decode_budget: Option<u64>,
+    /// Sum of the canonical module bytes one code bundle may carry, validated at basic
+    /// structure once the contract-code generations exist. `None` before them.
+    pub max_contract_code_bundle_bytes: Option<u64>,
+    /// Number of modules one code bundle may carry, validated at basic structure once the
+    /// contract-code generations exist. `None` before them.
+    pub max_contract_code_modules_per_bundle: Option<u16>,
     /// Maximum number of batched transitions (document and token transitions counted together)
     /// one batch state transition may carry.
     ///
@@ -174,6 +207,44 @@ mod tests {
                  batch; see SystemLimits::max_transitions_in_documents_batch",
                 platform_version.protocol_version
             );
+        }
+    }
+
+    /// The v1 decoder picks the family cap from these fields: `None` means a contract
+    /// transition is bounded like every other family, `Some` means the larger contract-code
+    /// cap applies. A shipped version that gained a `Some` by a copy-paste into a new table
+    /// would silently raise the cap validators on that version agree on, so the absence is
+    /// pinned here for every version below 17 and the presence for 17 and above.
+    #[test]
+    fn contract_code_limits_are_absent_before_protocol_version_17() {
+        assert_eq!(PLATFORM_VERSIONS.len(), LATEST_VERSION as usize);
+        for platform_version in PLATFORM_VERSIONS {
+            let limits = &platform_version.system_limits;
+            let contract_code_limits = (
+                limits.max_contract_code_state_transition_size,
+                limits.max_contract_code_state_transition_decode_budget,
+                limits.max_contract_code_bundle_bytes,
+                limits.max_contract_code_modules_per_bundle,
+            );
+            if platform_version.protocol_version < 17 {
+                assert_eq!(
+                    contract_code_limits,
+                    (None, None, None, None),
+                    "protocol version {} predates contract code bundles and must not bound them",
+                    platform_version.protocol_version
+                );
+            } else {
+                assert!(
+                    limits.max_contract_code_state_transition_size.is_some()
+                        && limits
+                            .max_contract_code_state_transition_decode_budget
+                            .is_some()
+                        && limits.max_contract_code_bundle_bytes.is_some()
+                        && limits.max_contract_code_modules_per_bundle.is_some(),
+                    "protocol version {} admits contract code bundles and must bound them",
+                    platform_version.protocol_version
+                );
+            }
         }
     }
 

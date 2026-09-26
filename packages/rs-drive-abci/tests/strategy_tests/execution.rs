@@ -2,8 +2,8 @@ use crate::masternodes;
 use crate::masternodes::{GenerateTestMasternodeUpdates, MasternodeListItemWithUpdates};
 use crate::query::ProofVerification;
 use crate::strategy::{
-    ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease, NetworkStrategy,
-    StrategyRandomness, ValidatorVersionMigration,
+    BlockProposalRounds, ChainExecutionOutcome, ChainExecutionParameters, CoreHeightIncrease,
+    NetworkStrategy, ProposalConsensusParamUpdates, StrategyRandomness, ValidatorVersionMigration,
 };
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
 use dpp::block::block_info::BlockInfo;
@@ -978,6 +978,7 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
 
     let mut state_transitions_per_block = BTreeMap::new();
     let mut state_transition_results_per_block = BTreeMap::new();
+    let mut consensus_param_updates_per_block = BTreeMap::new();
     let mut shielded_state: Option<crate::strategy::ShieldedState> = None;
 
     for block_height in block_start..(block_start + block_count) {
@@ -1080,6 +1081,7 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
             .unwrap_or_default();
 
         let mut block_execution_outcome = None;
+        let mut proposal_rounds = BlockProposalRounds::default();
         for round in 0..=rounds {
             block_execution_outcome = Some(
                 abci_app
@@ -1104,6 +1106,14 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
                     )
                     .expect("expected to execute a block"),
             );
+            let outcome = block_execution_outcome
+                .as_ref()
+                .expect("the round was just executed");
+            proposal_rounds.rounds.push(ProposalConsensusParamUpdates {
+                prepare_proposal: outcome.consensus_param_updates.clone(),
+                process_proposal: outcome.process_proposal_consensus_param_updates.clone(),
+                app_hash: outcome.root_app_hash,
+            });
         }
 
         let MimicExecuteBlockOutcome {
@@ -1116,11 +1126,15 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
             block_id_hash: block_hash,
             signature,
             app_version,
+            consensus_param_updates: _,
+            process_proposal_consensus_param_updates: _,
         } = block_execution_outcome.unwrap();
 
         if let Some(validator_set_update) = validator_set_update {
             validator_set_updates.insert(block_height, validator_set_update);
         }
+
+        consensus_param_updates_per_block.insert(block_height, proposal_rounds);
 
         if strategy.dont_finalize_block() {
             continue;
@@ -1245,6 +1259,7 @@ pub(crate) async fn continue_chain_for_strategy<'a>(
         withdrawals: total_withdrawals,
         validator_set_updates,
         state_transition_results_per_block,
+        consensus_param_updates_per_block,
         instant_lock_quorums,
         signer,
     }
