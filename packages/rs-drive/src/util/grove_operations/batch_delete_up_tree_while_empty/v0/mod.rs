@@ -2,7 +2,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
-use crate::util::grove_operations::pending_grove_operations::pending_grove_operations_for_delete_up_tree;
+use crate::util::grove_operations::pending_grove_operations::pending_grove_operations;
 use crate::util::grove_operations::{push_drive_operation_result, BatchDeleteUpTreeApplyType};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
@@ -54,15 +54,15 @@ impl Drive {
                 };
                 // The pending operations in the current operations (eg, delete/add), then those
                 // in the same batch but in a different operation. Every protocol version builds
-                // the same deletes and cost as with a copy of both: GroveDB reads none of the
-                // operations left out.
-                let pending_operations = pending_grove_operations_for_delete_up_tree(
-                    drive_operations,
-                    check_existing_operations.as_deref().map(Vec::as_slice),
-                    &path,
-                    key,
-                    stop_path_height,
-                );
+                // the same deletes and cost as with a copy of both: GroveDB reads the same
+                // operations, borrowed.
+                let pending_operations =
+                    pending_grove_operations(drive_operations).chain(pending_grove_operations(
+                        check_existing_operations
+                            .as_deref()
+                            .map(Vec::as_slice)
+                            .unwrap_or_default(),
+                    ));
                 self.grove.delete_operations_for_delete_up_tree_while_empty(
                     path.to_path_refs().as_slice().into(),
                     key,

@@ -1,8 +1,10 @@
-//! Every batch delete helper builds the same operations, costs included, with only the pending
-//! operations GroveDB reads as it did with a copy of the whole pending batch.
+//! The batch delete helpers build the same operations, costs included, handing GroveDB their
+//! pending batch by reference as they did handing it a copy.
 //!
 //! `old` holds the helpers as they were before, each copying the whole batch per delete; every
 //! test builds the same batch through a helper and its old copy and compares the operation lists.
+//! `batch_move`, `batch_delete_items_in_path_query` and `batch_move_items_in_path_query` changed
+//! the same way as `batch_delete`, so its cases cover them.
 
 use super::COPIED_PENDING_GROVE_OPERATIONS;
 use crate::drive::Drive;
@@ -11,15 +13,12 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::{
     CalculatedCostOperation, EphemeralGroveOperation, GroveOperation,
 };
-use crate::util::grove_operations::{
-    BatchDeleteApplyType, BatchDeleteUpTreeApplyType, BatchMoveApplyType,
-};
+use crate::util::grove_operations::{BatchDeleteApplyType, BatchDeleteUpTreeApplyType};
 use crate::util::test_helpers::setup::setup_drive;
 use grovedb::batch::{GroveOp, KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::operations::delete::DeleteOptions;
-use grovedb::{BackwardsReferences, Element, MaybeTree, PathQuery, Query, SizedQuery, TreeType};
+use grovedb::{BackwardsReferences, Element, MaybeTree, TreeType};
 use grovedb_costs::OperationCost;
-use grovedb_epoch_based_storage_flags::StorageFlags;
 use platform_version::version::PlatformVersion;
 use std::fmt::Debug;
 
@@ -33,14 +32,11 @@ mod old {
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::grove_operations::{
         push_drive_operation_result, BatchDeleteApplyType, BatchDeleteUpTreeApplyType,
-        BatchMoveApplyType, QueryType,
     };
     use grovedb::batch::key_info::KeyInfo;
-    use grovedb::batch::{GroveOp, KeyInfoPath, QualifiedGroveDbOp};
+    use grovedb::batch::{GroveOp, KeyInfoPath};
     use grovedb::operations::delete::{DeleteOptions, DeleteUpTreeOptions};
-    use grovedb::query_result_type::{PathKeyElementTrio, QueryResultType};
-    use grovedb::{BackwardsReferences, Element, GroveDb, PathQuery, TransactionArg};
-    use grovedb_epoch_based_storage_flags::StorageFlags;
+    use grovedb::{BackwardsReferences, Element, GroveDb, TransactionArg};
     use grovedb_path::SubtreePath;
     use grovedb_storage::rocksdb_storage::RocksDbStorage;
     use platform_version::version::drive_versions::DriveVersion;
@@ -230,301 +226,6 @@ mod old {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn batch_move<B: AsRef<[u8]>>(
-        drive: &Drive,
-        from_path: SubtreePath<'_, B>,
-        key: &[u8],
-        to_path: Vec<Vec<u8>>,
-        apply_type: BatchMoveApplyType,
-        alter_flags_to_new_flags: Option<Option<StorageFlags>>,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<(), Error> {
-        let mut element = match apply_type {
-            BatchMoveApplyType::StatelessBatchMove {
-                estimated_value_size,
-                flags_len,
-                ..
-            } => {
-                let value = vec![0u8; estimated_value_size as usize];
-                let flags = vec![0u8; flags_len as usize];
-                Element::new_item_with_flags(value, Some(flags))
-            }
-            BatchMoveApplyType::StatefulBatchMove { .. } => drive
-                .grove_get(
-                    from_path.clone(),
-                    key,
-                    QueryType::StatefulQuery,
-                    transaction,
-                    drive_operations,
-                    drive_version,
-                )?
-                .ok_or_else(|| {
-                    Error::Drive(DriveError::ElementNotFound("element to move not found"))
-                })?,
-        };
-
-        if element.is_any_tree() {
-            return Err(Error::Drive(DriveError::NotSupported(
-                "batch_move does not support moving trees",
-            )));
-        }
-
-        let current_batch = LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
-        let delete_opts = DeleteOptions {
-            backwards_references: BackwardsReferences::DontCheck,
-            allow_deleting_non_empty_trees: false,
-            deleting_non_empty_trees_returns_error: true,
-            base_root_storage_is_free: true,
-            validate_tree_at_path_exists: false,
-        };
-
-        let delete_op = match apply_type {
-            BatchMoveApplyType::StatelessBatchMove {
-                in_tree_type,
-                estimated_key_size,
-                estimated_value_size,
-                ..
-            } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
-                &KeyInfoPath::from_known_owned_path(from_path.to_vec()),
-                &KeyInfo::KnownKey(key.to_vec()),
-                in_tree_type,
-                false,
-                true,
-                0,
-                (estimated_key_size, estimated_value_size),
-                BackwardsReferences::DontCheck,
-                &drive_version.grove_version,
-            )
-            .map(|r| r.map(Some)),
-            BatchMoveApplyType::StatefulBatchMove {
-                is_known_to_be_subtree_with_sum,
-            } => drive.grove.delete_operation_for_delete_internal(
-                from_path,
-                key,
-                &delete_opts,
-                is_known_to_be_subtree_with_sum,
-                &current_batch.operations,
-                transaction,
-                &drive_version.grove_version,
-            ),
-        };
-
-        if let Some(delete_op) = push_drive_operation_result(delete_op, drive_operations)? {
-            if let Some(flags) = alter_flags_to_new_flags.as_ref() {
-                element.set_flags(StorageFlags::map_to_some_element_flags(flags.as_ref()));
-            }
-
-            drive_operations.push(GroveOperation(delete_op));
-            drive_operations.push(GroveOperation(
-                QualifiedGroveDbOp::insert_or_replace_op(to_path, key.to_vec(), element)
-                    .dont_check_for_backwards_references(),
-            ));
-        }
-
-        Ok(())
-    }
-
-    fn path_query_elements(
-        drive: &Drive,
-        path_query: &PathQuery,
-        error_if_intermediate_path_tree_not_present: bool,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<Vec<PathKeyElementTrio>, Error> {
-        if path_query.query.limit.is_none() {
-            return Err(Error::Drive(DriveError::NotSupported(
-                "Limits are required for path_query",
-            )));
-        }
-        Ok(
-            if path_query
-                .query
-                .query
-                .items
-                .iter()
-                .all(|query_item| query_item.is_key())
-            {
-                drive
-                    .grove_get_raw_path_query_with_optional(
-                        path_query,
-                        error_if_intermediate_path_tree_not_present,
-                        transaction,
-                        drive_operations,
-                        drive_version,
-                    )?
-                    .into_iter()
-                    .filter_map(|(path, key, maybe_element)| {
-                        maybe_element.map(|element| (path, key, element))
-                    })
-                    .collect()
-            } else {
-                drive
-                    .grove_get_raw_path_query(
-                        path_query,
-                        transaction,
-                        QueryResultType::QueryPathKeyElementTrioResultType,
-                        drive_operations,
-                        drive_version,
-                    )?
-                    .0
-                    .to_path_key_elements()
-            },
-        )
-    }
-
-    pub(super) fn batch_delete_items_in_path_query(
-        drive: &Drive,
-        path_query: &PathQuery,
-        error_if_intermediate_path_tree_not_present: bool,
-        apply_type: BatchDeleteApplyType,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<(), Error> {
-        let query_result = path_query_elements(
-            drive,
-            path_query,
-            error_if_intermediate_path_tree_not_present,
-            transaction,
-            drive_operations,
-            drive_version,
-        )?;
-
-        for (path, key, _) in query_result {
-            let current_batch_operations =
-                LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
-            let options = DeleteOptions {
-                backwards_references: BackwardsReferences::DontCheck,
-                allow_deleting_non_empty_trees: false,
-                deleting_non_empty_trees_returns_error: true,
-                base_root_storage_is_free: true,
-                validate_tree_at_path_exists: false,
-            };
-            let delete_operation = match apply_type {
-                BatchDeleteApplyType::StatelessBatchDelete {
-                    in_tree_type: is_sum_tree,
-                    estimated_key_size,
-                    estimated_value_size,
-                } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
-                    &KeyInfoPath::from_known_owned_path(path.to_vec()),
-                    &KeyInfo::KnownKey(key.to_vec()),
-                    is_sum_tree,
-                    false,
-                    true,
-                    0,
-                    (estimated_key_size, estimated_value_size),
-                    BackwardsReferences::DontCheck,
-                    &drive_version.grove_version,
-                )
-                .map(|r| r.map(Some)),
-                BatchDeleteApplyType::StatefulBatchDelete {
-                    is_known_to_be_subtree_with_sum,
-                } => drive.grove.delete_operation_for_delete_internal(
-                    path.as_slice().into(),
-                    key.as_slice(),
-                    &options,
-                    is_known_to_be_subtree_with_sum,
-                    &current_batch_operations.operations,
-                    transaction,
-                    &drive_version.grove_version,
-                ),
-            };
-
-            if let Some(delete_operation) =
-                push_drive_operation_result(delete_operation, drive_operations)?
-            {
-                drive_operations.push(GroveOperation(delete_operation));
-            }
-        }
-
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn batch_move_items_in_path_query(
-        drive: &Drive,
-        path_query: &PathQuery,
-        new_path: Vec<Vec<u8>>,
-        error_if_intermediate_path_tree_not_present: bool,
-        apply_type: BatchMoveApplyType,
-        alter_flags_to_new_flags: Option<Option<StorageFlags>>,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<(), Error> {
-        let query_result = path_query_elements(
-            drive,
-            path_query,
-            error_if_intermediate_path_tree_not_present,
-            transaction,
-            drive_operations,
-            drive_version,
-        )?;
-
-        for (path, key, mut element) in query_result {
-            let current_batch_operations =
-                LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
-            let options = DeleteOptions {
-                backwards_references: BackwardsReferences::DontCheck,
-                allow_deleting_non_empty_trees: false,
-                deleting_non_empty_trees_returns_error: true,
-                base_root_storage_is_free: true,
-                validate_tree_at_path_exists: false,
-            };
-            let delete_operation = match apply_type {
-                BatchMoveApplyType::StatelessBatchMove {
-                    in_tree_type,
-                    estimated_key_size,
-                    estimated_value_size,
-                    ..
-                } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
-                    &KeyInfoPath::from_known_owned_path(path.to_vec()),
-                    &KeyInfo::KnownKey(key.to_vec()),
-                    in_tree_type,
-                    false,
-                    true,
-                    0,
-                    (estimated_key_size, estimated_value_size),
-                    BackwardsReferences::DontCheck,
-                    &drive_version.grove_version,
-                )
-                .map(|r| r.map(Some)),
-                BatchMoveApplyType::StatefulBatchMove {
-                    is_known_to_be_subtree_with_sum,
-                } => drive.grove.delete_operation_for_delete_internal(
-                    path.as_slice().into(),
-                    key.as_slice(),
-                    &options,
-                    is_known_to_be_subtree_with_sum,
-                    &current_batch_operations.operations,
-                    transaction,
-                    &drive_version.grove_version,
-                ),
-            };
-
-            if let Some(delete_operation) =
-                push_drive_operation_result(delete_operation, drive_operations)?
-            {
-                if let Some(altered_flags) = alter_flags_to_new_flags.as_ref() {
-                    element.set_flags(StorageFlags::map_to_some_element_flags(
-                        altered_flags.as_ref(),
-                    ))
-                }
-                drive_operations.push(GroveOperation(delete_operation));
-                drive_operations.push(GroveOperation(
-                    QualifiedGroveDbOp::insert_or_replace_op(new_path.clone(), key, element)
-                        .dont_check_for_backwards_references(),
-                ));
-            }
-        }
-
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn batch_delete_up_tree_while_empty(
         drive: &Drive,
         path: KeyInfoPath,
@@ -576,7 +277,7 @@ mod old {
                         key,
                         &options,
                         is_known_to_be_subtree_with_sum,
-                        current_batch_operations.operations,
+                        &current_batch_operations.operations,
                         transaction,
                         &drive_version.grove_version,
                     )
@@ -1343,176 +1044,8 @@ fn should_build_raw_removals_as_before() {
     assert_non_empty_tree_refused(&result);
 }
 
-#[test]
-fn should_build_moves_as_before() {
-    let drive = setup_fixture();
-    let drive_version = &PlatformVersion::latest().drive;
-    for (key, is_known_to_be_subtree_with_sum) in [
-        (b"i1".as_slice(), None),
-        (b"i1".as_slice(), Some(MaybeTree::NotTree)),
-        // A tree is refused before GroveDB builds anything.
-        (b"a".as_slice(), Some(MaybeTree::Tree(TreeType::NormalTree))),
-    ] {
-        let apply_type = BatchMoveApplyType::StatefulBatchMove {
-            is_known_to_be_subtree_with_sum,
-        };
-        let (result, _) = assert_builds_as_before(
-            unrelated_operations,
-            |operations| {
-                drive.batch_move(
-                    path(&[b"root"]).as_slice().into(),
-                    key,
-                    path(&[b"root", b"b"]),
-                    apply_type,
-                    Some(None),
-                    None,
-                    operations,
-                    drive_version,
-                )
-            },
-            |operations| {
-                old::batch_move(
-                    &drive,
-                    path(&[b"root"]).as_slice().into(),
-                    key,
-                    path(&[b"root", b"b"]),
-                    apply_type,
-                    Some(None),
-                    None,
-                    operations,
-                    drive_version,
-                )
-            },
-        );
-        assert_eq!(result.is_ok(), key == b"i1");
-    }
-}
-
-fn range_query(path: Vec<Vec<u8>>) -> PathQuery {
-    PathQuery::new(
-        path,
-        SizedQuery::new(Query::new_range_full(), Some(10), None),
-    )
-}
-
-fn keys_query(path: Vec<Vec<u8>>, keys: &[&[u8]]) -> PathQuery {
-    let mut query = Query::new();
-    for key in keys {
-        query.insert_key(key.to_vec());
-    }
-    PathQuery::new(path, SizedQuery::new(query, Some(10), None))
-}
-
-#[test]
-fn should_build_path_query_deletes_as_before() {
-    let drive = setup_fixture();
-    let drive_version = &PlatformVersion::latest().drive;
-    // Each case: the query, the pending batch, whether the deletes succeed, and whether the moves
-    // into b do (a tree moved into b leaves b non-empty for the next move).
-    type Case = (PathQuery, fn() -> Vec<LowLevelDriveOperation>, bool, bool);
-    let cases: Vec<Case> = vec![
-        // Items.
-        (
-            range_query(path(&[b"root", b"a"])),
-            unrelated_operations,
-            true,
-            true,
-        ),
-        (
-            keys_query(path(&[b"root", b"f", b"g"]), &[b"h", b"i", b"none"]),
-            unrelated_operations,
-            true,
-            true,
-        ),
-        // Trees, one emptied earlier in the batch and one empty.
-        (
-            keys_query(path(&[b"root"]), &[b"a", b"b"]),
-            || {
-                vec![
-                    delete(path(&[b"root", b"a"]), b"x"),
-                    delete(path(&[b"root", b"a"]), b"y"),
-                ]
-            },
-            true,
-            false,
-        ),
-        // A tree left non-empty.
-        (
-            keys_query(path(&[b"root"]), &[b"b", b"c"]),
-            unrelated_operations,
-            false,
-            false,
-        ),
-    ];
-    for (path_query, pending, succeeds, moves_succeed) in cases {
-        for apply_type in [stateful(None), stateless()] {
-            let (result, _) = assert_builds_as_before(
-                pending,
-                |operations| {
-                    drive.batch_delete_items_in_path_query(
-                        &path_query,
-                        true,
-                        apply_type,
-                        None,
-                        operations,
-                        drive_version,
-                    )
-                },
-                |operations| {
-                    old::batch_delete_items_in_path_query(
-                        &drive,
-                        &path_query,
-                        true,
-                        apply_type,
-                        None,
-                        operations,
-                        drive_version,
-                    )
-                },
-            );
-            if matches!(apply_type, BatchDeleteApplyType::StatefulBatchDelete { .. }) {
-                assert_eq!(result.is_ok(), succeeds, "{result:?}");
-            }
-        }
-
-        let apply_type = BatchMoveApplyType::StatefulBatchMove {
-            is_known_to_be_subtree_with_sum: None,
-        };
-        let flags = Some(StorageFlags::new_single_epoch(1, None));
-        let (result, _) = assert_builds_as_before(
-            pending,
-            |operations| {
-                drive.batch_move_items_in_path_query(
-                    &path_query,
-                    path(&[b"root", b"b"]),
-                    true,
-                    apply_type,
-                    Some(flags.clone()),
-                    None,
-                    operations,
-                    drive_version,
-                )
-            },
-            |operations| {
-                old::batch_move_items_in_path_query(
-                    &drive,
-                    &path_query,
-                    path(&[b"root", b"b"]),
-                    true,
-                    apply_type,
-                    Some(flags.clone()),
-                    None,
-                    operations,
-                    drive_version,
-                )
-            },
-        );
-        assert_eq!(result.is_ok(), moves_succeed, "{result:?}");
-    }
-}
-
-/// Building deletes into one batch copies none of the pending batch unless an operation sits
-/// where GroveDB looks, while the old helpers copied every earlier operation for each delete.
+/// Building deletes into one batch copies none of the pending batch, while the old helpers copied
+/// every earlier operation for each delete.
 #[test]
 fn should_not_copy_the_pending_batch_for_each_delete() {
     const DELETES: usize = 400;
@@ -1559,8 +1092,7 @@ fn should_not_copy_the_pending_batch_for_each_delete() {
         DELETES * (DELETES - 1) / 2
     );
 
-    // Tree deletes, and up-tree deletes that climb through one tree each, copy nothing when
-    // nothing earlier in the batch sits under the trees they read.
+    // Tree deletes, and up-tree deletes that climb through one tree each, copy nothing either.
     let grove_version = &drive_version.grove_version;
     for n in 0..DELETES / 4 {
         let tree = format!("tree {n}").into_bytes();

@@ -3,7 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
-use crate::util::grove_operations::pending_grove_operations::pending_grove_operations_for_delete;
+use crate::util::grove_operations::pending_grove_operations::pending_grove_operations;
 use crate::util::grove_operations::{push_drive_operation_result, BatchMoveApplyType, QueryType};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
@@ -92,19 +92,13 @@ impl Drive {
                 is_known_to_be_subtree_with_sum,
             } => {
                 // Every protocol version builds the same delete and cost as with a copy of the
-                // whole pending batch: GroveDB reads none of the operations left out.
-                let pending_operations = pending_grove_operations_for_delete(
-                    drive_operations,
-                    &from_path,
-                    key,
-                    is_known_to_be_subtree_with_sum,
-                );
+                // whole pending batch: GroveDB reads the same operations, borrowed.
                 self.grove.delete_operation_for_delete_internal(
                     from_path,
                     key,
                     &delete_opts,
                     is_known_to_be_subtree_with_sum,
-                    &pending_operations,
+                    pending_grove_operations(drive_operations),
                     transaction,
                     &drive_version.grove_version,
                 )
