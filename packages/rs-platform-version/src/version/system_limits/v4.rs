@@ -72,6 +72,10 @@ use crate::version::system_limits::SystemLimits;
 ///   seated team's leader add at most 15 members (`max_contract_moderation_added_moderators`),
 ///   which joined this table in place while protocol version 14 was unreleased. A charter's
 ///   description cap is the charter schema's own `maxBytes`, not a limit here.
+/// * Token pool notes threshold (protocol version 14): a token configuration's
+///   `minimumPoolNotesForOutgoing` is at most 250 (`max_token_pool_notes_for_outgoing`), the
+///   credit pool's own threshold, backfilled into the earlier tables, which admit no token
+///   configuration able to carry it.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
@@ -122,6 +126,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     // only becomes reachable if the size limit is raised. Pinned by dpp's
     // `seed_pool_batch_fits_max_state_transition_size` signing test.
     max_shielded_transition_actions: 16,
+    max_token_pool_notes_for_outgoing: 250,
     max_time_range_overlap_factor: Some(24),
     max_time_range_ttl_seconds: Some(604_800), // one week
     min_time_range_ttl_drop_operations_per_write: Some(32),

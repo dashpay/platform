@@ -25,7 +25,7 @@ impl<C> Platform<C> {
                         "tokens are not balanced after block execution {:?} off by {}",
                         token_balance,
                         token_balance
-                            .total_identity_token_balances
+                            .total_balances()?
                             .abs_diff(token_balance.total_tokens_in_platform)
                     )),
                 ));

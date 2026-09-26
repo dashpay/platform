@@ -559,6 +559,7 @@ mod property_constraints_tests {
                 document_type_name: "offer".to_string(),
                 data_contract: contract_fetch_info,
                 token_cost: None,
+                shielded_token_payment: None,
                 gas_fees_paid_by: GasFeesPaidBy::default(),
                 contract_gas_fees_paid_by: GasFeesPaidBy::default(),
                 declared_action_fee: None,

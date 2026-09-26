@@ -156,7 +156,7 @@ impl ExtendedDocument {
     /// Returns a reference to the actual document object containing the data.
     pub fn token_payment_info(&self) -> Option<TokenPaymentInfo> {
         match self {
-            ExtendedDocument::V0(v0) => v0.token_payment_info,
+            ExtendedDocument::V0(v0) => v0.token_payment_info.clone(),
         }
     }
 

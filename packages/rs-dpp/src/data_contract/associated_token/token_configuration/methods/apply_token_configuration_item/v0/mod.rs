@@ -151,6 +151,11 @@ impl TokenConfigurationV0 {
                     .trade_mode_change_rules_mut()
                     .set_admin_action_takers(admin_group);
             }
+            // A V0 configuration has no shielded pool and so no threshold to change;
+            // `can_apply_token_configuration_item` refuses these items for it.
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(_)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_) => {}
         }
     }
 }

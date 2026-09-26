@@ -33,6 +33,11 @@ pub struct DriveAbciValidationConstants {
     /// transitions (Unshield, ShieldedWithdrawal) are allowed. This ensures a
     /// sufficient anonymity set before funds can leave the pool.
     pub minimum_pool_notes_for_outgoing: u64,
+    /// Superseded and read by nothing: a token shielded pool's outgoing notes threshold is
+    /// the token configuration's `minimumPoolNotesForOutgoing`, set per token by its issuer
+    /// and bounded by `SystemLimits::max_token_pool_notes_for_outgoing`. Kept only so the
+    /// version tables stay as they are; do not read it for a token pool.
+    pub minimum_token_pool_notes_for_outgoing: u64,
     /// Number of blocks of anchors to retain. Anchors older than this are
     /// pruned at the end of each block. Clients must use an anchor no older
     /// than this many blocks when building shielded transactions.
@@ -155,6 +160,12 @@ pub struct DriveAbciStateTransitionValidationVersions {
         DriveAbciStateTransitionValidationVersion,
     pub shield_from_identity_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_from_shielded_pool_state_transition:
+        DriveAbciStateTransitionValidationVersion,
+    pub token_shielded_transfer_with_shielded_fee_state_transition:
+        DriveAbciStateTransitionValidationVersion,
+    pub token_unshield_with_shielded_fee_state_transition:
+        DriveAbciStateTransitionValidationVersion,
+    pub token_purchase_from_shielded_pool_state_transition:
         DriveAbciStateTransitionValidationVersion,
 }
 
@@ -287,6 +298,20 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_direct_purchase_transition_state_validation: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition_structure_validation: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition_state_validation: FeatureVersion,
+    pub token_shield_transition_structure_validation: FeatureVersion,
+    pub token_shield_transition_state_validation: FeatureVersion,
+    pub token_mint_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_mint_to_pool_transition_state_validation: FeatureVersion,
+    pub token_burn_from_pool_transition_structure_validation: FeatureVersion,
+    pub token_burn_from_pool_transition_state_validation: FeatureVersion,
+    pub token_claim_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_claim_to_pool_transition_state_validation: FeatureVersion,
+    pub token_direct_purchase_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_direct_purchase_to_pool_transition_state_validation: FeatureVersion,
+    pub token_unshield_transition_structure_validation: FeatureVersion,
+    pub token_unshield_transition_state_validation: FeatureVersion,
+    pub token_shielded_transfer_transition_structure_validation: FeatureVersion,
+    pub token_shielded_transfer_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

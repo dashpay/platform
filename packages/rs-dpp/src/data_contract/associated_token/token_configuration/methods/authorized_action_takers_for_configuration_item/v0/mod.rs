@@ -134,6 +134,12 @@ impl TokenConfigurationV0 {
                 .marketplace_rules
                 .trade_mode_change_rules()
                 .admin_action_takers(),
+            // A V0 configuration has no shielded pool and so no threshold for anyone to change.
+            TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(_)
+            | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_) => {
+                AuthorizedActionTakers::NoOne
+            }
         }
     }
 }

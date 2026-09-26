@@ -60,6 +60,7 @@
 - [Contested Documents](data-model/contested-documents.md)
 - [Identities](data-model/identities.md)
 - [Key Budgets and Expiry](data-model/key-limits.md)
+- [Token Shielded Pools](data-model/token-shielded-pools.md)
 
 # Drive
 

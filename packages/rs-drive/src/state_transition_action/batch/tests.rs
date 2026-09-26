@@ -134,6 +134,7 @@ fn test_document_base_v0() -> DocumentBaseTransitionActionV0 {
         gas_fees_paid_by: GasFeesPaidBy::default(),
         contract_gas_fees_paid_by: GasFeesPaidBy::default(),
         declared_action_fee: None,
+        shielded_token_payment: None,
     }
 }
 
@@ -2940,6 +2941,7 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         gas_fees_paid_by: GasFeesPaidBy::default(),
         contract_gas_fees_paid_by: GasFeesPaidBy::default(),
         declared_action_fee: None,
+        shielded_token_payment: None,
     });
     DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
         base,
@@ -2961,6 +2963,7 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         gas_fees_paid_by: GasFeesPaidBy::default(),
         contract_gas_fees_paid_by: GasFeesPaidBy::default(),
         declared_action_fee: None,
+        shielded_token_payment: None,
     });
     DocumentReplaceTransitionAction::V0(DocumentReplaceTransitionActionV0 {
         base,

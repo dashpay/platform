@@ -20,9 +20,12 @@ impl TokenConfiguration {
             return legacy_result;
         }
 
-        let TokenConfiguration::V0(configuration) = self;
-
-        for (_, rules) in configuration.all_change_control_rules() {
+        // Iterate through the enum rather than narrowing to the V0 base first. The narrowed
+        // view cannot see rules a later configuration version adds, and the v0 pass above is
+        // the only other place those are reached — through `all_used_group_positions`. Reading
+        // them here too means the coverage is doubled rather than resting on that one call, so
+        // making v0 stand alone, or making this loop stand alone, cannot silently drop a rule.
+        for (_, rules) in self.all_change_control_rules() {
             for action_takers in [
                 rules.authorized_to_make_change_action_takers(),
                 rules.admin_action_takers(),
@@ -35,9 +38,7 @@ impl TokenConfiguration {
                             GroupPositionDoesNotExistError::new(*group_position).into(),
                         );
                     }
-                    AuthorizedActionTakers::MainGroup
-                        if configuration.main_control_group().is_none() =>
-                    {
+                    AuthorizedActionTakers::MainGroup if self.main_control_group().is_none() => {
                         return SimpleConsensusValidationResult::new_with_error(
                             MainGroupIsNotDefinedError::new().into(),
                         );

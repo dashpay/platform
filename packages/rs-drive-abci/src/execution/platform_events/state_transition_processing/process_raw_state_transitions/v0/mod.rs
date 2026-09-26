@@ -5,6 +5,20 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::Credits;
+use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+use dpp::state_transition::batch_transition::batched_transition::token_transition::{
+    TokenTransition, TokenTransitionV0Methods,
+};
+use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
+use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
+use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
+use dpp::state_transition::token_unshield_with_shielded_fee_transition::accessors::TokenUnshieldWithShieldedFeeTransitionAccessorsV0;
+use dpp::state_transition::StateTransition;
+use dpp::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
@@ -188,6 +202,11 @@ where
                         }
                         let credit_mints_at_savepoint = block_credit_mints;
 
+                        // Remembered before the transition is consumed: the pools an applied
+                        // batch touched get their anchor recorded at block end.
+                        let token_shielded_pools_touched =
+                            token_shielded_pools_touched(&state_transition);
+
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
                             &platform_ref,
@@ -270,6 +289,18 @@ where
                                     // classification in `prepare_proposal`.
                                 }
                             }
+                        }
+
+                        // Only a successful execution writes to a token pool; a paid failure
+                        // bumps the nonce and nothing else, and its pool may not even exist
+                        // (a token without the flag, or a paid rejection before the pool
+                        // check), so it must not reach the block end anchor recorder.
+                        if matches!(
+                            execution_result,
+                            StateTransitionExecutionResult::SuccessfulExecution { .. }
+                        ) {
+                            processing_result
+                                .add_token_shielded_pools_touched(token_shielded_pools_touched);
                         }
 
                         // Store metrics
@@ -367,4 +398,40 @@ fn error_to_internal_error_execution_result(
     }
 
     StateTransitionExecutionResult::InternalError(error_with_st.error.to_string())
+}
+
+/// The token shielded pools a state transition writes to: the token ids of every token pool
+/// transition in a batch, of every document whose token cost is paid from a pool, and of the
+/// identity-less token pool transitions.
+fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 32]> {
+    match state_transition {
+        StateTransition::Batch(batch) => batch
+            .transitions_iter()
+            .filter_map(|transition| match transition {
+                BatchedTransitionRef::Token(
+                    token_transition @ (TokenTransition::Shield(_)
+                    | TokenTransition::Unshield(_)
+                    | TokenTransition::ShieldedTransfer(_)
+                    | TokenTransition::MintToPool(_)
+                    | TokenTransition::BurnFromPool(_)
+                    | TokenTransition::ClaimToPool(_)
+                    | TokenTransition::DirectPurchaseToPool(_)),
+                ) => Some(token_transition.token_id().to_buffer()),
+                BatchedTransitionRef::Document(document_transition) => {
+                    let base = document_transition.base();
+                    base.token_payment_info_ref()
+                        .as_ref()
+                        .filter(|info| info.shielded_payment().is_some())
+                        .map(|info| info.token_id(base.data_contract_id()).to_buffer())
+                }
+                _ => None,
+            })
+            .collect(),
+        StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
+            vec![st.token_id().to_buffer()]
+        }
+        StateTransition::TokenUnshieldWithShieldedFee(st) => vec![st.token_id().to_buffer()],
+        StateTransition::TokenPurchaseFromShieldedPool(st) => vec![st.token_id().to_buffer()],
+        _ => vec![],
+    }
 }

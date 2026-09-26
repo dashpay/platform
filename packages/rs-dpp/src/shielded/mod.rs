@@ -5,6 +5,7 @@ mod compute_minimum_shielded_fee;
 pub mod memo;
 mod sighash;
 
+use crate::util::hash::hash_single;
 pub use memo::{ShieldedMemo, MEMO_PAYLOAD_SIZE, MEMO_SIZE};
 
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -17,19 +18,56 @@ pub use compute_minimum_shielded_fee::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
     compute_shielded_identity_create_fee, compute_shielded_identity_top_up_fee,
     compute_shielded_unshield_fee, compute_shielded_verification_fee,
-    compute_shielded_withdrawal_fee,
+    compute_shielded_withdrawal_fee, compute_token_pool_paid_shielded_fee,
+    compute_token_purchase_from_shielded_pool_fee,
+    compute_token_shielded_transfer_with_shielded_fee_fee,
+    compute_token_unshield_with_shielded_fee_fee,
 };
 
 // Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
 // builders into their own file. Both the version-dispatching wrappers and their `_v0` impls are
 // re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
+/// A digest of serialized Orchard actions in wire order: every field of every action, hashed
+/// once. A group action stores it so every signer commits to exactly the same notes, and a
+/// pool mint or burn folds it into its group action id.
+pub fn serialized_actions_digest(actions: &[SerializedAction]) -> [u8; 32] {
+    let mut bytes = Vec::new();
+    for action in actions {
+        bytes.extend_from_slice(&action.nullifier);
+        bytes.extend_from_slice(&action.rk);
+        bytes.extend_from_slice(&action.cmx);
+        bytes.extend_from_slice(&action.encrypted_note);
+        bytes.extend_from_slice(&action.cv_net);
+        bytes.extend_from_slice(&action.spend_auth_sig);
+    }
+    hash_single(bytes)
+}
+
 pub use sighash::{
-    compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
+    compute_platform_sighash, credit_pool_output_only_extra_sighash_data_v0,
+    document_token_payment_extra_sighash_data, document_token_payment_extra_sighash_data_v0,
+    identity_create_from_shielded_extra_sighash_data,
     identity_create_from_shielded_extra_sighash_data_v0,
     identity_top_up_from_shielded_extra_sighash_data,
-    identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
-    shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
-    unshield_extra_sighash_data_v0,
+    identity_top_up_from_shielded_extra_sighash_data_v0, shield_extra_sighash_data,
+    shield_from_asset_lock_extra_sighash_data, shield_from_identity_extra_sighash_data,
+    shielded_withdrawal_extra_sighash_data, shielded_withdrawal_extra_sighash_data_v0,
+    token_burn_from_pool_extra_sighash_data, token_burn_from_pool_extra_sighash_data_v0,
+    token_pool_fee_bundle_extra_sighash_data, token_pool_fee_bundle_extra_sighash_data_v0,
+    token_pool_output_only_extra_sighash_data, token_pool_output_only_extra_sighash_data_v0,
+    token_purchase_from_shielded_pool_extra_sighash_data,
+    token_purchase_from_shielded_pool_extra_sighash_data_v0,
+    token_shielded_transfer_extra_sighash_data, token_shielded_transfer_extra_sighash_data_v0,
+    token_shielded_transfer_with_shielded_fee_extra_sighash_data,
+    token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0,
+    token_unshield_extra_sighash_data, token_unshield_extra_sighash_data_v0,
+    token_unshield_with_shielded_fee_extra_sighash_data,
+    token_unshield_with_shielded_fee_extra_sighash_data_v0, unshield_extra_sighash_data,
+    unshield_extra_sighash_data_v0, SHIELD_BUNDLE_TAG, SHIELD_FROM_ASSET_LOCK_BUNDLE_TAG,
+    SHIELD_FROM_IDENTITY_BUNDLE_TAG, TOKEN_CLAIM_TO_POOL_BUNDLE_TAG,
+    TOKEN_DIRECT_PURCHASE_TO_POOL_BUNDLE_TAG, TOKEN_MINT_TO_POOL_BUNDLE_TAG,
+    TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE, TOKEN_SHIELDED_TRANSFER_WITH_SHIELDED_FEE_TYPE,
+    TOKEN_SHIELD_BUNDLE_TAG, TOKEN_UNSHIELD_WITH_SHIELDED_FEE_TYPE,
 };
 
 /// Calibrated effective storage-byte cost of the Core withdrawal document a
@@ -128,6 +166,7 @@ pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 20;
 /// the serialized actions, Sinsemilla anchor, Halo 2 proof, and RedPallas
 /// binding signature. Using this struct reduces parameter counts in SDK
 /// helper functions from 10-12 down to 5-8.
+#[derive(Debug, Clone, PartialEq)]
 pub struct OrchardBundleParams {
     /// The serialized Orchard actions (spends + outputs).
     pub actions: Vec<SerializedAction>,

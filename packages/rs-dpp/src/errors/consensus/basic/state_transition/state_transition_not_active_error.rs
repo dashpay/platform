@@ -22,7 +22,7 @@ use thiserror::Error;
     DecodeUntrusted,
 )]
 #[error(
-    "State transition type {state_transition_type} is not yet active. Current protocol version is {current_protocol_version}, required protocol version is {required_protocol_version}"
+    "State transition type {state_transition_type} is not active at protocol version {current_protocol_version}. The boundary of its active range is protocol version {required_protocol_version}"
 )]
 #[platform_serialize(unversioned)]
 pub struct StateTransitionNotActiveError {

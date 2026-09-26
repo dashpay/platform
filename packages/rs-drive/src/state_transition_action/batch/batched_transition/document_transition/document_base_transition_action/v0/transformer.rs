@@ -6,7 +6,7 @@ use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::state::token::{IdentityHasNotAgreedToPayRequiredTokenAmountError, IdentityTryingToPayWithWrongTokenError, RequiredTokenPaymentInfoNotSetError};
+use dpp::consensus::state::token::{IdentityHasNotAgreedToPayRequiredTokenAmountError, IdentityTryingToPayWithWrongTokenError, RequiredTokenPaymentInfoNotSetError, TokenShieldedPaymentAmountMismatchError, TokenShieldedPaymentNotRequiredError};
 use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
@@ -18,9 +18,10 @@ use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenCost;
 use dpp::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
 use dpp::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::error::Error;
-use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DeclaredDocumentActionFee, DocumentBaseTransitionActionV0};
+use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DeclaredDocumentActionFee, DocumentBaseTransitionActionV0, DocumentShieldedTokenPayment};
 
 impl DocumentBaseTransitionActionV0 {
     /// try from borrowed base transition with contract lookup
@@ -60,14 +61,20 @@ impl DocumentBaseTransitionActionV0 {
                 )
             },
         );
+        let mut shielded_token_payment = None;
         if let Some(document_action_token_cost) = document_action_token_cost {
+            let token_id: Identifier = calculate_token_id(
+                document_action_token_cost
+                    .contract_id
+                    .unwrap_or(data_contract_id)
+                    .as_bytes(),
+                document_action_token_cost.token_contract_position,
+            )
+            .into();
             let Some(token_payment_info) = value.token_payment_info_ref() else {
                 return Ok(ConsensusValidationResult::new_with_error(
                     ConsensusError::StateError(StateError::RequiredTokenPaymentInfoNotSetError(
-                        RequiredTokenPaymentInfoNotSetError::new(
-                            token_cost.expect("expected token cost").0,
-                            action.to_string(),
-                        ),
+                        RequiredTokenPaymentInfoNotSetError::new(token_id, action.to_string()),
                     )),
                 ));
             };
@@ -81,7 +88,7 @@ impl DocumentBaseTransitionActionV0 {
                         IdentityTryingToPayWithWrongTokenError::new(
                             document_action_token_cost.contract_id,
                             document_action_token_cost.token_contract_position,
-                            token_cost.expect("expected token cost").0,
+                            token_id,
                             token_payment_info.payment_token_contract_id(),
                             token_payment_info.token_contract_position(),
                             token_payment_info.token_id(data_contract_id),
@@ -97,7 +104,7 @@ impl DocumentBaseTransitionActionV0 {
                     ConsensusError::StateError(
                         StateError::IdentityHasNotAgreedToPayRequiredTokenAmountError(
                             IdentityHasNotAgreedToPayRequiredTokenAmountError::new(
-                                token_cost.expect("expected token cost").0,
+                                token_id,
                                 document_action_token_cost.token_amount,
                                 token_payment_info.minimum_token_cost(),
                                 token_payment_info.maximum_token_cost(),
@@ -105,6 +112,43 @@ impl DocumentBaseTransitionActionV0 {
                             ),
                         ),
                     ),
+                ));
+            }
+            // A shielded payment pays exactly what its bundle proves: the document type's cost,
+            // or the document is rejected before the proof is verified.
+            if let Some(payment) = token_payment_info.shielded_payment() {
+                if payment.amount != document_action_token_cost.token_amount {
+                    return Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::TokenShieldedPaymentAmountMismatchError(
+                                TokenShieldedPaymentAmountMismatchError::new(
+                                    token_id,
+                                    document_action_token_cost.token_amount,
+                                    payment.amount,
+                                    action.to_string(),
+                                ),
+                            ),
+                        ),
+                    ));
+                }
+                shielded_token_payment = Some(Box::new(DocumentShieldedTokenPayment {
+                    payment: payment.clone(),
+                    token_contract_id: document_action_token_cost
+                        .contract_id
+                        .unwrap_or(data_contract_id),
+                    token_contract_position: document_action_token_cost.token_contract_position,
+                }));
+            }
+        } else if let Some(token_payment_info) = value.token_payment_info_ref() {
+            // A bundle with nothing to pay would be verified for free and never applied.
+            if token_payment_info.shielded_payment().is_some() {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::TokenShieldedPaymentNotRequiredError(
+                        TokenShieldedPaymentNotRequiredError::new(
+                            token_payment_info.token_id(data_contract_id),
+                            action.to_string(),
+                        ),
+                    )),
                 ));
             }
         }
@@ -143,6 +187,7 @@ impl DocumentBaseTransitionActionV0 {
             gas_fees_paid_by,
             contract_gas_fees_paid_by,
             declared_action_fee,
+            shielded_token_payment,
         }
         .into())
     }

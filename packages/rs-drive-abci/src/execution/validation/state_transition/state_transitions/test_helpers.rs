@@ -5,11 +5,15 @@
 //! balance setup utilities, and shielded pool state helpers.
 
 use crate::config::{PlatformConfig, PlatformTestConfig};
+use crate::execution::check_tx::CheckTxLevel;
+use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-use dpp::address_funds::{AddressWitness, PlatformAddress};
+use dpp::address_funds::{AddressWitness, OrchardAddress, PlatformAddress};
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::ConsensusError;
 use dpp::dashcore::blockdata::script::ScriptBuf;
 use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey};
@@ -18,6 +22,7 @@ use dpp::identity::signer::Signer;
 use dpp::platform_value::BinaryData;
 use dpp::prelude::AddressNonce;
 use dpp::serialization::PlatformSerializable;
+use dpp::shielded::builder::OrchardProver;
 use dpp::shielded::SerializedAction;
 use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
@@ -612,7 +617,10 @@ pub fn insert_dummy_encrypted_notes(platform: &TempPlatform<MockCoreRPCLike>, co
 // Shared Orchard Proving Key & Serialization
 // ==========================================
 
-use grovedb_commitment_tree::{Authorized as OrchardAuthorized, Bundle, DashMemo, ProvingKey};
+use grovedb_commitment_tree::{
+    Authorized as OrchardAuthorized, Bundle, DashMemo, FullViewingKey, ProvingKey, Scope,
+    SpendingKey,
+};
 use std::sync::OnceLock;
 
 /// Single process-wide proving key shared by ALL shielded tests.
@@ -626,6 +634,56 @@ static SHARED_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
 /// Returns a reference to the lazily-initialized proving key.
 pub fn get_proving_key() -> &'static ProvingKey {
     SHARED_PROVING_KEY.get_or_init(ProvingKey::build)
+}
+
+/// The prover the public `dpp::shielded::builder` functions take, backed by the shared key.
+pub struct TestOrchardProver;
+
+impl OrchardProver for TestOrchardProver {
+    fn proving_key(&self) -> &ProvingKey {
+        get_proving_key()
+    }
+}
+
+/// A fixed Orchard recipient for bundles built through the public builders.
+pub fn test_orchard_recipient() -> OrchardAddress {
+    let full_viewing_key = FullViewingKey::from(&SpendingKey::from_bytes([0u8; 32]).unwrap());
+    OrchardAddress::from_raw_bytes(
+        &full_viewing_key
+            .address_at(0u32, Scope::External)
+            .to_raw_address_bytes(),
+    )
+    .expect("valid orchard address bytes")
+}
+
+/// Runs `transition` through a first-time CheckTx against the platform's current state and
+/// returns what admission refused it for; an empty list means it was admitted.
+pub fn check_tx_errors(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    transition: &StateTransition,
+) -> Vec<ConsensusError> {
+    let raw = transition
+        .serialize_to_bytes()
+        .expect("should serialize transition");
+    let state = platform.state.load();
+    let platform_version = state
+        .current_platform_version()
+        .expect("expected the current platform version");
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
+    platform
+        .check_tx(
+            &raw,
+            CheckTxLevel::FirstTimeCheck,
+            &platform_ref,
+            platform_version,
+        )
+        .expect("check_tx must not error")
+        .errors
 }
 
 /// Serialize an authorized Orchard bundle into the platform-compatible

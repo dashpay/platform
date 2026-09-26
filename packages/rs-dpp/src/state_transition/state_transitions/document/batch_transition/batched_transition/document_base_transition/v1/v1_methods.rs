@@ -21,7 +21,7 @@ pub trait DocumentBaseTransitionV1Methods: DocumentBaseTransitionV0Methods {
 
 impl DocumentBaseTransitionV1Methods for DocumentBaseTransitionV1 {
     fn token_payment_info(&self) -> Option<TokenPaymentInfo> {
-        self.token_payment_info
+        self.token_payment_info.clone()
     }
 
     fn token_payment_info_ref(&self) -> &Option<TokenPaymentInfo> {

@@ -194,7 +194,7 @@ fn default_token_marketplace_rules() -> TokenMarketplaceRules {
     })
 }
 
-fn default_change_control_rules() -> ChangeControlRules {
+pub(crate) fn default_change_control_rules() -> ChangeControlRules {
     ChangeControlRules::V0(ChangeControlRulesV0 {
         authorized_to_make_change: AuthorizedActionTakers::NoOne,
         admin_action_takers: AuthorizedActionTakers::NoOne,
