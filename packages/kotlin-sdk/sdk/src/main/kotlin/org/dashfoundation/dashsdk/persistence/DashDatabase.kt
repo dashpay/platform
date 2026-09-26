@@ -171,7 +171,14 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * while the cursor it lowers is durable, so every fresh process rewound again
  * and re-walked every filter from the earliest contact's core height. All
  * three NULL (every pre-migration row) means no record: native rewinds once
- * more, writes one, and never again for the contacts it covers.
+ * more, writes one, and never again for the contacts it covers. The same
+ * version adds the nullable `dashpay_contact_requests.externalAccountReference`
+ * column — `EstablishedContact::external_account_reference`, the marker that
+ * says which incoming `accountReference` the outbound sending account was
+ * built from. It was never persisted, so every cold start read it as absent,
+ * treated the account as rotated, tore it down and rebuilt it — and that
+ * rebuild was the per-launch cursor rewind. NULL for pre-migration rows:
+ * native rebuilds once, stamps it, and never again.
  */
 @Database(
     version = 15,
@@ -692,16 +699,20 @@ abstract class DashDatabase : RoomDatabase() {
 
         /**
          * v14 -> v15: additive nullable `wallets.dashPayBackfillFloor`,
-         * `wallets.dashPayBackfillRewoundFrom` and
-         * `wallets.dashPayBackfillCovered`, see the version-15 class doc
-         * above. NULL for every pre-existing row — no record on file, so the
-         * next rescan sweep behaves exactly as before and writes one.
+         * `wallets.dashPayBackfillRewoundFrom`, `wallets.dashPayBackfillCovered`
+         * and `dashpay_contact_requests.externalAccountReference`, see the
+         * version-15 class doc above. NULL for every pre-existing row — no
+         * record on file and no marker, so the next sweep rebuilds the
+         * outbound account once, rescans once, and writes both.
          */
         val MIGRATION_14_15: Migration = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `wallets` ADD COLUMN `dashPayBackfillFloor` INTEGER")
                 db.execSQL("ALTER TABLE `wallets` ADD COLUMN `dashPayBackfillRewoundFrom` INTEGER")
                 db.execSQL("ALTER TABLE `wallets` ADD COLUMN `dashPayBackfillCovered` BLOB")
+                db.execSQL(
+                    "ALTER TABLE `dashpay_contact_requests` ADD COLUMN `externalAccountReference` INTEGER",
+                )
             }
         }
 

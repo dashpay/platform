@@ -4833,6 +4833,61 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(mutedId.contentEquals(identity.ignoredSenders[0]))
     }
 
+    /**
+     * dashpay/platform#4302: the outbound-account marker
+     * (`EstablishedContact::external_account_reference`) must round-trip,
+     * or every cold start rebuilds the outbound account. `false` stores
+     * NULL and restores as absent; `true` stores the value and restores it.
+     */
+    @Test
+    fun contactUpsertRoundTripsTheExternalAccountReference() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val xpub = ByteArray(78) { 30 }
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), xpub,
+        )
+        val ownerId = ByteArray(32) { 23 }
+        val contactId = ByteArray(32) { 24 }
+        seedIdentity(ownerId)
+
+        // Absent marker (the default trailing arguments).
+        persistIncomingContact(ownerId, contactId)
+        val before = handler.onLoadWalletList().single().identities.single().contacts.single()
+        assertFalse(before.hasExternalAccountReference)
+        assertEquals(0, before.externalAccountReference)
+        assertNull(db.dashpayDao().getContactRequestsByOwner(ownerId).single().externalAccountReference)
+
+        // Stamped marker.
+        handler.onChangesetBegin(walletId)
+        handler.onPersistContactUpsert(
+            walletId = walletId,
+            ownerId = ownerId,
+            contactId = contactId,
+            isOutgoing = false,
+            senderKeyIndex = 2,
+            recipientKeyIndex = 3,
+            accountReference = 4,
+            encryptedPublicKey = ByteArray(96) { 5 },
+            encryptedAccountLabel = null,
+            autoAcceptProof = null,
+            coreHeightCreatedAt = 100_000,
+            createdAt = 1_700_000_000_000,
+            paymentChannelBroken = false,
+            alias = null,
+            note = null,
+            isHidden = false,
+            contactAccountLabel = null,
+            acceptedAccounts = IntArray(0),
+            hasExternalAccountReference = true,
+            externalAccountReference = 4,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        val after = handler.onLoadWalletList().single().identities.single().contacts.single()
+        assertTrue(after.hasExternalAccountReference)
+        assertEquals(4, after.externalAccountReference)
+        assertEquals(4, db.dashpayDao().getContactRequestsByOwner(ownerId).single().externalAccountReference)
+    }
+
     @Test
     fun loadWalletListScopesToTheHandlerNetwork() = runTest {
         // A network-scoped handler must never hand the Rust loader a

@@ -324,6 +324,21 @@ class DashDatabaseTest {
         assertNull(legacy.dashPayBackfillFloor)
         assertNull(legacy.dashPayBackfillRewoundFrom)
         assertNull(legacy.dashPayBackfillCovered)
+
+        // Same version: the nullable outbound-account marker on contact rows.
+        var markerFound = false
+        db.openHelper.readableDatabase.query("PRAGMA table_info('dashpay_contact_requests')").use { c ->
+            val name = c.getColumnIndexOrThrow("name")
+            val type = c.getColumnIndexOrThrow("type")
+            val notNull = c.getColumnIndexOrThrow("notnull")
+            while (c.moveToNext()) {
+                if (c.getString(name) != "externalAccountReference") continue
+                markerFound = true
+                assertEquals("INTEGER", c.getString(type))
+                assertEquals(0, c.getInt(notNull))
+            }
+        }
+        assertTrue(markerFound)
     }
 
     @Test

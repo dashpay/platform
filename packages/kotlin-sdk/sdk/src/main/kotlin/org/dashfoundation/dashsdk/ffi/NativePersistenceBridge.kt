@@ -592,13 +592,22 @@ abstract class NativePersistenceBridge {
 
     /**
      * One `ContactRequestFFI` upsert. Descriptor
-     * `([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I`.
+     * `([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[IZI)I`.
      *
      * The tail block ([paymentChannelBroken] / [alias] / [note] /
      * [isHidden] / [contactAccountLabel] / [acceptedAccounts]) is
      * established-row relationship metadata (contactInfo + DIP-15
      * accepted accounts) — null / false / empty on pending rows.
      * [acceptedAccounts] is never null (empty when absent).
+     *
+     * [hasExternalAccountReference] / [externalAccountReference] mirror
+     * `EstablishedContact::external_account_reference`: the incoming
+     * `accountReference` the registered outbound (sending) account was
+     * built from. Store it and hand it back on
+     * [ContactRequestRestoreData]; a cold start that restores `None`
+     * treats the account as rotated and rebuilds it on every launch
+     * (dashpay/platform#4302). Replicated onto both established rows;
+     * `false` / 0 on pending rows.
      */
     @Suppress("LongParameterList")
     open fun onPersistContactUpsert(
@@ -620,6 +629,8 @@ abstract class NativePersistenceBridge {
         isHidden: Boolean,
         contactAccountLabel: String?,
         acceptedAccounts: IntArray,
+        hasExternalAccountReference: Boolean = false,
+        externalAccountReference: Int = 0,
     ): Int = 0
 
     /** One sent-side `ContactRequestRemovalFFI`. Descriptor `([B[B[B)I`. */
@@ -1310,6 +1321,14 @@ class ContactRequestRestoreData(
     @JvmField val isHidden: Boolean,
     @JvmField val contactAccountLabel: String?,
     @JvmField val acceptedAccounts: IntArray,
+    /**
+     * `EstablishedContact::external_account_reference` as a `(present,
+     * value)` pair, exactly as [NativePersistenceBridge.onPersistContactUpsert]
+     * delivered it. `false` restores `None`, which makes native rebuild the
+     * outbound account once on the next sweep.
+     */
+    @JvmField val hasExternalAccountReference: Boolean = false,
+    @JvmField val externalAccountReference: Int = 0,
 )
 
 /**

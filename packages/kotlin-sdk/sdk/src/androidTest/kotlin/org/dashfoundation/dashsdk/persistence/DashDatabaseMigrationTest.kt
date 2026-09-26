@@ -630,10 +630,38 @@ class DashDatabaseMigrationTest {
                     "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
                     "VALUES (x'01', x'02', 1, 'w', 0, 2309809, 0, 0, 0, 0)",
             )
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "createdAt, lastUpdated, networkRaw, identityIndex, walletId) " +
+                    "VALUES (x'0A', 0, 0, 1, 'User', 0, 0, 1, 0, x'01')",
+            )
+            execSQL(
+                "INSERT INTO dashpay_contact_requests (networkRaw, ownerIdentityId, " +
+                    "contactIdentityId, isOutgoing, senderKeyIndex, recipientKeyIndex, " +
+                    "accountReference, encryptedPublicKey, coreHeightCreatedAt, createdAtMillis, " +
+                    "paymentChannelBroken, contactHidden, createdAt, lastUpdated) " +
+                    "VALUES (1, x'0A', x'0B', 0, 2, 3, 4, x'05', 1226329, 0, 0, 0, 0, 0)",
+            )
             close()
         }
 
         val db = helper.runMigrationsAndValidate(dbName, 15, true, DashDatabase.MIGRATION_14_15)
+
+        db.query(
+            "SELECT externalAccountReference FROM dashpay_contact_requests WHERE ownerIdentityId = x'0A'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue("pre-migration contact rows carry no outbound-account marker", c.isNull(0))
+        }
+        db.execSQL(
+            "UPDATE dashpay_contact_requests SET externalAccountReference = 4 WHERE ownerIdentityId = x'0A'",
+        )
+        db.query(
+            "SELECT externalAccountReference FROM dashpay_contact_requests WHERE ownerIdentityId = x'0A'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(4, c.getInt(0))
+        }
 
         db.query(
             "SELECT dashPayBackfillFloor, dashPayBackfillRewoundFrom, dashPayBackfillCovered, " +
