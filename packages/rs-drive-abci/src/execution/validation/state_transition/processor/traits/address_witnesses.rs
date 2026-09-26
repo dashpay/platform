@@ -5,6 +5,8 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::address_funds::AddressWitnessVerificationOperations;
+use dpp::consensus::basic::state_transition::TransitionOverMaxInputsError;
+use dpp::consensus::basic::BasicError;
 use dpp::serialization::Signable;
 use dpp::state_transition::{StateTransition, StateTransitionWitnessValidation};
 use dpp::validation::SimpleConsensusValidationResult;
@@ -50,6 +52,28 @@ impl StateTransitionAddressWitnessValidationV0 for StateTransition {
             .validate_address_witnesses
         {
             0 => {
+                // The input limit is checked before any witness is verified; the same check
+                // stays in `validate_address_balances_and_nonces` and in basic structure
+                // validation. This sits in v0 at every protocol version because it cannot
+                // change consensus: a transition over the limit was already refused unpaid
+                // (with the signature error or with this one), and an unpaid refusal never
+                // lands in a committed block (the proposer removes it and `process_proposal`
+                // rejects a block that carries one). Only which unpaid error it gets changes.
+                if let Some(inputs) = self.inputs() {
+                    let max_inputs = platform_version.dpp.state_transitions.max_address_inputs;
+                    if inputs.len() > max_inputs as usize {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            BasicError::TransitionOverMaxInputsError(
+                                TransitionOverMaxInputsError::new(
+                                    inputs.len().min(u16::MAX as usize) as u16,
+                                    max_inputs,
+                                ),
+                            )
+                            .into(),
+                        ));
+                    }
+                }
+
                 let signable_bytes = self.signable_bytes()?;
 
                 let witness_result = match self {
@@ -372,6 +396,14 @@ mod tests {
 
     mod validate_address_witnesses {
         use super::*;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            create_platform_address, TestAddressSigner,
+        };
+        use assert_matches::assert_matches;
+        use dpp::address_funds::AddressFundsFeeStrategyStep;
+        use dpp::consensus::ConsensusError;
+        use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
+        use std::collections::BTreeMap;
 
         #[test]
         fn should_return_valid_for_non_address_transition() {
@@ -385,6 +417,91 @@ mod tests {
                 .validate_address_witnesses(&mut exec_ctx, platform_version)
                 .expect("should not error");
             assert!(result.is_valid());
+        }
+
+        /// A transfer from `input_count` addresses with every input signed.
+        async fn signed_transfer(
+            input_count: u8,
+            platform_version: &PlatformVersion,
+        ) -> StateTransition {
+            let mut signer = TestAddressSigner::new();
+            let mut inputs = BTreeMap::new();
+            for i in 1..=input_count {
+                inputs.insert(signer.add_p2pkh([i; 32]), (1, 1_000_000));
+            }
+            let mut outputs = BTreeMap::new();
+            outputs.insert(
+                create_platform_address(100),
+                1_000_000 * u64::from(input_count),
+            );
+            AddressFundsTransferTransitionV0::try_from_inputs_with_signer(
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                &signer,
+                0,
+                platform_version,
+            )
+            .await
+            .expect("should create signed transition")
+        }
+
+        fn signature_verifications(exec_ctx: &StateTransitionExecutionContext) -> usize {
+            exec_ctx
+                .operations_slice()
+                .iter()
+                .filter(|operation| {
+                    matches!(operation, ValidationOperation::SignatureVerification(_))
+                })
+                .count()
+        }
+
+        #[tokio::test]
+        async fn should_refuse_over_the_input_limit_without_verifying_any_witness() {
+            for platform_version in [
+                PlatformVersion::latest(),
+                PlatformVersion::get(13).expect("expected protocol version 13"),
+            ] {
+                // Every witness is valid, so any refusal comes from the limit alone.
+                let st = signed_transfer(17, platform_version).await;
+                let mut exec_ctx =
+                    StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                        .unwrap();
+                let result = st
+                    .validate_address_witnesses(&mut exec_ctx, platform_version)
+                    .expect("should not error");
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(BasicError::TransitionOverMaxInputsError(e))]
+                        if e.actual_inputs() == 17 && e.max_inputs() == 16,
+                    "at protocol version {}",
+                    platform_version.protocol_version
+                );
+                assert_eq!(signature_verifications(&exec_ctx), 0);
+            }
+        }
+
+        #[tokio::test]
+        async fn should_verify_every_witness_at_the_input_limit() {
+            for platform_version in [
+                PlatformVersion::latest(),
+                PlatformVersion::get(13).expect("expected protocol version 13"),
+            ] {
+                let st = signed_transfer(16, platform_version).await;
+                let mut exec_ctx =
+                    StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                        .unwrap();
+                let result = st
+                    .validate_address_witnesses(&mut exec_ctx, platform_version)
+                    .expect("should not error");
+                assert!(
+                    result.is_valid(),
+                    "at protocol version {}: {:?}",
+                    platform_version.protocol_version,
+                    result.errors
+                );
+                assert_eq!(signature_verifications(&exec_ctx), 16);
+            }
         }
     }
 }
