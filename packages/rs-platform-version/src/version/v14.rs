@@ -1151,6 +1151,37 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     a second write replaced the first and two credits to an indebted
 ///     identity repaid its debt twice.
 ///
+/// 43. **The end-date cleanup of ended contested vote polls**: a block ends at
+///     most `maximum_vote_polls_to_process` vote polls, the earliest end date
+///     first, and removes their entries from the end-date queries.
+///     `remove_contested_resource_vote_poll_end_date_query_operations` 2
+///     (`DRIVE_VOTE_METHOD_VERSIONS_V3`) removes an end date only once none of
+///     its vote polls remain: it reads the entries under the date and keeps the
+///     date while any of them is not removed in the same batch, so the polls
+///     left end in a later block.
+///
+/// 44. **The total supply ceiling bounds every mint and direct purchase**: a
+///     token's total supply is stored in a sum item, so it can never pass
+///     `i64::MAX`. Token mint and token direct purchase state validation 1
+///     treat `i64::MAX` as the max supply when the token configures none (and
+///     cap a configured one there), refusing a mint or purchase past it with
+///     `TokenMintPastMaxSupplyError`, as a paid consensus error. State
+///     validation 0 checked only a configured max supply, so such a transition
+///     failed in execution as an internal error instead. Both now read the
+///     total supply on every mint and purchase, and pay for that read.
+///
+/// 45. **A masternode vote towards an identity names a contender**: a
+///     `ResourceVoteChoice::TowardsIdentity` vote for an identity that is not a
+///     contender of the poll is refused, unpaid, with
+///     `VoteChoiceNotAllowedForVotePollError` (40307) by `validate_state` 1 of
+///     the masternode vote, which reads the contender's document reference
+///     under the poll. The reserved keys of the poll's stored info, abstain
+///     tree and lock tree are refused before that read. Before, a vote for an
+///     unknown identity failed with an internal error, and a vote towards a
+///     reserved key was counted as Lock or Abstain. `check_for_ended_vote_polls`
+///     1 also ignores the lock tally of a contest resolved without locking. No
+///     table moves: both generations are selected by this version alone.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -1215,7 +1246,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore)
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit

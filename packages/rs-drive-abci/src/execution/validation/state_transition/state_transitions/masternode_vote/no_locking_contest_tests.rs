@@ -1,11 +1,12 @@
 //! Contests on a unique index resolved without locking
 //! (`ContestedIndexResolution::MasternodeVoteNoLocking`, protocol version 14): no Lock choice,
 //! a single contender is awarded when the join window closes, a second contender opens the
-//! vote window, and a tie goes to the earliest contender.
+//! vote window, and a tie goes to the earliest contender. From protocol version 14 a vote
+//! towards an identity must name a contender of the poll, on these contests and on DPNS ones.
 
 use crate::execution::validation::state_transition::state_transitions::tests::{
-    create_dpns_identity_name_contest, get_vote_states, perform_vote, perform_votes_multi,
-    setup_identity, setup_masternode_voting_identity,
+    create_dpns_identity_name_contest, dpns_name_vote_poll, get_vote_states, perform_vote,
+    perform_votes_multi, setup_identity, setup_masternode_voting_identity,
 };
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::MockCoreRPCLike;
@@ -37,6 +38,11 @@ use dpp::util::strings::convert_to_homograph_safe_chars;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
+use drive::drive::votes::paths::{
+    RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32,
+    RESOURCE_STORED_INFO_KEY_U8_32,
+};
+use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
 use drive::query::VotePollsByEndDateDriveQuery;
 use drive::util::test_helpers::setup_contract;
 use platform_version::version::PlatformVersion;
@@ -757,5 +763,448 @@ async fn should_award_a_dpns_tie_to_the_earliest_contender_from_version_14() {
     assert_eq!(
         winner(&platform, dpns_contract.as_ref(), platform_version),
         Some(earliest)
+    );
+}
+
+/// The ids a vote towards an identity may not name: the reserved keys under which a poll keeps
+/// its lock votes, its abstain votes and its stored info, and an identity that is not a contender.
+fn non_contender_ids(rng: &mut StdRng) -> [Identifier; 4] {
+    [
+        Identifier::new(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32),
+        Identifier::new(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32),
+        Identifier::new(RESOURCE_STORED_INFO_KEY_U8_32),
+        Identifier::new(rng.gen()),
+    ]
+}
+
+type MasternodeInfo = (Identifier, Identity, SimpleSigner, IdentityPublicKey);
+
+/// `masternode`'s vote towards `identity_id`, its first, is refused, unpaid.
+async fn refuse_vote_towards(
+    platform: &mut TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    identity_id: Identifier,
+    (pro_tx_hash, _, signer, voting_key): &MasternodeInfo,
+    platform_version: &PlatformVersion,
+) {
+    let choice = ResourceVoteChoice::TowardsIdentity(identity_id);
+    let refused =
+        VoteChoiceNotAllowedForVotePollError::new(vote_poll(contract), choice).to_string();
+    let platform_state = platform.state.load();
+    perform_vote(
+        platform,
+        &platform_state,
+        contract,
+        choice,
+        NAME,
+        signer,
+        *pro_tx_hash,
+        voting_key,
+        1,
+        Some(&refused),
+        platform_version,
+    )
+    .await;
+}
+
+/// `masternode`'s vote for `choice` with `nonce` passes.
+async fn vote(
+    platform: &mut TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    choice: ResourceVoteChoice,
+    (pro_tx_hash, _, signer, voting_key): &MasternodeInfo,
+    nonce: u64,
+    platform_version: &PlatformVersion,
+) {
+    let platform_state = platform.state.load();
+    perform_vote(
+        platform,
+        &platform_state,
+        contract,
+        choice,
+        NAME,
+        signer,
+        *pro_tx_hash,
+        voting_key,
+        nonce,
+        None,
+        platform_version,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn should_refuse_a_vote_towards_an_identity_that_is_not_a_contender() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    join(
+        &platform,
+        &contract,
+        &bob,
+        2,
+        20_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    let masternode = setup_masternode_voting_identity(&mut platform, 0x7a1, platform_version);
+    for identity_id in non_contender_ids(&mut rng) {
+        refuse_vote_towards(
+            &mut platform,
+            &contract,
+            identity_id,
+            &masternode,
+            platform_version,
+        )
+        .await;
+    }
+    let (abstaining, locking, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert_eq!(abstaining, Some(0));
+    assert_eq!(locking, Some(0));
+    assert_eq!(tallies.len(), 2, "only alice and bob are contenders");
+    assert!(tallies.contains(&(alice.0.id(), Some(0))));
+    assert!(tallies.contains(&(bob.0.id(), Some(0))));
+
+    // The refused votes took no nonce: the same masternode's first vote counts
+    vote(
+        &mut platform,
+        &contract,
+        ResourceVoteChoice::TowardsIdentity(alice.0.id()),
+        &masternode,
+        1,
+        platform_version,
+    )
+    .await;
+    let (_, _, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert!(tallies.contains(&(alice.0.id(), Some(1))));
+}
+
+/// The DPNS rule refuses the same ids, and keeps every choice it offers: a contender, abstain
+/// and lock, with a masternode moving its vote between them.
+#[tokio::test]
+async fn should_refuse_a_dpns_vote_towards_an_identity_that_is_not_a_contender() {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = TestPlatformBuilder::new()
+        .with_latest_protocol_version()
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let platform_state = platform.state.load();
+    let (contender_1, contender_2, dpns_contract) = create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        7,
+        NAME,
+        platform_version,
+    )
+    .await;
+    let mut rng = StdRng::seed_from_u64(0x7a2);
+    let masternode = setup_masternode_voting_identity(&mut platform, 0x7a2, platform_version);
+
+    for identity_id in non_contender_ids(&mut rng) {
+        refuse_vote_towards(
+            &mut platform,
+            dpns_contract.as_ref(),
+            identity_id,
+            &masternode,
+            platform_version,
+        )
+        .await;
+    }
+    let (abstaining, locking, tallies) =
+        tallies_of(&platform, dpns_contract.as_ref(), platform_version);
+    assert_eq!(abstaining, Some(0));
+    assert_eq!(locking, Some(0));
+    assert_eq!(
+        tallies,
+        vec![(contender_1.id(), Some(0)), (contender_2.id(), Some(0))]
+    );
+
+    for (nonce, choice, expected) in [
+        (1, ResourceVoteChoice::Lock, (0, 1, 0, 0)),
+        (2, ResourceVoteChoice::Abstain, (1, 0, 0, 0)),
+        (
+            3,
+            ResourceVoteChoice::TowardsIdentity(contender_1.id()),
+            (0, 0, 1, 0),
+        ),
+        (
+            4,
+            ResourceVoteChoice::TowardsIdentity(contender_2.id()),
+            (0, 0, 0, 1),
+        ),
+    ] {
+        vote(
+            &mut platform,
+            dpns_contract.as_ref(),
+            choice,
+            &masternode,
+            nonce,
+            platform_version,
+        )
+        .await;
+        let (abstaining, locking, tallies) =
+            tallies_of(&platform, dpns_contract.as_ref(), platform_version);
+        let (abstain, lock, towards_1, towards_2) = expected;
+        assert_eq!(
+            (abstaining, locking, tallies),
+            (
+                Some(abstain),
+                Some(lock),
+                vec![
+                    (contender_1.id(), Some(towards_1)),
+                    (contender_2.id(), Some(towards_2))
+                ]
+            ),
+            "after the vote {choice:?}"
+        );
+    }
+}
+
+/// Before, a vote towards the lock tree's key was counted as Lock, so such votes locked a
+/// contest that is meant to always have a winner.
+#[tokio::test]
+async fn should_award_a_contest_without_locking_whose_lock_key_votes_were_refused() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let (_, poll_duration) = windows(&platform, platform_version);
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let start = join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    join(
+        &platform,
+        &contract,
+        &bob,
+        2,
+        start + 60_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    for (seed, reserved_key) in [
+        (100, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32),
+        (101, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32),
+        (102, RESOURCE_LOCK_VOTE_TREE_KEY_U8_32),
+        (103, RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32),
+    ] {
+        let masternode = setup_masternode_voting_identity(&mut platform, seed, platform_version);
+        refuse_vote_towards(
+            &mut platform,
+            &contract,
+            Identifier::new(reserved_key),
+            &masternode,
+            platform_version,
+        )
+        .await;
+    }
+    perform_votes_multi(
+        &mut platform,
+        &contract,
+        vec![(ResourceVoteChoice::TowardsIdentity(alice.0.id()), 2)],
+        NAME,
+        104,
+        None,
+        platform_version,
+    )
+    .await;
+    let (abstaining, locking, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert_eq!(abstaining, Some(0));
+    assert_eq!(locking, Some(0));
+    assert!(tallies.contains(&(alice.0.id(), Some(2))));
+    assert!(tallies.contains(&(bob.0.id(), Some(0))));
+
+    end_polls_at(&platform, start + poll_duration, 11, platform_version);
+    assert_eq!(
+        winner(&platform, &contract, platform_version),
+        Some(alice.0.id())
+    );
+}
+
+/// `check_for_ended_vote_polls` 1 ignores the lock tally of a contest without locking, which
+/// vote validation keeps at zero: lock votes written straight to Drive do not lock it.
+#[tokio::test]
+async fn should_award_a_contest_without_locking_whatever_its_lock_tally_holds() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let (_, poll_duration) = windows(&platform, platform_version);
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let start = join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    join(
+        &platform,
+        &contract,
+        &bob,
+        2,
+        start + 60_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    perform_votes_multi(
+        &mut platform,
+        &contract,
+        vec![(ResourceVoteChoice::TowardsIdentity(alice.0.id()), 1)],
+        NAME,
+        100,
+        None,
+        platform_version,
+    )
+    .await;
+
+    let resolved_vote_poll = dpns_name_vote_poll(&contract, NAME)
+        .resolve_owned(&platform.drive, None, platform_version)
+        .expect("expected to resolve the vote poll");
+    for voter in 1..=3u8 {
+        platform
+            .drive
+            .register_contested_resource_identity_vote(
+                [voter; 32],
+                1,
+                resolved_vote_poll.clone(),
+                ResourceVoteChoice::Lock,
+                None,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+            )
+            .expect("expected to write a lock vote");
+    }
+    let (_, locking, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert_eq!(locking, Some(3));
+    assert!(tallies.contains(&(alice.0.id(), Some(1))));
+
+    end_polls_at(&platform, start + poll_duration, 11, platform_version);
+    assert_eq!(
+        winner(&platform, &contract, platform_version),
+        Some(alice.0.id())
+    );
+}
+
+#[tokio::test]
+async fn should_accept_a_vote_towards_an_identity_once_it_joins_the_contest() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let carol = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let start = join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    join(
+        &platform,
+        &contract,
+        &bob,
+        2,
+        start + 60_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    let masternode = setup_masternode_voting_identity(&mut platform, 0x7a3, platform_version);
+    refuse_vote_towards(
+        &mut platform,
+        &contract,
+        carol.0.id(),
+        &masternode,
+        platform_version,
+    )
+    .await;
+
+    join(
+        &platform,
+        &contract,
+        &carol,
+        3,
+        start + 120_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    vote(
+        &mut platform,
+        &contract,
+        ResourceVoteChoice::TowardsIdentity(carol.0.id()),
+        &masternode,
+        1,
+        platform_version,
+    )
+    .await;
+    let (_, _, tallies) = tallies_of(&platform, &contract, platform_version);
+    assert!(tallies.contains(&(carol.0.id(), Some(1))));
+}
+
+/// Protocol version 13 keeps `validate_state` 0, which writes a vote towards the lock tree's
+/// key into the lock tree. Pinned so the replay boundary stays explicit.
+#[tokio::test]
+async fn should_count_a_vote_towards_the_lock_key_as_lock_at_protocol_version_13() {
+    let platform_version = PlatformVersion::get(13).expect("expected platform version 13");
+    let mut platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(13)
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let platform_state = platform.state.load();
+    let (contender_1, contender_2, dpns_contract) = create_dpns_identity_name_contest(
+        &mut platform,
+        &platform_state,
+        7,
+        NAME,
+        platform_version,
+    )
+    .await;
+    perform_votes_multi(
+        &mut platform,
+        dpns_contract.as_ref(),
+        vec![(
+            ResourceVoteChoice::TowardsIdentity(Identifier::new(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32)),
+            1,
+        )],
+        NAME,
+        10,
+        None,
+        platform_version,
+    )
+    .await;
+    let (abstaining, locking, tallies) =
+        tallies_of(&platform, dpns_contract.as_ref(), platform_version);
+    assert_eq!(abstaining, Some(0));
+    assert_eq!(locking, Some(1));
+    assert_eq!(
+        tallies,
+        vec![(contender_1.id(), Some(0)), (contender_2.id(), Some(0))]
     );
 }

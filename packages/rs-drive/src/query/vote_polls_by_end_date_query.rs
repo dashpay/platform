@@ -1,3 +1,5 @@
+#[cfg(feature = "server")]
+use crate::drive::votes::paths::vote_contested_resource_end_date_queries_at_time_tree_path_vec;
 use crate::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 #[cfg(feature = "server")]
 use crate::drive::Drive;
@@ -210,6 +212,47 @@ impl VotePollsByEndDateDriveQuery {
                     .collect::<Result<Vec<_>, Error>>()?;
                 Ok(vote_polls)
             }
+        }
+    }
+
+    #[cfg(feature = "server")]
+    /// Executes a query with no proof for the keys listed at one end time: the unique ids of the
+    /// vote polls ending then, at most `limit` of them, or all of them when `limit` is `None`.
+    /// An end time with no tree lists none.
+    pub fn execute_no_proof_keys_for_single_end_time(
+        end_time: TimestampMillis,
+        limit: Option<u16>,
+        drive: &Drive,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        let mut query = Query::new();
+        query.insert_all();
+        let path_query = PathQuery::new(
+            vote_contested_resource_end_date_queries_at_time_tree_path_vec(end_time),
+            SizedQuery::new(query, limit, None),
+        );
+        let query_result = drive.grove_get_raw_path_query(
+            &path_query,
+            transaction,
+            QueryResultType::QueryKeyElementPairResultType,
+            drive_operations,
+            &platform_version.drive,
+        );
+        match query_result {
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
+                Ok(vec![])
+            }
+            Err(e) => Err(e),
+            Ok((query_result_elements, _)) => Ok(query_result_elements.to_keys()),
         }
     }
 

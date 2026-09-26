@@ -6,6 +6,11 @@ that names the contract, the document type, the index and the index values, and 
 evonodes decide who gets the value. A masternode's vote counts once, an evonode's four times. Every
 vote is a `MasternodeVote` state transition carrying the poll and a `ResourceVoteChoice`.
 
+From protocol version 14, a vote towards an identity must name a contender of the poll. Any other
+identity, including the reserved keys under which the poll keeps its stored result and its abstain
+and lock tallies, is refused with `VoteChoiceNotAllowedForVotePollError` (40307). Before 14 such a
+vote failed with an internal error, or counted as abstain or lock when it named a reserved key.
+
 The contest is funded by the contenders' prefunded voting balances, and each vote costs a fixed
 amount from that balance. Contenders may join for the **join window** (one week on mainnet) after
 the first document; the contest runs for the **poll duration** (two weeks on mainnet). The first
@@ -71,6 +76,13 @@ resolutions; contests ending before version 14 awarded the latest contender.
 A contest's state lives under `votes / contested_resource / active_polls`, laid out like the
 contested index it decides: the contenders' documents, one votes sum tree per contender, and the
 abstain and lock tallies. The masternodes' vote references live under
-`votes / contested_resource / identity_votes`, and the end dates under `votes / end_date_queries`.
+`votes / contested_resource / identity_votes`, and the end dates under `votes / end_date_queries`,
+one tree per end date holding an entry for each contest ending then.
 Once the contest ends, the winning document is awarded, the losers are removed, and the stored
 result stays for the `getContestedResourceVoteState` query.
+
+A block ends at most `maximum_vote_polls_to_process` contests (a drive-abci `event_constants`
+value, two at protocol version 14), the earliest end date first, so contests due together may end
+over several blocks. The cleanup removes each ended contest's
+end-date entry, and removes an end date only once none of its contests remain under it; the rest
+end in the next blocks.

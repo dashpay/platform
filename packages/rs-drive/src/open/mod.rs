@@ -68,6 +68,8 @@ impl Drive {
                 system_data_contracts: SystemDataContracts::new(),
             },
             checkpoints,
+            #[cfg(feature = "full")]
+            temp_dir: None,
         };
 
         // A reopened Drive must present the same protocol version votes as a node that never

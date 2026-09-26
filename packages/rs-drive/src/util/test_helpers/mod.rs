@@ -21,9 +21,23 @@ use dpp::block::block_info::BlockInfo;
 use dpp::prelude::Identifier;
 
 #[cfg(feature = "fixtures-and-mocks")]
+use crate::drive::votes::paths::vote_end_date_queries_tree_path_vec;
+#[cfg(feature = "fixtures-and-mocks")]
+use crate::query::VotePollsByEndDateDriveQuery;
+#[cfg(feature = "fixtures-and-mocks")]
+use crate::util::common::encode::decode_u64;
+#[cfg(feature = "fixtures-and-mocks")]
+use dpp::prelude::TimestampMillis;
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::json_document::json_document_to_contract_with_ids;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::version::PlatformVersion;
+#[cfg(feature = "fixtures-and-mocks")]
+use grovedb::query_result_type::QueryResultType;
+#[cfg(feature = "fixtures-and-mocks")]
+use grovedb::{PathQuery, Query};
+#[cfg(feature = "fixtures-and-mocks")]
+use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(test)]
 use ciborium::value::Value;
@@ -70,6 +84,47 @@ pub fn setup_contract(
         )
         .expect("contract should be applied");
     contract
+}
+
+#[cfg(feature = "fixtures-and-mocks")]
+/// Every end date of the vote poll end-date queries, with the unique ids of the vote polls listed
+/// under it; an end date that lists none shows as an empty set.
+pub fn vote_poll_end_dates(
+    drive: &Drive,
+    platform_version: &PlatformVersion,
+) -> BTreeMap<TimestampMillis, BTreeSet<Identifier>> {
+    let mut query = Query::new();
+    query.insert_all();
+    let (end_dates, _) = drive
+        .grove_get_raw_path_query(
+            &PathQuery::new_unsized(vote_end_date_queries_tree_path_vec(), query),
+            None,
+            QueryResultType::QueryKeyElementPairResultType,
+            &mut vec![],
+            &platform_version.drive,
+        )
+        .expect("expected to read the end dates");
+    end_dates
+        .to_keys()
+        .into_iter()
+        .map(|end_date_key| {
+            let end_date = decode_u64(&end_date_key).expect("expected an encoded end date");
+            let unique_ids =
+                VotePollsByEndDateDriveQuery::execute_no_proof_keys_for_single_end_time(
+                    end_date,
+                    None,
+                    drive,
+                    None,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("expected to read the vote polls of an end date")
+                .into_iter()
+                .map(|key| Identifier::from_bytes(&key).expect("expected a vote poll id"))
+                .collect();
+            (end_date, unique_ids)
+        })
+        .collect()
 }
 
 #[cfg(test)]
