@@ -36,6 +36,7 @@
 extern crate core;
 use dpp::bls_signatures::SecretKey as BlsPrivateKey;
 mod addresses_with_balance;
+mod determinism_artifact;
 mod execution;
 mod failures;
 mod masternode_list_item_helpers;
