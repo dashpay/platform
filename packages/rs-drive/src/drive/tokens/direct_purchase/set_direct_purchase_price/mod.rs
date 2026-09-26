@@ -54,7 +54,7 @@ impl Drive {
         Ok(fees)
     }
 
-    /// Gathers the operations needed to mint tokens.
+    /// Gathers the operations needed to set a token's direct purchase price.
     pub fn token_set_direct_purchase_price_operations(
         &self,
         token_id: [u8; 32],
@@ -64,7 +64,13 @@ impl Drive {
         >,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match platform_version.drive.methods.token.update.mint {
+        match platform_version
+            .drive
+            .methods
+            .token
+            .update
+            .set_direct_purchase_price
+        {
             0 => self.token_set_direct_purchase_price_operations_v0(
                 token_id,
                 price,

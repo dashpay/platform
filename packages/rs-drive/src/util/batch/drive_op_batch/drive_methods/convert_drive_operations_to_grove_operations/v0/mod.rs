@@ -9,7 +9,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use grovedb::batch::QualifiedGroveDbOp;
 use grovedb::TransactionArg;
-use itertools::Itertools;
 
 impl Drive {
     /// Convert a batch of drive operations to a batch of grove database operations.
@@ -37,22 +36,20 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<GroveDbOpBatch, Error> {
-        let ops = drive_batch_operations
-            .into_iter()
-            .map(|drive_op| {
-                let inner_drive_operations = drive_op.into_low_level_drive_operations(
-                    self,
-                    &mut None,
-                    block_info,
-                    transaction,
-                    platform_version,
-                )?;
-                Ok(LowLevelDriveOperation::grovedb_operations_consume(
-                    inner_drive_operations,
-                ))
-            })
-            .flatten_ok()
-            .collect::<Result<Vec<QualifiedGroveDbOp>, Error>>()?;
+        let mut low_level_operations: Vec<LowLevelDriveOperation> = vec![];
+        for drive_op in drive_batch_operations {
+            let mut lowered = drive_op.into_low_level_drive_operations(
+                self,
+                &mut Some(&mut low_level_operations),
+                &mut None,
+                block_info,
+                transaction,
+                platform_version,
+            )?;
+            low_level_operations.append(&mut lowered);
+        }
+        let ops: Vec<QualifiedGroveDbOp> =
+            LowLevelDriveOperation::grovedb_operations_consume(low_level_operations);
         Ok(GroveDbOpBatch::from_operations(ops))
     }
 }

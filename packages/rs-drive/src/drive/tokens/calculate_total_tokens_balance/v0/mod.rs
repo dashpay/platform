@@ -42,6 +42,8 @@ impl Drive {
         Ok(TotalTokensBalance {
             total_tokens_in_platform,
             total_identity_token_balances,
+            // The destroyed supply ledger does not exist at this generation.
+            total_destroyed_supply: 0,
         })
     }
 }

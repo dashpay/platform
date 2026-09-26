@@ -1,5 +1,6 @@
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 use versioned_feature_core::FeatureVersion;
 
@@ -16,4 +17,8 @@ pub struct DPPTokenVersions {
     /// v0: uses only minimum_purchase_amount_and_price().1 (vulnerable to schedule swap)
     /// v1: includes the full serialized TokenPricingSchedule in the hash
     pub token_set_price_action_id_version: FeatureVersion,
+    /// Structure version `ContractTokenLifecycle::new` builds: the per-issuer token supply
+    /// rollup and wipe marker Drive keeps from protocol version 17. Shipped tables carry 0
+    /// because the record did not exist before; nothing reads it there.
+    pub contract_token_lifecycle_default_structure_version: FeatureVersion,
 }

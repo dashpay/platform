@@ -130,6 +130,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -149,6 +150,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     token_id_bytes,
                     identity_id_bytes,
                     burn_amount,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
@@ -170,6 +172,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     mint_amount,
                     allow_first_mint,
                     allow_saturation,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
@@ -187,6 +190,7 @@ impl DriveLowLevelOperationConverter for TokenOperationType {
                     recipients,
                     mint_amount,
                     allow_first_mint,
+                    previous_batch_operations,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,

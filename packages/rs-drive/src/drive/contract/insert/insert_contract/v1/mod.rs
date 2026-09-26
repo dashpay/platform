@@ -406,8 +406,8 @@ mod tests {
     /// drives the `i64::MAX` guard.
     #[test]
     fn test_insert_contract_with_token_base_supply_overflow_fails() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
@@ -449,8 +449,8 @@ mod tests {
     /// apply=true path PR #3516 covered.
     #[test]
     fn test_insert_contract_v1_token_estimated_costs_branches() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
@@ -488,8 +488,8 @@ mod tests {
     /// also asserting token+keyword insertion still works on a separate contract id.
     #[test]
     fn test_insert_contract_v1_empty_groups_with_tokens_and_keywords() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
@@ -524,8 +524,8 @@ mod tests {
     /// identity_infos trees.
     #[test]
     fn test_insert_contract_v1_two_tokens_distinct_ids_all_trees_created() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
         let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();

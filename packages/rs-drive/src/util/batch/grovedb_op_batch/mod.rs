@@ -7,9 +7,10 @@ use crate::drive::credit_pools::epochs;
 use crate::drive::identity::IdentityRootStructure;
 use crate::drive::{credit_pools, tokens, RootTree};
 use crate::util::batch::grovedb_op_batch::KnownPath::{
-    TokenBalancesRoot, TokenContractInfoRoot, TokenDirectSellPriceRoot, TokenDistributionRoot,
-    TokenIdentityInfoRoot, TokenPerpetualDistributionRoot, TokenPreProgrammedDistributionRoot,
-    TokenStatusRoot, TokenTimedDistributionRoot,
+    TokenBalancesRoot, TokenContractInfoRoot, TokenContractLifecyclesRoot,
+    TokenDirectSellPriceRoot, TokenDistributionRoot, TokenIdentityInfoRoot,
+    TokenPerpetualDistributionRoot, TokenPreProgrammedDistributionRoot, TokenStatusRoot,
+    TokenTimedDistributionRoot,
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
@@ -68,6 +69,7 @@ enum KnownPath {
     TokenIdentityInfoRoot,                                            //Level 2
     TokenContractInfoRoot,                                            //Level 2
     TokenStatusRoot,                                                  //Level 2
+    TokenContractLifecyclesRoot,                                      //Level 2
     VersionsRoot,                                                     //Level 1
     VotesRoot,                                                        //Level 1
     GroupActionsRoot,                                                 //Level 1
@@ -265,8 +267,23 @@ fn readable_key_info(known_path: KnownPath, key_info: &KeyInfo) -> (String, Opti
                     tokens::paths::TOKEN_STATUS_INFO_KEY => {
                         (format!("Status({})", tokens::paths::TOKEN_STATUS_INFO_KEY), Some(TokenStatusRoot))
                     }
+                    tokens::paths::TOKEN_CONTRACT_LIFECYCLES_KEY => {
+                        (format!("ContractLifecycles({})", tokens::paths::TOKEN_CONTRACT_LIFECYCLES_KEY), Some(TokenContractLifecyclesRoot))
+                    }
                     _ => (hex_to_ascii(key), None),
                 },
+                KnownPath::TokenContractLifecyclesRoot if key.len() == 1 => match key[0] {
+                    0 => ("DestroyedSupply(0)".to_string(), None),
+                    1 => ("CleanupQueue(1)".to_string(), None),
+                    _ => (hex_to_ascii(key), None),
+                },
+                KnownPath::TokenContractLifecyclesRoot if key.len() == 32 => (
+                    format!(
+                        "ContractId(bs58::{})",
+                        Identifier::from_vec(key.clone()).unwrap()
+                    ),
+                    None,
+                ),
                 KnownPath::TokenDistributionRoot if key.len() == 1 => match key[0] {
                     tokens::paths::TOKEN_TIMED_DISTRIBUTIONS_KEY => {
                         (format!("TimedDistribution({})", tokens::paths::TOKEN_TIMED_DISTRIBUTIONS_KEY), Some(TokenTimedDistributionRoot))

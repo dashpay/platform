@@ -153,8 +153,8 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     fn setup_token_with_supply(initial_supply: u64) -> (crate::drive::Drive, [u8; 32], BlockInfo) {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [1u8; 32];
         let contract_id = Identifier::from([3u8; 32]);
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn should_remove_from_existing_total_supply() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let (drive, token_id, block_info) = setup_token_with_supply(1000);
 
         drive
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn should_remove_to_exact_zero() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let (drive, token_id, block_info) = setup_token_with_supply(500);
 
         drive
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn should_error_on_underflow() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let (drive, token_id, block_info) = setup_token_with_supply(100);
 
         let result = drive.remove_from_token_total_supply_v0(
@@ -259,7 +259,7 @@ mod tests {
     fn should_estimate_costs_without_mutating_state_when_apply_false() {
         // Exercise the estimated_costs_only_with_layer_info branch and the
         // u64::MAX placeholder path inside operations_v0.
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let (drive, token_id, block_info) = setup_token_with_supply(5_000);
 
         let app_hash_before = drive
@@ -297,8 +297,8 @@ mod tests {
 
     #[test]
     fn should_error_when_removing_from_non_existent_token() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [42u8; 32];
 

@@ -23,12 +23,35 @@ pub const TOKEN_DIRECT_SELL_PRICE_KEY: u8 = 92;
 /// Key for token distributions sub level
 pub const TOKEN_DISTRIBUTIONS_KEY: u8 = 32;
 
+/// Key for the per-issuer token lifecycle ledger: one record per contract that issues
+/// tokens (its supply rollup and, once destroyed, its wipe marker) plus the ledger scalars
+/// below. Exists from protocol version 17.
+///
+/// The value is provisional: the allocation register leaves new keys under `[Tokens]`
+/// unallocated, and 224 is the next free one-byte key here.
+pub const TOKEN_CONTRACT_LIFECYCLES_KEY: u8 = 224;
+
+// The token contract lifecycles tree level
+
+/// Key of the destroyed supply scalar: the summed issued supply of every destroyed issuer whose
+/// leaves are still stored, as a 16 byte big endian item. Read once by token conservation,
+/// raised once per destruction and lowered by every physical cleanup step.
+pub const TOKEN_DESTROYED_SUPPLY_KEY: [u8; 1] = [0];
+
+/// Key of the cleanup queue tree: one entry per destroyed issuer awaiting physical cleanup,
+/// keyed by destruction height and contract id so it is processed first in, first out.
+pub const TOKEN_LIFECYCLE_CLEANUP_QUEUE_KEY: [u8; 1] = [1];
+
 // The Token Merk tree looks like
 //                                                       TOKEN_BALANCES_KEY
 //                                           /                                                       \
 //                             TOKEN_STATUS_INFO_KEY                                   TOKEN_IDENTITY_INFO_KEY
-//                              /             \                                                    /
-//           TOKEN_DISTRIBUTIONS_KEY    TOKEN_DIRECT_SELL_PRICE_KEY                  TOKEN_CONTRACT_INFO_KEY
+//                              /             \                                                    /           \
+//           TOKEN_DISTRIBUTIONS_KEY    TOKEN_DIRECT_SELL_PRICE_KEY                  TOKEN_CONTRACT_INFO_KEY   TOKEN_CONTRACT_LIFECYCLES_KEY
+//
+// TOKEN_CONTRACT_LIFECYCLES_KEY is added after genesis of an earlier protocol version, so its
+// exact placement follows the AVL rebalancing of the insertion order the genesis and upgrade
+// paths share.
 
 // The token distribution Tree level
 
@@ -142,6 +165,42 @@ pub fn token_statuses_root_path() -> [&'static [u8]; 2] {
 /// Returns the root path for token statuses as a vector of byte vectors.
 pub fn token_statuses_root_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Tokens as u8], vec![TOKEN_STATUS_INFO_KEY]]
+}
+
+/// Returns the root path of the token contract lifecycle ledger as a fixed-size array of byte
+/// slices.
+pub fn token_contract_lifecycles_root_path() -> [&'static [u8]; 2] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_CONTRACT_LIFECYCLES_KEY],
+    ]
+}
+
+/// Returns the root path of the token contract lifecycle ledger as a vector of byte vectors.
+pub fn token_contract_lifecycles_root_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_CONTRACT_LIFECYCLES_KEY],
+    ]
+}
+
+/// Returns the path of the cleanup queue of destroyed issuers as a fixed-size array of byte
+/// slices.
+pub fn token_lifecycle_cleanup_queue_path() -> [&'static [u8]; 3] {
+    [
+        Into::<&[u8; 1]>::into(RootTree::Tokens),
+        &[TOKEN_CONTRACT_LIFECYCLES_KEY],
+        &TOKEN_LIFECYCLE_CLEANUP_QUEUE_KEY,
+    ]
+}
+
+/// Returns the path of the cleanup queue of destroyed issuers as a vector of byte vectors.
+pub fn token_lifecycle_cleanup_queue_path_vec() -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Tokens as u8],
+        vec![TOKEN_CONTRACT_LIFECYCLES_KEY],
+        TOKEN_LIFECYCLE_CLEANUP_QUEUE_KEY.to_vec(),
+    ]
 }
 
 /// Returns the root path for token distributions as a fixed-size array of byte slices.

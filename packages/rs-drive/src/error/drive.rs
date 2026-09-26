@@ -218,4 +218,8 @@ pub enum DriveError {
     /// Checkpoint not found for specified block height
     #[error("checkpoint not found for block height: {0}")]
     CheckpointNotFound(u64),
+
+    /// A token issuer was asked to be destroyed a second time
+    #[error("token issuer already destroyed: {0}")]
+    TokenIssuerAlreadyDestroyed(Identifier),
 }
