@@ -26,7 +26,6 @@
 //! - [DIP-14](https://github.com/dashpay/dips/blob/master/dip-0014.md)
 //! - [DIP-15](https://github.com/dashpay/dips/blob/master/dip-0015.md)
 
-use dashcore::secp256k1::Secp256k1;
 use dashcore::{Address, Network, PublicKey};
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
@@ -210,13 +209,11 @@ pub fn derive_contact_payment_address(
     index: u32,
     network: Network,
 ) -> Result<Address, PlatformWalletError> {
-    let secp = Secp256k1::new();
-
     let child_number = ChildNumber::from_normal_idx(index).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!("Invalid payment address index: {}", e))
     })?;
 
-    let address_key = contact_xpub.ckd_pub(&secp, child_number).map_err(|e| {
+    let address_key = contact_xpub.ckd_pub(child_number).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to derive contact payment key at index {}: {}",
             index, e

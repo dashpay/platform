@@ -90,6 +90,16 @@ once_cell = "1.7"
 env_logger = { version = "0.11.8" }
 log = { version = "0.4.27" }
 
+# secp256k1 0.33 pulls getrandom 0.3 (via rand 0.9) and key-wallet pulls
+# getrandom 0.4; on wasm32-unknown-unknown both refuse to build without their
+# `wasm_js` feature, so enable it here where every wasm crate picks it up.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+
+[package.metadata.cargo-machete]
+ignored = ["getrandom_03", "getrandom_04"]
+
 [features]
 default = ["state-transitions"]
 core_bincode = ["dashcore/bincode"]

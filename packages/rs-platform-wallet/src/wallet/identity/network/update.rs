@@ -271,6 +271,17 @@ impl IdentityWallet {
     /// **not** look up the identity in the internal `IdentityManager`. The
     /// caller supplies the `Identity`, master key ID, and a `Signer` directly.
     ///
+    /// Keys in `add_public_keys` may be `IdentityPublicKey::V1` carrying a
+    /// `total_budget` and/or `expires_at` (protocol version 14). The
+    /// transition builder turns each key into the matching
+    /// `IdentityPublicKeyInCreation` version, so a V1 key is registered
+    /// with its limits inside the signed bytes and a V0 key is registered
+    /// exactly as before. The consensus rules on limits (AUTHENTICATION
+    /// purpose and a level below MASTER, non-zero budget, expiry in the
+    /// future) are not re-checked here: Platform validates them and the
+    /// caller receives the chain's error. See
+    /// `docs/protocol/authentication-key-limits.md`.
+    ///
     /// Returns the [`StateTransitionProofResult`] from the broadcast so callers
     /// can inspect proof-verified outcomes (e.g. updated keys, balance).
     pub async fn update_identity_with_signer<S: Signer<IdentityPublicKey>>(

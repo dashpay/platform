@@ -12,7 +12,7 @@ use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::blockdata::script::ScriptBuf;
 use dpp::dashcore::hashes::{sha256, Hash};
-use dpp::dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey};
+use dpp::dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 use dpp::dashcore::PublicKey;
 use dpp::identity::signer::Signer;
 use dpp::platform_value::BinaryData;
@@ -36,8 +36,6 @@ pub use dpp::dashcore::blockdata::opcodes::all::{
 };
 pub use dpp::dashcore::blockdata::script::ScriptBuf as TestScriptBuf;
 pub use dpp::dashcore::hashes::Hash as TestHash;
-#[allow(unused_imports)]
-pub use dpp::dashcore::secp256k1::Secp256k1 as TestSecp256k1;
 #[allow(unused_imports)]
 pub use dpp::dashcore::PublicKey as TestPublicKey;
 pub use dpp::ProtocolError as TestProtocolError;
@@ -73,19 +71,18 @@ impl TestAddressSigner {
     }
 
     pub fn create_keypair(seed: [u8; 32]) -> (RawSecretKey, PublicKey) {
-        let secp = Secp256k1::new();
         // Hash the seed to ensure it's always a valid secret key
         // (non-zero, less than curve order). Raw seeds like [0u8; 32] are invalid.
         let hashed_seed = sha256::Hash::hash(&seed);
-        let secret_key =
-            RawSecretKey::from_byte_array(hashed_seed.as_byte_array()).expect("valid secret key");
-        let raw_public_key = RawPublicKey::from_secret_key(&secp, &secret_key);
+        let secret_key = RawSecretKey::from_secret_bytes(*hashed_seed.as_byte_array())
+            .expect("valid secret key");
+        let raw_public_key = RawPublicKey::from_secret_key(&secret_key);
         let public_key = PublicKey::new(raw_public_key);
         (secret_key, public_key)
     }
 
     pub fn sign_data(data: &[u8], secret_key: &RawSecretKey) -> Vec<u8> {
-        dpp::dashcore::signer::sign(data, secret_key.as_ref())
+        dpp::dashcore::signer::sign(data, secret_key.as_secret_bytes())
             .expect("signing should succeed")
             .to_vec()
     }
@@ -139,7 +136,7 @@ impl TestAddressSigner {
             PlatformAddress::P2pkh(hash) => self
                 .p2pkh_keys
                 .get(hash)
-                .map(|entry| entry.secret_key.secret_bytes()),
+                .map(|entry| entry.secret_key.to_secret_bytes()),
             _ => None,
         }
     }

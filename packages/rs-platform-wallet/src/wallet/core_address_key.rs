@@ -22,7 +22,6 @@
 
 use std::str::FromStr;
 
-use dashcore::secp256k1::Secp256k1;
 use dashcore::{Address, PrivateKey as DashPrivateKey};
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use zeroize::Zeroizing;
@@ -115,13 +114,12 @@ impl PlatformWallet {
         // Derive the raw scalar from the selected key source.
         let secret_bytes: Zeroizing<[u8; 32]> = match resolved_master {
             Some(master) => {
-                let secp = Secp256k1::new();
-                let derived = master.derive_priv(&secp, &path).map_err(|e| {
+                let derived = master.derive_priv(&path).map_err(|e| {
                     PlatformWalletError::KeyDerivation(format!(
                         "failed to derive private key at {path}: {e}"
                     ))
                 })?;
-                Zeroizing::new(derived.private_key.secret_bytes())
+                Zeroizing::new(derived.private_key.to_secret_bytes())
             }
             None => {
                 // Resident key-bearing wallet — derive from its own root.
@@ -133,15 +131,15 @@ impl PlatformWallet {
                         "failed to derive private key at {path} from resident wallet: {e}"
                     ))
                 })?;
-                Zeroizing::new(secret_key.secret_bytes())
+                Zeroizing::new(secret_key.to_secret_bytes())
             }
         };
 
-        // Build the network-aware compressed WIF. `SecretKey::from_slice`
+        // Build the network-aware compressed WIF. `SecretKey::from_secret_bytes`
         // over the just-derived bytes is infallible, but map its error
         // rather than unwrap to keep the boundary panic-free.
-        let secret_key = dashcore::secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
-            .map_err(|e| {
+        let secret_key =
+            dashcore::secp256k1::SecretKey::from_secret_bytes(*secret_bytes).map_err(|e| {
                 PlatformWalletError::KeyDerivation(format!(
                     "derived private key bytes were not a valid secp256k1 scalar: {e}"
                 ))

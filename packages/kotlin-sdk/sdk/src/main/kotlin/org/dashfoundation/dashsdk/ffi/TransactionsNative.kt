@@ -18,6 +18,17 @@ package org.dashfoundation.dashsdk.ffi
 internal object TransactionsNative {
 
     /**
+     * Decode any DPP state transition (a `dash-st:` payload or a DashPay
+     * Connect `sign` request) into the packed big-endian blob documented
+     * in `rs-unified-sdk-jni/src/parse_state_transition.rs`, decoded by
+     * [org.dashfoundation.dashsdk.identity.StateTransitionParser.parseBlob].
+     * Bridges `platform_wallet_parse_state_transition`. Accepts tagged and
+     * Yappr's tagless framing; never signs or broadcasts. Throws
+     * [DashSDKException] on undecodable bytes.
+     */
+    external fun parseStateTransition(transitionBytes: ByteArray): ByteArray
+
+    /**
      * Add public keys and/or disable existing key ids on an identity,
      * signing the resulting `IdentityUpdateTransition` via [signerHandle]
      * (the identity's MASTER auth key). Bridges

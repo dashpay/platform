@@ -93,7 +93,6 @@ use std::ptr;
 
 use crate::types::{FFINetwork, Network};
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::Secp256k1;
 use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -260,7 +259,6 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
 
     let kw_network: Network = network.into();
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
-    let secp = Secp256k1::new();
 
     // ---- Walk derivation paths, persist, build pubkey-only rows --------------
     let persister = &*persister_handle;
@@ -298,7 +296,7 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
             }
         };
 
-        let derived = match master.derive_priv(&secp, &path) {
+        let derived = match master.derive_priv(&path) {
             Ok(d) => d,
             Err(e) => {
                 cleanup(rows);
@@ -313,13 +311,13 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
         };
 
         // Materialize pubkey + hash160 once.
-        let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
+        let extended_pub = ExtendedPubKey::from_priv(&derived);
         let pub_bytes: [u8; 33] = extended_pub.public_key.serialize();
         let pub_hash: [u8; 20] = dashcore::hashes::hash160::Hash::hash(&pub_bytes).to_byte_array();
 
         // Hold the secret scalar in a buffer that drops with
         // `zeroize::Zeroize::zeroize` at scope end.
-        let mut priv_scalar: [u8; 32] = derived.private_key.secret_bytes();
+        let mut priv_scalar: [u8; 32] = derived.private_key.to_secret_bytes();
 
         let path_cstring = match CString::new(path.to_string()) {
             Ok(s) => s,

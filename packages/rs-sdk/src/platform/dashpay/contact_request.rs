@@ -6,7 +6,7 @@ use crate::platform::transition::put_document::PutDocument;
 use crate::platform::Document;
 use crate::{Error, Sdk};
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::{RngCore, SeedableRng};
+use dpp::dashcore::secp256k1::rand::{Rng, RngCore, SeedableRng};
 use dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -365,7 +365,7 @@ impl Sdk {
         }
 
         // Generate random IVs for encryption
-        let mut rng = StdRng::from_entropy();
+        let mut rng = StdRng::from_os_rng();
         let mut xpub_iv = [0u8; 16];
         rng.fill_bytes(&mut xpub_iv);
 
@@ -410,8 +410,8 @@ impl Sdk {
             })?;
 
         // Generate entropy for document ID
-        let mut rng = StdRng::from_entropy();
-        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut rng = StdRng::from_os_rng();
+        let entropy = Bytes32::new(rng.random());
 
         // Generate document ID
         let sender_id = input.sender_identity.id().to_owned();
@@ -573,15 +573,14 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::dashcore::secp256k1;
     use dpp::dashcore::secp256k1::rand::{self, RngCore};
-    use dpp::dashcore::secp256k1::Secp256k1;
 
     #[test]
     fn test_ecdh_encryption_produces_correct_size() {
         // Test that ECDH encryption produces the correct output sizes
-        let secp = Secp256k1::new();
-        let (secret1, _public1) = secp.generate_keypair(&mut rand::thread_rng());
-        let (_secret2, public2) = secp.generate_keypair(&mut rand::thread_rng());
+        let (secret1, _public1) = secp256k1::generate_keypair(&mut rand::rng());
+        let (_secret2, public2) = secp256k1::generate_keypair(&mut rand::rng());
 
         // Derive shared key
         let shared_key = derive_shared_key_ecdh(&secret1, &public2);
@@ -589,8 +588,8 @@ mod tests {
         // Generate random IVs
         let mut xpub_iv = [0u8; 16];
         let mut label_iv = [0u8; 16];
-        rand::thread_rng().fill_bytes(&mut xpub_iv);
-        rand::thread_rng().fill_bytes(&mut label_iv);
+        rand::rng().fill_bytes(&mut xpub_iv);
+        rand::rng().fill_bytes(&mut label_iv);
 
         // Test extended public key encryption: the DIP-15 compact plaintext is
         // 69 bytes (parentFingerprint ‖ chainCode ‖ pubKey) → 96 bytes with IV
@@ -652,7 +651,7 @@ mod tests {
         // send_contact_request would generate fresh entropy E2 != E1 and this
         // invariant could not even be expressed. This test pins it.
         let mut rng = StdRng::seed_from_u64(0x6732_4732); // deterministic, no network
-        let entropy = Bytes32::random_with_rng(&mut rng);
+        let entropy = Bytes32::new(rng.random());
 
         let contract_id = Identifier::from([1u8; 32]);
         let owner_id = Identifier::from([2u8; 32]);
@@ -770,9 +769,8 @@ mod tests {
     #[test]
     fn test_ecdh_shared_secret_symmetry() {
         // Test that both parties derive the same shared secret
-        let secp = Secp256k1::new();
-        let (secret_alice, public_alice) = secp.generate_keypair(&mut rand::thread_rng());
-        let (secret_bob, public_bob) = secp.generate_keypair(&mut rand::thread_rng());
+        let (secret_alice, public_alice) = secp256k1::generate_keypair(&mut rand::rng());
+        let (secret_bob, public_bob) = secp256k1::generate_keypair(&mut rand::rng());
 
         // Alice derives shared secret using her private key and Bob's public key
         let shared_alice = derive_shared_key_ecdh(&secret_alice, &public_bob);

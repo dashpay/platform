@@ -609,7 +609,7 @@ mod tests {
 
             let transition = create_signed_shield_from_asset_lock_transition(
                 asset_lock_proof,
-                &wrong_private_key.inner.secret_bytes(), // Wrong key
+                &wrong_private_key.inner.to_secret_bytes(), // Wrong key
                 vec![create_dummy_serialized_action()],
                 5000,
                 [42u8; 32],

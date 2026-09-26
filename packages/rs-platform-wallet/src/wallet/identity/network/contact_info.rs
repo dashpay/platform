@@ -514,7 +514,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: super::ContactCryptoProvider + Sync,
     {
-        use dashcore::secp256k1::rand::{thread_rng, RngCore};
+        use dashcore::secp256k1::rand::{rng, RngCore};
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
         // Build the decrypted-payload struct once: it is both the local
@@ -696,7 +696,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             write_root_id,
         )?;
         let mut iv = [0u8; 16];
-        thread_rng().fill_bytes(&mut iv);
+        rng().fill_bytes(&mut iv);
         let sealed = crypto
             .contact_info_seal(
                 &root_path,

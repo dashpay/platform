@@ -304,7 +304,7 @@ impl IdentityWallet {
                     {
                         candidate_scalars.insert(
                             *key_id,
-                            zeroize::Zeroizing::new(xpriv.private_key.secret_bytes()),
+                            zeroize::Zeroizing::new(xpriv.private_key.to_secret_bytes()),
                         );
                     }
                 }

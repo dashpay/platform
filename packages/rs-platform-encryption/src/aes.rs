@@ -63,13 +63,13 @@ pub fn decrypt_aes_256_cbc(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use secp256k1::rand::{thread_rng, RngCore};
+    use secp256k1::rand::{rng, RngCore};
 
     #[test]
     fn test_aes_encryption_decryption() {
         let key = [0u8; 32];
         let mut iv = [0u8; 16];
-        thread_rng().fill_bytes(&mut iv);
+        rng().fill_bytes(&mut iv);
 
         let plaintext = b"Hello, DashPay!";
 

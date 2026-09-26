@@ -113,21 +113,20 @@ pub fn decrypt_account_label(
 mod tests {
     use super::*;
     use crate::ecdh::derive_shared_key_ecdh;
-    use secp256k1::rand::{thread_rng, RngCore};
-    use secp256k1::Secp256k1;
+    use secp256k1::generate_keypair;
+    use secp256k1::rand::{rng, RngCore};
 
     #[test]
     fn test_account_label_encryption() {
-        let secp = Secp256k1::new();
-        let (secret1, _public1) = secp.generate_keypair(&mut thread_rng());
-        let (_secret2, public2) = secp.generate_keypair(&mut thread_rng());
+        let (secret1, _public1) = generate_keypair(&mut rng());
+        let (_secret2, public2) = generate_keypair(&mut rng());
 
         // Derive shared key
         let shared_key = derive_shared_key_ecdh(&secret1, &public2);
 
         // Generate random IV
         let mut iv = [0u8; 16];
-        thread_rng().fill_bytes(&mut iv);
+        rng().fill_bytes(&mut iv);
 
         let label = "My DashPay Account";
 

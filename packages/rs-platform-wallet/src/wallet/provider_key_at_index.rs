@@ -635,7 +635,6 @@ impl PlatformWallet {
                                     "failed to build master xpriv: {e}"
                                 ))
                             })?;
-                        let secp = dashcore::key::Secp256k1::new();
                         // The ACCOUNT's own path, not `account_type.derivation_path(network)`.
                         // The public side above comes off `account.account_xpub`, built from
                         // this path using the ACCOUNT's network; resolving it again from the
@@ -654,11 +653,11 @@ impl PlatformWallet {
                             ))
                         })?;
                         let mut child_xpriv = master
-                            .derive_priv(&secp, &account_path)
+                            .derive_priv(&account_path)
                             .and_then(|acct| {
                                 let child_path: key_wallet::bip32::DerivationPath =
                                     vec![child].into();
-                                acct.derive_priv(&secp, &child_path)
+                                acct.derive_priv(&child_path)
                             })
                             .map_err(|e| {
                                 PlatformWalletError::KeyDerivation(format!(
@@ -666,7 +665,7 @@ impl PlatformWallet {
                                 ))
                             })?;
                         let mut private = child_xpriv.to_priv();
-                        let derived_public = private.public_key(&secp);
+                        let derived_public = private.public_key();
 
                         // Produce every output while the scalar is still live,
                         // then erase it. `dashcore::PrivateKey` is `Copy` and
@@ -677,7 +676,7 @@ impl PlatformWallet {
                         // the `PrivateKey` itself.
                         let outputs = if derived_public == public_key {
                             Some((
-                                Zeroizing::new(private.inner.secret_bytes().to_vec()),
+                                Zeroizing::new(private.inner.to_secret_bytes().to_vec()),
                                 Zeroizing::new(private.to_wif()),
                             ))
                         } else {
@@ -1096,7 +1095,6 @@ mod tests {
             let wallet = seed_bearing_wallet(network);
             let seed = wallet.wallet_seed_bytes().expect("resident seed");
             let master = ExtendedPrivKey::new_master(network, &seed).expect("master xpriv");
-            let secp = dashcore::key::Secp256k1::new();
 
             for (kind, family) in [
                 (ProviderKeyKind::Owner, "2'"),
@@ -1115,11 +1113,11 @@ mod tests {
                     let path =
                         DerivationPath::from_str(&format!("m/9'/{coin}/3'/{family}/{index}"))
                             .expect("explicit DIP-3 path");
-                    let expected = master.derive_priv(&secp, &path).expect("path derivation");
+                    let expected = master.derive_priv(&path).expect("path derivation");
 
                     assert_eq!(
-                        derived.inner.secret_bytes(),
-                        expected.private_key.secret_bytes(),
+                        derived.inner.to_secret_bytes(),
+                        expected.private_key.to_secret_bytes(),
                         "{kind:?} key at index {index} on {network:?} must come from \
                          m/9'/{coin}/3'/{family}/{index}"
                     );
@@ -1150,14 +1148,13 @@ mod tests {
         let master = ExtendedPrivKey::new_master(Network::Mainnet, &seed).expect("master");
         let doubled = master
             .derive_priv(
-                &dashcore::key::Secp256k1::new(),
                 &DerivationPath::from_str("m/9'/5'/3'/1'/9'/5'/3'/1'/19").expect("doubled path"),
             )
             .expect("doubled derivation");
 
         assert_ne!(
-            derived.inner.secret_bytes(),
-            doubled.private_key.secret_bytes(),
+            derived.inner.to_secret_bytes(),
+            doubled.private_key.to_secret_bytes(),
             "the account derivation path is being applied twice again"
         );
     }
@@ -1181,7 +1178,6 @@ mod tests {
 
         let wallet = seed_bearing_wallet(Network::Mainnet);
         let seed = wallet.wallet_seed_bytes().expect("resident seed");
-        let secp = dashcore::key::Secp256k1::new();
         let master = ExtendedPrivKey::new_master(Network::Mainnet, &seed).expect("master");
 
         for (kind, family) in [
@@ -1216,22 +1212,21 @@ mod tests {
             let child = ChildNumber::from_normal_idx(19).expect("child index");
             let child_path: DerivationPath = vec![child].into();
             let derived = master
-                .derive_priv(&secp, &account_path)
-                .and_then(|acct| acct.derive_priv(&secp, &child_path))
+                .derive_priv(&account_path)
+                .and_then(|acct| acct.derive_priv(&child_path))
                 .expect("gate-free derivation")
                 .to_priv();
 
             let expected = master
                 .derive_priv(
-                    &secp,
                     &DerivationPath::from_str(&format!("m/9'/5'/3'/{family}/19"))
                         .expect("explicit path"),
                 )
                 .expect("path derivation");
 
             assert_eq!(
-                derived.inner.secret_bytes(),
-                expected.private_key.secret_bytes(),
+                derived.inner.to_secret_bytes(),
+                expected.private_key.to_secret_bytes(),
                 "{kind:?} watch-only derivation must match m/9'/5'/3'/{family}/19"
             );
         }
