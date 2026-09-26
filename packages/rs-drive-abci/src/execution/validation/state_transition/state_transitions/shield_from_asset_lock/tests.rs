@@ -781,36 +781,94 @@ mod tests {
     mod nullifiers {
         use super::*;
         use crate::execution::validation::state_transition::state_transitions::test_helpers::{
-            build_outputs_only_bundle, has_recorded_nullifier, process_transition_and_commit,
-            setup_platform_at_protocol_version, shielded_transfer_errors_revealing,
-            OutputsOnlyBundle,
+            build_outputs_only_bundle, build_outputs_only_bundle_bound, has_recorded_nullifier,
+            process_transition_and_commit, setup_platform_at_protocol_version,
+            shielded_transfer_errors_revealing, OutputsOnlyBundle,
         };
         use std::sync::OnceLock;
 
-        /// One proven bundle shared by the tests of this module; each runs on a fresh platform.
-        fn bundle() -> &'static OutputsOnlyBundle {
-            static BUNDLE: OnceLock<OutputsOnlyBundle> = OnceLock::new();
-            BUNDLE.get_or_init(|| build_outputs_only_bundle(5_000))
-        }
-
-        /// A shield of `actions` (with the fields of `bundle`) from a fresh asset lock drawn
-        /// from `seed`; the surplus goes to a platform address.
-        fn signed_shield(
+        /// A shield funded by a fresh asset lock drawn from `seed`, its bundle proved against that
+        /// lock. The sighash binds the lock's identifier, so the proved bundle verifies under no
+        /// other lock and each test has to prove its own. Returns the transition together with the
+        /// nullifiers its actions reveal.
+        fn bound_shield(
             seed: u64,
-            actions: Vec<SerializedAction>,
-            bundle: &OutputsOnlyBundle,
-        ) -> StateTransition {
+            platform_version: &PlatformVersion,
+        ) -> (StateTransition, Vec<[u8; 32]>) {
             let mut rng = StdRng::seed_from_u64(seed);
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let extra_sighash_data =
+                shield_from_asset_lock_extra_sighash_data(&asset_lock_proof, platform_version)
+                    .expect("the binding of the funding asset lock");
+            let bundle = build_outputs_only_bundle_bound(5_000, &extra_sighash_data);
+            let nullifiers = bundle.nullifiers();
+            let transition = create_signed_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                bundle.actions,
+                bundle.amount,
+                bundle.anchor,
+                bundle.proof,
+                bundle.binding_signature,
+            );
+            (transition, nullifiers)
+        }
+
+        /// A shield whose actions reveal `nullifiers`, with unprovable proof bytes. The nullifier
+        /// check runs before the proof, so a bundle meant to be refused for its nullifier never
+        /// reaches verification and needs no binding to reach the check.
+        fn unprovable_shield_revealing(seed: u64, nullifiers: &[[u8; 32]]) -> StateTransition {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let actions = nullifiers
+                .iter()
+                .map(|nullifier| SerializedAction {
+                    nullifier: *nullifier,
+                    ..create_dummy_serialized_action()
+                })
+                .collect();
             create_signed_shield_from_asset_lock_transition(
                 asset_lock_proof,
                 &asset_lock_pk,
                 actions,
-                bundle.amount,
-                bundle.anchor,
-                bundle.proof.clone(),
-                bundle.binding_signature,
+                5_000,
+                [42u8; 32],
+                vec![0u8; 100],
+                [0u8; 64],
             )
+        }
+
+        /// One proven, unbound bundle shared by the protocol-version-13 test: 13 binds nothing, so
+        /// there one bundle still verifies under any asset lock.
+        fn unbound_bundle() -> &'static OutputsOnlyBundle {
+            static BUNDLE: OnceLock<OutputsOnlyBundle> = OnceLock::new();
+            BUNDLE.get_or_init(|| build_outputs_only_bundle(5_000))
+        }
+
+        /// A version 0 shield of `bundle` from a fresh asset lock drawn from `seed`. Version 0 is
+        /// what protocol version 13 admits, and it binds nothing.
+        fn signed_shield_v0(seed: u64, bundle: &OutputsOnlyBundle) -> StateTransition {
+            use dpp::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
+
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let surplus_output = Some(dpp::address_funds::PlatformAddress::P2pkh([0x33; 20]));
+            let body = |signature: BinaryData| ShieldFromAssetLockTransitionV0 {
+                asset_lock_proof: asset_lock_proof.clone(),
+                actions: bundle.actions.clone(),
+                value_balance: bundle.amount,
+                anchor: bundle.anchor,
+                proof: bundle.proof.clone(),
+                binding_signature: bundle.binding_signature,
+                surplus_output,
+                signature,
+            };
+            let unsigned: StateTransition = body(Default::default()).into();
+            let signable_bytes = unsigned
+                .signable_bytes()
+                .expect("should compute signable bytes");
+            let signature = dpp::dashcore::signer::sign(&signable_bytes, &asset_lock_pk).unwrap();
+            body(BinaryData::new(signature.to_vec())).into()
         }
 
         /// Two dummy actions revealing the same nullifier, with unprovable proof bytes.
@@ -835,16 +893,15 @@ mod tests {
         fn should_record_the_nullifiers_a_shield_reveals() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
-            let bundle = bundle();
 
-            let st = signed_shield(1, bundle.actions.clone(), bundle);
+            let (st, nullifiers) = bound_shield(1, platform_version);
             let result = process_transition_and_commit(&platform, st, platform_version);
 
             assert_matches!(
                 result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
-            for nullifier in bundle.nullifiers() {
+            for nullifier in nullifiers {
                 assert!(
                     has_recorded_nullifier(&platform, &nullifier),
                     "every nullifier the shield reveals must be recorded"
@@ -856,20 +913,21 @@ mod tests {
         fn should_refuse_a_shield_repeating_a_recorded_nullifier() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
-            let bundle = bundle();
 
-            let first = signed_shield(1, bundle.actions.clone(), bundle);
+            let (first, nullifiers) = bound_shield(1, platform_version);
             let result = process_transition_and_commit(&platform, first, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
-            // The same bundle from a second asset lock: the same note, the same nullifiers.
-            let repeat = signed_shield(2, bundle.actions.clone(), bundle);
+            // A second shield, from a second asset lock, revealing the nullifiers the first
+            // recorded. Its bundle cannot be the first's — the sighash binds the lock that funds
+            // it — but it does not have to be: the nullifier is refused before the proof is read.
+            let repeat = unprovable_shield_revealing(2, &nullifiers);
             let result = process_transition_and_commit(&platform, repeat, platform_version);
 
-            let first_nullifier = bundle.nullifiers()[0];
+            let first_nullifier = nullifiers[0];
             assert_matches!(
                 result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
@@ -903,9 +961,8 @@ mod tests {
         fn should_refuse_a_spend_revealing_a_nullifier_a_shield_recorded() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
-            let bundle = bundle();
 
-            let st = signed_shield(1, bundle.actions.clone(), bundle);
+            let (st, nullifiers) = bound_shield(1, platform_version);
             let result = process_transition_and_commit(&platform, st, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
@@ -916,7 +973,7 @@ mod tests {
                 shielded_transfer_errors_revealing(&platform, [0xEE; 32]).is_empty(),
                 "a spend revealing an unrecorded nullifier passes the spend-side check"
             );
-            let recorded = bundle.nullifiers()[1];
+            let recorded = nullifiers[1];
             assert_matches!(
                 shielded_transfer_errors_revealing(&platform, recorded).as_slice(),
                 [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
@@ -1045,9 +1102,9 @@ mod tests {
         fn should_neither_record_nor_check_nullifiers_before_protocol_version_14() {
             let platform_version = PlatformVersion::get(13).expect("protocol version 13");
             let platform = setup_platform_at_protocol_version(13);
-            let bundle = bundle();
+            let bundle = unbound_bundle();
 
-            let first = signed_shield(1, bundle.actions.clone(), bundle);
+            let first = signed_shield_v0(1, bundle);
             let result = process_transition_and_commit(&platform, first, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
@@ -1060,7 +1117,7 @@ mod tests {
                 );
             }
 
-            let repeat = signed_shield(2, bundle.actions.clone(), bundle);
+            let repeat = signed_shield_v0(2, bundle);
             let result = process_transition_and_commit(&platform, repeat, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
@@ -1069,9 +1126,19 @@ mod tests {
             );
 
             // Without the check, the unprovable bundle reaches its proof and pays the penalty.
+            let repeated_inside = OutputsOnlyBundle {
+                actions: vec![
+                    create_dummy_serialized_action(),
+                    create_dummy_serialized_action(),
+                ],
+                amount: 5_000,
+                anchor: [42u8; 32],
+                proof: vec![0u8; 100],
+                binding_signature: [0u8; 64],
+            };
             let result = process_transition(
                 &platform,
-                shield_repeating_a_nullifier_inside_the_bundle(),
+                signed_shield_v0(9, &repeated_inside),
                 platform_version,
             );
             assert_matches!(

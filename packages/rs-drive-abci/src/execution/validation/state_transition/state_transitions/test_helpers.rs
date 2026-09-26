@@ -531,8 +531,18 @@ impl OutputsOnlyBundle {
 }
 
 /// Builds and proves an outputs-only bundle paying `value` to a fixed recipient, with no extra
-/// sighash data (what every shielding transition signs). Orchard pads it to two actions.
+/// sighash data. Orchard pads it to two actions. Only the protocol versions that do not bind these
+/// bundles accept one: from the version that does, use `build_outputs_only_bundle_bound` with the
+/// funder's binding, or the bundle verifies nowhere.
 pub fn build_outputs_only_bundle(value: u64) -> OutputsOnlyBundle {
+    build_outputs_only_bundle_bound(value, &[])
+}
+
+/// Builds and proves an outputs-only bundle paying `value` to a fixed recipient, committing
+/// `extra_sighash_data` — the binding that ties the bundle to the addresses, identity or asset lock
+/// funding it, so it cannot be lifted into a transition funded by anything else. Orchard pads it to
+/// two actions.
+pub fn build_outputs_only_bundle_bound(value: u64, extra_sighash_data: &[u8]) -> OutputsOnlyBundle {
     use grovedb_commitment_tree::{
         Anchor, Builder, BundleType, Flags as OrchardFlags, FullViewingKey, NoteValue, Scope,
         SpendingKey,
@@ -555,7 +565,7 @@ pub fn build_outputs_only_bundle(value: u64) -> OutputsOnlyBundle {
         .unwrap();
     let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-    let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+    let sighash = compute_platform_sighash(&bundle_commitment, extra_sighash_data);
     let proven = unauthorized
         .create_proof(get_proving_key(), &mut rng)
         .unwrap();

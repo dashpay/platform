@@ -1410,9 +1410,9 @@ mod tests {
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
         use crate::execution::validation::state_transition::shield::StateTransitionShieldTransitionActionTransformer;
         use crate::execution::validation::state_transition::state_transitions::test_helpers::{
-            build_outputs_only_bundle, has_recorded_nullifier, process_transition_and_commit,
-            setup_platform_at_protocol_version, shielded_transfer_errors_revealing,
-            OutputsOnlyBundle,
+            build_outputs_only_bundle, build_outputs_only_bundle_bound, has_recorded_nullifier,
+            process_transition_and_commit, setup_platform_at_protocol_version,
+            shielded_transfer_errors_revealing, OutputsOnlyBundle,
         };
         use crate::platform_types::platform::PlatformRef;
         use crate::rpc::core::MockCoreRPCLike;
@@ -1423,10 +1423,42 @@ mod tests {
         use drive::state_transition_action::StateTransitionAction;
         use std::sync::OnceLock;
 
-        /// One proven bundle shared by the tests of this module; each runs on a fresh platform.
-        fn bundle() -> &'static OutputsOnlyBundle {
+        /// One proven, unbound bundle, shared by the protocol-version-13 test: 13 binds nothing,
+        /// so there a single bundle still verifies under any input set, which is what that test
+        /// submits twice.
+        fn unbound_bundle() -> &'static OutputsOnlyBundle {
             static BUNDLE: OnceLock<OutputsOnlyBundle> = OnceLock::new();
             BUNDLE.get_or_init(|| build_outputs_only_bundle(5_000))
+        }
+
+        /// A shield from `address` at `nonce`, its bundle proved against those inputs. The sighash
+        /// binds the funding addresses, their nonces and the credits they pay, so the bundle
+        /// verifies under no other input set and each test proves its own. Returns the transition
+        /// and the nullifiers its actions reveal.
+        async fn bound_shield(
+            signer: &TestAddressSigner,
+            address: PlatformAddress,
+            nonce: AddressNonce,
+            platform_version: &PlatformVersion,
+        ) -> (StateTransition, Vec<[u8; 32]>) {
+            // `signed_shield` derives the inputs from the amount the bundle pays, and the binding
+            // covers those inputs, so the amount is fixed here rather than read back off a bundle
+            // that would have to exist first.
+            const SHIELDED: u64 = 5_000;
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (nonce, SHIELDED + dash_to_credits!(0.01)));
+            let extra_sighash_data = shield_extra_sighash_data(&inputs, platform_version)
+                .expect("the binding of the funding inputs");
+            let bundle = build_outputs_only_bundle_bound(SHIELDED, &extra_sighash_data);
+            assert_eq!(
+                bundle.amount, SHIELDED,
+                "the inputs signed_shield derives must be the ones the bundle is bound to"
+            );
+            let nullifiers = bundle.nullifiers();
+            (
+                signed_shield(signer, address, nonce, &bundle).await,
+                nullifiers,
+            )
         }
 
         /// A shield of `bundle` from `address` at `nonce`, signed by `signer`.
@@ -1482,9 +1514,10 @@ mod tests {
         /// nullifier. Block processing verifies the proof in the stateless step before this
         /// transform, and no Orchard builder emits a bundle that repeats a nullifier, so the
         /// check is reached here directly, as block processing reaches it after the proof.
-        fn transform_shield_repeating_a_nullifier_inside_the_bundle(
+        fn transform_shield_revealing(
             platform: &TempPlatform<MockCoreRPCLike>,
             platform_version: &PlatformVersion,
+            nullifiers: &[[u8; 32]],
         ) -> ConsensusValidationResult<StateTransitionAction> {
             let address = create_platform_address(1);
             let requested = dash_to_credits!(0.1);
@@ -1492,10 +1525,13 @@ mod tests {
             inputs.insert(address, (1 as AddressNonce, requested));
             let transition = ShieldTransition::V0(ShieldTransitionV0 {
                 inputs,
-                actions: vec![
-                    create_dummy_serialized_action(),
-                    create_dummy_serialized_action(),
-                ],
+                actions: nullifiers
+                    .iter()
+                    .map(|nullifier| SerializedAction {
+                        nullifier: *nullifier,
+                        ..create_dummy_serialized_action()
+                    })
+                    .collect(),
                 amount: 1_000,
                 anchor: [0u8; 32],
                 proof: vec![0u8; 100],
@@ -1536,16 +1572,15 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
             let (signer, address) = funded_address(&mut platform);
-            let bundle = bundle();
 
-            let st = signed_shield(&signer, address, 1, bundle).await;
+            let (st, nullifiers) = bound_shield(&signer, address, 1, platform_version).await;
             let result = process_transition_and_commit(&platform, st, platform_version);
 
             assert_matches!(
                 result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
-            for nullifier in bundle.nullifiers() {
+            for nullifier in nullifiers {
                 assert!(
                     has_recorded_nullifier(&platform, &nullifier),
                     "every nullifier the shield reveals must be recorded"
@@ -1558,26 +1593,26 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
             let (signer, address) = funded_address(&mut platform);
-            let bundle = bundle();
 
-            let first = signed_shield(&signer, address, 1, bundle).await;
+            let (first, nullifiers) = bound_shield(&signer, address, 1, platform_version).await;
             let result = process_transition_and_commit(&platform, first, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
-            // The same bundle again, under the next address nonce: the same note, the same
-            // nullifiers.
-            let repeat = signed_shield(&signer, address, 2, bundle).await;
-            let result = process_transition_and_commit(&platform, repeat, platform_version);
+            // A second shield revealing what the first recorded. It cannot carry the first's
+            // bundle — the sighash binds the inputs that fund it — so the repeat is shown to the
+            // transform, which is where the state check lives and where block processing reaches
+            // it after the stateless proof step.
+            let first_nullifier = nullifiers[0];
+            let result = transform_shield_revealing(&platform, platform_version, &nullifiers);
 
-            let first_nullifier = bundle.nullifiers()[0];
+            assert!(!result.has_data(), "no action for a refused shield");
             assert_matches!(
-                result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))
-                )] if e.nullifier() == first_nullifier
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
+                    if e.nullifier() == first_nullifier
             );
         }
 
@@ -1586,10 +1621,9 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
-            let result = transform_shield_repeating_a_nullifier_inside_the_bundle(
-                &platform,
-                platform_version,
-            );
+            let repeated = create_dummy_serialized_action().nullifier;
+            let result =
+                transform_shield_revealing(&platform, platform_version, &[repeated, repeated]);
 
             assert!(!result.has_data(), "no action for a refused shield");
             assert_matches!(
@@ -1604,9 +1638,8 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
             let (signer, address) = funded_address(&mut platform);
-            let bundle = bundle();
 
-            let st = signed_shield(&signer, address, 1, bundle).await;
+            let (st, nullifiers) = bound_shield(&signer, address, 1, platform_version).await;
             let result = process_transition_and_commit(&platform, st, platform_version);
             assert_matches!(
                 result.execution_results().as_slice(),
@@ -1617,7 +1650,7 @@ mod tests {
                 shielded_transfer_errors_revealing(&platform, [0xEE; 32]).is_empty(),
                 "a spend revealing an unrecorded nullifier passes the spend-side check"
             );
-            let recorded = bundle.nullifiers()[1];
+            let recorded = nullifiers[1];
             assert_matches!(
                 shielded_transfer_errors_revealing(&platform, recorded).as_slice(),
                 [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
@@ -1630,7 +1663,7 @@ mod tests {
             let platform_version = PlatformVersion::get(13).expect("protocol version 13");
             let mut platform = setup_platform_at_protocol_version(13);
             let (signer, address) = funded_address(&mut platform);
-            let bundle = bundle();
+            let bundle = unbound_bundle();
 
             let first = signed_shield(&signer, address, 1, bundle).await;
             let result = process_transition_and_commit(&platform, first, platform_version);
@@ -1653,10 +1686,9 @@ mod tests {
                 "protocol version 13 accepts a repeated shield"
             );
 
-            let result = transform_shield_repeating_a_nullifier_inside_the_bundle(
-                &platform,
-                platform_version,
-            );
+            let repeated = create_dummy_serialized_action().nullifier;
+            let result =
+                transform_shield_revealing(&platform, platform_version, &[repeated, repeated]);
             assert!(
                 result.is_valid_with_data(),
                 "protocol version 13 does not check a nullifier repeated inside the bundle"

@@ -1383,15 +1383,22 @@ mod tests {
     mod nullifiers {
         use super::*;
         use crate::execution::validation::state_transition::state_transitions::test_helpers::{
-            build_outputs_only_bundle, has_recorded_nullifier, shielded_transfer_errors_revealing,
-            OutputsOnlyBundle,
+            build_outputs_only_bundle_bound, has_recorded_nullifier,
+            shielded_transfer_errors_revealing, OutputsOnlyBundle,
         };
-        use std::sync::OnceLock;
 
-        /// One proven bundle shared by the tests of this module; each runs on a fresh platform.
-        fn bundle() -> &'static OutputsOnlyBundle {
-            static BUNDLE: OnceLock<OutputsOnlyBundle> = OnceLock::new();
-            BUNDLE.get_or_init(|| build_outputs_only_bundle(5_000))
+        /// A bundle proved against `identity_id`. The sighash binds the identity funding the
+        /// shield, so the bundle verifies for that identity's transitions and for no other's, and
+        /// each test proves its own. The binding does not cover the nonce, so one bundle still
+        /// serves several shields by the same identity.
+        fn bound_bundle(
+            identity_id: &[u8; 32],
+            platform_version: &PlatformVersion,
+        ) -> OutputsOnlyBundle {
+            let extra_sighash_data =
+                shield_from_identity_extra_sighash_data(identity_id, platform_version)
+                    .expect("the binding of the funding identity");
+            build_outputs_only_bundle_bound(5_000, &extra_sighash_data)
         }
 
         fn proven(bundle: &OutputsOnlyBundle) -> ProvenBundle {
@@ -1433,7 +1440,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
             let (identity, signer) = funded_identity(&mut platform, 71, platform_version);
-            let bundle = bundle();
+            let bundle = &bound_bundle(&identity.id().to_buffer(), platform_version);
 
             let st = create_signed_transition(
                 &identity,
@@ -1479,7 +1486,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
             let (identity, signer) = funded_identity(&mut platform, 72, platform_version);
-            let bundle = bundle();
+            let bundle = &bound_bundle(&identity.id().to_buffer(), platform_version);
 
             let first = create_signed_transition(
                 &identity,
@@ -1610,7 +1617,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
             let (identity, signer) = funded_identity(&mut platform, 74, platform_version);
-            let bundle = bundle();
+            let bundle = &bound_bundle(&identity.id().to_buffer(), platform_version);
 
             let st = create_signed_transition(
                 &identity,
