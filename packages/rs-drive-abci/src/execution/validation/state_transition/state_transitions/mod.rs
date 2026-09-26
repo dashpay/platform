@@ -214,12 +214,26 @@ pub(in crate::execution) mod tests {
         seed: u64,
         credits: Credits,
     ) -> (Identity, SimpleSigner, IdentityPublicKey) {
-        let platform_version = PlatformVersion::latest();
+        setup_identity_with_system_credits_with_platform_version(
+            platform,
+            seed,
+            credits,
+            PlatformVersion::latest(),
+        )
+    }
+
+    /// Same as `setup_identity_with_system_credits`, under a chosen platform version
+    pub(in crate::execution) fn setup_identity_with_system_credits_with_platform_version(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seed: u64,
+        credits: Credits,
+        platform_version: &PlatformVersion,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
         platform
             .drive
             .add_to_system_credits(credits, None, platform_version)
             .expect("expected to add to system credits");
-        setup_identity(platform, seed, credits)
+        setup_identity_with_platform_version(platform, seed, credits, platform_version)
     }
 
     pub(in crate::execution) fn setup_identity(
@@ -227,7 +241,15 @@ pub(in crate::execution) mod tests {
         seed: u64,
         credits: Credits,
     ) -> (Identity, SimpleSigner, IdentityPublicKey) {
-        let platform_version = PlatformVersion::latest();
+        setup_identity_with_platform_version(platform, seed, credits, PlatformVersion::latest())
+    }
+
+    pub(in crate::execution) fn setup_identity_with_platform_version(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        seed: u64,
+        credits: Credits,
+        platform_version: &PlatformVersion,
+    ) -> (Identity, SimpleSigner, IdentityPublicKey) {
         let mut signer = SimpleSigner::default();
 
         let mut rng = StdRng::seed_from_u64(seed);
