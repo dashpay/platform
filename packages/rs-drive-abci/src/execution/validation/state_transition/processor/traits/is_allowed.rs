@@ -164,9 +164,8 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                         ]));
                     }
                 }
-                // The batch's own `is_allowed` covered contested documents before a target
-                // epoch and was removed upstream once those were allowed; the version gate above
-                // is all a batch needs here now.
+                // A batch needs no further `is_allowed` check: the token shielded pool version
+                // gate above is the only one it carries.
                 Ok(ConsensusValidationResult::new())
             }
             StateTransition::IdentityTopUpFromAddresses(_)
