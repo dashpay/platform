@@ -82,6 +82,7 @@ where
 
             let outcome = self.drive.apply_balance_change_from_fee_to_identity(
                 balance_change,
+                block_info,
                 Some(transaction),
                 platform_version,
             )?;

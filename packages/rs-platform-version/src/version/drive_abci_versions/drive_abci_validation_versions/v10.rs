@@ -117,7 +117,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 advanced_structure: Some(0),
                 identity_signatures: None,
                 nonce: Some(1),
-                state: 1, // changed in v14: refuses a Lock vote on a contested index resolved without locking
+                state: 1, // changed in v14: refuses a Lock vote on a contested index resolved without locking, and a vote towards an identity that is not a contender
                 transform_into_action: 0,
             },
             masternode_vote_state_transition_balance_pre_check: 0,
@@ -229,7 +229,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                         reject_data_trigger: 0,
                     },
                 },
-                is_allowed: 0,
                 // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
                 // only has to fund its principal (purchases, contest collateral) itself.
                 identity_minimum_balance_pre_check: 1,
@@ -254,7 +253,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 token_mint_transition_structure_validation: 0,
                 token_burn_transition_structure_validation: 0,
                 token_transfer_transition_structure_validation: 0,
-                token_mint_transition_state_validation: 0,
+                token_mint_transition_state_validation: 1, // changed: `i64::MAX` bounds the total supply when no max supply is set
                 token_burn_transition_state_validation: 0,
                 token_transfer_transition_state_validation: 0,
                 token_base_transition_structure_validation: 0,
@@ -273,7 +272,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 token_claim_transition_structure_validation: 0,
                 token_claim_transition_state_validation: 0,
                 token_direct_purchase_transition_structure_validation: 0,
-                token_direct_purchase_transition_state_validation: 0,
+                token_direct_purchase_transition_state_validation: 1, // changed: `i64::MAX` bounds the total supply when no max supply is set
                 token_set_price_for_direct_purchase_transition_structure_validation: 0,
                 token_set_price_for_direct_purchase_transition_state_validation: 0,
             },

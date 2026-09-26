@@ -11,7 +11,7 @@ use crate::version::drive_versions::drive_state_transition_method_versions::v4::
 use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
 use crate::version::drive_versions::drive_token_method_versions::v2::DRIVE_TOKEN_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_verify_method_versions::v3::DRIVE_VERIFY_METHOD_VERSIONS_V3;
-use crate::version::drive_versions::drive_vote_method_versions::v2::DRIVE_VOTE_METHOD_VERSIONS_V2;
+use crate::version::drive_versions::drive_vote_method_versions::v3::DRIVE_VOTE_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
     DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveFetchMethodVersions,
@@ -58,6 +58,10 @@ use grovedb_version::version::v4::GROVE_V4;
 ///   `insert_contested.fetch_charter_election_windows` (`None` before), so
 ///   an `electedCharter` contest runs on the join and vote windows of its
 ///   target contract instead of the generic ones.
+/// * **End-date cleanup of ended vote polls**: `DRIVE_VOTE_METHOD_VERSIONS_V3`
+///   bumps `cleanup.remove_contested_resource_vote_poll_end_date_query_operations`
+///   to 2, so the cleanup removes an end date only once none of its polls
+///   remain.
 ///
 /// Everything else matches `DRIVE_VERSION_V8`.
 pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
@@ -89,7 +93,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             calculate_total_credits_balance: 2, // ShieldedBalances root tree adds a fifth term to the equation
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker (shared-prefix aggregate indexes become insertable) and the detect_ranked_mode slot
-        vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
+        vote: DRIVE_VOTE_METHOD_VERSIONS_V3, // changed in v9: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain
         contract: DRIVE_CONTRACT_METHOD_VERSIONS_V4, // changed in v9: add_contract_to_storage v1 writes the contract version item beside the contract; update_contract v2 creates the distribution storage and mints the base supply of tokens added by an update
         fees: DriveFeesMethodVersions { calculate_fee: 0 },
         estimated_costs: DriveEstimatedCostsMethodVersions {
@@ -105,7 +109,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         },
         verify: DRIVE_VERIFY_METHOD_VERSIONS_V3, // changed in v9: a document batch proof carries the owner's balance (verify state transition v1)
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V2, // changed in v9: v1 withdrawal-by-transaction-index query builder (structural, identical lowering)
-        token: DRIVE_TOKEN_METHOD_VERSIONS_V2, // changed in v9: add_pre_programmed_distributions v1 queues the release-time tree shared by a contract's tokens once
+        token: DRIVE_TOKEN_METHOD_VERSIONS_V2, // changed in v9: add_pre_programmed_distributions v1 queues the release-time tree shared by a contract's tokens once; evonode_participation_rewards v1 pays an evonode's claim only through the epochs it read
         platform_system: DrivePlatformSystemMethodVersions {
             estimation_costs: DriveSystemEstimationCostsMethodVersions {
                 for_total_system_credits_update: 0,
@@ -123,7 +127,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4, // changed: document_from_action generation 1 stamps built documents with the contract version (create assigns, replace re-assigns; paired with document serialization format 3)
         batch_operations: DriveBatchOperationsMethodVersion {
             convert_drive_operations_to_grove_operations: 0,
-            apply_drive_operations: 1, // changed: a batch carrying a storage refund forfeiture (a moderator's document deletion) refunds nobody
+            apply_drive_operations: 1, // changed: a batch carrying a storage refund forfeiture (a moderator's document deletion) refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch is merged into one, a batch writing one token balance or supply twice is refused, and repaid identity debt goes to the processing fee pool
         },
         platform_state: DrivePlatformStateMethodVersions {
             fetch_platform_state_bytes: 0,

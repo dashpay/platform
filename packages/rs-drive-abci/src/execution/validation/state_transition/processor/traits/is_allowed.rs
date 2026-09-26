@@ -1,7 +1,5 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
@@ -19,9 +17,8 @@ pub(crate) trait StateTransitionIsAllowedValidationV0 {
     /// This means we should validate is state transition is allowed
     fn has_is_allowed_validation(&self) -> Result<bool, Error>;
     /// Preliminary validation for a state transition
-    fn validate_is_allowed<C: CoreRPCLike>(
+    fn validate_is_allowed(
         &self,
-        platform: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error>;
 }
@@ -29,8 +26,7 @@ pub(crate) trait StateTransitionIsAllowedValidationV0 {
 impl StateTransitionIsAllowedValidationV0 for StateTransition {
     fn has_is_allowed_validation(&self) -> Result<bool, Error> {
         match self {
-            StateTransition::Batch(_)
-            | StateTransition::IdentityTopUpFromAddresses(_)
+            StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
@@ -47,7 +43,8 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::IdentityKeyLimitsUpdate(_)
             | StateTransition::ContractUserModeration(_)
             | StateTransition::ContractFeeClaim(_) => Ok(true),
-            StateTransition::DataContractCreate(_)
+            StateTransition::Batch(_)
+            | StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
@@ -58,13 +55,11 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
         }
     }
 
-    fn validate_is_allowed<C: CoreRPCLike>(
+    fn validate_is_allowed(
         &self,
-        platform: &PlatformRef<C>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<()>, Error> {
         match self {
-            StateTransition::Batch(st) => st.validate_is_allowed(platform, platform_version),
             StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
@@ -346,7 +341,6 @@ mod tests {
     /// Returns all state transitions grouped by expected `has_is_allowed_validation` result.
     fn transitions_requiring_allowed_validation() -> Vec<StateTransition> {
         vec![
-            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
             StateTransition::IdentityTopUpFromAddresses(IdentityTopUpFromAddressesTransition::V0(
                 IdentityTopUpFromAddressesTransitionV0::default(),
             )),
@@ -382,6 +376,7 @@ mod tests {
 
     fn transitions_not_requiring_allowed_validation() -> Vec<StateTransition> {
         vec![
+            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
             make_data_contract_create_st(),
             make_data_contract_update_st(),
             StateTransition::IdentityCreate(IdentityCreateTransition::V0(

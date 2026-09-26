@@ -3182,7 +3182,6 @@ mod tests {
     use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::option::Option::None;
-    use tempfile::TempDir;
 
     use crate::drive::Drive;
     use crate::query::{
@@ -3195,7 +3194,7 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::config::DriveConfig;
-    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::SystemDataContract;
@@ -3209,11 +3208,9 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     fn setup_family_contract() -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive(None);
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -3241,11 +3238,9 @@ mod tests {
     }
 
     fn setup_withdrawal_contract() -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive(None);
 
         drive
             .create_initial_state_structure(None, platform_version)
