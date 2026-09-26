@@ -203,12 +203,32 @@ operations and measures the actual cost of each insert, delete, and query.
 
 When data is removed from GroveDB (a document is deleted, a key is removed),
 the system calculates a refund of the original storage fee. Refunds are tracked
-per identity per epoch:
+per owner per epoch:
 
 ```rust
-pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
-// BTreeMap<IdentifierBytes32, BTreeMap<EpochIndex, Credits>>
+pub struct FeeRefunds(pub CreditsPerEpochByIdentifier, pub RefundOwnersByIdentifier);
+// BTreeMap<[u8; 32], BTreeMap<EpochIndex, Credits>> plus BTreeMap<[u8; 32], RefundOwner>
 ```
+
+The first field is the carrier GroveDB hands back: removed bytes keyed by a
+32-byte identifier. The second field records the typed owner of every carrier
+key. `RefundOwner` (`rs-dpp/src/fee/refund_owner`) names the owner
+explicitly: `Identity(id)` for bytes an identity paid for, or
+`ContractBucket { contract_id, position }` for bytes a contract credit bucket
+paid for. An identity's carrier key is its id, so every historical record
+keeps its key; a bucket's carrier key is a domain separated double SHA-256 of
+the contract id and the bucket position. The kind is always read from the
+record and never inferred from the shape of the key.
+
+The owner is bound to the bytes when they are stored, in the element flags
+(`rs-drive/src/util/storage_flags`). Flag type bytes 0 to 3 are the
+historical unowned and identity-owned encodings, produced and parsed by the
+pinned `grovedb-epoch-based-storage-flags` crate so they cannot drift. Type
+bytes 4 and 5 carry a contract bucket owner. Only the batch apply generation
+that knows typed owners splits removed bytes for type bytes 4 and 5 and it
+records the owner of every sectioned removal on the cost operation it pushes
+(`CalculatedCostOperationWithRefundOwners`); the earlier generation hands the
+flags to the crate and fails closed on a type byte it does not know.
 
 Refunds are not 1:1 with the original fee because storage fees are distributed
 across future epochs (see below). The refund amount depends on how many epochs

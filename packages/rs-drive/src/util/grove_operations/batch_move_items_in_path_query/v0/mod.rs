@@ -4,12 +4,12 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 use crate::util::grove_operations::{push_drive_operation_result, BatchMoveApplyType};
+use crate::util::storage_flags::StorageFlags;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::operations::delete::DeleteOptions;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{GroveDb, PathQuery, TransactionArg};
-use grovedb_epoch_based_storage_flags::StorageFlags;
 use grovedb_storage::rocksdb_storage::RocksDbStorage;
 use platform_version::version::drive_versions::DriveVersion;
 

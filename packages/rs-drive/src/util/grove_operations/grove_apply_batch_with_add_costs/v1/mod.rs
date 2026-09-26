@@ -5,19 +5,23 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::query::GroveError;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::batch::GroveDbOpBatch;
-use crate::util::grove_operations::push_drive_operation_result;
-// The shipped generation is bound to the crate's flags type on purpose: it
-// splits and combines exactly the four historical flag types and rejects any
-// other type byte, so bytes owned by a contract credit bucket can never be
-// sectioned by this generation. The typed flags live in version 1.
+use crate::util::grove_operations::push_drive_operation_result_with_refund_owners;
+use crate::util::storage_flags::StorageFlags;
+use dpp::fee::refund_owner::RefundOwnersByIdentifier;
 use grovedb::batch::{BatchApplyOptions, QualifiedGroveDbOp};
 use grovedb::TransactionArg;
-use grovedb_epoch_based_storage_flags::StorageFlags;
 use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
-    /// Applies the given groveDB operations batch and gets and passes the costs to `push_drive_operation_result`.
-    pub(super) fn grove_apply_batch_with_add_costs_v0(
+    /// Applies the given groveDB operations batch and passes the costs to
+    /// `push_drive_operation_result_with_refund_owners`.
+    ///
+    /// This generation splits removed bytes with the typed storage flags:
+    /// every owned removal is sectioned under the owner's carrier key and
+    /// the owner is recorded next to it, so the cost operation it pushes
+    /// carries the recorded owners for the fee decoder to route. It accepts
+    /// contract bucket owned flags, which the previous generation rejects.
+    pub(super) fn grove_apply_batch_with_add_costs_v1(
         &self,
         ops: GroveDbOpBatch,
         validate: bool,
@@ -30,10 +34,6 @@ impl Drive {
                 "batch is empty when trying to apply batch with add costs".to_string(),
             )));
         }
-        // if ops.operations.len() < 500 {
-        //     //no initialization
-        //     println!("batch {}", &ops);
-        // }
 
         if self.config.batching_consistency_verification {
             let consistency_results =
@@ -64,6 +64,8 @@ impl Drive {
             None
         };
 
+        let mut refund_owners = RefundOwnersByIdentifier::new();
+
         let cost_context = self.grove.apply_batch_with_element_flags_update(
             ops.operations,
             Some(BatchApplyOptions {
@@ -74,12 +76,17 @@ impl Drive {
                 batch_pause_height: None,
             }),
             |cost, old_flags, new_flags| {
-                StorageFlags::update_element_flags(cost, old_flags, new_flags)
+                StorageFlags::update_element_flags_typed(cost, old_flags, new_flags)
                     .map_err(|e| GroveError::JustInTimeElementFlagsClientError(e.to_string()))
             },
             |flags, removed_key_bytes, removed_value_bytes| {
-                StorageFlags::split_removal_bytes(flags, removed_key_bytes, removed_value_bytes)
-                    .map_err(|e| GroveError::SplitRemovalBytesClientError(e.to_string()))
+                StorageFlags::split_removal_bytes_typed(
+                    flags,
+                    removed_key_bytes,
+                    removed_value_bytes,
+                    &mut refund_owners,
+                )
+                .map_err(|e| GroveError::SplitRemovalBytesClientError(e.to_string()))
             },
             transaction,
             &drive_version.grove_version,
@@ -107,6 +114,10 @@ impl Drive {
             }
         }
 
-        push_drive_operation_result(cost_context, drive_operations)
+        push_drive_operation_result_with_refund_owners(
+            cost_context,
+            refund_owners,
+            drive_operations,
+        )
     }
 }
