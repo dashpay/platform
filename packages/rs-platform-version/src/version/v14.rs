@@ -1205,6 +1205,31 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     refunded share and the later epochs gave back more than theirs. The
 ///     total taken out equals the refund in both.
 ///
+/// 48. **An evonode's token claim covers only the epochs it read**: an
+///     `EvonodesByParticipation` perpetual distribution weighs each cycle by the
+///     claimant's share of the blocks proposed in the epochs it spans, from their
+///     finalized epoch infos. Up to v13 the claim read at most
+///     `drive_abci.query.max_returned_elements` (100) of them but evaluated its
+///     whole range, up to 128 cycles (32,767 for a fixed amount), from the last
+///     paid moment or, on a first claim, from the start of the distribution. An
+///     evonode more than 100 epochs behind (about 2.5 years on mainnet, 4 days on
+///     testnet) had every claim of a function other than a fixed amount fail as an
+///     internal error, with its last paid moment never advancing, while a fixed
+///     amount applied the share of the epochs read to the whole range. A claim
+///     reaching an epoch whose info the fee distribution of the block had not
+///     written yet (the previous epoch, in the first block of an epoch) failed or
+///     was weighed the same way. `evonode_participation_rewards` 1
+///     (`DRIVE_TOKEN_METHOD_VERSIONS_V2`) reads the epochs after the cycle start of
+///     the last paid moment, at most `SYSTEM_LIMITS_V4.max_evonode_reward_claim_epochs`
+///     (100, backfilled into the earlier tables) or one whole cycle when a cycle is
+///     longer, and pays through the last whole cycle it read, which the claim stores
+///     as the last paid moment, so an evonode that is behind is paid over several
+///     claims. An epoch without finalized info before the last one read, one in which
+///     no block was produced, counts as an epoch without blocks, and a claim that
+///     read no whole cycle is refused, paid, with `InvalidTokenClaimNoCurrentRewards`.
+///     `get_finalized_epoch_infos` now takes its limit from the caller; every other
+///     caller passes the query bound it read before.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -1269,7 +1294,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
