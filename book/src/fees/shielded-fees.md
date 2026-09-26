@@ -68,6 +68,14 @@ is funded by a consumed asset lock with no metering anchor, so it pays the flat
 is the on-wire action count of the bundle (a single-output, spends-disabled Orchard bundle
 pads to 2 actions, so the minimum is the 2-action fee).
 
+Every action of an outputs-only bundle still reveals a nullifier, that of a dummy spend,
+which becomes the new note's `rho`. From protocol version 14 the entry transitions record
+those nullifiers and refuse one repeated inside the bundle or already recorded
+(`NullifierAlreadySpentError`), as the spends do, so every revealed nullifier is recorded
+once. `Shield` and `ShieldFromIdentity` meter the nullifier writes like the rest of their
+storage; `ShieldFromAssetLock`'s flat fee already prices a note and a nullifier write per
+action (see [Per-Action Storage Fee](#3-per-action-storage-fee)).
+
 ### Shield
 
 `Shield` is charged like any other address-funded transition: GroveDB **meters** the
@@ -99,8 +107,8 @@ compute` funding gate is `validate_fees_of_event`.
 `ShieldFromIdentity` (protocol version 14) is `Shield` with the identity balance as
 the funding side. It is identity-signed (TRANSFER key, identity nonce) like
 `IdentityCreditTransferToAddresses`, and carries the same outputs-only Orchard bundle
-as `Shield`. The fee model is identical to `Shield`'s: GroveDB meters the note
-inserts and the identity balance and nonce writes, and the shielded compute fee is
+as `Shield`. The fee model is identical to `Shield`'s: GroveDB meters the note and
+nullifier inserts and the identity balance and nonce writes, and the shielded compute fee is
 added as `additional_fixed_fee_cost`:
 
 ```
@@ -110,13 +118,16 @@ identity_balance_after = identity_balance_before - amount - fee
 
 `user_fee_increase` applies to the metered processing portion. The stateless
 floor requires `identity_balance >= amount + compute_shielded_identity_balance_write_fee`,
-the conservative complete fee (`compute_minimum_shielded_fee` plus the flat
-`SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES` identity-write component at the
-storage rate: 20 effective bytes covering the nonce and balance rewrites, which add no
-storage but replace 883 bytes of Merk path for a measured 466,760 credits of
-processing, folded into one flat figure with headroom like the other shielded
-components), so an identity that could not pay the complete fee is refused before the
-Orchard proof is verified. The authoritative gate is the identity-paid fee
+the conservative complete fee: `compute_minimum_shielded_fee`, plus
+`SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES` (120 effective bytes) per action for the
+metered processing of the note and nullifier writes, which the per-action allowance
+(sized for the storage a spend books) does not price, plus the flat
+`SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES` identity-side component (60 effective
+bytes: the nonce and balance rewrites, which add no storage but replace 883 bytes of
+Merk path for a measured 466,760 credits of processing, and the reads and pool-total
+update around them, 1,076,280 credits in all), each at the storage rate and with
+headroom like the other shielded components. An identity that could not pay the
+complete fee is therefore refused before the Orchard proof is verified. The authoritative gate is the identity-paid fee
 validation of the execution event (`Paid`), which rejects with
 `IdentityInsufficientBalanceError`. The identity balance and the pool total are
 both terms of the block conservation equation, so the converter emits no
@@ -205,10 +216,11 @@ batch verification. For a spend-bearing action that marginal work includes:
 - Nullifier duplicate check (hash + tree lookup)
 - Note commitment insertion into the Sinsemilla-based Merkle tree
 
-Output-only entry transitions (Shield / ShieldFromAssetLock) do no spends or
-nullifier checks, but each output action still enlarges the proof and so carries
+Output-only entry transitions (Shield / ShieldFromAssetLock / ShieldFromIdentity) do
+no spends, but each output action still enlarges the proof and so carries
 the same per-action processing charge — this fee tracks the marginal verification
-work, not a fixed per-action checklist.
+work, not a fixed per-action checklist. From protocol version 14 it also prices the
+check of the nullifier each of their actions reveals.
 
 The fee is calibrated at roughly a 4.5:1 ratio against the fixed
 proof-verification fee (100M : 22M) rather than the looser ratio used before the

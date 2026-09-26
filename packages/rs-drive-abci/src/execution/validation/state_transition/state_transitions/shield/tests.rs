@@ -1387,6 +1387,269 @@ mod tests {
     }
 
     // ==========================================
+    // NULLIFIER TESTS (every revealed nullifier is recorded once)
+    // ==========================================
+
+    mod nullifiers {
+        use super::*;
+        use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+        use crate::execution::validation::state_transition::shield::StateTransitionShieldTransitionActionTransformer;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            build_outputs_only_bundle, has_recorded_nullifier, process_transition_and_commit,
+            setup_platform_at_protocol_version, shielded_transfer_errors_revealing,
+            OutputsOnlyBundle,
+        };
+        use crate::platform_types::platform::PlatformRef;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::validation::ConsensusValidationResult;
+        use dpp::version::DefaultForPlatformVersion;
+        use drive::state_transition_action::StateTransitionAction;
+        use std::sync::OnceLock;
+
+        /// One proven bundle shared by the tests of this module; each runs on a fresh platform.
+        fn bundle() -> &'static OutputsOnlyBundle {
+            static BUNDLE: OnceLock<OutputsOnlyBundle> = OnceLock::new();
+            BUNDLE.get_or_init(|| build_outputs_only_bundle(5_000))
+        }
+
+        /// A shield of `bundle` from `address` at `nonce`, signed by `signer`.
+        async fn signed_shield(
+            signer: &TestAddressSigner,
+            address: PlatformAddress,
+            nonce: AddressNonce,
+            bundle: &OutputsOnlyBundle,
+        ) -> StateTransition {
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (nonce, bundle.amount + dash_to_credits!(0.01)));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions: bundle.actions.clone(),
+                amount: bundle.amount,
+                anchor: bundle.anchor,
+                proof: bundle.proof.clone(),
+                binding_signature: bundle.binding_signature,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for input in inputs.keys() {
+                witnesses.push(
+                    signer
+                        .sign_create_witness(input, &signable_bytes)
+                        .await
+                        .expect("should sign"),
+                );
+            }
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+            st
+        }
+
+        /// A funded address on `platform` and the signer for it.
+        fn funded_address(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+        ) -> (TestAddressSigner, PlatformAddress) {
+            let mut signer = TestAddressSigner::new();
+            let address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(platform, address, 0, dash_to_credits!(1.0));
+            (signer, address)
+        }
+
+        /// Runs the shield transform directly on a shield whose two actions reveal the same
+        /// nullifier. Block processing verifies the proof in the stateless step before this
+        /// transform, and no Orchard builder emits a bundle that repeats a nullifier, so the
+        /// check is reached here directly, as block processing reaches it after the proof.
+        fn transform_shield_repeating_a_nullifier_inside_the_bundle(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            platform_version: &PlatformVersion,
+        ) -> ConsensusValidationResult<StateTransitionAction> {
+            let address = create_platform_address(1);
+            let requested = dash_to_credits!(0.1);
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (1 as AddressNonce, requested));
+            let transition = ShieldTransition::V0(ShieldTransitionV0 {
+                inputs,
+                actions: vec![
+                    create_dummy_serialized_action(),
+                    create_dummy_serialized_action(),
+                ],
+                amount: 1_000,
+                anchor: [0u8; 32],
+                proof: vec![0u8; 100],
+                binding_signature: [0u8; 64],
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            });
+            // The address held exactly `requested`, all of it debited by the balance check.
+            let mut remaining = BTreeMap::new();
+            remaining.insert(address, (1 as AddressNonce, 0));
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("execution context");
+            transition
+                .transform_into_action_for_shield_transition(
+                    &platform_ref,
+                    remaining,
+                    &BlockInfo::default(),
+                    &mut execution_context,
+                    None,
+                )
+                .expect("expected the shield transform to run")
+        }
+
+        #[tokio::test]
+        async fn should_record_the_nullifiers_a_shield_reveals() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (signer, address) = funded_address(&mut platform);
+            let bundle = bundle();
+
+            let st = signed_shield(&signer, address, 1, bundle).await;
+            let result = process_transition_and_commit(&platform, st, platform_version);
+
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            for nullifier in bundle.nullifiers() {
+                assert!(
+                    has_recorded_nullifier(&platform, &nullifier),
+                    "every nullifier the shield reveals must be recorded"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_shield_repeating_a_recorded_nullifier() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (signer, address) = funded_address(&mut platform);
+            let bundle = bundle();
+
+            let first = signed_shield(&signer, address, 1, bundle).await;
+            let result = process_transition_and_commit(&platform, first, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            // The same bundle again, under the next address nonce: the same note, the same
+            // nullifiers.
+            let repeat = signed_shield(&signer, address, 2, bundle).await;
+            let result = process_transition_and_commit(&platform, repeat, platform_version);
+
+            let first_nullifier = bundle.nullifiers()[0];
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))
+                )] if e.nullifier() == first_nullifier
+            );
+        }
+
+        #[test]
+        fn should_refuse_a_nullifier_repeated_inside_the_bundle() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let result = transform_shield_repeating_a_nullifier_inside_the_bundle(
+                &platform,
+                platform_version,
+            );
+
+            assert!(!result.has_data(), "no action for a refused shield");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
+                    if e.nullifier() == create_dummy_serialized_action().nullifier
+            );
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_spend_revealing_a_nullifier_a_shield_recorded() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (signer, address) = funded_address(&mut platform);
+            let bundle = bundle();
+
+            let st = signed_shield(&signer, address, 1, bundle).await;
+            let result = process_transition_and_commit(&platform, st, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            assert!(
+                shielded_transfer_errors_revealing(&platform, [0xEE; 32]).is_empty(),
+                "a spend revealing an unrecorded nullifier passes the spend-side check"
+            );
+            let recorded = bundle.nullifiers()[1];
+            assert_matches!(
+                shielded_transfer_errors_revealing(&platform, recorded).as_slice(),
+                [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
+                    if e.nullifier() == recorded
+            );
+        }
+
+        #[tokio::test]
+        async fn should_neither_record_nor_check_nullifiers_before_protocol_version_14() {
+            let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+            let mut platform = setup_platform_at_protocol_version(13);
+            let (signer, address) = funded_address(&mut platform);
+            let bundle = bundle();
+
+            let first = signed_shield(&signer, address, 1, bundle).await;
+            let result = process_transition_and_commit(&platform, first, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            for nullifier in bundle.nullifiers() {
+                assert!(
+                    !has_recorded_nullifier(&platform, &nullifier),
+                    "protocol version 13 records no shield nullifier"
+                );
+            }
+
+            let repeat = signed_shield(&signer, address, 2, bundle).await;
+            let result = process_transition_and_commit(&platform, repeat, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "protocol version 13 accepts a repeated shield"
+            );
+
+            let result = transform_shield_repeating_a_nullifier_inside_the_bundle(
+                &platform,
+                platform_version,
+            );
+            assert!(
+                result.is_valid_with_data(),
+                "protocol version 13 does not check a nullifier repeated inside the bundle"
+            );
+        }
+    }
+
+    // ==========================================
     // CREDIT CONSERVATION TESTS (sum-tree balance)
     // ==========================================
 

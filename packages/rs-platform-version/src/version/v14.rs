@@ -1192,6 +1192,27 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     hash. Version 1 also reports a transition whose version is not active
 ///     as `StateTransitionNotActiveError` (10603) instead of a decode failure.
 ///
+/// 47. **Every revealed nullifier is recorded once**: each action of an
+///     outputs-only Orchard bundle reveals a nullifier (that of a dummy spend,
+///     which becomes the new note's `rho`). The spends already recorded and
+///     checked theirs; now `Shield`, `ShieldFromAssetLock` and
+///     `ShieldFromIdentity` do too. `transform_into_action` 1 of the shield and
+///     the shield from asset lock (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`), and
+///     `transform_into_action` 0 of the shield from identity in place, refuse a
+///     nullifier repeated inside the bundle or already recorded, with
+///     `NullifierAlreadySpentError`: unpaid for the first two, as for the
+///     spends, and a paid nonce bump for the identity-signed one. The
+///     high-level operations of the shield and the shield from asset lock 1
+///     (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`), and of the shield from
+///     identity 0 in place, record the nullifiers. Recording them is metered
+///     storage for the shield and the shield from identity; the shield from
+///     asset lock's flat pool fee already prices a note and a nullifier write
+///     per action. The shield from identity's admission floor
+///     (`compute_shielded_identity_balance_write_fee` 0, the client's estimate
+///     of its complete fee) gains 120 effective bytes per action and its flat
+///     identity component grows from 20 to 60, so it still covers the metered
+///     fee. Nullifiers revealed by shields before this version are not added.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

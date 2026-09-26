@@ -31,6 +31,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // (DocumentPropertyConstraintViolatedError, 10422): the check runs inside dpp's
 // `DataContract::validate_document_properties` 0, which both call, and is inert
 // before this version through its own dpp gate.
+// Shield and shield from asset lock transform_into_action 1 refuse an action
+// nullifier repeated inside the bundle or already recorded in state
+// (NullifierAlreadySpentError), the same check the spends run.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -324,7 +327,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1, // changed: nullifier checks
             },
             shielded_transfer_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
@@ -348,7 +351,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 identity_signatures: None,
                 nonce: None,
                 state: 0,
-                transform_into_action: 0,
+                transform_into_action: 1, // changed: nullifier checks
             },
             shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),

@@ -1102,4 +1102,269 @@ mod tests {
         assert_eq!(proven_balance, identity_balance(&platform, &identity));
         assert!(proven_balance < initial_balance - amount);
     }
+
+    // ==========================================
+    // Nullifiers: every revealed nullifier is recorded once
+    // ==========================================
+
+    mod nullifiers {
+        use super::*;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            build_outputs_only_bundle, has_recorded_nullifier, shielded_transfer_errors_revealing,
+            OutputsOnlyBundle,
+        };
+        use std::sync::OnceLock;
+
+        /// One proven bundle shared by the tests of this module; each runs on a fresh platform.
+        fn bundle() -> &'static OutputsOnlyBundle {
+            static BUNDLE: OnceLock<OutputsOnlyBundle> = OnceLock::new();
+            BUNDLE.get_or_init(|| build_outputs_only_bundle(5_000))
+        }
+
+        fn proven(bundle: &OutputsOnlyBundle) -> ProvenBundle {
+            ProvenBundle {
+                actions: bundle.actions.clone(),
+                amount: bundle.amount,
+                anchor: bundle.anchor,
+                proof: bundle.proof.clone(),
+                binding_signature: bundle.binding_signature,
+            }
+        }
+
+        /// A funded identity on `platform` and its signer.
+        fn funded_identity(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            seed: u8,
+            platform_version: &PlatformVersion,
+        ) -> (Identity, SimpleSigner) {
+            let mut rng = StdRng::seed_from_u64(seed as u64);
+            let (identity, signer) = create_identity_with_transfer_key(
+                [seed; 32],
+                dash_to_credits!(1.0),
+                &mut rng,
+                platform_version,
+            );
+            add_identity_to_drive(platform, &identity);
+            (identity, signer)
+        }
+
+        fn pool_total(platform: &TempPlatform<MockCoreRPCLike>) -> u64 {
+            platform
+                .drive
+                .read_shielded_pool_total_balance(None, &mut vec![], PlatformVersion::latest())
+                .expect("fetch pool total")
+        }
+
+        #[tokio::test]
+        async fn should_record_the_nullifiers_a_shield_reveals() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (identity, signer) = funded_identity(&mut platform, 71, platform_version);
+            let bundle = bundle();
+
+            let st = create_signed_transition(
+                &identity,
+                &signer,
+                proven(bundle),
+                bundle.amount,
+                1,
+                0,
+                platform_version,
+            )
+            .await;
+            let result = process_transition_and_commit(&platform, st, platform_version);
+
+            let charged = match result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. }] => {
+                    fee_result.total_base_fee()
+                }
+                other => panic!("expected a successful shield, got {other:?}"),
+            };
+            for nullifier in bundle.nullifiers() {
+                assert!(
+                    has_recorded_nullifier(&platform, &nullifier),
+                    "every nullifier the shield reveals must be recorded"
+                );
+            }
+            // The admission floor is the client's estimate of the complete fee; the nullifier
+            // writes must stay inside it.
+            let floor = dpp::shielded::compute_shielded_identity_balance_write_fee(
+                bundle.actions.len(),
+                platform_version,
+            )
+            .expect("floor");
+            assert!(
+                charged <= floor,
+                "the charged fee ({charged}) must stay within the admission floor ({floor})"
+            );
+        }
+
+        /// The repeat is refused at CheckTx, and in a block it is a paid failure: the identity
+        /// nonce is consumed and the reads are charged, and nothing reaches the pool.
+        #[tokio::test]
+        async fn should_refuse_a_shield_repeating_a_recorded_nullifier() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (identity, signer) = funded_identity(&mut platform, 72, platform_version);
+            let bundle = bundle();
+
+            let first = create_signed_transition(
+                &identity,
+                &signer,
+                proven(bundle),
+                bundle.amount,
+                1,
+                0,
+                platform_version,
+            )
+            .await;
+            let result = process_transition_and_commit(&platform, first, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            let balance_before = identity_balance(&platform, &identity);
+            let pool_before = pool_total(&platform);
+
+            // The same bundle under the next nonce: the same note, the same nullifiers.
+            let repeat = create_signed_transition(
+                &identity,
+                &signer,
+                proven(bundle),
+                bundle.amount,
+                2,
+                0,
+                platform_version,
+            )
+            .await;
+            let first_nullifier = bundle.nullifiers()[0];
+
+            let raw = repeat.serialize_to_bytes().expect("serialize");
+            {
+                let state = platform.state.load();
+                let platform_ref = PlatformRef {
+                    drive: &platform.drive,
+                    state: &state,
+                    config: &platform.config,
+                    core_rpc: &platform.core_rpc,
+                };
+                let check = platform
+                    .check_tx(
+                        &raw,
+                        CheckTxLevel::FirstTimeCheck,
+                        &platform_ref,
+                        platform_version,
+                    )
+                    .expect("check_tx runs");
+                assert_matches!(
+                    check.errors.as_slice(),
+                    [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
+                        if e.nullifier() == first_nullifier
+                );
+            }
+
+            let result = process_transition_and_commit(&platform, repeat, platform_version);
+            let charged = match result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::NullifierAlreadySpentError(e)),
+                    actual_fees,
+                    ..
+                }] if e.nullifier() == first_nullifier => actual_fees.total_base_fee(),
+                other => panic!("expected a paid nullifier refusal, got {other:?}"),
+            };
+            assert!(charged > 0, "the refusal is paid");
+            assert_eq!(
+                identity_balance(&platform, &identity),
+                balance_before - charged
+            );
+            assert_eq!(identity_nonce(&platform, &identity), 2);
+            assert_eq!(
+                pool_total(&platform),
+                pool_before,
+                "nothing reaches the pool"
+            );
+        }
+
+        /// The check runs before the proof, so the unprovable bundle is refused for its nullifier,
+        /// without the proof-failure penalty.
+        #[tokio::test]
+        async fn should_refuse_a_nullifier_repeated_inside_the_bundle() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (identity, signer) = funded_identity(&mut platform, 73, platform_version);
+
+            let mut repeating = dummy_bundle();
+            repeating.actions = vec![
+                create_dummy_serialized_action(),
+                create_dummy_serialized_action(),
+            ];
+            let st = create_signed_transition(
+                &identity,
+                &signer,
+                repeating,
+                1_000,
+                1,
+                0,
+                platform_version,
+            )
+            .await;
+            let result = process_transition_and_commit(&platform, st, platform_version);
+
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .shielded_proof_verification_failure;
+            let charged = match result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::NullifierAlreadySpentError(e)),
+                    actual_fees,
+                    ..
+                }] if e.nullifier() == create_dummy_serialized_action().nullifier => {
+                    actual_fees.total_base_fee()
+                }
+                other => panic!("expected a paid nullifier refusal, got {other:?}"),
+            };
+            assert!(
+                charged < penalty,
+                "the refusal ({charged}) must not charge the proof-failure penalty ({penalty})"
+            );
+            assert_eq!(identity_nonce(&platform, &identity), 1);
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_spend_revealing_a_nullifier_a_shield_recorded() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (identity, signer) = funded_identity(&mut platform, 74, platform_version);
+            let bundle = bundle();
+
+            let st = create_signed_transition(
+                &identity,
+                &signer,
+                proven(bundle),
+                bundle.amount,
+                1,
+                0,
+                platform_version,
+            )
+            .await;
+            let result = process_transition_and_commit(&platform, st, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            assert!(
+                shielded_transfer_errors_revealing(&platform, [0xEE; 32]).is_empty(),
+                "a spend revealing an unrecorded nullifier passes the spend-side check"
+            );
+            let recorded = bundle.nullifiers()[1];
+            assert_matches!(
+                shielded_transfer_errors_revealing(&platform, recorded).as_slice(),
+                [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
+                    if e.nullifier() == recorded
+            );
+        }
+    }
 }

@@ -74,7 +74,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// below is the load-bearing defense if a future path ever reaches this transform without that
 /// invariant — it would otherwise mint credits (pool credited `shield_amount`, addresses debited
 /// less).
-fn reallocate_inputs_for_shield_amount(
+pub(super) fn reallocate_inputs_for_shield_amount(
     transition: &ShieldTransitionV0,
     inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     shield_amount: Credits,

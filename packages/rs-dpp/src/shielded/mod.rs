@@ -97,15 +97,17 @@ pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
 /// [`compute_minimum_shielded_fee::compute_shielded_identity_top_up_fee`].
 pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 8;
 
-/// Flat component (in effective bytes at the per-byte storage rate) for the identity-side writes a
-/// `ShieldFromIdentity` performs on top of its per-action note inserts: the `UpdateIdentityNonce`
-/// and `RemoveFromIdentityBalance` operations.
+/// Flat component (in effective bytes at the per-byte storage rate) for the identity-side work a
+/// `ShieldFromIdentity` performs on top of its per-action note and nullifier writes: the
+/// `UpdateIdentityNonce` and `RemoveFromIdentityBalance` operations, and the reads and updates
+/// around them (the identity fetched for its signature, the pool total read and rewritten).
 ///
 /// The transition's real fee is metered and only known at execution, so its stateless admission
 /// floor needs a conservative stand-in for the metered part: [`compute_minimum_shielded_fee`]
-/// (compute plus the per-action note allowance, which covers the note inserts with headroom)
-/// plus this component. Admission below `amount + floor` is refused BEFORE the Orchard proof is
-/// verified, so a short identity never occupies a proof-verification slot.
+/// (compute plus the per-action allowance), plus
+/// [`SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES`] per action, plus this component. Admission
+/// below `amount + floor` is refused BEFORE the Orchard proof is verified, so a short identity
+/// never occupies a proof-verification slot.
 ///
 /// What the two writes do: the identity already exists, so neither adds storage. Each rewrites
 /// its element and every Merk node on the path to the root (replaced bytes, charged at the
@@ -116,11 +118,29 @@ pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 8;
 /// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`), that variable tree work is folded into ONE flat
 /// effective-byte figure priced at the full storage rate so it tracks the rate as it evolves,
 /// rather than modelled per replaced byte: 466,760 credits is 17.0 effective bytes at 27,400
-/// credits/byte, and 20 leaves headroom for the path growing by about a node (roughly 0.7
-/// effective bytes) each time the identity count doubles. The pool-total update is not priced
-/// separately, exactly as for the other pool-paid transitions. See
+/// credits/byte. With the reads and the pool-total update, the whole flat part of a
+/// `ShieldFromIdentity` measured 1,076,280 credits at protocol version 14 (39.3 effective bytes;
+/// the transition's metered fee is exactly linear in the action count on a fresh pool), and 60
+/// leaves headroom for the paths growing by about a node (roughly 0.7 effective bytes per write)
+/// each time the identity count doubles. See
 /// [`compute_minimum_shielded_fee::compute_shielded_identity_balance_write_fee`].
-pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 20;
+pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 60;
+
+/// Per-action component (in effective bytes at the per-byte storage rate) the `ShieldFromIdentity`
+/// admission floor adds on top of the per-action allowance of [`compute_minimum_shielded_fee`]
+/// (`shielded_storage_bytes_per_action`).
+///
+/// That allowance is sized for the storage a pool-paid spend books for its note and nullifier; the
+/// spends' flat fee absorbs the writes' processing in its compute part. `ShieldFromIdentity` is
+/// metered, and from protocol version 14 records the nullifier of each action as the spends do, so
+/// its floor has to stand in for that processing as well. Measured at protocol version 14 on an
+/// empty pool, each action costs 16,474,000 credits: 8,451,000 of note storage, 5,886,000 of
+/// nullifier storage and 2,137,000 of processing, 601 effective bytes against the allowance's 550.
+/// The nullifier write's processing grows with the nullifier tree, by about 46,000 credits (1.7
+/// effective bytes) each time the recorded nullifiers double (459,900 credits for the first write,
+/// 1,371,280 at 131,072), so 120 covers each action up to about 2^30 recorded nullifiers. See
+/// [`compute_minimum_shielded_fee::compute_shielded_identity_balance_write_fee`].
+pub const SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES: u64 = 120;
 
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///

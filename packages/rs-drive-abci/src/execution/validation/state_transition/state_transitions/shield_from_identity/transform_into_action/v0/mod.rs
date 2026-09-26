@@ -4,7 +4,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
-    read_pool_total_balance, reconstruct_and_verify_bundle, FLAGS_OUTPUTS_ONLY,
+    read_pool_total_balance, reconstruct_and_verify_bundle, validate_nullifiers, FLAGS_OUTPUTS_ONLY,
 };
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use dpp::block::block_info::BlockInfo;
@@ -41,6 +41,16 @@ impl ShieldFromIdentityStateTransitionTransformIntoActionValidationV0
     /// so the action can bump it, and that read is metered into the execution context so
     /// the identity pays for it.
     ///
+    /// The nullifier each action reveals (that of a dummy spend, which becomes the new
+    /// note's `rho`) is checked as the spends check theirs: a nullifier repeated inside the
+    /// bundle or already recorded by an earlier spend or shield is refused with
+    /// `NullifierAlreadySpentError`, before proof verification. Those reads are metered with
+    /// the pool read, and the refusal returns a `BumpIdentityNonceAction`, a paid failure
+    /// like the failed proof below but without its penalty. The action's operations record
+    /// the nullifiers. This generation is selected only from protocol version 14, the first
+    /// version whose `is_allowed` admits the transition, so these checks were edited into it
+    /// in place.
+    ///
     /// The Orchard proof is verified HERE rather than in the shared stateless proof step
     /// (like `ShieldFromAssetLock`), because a failed proof must not be a free rejection:
     /// the transition is identity-signed, so a rejection that left the nonce and balance
@@ -60,11 +70,23 @@ impl ShieldFromIdentityStateTransitionTransformIntoActionValidationV0
         check_tx_proof_verifier: Option<&CheckTxProofVerifier>,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let ShieldFromIdentityTransition::V0(v0) = self;
+
         let mut drive_operations = vec![];
         let current_total_balance =
             read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
 
-        let pool_read_fee = Drive::calculate_fee(
+        // Validate nullifiers: intra-bundle duplicates + already recorded in state.
+        let nullifiers: Vec<[u8; 32]> = v0.actions.iter().map(|action| action.nullifier).collect();
+        let nullifier_refusal = validate_nullifiers(
+            drive,
+            &nullifiers,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )?;
+
+        let state_read_fee = Drive::calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
@@ -72,9 +94,20 @@ impl ShieldFromIdentityStateTransitionTransformIntoActionValidationV0
             platform_version,
             None,
         )?;
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(pool_read_fee));
+        execution_context
+            .add_operation(ValidationOperation::PrecalculatedOperation(state_read_fee));
 
-        let ShieldFromIdentityTransition::V0(v0) = self;
+        // Refused before CheckTx returns and before the proof: CheckTx rejects the result
+        // (it carries an error), block processing charges the reads and bumps the nonce.
+        if let Some(refusal) = nullifier_refusal {
+            let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                BumpIdentityNonceAction::from_borrowed_shield_from_identity_transition(self),
+            );
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                refusal.errors,
+            ));
+        }
 
         // CheckTx must first build and meter the successful action so its full
         // identity-balance fee gate runs before expensive proof work. Its caller
