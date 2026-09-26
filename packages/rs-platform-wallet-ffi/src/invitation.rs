@@ -30,7 +30,7 @@ use std::os::raw::c_char;
 
 use dpp::identity::accessors::IdentityGettersV0;
 use platform_wallet::wallet::identity::crypto::{
-    parse_invitation_uri, wif_network_matches, InviterInfo,
+    parse_invitation_uri, InviterInfo, ParsedInvitation,
 };
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
@@ -336,6 +336,19 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
     PlatformWalletFFIResult::ok()
 }
 
+/// Parse a link for one of the read-only invitation queries. A malformed link
+/// is definitive, not undetermined: there is no invitation to claim, so it is
+/// its own code (`ErrorInvalidParameter`) and the caller can say so instead of
+/// falling through the generic arm into "proceed anyway".
+fn parse_invitation_for_query(uri: &str) -> Result<ParsedInvitation, PlatformWalletFFIResult> {
+    parse_invitation_uri(uri).map_err(|e| {
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("invitation link is malformed and cannot be claimed: {e}"),
+        )
+    })
+}
+
 /// The identity id this invitation WOULD create — a read-only probe that lets
 /// the UI reject an already-claimed voucher up front.
 ///
@@ -369,8 +382,7 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
 ///
 /// * `ErrorInvalidParameter` — the URI is malformed, so there is no invitation.
 /// * `ErrorInvalidNetwork` — the voucher key belongs to the other network;
-///   [`platform_wallet_claim_invitation`] applies the same guard and will
-///   refuse it too.
+///   [`platform_wallet_claim_invitation`] refuses it with the same code.
 ///
 /// Every other failure (funding-tx not yet propagated, transport error) leaves
 /// usability genuinely undetermined, and only those should be treated as
@@ -385,58 +397,31 @@ pub unsafe extern "C" fn platform_wallet_invitation_prospective_identity_id(
     uri: *const c_char,
     out_identity_id: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
-    check_ptr!(uri);
     check_ptr!(out_identity_id);
     // Sentinel before any fallible work, matching the claim/parse siblings.
     unsafe {
         *out_identity_id = [0u8; 32];
     }
+    check_ptr!(uri);
 
     let uri = unwrap_result_or_return!(unsafe { CStr::from_ptr(uri) }.to_str());
-    // A malformed link is definitive, not undetermined: there is no invitation
-    // to claim. Surfaced as its own code so the caller can say so instead of
-    // falling through the generic arm into "proceed anyway".
-    let invitation = match parse_invitation_uri(uri) {
+    let invitation = match parse_invitation_for_query(uri) {
         Ok(invitation) => invitation,
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("invitation link is malformed and cannot be claimed: {e}"),
-            );
-        }
-    };
-
-    let option = PLATFORM_WALLET_STORAGE.with_item(
-        wallet_handle,
-        |wallet| -> Result<dash_sdk::platform::Identifier, PlatformWalletFFIResult> {
-            // Also definitive: the claim applies the same guard, so a link for the
-            // other network can never be claimed through this wallet. Checked here
-            // (as the withdrawal FFI does) to give it a distinguishable code rather
-            // than flattening into the catch-all the library error maps to.
-            if !wif_network_matches(invitation.voucher_key_network, wallet.network()) {
-                return Err(PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorInvalidNetwork,
-                    format!(
-                        "invitation is for the {:?} network but this wallet is on {:?}",
-                        invitation.voucher_key_network,
-                        wallet.network()
-                    ),
-                ));
-            }
-            let identity_wallet = wallet.identity().clone();
-            block_on_worker(async move {
-                identity_wallet
-                    .invitation_prospective_identity_id(&invitation)
-                    .await
-            })
-            .map_err(PlatformWalletFFIResult::from)
-        },
-    );
-    let result = unwrap_option_or_return!(option);
-    let identifier = match result {
-        Ok(identifier) => identifier,
         Err(e) => return e,
     };
+
+    // A link for the other network comes back as the library's typed
+    // mismatch, which maps to `ErrorInvalidNetwork`.
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move {
+            identity_wallet
+                .invitation_prospective_identity_id(&invitation)
+                .await
+        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let identifier = unwrap_result_or_return!(result);
     unsafe {
         *out_identity_id = identifier.to_buffer();
     }
@@ -488,7 +473,9 @@ impl From<InvitationClaimStatus> for InvitationClaimStatusFFI {
 
 /// What an invitation is worth and whether it was already claimed, without
 /// claiming it: one funding-tx fetch (with the claim's propagation retry) and
-/// one identity fetch.
+/// one identity fetch. A ChainLock-only link whose funding tx is not
+/// chain-locked yet is reported (`is_instant` and `is_chain_locked` both
+/// false) rather than refused.
 ///
 /// Same error contract as
 /// [`platform_wallet_invitation_prospective_identity_id`]:
@@ -509,48 +496,24 @@ pub unsafe extern "C" fn platform_wallet_invitation_claim_status(
     uri: *const c_char,
     out_status: *mut InvitationClaimStatusFFI,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(uri);
     check_ptr!(out_status);
     unsafe {
         *out_status = InvitationClaimStatusFFI::zeroed();
     }
+    check_ptr!(uri);
 
     let uri = unwrap_result_or_return!(unsafe { CStr::from_ptr(uri) }.to_str());
-    let invitation = match parse_invitation_uri(uri) {
+    let invitation = match parse_invitation_for_query(uri) {
         Ok(invitation) => invitation,
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("invitation link is malformed and cannot be claimed: {e}"),
-            );
-        }
-    };
-
-    let option = PLATFORM_WALLET_STORAGE.with_item(
-        wallet_handle,
-        |wallet| -> Result<InvitationClaimStatus, PlatformWalletFFIResult> {
-            if !wif_network_matches(invitation.voucher_key_network, wallet.network()) {
-                return Err(PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorInvalidNetwork,
-                    format!(
-                        "invitation is for the {:?} network but this wallet is on {:?}",
-                        invitation.voucher_key_network,
-                        wallet.network()
-                    ),
-                ));
-            }
-            let identity_wallet = wallet.identity().clone();
-            block_on_worker(
-                async move { identity_wallet.invitation_claim_status(&invitation).await },
-            )
-            .map_err(PlatformWalletFFIResult::from)
-        },
-    );
-    let result = unwrap_option_or_return!(option);
-    let status = match result {
-        Ok(status) => status,
         Err(e) => return e,
     };
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move { identity_wallet.invitation_claim_status(&invitation).await })
+    });
+    let result = unwrap_option_or_return!(option);
+    let status = unwrap_result_or_return!(result);
     unsafe {
         *out_status = status.into();
     }
@@ -587,7 +550,8 @@ pub struct InvitationPreviewFFI {
     /// [`crate::platform_wallet_string_free`].
     pub inviter_username: *mut c_char,
     /// Amount locked in the voucher (duffs) — always 0: unknown pre-fetch (the
-    /// link carries the funding txid, not the proof), resolved at claim time.
+    /// link carries the funding txid, not the proof). Read it with
+    /// [`platform_wallet_invitation_claim_status`].
     pub amount_duffs: u64,
     /// Advisory expiry (unix seconds) — always 0: the legacy link carries no
     /// expiry field.
@@ -637,8 +601,9 @@ fn optional_c_string(value: Option<&String>) -> *mut c_char {
 /// the UI can render a clean "invalid invitation" state; only a null / non-UTF-8
 /// `uri` argument returns an error result.
 ///
-/// When `out_preview.inviter_username` is non-null it is a heap C string the
-/// caller frees with [`crate::platform_wallet_string_free`]. It can be null
+/// `out_preview.inviter_username`, `inviter_display_name` and
+/// `inviter_avatar_url` are each either null or a heap C string the caller
+/// frees with [`crate::platform_wallet_string_free`]. The username can be null
 /// even when `has_inviter` is set (a metadata-only link) — see the field docs.
 ///
 /// # Safety
@@ -959,7 +924,7 @@ mod tests {
     /// The inviter's display name and avatar URL travel through the preview
     /// (percent-decoded), and both are null for a link that carries neither.
     #[test]
-    fn parse_invitation_surfaces_inviter_display_name_and_avatar() {
+    fn should_surface_inviter_display_name_and_avatar_in_the_preview() {
         let key = SecretKey::from_slice(&[0x11u8; 32]).unwrap();
         let wif = PrivateKey::new(key, Network::Testnet).to_wif();
         let txid = "ab".repeat(32);
@@ -1006,7 +971,7 @@ mod tests {
     /// A malformed link is a definitive `ErrorInvalidParameter` from the status
     /// call — never a zeroed "not claimed" the caller could proceed on.
     #[test]
-    fn claim_status_malformed_uri_is_invalid_parameter() {
+    fn should_refuse_a_malformed_link_in_claim_status_as_invalid_parameter() {
         let bad = std::ffi::CString::new("https://not-an-invite").unwrap();
         let mut status = InvitationClaimStatusFFI::zeroed();
         status.amount_duffs = 7;
@@ -1015,13 +980,33 @@ mod tests {
         assert_eq!(status.amount_duffs, 0, "the out-param is zeroed first");
     }
 
-    /// A null `uri` is rejected with `ErrorNullPointer`.
+    /// A null `uri` is rejected with `ErrorNullPointer`, after the out-param
+    /// is zeroed.
     #[test]
-    fn claim_status_null_uri_is_null_pointer() {
+    fn should_refuse_a_null_uri_in_claim_status_and_still_zero_the_status() {
         let mut status = InvitationClaimStatusFFI::zeroed();
+        status.already_claimed = true;
         let r =
             unsafe { platform_wallet_invitation_claim_status(0, std::ptr::null(), &mut status) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(!status.already_claimed, "the out-param is zeroed first");
+    }
+
+    /// A link for the other network is refused by the library with a typed
+    /// error that must reach hosts as the definitive `ErrorInvalidNetwork`,
+    /// not the undetermined catch-all.
+    #[test]
+    fn should_map_an_invitation_network_mismatch_to_invalid_network() {
+        let result = PlatformWalletFFIResult::from(
+            platform_wallet::PlatformWalletError::InvitationNetworkMismatch {
+                invitation: Network::Testnet,
+                wallet: Network::Mainnet,
+            },
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidNetwork
+        );
     }
 
     /// The amount-bound getters hand back the library constants verbatim. This

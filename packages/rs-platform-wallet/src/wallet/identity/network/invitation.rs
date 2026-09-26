@@ -17,8 +17,7 @@
 use std::collections::BTreeMap;
 
 use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-use dpp::dashcore::{InstantLock, OutPoint, PrivateKey, Transaction};
+use dpp::dashcore::{InstantLock, Network, OutPoint, PrivateKey, Transaction};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -34,15 +33,17 @@ use crate::changeset::{
     InvitationChangeSet, InvitationEntry, InvitationStatus, PersistenceCapabilities,
 };
 
+use dash_sdk::core::FetchedCoreTransaction;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
+use dash_sdk::platform::Fetch;
 
 use crate::error::{
-    is_identity_create_already_landed, is_instant_lock_proof_invalid, PlatformWalletError,
+    is_asset_lock_already_consumed, is_instant_lock_proof_invalid, PlatformWalletError,
 };
-use crate::wallet::asset_lock::orchestration::submit_with_cl_height_retry;
+use crate::wallet::asset_lock::orchestration::{out_point_from_proof, submit_with_cl_height_retry};
 use crate::wallet::identity::crypto::{
-    encode_invitation_uri, voucher_output_index, wif_network_matches,
+    encode_invitation_uri, voucher_credit_output, wif_network_matches,
 };
 use crate::wallet::identity::crypto::{InviterInfo, ParsedInvitation};
 use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
@@ -130,7 +131,8 @@ pub struct InvitationClaimStatus {
     pub amount_duffs: u64,
     /// The claim would submit an InstantSend proof (the link carried an islock).
     pub is_instant: bool,
-    /// The funding transaction is chain-locked.
+    /// The funding transaction is chain-locked. `false` with `is_instant ==
+    /// false` is a ChainLock-only invitation whose claim must wait for it.
     pub is_chain_locked: bool,
     /// An identity exists at `prospective_identity_id` — definitively claimed.
     /// `false` does NOT prove the voucher is unspent (see
@@ -447,22 +449,8 @@ impl IdentityWallet {
         &self,
         invitation: &ParsedInvitation,
     ) -> Result<Identifier, PlatformWalletError> {
-        if !wif_network_matches(invitation.voucher_key_network, self.sdk.network) {
-            return Err(PlatformWalletError::InvalidIdentityData(format!(
-                "invitation is for the {:?} network but this wallet is on {:?}",
-                invitation.voucher_key_network, self.sdk.network
-            )));
-        }
-        let proof = self.reconstruct_asset_lock_proof(invitation).await?;
-        // The reconstruction now carries an optional ChainLock fallback for
-        // the claim path; the prospective id is always derived from the
-        // PRIMARY proof (both proofs cover the same credit output, so the
-        // id is identical either way).
-        proof.primary.create_identifier().map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "invitation asset lock proof yielded no identity id: {e}"
-            ))
-        })
+        let funding = self.inspect_invitation_funding(invitation).await?;
+        Ok(identity_id_for_out_point(funding.out_point))
     }
 
     /// What an invitation is worth and whether it was already claimed — the
@@ -480,58 +468,31 @@ impl IdentityWallet {
     /// `false` does not prove the voucher is unspent (a reclaim top-up consumes
     /// it without creating the derived identity).
     ///
+    /// It describes the funding transaction rather than requiring a buildable
+    /// proof: a ChainLock-only link whose funding tx is not chain-locked yet
+    /// reports `is_instant == false, is_chain_locked == false` and its amount
+    /// instead of failing (the claim of such a link waits for the ChainLock).
+    /// A failed identity lookup still fails the whole call.
+    ///
     /// Costs one funding-tx fetch (with the claim's bounded propagation retry)
     /// and one identity fetch. Same wrong-network fail-fast as the claim.
     pub async fn invitation_claim_status(
         &self,
         invitation: &ParsedInvitation,
     ) -> Result<InvitationClaimStatus, PlatformWalletError> {
-        use dash_sdk::platform::Fetch;
-
-        if !wif_network_matches(invitation.voucher_key_network, self.sdk.network) {
-            return Err(PlatformWalletError::InvalidIdentityData(format!(
-                "invitation is for the {:?} network but this wallet is on {:?}",
-                invitation.voucher_key_network, self.sdk.network
-            )));
-        }
-        let proof = self.reconstruct_asset_lock_proof(invitation).await?;
-        let prospective_identity_id = proof.primary.create_identifier().map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "invitation asset lock proof yielded no identity id: {e}"
-            ))
-        })?;
-        let is_instant = matches!(proof.primary, AssetLockProof::Instant(_));
-        // A ChainLock primary is only ever built for a chain-locked tx, and an
-        // InstantSend primary carries a ChainLock fallback exactly when the tx
-        // is chain-locked.
-        let is_chain_locked = !is_instant || proof.chain_fallback.is_some();
+        let funding = self.inspect_invitation_funding(invitation).await?;
+        let prospective_identity_id = identity_id_for_out_point(funding.out_point);
         let already_claimed = Identity::fetch(&self.sdk, prospective_identity_id)
             .await
             .map_err(PlatformWalletError::Sdk)?
             .is_some();
         Ok(InvitationClaimStatus {
             prospective_identity_id,
-            amount_duffs: proof.credit_output_duffs,
-            is_instant,
-            is_chain_locked,
+            amount_duffs: funding.credit_output_duffs,
+            is_instant: funding.instant_lock.is_some(),
+            is_chain_locked: funding.is_chain_locked,
             already_claimed,
         })
-    }
-
-    /// The identity at `identity_id` when it carries exactly `expected_keys`
-    /// — the one a claim of ours created — or `None` when there is none or it
-    /// belongs to someone else.
-    async fn fetch_own_claimed_identity(
-        &self,
-        identity_id: Identifier,
-        expected_keys: &BTreeMap<KeyID, IdentityPublicKey>,
-    ) -> Result<Option<Identity>, PlatformWalletError> {
-        use dash_sdk::platform::Fetch;
-
-        let fetched = Identity::fetch(&self.sdk, identity_id)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
-        Ok(fetched.filter(|identity| identity_carries_keys(identity, expected_keys)))
     }
 
     /// Claim a DashPay invitation: register a NEW identity for the invitee,
@@ -581,16 +542,7 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         preflight_keys_map(&keys_map)?;
-
-        // Reject a wrong-network link before any network work: a testnet WIF is a
-        // valid key on the wrong chain, so it would otherwise surface as a
-        // confusing funding-tx fetch miss rather than a clear "wrong network".
-        if !wif_network_matches(invitation.voucher_key_network, self.sdk.network) {
-            return Err(PlatformWalletError::InvalidIdentityData(format!(
-                "invitation is for the {:?} network but this wallet is on {:?}",
-                invitation.voucher_key_network, self.sdk.network
-            )));
-        }
+        ensure_invitation_network(&invitation, self.sdk.network)?;
 
         // Reconstruct the funding asset-lock proof by refetching the tx. Consensus
         // enforces pk↔output, islock↔tx, and identity_id↔outpoint, so the local
@@ -605,15 +557,12 @@ impl IdentityWallet {
         let ReconstructedProof {
             primary,
             chain_fallback,
-            ..
         } = self.reconstruct_asset_lock_proof(&invitation).await?;
-        // Taken before `primary` moves into the submission: the identity this
-        // claim creates, for recognizing our own earlier submission below.
-        let prospective_identity_id = primary.create_identifier().map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "invitation asset lock proof yielded no identity id: {e}"
-            ))
-        })?;
+        // Taken before `primary` moves into the submission: the outpoint this
+        // claim spends and the identity it creates, for recognizing our own
+        // earlier claim below.
+        let out_point = out_point_from_proof(&primary);
+        let prospective_identity_id = identity_id_for_out_point(out_point);
 
         // The voucher key signs the asset lock's outer ST signature (ECDSA over
         // the credit-output pubkey hash). Convert to the SDK's `PrivateKey`,
@@ -658,31 +607,16 @@ impl IdentityWallet {
             })
             .await;
 
-        // A claim that already landed reports itself as a failure: a broadcast
-        // that timed out after the node accepted it is retried by the DAPI
-        // client and refused as "tx already exists in cache", and a claim
-        // repeated after that is refused because the outpoint is consumed.
-        // Either way the identity exists — if it carries exactly the keys we
-        // submitted, it is ours and the claim succeeded.
-        let identity = match submitted {
-            Ok(identity) => identity,
-            Err(PlatformWalletError::Sdk(error)) if is_identity_create_already_landed(&error) => {
-                match self
-                    .fetch_own_claimed_identity(prospective_identity_id, placeholder.public_keys())
-                    .await?
-                {
-                    Some(identity) => {
-                        tracing::info!(
-                            "invitation claim was already accepted by Platform; adopting identity {}",
-                            prospective_identity_id
-                        );
-                        identity
-                    }
-                    None => return Err(PlatformWalletError::Sdk(error)),
-                }
-            }
-            Err(error) => return Err(error),
-        };
+        // A lost-ACK duplicate of this very submission ("already in the
+        // mempool / in chain") is resolved inside the SDK's result wait. What
+        // reaches here is a claim repeated after an earlier one landed, refused
+        // because its outpoint is consumed: adopt the identity when it carries
+        // exactly the keys we submitted.
+        let identity =
+            adopt_already_landed_claim(submitted, &out_point, placeholder.public_keys(), || {
+                Identity::fetch(sdk, prospective_identity_id)
+            })
+            .await?;
 
         // Best-effort local bookkeeping — Platform has already accepted the
         // registration, so a local failure must NOT propagate (mirrors
@@ -764,8 +698,36 @@ impl IdentityWallet {
         &self,
         invitation: &ParsedInvitation,
     ) -> Result<ReconstructedProof, PlatformWalletError> {
+        let fetched = self.fetch_funding_tx(invitation).await?;
+        assemble_asset_lock_proof(
+            fetched.transaction,
+            fetched.is_chain_locked,
+            fetched.height,
+            invitation,
+        )
+    }
+
+    /// The wrong-network guard, the funding-tx fetch and its inspection: what
+    /// the invitee's read-only queries need, without requiring the tx to be
+    /// claimable yet (see [`inspect_funding_tx`]).
+    async fn inspect_invitation_funding(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<InvitationFunding, PlatformWalletError> {
+        ensure_invitation_network(invitation, self.sdk.network)?;
+        let fetched = self.fetch_funding_tx(invitation).await?;
+        inspect_funding_tx(&fetched.transaction, fetched.is_chain_locked, invitation)
+    }
+
+    /// Fetch the invitation's funding transaction with the bounded propagation
+    /// retry (see [`fetch_funding_tx_with_retry`]); a miss after every attempt
+    /// is an error.
+    async fn fetch_funding_tx(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<FetchedCoreTransaction, PlatformWalletError> {
         let sdk = &self.sdk;
-        let fetched = fetch_funding_tx_with_retry(
+        fetch_funding_tx_with_retry(
             &invitation.funding_txid,
             |txid| async move {
                 sdk.get_transaction(&txid)
@@ -782,13 +744,7 @@ impl IdentityWallet {
                  retry shortly"
                     .to_string(),
             )
-        })?;
-        assemble_asset_lock_proof(
-            fetched.transaction,
-            fetched.is_chain_locked,
-            fetched.height,
-            invitation,
-        )
+        })
     }
 }
 
@@ -886,6 +842,76 @@ where
     }
 }
 
+/// Refuse a link whose voucher key is for the other network before any
+/// network work: a testnet WIF is a valid key on the wrong chain, so it would
+/// otherwise surface as a confusing funding-tx fetch miss.
+fn ensure_invitation_network(
+    invitation: &ParsedInvitation,
+    wallet_network: Network,
+) -> Result<(), PlatformWalletError> {
+    if wif_network_matches(invitation.voucher_key_network, wallet_network) {
+        Ok(())
+    } else {
+        Err(PlatformWalletError::InvitationNetworkMismatch {
+            invitation: invitation.voucher_key_network,
+            wallet: wallet_network,
+        })
+    }
+}
+
+/// The identity id Platform derives from an asset-lock outpoint. Both proof
+/// kinds hash only the outpoint, so the ChainLock derivation (which ignores
+/// its height) gives the id for either.
+fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
+    ChainAssetLockProof::new(0, out_point.into()).create_identifier()
+}
+
+/// Recognize a claim Platform already executed. A claim repeated after an
+/// earlier attempt landed (reported as a failure, or interrupted) is refused
+/// because its outpoint is consumed; the identity at the prospective id is
+/// ours when it carries exactly the keys we submitted, and is then the
+/// claim's result. Anything else (no identity, someone else's, a failed
+/// lookup) reports the original rejection.
+///
+/// `fetch` looks up the identity at the prospective id: the injectable seam
+/// (production passes `Identity::fetch`).
+async fn adopt_already_landed_claim<F, Fut>(
+    submitted: Result<Identity, PlatformWalletError>,
+    out_point: &OutPoint,
+    submitted_keys: &BTreeMap<KeyID, IdentityPublicKey>,
+    fetch: F,
+) -> Result<Identity, PlatformWalletError>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<Option<Identity>, dash_sdk::Error>>,
+{
+    let error = match submitted {
+        Err(PlatformWalletError::Sdk(error))
+            if is_asset_lock_already_consumed(&error, out_point) =>
+        {
+            error
+        }
+        other => return other,
+    };
+    match fetch().await {
+        Ok(Some(identity)) if identity_carries_keys(&identity, submitted_keys) => {
+            tracing::info!(
+                identity_id = %identity.id(),
+                "invitation claim was already accepted by Platform; adopting its identity"
+            );
+            Ok(identity)
+        }
+        Ok(_) => Err(PlatformWalletError::Sdk(error)),
+        Err(lookup) => {
+            tracing::warn!(
+                error = %lookup,
+                "could not look up the identity of a consumed invitation; reporting the rejection"
+            );
+            Err(PlatformWalletError::Sdk(error))
+        }
+    }
+}
+
 /// The identity carries exactly `expected` public keys — same ids, same key
 /// data. Key data is what only our signer could have produced, so a match
 /// means the identity was created by our claim, not by a finder of the link.
@@ -918,29 +944,32 @@ fn identity_carries_keys(
 struct ReconstructedProof {
     primary: AssetLockProof,
     chain_fallback: Option<AssetLockProof>,
-    /// Value (duffs) of the credit output the voucher key controls — what the
-    /// invitation is worth to the invitee. Read from the same selected output
-    /// both proofs cover.
-    credit_output_duffs: u64,
 }
 
-/// Assemble the asset-lock proof from an already-fetched funding transaction — the
-/// pure, testable core of the claim reconstruction (the fetch/retry lives in
-/// `reconstruct_asset_lock_proof`). Validates the tx is the funding tx (either byte
-/// order), selects the voucher's credit output, and builds an InstantSend proof
-/// (link carried an islock) or a ChainLock proof (islock absent), requiring
-/// chain-lock finality for the latter.
-///
-/// When an islock is present AND the funding tx is already chain-locked, the
-/// returned [`ReconstructedProof`] also carries a `chain_fallback` ChainLock proof
-/// over the same credit output, so the caller can recover from a stale islock that
-/// Platform rejects without refetching the tx.
-fn assemble_asset_lock_proof(
-    transaction: Transaction,
+/// What an invitation's funding transaction says before any proof is built.
+#[derive(Debug)]
+struct InvitationFunding {
+    /// The voucher's credit outpoint; the claim's identity id derives from it.
+    out_point: OutPoint,
+    /// Value of that credit output (duffs): what the invitation is worth.
+    credit_output_duffs: u64,
+    /// The link's islock, decoded and checked to lock this transaction.
+    instant_lock: Option<InstantLock>,
+    /// The funding transaction is chain-locked.
     is_chain_locked: bool,
-    height: u32,
+}
+
+/// Check a fetched funding transaction against the link and select the
+/// voucher's credit output: the pure core shared by the claim's proof
+/// assembly and the read-only queries. Validates the tx is the funding tx
+/// (either byte order), selects the voucher's credit output, and decodes the
+/// link's islock (checking it locks this tx). Chain-lock finality is reported,
+/// not required: only building a ChainLock proof needs it.
+fn inspect_funding_tx(
+    transaction: &Transaction,
+    is_chain_locked: bool,
     invitation: &ParsedInvitation,
-) -> Result<ReconstructedProof, PlatformWalletError> {
+) -> Result<InvitationFunding, PlatformWalletError> {
     // Fail-fast: the fetched tx must actually be the funding tx (either byte
     // order). DAPI returns whatever tx matches the id we asked for, so this
     // guards a backend that answers with an unrelated tx.
@@ -956,31 +985,10 @@ fn assemble_asset_lock_proof(
 
     // Select the funded credit output the voucher key controls (not index 0
     // — a legacy invite's credit output need not be first).
-    let output_index = voucher_output_index(&transaction, &invitation.voucher_key)?;
-    let credit_output_duffs = match &transaction.special_transaction_payload {
-        Some(TransactionPayload::AssetLockPayloadType(payload)) => payload
-            .credit_outputs
-            .get(output_index as usize)
-            .map(|out| out.value),
-        _ => None,
-    }
-    .ok_or_else(|| {
-        PlatformWalletError::InvalidIdentityData(
-            "selected voucher credit output is missing from the funding transaction".to_string(),
-        )
-    })?;
+    let (output_index, credit_output) =
+        voucher_credit_output(transaction, &invitation.voucher_key)?;
 
-    // A ChainLock proof over the selected credit output. Buildable only once the
-    // funding block is chain-locked; `height` is the tx's mined height (the
-    // `ChainAssetLockProof`'s `core_chain_locked_height`). Reused both as the
-    // primary for an islock-less invite and as the stale-islock fallback.
-    let chain_lock_proof = |txid| -> AssetLockProof {
-        let out_point = OutPoint::new(txid, output_index);
-        let out_point_bytes: [u8; 36] = out_point.into();
-        AssetLockProof::Chain(ChainAssetLockProof::new(height, out_point_bytes))
-    };
-
-    match &invitation.islock_hex {
+    let instant_lock = match &invitation.islock_hex {
         Some(islock_hex) => {
             let islock_bytes = hex::decode(islock_hex).map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
@@ -1001,22 +1009,64 @@ fn assemble_asset_lock_proof(
                     "invitation islock does not lock the funding transaction".to_string(),
                 ));
             }
+            Some(instant_lock)
+        }
+        None => None,
+    };
+
+    Ok(InvitationFunding {
+        out_point: OutPoint::new(transaction.txid(), output_index),
+        credit_output_duffs: credit_output.value,
+        instant_lock,
+        is_chain_locked,
+    })
+}
+
+/// Assemble the asset-lock proof from an already-fetched funding transaction — the
+/// pure, testable core of the claim reconstruction (the fetch/retry lives in
+/// `reconstruct_asset_lock_proof`). Checks the tx with [`inspect_funding_tx`], then
+/// builds an InstantSend proof (link carried an islock) or a ChainLock proof
+/// (islock absent), requiring chain-lock finality for the latter.
+///
+/// When an islock is present AND the funding tx is already chain-locked, the
+/// returned [`ReconstructedProof`] also carries a `chain_fallback` ChainLock proof
+/// over the same credit output, so the caller can recover from a stale islock that
+/// Platform rejects without refetching the tx.
+fn assemble_asset_lock_proof(
+    transaction: Transaction,
+    is_chain_locked: bool,
+    height: u32,
+    invitation: &ParsedInvitation,
+) -> Result<ReconstructedProof, PlatformWalletError> {
+    let InvitationFunding {
+        out_point,
+        instant_lock,
+        ..
+    } = inspect_funding_tx(&transaction, is_chain_locked, invitation)?;
+
+    // A ChainLock proof over the selected credit output. Buildable only once the
+    // funding block is chain-locked; `height` is the tx's mined height (the
+    // `ChainAssetLockProof`'s `core_chain_locked_height`). Reused both as the
+    // primary for an islock-less invite and as the stale-islock fallback.
+    let chain_lock_proof =
+        || AssetLockProof::Chain(ChainAssetLockProof::new(height, out_point.into()));
+
+    match instant_lock {
+        Some(instant_lock) => {
             // Fast path: submit the InstantSend proof. If the islock is stale
             // (quorum rotated / no longer "recent") Platform rejects it, and the
             // claim falls back to `chain_fallback` — available only when the
             // funding tx is already chain-locked (the usual case by claim time,
-            // since the voucher was funded minutes-to-hours earlier). Computed
-            // from `&transaction` BEFORE it is moved into the IS proof below.
-            let chain_fallback = is_chain_locked.then(|| chain_lock_proof(transaction.txid()));
+            // since the voucher was funded minutes-to-hours earlier).
+            let chain_fallback = is_chain_locked.then(chain_lock_proof);
             let primary = AssetLockProof::Instant(InstantAssetLockProof::new(
                 instant_lock,
                 transaction,
-                output_index,
+                out_point.vout,
             ));
             Ok(ReconstructedProof {
                 primary,
                 chain_fallback,
-                credit_output_duffs,
             })
         }
         None => {
@@ -1033,9 +1083,8 @@ fn assemble_asset_lock_proof(
                 ));
             }
             Ok(ReconstructedProof {
-                primary: chain_lock_proof(transaction.txid()),
+                primary: chain_lock_proof(),
                 chain_fallback: None,
-                credit_output_duffs,
             })
         }
     }
@@ -1167,7 +1216,6 @@ mod tests {
         let inv = parsed(key, txid, None);
         let reconstructed = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
         assert!(matches!(reconstructed.primary, AssetLockProof::Chain(_)));
-        assert_eq!(reconstructed.credit_output_duffs, 100_000);
         assert!(
             reconstructed.chain_fallback.is_none(),
             "an islock-less chainlock invite has no separate fallback"
@@ -1193,7 +1241,6 @@ mod tests {
             matches!(reconstructed.primary, AssetLockProof::Instant(_)),
             "the islock fast path must be tried first"
         );
-        assert_eq!(reconstructed.credit_output_duffs, 100_000);
         assert!(
             matches!(reconstructed.chain_fallback, Some(AssetLockProof::Chain(_))),
             "a chain-locked funding tx must carry a ChainLock fallback for stale-islock recovery"
@@ -1255,11 +1302,17 @@ mod tests {
         let txid = tx.txid();
         let inv = parsed(key, txid.to_string(), None);
 
+        let funding = inspect_funding_tx(&tx, true, &inv).unwrap();
+        assert_eq!(
+            funding.credit_output_duffs, 25_000_000,
+            "the amount must come from the voucher's output, not the decoy at index 0"
+        );
         let proof = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
         let id = proof.primary.create_identifier().unwrap();
         assert_eq!(
-            proof.credit_output_duffs, 25_000_000,
-            "the amount must come from the voucher's output, not the decoy at index 0"
+            identity_id_for_out_point(funding.out_point),
+            id,
+            "the read-only queries must derive the id the claim creates"
         );
 
         let from_index_0 =
@@ -1322,42 +1375,249 @@ mod tests {
         );
     }
 
-    /// A claim that already landed is recognized as ours only by its keys:
-    /// the same key set is ours, anything else (a finder of the link claiming
-    /// first) is not.
-    #[test]
-    fn claimed_identity_is_ours_only_with_our_keys() {
+    /// A test identity key: `byte` fills the key data, so two keys differ
+    /// exactly when their bytes do.
+    fn test_key(id: KeyID, byte: u8) -> IdentityPublicKey {
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dpp::identity::KeyType;
         use dpp::platform_value::BinaryData;
 
-        let key = |id: KeyID, byte: u8| {
-            IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                id,
-                purpose: Purpose::AUTHENTICATION,
-                security_level: SecurityLevel::MASTER,
-                contract_bounds: None,
-                key_type: KeyType::ECDSA_SECP256K1,
-                read_only: false,
-                data: BinaryData::new(vec![byte; 33]),
-                disabled_at: None,
-            })
-        };
-        let ours: BTreeMap<KeyID, IdentityPublicKey> = [(0, key(0, 1)), (1, key(1, 2))].into();
-        let identity = |keys: BTreeMap<KeyID, IdentityPublicKey>| {
-            Identity::V0(IdentityV0 {
-                id: Identifier::default(),
-                public_keys: keys,
-                balance: 0,
-                revision: 0,
-            })
-        };
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![byte; 33]),
+            disabled_at: None,
+        })
+    }
 
-        assert!(identity_carries_keys(&identity(ours.clone()), &ours));
-        let theirs: BTreeMap<KeyID, IdentityPublicKey> = [(0, key(0, 9)), (1, key(1, 2))].into();
-        assert!(!identity_carries_keys(&identity(theirs), &ours));
-        let fewer: BTreeMap<KeyID, IdentityPublicKey> = [(0, key(0, 1))].into();
-        assert!(!identity_carries_keys(&identity(fewer), &ours));
+    fn identity_with_keys(keys: BTreeMap<KeyID, IdentityPublicKey>) -> Identity {
+        Identity::V0(IdentityV0 {
+            id: Identifier::default(),
+            public_keys: keys,
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    fn our_keys() -> BTreeMap<KeyID, IdentityPublicKey> {
+        [(0, test_key(0, 1)), (1, test_key(1, 2))].into()
+    }
+
+    /// A claim that already landed is recognized as ours only by its keys:
+    /// the same key set is ours, anything else (a finder of the link claiming
+    /// first) is not.
+    #[test]
+    fn should_recognize_a_claimed_identity_only_by_our_keys() {
+        let ours = our_keys();
+        assert!(identity_carries_keys(
+            &identity_with_keys(ours.clone()),
+            &ours
+        ));
+        let theirs: BTreeMap<KeyID, IdentityPublicKey> =
+            [(0, test_key(0, 9)), (1, test_key(1, 2))].into();
+        assert!(!identity_carries_keys(&identity_with_keys(theirs), &ours));
+        let fewer: BTreeMap<KeyID, IdentityPublicKey> = [(0, test_key(0, 1))].into();
+        assert!(!identity_carries_keys(&identity_with_keys(fewer), &ours));
+    }
+
+    /// A testnet link in a mainnet wallet is refused with the typed mismatch
+    /// the FFI maps to `ErrorInvalidNetwork`.
+    #[test]
+    fn should_refuse_an_invitation_for_the_other_network() {
+        let inv = parsed(voucher_secret(), "00".repeat(32), None);
+        assert!(ensure_invitation_network(&inv, Network::Testnet).is_ok());
+        assert!(matches!(
+            ensure_invitation_network(&inv, Network::Mainnet),
+            Err(PlatformWalletError::InvitationNetworkMismatch {
+                invitation: Network::Testnet,
+                wallet: Network::Mainnet,
+            })
+        ));
+    }
+
+    /// A ChainLock-only link whose funding tx is not chain-locked yet cannot
+    /// be claimed, but the read-only view still reads its amount and outpoint
+    /// and reports the missing ChainLock instead of failing.
+    #[test]
+    fn should_inspect_a_chainlock_invitation_before_it_is_chain_locked() {
+        let key = voucher_secret();
+        let tx = funding_tx(&key);
+        let txid = tx.txid();
+        let inv = parsed(key, txid.to_string(), None);
+
+        let funding = inspect_funding_tx(&tx, false, &inv).unwrap();
+        assert_eq!(funding.credit_output_duffs, 100_000);
+        assert_eq!(funding.out_point, OutPoint::new(txid, 0));
+        assert!(funding.instant_lock.is_none());
+        assert!(!funding.is_chain_locked);
+        assert!(
+            assemble_asset_lock_proof(tx, false, 100, &inv).is_err(),
+            "the claim itself still waits for the ChainLock"
+        );
+    }
+
+    /// The InstantSend read-only view carries the decoded islock, and its id
+    /// matches the claim's InstantSend primary.
+    #[test]
+    fn should_inspect_an_instant_invitation_with_the_claims_identity_id() {
+        let key = voucher_secret();
+        let tx = funding_tx(&key);
+        let txid = tx.txid().to_string();
+        let mut islock = InstantLock::default();
+        islock.txid = tx.txid();
+        let mut islock_bytes = Vec::new();
+        islock.consensus_encode(&mut islock_bytes).unwrap();
+        let inv = parsed(key, txid, Some(hex::encode(islock_bytes)));
+
+        let funding = inspect_funding_tx(&tx, true, &inv).unwrap();
+        assert!(funding.instant_lock.is_some());
+        assert_eq!(funding.credit_output_duffs, 100_000);
+        let primary = assemble_asset_lock_proof(tx, true, 100, &inv)
+            .unwrap()
+            .primary;
+        assert_eq!(
+            identity_id_for_out_point(funding.out_point),
+            primary.create_identifier().unwrap()
+        );
+    }
+
+    // --- adopt_already_landed_claim: recognizing our own earlier claim ---
+
+    mod claim_adoption {
+        use std::cell::Cell;
+
+        use super::super::adopt_already_landed_claim;
+        use super::{identity_with_keys, our_keys, test_key};
+        use crate::PlatformWalletError;
+        use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::ConsensusError;
+        use dpp::dashcore::hashes::Hash;
+        use dpp::dashcore::{OutPoint, Txid};
+        use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+        use std::collections::BTreeMap;
+
+        fn out_point() -> OutPoint {
+            OutPoint::new(Txid::from_byte_array([7u8; 32]), 1)
+        }
+
+        /// Platform's consumed-outpoint rejection for `out_point`.
+        fn consumed(out_point: OutPoint) -> PlatformWalletError {
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                dpp::ProtocolError::ConsensusError(Box::new(ConsensusError::BasicError(
+                    BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(
+                        IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
+                            out_point.txid,
+                            out_point.vout as usize,
+                        ),
+                    ),
+                ))),
+            ))
+        }
+
+        fn is_consumed(result: &Result<Identity, PlatformWalletError>) -> bool {
+            matches!(
+                result,
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(_)))
+            )
+        }
+
+        /// Run the seam with a scripted lookup, counting how often it is called.
+        async fn adopt(
+            submitted: Result<Identity, PlatformWalletError>,
+            lookup: Result<Option<Identity>, dash_sdk::Error>,
+        ) -> (Result<Identity, PlatformWalletError>, u32) {
+            let calls = Cell::new(0);
+            let keys = our_keys();
+            let result = adopt_already_landed_claim(submitted, &out_point(), &keys, || {
+                calls.set(calls.get() + 1);
+                async { lookup }
+            })
+            .await;
+            (result, calls.get())
+        }
+
+        #[tokio::test]
+        async fn should_pass_a_successful_claim_through_without_a_lookup() {
+            let (result, lookups) = adopt(Ok(identity_with_keys(our_keys())), Ok(None)).await;
+            assert!(result.is_ok());
+            assert_eq!(lookups, 0);
+        }
+
+        #[tokio::test]
+        async fn should_adopt_our_identity_behind_a_consumed_outpoint() {
+            let (result, lookups) = adopt(
+                Err(consumed(out_point())),
+                Ok(Some(identity_with_keys(our_keys()))),
+            )
+            .await;
+            assert!(result.is_ok(), "our own landed claim is the claim's result");
+            assert_eq!(lookups, 1);
+        }
+
+        #[tokio::test]
+        async fn should_report_the_rejection_when_someone_else_claimed_first() {
+            let theirs: BTreeMap<KeyID, IdentityPublicKey> = [(0, test_key(0, 9))].into();
+            let (result, _) = adopt(
+                Err(consumed(out_point())),
+                Ok(Some(identity_with_keys(theirs))),
+            )
+            .await;
+            assert!(is_consumed(&result));
+        }
+
+        /// A reclaim top-up consumes the outpoint without creating the
+        /// identity: nothing to adopt.
+        #[tokio::test]
+        async fn should_report_the_rejection_when_no_identity_exists() {
+            let (result, _) = adopt(Err(consumed(out_point())), Ok(None)).await;
+            assert!(is_consumed(&result));
+        }
+
+        /// A failed lookup must not replace the rejection that explains the
+        /// failure.
+        #[tokio::test]
+        async fn should_keep_the_rejection_when_the_lookup_fails() {
+            let (result, _) = adopt(
+                Err(consumed(out_point())),
+                Err(dash_sdk::Error::Generic("timeout".to_string())),
+            )
+            .await;
+            assert!(is_consumed(&result));
+        }
+
+        /// A consumed report for another outpoint is not about this claim.
+        #[tokio::test]
+        async fn should_ignore_a_consumed_report_for_another_outpoint() {
+            let other = OutPoint::new(Txid::from_byte_array([8u8; 32]), 1);
+            let (result, lookups) = adopt(
+                Err(consumed(other)),
+                Ok(Some(identity_with_keys(our_keys()))),
+            )
+            .await;
+            assert!(is_consumed(&result));
+            assert_eq!(lookups, 0);
+        }
+
+        #[tokio::test]
+        async fn should_pass_unrelated_errors_through_without_a_lookup() {
+            let (result, lookups) = adopt(
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Generic(
+                    "unrelated".to_string(),
+                ))),
+                Ok(Some(identity_with_keys(our_keys()))),
+            )
+            .await;
+            assert!(matches!(
+                result,
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Generic(_)))
+            ));
+            assert_eq!(lookups, 0);
+        }
     }
 
     /// An islock that locks a DIFFERENT tx than the funding tx is rejected (the

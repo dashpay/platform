@@ -67,6 +67,15 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
+    /// A DashPay invitation link's voucher key is for the other network (a
+    /// testnet link opened in a mainnet wallet, or the reverse). Definitive:
+    /// the claim refuses the link before any network work.
+    #[error("invitation is for the {invitation:?} network but this wallet is on {wallet:?}")]
+    InvitationNetworkMismatch {
+        invitation: Network,
+        wallet: Network,
+    },
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing
@@ -1245,25 +1254,6 @@ pub fn is_asset_lock_already_consumed(
         )) if e.transaction_id() == out_point.txid
             && e.output_index() == out_point.vout as usize
     )
-}
-
-/// Platform refused an identity create in a way that means the same create
-/// was already accepted: the identical transition is still in the mempool
-/// ("tx already exists in cache" — a broadcast that timed out after the node
-/// took it, then retried elsewhere), or its funding outpoint is consumed.
-///
-/// Neither says by whom. A caller may treat the create as done only after
-/// fetching the identity and checking it carries the keys it submitted.
-pub fn is_identity_create_already_landed(error: &dash_sdk::Error) -> bool {
-    use dpp::consensus::basic::BasicError;
-
-    matches!(error, dash_sdk::Error::AlreadyExists(_))
-        || matches!(
-            consensus_error_of(error),
-            Some(ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(_)
-            ))
-        )
 }
 
 /// Promote a document-trade consensus rejection to its typed
