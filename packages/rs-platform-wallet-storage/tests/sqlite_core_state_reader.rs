@@ -778,3 +778,276 @@ fn rehydration_routes_used_addresses_to_owning_account() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Spend replay: a restored wallet must reject a redelivered funding
+// transaction whose output was already spent on-chain.
+// ---------------------------------------------------------------------------
+
+const FUNDING_HEIGHT: u32 = 100;
+const SPEND_HEIGHT: u32 = 150;
+const SYNCED_HEIGHT: u32 = 200;
+
+fn block_context(height: u32) -> key_wallet::transaction_checking::TransactionContext {
+    key_wallet::transaction_checking::TransactionContext::InBlock(
+        key_wallet::transaction_checking::BlockInfo::new(
+            height,
+            dashcore::BlockHash::from_byte_array([height as u8; 32]),
+            1_700_000_000 + height,
+        ),
+    )
+}
+
+/// A `TransactionRecord` carrying the real `tx` (the store keys the row by
+/// `tx.txid()` and the restore path reads the raw inputs back).
+fn record_of(
+    tx: &dashcore::Transaction,
+    context: key_wallet::transaction_checking::TransactionContext,
+) -> key_wallet::managed_account::transaction_record::TransactionRecord {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    TransactionRecord::new(
+        tx.clone(),
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        context,
+        key_wallet::transaction_checking::TransactionType::Standard,
+        TransactionDirection::Incoming,
+        Vec::new(),
+        Vec::new(),
+        0,
+    )
+}
+
+/// A funding transaction paying `value` to `script`, spending an external
+/// coin so it is not mistaken for a coinbase.
+fn funding_tx(script: dashcore::ScriptBuf, value: u64) -> dashcore::Transaction {
+    dashcore::Transaction {
+        version: 2,
+        lock_time: 0,
+        input: vec![dashcore::TxIn {
+            previous_output: OutPoint::new(Txid::from_byte_array([0xEE; 32]), 7),
+            ..Default::default()
+        }],
+        output: vec![dashcore::TxOut {
+            value,
+            script_pubkey: script,
+        }],
+        special_transaction_payload: None,
+    }
+}
+
+/// A transaction spending `input` to a foreign script.
+fn spending_tx(input: OutPoint, value: u64) -> dashcore::Transaction {
+    dashcore::Transaction {
+        version: 2,
+        lock_time: 0,
+        input: vec![dashcore::TxIn {
+            previous_output: input,
+            ..Default::default()
+        }],
+        output: vec![dashcore::TxOut {
+            value,
+            script_pubkey: dashcore::ScriptBuf::from_bytes(vec![0x6a]),
+        }],
+        special_transaction_payload: None,
+    }
+}
+
+/// Wallet whose BIP44 manifest is persisted, plus the script of one of its
+/// monitored addresses.
+fn registered_wallet(
+    persister: &platform_wallet_storage::SqlitePersister,
+    w: &[u8; 32],
+    seed: [u8; 64],
+) -> (Wallet, key_wallet::Address) {
+    let wallet = Wallet::from_seed_bytes(
+        seed,
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let address = WalletInfoInterface::monitored_addresses(&info)
+        .into_iter()
+        .next()
+        .expect("at least one monitored address");
+    persister
+        .store(
+            *w,
+            PlatformWalletChangeSet {
+                account_registrations: manifest_for(&wallet),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    (wallet, address)
+}
+
+/// Reopen, run the production `load()`, redeliver `funding` in its original
+/// block context, and assert its output does not come back spendable.
+async fn assert_redelivered_funding_is_not_resurrected(
+    path: &std::path::Path,
+    w: &[u8; 32],
+    funding: &dashcore::Transaction,
+    expected_spend_height: u32,
+) {
+    use key_wallet::transaction_checking::WalletTransactionChecker;
+
+    let spent = OutPoint::new(funding.txid(), 0);
+    let p2 = reopen(path);
+    let mut state = p2.load().expect("load");
+    let mut restored = state.wallets.remove(w).expect("wallet restored");
+
+    assert_eq!(
+        restored.wallet_info.observed_spent_outpoints().get(&spent),
+        Some(&expected_spend_height),
+        "restore must replay the persisted spend into observed_spent_outpoints"
+    );
+
+    restored
+        .wallet_info
+        .check_core_transaction(
+            funding,
+            block_context(FUNDING_HEIGHT),
+            &mut restored.wallet,
+            true,
+            true,
+        )
+        .await;
+
+    let resurrected = restored
+        .wallet_info
+        .accounts
+        .all_funding_accounts()
+        .iter()
+        .any(|account| account.utxos.contains_key(&spent));
+    assert!(
+        !resurrected,
+        "a redelivered funding transaction must not resurrect a spent output"
+    );
+    let bal = WalletInfoInterface::balance(&restored.wallet_info);
+    assert_eq!(
+        bal.confirmed() + bal.unconfirmed() + bal.immature() + bal.locked(),
+        0,
+        "the spent coin must not be re-credited"
+    );
+}
+
+/// Funding mined, then spent in a later block; both records and the spent
+/// UTXO row persist. After close/reopen the typed-row restore has no
+/// snapshot to lean on, so the spend must be replayed from the persisted
+/// spending record.
+#[tokio::test]
+async fn spent_utxo_is_not_resurrected_by_funding_redelivery_after_restore() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC1);
+    ensure_wallet_meta(&persister, &w);
+    let (_wallet, address) = registered_wallet(&persister, &w, [0x31; 64]);
+
+    let funding = funding_tx(address.script_pubkey(), 5_000_000);
+    let spent = OutPoint::new(funding.txid(), 0);
+    let spend = spending_tx(spent, 4_990_000);
+    let funded_utxo = Utxo {
+        outpoint: spent,
+        txout: funding.output[0].clone(),
+        address: address.clone(),
+        height: FUNDING_HEIGHT,
+        is_coinbase: false,
+        is_confirmed: true,
+        is_instantlocked: false,
+        is_locked: false,
+        is_trusted: false,
+    };
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: vec![record_of(&funding, block_context(FUNDING_HEIGHT))],
+                    new_utxos: vec![funded_utxo.clone()],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: vec![record_of(&spend, block_context(SPEND_HEIGHT))],
+                    spent_utxos: vec![funded_utxo],
+                    last_processed_height: Some(SYNCED_HEIGHT),
+                    synced_height: Some(SYNCED_HEIGHT),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    assert_redelivered_funding_is_not_resurrected(&path, &w, &funding, SPEND_HEIGHT).await;
+}
+
+/// The spender lost a conflict to a foreign winner mined at `SPEND_HEIGHT`:
+/// the loser record is swept away and only a stamped sweep placeholder
+/// remembers that the coin is gone. That stamp must be replayed too.
+#[tokio::test]
+async fn swept_spend_hold_is_not_resurrected_by_funding_redelivery_after_restore() {
+    use platform_wallet::changeset::changeset::SweepBatch;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xC2);
+    ensure_wallet_meta(&persister, &w);
+    let (_wallet, address) = registered_wallet(&persister, &w, [0x32; 64]);
+
+    let funding = funding_tx(address.script_pubkey(), 7_000_000);
+    let spent = OutPoint::new(funding.txid(), 0);
+    let loser = spending_tx(spent, 6_990_000);
+
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: vec![record_of(
+                        &loser,
+                        key_wallet::transaction_checking::TransactionContext::Mempool,
+                    )],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    sweeps: vec![SweepBatch {
+                        txids: vec![loser.txid()],
+                        superseded_by: Txid::from_byte_array([0xAB; 32]),
+                        winner_mined_height: Some(SPEND_HEIGHT),
+                        released_outpoints: vec![],
+                    }],
+                    last_processed_height: Some(SYNCED_HEIGHT),
+                    synced_height: Some(SYNCED_HEIGHT),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    assert_redelivered_funding_is_not_resurrected(&path, &w, &funding, SPEND_HEIGHT).await;
+}

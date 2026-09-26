@@ -72,6 +72,12 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "SELECT length(outpoint), outpoint, value, length(script), script",
     ),
     ("core_state.rs", "SELECT DISTINCT script FROM core_utxos"),
+    // Restore-time reader of stamped sweep holds, merged into the wallet's
+    // observed on-chain spends: one-shot read-only scan per wallet.
+    (
+        "core_state.rs",
+        "SELECT length(outpoint), outpoint, winner_mined_height FROM core_utxos",
+    ),
     // Pool reader: verbatim used-set with owner columns, a one-shot read-only
     // scan per wallet.
     (
