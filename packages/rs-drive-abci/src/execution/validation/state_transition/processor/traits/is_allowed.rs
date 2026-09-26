@@ -467,6 +467,10 @@ mod tests {
     /// Returns all state transitions grouped by expected `has_is_allowed_validation` result.
     fn transitions_requiring_allowed_validation() -> Vec<StateTransition> {
         vec![
+            // A batch carries the gate that refuses the token shielded pool's transitions, the
+            // pool's configuration items and a document token cost paid from a pool before the
+            // protocol version admitting them.
+            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
             StateTransition::IdentityTopUpFromAddresses(IdentityTopUpFromAddressesTransition::V0(
                 IdentityTopUpFromAddressesTransitionV0::default(),
             )),
@@ -502,7 +506,6 @@ mod tests {
 
     fn transitions_not_requiring_allowed_validation() -> Vec<StateTransition> {
         vec![
-            StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
             make_data_contract_create_st(),
             make_data_contract_update_st(),
             StateTransition::IdentityCreate(IdentityCreateTransition::V0(
