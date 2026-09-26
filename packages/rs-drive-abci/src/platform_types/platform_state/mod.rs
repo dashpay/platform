@@ -658,6 +658,12 @@ mod tests {
                     .previous_fee_versions_mut()
                     .insert(epoch_index, registered);
             }
+            // The mock generation's number is not a registry position, so restoring it proves
+            // the structure 1 load path resolves by carried number.
+            let mock = TEST_FEE_VERSION_DOUBLED_STORAGE_RATE
+                .as_static()
+                .expect("mock generation is registered");
+            state.previous_fee_versions_mut().insert(10, mock);
 
             let reloaded = round_trip_through_entries(&state);
 
@@ -665,6 +671,13 @@ mod tests {
                 reloaded.previous_fee_versions(),
                 state.previous_fee_versions(),
                 "every registered number survives the structure 1 round trip"
+            );
+            assert_eq!(
+                reloaded
+                    .previous_fee_versions()
+                    .get(&10)
+                    .map(|fee_version| fee_version.fee_version_number),
+                Some(TEST_FEE_VERSION_NUMBER_DOUBLED_STORAGE_RATE)
             );
         }
 
