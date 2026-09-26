@@ -302,4 +302,73 @@ impl DriveDocumentCountQuery<'_> {
             ))),
         }
     }
+
+    /// The outer-walk limit a [`DocumentCountMode::RangeAggregateCarrierProof`]
+    /// request is proved with. The dispatcher passes it to the prover
+    /// and the SDK passes it to the verifier; it lands in
+    /// `SizedQuery::limit`, so both sides must derive it identically
+    /// or an honest proof fails verification.
+    ///
+    /// Two shapes share the carrier proof and treat `limit`
+    /// differently (validate, don't clamp):
+    ///
+    /// - **In-outer carrier (G7):** the caller's `|In|` already bounds
+    ///   the result, so the limit stays `None`. A non-`None` `limit` is
+    ///   rejected: there's no use case for a sub-`|In|` limit on this
+    ///   path, and accepting it would silently change which In-branches
+    ///   appear in the proof.
+    /// - **Range-outer carrier (G8):** the platform caps the outer walk
+    ///   at [`super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`]. An unset
+    ///   `limit` uses the cap itself; a smaller one truncates the walk
+    ///   further; a larger one, or `0`, is rejected.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn carrier_aggregate_outer_limit(
+        where_clauses: &[WhereClause],
+        limit: Option<u32>,
+    ) -> Result<Option<u16>, QuerySyntaxError> {
+        let has_outer_range = where_clauses
+            .iter()
+            .filter(|wc| Self::is_range_operator(wc.operator))
+            .count()
+            == 2;
+        if has_outer_range {
+            match limit {
+                None => Ok(Some(super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT)),
+                Some(n) => {
+                    if n > super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT as u32 {
+                        return Err(QuerySyntaxError::InvalidLimit(format!(
+                            "carrier-aggregate range-outer queries (e.g. \
+                                 `outer_range_field > X AND inner_acor_field > \
+                                 Y` with `group_by = [outer_range_field]`) cap \
+                                 the outer walk at {} entries (compile-time \
+                                 constant `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`); \
+                                 got limit = {}. Pass a value ≤ {} or omit \
+                                 `limit` to use the default.",
+                            super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
+                            n,
+                            super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
+                        )));
+                    }
+                    if n == 0 {
+                        return Err(QuerySyntaxError::InvalidLimit(
+                            "carrier-aggregate range-outer queries require limit \
+                             ≥ 1; got limit = 0"
+                                .to_string(),
+                        ));
+                    }
+                    Ok(Some(n as u16))
+                }
+            }
+        } else {
+            if let Some(n) = limit {
+                return Err(QuerySyntaxError::InvalidLimit(format!(
+                    "carrier-aggregate In-outer queries (e.g. `outer_in_field IN \
+                     [...] AND inner_acor_field > Y` with `group_by = \
+                     [outer_in_field]`) don't accept `limit` — the In array's \
+                     length already bounds the result. Got limit = {n}.",
+                )));
+            }
+            Ok(None)
+        }
+    }
 }
