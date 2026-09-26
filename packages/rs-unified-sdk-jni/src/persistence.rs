@@ -1557,7 +1557,7 @@ unsafe fn persist_contact_upsert(
     env.call_method(
         bridge,
         "onPersistContactUpsert",
-        "([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I",
+        CONTACT_UPSERT_DESCRIPTOR,
         &[
             wid.into(),
             (&owner).into(),
@@ -1577,10 +1577,24 @@ unsafe fn persist_contact_upsert(
             JValue::Bool(c.is_hidden as u8),
             (&contact_account_label).into(),
             (&accepted).into(),
+            JValue::Bool(c.has_external_account_reference as u8),
+            JValue::Int(if c.has_external_account_reference {
+                c.external_account_reference as i32
+            } else {
+                0
+            }),
         ],
     )?
     .i()
 }
+
+/// Descriptor of `NativePersistenceBridge.onPersistContactUpsert`. The
+/// trailing `(Z, I)` pair is `EstablishedContact::external_account_reference`
+/// as `(hasExternalAccountReference, externalAccountReference)` — the marker
+/// whose loss across restart rebuilt every outbound contact account on every
+/// launch (dashpay/platform#4302).
+const CONTACT_UPSERT_DESCRIPTOR: &str =
+    "([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[IZI)I";
 
 /// Copy `len` `u32`s from `ptr` (or 0 when null) into a JVM `int[]`
 /// (bit-pattern cast — DIP-15 account indices never exceed `i32::MAX`
@@ -3463,6 +3477,15 @@ fn build_contact_restore(
     let is_hidden = env.get_field(holder, "isHidden", "Z")?.z()?;
     let contact_account_label = read_opt_cstring_field(env, holder, "contactAccountLabel")?;
     let accepted_accounts = read_u32_array_field(env, holder, "acceptedAccounts")?;
+    let has_external_account_reference = env
+        .get_field(holder, "hasExternalAccountReference", "Z")?
+        .z()?;
+    let external_account_reference = if has_external_account_reference {
+        env.get_field(holder, "externalAccountReference", "I")?
+            .i()? as u32
+    } else {
+        0
+    };
 
     let row = ContactRequestFFI {
         owner_id,
@@ -3486,6 +3509,8 @@ fn build_contact_restore(
         contact_account_label: ptr::null(),
         accepted_accounts: ptr::null(),
         accepted_accounts_len: 0,
+        has_external_account_reference,
+        external_account_reference,
     };
     Ok(ContactRestoreStaged {
         row,
@@ -4711,10 +4736,7 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     ("onPersistTokenBalanceUpsert", "([B[B[BJ)I"),
     ("onPersistTokenBalanceRemoval", "([B[B[B)I"),
     ("onPersistContactIgnored", "([B[B[BZ)I"),
-    (
-        "onPersistContactUpsert",
-        "([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[I)I",
-    ),
+    ("onPersistContactUpsert", CONTACT_UPSERT_DESCRIPTOR),
     ("onPersistContactRemovalSent", "([B[B[B)I"),
     ("onPersistContactRemovalIncoming", "([B[B[B)I"),
     ("onPersistAssetLockUpsert", "([B[B[BIBIJB[B)I"),

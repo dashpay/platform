@@ -2668,6 +2668,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         established.note.as_deref(),
                         established.is_hidden,
                         &established.accepted_accounts,
+                        established.external_account_reference,
                     ));
                     upserts.push(ContactRequestFFI::from_established_incoming(
                         key.owner_id.to_buffer(),
@@ -2681,6 +2682,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         // rides only the incoming row.
                         established.contact_account_label.as_deref(),
                         &established.accepted_accounts,
+                        established.external_account_reference,
                     ));
                 }
                 let removed_sent: Vec<ContactRequestRemovalFFI> = contacts_cs
@@ -6501,6 +6503,7 @@ unsafe fn apply_contact_rows(
         is_hidden: bool,
         contact_account_label: Option<String>,
         accepted_accounts: Vec<u32>,
+        external_account_reference: Option<u32>,
     }
 
     let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
@@ -6573,6 +6576,12 @@ unsafe fn apply_contact_rows(
         if acc.accepted_accounts.is_empty() {
             acc.accepted_accounts = u32s(row.accepted_accounts, row.accepted_accounts_len);
         }
+        // The outbound-account marker is relationship-level too; a host
+        // that never stored it hands back `false`, which restores `None`
+        // and keeps the conservative one-rebuild behaviour.
+        if acc.external_account_reference.is_none() && row.has_external_account_reference {
+            acc.external_account_reference = Some(row.external_account_reference);
+        }
     }
 
     for (contact_id_bytes, acc) in by_contact {
@@ -6586,6 +6595,7 @@ unsafe fn apply_contact_rows(
                 contact.payment_channel_broken = acc.payment_channel_broken;
                 contact.contact_account_label = acc.contact_account_label;
                 contact.accepted_accounts = acc.accepted_accounts;
+                contact.external_account_reference = acc.external_account_reference;
                 managed.apply_established_contact(contact);
             }
             (Some(outgoing), None) => {
@@ -10524,6 +10534,7 @@ mod tests {
                 Some("a note"),
                 true,
                 &[7, 42],
+                Some(4),
             ),
             ContactRequestFFI::from_established_incoming(
                 owner.to_buffer(),
@@ -10535,6 +10546,7 @@ mod tests {
                 true,
                 Some("Main wallet"),
                 &[7, 42],
+                Some(4),
             ),
         ];
 
@@ -10591,6 +10603,11 @@ mod tests {
         assert_eq!(e.note.as_deref(), Some("a note"));
         assert!(e.is_hidden);
         assert!(e.payment_channel_broken);
+        assert_eq!(
+            e.external_account_reference,
+            Some(4),
+            "the outbound-account marker must survive the restore (dashpay/platform#4302)"
+        );
         assert_eq!(
             e.contact_account_label.as_deref(),
             Some("Main wallet"),
