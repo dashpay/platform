@@ -28,6 +28,9 @@ impl Drive {
     ///   The ending epoch index for the query.
     /// - `end_epoch_index_included` (`bool`):
     ///   If `true`, includes `end_epoch_index` in the results.
+    /// - `limit` (`u16`):
+    ///   The most epochs returned, the first ones in the query's direction. Epochs without
+    ///   finalized info do not count.
     /// - `transaction` (`TransactionArg`):
     ///   The current database transaction for querying storage.
     /// - `platform_version` (`&PlatformVersion`):
@@ -43,12 +46,14 @@ impl Drive {
     ///
     /// - Returns `DriveError::UnknownVersionMismatch` if an unsupported `platform_version` is provided.
     /// - Any errors returned by `get_finalized_epoch_infos_v0` if the query fails.
+    #[allow(clippy::too_many_arguments)]
     pub fn get_finalized_epoch_infos<T: FromIterator<(EpochIndex, FinalizedEpochInfo)>>(
         &self,
         start_epoch_index: u16,
         start_epoch_index_included: bool,
         end_epoch_index: u16,
         end_epoch_index_included: bool,
+        limit: u16,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<T, Error> {
@@ -64,6 +69,7 @@ impl Drive {
                 start_epoch_index_included,
                 end_epoch_index,
                 end_epoch_index_included,
+                limit,
                 transaction,
                 platform_version,
             ),
