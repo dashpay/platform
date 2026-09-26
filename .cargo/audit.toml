@@ -1,6 +1,9 @@
 [advisories]
 # CI reads audit configuration from the workspace root.
 # TODO: enable PR audits once existing workspace advisories are resolved.
+# This ignore list does not apply to the DashVM engine set (Wasmtime, Cranelift, wasm-tools):
+# .github/scripts/check-engine-advisories.py audits those crates from outside the workspace
+# configuration. Engine exceptions go in Cargo.toml under workspace.metadata.dashvm.engine.
 ignore = [
     # Acknowledged 2026-06-08: bincode is unmaintained; no known exploit in this advisory.
     # Storage decodes are size-bounded; the FFI asset-lock size gate is tracked in #4585.

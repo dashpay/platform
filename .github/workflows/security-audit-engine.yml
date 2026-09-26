@@ -1,0 +1,93 @@
+name: "Security: DashVM Engine"
+
+# Audits the DashVM engine dependency set (Wasmtime, Cranelift and the
+# wasm-tools crates, declared in the root Cargo.toml under
+# [workspace.metadata.dashvm.engine]) separately from the base-wide Rust audit.
+# The engine decides consensus results, so an advisory against one of its
+# crates is classified by the execution/fee-equivalence hotfix rule in
+# book/src/architecture/engine-dependencies-and-hotfixes.md rather than
+# deferred with the rest of the nightly findings. The checker runs cargo-audit
+# from outside the workspace so the ignore list in .cargo/audit.toml cannot
+# hide an engine advisory; engine exceptions live in Cargo.toml with a reason
+# and an expiry.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # After the base-wide audit at 23:30 UTC, off the round minute.
+    - cron: "45 23 * * *"
+  pull_request:
+    branches:
+      - master
+      - "v*-dev"
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "packages/**/Cargo.toml"
+      - ".cargo/audit.toml"
+      - ".github/scripts/check-engine-advisories.py"
+      - ".github/workflows/security-audit-engine.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine-security:
+    name: DashVM engine dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up audit toolchain
+        # Same as the base-wide audit: the tool builds with a compiler
+        # independent of rust-toolchain.toml.
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo-audit
+        id: cache-cargo-audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.2-${{ runner.os }}
+
+      - name: Install cargo-audit
+        if: steps.cache-cargo-audit.outputs.cache-hit != 'true'
+        # Use the tool's lockfile so the audit binary is reproducible.
+        run: cargo +stable install cargo-audit --version 0.22.2 --locked
+
+      - name: Show cargo-audit version
+        run: cargo +stable audit --version
+
+      - name: Exercise the checker on known findings
+        # The failure path runs before the real audit, so a green run means the
+        # engine set was audited, not that nothing was compared.
+        run: python3 .github/scripts/check-engine-advisories.py --self-test
+
+      - name: Audit the engine dependency set
+        run: |
+          # The default shell has errexit on; guard the checker so its report is
+          # shown and summarised on failure, then exit with its status.
+          set -uo pipefail
+          report="${RUNNER_TEMP}/engine-audit.txt"
+          status=0
+          python3 .github/scripts/check-engine-advisories.py > "${report}" || status=$?
+          cat "${report}"
+          {
+            echo "## DashVM engine dependency audit"
+            echo
+            echo '```text'
+            cat "${report}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+          exit "${status}"

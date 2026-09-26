@@ -11,6 +11,7 @@
 
 - [Monorepo Overview](architecture/overview.md)
 - [Component Pipeline](architecture/component-pipeline.md)
+- [Engine Dependencies and Hotfixes](architecture/engine-dependencies-and-hotfixes.md)
 
 # Versioning
 

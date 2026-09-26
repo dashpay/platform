@@ -139,3 +139,38 @@ opt-level = 3
 
 version = "4.2.0-dev.8"
 rust-version = "1.92"
+
+# DashVM engine dependency set (dashpay/platform#4626, section 8). Read by
+# .github/scripts/check-engine-advisories.py, which audits every resolved version of these
+# crates from outside the workspace configuration: an advisory against one of them fails the
+# engine audit regardless of the ignore list in .cargo/audit.toml, because the engine decides
+# consensus results. Names only; the release is pinned where the crates are used (the runtime
+# and validation crates) and drift of the pinned configuration is checked there. A crate that
+# the lockfile does not resolve yet is reported as planned and skipped, so the set can name
+# the engine before the runtime crate lands. Membership is provisional until the runtime crate
+# pins the release; see book/src/architecture/engine-dependencies-and-hotfixes.md.
+[workspace.metadata.dashvm.engine]
+crates = [
+    "wasmtime",
+    "wasmtime-environ",
+    "wasmtime-internal-cranelift",
+    "cranelift-codegen",
+    "cranelift-frontend",
+    "cranelift-native",
+    "wasmparser",
+    "wasm-encoder",
+]
+# A scoped acknowledgement hides one advisory from the engine audit until it expires. It must
+# say why the advisory cannot reach a node under the pinned profile (for example a Winch or a
+# component-model bug when neither is compiled in). `expires` is an ISO 8601 date at most
+# 90 days out (provisional bound, see the book chapter); renewal is a new entry with a fresh
+# reason, and an entry whose advisory is no longer reported must be removed.
+# acknowledged = [
+#     { id = "RUSTSEC-2026-0000", reason = "...", expires = "2026-12-31" },
+# ]
+# A temporary patch (Q01: an exception, not a standing engine fork) must be declared here
+# with the upstream fix it carries and the date by which an upstream release replaces it.
+# Every `[patch.*]` entry for an engine crate without a declaration fails the audit.
+# patches = [
+#     { crate = "wasmtime", upstream = "https://github.com/bytecodealliance/wasmtime/pull/0", expires = "2026-12-31" },
+# ]
