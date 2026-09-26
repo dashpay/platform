@@ -218,4 +218,10 @@ pub enum DriveError {
     /// Checkpoint not found for specified block height
     #[error("checkpoint not found for block height: {0}")]
     CheckpointNotFound(u64),
+
+    /// The native contested award operation refused to award: the poll is not a started
+    /// contest, has not ended at the block time, or is not queued for finalization at the
+    /// end date the caller named. Nothing was applied.
+    #[error("contested award rejected: {0}")]
+    ContestedAwardRejected(String),
 }

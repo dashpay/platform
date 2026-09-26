@@ -83,6 +83,8 @@ use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
 #[cfg(feature = "validation")]
+use crate::data_contract::document_type::class_methods::validate_contested_index_parameters::validate_contested_index_parameters;
+#[cfg(feature = "validation")]
 use crate::data_contract::document_type::schema::validate_max_depth;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
@@ -1093,6 +1095,20 @@ fn parse_indices(
                             &index,
                             flags,
                             flattened_document_properties,
+                        )?;
+
+                        // CONTESTED: the declared parameters must be ones the
+                        // native contest machinery can honour. Versioned on the
+                        // validation table rather than owned by a generation
+                        // because every generation reaches this core; `None`
+                        // on the versions that predate the check keeps their
+                        // parses byte-identical.
+                        validate_contested_index_parameters(
+                            ctx.name,
+                            &index,
+                            flattened_document_properties,
+                            required_fields,
+                            ctx.platform_version,
                         )?;
                     }
 

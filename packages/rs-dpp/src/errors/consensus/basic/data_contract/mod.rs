@@ -1,3 +1,4 @@
+mod contested_index_invalid_parameters_error;
 mod contested_unique_index_on_mutable_document_type_error;
 mod contested_unique_index_with_unique_index_error;
 mod data_contract_have_new_unique_index_error;
@@ -83,6 +84,7 @@ pub use system_property_index_already_present_error::*;
 pub use undefined_index_property_error::*;
 pub use unique_indices_limit_reached_error::*;
 
+pub use contested_index_invalid_parameters_error::*;
 pub use contested_unique_index_on_mutable_document_type_error::*;
 pub use contested_unique_index_with_unique_index_error::*;
 pub use duplicate_keywords_error::*;

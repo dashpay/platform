@@ -5891,17 +5891,423 @@ mod tests {
         mod document_distribution {
             use super::*;
             use crate::config::PlatformConfig;
+            use crate::execution::validation::state_transition::tests::setup_identity;
             use crate::execution::validation::state_transition::tests::{
                 create_dpns_contract_name_contest,
                 create_dpns_identity_name_contest_skip_creating_identities,
+                create_dpns_name_contest_on_identities,
             };
+            use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
             use assert_matches::assert_matches;
             use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0;
             use dapi_grpc::platform::v0::{
                 get_contested_resource_vote_state_request, GetContestedResourceVoteStateRequest,
             };
+            use dpp::consensus::basic::BasicError;
+            use dpp::consensus::state::data_trigger::DataTriggerError;
+            use dpp::consensus::state::state_error::StateError;
+            use dpp::consensus::ConsensusError;
             use dpp::dashcore::Network;
+            use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+            use dpp::serialization::PlatformSerializable;
+            use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+            use dpp::state_transition::batch_transition::BatchTransition;
+            use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{
+                ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters,
+            };
+            use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+            use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+            use drive::query::DriveDocumentQuery;
+            use drive::util::object_size_info::DataContractOwnedResolvedInfo;
             use platform_version::version::INITIAL_PROTOCOL_VERSION;
+            use rand::prelude::StdRng;
+            use rand::Rng;
+            use rand::SeedableRng;
+
+            /// The rule scopes of a contested document type, on the DPNS system contract
+            /// with its data triggers enabled:
+            ///
+            /// * the award runs no create-scope rule. Both contenders delete their
+            ///   preorder documents before the poll ends, so the DPNS create trigger,
+            ///   which requires a preorder, would reject the winning document if it were
+            ///   re-run on the award; the award still succeeds;
+            /// * ordinary actions keep their ordinary rules: the winner's replace and
+            ///   delete of the awarded domain are rejected exactly as before the award;
+            /// * the poll finalizes once: the stored info carries exactly one finalized
+            ///   event, the status is awarded, and a later sweep finds nothing to award.
+            #[tokio::test]
+            async fn test_document_distribution_runs_no_create_rule_and_keeps_ordinary_rules() {
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .with_latest_protocol_version()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let mut rng = StdRng::seed_from_u64(7);
+                let identity_1_info =
+                    setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+                let identity_2_info =
+                    setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+                let (identity_1_info, identity_2_info) =
+                    if identity_1_info.0.id() < identity_2_info.0.id() {
+                        (identity_1_info, identity_2_info)
+                    } else {
+                        (identity_2_info, identity_1_info)
+                    };
+
+                let (
+                    ((preorder_document_1, _), (_, _)),
+                    ((preorder_document_2, _), (_, _)),
+                    dpns_contract,
+                ) = create_dpns_name_contest_on_identities(
+                    &mut platform,
+                    &identity_1_info,
+                    &identity_2_info,
+                    &platform_state,
+                    rng,
+                    "quantum",
+                    None,
+                    false,
+                    platform_version,
+                )
+                .await;
+
+                let (contender_1, signer_1, key_1) = &identity_1_info;
+                let (contender_2, signer_2, key_2) = &identity_2_info;
+
+                perform_votes_multi(
+                    &mut platform,
+                    dpns_contract.as_ref(),
+                    vec![
+                        (TowardsIdentity(contender_1.id()), 5),
+                        (TowardsIdentity(contender_2.id()), 50),
+                    ],
+                    "quantum",
+                    10,
+                    None,
+                    platform_version,
+                )
+                .await;
+
+                // Both contenders delete their preorder before the poll ends, so a
+                // create-scope rule re-run on the award would find no preorder.
+                let preorder = dpns_contract
+                    .document_type_for_name("preorder")
+                    .expect("expected the preorder document type");
+
+                for (preorder_document, key, signer) in [
+                    (preorder_document_1, key_1, signer_1),
+                    (preorder_document_2, key_2, signer_2),
+                ] {
+                    let delete_transition =
+                        BatchTransition::new_document_deletion_transition_from_document(
+                            preorder_document,
+                            preorder,
+                            key,
+                            4,
+                            0,
+                            None,
+                            signer,
+                            platform_version,
+                            None,
+                        )
+                        .await
+                        .expect("expected to create the preorder deletion");
+
+                    let serialized = delete_transition
+                        .serialize_to_bytes()
+                        .expect("expected the deletion to serialize");
+
+                    let transaction = platform.drive.grove.start_transaction();
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &[serialized],
+                            &platform_state,
+                            &BlockInfo::default_with_time(6_000),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process the preorder deletion");
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+                    assert_matches!(
+                        processing_result.execution_results().as_slice(),
+                        [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                    );
+                }
+
+                let platform_state = platform.state.load();
+                let mut platform_state = (**platform_state).clone();
+
+                let block_info = BlockInfo {
+                    time_ms: 1_209_900_000, // 2 weeks and 300s
+                    height: 10000,
+                    core_height: 42,
+                    epoch: Default::default(),
+                };
+
+                platform_state.set_last_committed_block_info(Some(
+                    ExtendedBlockInfoV0 {
+                        basic_info: block_info,
+                        app_hash: platform
+                            .drive
+                            .grove
+                            .root_hash(None, &platform_version.drive.grove_version)
+                            .unwrap()
+                            .unwrap(),
+                        quorum_hash: [0u8; 32],
+                        block_id_hash: [0u8; 32],
+                        proposer_pro_tx_hash: [0u8; 32],
+                        signature: [0u8; 96],
+                        round: 0,
+                    }
+                    .into(),
+                ));
+
+                platform.state.store(Arc::new(platform_state));
+
+                let platform_state = platform.state.load();
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                platform
+                    .check_for_ended_vote_polls(
+                        &platform_state,
+                        &platform_state,
+                        &block_info,
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .expect("the award runs no create-scope rule, so the missing preorders do not stop it");
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                // The award happened: the finished vote info names contender 2.
+                let (contenders, _, _, finished_vote_info) = get_vote_states(
+                    &platform,
+                    &platform_state,
+                    &dpns_contract,
+                    "quantum",
+                    None,
+                    true,
+                    None,
+                    ResultType::DocumentsAndVoteTally,
+                    platform_version,
+                );
+
+                assert_eq!(contenders.len(), 2);
+                assert_eq!(
+                    finished_vote_info,
+                    Some(FinishedVoteInfo {
+                        finished_vote_outcome:
+                            finished_vote_info::FinishedVoteOutcome::TowardsIdentity as i32,
+                        won_by_identity_id: Some(contender_2.id().to_vec()),
+                        finished_at_block_height: 10000,
+                        finished_at_core_block_height: 42,
+                        finished_at_block_time_ms: 1_209_900_000,
+                        finished_at_epoch: 0
+                    })
+                );
+
+                // The awarded document is a domain document owned by the winner.
+                let domain = dpns_contract
+                    .document_type_for_name("domain")
+                    .expect("expected the domain document type");
+
+                let awarded_documents = platform
+                    .drive
+                    .query_documents(
+                        DriveDocumentQuery::any_item_query(&dpns_contract, domain),
+                        None,
+                        false,
+                        None,
+                        None,
+                    )
+                    .expect("expected to query the domain documents")
+                    .documents_owned();
+
+                assert_eq!(awarded_documents.len(), 1);
+                let mut awarded_document = awarded_documents
+                    .into_iter()
+                    .next()
+                    .expect("expected the awarded document");
+                assert_eq!(awarded_document.owner_id(), contender_2.id());
+
+                // Ordinary rules are still enforced on ordinary actions: the winner can
+                // neither replace nor delete the awarded domain.
+                awarded_document.set_revision(Some(2));
+
+                let replace_transition =
+                    BatchTransition::new_document_replacement_transition_from_document(
+                        awarded_document.clone(),
+                        domain,
+                        key_2,
+                        5,
+                        0,
+                        None,
+                        signer_2,
+                        platform_version,
+                        None,
+                    )
+                    .await
+                    .expect("expected to create the replacement");
+
+                let delete_transition =
+                    BatchTransition::new_document_deletion_transition_from_document(
+                        awarded_document,
+                        domain,
+                        key_2,
+                        6,
+                        0,
+                        None,
+                        signer_2,
+                        platform_version,
+                        None,
+                    )
+                    .await
+                    .expect("expected to create the deletion");
+
+                for (transition, expect_data_trigger_reject) in
+                    [(replace_transition, false), (delete_transition, true)]
+                {
+                    let serialized = transition
+                        .serialize_to_bytes()
+                        .expect("expected the transition to serialize");
+
+                    let transaction = platform.drive.grove.start_transaction();
+                    let processing_result = platform
+                        .platform
+                        .process_raw_state_transitions(
+                            &[serialized],
+                            &platform_state,
+                            &BlockInfo::default_with_time(1_209_903_000),
+                            &transaction,
+                            platform_version,
+                            false,
+                            None,
+                        )
+                        .expect("expected to process the transition");
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("expected to commit transaction");
+
+                    if expect_data_trigger_reject {
+                        assert_matches!(
+                            processing_result.execution_results().as_slice(),
+                            [StateTransitionExecutionResult::PaidConsensusError {
+                                error: ConsensusError::StateError(StateError::DataTriggerError(
+                                    DataTriggerError::DataTriggerConditionError(_)
+                                )),
+                                ..
+                            }]
+                        );
+                    } else {
+                        assert_matches!(
+                            processing_result.execution_results().as_slice(),
+                            [StateTransitionExecutionResult::PaidConsensusError {
+                                error: ConsensusError::BasicError(
+                                    BasicError::InvalidDocumentTransitionActionError(_)
+                                ),
+                                ..
+                            }]
+                        );
+                    }
+                }
+
+                // The poll finalized exactly once.
+                let vote_poll = ContestedDocumentResourceVotePollWithContractInfo {
+                    contract: DataContractOwnedResolvedInfo::OwnedDataContract(
+                        dpns_contract.as_ref().clone(),
+                    ),
+                    document_type_name: "domain".to_string(),
+                    index_name: "parentNameAndLabel".to_string(),
+                    index_values: vec![
+                        Value::Text("dash".to_string()),
+                        Value::Text(convert_to_homograph_safe_chars("quantum")),
+                    ],
+                };
+
+                let (_, stored_info) = platform
+                    .drive
+                    .fetch_contested_document_vote_poll_stored_info(
+                        &vote_poll,
+                        None,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch the stored info");
+                let stored_info = stored_info.expect("expected the stored info to remain");
+                assert_eq!(
+                    stored_info.vote_poll_status(),
+                    ContestedDocumentVotePollStatus::Awarded(contender_2.id())
+                );
+                assert_eq!(
+                    stored_info
+                        .contender_votes_in_vec_of_contender_with_serialized_document()
+                        .map(|contenders| contenders.len()),
+                    Some(2)
+                );
+                assert_eq!(stored_info.last_finalization_block(), Some(block_info));
+
+                // A later sweep finds nothing: the end-date entry is gone.
+                let later_block_info = BlockInfo {
+                    time_ms: 1_210_000_000,
+                    height: 10001,
+                    core_height: 43,
+                    epoch: Default::default(),
+                };
+
+                let transaction = platform.drive.grove.start_transaction();
+                platform
+                    .check_for_ended_vote_polls(
+                        &platform_state,
+                        &platform_state,
+                        &later_block_info,
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .expect("a later sweep has nothing to award");
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                let (_, stored_info) = platform
+                    .drive
+                    .fetch_contested_document_vote_poll_stored_info(
+                        &vote_poll,
+                        None,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to fetch the stored info");
+                assert_eq!(
+                    stored_info
+                        .expect("expected the stored info to remain")
+                        .last_finalization_block(),
+                    Some(block_info),
+                    "the poll was not finalized a second time"
+                );
+            }
 
             #[tokio::test]
             async fn test_document_distribution() {

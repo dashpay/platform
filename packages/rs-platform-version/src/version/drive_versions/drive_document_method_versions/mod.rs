@@ -1,9 +1,10 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -117,6 +118,15 @@ pub struct DriveDocumentInsertContestedMethodVersions {
     pub add_contested_indices_for_contract_operations: FeatureVersion,
     pub add_contested_reference_and_vote_subtree_to_document_operations: FeatureVersion,
     pub add_contested_vote_subtree_for_non_identities_operations: FeatureVersion,
+    /// Version of `Drive::award_contested_document_vote_poll`, the native
+    /// award operation: it re-derives the ended poll's winner from state
+    /// (stored status, end-date queue entry, tallies, stored contender bytes)
+    /// and inserts the winning document in the same call. `None` on every
+    /// table before protocol version 17: those versions award through the
+    /// block executor's own selection and the generic document insert, and
+    /// the dispatcher refuses the operation outright, so a historical table
+    /// cannot be used to reach it.
+    pub award_contested_document_vote_poll: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
