@@ -52,7 +52,7 @@ pub struct IndexProperty {
 
 ### `name`
 
-A short, human-readable identifier for the index (e.g. `"byOwnerAndType"`). It shows up in error messages and is the key used in `document_type.indexes()` (`BTreeMap<String, Index>`). If omitted in the schema, a random alphanumeric name is generated. Two indexes within the same document type cannot share a name.
+A short, human-readable identifier for the index (e.g. `"byOwnerAndType"`). It shows up in error messages and is the key used in `document_type.indexes()` (`BTreeMap<String, Index>`). Every document meta-schema requires it. A parse that skips schema validation (check tx, test fixtures) and meets an unnamed index derives the name from the properties and their directions, joined with `|`, so every parse of the same contract agrees on it. Two indexes within the same document type cannot share a name.
 
 ### `properties: Vec<IndexProperty>`
 
@@ -67,7 +67,7 @@ The schema form is:
 ]
 ```
 
-`asc` / `desc` controls sort order on result enumeration. Drive currently only uses ascending storage, but the field is preserved through the contract.
+Every document meta-schema accepts only `"asc"`. Drive stores index entries in ascending order; a query chooses its own result order.
 
 ### `unique: bool`
 

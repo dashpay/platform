@@ -104,9 +104,9 @@ The document's unique identifier, written as raw bytes. This is a 256-bit value 
 
 The identity that currently owns the document, written as raw bytes.
 
-### `$creatorId` (v2 only, conditional)
+### `$creatorId` (v2 and v3, conditional)
 
-Present only in serialization version 2, and only if the document type supports transfers (`documents_transferable`) or trading (`trade_mode != None`).
+Present only in serialization versions 2 and 3, and only if the document type supports transfers (`documents_transferable`) or trading (`trade_mode != None`).
 
 ```text
 0x01  [32 bytes creatorId]    — creator ID present
@@ -185,7 +185,7 @@ All numeric values use **big-endian** byte order.
 | `identifier` | 32 bytes raw |
 | `date` | 8 bytes big-endian f64 (when optional: `0xff` prefix + 8 bytes) |
 | `array` (typed array, protocol v14) | varint element count + each element encoded exactly as a required property of the element's type (rows above): an identifier element is 32 raw bytes, an integer element takes the width its bounds give it, a fixed-size byte array element is raw, a string or variable-size byte array element has a varint length prefix. Elements never carry a presence byte |
-| `object` | Nested fields serialized recursively in their schema position order |
+| `object` | Nested fields serialized recursively, in the order the schema lists them (not sorted by `position`) |
 
 **Note on date types**: User-property `date` fields are encoded as **f64** (8 bytes). System timestamps (`$createdAt`, `$updatedAt`, `$transferredAt`) are **u64** milliseconds. Both are 8 bytes big-endian but use different numeric representations.
 
