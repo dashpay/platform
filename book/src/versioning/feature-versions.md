@@ -485,16 +485,19 @@ slots edited. Newer ones use struct update syntax, so that the file *is* the
 diff:
 
 ```rust
-// packages/rs-platform-version/src/version/drive_abci_versions/drive_abci_query_versions/v3.rs
+// packages/rs-platform-version/src/version/drive_abci_versions/drive_abci_query_versions/v2.rs
 
-/// Differs from v2 in exactly one slot:
+/// Differs from v1 in two slots.
 /// `document_query_helpers.compute_aggregate_mode_and_check_limit` is 2
-/// rather than 1. That is the boolean-`HAVING` routing gate. ...
-pub const DRIVE_ABCI_QUERY_VERSIONS_V3: DriveAbciQueryVersions = DriveAbciQueryVersions {
+/// rather than 0: the ranked and boolean-`HAVING` routing gate. ...
+pub const DRIVE_ABCI_QUERY_VERSIONS_V2: DriveAbciQueryVersions = DriveAbciQueryVersions {
     document_query_helpers: DriveAbciDocumentQueryHelperVersions {
         compute_aggregate_mode_and_check_limit: 2,
     },
-    ..DRIVE_ABCI_QUERY_VERSIONS_V2
+    data_contract_query_helpers: DriveAbciDataContractQueryHelperVersions {
+        latest_versions_read: 1,
+    },
+    ..DRIVE_ABCI_QUERY_VERSIONS_V1
 };
 ```
 
