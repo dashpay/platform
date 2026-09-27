@@ -154,6 +154,7 @@ use dpp::consensus::state::identity::gas_sponsor_insufficient_balance_error::Gas
 use dpp::consensus::state::token::{GasFeesPaidByNotAllowedError, InconsistentGasFeesPaidByInBatchError};
 use dpp::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
 use dpp::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
+use dpp::consensus::state::document::document_expired_error::DocumentExpiredError;
 use dpp::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
 use dpp::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
@@ -716,6 +717,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentActionFeeModeratorsShareMismatchError(e) => {
             generic_consensus_error!(DocumentActionFeeModeratorsShareMismatchError, e).into()
+        }
+        StateError::DocumentExpiredError(e) => {
+            generic_consensus_error!(DocumentExpiredError, e).into()
         }
     }
 }

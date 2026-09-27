@@ -39,6 +39,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
+use crate::execution::validation::state_transition::common::validate_document_not_expired::validate_document_action_not_expired;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
@@ -257,6 +258,30 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                         ],
                     ));
                 }
+            }
+        }
+
+        // A document whose type declares a `ttl` is no longer replaced, transferred, bought or
+        // repriced once that has passed (`DocumentExpiredError`), judged from the document the
+        // action carries and the block time. Here rather than in the state validation, so
+        // check_tx refuses the change too.
+        for transition in action.transitions() {
+            let BatchedTransitionAction::DocumentAction(document_action) = transition else {
+                continue;
+            };
+            let result = validate_document_action_not_expired(document_action, block_info)?;
+            if !result.is_valid() {
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                        document_action.base(),
+                        self.owner_id(),
+                        self.user_fee_increase(),
+                    ),
+                );
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    result.errors,
+                ));
             }
         }
 

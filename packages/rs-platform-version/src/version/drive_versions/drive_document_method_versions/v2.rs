@@ -1,8 +1,9 @@
 use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentDeleteMethodVersions, DriveDocumentEstimationCostsMethodVersions,
-    DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertContestedMethodVersions,
-    DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
-    DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
+    DriveDocumentExpirationMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
+    DriveDocumentInsertContestedMethodVersions, DriveDocumentInsertMethodVersions,
+    DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions,
+    DriveDocumentUpdateMethodVersions,
 };
 
 /// This was introduced in protocol v10 to deal with changes in queries for document uniqueness
@@ -120,4 +121,12 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
         // stop, so a future change to the v1 arm doesn't need to
         // re-prove v0 ≡ v1 for every pre-v12 corner case.
         primary_key_tree_type: 0,
+        expiration: DriveDocumentExpirationMethodVersions {
+            insert_documents_expirations_tree: 0,
+            add_document_expiration_operations: 0,
+            remove_document_expiration_operations: 0,
+            fetch_expired_documents: 0,
+            remove_expired_documents: 0,
+            add_estimation_costs_for_document_expiration: 0,
+        },
     };

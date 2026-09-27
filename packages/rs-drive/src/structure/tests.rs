@@ -335,7 +335,8 @@ mod fixtures {
     use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
     use dpp::data_contract::v1::DataContractV1;
     use dpp::data_contract::DataContract;
-    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::Credits;
     use dpp::group::action_event::GroupActionEvent;
     use dpp::group::group_action::v0::GroupActionV0;
@@ -356,6 +357,7 @@ mod fixtures {
     use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
 
     /// Nodes no fixture below reaches, but the drive-abci strategy tests do:
@@ -1553,11 +1555,95 @@ mod fixtures {
         conformance_of(&drive, "spent_nullifiers", run);
     }
 
+    /// Documents of a type declaring a `ttl`: stored without storage flags, each with an entry
+    /// in the documents expirations tree under the time it expires. Two of them expire
+    /// together, created in the same block.
+    fn expiring_documents(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = DataContractFactory::new(platform_version.protocol_version)
+            .expect("expected a contract factory")
+            .create_with_value_config(
+                Identifier::from([31; 32]),
+                0,
+                platform_value!({ "note": {
+                    "type": "object",
+                    "documentsMutable": true,
+                    "ttl": 1_209_600,
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    },
+                    "indices": [
+                        { "name": "byText", "properties": [{ "text": "asc" }] },
+                    ],
+                    "required": ["$createdAt", "text"],
+                    "additionalProperties": false,
+                }}),
+                None,
+                None,
+            )
+            .expect("expected the contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the contract");
+        let document_type = contract
+            .document_type_for_name("note")
+            .expect("expected the note type");
+        for (seed, created_at) in [(1u8, 1_000_000u64), (2, 1_000_000), (3, 2_000_000)] {
+            let document = Document::V0(DocumentV0 {
+                id: Identifier::from([seed; 32]),
+                owner_id: Identifier::from([32; 32]),
+                properties: BTreeMap::from([(
+                    "text".to_string(),
+                    Value::Text(format!("note {seed}")),
+                )]),
+                revision: Some(1),
+                created_at: Some(created_at),
+                ..Default::default()
+            });
+            let owner_flags = StorageFlags::new_single_epoch(0, Some([32; 32]));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                &document,
+                                Some(Cow::Owned(owner_flags)),
+                            )),
+                            owner_id: Some([32; 32]),
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo {
+                        time_ms: created_at,
+                        ..Default::default()
+                    },
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to add the document");
+        }
+        conformance_of(&drive, "expiring_documents", run);
+    }
+
     /// Runs every fixture
     pub(super) fn run_all() -> FixtureRun {
         let mut run = FixtureRun::default();
         identities(&mut run);
         contracts_with_documents(&mut run);
+        expiring_documents(&mut run);
         moderated_contract(&mut run);
         warned_contract(&mut run);
         elected_contract(&mut run);

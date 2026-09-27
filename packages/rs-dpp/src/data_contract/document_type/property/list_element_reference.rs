@@ -158,9 +158,8 @@ impl ListElementReference {
     pub fn referenced_side_error(&self, referenced: DocumentTypeRef) -> Option<String> {
         let referenced_name = referenced.name();
         let list = &self.in_list;
-        if referenced.documents_can_be_deleted()
-            || referenced.documents_can_be_deleted_by_moderators()
-        {
+        // Deleted by anyone: its owner, the moderators, or the platform when a `ttl` passes.
+        if referenced.documents_can_disappear() {
             return Some(format!(
                 "documents of \"{referenced_name}\" can be deleted: the list must be held by a \
                  document that never is"

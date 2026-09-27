@@ -1,8 +1,9 @@
 use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentDeleteMethodVersions, DriveDocumentEstimationCostsMethodVersions,
-    DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertContestedMethodVersions,
-    DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
-    DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
+    DriveDocumentExpirationMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
+    DriveDocumentInsertContestedMethodVersions, DriveDocumentInsertMethodVersions,
+    DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions,
+    DriveDocumentUpdateMethodVersions,
 };
 
 /// V4 is protocol version 14's document-method table. It hosts five
@@ -169,4 +170,12 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
         // Unchanged from V3 — see V3's comment for the v12-gated
         // count/sum composition rationale.
         primary_key_tree_type: 1,
+        expiration: DriveDocumentExpirationMethodVersions {
+            insert_documents_expirations_tree: 0,
+            add_document_expiration_operations: 0,
+            remove_document_expiration_operations: 0,
+            fetch_expired_documents: 0,
+            remove_expired_documents: 0,
+            add_estimation_costs_for_document_expiration: 0,
+        },
     };

@@ -37,6 +37,7 @@ use crate::consensus::state::data_contract::data_contract_is_readonly_error::Dat
 use crate::consensus::state::data_trigger::DataTriggerError;
 use crate::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
 use crate::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
+use crate::consensus::state::document::document_expired_error::DocumentExpiredError;
 use crate::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
 use crate::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
@@ -621,6 +622,11 @@ pub enum StateError {
     // 14).
     #[error(transparent)]
     ModerationReasonNotListedError(ModerationReasonNotListedError),
+
+    // A document whose type declares a `ttl` is changed or restored after it expired
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentExpiredError(DocumentExpiredError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1290,12 +1296,24 @@ mod tests {
             149
         );
         // A seated moderation team's action names a reason its proposal lists (protocol
-        // version 14): the tail of the enum.
+        // version 14).
         assert_eq!(
             discriminant_of(StateError::ModerationReasonNotListedError(
                 ModerationReasonNotListedError::new(group_id, identity_id, None)
             )),
             150
+        );
+        // A document changed or restored after its time to live passed (protocol version
+        // 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentExpiredError(DocumentExpiredError::new(
+                group_id,
+                "note".to_string(),
+                identity_id,
+                1_000,
+                2_000,
+            ))),
+            151
         );
     }
 }
