@@ -217,6 +217,44 @@ mod property_constraints_tests {
         })
     }
 
+    /// An `offer` type with the integers [`set_valid_offer`] fills, a `title`, a
+    /// typed array of `tags` and a byte array `signature`, and four rules on
+    /// their sizes: `shortTitle` (at most 10 characters), `titleBytes` (at most
+    /// 12 UTF-8 bytes), `tagsPerUnit` (no more tags than the quantity) and
+    /// `signatureLength` (left out, or 64 or 65 bytes).
+    fn sized_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "title": { "type": "string", "maxLength": 40, "position": 4 },
+                "tags": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": { "type": "string", "maxLength": 16 },
+                    "position": 5
+                },
+                "signature": {
+                    "type": "array",
+                    "byteArray": true,
+                    "maxItems": 65,
+                    "position": 6
+                }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "shortTitle": { "lessThanOrEqual": [{ "length": "title" }, 10] },
+                "titleBytes": { "lessThanOrEqual": [{ "byteLength": "title" }, 12] },
+                "tagsPerUnit": { "lessThanOrEqual": [{ "count": "tags" }, "quantity"] },
+                "signatureLength": { "in": [{ "count": "signature" }, [0, 64, 65]] }
+            },
+            "additionalProperties": false
+        })
+    }
+
     /// An offer that meets every rule: (100 + 10) * 2 = 220.
     fn set_valid_offer(document: &mut Document) {
         document.set("price", Value::U64(100));
@@ -1238,5 +1276,57 @@ mod property_constraints_tests {
                 if e.constraint() == "depositCoversOrder"
                     && e.violation() == PropertyConstraintViolation::NotMet
         );
+    }
+
+    /// Sizes read by real creates: a title too long in characters, one short
+    /// enough in characters but too long in bytes, more tags than the quantity
+    /// and a signature of the wrong length are each refused with the rule they
+    /// break, and an offer meeting all four is stored.
+    #[tokio::test]
+    async fn should_judge_the_sizes_of_strings_arrays_and_byte_arrays() {
+        let mut fixture = OfferFixture::with_schema(sized_offer_schema());
+        let tags = |count: usize| Value::Array(vec![Value::Text("tag".to_string()); count]);
+
+        // 12 characters
+        let result = fixture
+            .create(|document| document.set("title", Value::from("a long title")))
+            .await;
+        expect_violated(result, "shortTitle", PropertyConstraintViolation::NotMet);
+
+        // 8 characters, 16 bytes
+        let result = fixture
+            .create(|document| document.set("title", Value::from("éééééééé")))
+            .await;
+        expect_violated(result, "titleBytes", PropertyConstraintViolation::NotMet);
+
+        // 3 tags for a quantity of 2
+        let result = fixture
+            .create(|document| document.set("tags", tags(3)))
+            .await;
+        expect_violated(result, "tagsPerUnit", PropertyConstraintViolation::NotMet);
+
+        // 10 bytes
+        let result = fixture
+            .create(|document| document.set("signature", Value::Bytes(vec![7; 10])))
+            .await;
+        expect_violated(
+            result,
+            "signatureLength",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        // 4 characters in 5 bytes, 2 tags, a 64-byte signature
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("title", Value::from("Café"));
+                    document.set("tags", tags(2));
+                    document.set("signature", Value::Bytes(vec![7; 64]));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
     }
 }

@@ -1880,8 +1880,10 @@ pub(super) fn validate_encrypted_for_declarations(
 /// Reads the `propertyConstraints` keyword onto the document type and checks
 /// every property its rules read: by its value, an integer or boolean
 /// property of the type (a nested one named by its dotted path, as the
-/// flattened map names it); by its presence, a property of any type, an object included; either
-/// way one that is neither transient nor inside a transient object. A
+/// flattened map names it); by its `length` or `byteLength`, a string
+/// property; by its `count`, an array or byte array property; by its presence,
+/// a property of any type, an object included; any way one that is neither
+/// transient nor inside a transient object. A
 /// transient value is never stored, so a stored document could not be held to
 /// a rule reading one. The declaration's shape ([`parse_property_constraints`]) and these reads are
 /// checked on every parse; under full validation, the limits too: at most
@@ -1967,6 +1969,8 @@ fn apply_property_constraints_v0(
                 PropertyRead::Value => "reads",
                 PropertyRead::Presence => "tests the presence of",
                 PropertyRead::Text | PropertyRead::Identifier => "compares",
+                PropertyRead::Length => "measures",
+                PropertyRead::Count => "counts the items of",
             };
             match read {
                 PropertyRead::Value => match document_type
@@ -2045,6 +2049,59 @@ fn apply_property_constraints_v0(
                             "rule \"{name}\" compares \"{path}\" with a string, but it is not a \
                              string property of the document type (a nested one is named by its \
                              dotted path)"
+                        )));
+                    }
+                },
+                PropertyRead::Length => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    Some(DocumentPropertyType::String(_)) => {}
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" measures the length of \"{path}\", which has type {}, \
+                             not string: count gives the items of an array or byte array",
+                            other.name()
+                        )));
+                    }
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" measures the length of \"{path}\", which is not a \
+                             string property of the document type (a nested one is named by its \
+                             dotted path)"
+                        )));
+                    }
+                },
+                PropertyRead::Count => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    Some(
+                        DocumentPropertyType::TypedArray(_)
+                        | DocumentPropertyType::ByteArray(_)
+                        | DocumentPropertyType::Array(_)
+                        | DocumentPropertyType::VariableTypeArray(_),
+                    ) => {}
+                    Some(DocumentPropertyType::String(_)) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" counts the items of \"{path}\", which has type \
+                             string, not array: length or byteLength gives the size of a string"
+                        )));
+                    }
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" counts the items of \"{path}\", which has type {}, \
+                             not array or byteArray",
+                            other.name()
+                        )));
+                    }
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" counts the items of \"{path}\", which is not an array \
+                             or byte array property of the document type (a nested one is named \
+                             by its dotted path)"
                         )));
                     }
                 },

@@ -62,12 +62,13 @@ const PROPERTY_CONSTRAINTS_KEYWORD: &str = "propertyConstraints";
 /// the rule's name (its key in `propertyConstraints`), the rule exactly as the
 /// document type's schema declares it, every property it reads in declared
 /// order (`kind` is `"value"` for an integer operand, `"presence"` for
-/// `present` / `absent`, `"text"` for a string comparison and `"identifier"`
-/// for an identifier comparison; `$ownerId` is no property and is not listed),
-/// and whether it reads `$ownerId`, which makes a transfer or a purchase answer
-/// to it too. Rules are listed in name order, the order consensus checks them
-/// in. A document type declaring none gives `[]`, and so does every document
-/// type when the SDK's protocol version is below 14.
+/// `present` / `absent`, `"text"` for a string comparison, `"identifier"` for
+/// an identifier comparison, `"length"` for a `length` or `byteLength` operand
+/// and `"count"` for a `count` operand; `$ownerId` is no property and is not
+/// listed), and whether it reads `$ownerId`, which makes a transfer or a
+/// purchase answer to it too. Rules are listed in name order, the order
+/// consensus checks them in. A document type declaring none gives `[]`, and so
+/// does every document type when the SDK's protocol version is below 14.
 ///
 /// The contract is read from its platform serialization at the SDK's protocol
 /// version, as `dash_sdk_add_known_contracts` reads it, without re-validating
@@ -358,6 +359,8 @@ fn read_kind_name(read: PropertyRead) -> &'static str {
         PropertyRead::Presence => "presence",
         PropertyRead::Text => "text",
         PropertyRead::Identifier => "identifier",
+        PropertyRead::Length => "length",
+        PropertyRead::Count => "count",
     }
 }
 

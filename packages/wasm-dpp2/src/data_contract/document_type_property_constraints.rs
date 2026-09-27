@@ -2,8 +2,8 @@
 //! created or replaced document's properties to, from protocol version 14
 //! onward.
 //!
-//! A rule is a condition: a comparison of integer expressions, a membership
-//! test (`in`), a comparison of a string or an identifier property (or
+//! A rule is a condition: a comparison of integer expressions (sizes of
+//! strings and arrays included), a membership test (`in`), a comparison of a string or an identifier property (or
 //! `$ownerId`, the document's owner) with constants or with another property
 //! of its kind, a presence test (`present`, `absent`), or `anyOf`, `allOf` or
 //! `not` over conditions. Consensus evaluates every rule on each create and
@@ -38,7 +38,11 @@ const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
  * - `ifAbsent`: a property path and the integer it takes when left out;
  * - `add` and `multiply` over two or more operands, `subtract`, `divide`,
  *   `modulo` and `power` over exactly two. Arithmetic is exact over 128-bit
- *   integers; `divide` and `modulo` are Euclidean.
+ *   integers; `divide` and `modulo` are Euclidean;
+ * - `length` and `byteLength`: the characters (as `maxLength` counts them)
+ *   and the UTF-8 bytes of a string property; `count`: the items of an array
+ *   property, or the bytes of a byte array property. Each is 0 when the
+ *   document leaves the property out.
  */
 export type PropertyConstraintExpression =
   | number
@@ -50,7 +54,10 @@ export type PropertyConstraintExpression =
   | { subtract: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { divide: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { modulo: [PropertyConstraintExpression, PropertyConstraintExpression] }
-  | { power: [PropertyConstraintExpression, PropertyConstraintExpression] };
+  | { power: [PropertyConstraintExpression, PropertyConstraintExpression] }
+  | { length: string }
+  | { byteLength: string }
+  | { count: string };
 
 /**
  * One side of a comparison of strings or identifiers.
@@ -97,9 +104,16 @@ export type PropertyConstraintCondition =
 /**
  * How a rule reads a property: `value` as an integer operand, `presence` in
  * `present` or `absent`, `text` compared with strings, `identifier` compared
- * with identifiers.
+ * with identifiers, `length` by the size of a string (`length` or
+ * `byteLength`), `count` by the items of an array or byte array.
  */
-export type PropertyConstraintReadKind = 'value' | 'presence' | 'text' | 'identifier';
+export type PropertyConstraintReadKind =
+  | 'value'
+  | 'presence'
+  | 'text'
+  | 'identifier'
+  | 'length'
+  | 'count';
 
 /**
  * A single `propertyConstraints` rule of a document type.
@@ -169,6 +183,8 @@ fn read_kind_name(read: PropertyRead) -> &'static str {
         PropertyRead::Presence => "presence",
         PropertyRead::Text => "text",
         PropertyRead::Identifier => "identifier",
+        PropertyRead::Length => "length",
+        PropertyRead::Count => "count",
     }
 }
 

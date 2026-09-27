@@ -1019,6 +1019,10 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
         json!({ "rule": { "in": ["state", ["open", 2]] } }),
         json!({ "rule": { "in": ["state", ["open"]] } }),
         json!({ "rule": { "in": ["state", ["open", "open"]] } }),
+        json!({ "rule": { "lessThan": [{ "length": 5 }, 10] } }),
+        json!({ "rule": { "lessThan": [{ "count": ["counts"] }, 10] } }),
+        json!({ "rule": { "lessThan": [{ "size": "note" }, 10] } }),
+        json!({ "rule": { "lessThan": [{ "length": "note", "count": "counts" }, 10] } }),
     ] {
         let registered = parse_order(rules.clone(), true);
         assert!(
@@ -1171,4 +1175,146 @@ fn should_refuse_adding_removing_or_changing_rules_on_update() {
         .validate_update(&new, &BlockInfo::default(), platform_version)
         .expect("the update is judged");
     assert!(result.is_valid(), "{:?}", result.errors);
+}
+
+/// `length` and `byteLength` measure a string property and `count` counts the
+/// items of an array property, nested ones included, on both paths.
+#[test]
+fn should_measure_strings_and_count_arrays_on_both_paths() {
+    let rules = json!({
+        "noteFitsQuantity": {
+            "lessThanOrEqual": [{ "length": "note" }, { "multiply": ["quantity", 10] }]
+        },
+        "tagWithinBytes": { "lessThanOrEqual": [{ "byteLength": "meta.tag" }, 20] },
+        "countsPerUnit": { "lessThanOrEqual": [{ "count": "counts" }, "quantity"] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["noteFitsQuantity"].property_reads(),
+            [
+                ("note", PropertyRead::Length),
+                ("quantity", PropertyRead::Value)
+            ]
+        );
+        assert_eq!(
+            constraints["tagWithinBytes"].property_reads(),
+            [("meta.tag", PropertyRead::Length)]
+        );
+        assert_eq!(
+            constraints["countsPerUnit"].property_reads(),
+            [
+                ("counts", PropertyRead::Count),
+                ("quantity", PropertyRead::Value)
+            ]
+        );
+    }
+
+    // A byte array counts its bytes: here a signature is left out or 64 or 65
+    // bytes long
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "signature": {
+                "type": "array",
+                "byteArray": true,
+                "maxItems": 65,
+                "position": 0
+            }
+        },
+        "propertyConstraints": {
+            "signatureLength": { "in": [{ "count": "signature" }, [0, 64, 65]] }
+        },
+        "additionalProperties": false
+    });
+    for full_validation in [true, false] {
+        let document_type =
+            parse_dispatched(schema.clone(), PlatformVersion::latest(), full_validation)
+                .expect("a rule may count the bytes of a byte array");
+        assert_eq!(
+            document_type.property_constraints()["signatureLength"].property_reads(),
+            [("signature", PropertyRead::Count)]
+        );
+    }
+}
+
+/// A size reads a property of the type of its measure, stored: `length` and
+/// `byteLength` a string, `count` an array or a byte array.
+#[test]
+fn should_hold_a_size_to_the_property_it_measures() {
+    for (operand, needle) in [
+        (
+            json!({ "length": "counts" }),
+            "measures the length of \"counts\", which has type array, not string: count gives \
+             the items of an array or byte array",
+        ),
+        (
+            json!({ "byteLength": "buyerId" }),
+            "measures the length of \"buyerId\", which has type identifier, not string",
+        ),
+        (
+            json!({ "length": "meta" }),
+            "measures the length of \"meta\", which is not a string property of the document type",
+        ),
+        (
+            json!({ "byteLength": "$ownerId" }),
+            "measures the length of \"$ownerId\", which is not a string property",
+        ),
+        (
+            json!({ "count": "note" }),
+            "counts the items of \"note\", which has type string, not array: length or \
+             byteLength gives the size of a string",
+        ),
+        (
+            json!({ "count": "buyerId" }),
+            "counts the items of \"buyerId\", which has type identifier, not array or byteArray",
+        ),
+        (
+            json!({ "count": "rush" }),
+            "counts the items of \"rush\", which has type boolean, not array or byteArray",
+        ),
+        (
+            json!({ "count": "meta.missing" }),
+            "counts the items of \"meta.missing\", which is not an array or byte array property",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(
+                    json!({ "rule": { "lessThan": [operand.clone(), "price"] } }),
+                    full_validation,
+                ),
+                needle,
+            );
+        }
+    }
+
+    // A transient value is never stored, so no rule may measure one
+    for (transient, operand, path) in [
+        ("note", json!({ "length": "note" }), "note"),
+        ("meta", json!({ "byteLength": "meta.tag" }), "meta.tag"),
+        ("counts", json!({ "count": "counts" }), "counts"),
+    ] {
+        let verb = if operand.get("count").is_some() {
+            "counts the items of"
+        } else {
+            "measures"
+        };
+        let schema = order_schema(
+            Some(json!({ "rule": { "lessThan": [operand, "price"] } })),
+            Some(transient),
+        );
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_dispatched(
+                    schema_value(schema.clone()),
+                    PlatformVersion::latest(),
+                    full_validation,
+                ),
+                &format!("{verb} \"{path}\", which is transient or inside a transient object"),
+            );
+        }
+    }
 }

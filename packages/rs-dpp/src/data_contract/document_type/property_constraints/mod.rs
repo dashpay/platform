@@ -34,9 +34,13 @@
 //!
 //! An operand is an integer value, the dotted path of an integer or boolean
 //! property (a boolean reads as 1 for true and 0 for false), or an object with
-//! one key: an arithmetic operator over its operands, or `ifAbsent`, a
-//! property with the value it takes when the document leaves it out. A
-//! property named on its own takes 0 when absent. A string constant is written
+//! one key: an arithmetic operator over its operands, `ifAbsent`, a property
+//! with the value it takes when the document leaves it out, or a size:
+//! `length` and `byteLength`, the characters and the UTF-8 bytes of a string
+//! property, and `count`, the items of an array or byte array property. A
+//! property named on its own takes 0 when absent, and so does the size of one
+//! (`{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }`). A string
+//! constant is written
 //! `{ "const": "closed" }`, since a string on its own is a path; `equal` and
 //! `notEqual` compare one with a string property, or two bare paths naming
 //! string properties with each other, and an `in` whose values are strings
@@ -83,11 +87,15 @@ const NOT: &str = "not";
 const PRESENT: &str = "present";
 const ABSENT: &str = "absent";
 const IN: &str = "in";
+const LENGTH: &str = "length";
+const BYTE_LENGTH: &str = "byteLength";
+const COUNT: &str = "count";
 /// The operand key of a string constant: `{ "const": "closed" }`.
 const CONST: &str = "const";
 
 /// Every key an operand object may hold, for the errors.
-const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power or ifAbsent";
+const OPERAND_KEYS: &str =
+    "add, subtract, multiply, divide, modulo, power, ifAbsent, length, byteLength or count";
 
 /// The deepest a condition or an operand may sit in its rule: the rule's own
 /// condition at depth 0, and each operand of a comparison, and each condition
@@ -155,6 +163,39 @@ impl ConstraintComparison {
     }
 }
 
+/// What a size operand measures of the property it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SizeMeasure {
+    /// `length`: the characters of a string property, as `maxLength` counts
+    /// them.
+    Length,
+    /// `byteLength`: the UTF-8 bytes of a string property, as `maxBytes`
+    /// counts them.
+    ByteLength,
+    /// `count`: the items of an array property, or the bytes of a byte array
+    /// property, as `maxItems` counts them.
+    Count,
+}
+
+impl SizeMeasure {
+    /// The operand key declaring it.
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            SizeMeasure::Length => LENGTH,
+            SizeMeasure::ByteLength => BYTE_LENGTH,
+            SizeMeasure::Count => COUNT,
+        }
+    }
+
+    /// How an operand of this measure reads the property it names.
+    fn read(self) -> PropertyRead {
+        match self {
+            SizeMeasure::Length | SizeMeasure::ByteLength => PropertyRead::Length,
+            SizeMeasure::Count => PropertyRead::Count,
+        }
+    }
+}
+
 /// An integer expression, one side of a rule or an operand inside one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstraintExpression {
@@ -164,6 +205,10 @@ pub enum ConstraintExpression {
     /// for true, 0 for false), or `if_absent` when the document leaves it out:
     /// 0 for a path on its own, the declared value for an `ifAbsent` operand.
     Property { path: String, if_absent: i128 },
+    /// `length`, `byteLength` or `count`: the size of the property at the
+    /// dotted `path`, as `measure` counts it, or 0 when the document leaves it
+    /// out.
+    Size { measure: SizeMeasure, path: String },
     /// `add`: the sum of two or more operands.
     Add(Vec<ConstraintExpression>),
     /// `multiply`: the product of two or more operands.
@@ -192,6 +237,9 @@ impl ConstraintExpression {
     ///   fractional part as an integer, which the document could not be stored
     ///   with anyway) that fits an `i128`
     ///   ([`PropertyConstraintViolation::Overflow`] otherwise);
+    /// * a size is never a fault: a property the document leaves out, or sets
+    ///   to null, has size 0, and so does a value of another type than the
+    ///   one measured, which the schema validation reported first refuses;
     /// * `add` and `multiply` fold their operands from the left, so an overflow
     ///   on the way is a fault even when a later operand would bring the result
     ///   back in range;
@@ -208,6 +256,11 @@ impl ConstraintExpression {
             ConstraintExpression::Value(value) => Ok(*value),
             ConstraintExpression::Property { path, if_absent } => {
                 property_value(data, path, *if_absent)
+            }
+            ConstraintExpression::Size { measure, path } => {
+                // A size fits a `usize`, which always fits an `i128`
+                i128::try_from(property_size(data, path, *measure))
+                    .map_err(|_| PropertyConstraintViolation::Overflow)
             }
             ConstraintExpression::Add(operands) => {
                 operands.iter().try_fold(0i128, |sum, operand| {
@@ -260,7 +313,9 @@ impl ConstraintExpression {
     /// The nodes of the expression: this one, and those of its operands.
     pub fn node_count(&self) -> usize {
         1 + match self {
-            ConstraintExpression::Value(_) | ConstraintExpression::Property { .. } => 0,
+            ConstraintExpression::Value(_)
+            | ConstraintExpression::Property { .. }
+            | ConstraintExpression::Size { .. } => 0,
             ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
                 operands.iter().map(ConstraintExpression::node_count).sum()
             }
@@ -275,7 +330,7 @@ impl ConstraintExpression {
     fn reads_property(&self) -> bool {
         match self {
             ConstraintExpression::Value(_) => false,
-            ConstraintExpression::Property { .. } => true,
+            ConstraintExpression::Property { .. } | ConstraintExpression::Size { .. } => true,
             ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
                 operands.iter().any(ConstraintExpression::reads_property)
             }
@@ -288,12 +343,13 @@ impl ConstraintExpression {
         }
     }
 
-    /// Appends the properties the expression reads, each by its value, to
-    /// `reads`, in the order it reads them.
+    /// Appends the properties the expression reads, each by its value or its
+    /// size, to `reads`, in the order it reads them.
     fn collect_property_reads<'a>(&'a self, reads: &mut Vec<(&'a str, PropertyRead)>) {
         match self {
             ConstraintExpression::Value(_) => {}
             ConstraintExpression::Property { path, .. } => reads.push((path, PropertyRead::Value)),
+            ConstraintExpression::Size { measure, path } => reads.push((path, measure.read())),
             ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
                 for operand in operands {
                     operand.collect_property_reads(reads);
@@ -323,6 +379,10 @@ pub enum PropertyRead {
     /// By its value, compared with identifier constants: an identifier
     /// property.
     Identifier,
+    /// By its size, in a `length` or `byteLength` operand: a string property.
+    Length,
+    /// By its size, in a `count` operand: an array or byte array property.
+    Count,
 }
 
 /// What a comparison of equality compares when it is not integers: strings or
@@ -1525,6 +1585,21 @@ fn parse_expression(
             }
             ConstraintExpression::Power(Box::new(base), Box::new(exponent))
         }
+        // What the path names is checked against the parsed document type
+        LENGTH | BYTE_LENGTH | COUNT => {
+            let Some(path) = operands.as_text() else {
+                return Err(format!("at {at} must name a property path"));
+            };
+            let measure = match key {
+                LENGTH => SizeMeasure::Length,
+                BYTE_LENGTH => SizeMeasure::ByteLength,
+                _ => SizeMeasure::Count,
+            };
+            ConstraintExpression::Size {
+                measure,
+                path: path.to_string(),
+            }
+        }
         CONST => {
             at.truncate(parent);
             return Err(format!(
@@ -1650,6 +1725,27 @@ fn property_value(
             .to_integer::<i128>()
             .map_err(|_| PropertyConstraintViolation::Overflow),
         Ok(Some(_)) => Err(PropertyConstraintViolation::NotAnInteger),
+    }
+}
+
+/// The size of the property at `path` in `data`, as `measure` counts it: 0
+/// when the document leaves it out or sets it to null, and for a value of
+/// another type than `measure` reads, which the schema validation reported
+/// before the rules refuses. A byte array counts its bytes, whichever form the
+/// document gives them in.
+fn property_size(data: &Value, path: &str, measure: SizeMeasure) -> usize {
+    let Ok(Some(value)) = data.get_optional_value_at_path(path) else {
+        return 0;
+    };
+    match (measure, value) {
+        (SizeMeasure::Length, Value::Text(text)) => text.chars().count(),
+        (SizeMeasure::ByteLength, Value::Text(text)) => text.len(),
+        (SizeMeasure::Count, Value::Array(items)) => items.len(),
+        (SizeMeasure::Count, Value::Bytes(bytes)) => bytes.len(),
+        (SizeMeasure::Count, Value::Bytes20(_)) => 20,
+        (SizeMeasure::Count, Value::Bytes32(_) | Value::Identifier(_)) => 32,
+        (SizeMeasure::Count, Value::Bytes36(_)) => 36,
+        _ => 0,
     }
 }
 

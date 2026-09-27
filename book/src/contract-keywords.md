@@ -90,7 +90,7 @@ A contract's `documentSchemas` maps each document type name to its schema. Keywo
 
 | Keyword | Value | What it does | From | Update |
 |---|---|---|---|---|
-| `propertyConstraints` | object of named rules | Rules every created or replaced document must meet, where JSON Schema bounds one property at a time: comparisons and arithmetic over integer properties, string and identifier comparisons, value sets, presence tests, combined with `anyOf`, `allOf` and `not`. At most 16 rules of at most 32 nodes each. A broken rule refuses the document (`DocumentPropertyConstraintViolatedError`, 10422). See [the operators](#propertyconstraints-operators) and [Property Constraints](data-model/documents.md#property-constraints-propertyconstraints). | 14 | Fixed (10246) |
+| `propertyConstraints` | object of named rules | Rules every created or replaced document must meet, where JSON Schema bounds one property at a time: comparisons and arithmetic over integer properties and the sizes of strings and arrays, string and identifier comparisons, value sets, presence tests, combined with `anyOf`, `allOf` and `not`. At most 16 rules of at most 32 nodes each. A broken rule refuses the document (`DocumentPropertyConstraintViolatedError`, 10422). See [the operators](#propertyconstraints-operators) and [Property Constraints](data-model/documents.md#property-constraints-propertyconstraints). | 14 | Fixed (10246) |
 
 ### Costs
 
@@ -258,6 +258,8 @@ An integer expression is a number, the path of an integer or boolean property (a
 | `add`, `multiply` | `[a, b, ...]` | The sum or product of two or more operands. |
 | `subtract`, `divide`, `modulo`, `power` | `[a, b]` | The result of the operation. `divide` and `modulo` are Euclidean. |
 | `ifAbsent` | `["path", default]` | The property's value, or `default` when the document leaves it out. |
+| `length`, `byteLength` | `"path"` | The characters (as `maxLength` counts them) or UTF-8 bytes (as `maxBytes` counts them) of a string property, 0 when the document leaves it out. |
+| `count` | `"path"` | The items of an array property, or the bytes of a byte array property, 0 when the document leaves it out. |
 | `const` | `"string"` | A string or identifier constant, only as a side of `equal` or `notEqual`. |
 
 Arithmetic is exact over 128-bit integers: an overflow, a division by zero or a negative exponent breaks the rule.

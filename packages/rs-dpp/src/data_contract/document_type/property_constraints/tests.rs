@@ -1987,3 +1987,217 @@ fn should_read_a_boolean_as_one_or_zero() {
         Some(PropertyConstraintViolation::NotMet)
     );
 }
+
+// ── sizes ───────────────────────────────────────────────────────────────
+
+/// `length`, `byteLength` and `count` are operands naming a property, one node
+/// each, read by their size.
+#[test]
+fn should_parse_the_size_operands() {
+    for (key, measure, read) in [
+        ("length", SizeMeasure::Length, PropertyRead::Length),
+        ("byteLength", SizeMeasure::ByteLength, PropertyRead::Length),
+        ("count", SizeMeasure::Count, PropertyRead::Count),
+    ] {
+        let rule = parse_rule_value(platform_value!({
+            "lessThanOrEqual": [{ key: "meta.body" }, "limit"]
+        }));
+        assert_eq!(
+            rule,
+            PropertyConstraint::Compare {
+                comparison: ConstraintComparison::LessThanOrEqual,
+                left: ConstraintExpression::Size {
+                    measure,
+                    path: "meta.body".to_string(),
+                },
+                right: property("limit"),
+            },
+            "{key}"
+        );
+        assert_eq!(measure.wire_name(), key);
+        assert_eq!(rule.node_count(), 3, "{key}");
+        assert_eq!(
+            rule.property_reads(),
+            [("meta.body", read), ("limit", PropertyRead::Value)],
+            "{key}"
+        );
+    }
+
+    // A size reads a property, so it alone keeps a comparison with a literal
+    // meaningful, inside arithmetic and in an `in` too
+    let rule = parse_rule_value(platform_value!({
+        "in": [{ "add": [{ "count": "tags" }, 1] }, [1, 2, 3]]
+    }));
+    assert_eq!(rule.property_reads(), [("tags", PropertyRead::Count)]);
+    assert_eq!(rule.node_count(), 7);
+
+    // Two measures of one property are different conditions
+    let rules = parse(platform_value!({
+        "rule": {
+            "anyOf": [
+                { "lessThanOrEqual": [{ "length": "title" }, 10] },
+                { "lessThanOrEqual": [{ "byteLength": "title" }, 10] }
+            ]
+        }
+    }))
+    .expect("parses");
+    assert_eq!(rules["rule"].repeated_condition(), None);
+}
+
+#[test]
+fn should_refuse_a_malformed_size_operand() {
+    for (operand, needle) in [
+        (
+            platform_value!({ "length": 5 }),
+            "at lessThan[0].length must name a property path",
+        ),
+        (
+            platform_value!({ "byteLength": ["title"] }),
+            "at lessThan[0].byteLength must name a property path",
+        ),
+        (
+            platform_value!({ "count": { "add": ["a", 1] } }),
+            "at lessThan[0].count must name a property path",
+        ),
+        (
+            platform_value!({ "size": "title" }),
+            "names \"size\", which is not one of add, subtract, multiply, divide, modulo, \
+             power, ifAbsent, length, byteLength or count",
+        ),
+    ] {
+        expect_refusal(
+            platform_value!({ "rule": { "lessThan": [operand, 10] } }),
+            needle,
+        );
+    }
+}
+
+/// `length` counts characters, as `maxLength` does, and `byteLength` UTF-8
+/// bytes, as `maxBytes` does.
+#[test]
+fn should_measure_a_string_in_characters_and_in_bytes() {
+    for (text, characters, bytes) in [
+        ("", 0, 0),
+        ("hello", 5, 5),
+        ("héllo", 5, 6),
+        ("日本", 2, 6),
+        ("👍🏽", 2, 8),
+    ] {
+        let values = data(&[("title", Value::Text(text.to_string()))]);
+        assert_eq!(
+            evaluate(platform_value!({ "length": "title" }), &values),
+            Ok(characters),
+            "{text:?}"
+        );
+        assert_eq!(
+            evaluate(platform_value!({ "byteLength": "title" }), &values),
+            Ok(bytes),
+            "{text:?}"
+        );
+    }
+}
+
+/// `count` counts the items of an array, and the bytes of a byte array in every
+/// form a document gives one in.
+#[test]
+fn should_count_the_items_of_an_array_and_the_bytes_of_a_byte_array() {
+    for (value, items) in [
+        (Value::Array(vec![]), 0),
+        (
+            Value::Array(vec![
+                Value::Text("a".to_string()),
+                Value::Text("b".to_string()),
+                Value::Text("c".to_string()),
+            ]),
+            3,
+        ),
+        (Value::Bytes(vec![7; 10]), 10),
+        (Value::Bytes20([7; 20]), 20),
+        (Value::Bytes32([7; 32]), 32),
+        (Value::Identifier([7; 32]), 32),
+        (Value::Bytes36([7; 36]), 36),
+    ] {
+        let values = data(&[("tags", value.clone())]);
+        assert_eq!(
+            evaluate(platform_value!({ "count": "tags" }), &values),
+            Ok(items),
+            "{value:?}"
+        );
+    }
+}
+
+/// A size never faults: a property left out or set to null has size 0, and so
+/// does a value of another type, which the schema validation reported first
+/// refuses.
+#[test]
+fn should_take_a_size_of_zero_for_a_property_left_out_or_of_another_type() {
+    let values = data(&[
+        ("empty", Value::Null),
+        ("number", Value::U64(12345)),
+        ("title", Value::Text("hello".to_string())),
+        ("tags", Value::Array(vec![Value::U8(1), Value::U8(2)])),
+    ]);
+    for (expression, expected) in [
+        (platform_value!({ "length": "missing" }), 0),
+        (platform_value!({ "byteLength": "empty" }), 0),
+        (platform_value!({ "count": "meta.missing" }), 0),
+        (platform_value!({ "length": "number" }), 0),
+        (platform_value!({ "length": "tags" }), 0),
+        (platform_value!({ "count": "title" }), 0),
+        (platform_value!({ "count": "number" }), 0),
+    ] {
+        assert_eq!(
+            evaluate(expression.clone(), &values),
+            Ok(expected),
+            "{expression:?}"
+        );
+    }
+
+    // A rule over a size left out holds or not as 0 says
+    let rule = parse_rule_value(platform_value!({
+        "greaterThanOrEqual": [{ "count": "tags" }, 1]
+    }));
+    assert_eq!(
+        rule.violation(&data(&[]), None),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+}
+
+/// A size compares with other properties: here a list holds at most as many
+/// tags as its `maxTags`, and a free listing's title is short.
+#[test]
+fn should_compare_a_size_with_other_properties() {
+    let tags_within_limit = parse_rule_value(platform_value!({
+        "lessThanOrEqual": [{ "count": "tags" }, "maxTags"]
+    }));
+    let tags = |count: usize| Value::Array(vec![Value::Text("tag".to_string()); count]);
+    assert_eq!(
+        tags_within_limit.violation(&data(&[("tags", tags(2)), ("maxTags", Value::U8(3))]), None),
+        None
+    );
+    assert_eq!(
+        tags_within_limit.violation(&data(&[("tags", tags(4)), ("maxTags", Value::U8(3))]), None),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+
+    let short_title_when_free = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "greaterThan": ["fee", 0] },
+            { "lessThanOrEqual": [{ "length": "title" }, 5] }
+        ]
+    }));
+    let listing =
+        |fee: u64, title: &str| data(&[("fee", Value::U64(fee)), ("title", Value::from(title))]);
+    assert_eq!(
+        short_title_when_free.violation(&listing(0, "héllo"), None),
+        None
+    );
+    assert_eq!(
+        short_title_when_free.violation(&listing(10, "a long title"), None),
+        None
+    );
+    assert_eq!(
+        short_title_when_free.violation(&listing(0, "a long title"), None),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+}

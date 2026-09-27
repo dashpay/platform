@@ -167,6 +167,63 @@ describe('DataContract: propertyConstraints (v14)', () => {
       expect(byType.get('offer')).to.have.length(5);
     });
 
+    it('should report sizes as length and count reads, and check them', () => {
+      const rules = {
+        titleBytes: { lessThanOrEqual: [{ byteLength: 'title' }, 12] },
+        tagsWithinLimit: { lessThanOrEqual: [{ count: 'tags' }, 'maxTags'] },
+      };
+      const contract = buildContract({
+        listing: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', maxLength: 40, position: 0 },
+            tags: {
+              type: 'array',
+              maxItems: 8,
+              items: { type: 'string', maxLength: 16 },
+              position: 1,
+            },
+            maxTags: { type: 'integer', minimum: 0, maximum: 8, position: 2 },
+          },
+          additionalProperties: false,
+          propertyConstraints: rules,
+        },
+      });
+
+      expect(contract.documentTypePropertyConstraints('listing')).to.deep.equal([
+        {
+          name: 'tagsWithinLimit',
+          rule: rules.tagsWithinLimit,
+          reads: [{ path: 'tags', kind: 'count' }, { path: 'maxTags', kind: 'value' }],
+          readsOwner: false,
+        },
+        {
+          name: 'titleBytes',
+          rule: rules.titleBytes,
+          reads: [{ path: 'title', kind: 'length' }],
+          readsOwner: false,
+        },
+      ]);
+
+      const listing = (properties: Record<string, unknown>) => new wasm.Document({
+        properties,
+        documentTypeName: 'listing',
+        dataContractId: contract.id,
+        ownerId,
+        revision: BigInt(1),
+      });
+      expect(contract.checkDocumentPropertyConstraints(
+        listing({ title: 'Café', tags: ['a', 'b'], maxTags: 2 }),
+      )).to.equal(undefined);
+      expect(contract.checkDocumentPropertyConstraints(
+        listing({ title: 'Café', tags: ['a', 'b', 'c'], maxTags: 2 }),
+      )).to.deep.include({ rule: 'tagsWithinLimit', violation: 'NotMet' });
+      // 8 characters, 16 bytes
+      expect(contract.checkDocumentPropertyConstraints(
+        listing({ title: 'éééééééé' }),
+      )).to.deep.include({ rule: 'titleBytes', violation: 'NotMet' });
+    });
+
     it('should report integer literals past Number.MAX_SAFE_INTEGER exactly, as bigint', () => {
       const big = 9007199254740993n; // 2 ** 53 + 1, which a number rounds
       const rules = {
