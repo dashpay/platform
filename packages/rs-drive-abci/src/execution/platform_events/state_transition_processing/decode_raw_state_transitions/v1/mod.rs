@@ -305,15 +305,21 @@ mod tests {
             .into_iter()
             .collect();
 
+        // The range is missed from below, so the boundary reported is its start: the version the
+        // submitter has to reach. Pinning the number is what tells this side of the choice apart
+        // from the other, which reports the range's end.
         match decoded.as_slice() {
-            [DecodedStateTransition::InvalidEncoding(invalid)] => assert!(
-                matches!(
-                    &invalid.error,
-                    ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
-                ),
-                "expected StateTransitionNotActiveError, got {:?}",
-                invalid.error
-            ),
+            [DecodedStateTransition::InvalidEncoding(invalid)] => match &invalid.error {
+                ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)) => {
+                    assert_eq!(
+                        error.required_protocol_version(),
+                        9,
+                        "a batch version 1 is active from protocol version 9"
+                    );
+                    assert_eq!(error.current_protocol_version(), 1);
+                }
+                other => panic!("expected StateTransitionNotActiveError, got {other:?}"),
+            },
             other => panic!("expected one InvalidEncoding, got {other:?}"),
         }
     }
