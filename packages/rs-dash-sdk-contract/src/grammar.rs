@@ -394,6 +394,12 @@ const PERSISTENT_KEYS: &[KeySpec] = &[
         doc: "documents live only in their indexes, default false",
     },
     KeySpec {
+        name: "entry_payload",
+        value: ValueShape::StrList,
+        required: false,
+        doc: "index-only only: top-level properties stored in every entry's value instead of an index key",
+    },
+    KeySpec {
         name: "requires",
         value: ValueShape::StrList,
         required: false,
@@ -507,8 +513,8 @@ const INDEX_KEYS: &[KeySpec] = &[
     KeySpec {
         name: "fields",
         value: ValueShape::Map(MapValue::Choice(&ORDER)),
-        required: true,
-        doc: "indexed property paths in order; system properties are written as string keys",
+        required: false,
+        doc: "indexed property paths in order; system properties are written as string keys; omitted only for a flat index-only index keyed by its terminal alone",
     },
     KeySpec {
         name: "unique",
@@ -1123,6 +1129,7 @@ mod tests {
                 "average",
                 "range_average",
                 "index_only",
+                "entry_payload",
                 "requires",
                 "store",
             ],
@@ -1485,6 +1492,24 @@ mod tests {
             ],
         );
         assert_eq!(kinds(&diagnostics), ["InvalidOptionValue"]);
+    }
+
+    #[test]
+    fn should_accept_a_flat_index_with_a_terminal_and_no_fields() {
+        let diagnostics = check_keys(
+            "index",
+            &[
+                GivenOption {
+                    name: "name",
+                    value: GivenValue::Str("by_post_owner"),
+                },
+                GivenOption {
+                    name: "terminal",
+                    value: GivenValue::StrList(&["post", "$ownerId"]),
+                },
+            ],
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
     }
 
     #[test]

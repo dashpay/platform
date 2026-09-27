@@ -9,7 +9,7 @@
 //! | Identity | Grammar | Source of the rule |
 //! |---|---|---|
 //! | [`CollectionName`] | `^[a-zA-Z0-9_-]{1,64}$` | native document type name rule |
-//! | [`PropertyName`] | `^[a-zA-Z0-9_-]{1,64}$` | document meta-schema property names |
+//! | [`PropertyName`] | `^[a-zA-Z0-9_]{1,64}$` | document meta-schema property names |
 //! | [`PropertyPath`] | dotted property names, at most 256 bytes, or a system property | index property name limit |
 //! | [`IndexName`] | 1 to 32 characters | document meta-schema index name |
 //! | [`MethodName`] | `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`, at most 64 bytes | provisional SDK rule |
@@ -125,11 +125,20 @@ impl InvalidName {
     }
 }
 
-fn is_name_char(c: char) -> bool {
+fn is_collection_name_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_' || c == '-'
 }
 
-fn check_native_name(kind: NameKind, name: &str) -> Result<(), InvalidName> {
+fn is_property_name_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
+fn check_bounded_name(
+    kind: NameKind,
+    name: &str,
+    allowed: fn(char) -> bool,
+    charset: &str,
+) -> Result<(), InvalidName> {
     if name.is_empty() {
         return Err(InvalidName::new(kind, name, "must not be empty"));
     }
@@ -140,14 +149,34 @@ fn check_native_name(kind: NameKind, name: &str) -> Result<(), InvalidName> {
             format!("longer than {MAX_NAME_BYTES} bytes"),
         ));
     }
-    if !name.chars().all(is_name_char) {
+    if !name.chars().all(allowed) {
         return Err(InvalidName::new(
             kind,
             name,
-            "only ASCII letters, digits, `_` and `-` are allowed",
+            format!("only {charset} are allowed"),
         ));
     }
     Ok(())
+}
+
+/// The native document type name rule: letters, digits, `_` and `-`.
+fn check_collection_name(kind: NameKind, name: &str) -> Result<(), InvalidName> {
+    check_bounded_name(
+        kind,
+        name,
+        is_collection_name_char,
+        "ASCII letters, digits, `_` and `-`",
+    )
+}
+
+/// The document meta-schema property name rule: letters, digits and `_`.
+fn check_property_name(kind: NameKind, name: &str) -> Result<(), InvalidName> {
+    check_bounded_name(
+        kind,
+        name,
+        is_property_name_char,
+        "ASCII letters, digits and `_`",
+    )
 }
 
 fn check_lower_segment(kind: NameKind, name: &str, segment: &str) -> Result<(), InvalidName> {
@@ -251,16 +280,16 @@ name_newtype!(
     /// document type name. Grammar `^[a-zA-Z0-9_-]{1,64}$`.
     CollectionName,
     NameKind::Collection,
-    check_native_name
+    check_collection_name
 );
 
 name_newtype!(
     /// The identity of one property at one nesting level. Grammar
-    /// `^[a-zA-Z0-9_-]{1,64}$`. Together with its collection and position it
+    /// `^[a-zA-Z0-9_]{1,64}$`. Together with its collection and position it
     /// identifies a stored field.
     PropertyName,
     NameKind::Property,
-    check_native_name
+    check_property_name
 );
 
 name_newtype!(
@@ -327,7 +356,7 @@ fn check_property_path(kind: NameKind, path: &str) -> Result<(), InvalidName> {
         ));
     }
     for segment in path.split('.') {
-        check_native_name(NameKind::Property, segment).map_err(|error| {
+        check_property_name(NameKind::Property, segment).map_err(|error| {
             InvalidName::new(
                 kind,
                 path,
@@ -431,6 +460,15 @@ mod tests {
         assert!(CollectionName::new("scores.v1").is_err());
         assert!(CollectionName::new("scores v1").is_err());
         assert!(CollectionName::new("scörés").is_err());
+    }
+
+    #[test]
+    fn should_reject_hyphens_in_property_names_but_not_collection_names() {
+        assert!(CollectionName::new("first-name").is_ok());
+        assert!(PropertyName::new("first_name").is_ok());
+        assert!(PropertyName::new("first-name").is_err());
+        assert!(PropertyPath::new("profile.first-name").is_err());
+        assert!(PropertyPath::new("profile.first_name").is_ok());
     }
 
     #[test]

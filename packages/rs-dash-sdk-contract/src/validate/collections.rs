@@ -9,7 +9,7 @@ use crate::declare::{
     CollectionKind, CollectionSpec, ContractDeclaration, Countability, FieldSpec, FieldType,
     IndexSpec, IntegerWidth, RankedCount, ReferenceTarget, TypedCollectionSpec, ValueType,
 };
-use crate::identity::{CollectionName, PropertyPath};
+use crate::identity::{CollectionName, PropertyName, PropertyPath};
 use crate::manifest::{CollectionManifest, IndexManifest, TypedCollectionManifest};
 use crate::validate::diagnostic::{DeclarationPath, Diagnostic, DiagnosticKind};
 use crate::validate::merge::dedupe;
@@ -125,6 +125,35 @@ fn validate_collection(
         }
     }
     requires.sort();
+
+    let mut entry_payload: Vec<PropertyName> = Vec::new();
+    if !collection.entry_payload.is_empty() && !collection.index_only {
+        diagnostics.push(Diagnostic::new(
+            path.clone(),
+            DiagnosticKind::IndexOnlyOptionOnStoredCollection,
+        ));
+    }
+    for property in &collection.entry_payload {
+        if !has_top_level_property(&fields, property.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                path.clone(),
+                DiagnosticKind::EntryPayloadPropertyUnknown {
+                    property: property.to_string(),
+                },
+            ));
+        }
+        if entry_payload.contains(property) {
+            diagnostics.push(Diagnostic::new(
+                path.clone(),
+                DiagnosticKind::DuplicateEntryPayloadProperty {
+                    property: property.to_string(),
+                },
+            ));
+        } else {
+            entry_payload.push(property.clone());
+        }
+    }
+    entry_payload.sort();
 
     let mut token_costs = collection.token_costs.clone();
     token_costs.sort_by_key(|cost| cost.action);
@@ -244,6 +273,7 @@ fn validate_collection(
         range_sum,
         index_only: collection.index_only,
         requires,
+        entry_payload,
         token_costs,
         store: collection.store,
         fields,
@@ -564,6 +594,18 @@ fn validate_index(
 ) -> IndexManifest {
     let path = DeclarationPath::index(&collection.name, &index.name);
 
+    // A flat index is keyed by its terminal alone; without either there is
+    // nothing to key by.
+    let has_terminal = index
+        .index_only
+        .as_ref()
+        .is_some_and(|options| !options.terminal.is_empty());
+    if index.properties.is_empty() && !has_terminal {
+        diagnostics.push(Diagnostic::new(
+            path.clone(),
+            DiagnosticKind::IndexWithoutProperties,
+        ));
+    }
     for property in &index.properties {
         if !has_property_path(fields, property) {
             diagnostics.push(Diagnostic::new(

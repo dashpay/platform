@@ -519,6 +519,19 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
+    /// An index has neither properties nor a terminal: a flat index needs a
+    /// terminal to be keyed by.
+    IndexWithoutProperties,
+    /// An entry payload property is not a declared top-level field.
+    EntryPayloadPropertyUnknown {
+        /// The property.
+        property: String,
+    },
+    /// An entry payload property is listed twice.
+    DuplicateEntryPayloadProperty {
+        /// The property.
+        property: String,
+    },
 }
 
 impl DiagnosticKind {
@@ -634,6 +647,13 @@ impl DiagnosticKind {
             }
             DiagnosticKind::DuplicateTerminalComponent { .. } => {
                 ("DSC0063", "DuplicateTerminalComponent")
+            }
+            DiagnosticKind::IndexWithoutProperties => ("DSC0064", "IndexWithoutProperties"),
+            DiagnosticKind::EntryPayloadPropertyUnknown { .. } => {
+                ("DSC0065", "EntryPayloadPropertyUnknown")
+            }
+            DiagnosticKind::DuplicateEntryPayloadProperty { .. } => {
+                ("DSC0066", "DuplicateEntryPayloadProperty")
             }
         }
     }
@@ -836,6 +856,15 @@ impl fmt::Display for DiagnosticKind {
             ),
             DiagnosticKind::DuplicateTerminalComponent { property } => {
                 write!(f, "terminal component `{property}` named twice")
+            }
+            DiagnosticKind::IndexWithoutProperties => {
+                f.write_str("an index without properties needs a terminal to be keyed by")
+            }
+            DiagnosticKind::EntryPayloadPropertyUnknown { property } => {
+                write!(f, "entry payload property `{property}` is not a top-level field")
+            }
+            DiagnosticKind::DuplicateEntryPayloadProperty { property } => {
+                write!(f, "entry payload property `{property}` listed twice")
             }
         }
     }

@@ -83,6 +83,8 @@ pub struct CollectionManifest {
     pub index_only: bool,
     /// Required system properties, sorted.
     pub requires: Vec<PropertyPath>,
+    /// Index-only entry payload properties, sorted.
+    pub entry_payload: Vec<PropertyName>,
     /// Token prices, sorted by action.
     pub token_costs: Vec<TokenCostSpec>,
     /// Document store.
