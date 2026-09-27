@@ -385,6 +385,38 @@ mod property_constraints_tests {
         })
     }
 
+    /// An `offer` type with the integers [`set_valid_offer`] fills, a `url`, a
+    /// `path` and a `parentPath`, with three rules on prefixes and suffixes:
+    /// `dashDomain` (a url ends with `.dash`), `secureUrl` (a url starts with
+    /// `https://`) and `underParent` (a path starts with its parent's).
+    fn linked_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "url": { "type": "string", "maxLength": 100, "position": 4 },
+                "path": { "type": "string", "maxLength": 100, "position": 5 },
+                "parentPath": { "type": "string", "maxLength": 100, "position": 6 }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "dashDomain": {
+                    "anyOf": [{ "absent": "url" }, { "endsWith": ["url", { "const": ".dash" }] }]
+                },
+                "secureUrl": {
+                    "anyOf": [{ "absent": "url" }, { "startsWith": ["url", { "const": "https://" }] }]
+                },
+                "underParent": {
+                    "anyOf": [{ "absent": "parentPath" }, { "startsWith": ["path", "parentPath"] }]
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
     /// An offer that meets every rule: (100 + 10) * 2 = 220.
     fn set_valid_offer(document: &mut Document) {
         document.set("price", Value::U64(100));
@@ -1802,5 +1834,44 @@ mod property_constraints_tests {
             fixture.transfer(member.id()).await,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
+    }
+
+    /// `startsWith` and `endsWith` read by real creates: a url on another domain,
+    /// one without https and a path outside its parent's are each refused with
+    /// the rule they break, and an offer meeting all three is stored.
+    #[tokio::test]
+    async fn should_judge_prefixes_and_suffixes_on_create() {
+        let mut fixture = OfferFixture::with_schema(linked_offer_schema());
+
+        let result = fixture
+            .create(|document| document.set("url", Value::from("https://shop.com")))
+            .await;
+        expect_violated(result, "dashDomain", PropertyConstraintViolation::NotMet);
+
+        let result = fixture
+            .create(|document| document.set("url", Value::from("http://shop.dash")))
+            .await;
+        expect_violated(result, "secureUrl", PropertyConstraintViolation::NotMet);
+
+        let result = fixture
+            .create(|document| {
+                document.set("path", Value::from("a/c"));
+                document.set("parentPath", Value::from("a/b"));
+            })
+            .await;
+        expect_violated(result, "underParent", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("url", Value::from("https://shop.dash"));
+                    document.set("path", Value::from("a/b/c"));
+                    document.set("parentPath", Value::from("a/b"));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
     }
 }

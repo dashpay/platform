@@ -85,6 +85,8 @@ export type PropertyConstraintEqualityOperand =
  * - `in`: an integer expression and two or more distinct integers, or a
  *   string or identifier property (or `$ownerId`) and two or more distinct
  *   strings or base58 identifiers;
+ * - `startsWith` / `endsWith`: two strings, a `const` or a string property
+ *   each, the first starting or ending with the second, byte for byte;
  * - `contains`: a typed array property and the value one of its elements must
  *   equal, an integer expression, a string or an identifier operand as its
  *   elements are; an array the document leaves out holds nothing;
@@ -100,6 +102,8 @@ export type PropertyConstraintCondition =
   | { greaterThan: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { greaterThanOrEqual: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { in: [PropertyConstraintExpression, Array<number | bigint>] | [string | { ifAbsent: [path: string, value: string] }, string[]] }
+  | { startsWith: [PropertyConstraintEqualityOperand, PropertyConstraintEqualityOperand] }
+  | { endsWith: [PropertyConstraintEqualityOperand, PropertyConstraintEqualityOperand] }
   | { contains: [path: string, PropertyConstraintExpression | PropertyConstraintEqualityOperand] }
   | { present: string }
   | { absent: string }

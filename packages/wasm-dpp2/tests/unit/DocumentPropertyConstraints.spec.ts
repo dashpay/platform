@@ -323,6 +323,41 @@ describe('DataContract: propertyConstraints (v14)', () => {
         .to.deep.include({ rule: 'notUsed', violation: 'NotMet' });
     });
 
+    it('should check startsWith and endsWith byte for byte', () => {
+      const rules = {
+        secureUrl: { startsWith: ['url', { const: 'https://' }] },
+        dashDomain: { endsWith: ['url', { const: '.dash' }] },
+      };
+      const contract = buildContract({
+        link: {
+          type: 'object',
+          properties: {
+            url: { type: 'string', maxLength: 100, position: 0 },
+          },
+          required: ['url'],
+          additionalProperties: false,
+          propertyConstraints: rules,
+        },
+      });
+
+      expect(contract.documentTypePropertyConstraints('link').map((rule) => rule.reads))
+        .to.deep.equal([[{ path: 'url', kind: 'text' }], [{ path: 'url', kind: 'text' }]]);
+
+      const link = (url: string) => new wasm.Document({
+        properties: { url },
+        documentTypeName: 'link',
+        dataContractId: contract.id,
+        ownerId,
+        revision: BigInt(1),
+      });
+      expect(contract.checkDocumentPropertyConstraints(link('https://pay.dash'))).to.equal(undefined);
+      expect(contract.checkDocumentPropertyConstraints(link('https://pay.com')))
+        .to.deep.include({ rule: 'dashDomain', violation: 'NotMet' });
+      // No case folding
+      expect(contract.checkDocumentPropertyConstraints(link('HTTPS://pay.dash')))
+        .to.deep.include({ rule: 'secureUrl', violation: 'NotMet' });
+    });
+
     it('should report integer literals past Number.MAX_SAFE_INTEGER exactly, as bigint', () => {
       const big = 9007199254740993n; // 2 ** 53 + 1, which a number rounds
       const rules = {
