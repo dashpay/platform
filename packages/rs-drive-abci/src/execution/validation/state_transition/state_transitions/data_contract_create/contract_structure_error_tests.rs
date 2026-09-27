@@ -1,70 +1,26 @@
-//! A contract breaking a doctype-level aggregate rule, registered through `check_tx` and block
-//! processing.
-//!
-//! From protocol version 14 the rule is a consensus error: `check_tx` refuses the transition with
-//! it, and a block charges the owner and bumps its identity nonce. At protocol version 13 the
-//! parser reports it as an error of its own: `check_tx` fails, and a block records an internal
-//! error, which leaves the owner untouched and keeps the transition out of any block.
+//! Registering a contract whose document type breaks a structural rule of the parser, through
+//! `check_tx` and block processing.
 
-use crate::execution::check_tx::CheckTxLevel;
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::contract_structure_test_harness::{
+    assert_paid_contract_structure_error, assert_unpaid_internal_error, check_and_process,
+    resign_with_schemas, summed_u64_schema, terminal_without_index_only_schema, Outcome,
+    SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
+};
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
-use crate::platform_types::platform::PlatformRef;
-use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::test::helpers::setup::TestPlatformBuilder;
-use assert_matches::assert_matches;
-use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
-use dpp::data_contract::errors::DataContractError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::SecurityLevel;
-use dpp::platform_value::{platform_value, Value};
-use dpp::prelude::Identifier;
-use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::platform_value::Value;
 use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
-use dpp::ProtocolError;
 use platform_version::version::{PlatformVersion, ProtocolVersion};
 
-/// The fragment of the parser's message for a summed property that parses as `u64`.
-const SUMMED_U64_MESSAGE: &str = "must be an integer type whose values fit in i64";
-
-/// A document type summing `amount`, which has a `minimum` and no `maximum`, so it parses as an
-/// unsigned 64-bit integer, which a sum tree cannot hold.
-fn summed_u64_schema() -> Value {
-    platform_value!({
-        "type": "object",
-        "documentsSummable": "amount",
-        "properties": {
-            "amount": {
-                "type": "integer",
-                "minimum": 1,
-                "position": 0,
-            },
-        },
-        "required": ["amount"],
-        "additionalProperties": false,
-    })
-}
-
-struct Outcome {
-    /// The consensus errors `check_tx` refused the transition with, or its own error.
-    check_tx: Result<Vec<ConsensusError>, String>,
-    block: StateTransitionExecutionResult,
-    nonce_before: Option<u64>,
-    nonce_after: Option<u64>,
-    balance_before: Option<u64>,
-    balance_after: Option<u64>,
-}
-
+/// Registers a contract whose only document type is `item`, with `schema`.
 async fn register_contract_with_schema(
-    protocol_version: ProtocolVersion,
     schema: Value,
+    protocol_version: ProtocolVersion,
 ) -> Outcome {
     let platform_version =
         PlatformVersion::get(protocol_version).expect("expected the protocol version");
@@ -90,144 +46,59 @@ async fn register_contract_with_schema(
     )
     .await
     .expect("expected to create the contract create transition");
-
-    // The rule is enforced whenever the contract is parsed, so a contract breaking it cannot be
-    // built; the schema is swapped into the serialized contract and the transition signed again.
-    match &mut state_transition {
-        StateTransition::DataContractCreate(create) => {
-            let mut serialized_contract = create.data_contract().clone();
-            let schemas = serialized_contract.document_schemas_mut();
+    let transition_bytes = resign_with_schemas(
+        &mut state_transition,
+        |schemas| {
             schemas.clear();
             schemas.insert("item".to_string(), schema);
-            create.set_data_contract(serialized_contract);
-        }
-        _ => panic!("expected a data contract create transition"),
-    }
-    state_transition
-        .sign_external(
-            &key,
-            &signer,
-            None::<fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>>,
-        )
-        .await
-        .expect("expected to sign the transition again");
-    let transition_bytes = state_transition
-        .serialize_to_bytes()
-        .expect("expected to serialize the transition");
+        },
+        &key,
+        &signer,
+    )
+    .await;
 
-    let platform_state = platform.state.load();
-    let platform_ref = PlatformRef {
-        drive: &platform.drive,
-        state: &platform_state,
-        config: &platform.config,
-        core_rpc: &platform.core_rpc,
-    };
-    let check_tx = platform
-        .check_tx(
-            &transition_bytes,
-            CheckTxLevel::FirstTimeCheck,
-            &platform_ref,
-            platform_version,
-        )
-        .map(|result| result.errors)
-        .map_err(|error| error.to_string());
-
-    let fetch_nonce_and_balance = || {
-        (
+    let owner_id = identity.id();
+    check_and_process(
+        &platform,
+        owner_id,
+        transition_bytes,
+        |platform| {
             platform
                 .drive
-                .fetch_identity_nonce(identity.id().to_buffer(), true, None, platform_version)
-                .expect("expected to fetch the identity nonce"),
-            platform
-                .drive
-                .fetch_identity_balance(identity.id().to_buffer(), None, platform_version)
-                .expect("expected to fetch the identity balance"),
-        )
-    };
-    let (nonce_before, balance_before) = fetch_nonce_and_balance();
-
-    let transaction = platform.drive.grove.start_transaction();
-    let processing_result = platform
-        .platform
-        .process_raw_state_transitions(
-            &[transition_bytes],
-            &platform_state,
-            &BlockInfo::default(),
-            &transaction,
-            platform_version,
-            false,
-            None,
-        )
-        .expect("block processing must return a result for the transition");
-    platform
-        .drive
-        .grove
-        .commit_transaction(transaction)
-        .unwrap()
-        .expect("expected to commit the transaction");
-
-    let (nonce_after, balance_after) = fetch_nonce_and_balance();
-
-    Outcome {
-        check_tx,
-        block: processing_result
-            .execution_results()
-            .first()
-            .expect("expected one execution result")
-            .clone(),
-        nonce_before,
-        nonce_after,
-        balance_before,
-        balance_after,
-    }
+                .fetch_identity_nonce(owner_id.to_buffer(), true, None, platform_version)
+                .expect("expected to fetch the identity nonce")
+        },
+        platform_version,
+    )
 }
 
 #[tokio::test]
 async fn should_refuse_a_summed_u64_property_with_a_paid_consensus_error() {
     let outcome = register_contract_with_schema(
-        PlatformVersion::latest().protocol_version,
         summed_u64_schema(),
+        PlatformVersion::latest().protocol_version,
     )
     .await;
 
-    assert_matches!(
-        outcome.check_tx.as_deref(),
-        Ok([ConsensusError::BasicError(BasicError::ContractError(
-            DataContractError::InvalidContractStructure(message)
-        ))]) if message.contains(SUMMED_U64_MESSAGE)
-    );
-    assert_matches!(
-        &outcome.block,
-        StateTransitionExecutionResult::PaidConsensusError { error: ConsensusError::BasicError(
-            BasicError::ContractError(DataContractError::InvalidContractStructure(message))
-        ), .. } if message.contains(SUMMED_U64_MESSAGE)
-    );
     assert_eq!(outcome.nonce_before, Some(0));
-    assert_eq!(
-        outcome.nonce_after,
-        Some(1),
-        "the rejection bumps the identity nonce"
-    );
-    assert!(
-        outcome.balance_after < outcome.balance_before,
-        "the rejection is charged: {:?} -> {:?}",
-        outcome.balance_before,
-        outcome.balance_after
-    );
+    assert_paid_contract_structure_error(&outcome, SUMMED_U64_MESSAGE, 1);
+}
+
+#[tokio::test]
+async fn should_refuse_a_terminal_outside_an_index_only_type_with_a_paid_consensus_error() {
+    let outcome = register_contract_with_schema(
+        terminal_without_index_only_schema(),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await;
+
+    assert_eq!(outcome.nonce_before, Some(0));
+    assert_paid_contract_structure_error(&outcome, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE, 1);
 }
 
 #[tokio::test]
 async fn should_keep_refusing_a_summed_u64_property_unpaid_at_protocol_version_13() {
-    let outcome = register_contract_with_schema(13, summed_u64_schema()).await;
+    let outcome = register_contract_with_schema(summed_u64_schema(), 13).await;
 
-    assert_matches!(
-        &outcome.check_tx,
-        Err(message) if message.contains(SUMMED_U64_MESSAGE)
-    );
-    assert_matches!(
-        &outcome.block,
-        StateTransitionExecutionResult::InternalError(message) if message.contains(SUMMED_U64_MESSAGE)
-    );
-    assert_eq!(outcome.nonce_after, outcome.nonce_before);
-    assert_eq!(outcome.balance_after, outcome.balance_before);
+    assert_unpaid_internal_error(&outcome, SUMMED_U64_MESSAGE);
 }

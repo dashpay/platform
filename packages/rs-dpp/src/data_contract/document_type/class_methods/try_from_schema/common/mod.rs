@@ -2681,10 +2681,22 @@ pub(super) fn apply_index_only(
                 payload_property, name,
             )));
         }
-        let max_width = property
-            .property_type
-            .max_byte_size(platform_version)?
-            .unwrap_or(u16::MAX);
+        // A string whose `maxLength` puts its worst case past `u16::MAX` bytes
+        // overflows the width computation; it could never fit an entry's value.
+        let max_width = match property.property_type.max_byte_size(platform_version) {
+            Ok(max_width) => max_width.unwrap_or(u16::MAX),
+            Err(ProtocolError::Overflow(_)) => {
+                return Err(structure_error(format!(
+                    "entryPayload property \"{}\" of indexOnly document type \"{}\" may \
+                     encode to more than {} bytes, over the {}-byte cap on an entry's value",
+                    payload_property,
+                    name,
+                    u16::MAX,
+                    platform_version.system_limits.max_field_value_size,
+                )))
+            }
+            Err(error) => return Err(error),
+        };
         if max_width == u16::MAX {
             return Err(structure_error(format!(
                 "entryPayload property \"{}\" of indexOnly document type \"{}\" must be \

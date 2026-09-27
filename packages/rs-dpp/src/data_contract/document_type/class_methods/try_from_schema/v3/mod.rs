@@ -20,7 +20,9 @@
 
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
+use crate::data_contract::document_type::class_methods::{
+    consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
+};
 // Only the ranked key-length rule below names `Index`, and it is validation-only.
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 #[cfg(feature = "validation")]
@@ -171,9 +173,14 @@ fn validate_ranked_index_property_key_length(
 
     // `None` is only produced by the array and object types, which the
     // property-type check right after this one rejects outright with the
-    // error that actually explains the problem.
-    let Some(worst_case_key_length) = property_type.max_byte_size(platform_version)? else {
-        return Ok(());
+    // error that actually explains the problem. A string whose `maxLength`
+    // puts its worst case past `u16::MAX` bytes overflows the computation;
+    // it is past every ceiling, so it is refused like any key over the limit.
+    let worst_case_key_length = match property_type.max_byte_size(platform_version) {
+        Ok(Some(length)) => length,
+        Ok(None) => return Ok(()),
+        Err(ProtocolError::Overflow(_)) => u16::MAX,
+        Err(error) => return Err(error),
     };
 
     if worst_case_key_length <= limit {
@@ -248,24 +255,29 @@ const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
 const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
     common::no_ranked_index_key_length_check;
 
-/// Reports a rule broken in a stage shared with generation 2 as a consensus
-/// error, as every other rule of this generation is reported.
+/// Reports a contract this generation refuses as a consensus error.
 ///
-/// The doctype-level aggregate stages
-/// ([`common::parse_doctype_aggregate_keywords`] and
-/// [`common::apply_doctype_aggregates`]) return the rules they enforce as a
-/// bare `ProtocolError::DataContractError`. A node takes that for a failure of
+/// Some stages report a broken rule as a bare `ProtocolError::DataContractError`,
+/// or a schema value of the wrong shape as a bare `ProtocolError::ValueError`:
+/// the core parse and the doctype-level aggregate stages, which generation 3
+/// shares with generations 1 and 2. A node takes a bare error for a failure of
 /// its own: the transition carrying the contract is refused without a fee or a
 /// nonce bump, and a block carrying it is rejected. As a consensus error it is
 /// a paid rejection instead, like a contract failing any other rule.
 ///
-/// The stages themselves keep the bare error, because generation 2 still
-/// reaches them at protocol versions 12 and 13. A node running this code at
-/// those versions must judge a block exactly as a node running the release
-/// that shipped them, and that release refuses such a transition unpaid.
-fn consensus_or_protocol_shared_stage_error(error: ProtocolError) -> ProtocolError {
+/// The shared stages keep the bare errors, because generations 1 and 2 still
+/// reach them at protocol versions up to 13. A node running this code at those
+/// versions must judge a block exactly as a node running the release that
+/// shipped them, and that release refuses such a transition unpaid.
+///
+/// The mapping is applied once, to everything the generation returns, so a
+/// stage added later cannot bring the bare errors back. Every other error
+/// passes through unchanged: `CorruptedCodeExecution`, a version mismatch or an
+/// arithmetic overflow is the node failing, not the contract.
+fn consensus_or_protocol_generation_3_error(error: ProtocolError) -> ProtocolError {
     match error {
         ProtocolError::DataContractError(error) => consensus_or_protocol_data_contract_error(error),
+        ProtocolError::ValueError(error) => consensus_or_protocol_value_error(error),
         error => error,
     }
 }
@@ -327,6 +339,37 @@ fn try_from_schema_generation_3(
     validation_operations: &mut impl Extend<ProtocolValidationOperation>,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV2, ProtocolError> {
+    parse_generation_3(
+        data_contract_id,
+        data_contract_system_version,
+        contract_config_version,
+        name,
+        schema,
+        schema_defs,
+        token_configurations,
+        data_contact_config,
+        full_validation,
+        validation_operations,
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_generation_3_error)
+}
+
+/// The body of [`try_from_schema_generation_3`], which maps its bare errors.
+#[allow(clippy::too_many_arguments)]
+fn parse_generation_3(
+    data_contract_id: Identifier,
+    data_contract_system_version: u16,
+    contract_config_version: u16,
+    name: &str,
+    schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+    data_contact_config: &DataContractConfig,
+    full_validation: bool,
+    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentTypeV2, ProtocolError> {
     // Generation 3 refuses `-` in a document type name, as meta-schema v3
     // refuses it in a property name: the path syntax was written for word
     // characters, and no contract on mainnet or testnet ever used one. A
@@ -343,8 +386,7 @@ fn try_from_schema_generation_3(
     // `schema`. Each is read wherever it appears, and its shape is enforced on
     // both paths: see "Doctype-level keywords on contracts that predate them"
     // above.
-    let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)
-        .map_err(consensus_or_protocol_shared_stage_error)?;
+    let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
     let entry_payload =
         common::parse_property_name_list_keyword(&schema, name, property_names::ENTRY_PAYLOAD)?;
@@ -479,8 +521,7 @@ fn try_from_schema_generation_3(
     }
     v2.owner_reference = owner_reference;
     v2.creator_reference = creator_reference;
-    common::apply_doctype_aggregates(&mut v2, aggregates, name)
-        .map_err(consensus_or_protocol_shared_stage_error)?;
+    common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
@@ -1626,6 +1667,26 @@ mod tests {
                 msg.contains("maxLength") && msg.contains("61") && msg.contains("247"),
                 "{axis}: the error must name maxLength, the 61-character bound and the \
                  247-byte key ceiling it derives from; got {msg}"
+            );
+        }
+    }
+
+    /// A `maxLength` whose worst case overflows `u16` bytes is refused with
+    /// the same consensus error as any other key over the ceiling, not as an
+    /// internal overflow.
+    #[test]
+    fn ranked_axes_refuse_a_string_too_long_to_size_as_a_consensus_error() {
+        for extras in [
+            count_ranked_extras(),
+            sum_ranked_extras(),
+            avg_ranked_extras(),
+        ] {
+            let error = parse_bound(ranked_bound_schema(string_property(16384), extras))
+                .expect_err("16384 * 4 bytes overflows u16 and must be rejected");
+            let msg = format!("{error:?}");
+            assert!(
+                msg.starts_with("ConsensusError(BasicError(InvalidIndexedPropertyConstraintError"),
+                "the ranked key ceiling's consensus error must be raised; got {msg}"
             );
         }
     }

@@ -6,7 +6,6 @@ use super::*;
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::data_contract::errors::DataContractError;
 
 /// Parse through the real dispatcher, which picks the parser generation out
 /// of the platform version's `try_from_schema` table value (generation 2 at
@@ -46,25 +45,5 @@ pub(super) fn expect_json_schema_error<T: std::fmt::Debug>(
     }
 }
 
-/// The parser's structure errors surface as `InvalidContractStructure`
-/// wrapped as the basic `ContractError` (this module only builds with the
-/// `validation` feature): a bare `ProtocolError::DataContractError` would
-/// refuse the transition unpaid.
-pub(super) fn expect_structure_error<T: std::fmt::Debug>(
-    result: Result<T, ProtocolError>,
-    needle: &str,
-) {
-    let message = match result {
-        Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
-            ConsensusError::BasicError(BasicError::ContractError(
-                DataContractError::InvalidContractStructure(message),
-            )) => message,
-            other => panic!("expected InvalidContractStructure, got {other:?}"),
-        },
-        other => panic!("expected InvalidContractStructure, got {other:?}"),
-    };
-    assert!(
-        message.contains(needle),
-        "expected {needle:?} in the error, got: {message}"
-    );
-}
+/// The parser's structure errors, shared with the other generation 3 suites.
+pub(super) use super::immutable_tests::expect_structure_error;

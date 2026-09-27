@@ -1,14 +1,16 @@
-//! The class of error a broken doctype-level aggregate rule is reported with.
+//! The class of error a contract refused in a shared stage is reported with.
 //!
-//! The aggregate stages are shared with generation 2. Generation 3 reports
-//! every rule they enforce as a consensus error, so a transition carrying the
-//! contract is a paid rejection; generation 2 keeps the bare
-//! `ProtocolError::DataContractError` it shipped with at protocol versions 12
-//! and 13, which a node refuses unpaid.
+//! The doctype-level aggregate stages are shared with generation 2, and the
+//! core parse with generations 1 and 2. Generation 3 reports what they refuse
+//! as a consensus error, so a transition carrying the contract is a paid
+//! rejection; the earlier generations keep the bare
+//! `ProtocolError::DataContractError` or `ProtocolError::ValueError` they
+//! shipped with, which a node refuses unpaid.
 
 use super::*;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use assert_matches::assert_matches;
 use platform_value::platform_value;
 
 /// Two bounded integers to sum, one integer that parses as `u64` (a `minimum`
@@ -176,5 +178,65 @@ fn should_keep_reporting_broken_aggregate_rules_as_bare_errors_at_protocol_versi
             ),
             other => panic!("expected a bare error containing {needle:?}, got {other:?}"),
         }
+    }
+}
+
+/// Schema values of the wrong shape the core parse reads: a `position` past
+/// `u32`, read under full validation after the meta-schema admitted it, and a
+/// `tokenCost` amount that is no integer, read on the non-validating path,
+/// where no meta-schema runs first.
+fn malformed_core_values() -> Vec<(&'static str, Value, bool)> {
+    vec![
+        (
+            "a position past u32",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "amount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000,
+                        "position": 4294967296u64,
+                    },
+                },
+                "required": ["amount"],
+                "additionalProperties": false,
+            }),
+            true,
+        ),
+        (
+            "a tokenCost amount that is no integer",
+            schema_with_doctype_keys(platform_value!({
+                "tokenCost": {"create": {"tokenPosition": 0, "amount": true}},
+            })),
+            false,
+        ),
+    ]
+}
+
+#[test]
+fn should_report_a_malformed_core_value_as_a_consensus_error() {
+    for (what, schema, full_validation) in malformed_core_values() {
+        match parse_dispatched(schema, PlatformVersion::latest(), full_validation) {
+            Err(ProtocolError::ConsensusError(error)) => assert_matches!(
+                *error,
+                ConsensusError::BasicError(BasicError::ValueError(_)),
+                "{what}"
+            ),
+            other => panic!("{what}: expected a consensus value error, got {other:?}"),
+        }
+    }
+}
+
+/// The core parse is left as it shipped for generations 1 and 2.
+#[test]
+fn should_keep_reporting_a_malformed_core_value_as_a_bare_error_at_protocol_version_13() {
+    let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+    for (what, schema, full_validation) in malformed_core_values() {
+        assert_matches!(
+            parse_dispatched(schema, platform_version, full_validation),
+            Err(ProtocolError::ValueError(_)),
+            "{what}"
+        );
     }
 }

@@ -19,11 +19,11 @@
 //! smuggling path — and the happy path is additionally exercised under full
 //! validation to pin the meta-schema admission.
 
+use super::immutable_tests::expect_structure_error;
 use super::*;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::errors::DataContractError;
 use platform_value::platform_value;
 
 /// Parse through this generation with validation mode spelled out.
@@ -152,35 +152,6 @@ fn likes_schema_with_index_key(index_position: usize, key: &str, value: Value) -
         .set_value(key, value)
         .expect("index key applies");
     schema
-}
-
-/// The constraint matrix reports through `InvalidContractStructure`, as a
-/// consensus error whenever the `validation` feature is on: a bare
-/// `ProtocolError::DataContractError` would refuse the transition unpaid.
-fn expect_structure_error(result: Result<DocumentTypeV2, ProtocolError>, needle: &str) {
-    let message = match result {
-        #[cfg(feature = "validation")]
-        Err(ProtocolError::ConsensusError(error)) => match *error {
-            ConsensusError::BasicError(BasicError::ContractError(
-                DataContractError::InvalidContractStructure(message),
-            )) => message,
-            other => {
-                panic!("expected InvalidContractStructure containing {needle:?}, got {other}")
-            }
-        },
-        #[cfg(not(feature = "validation"))]
-        Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-            message,
-        ))) => message,
-        Err(other) => {
-            panic!("expected InvalidContractStructure containing {needle:?}, got {other}")
-        }
-        Ok(_) => panic!("expected rejection containing {needle:?}, but the schema parsed"),
-    };
-    assert!(
-        message.contains(needle),
-        "expected structure error containing {needle:?}, got: {message}"
-    );
 }
 
 /// The terminal shares the prefix positions' shape checks, which report
@@ -1458,6 +1429,29 @@ fn rejects_an_unbounded_entry_payload_property() {
         parse_with(schema, PlatformVersion::latest(), false),
         "must be bounded",
     );
+}
+
+/// A string whose `maxLength` puts its worst case past `u16::MAX` bytes
+/// overflows the width computation, which is a refused contract rather than
+/// an internal error.
+#[test]
+fn rejects_an_entry_payload_string_wider_than_the_width_computation() {
+    let mut schema = login_response_schema();
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .set_value(
+            "encryptedPayload",
+            platform_value!({ "type": "string", "maxLength": 16384, "position": 2 }),
+        )
+        .expect("property applies");
+    for full_validation in [false, true] {
+        expect_structure_error(
+            parse_with(schema.clone(), PlatformVersion::latest(), full_validation),
+            "may encode to more than 65535 bytes",
+        );
+    }
 }
 
 #[test]
