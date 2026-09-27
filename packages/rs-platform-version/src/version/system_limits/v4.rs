@@ -81,7 +81,9 @@ use crate::version::system_limits::SystemLimits;
 ///   description cap is the charter schema's own `maxBytes`, not a limit here.
 /// * Contested documents (protocol version 14): a contest accepts at most 1,000 contenders
 ///   (`max_contenders_per_contest`, backfilled into the earlier tables, whose validation never
-///   reads it). The end of a poll tallies and cleans up every contender in one block.
+///   reads it). The end of a poll within the cap tallies and cleans up every contender in one
+///   block; the end of one that grew past 10,000 before version 14, its first 10,000
+///   (`maximum_contenders_to_consider`).
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
