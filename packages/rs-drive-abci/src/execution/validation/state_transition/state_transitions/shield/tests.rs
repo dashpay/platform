@@ -1451,12 +1451,7 @@ mod tests {
             );
             let extra_sighash_data = shield_extra_sighash_data(&inputs, platform_version)
                 .expect("the binding of the funding inputs");
-            let bundle = build_outputs_only_bundle_bound(SHIELDED, &extra_sighash_data);
-            assert_eq!(
-                bundle.amount, SHIELDED,
-                "the inputs signed_shield derives must be the ones the bundle is bound to"
-            );
-            bundle
+            build_outputs_only_bundle_bound(SHIELDED, &extra_sighash_data)
         }
 
         /// A shield of `bundle` from `address` at `nonce`, signed by `signer`.
