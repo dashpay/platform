@@ -542,6 +542,71 @@ mod tests {
             }
         }
 
+        /// The two fixtures are written by hand, so a transition kind absent from both is invisible
+        /// to the tests that consume them — which is how a kind can lose its `is_allowed` phase
+        /// with every test still green. The match below is exhaustive, so a new kind stops
+        /// compiling here until its expected answer is stated, and the fixtures are then held to
+        /// that answer for every kind they carry.
+        ///
+        /// The shielded and token kinds have no fixture entry: their `V0` bodies carry bundles,
+        /// proofs and signatures and implement no `Default`. What the gate does for them is pinned
+        /// by the block-level tests instead; what this test adds is that they cannot be forgotten.
+        #[test]
+        fn every_transition_kind_states_whether_it_has_an_is_allowed_phase() {
+            fn expected(st: &StateTransition) -> Option<bool> {
+                match st {
+                    StateTransition::Batch(_)
+                    | StateTransition::IdentityTopUpFromAddresses(_)
+                    | StateTransition::IdentityCreateFromAddresses(_)
+                    | StateTransition::AddressFundsTransfer(_)
+                    | StateTransition::IdentityCreditTransferToAddresses(_)
+                    | StateTransition::AddressFundingFromAssetLock(_)
+                    | StateTransition::AddressCreditWithdrawal(_)
+                    | StateTransition::Shield(_)
+                    | StateTransition::ShieldedTransfer(_)
+                    | StateTransition::Unshield(_)
+                    | StateTransition::ShieldFromAssetLock(_)
+                    | StateTransition::ShieldedWithdrawal(_)
+                    | StateTransition::IdentityCreateFromShieldedPool(_)
+                    | StateTransition::ShieldFromIdentity(_)
+                    | StateTransition::IdentityTopUpFromShieldedPool(_)
+                    | StateTransition::IdentityKeyLimitsUpdate(_)
+                    | StateTransition::ContractUserModeration(_)
+                    | StateTransition::ContractFeeClaim(_)
+                    | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+                    | StateTransition::TokenUnshieldWithShieldedFee(_)
+                    | StateTransition::TokenPurchaseFromShieldedPool(_) => Some(true),
+                    StateTransition::IdentityCreate(_)
+                    | StateTransition::IdentityTopUp(_)
+                    | StateTransition::IdentityCreditWithdrawal(_)
+                    | StateTransition::IdentityUpdate(_)
+                    | StateTransition::IdentityCreditTransfer(_)
+                    | StateTransition::MasternodeVote(_) => Some(false),
+                    // These two answer from the contract they carry, not from their kind: a token
+                    // configuration format the protocol version does not admit needs the check.
+                    StateTransition::DataContractCreate(_)
+                    | StateTransition::DataContractUpdate(_) => None,
+                }
+            }
+
+            for st in transitions_requiring_allowed_validation() {
+                assert_ne!(
+                    expected(&st),
+                    Some(false),
+                    "a kind in the requiring fixture is stated as needing no check: {:?}",
+                    std::mem::discriminant(&st)
+                );
+            }
+            for st in transitions_not_requiring_allowed_validation() {
+                assert_ne!(
+                    expected(&st),
+                    Some(true),
+                    "a kind in the not-requiring fixture is stated as needing the check: {:?}",
+                    std::mem::discriminant(&st)
+                );
+            }
+        }
+
         #[test]
         fn should_return_false_for_transitions_not_requiring_allowed_check() {
             for st in transitions_not_requiring_allowed_validation() {
