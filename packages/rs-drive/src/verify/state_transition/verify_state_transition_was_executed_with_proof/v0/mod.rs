@@ -635,15 +635,19 @@ impl Drive {
                             platform_version,
                         )?;
 
-                        let token_history_document_type =
-                            token_transition.historical_document_type(&token_history_contract)?;
-
                         let token_config = contract.expected_token_configuration(
                             token_transition.base().token_contract_position(),
                         )?;
                         let keeps_historical_document = token_config.keeps_history();
 
                         let historical_query = || {
+                            // Resolved here rather than above because the kinds that write into a
+                            // shielded pool keep no history and have no document type in the
+                            // history contract. Only a kind that reaches this closure has one, so
+                            // looking it up any earlier fails for every pool transition, whatever
+                            // the token's history settings say.
+                            let token_history_document_type = token_transition
+                                .historical_document_type(&token_history_contract)?;
                             let query = SingleDocumentDriveQuery {
                                 contract_id: token_history_contract.id().into_buffer(),
                                 document_type_name: token_history_document_type_name,
@@ -1118,7 +1122,7 @@ impl Drive {
                                         proof,
                                         token_id.into_buffer(),
                                         owner_id.into_buffer(),
-                                        false,
+                                        carries_owner_balance,
                                         platform_version,
                                     )?
                                 else {
@@ -1134,7 +1138,7 @@ impl Drive {
                                         proof,
                                         token_id.into_buffer(),
                                         recipient_id.into_buffer(),
-                                        false,
+                                        carries_owner_balance,
                                         platform_version,
                                     )?
                                 else {
@@ -1156,7 +1160,7 @@ impl Drive {
                                         proof,
                                         token_id.into_buffer(),
                                         &nullifiers,
-                                        false,
+                                        carries_owner_balance,
                                         platform_version,
                                     )?;
                                 if statuses.len() != nullifiers.len()
@@ -1175,7 +1179,7 @@ impl Drive {
                                     Drive::verify_token_shielded_pool_state(
                                         proof,
                                         token_id.into_buffer(),
-                                        false,
+                                        carries_owner_balance,
                                         platform_version,
                                     )?
                                 else {
@@ -1199,7 +1203,7 @@ impl Drive {
                                         proof,
                                         token_id.into_buffer(),
                                         &nullifiers,
-                                        false,
+                                        carries_owner_balance,
                                         platform_version,
                                     )?;
                                 if statuses.len() != nullifiers.len()

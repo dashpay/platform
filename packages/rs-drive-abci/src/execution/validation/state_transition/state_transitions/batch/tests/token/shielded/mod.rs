@@ -35,11 +35,13 @@ mod token_shielded_pool_tests {
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use dpp::version::feature_initial_protocol_versions::TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
     use drive::drive::shielded::paths::token_shielded_pool_anchors_path_vec;
+    use drive::drive::Drive;
     use drive::grovedb::Element;
     use grovedb_commitment_tree::{
         Anchor, Authorized, Builder, Bundle, BundleType, ClientMemoryCommitmentTree, DashMemo,
@@ -48,6 +50,7 @@ mod token_shielded_pool_tests {
         SpendingKey,
     };
     use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
 
     /// The basic token fixture mints this much to the contract owner.
     pub(super) const OWNER_INITIAL_BALANCE: u64 = 100_000;
@@ -396,6 +399,97 @@ mod token_shielded_pool_tests {
             .with_latest_protocol_version()
             .build_with_mock_rpc()
             .set_genesis_state()
+    }
+
+    /// Proving a pool write and verifying that proof is how a wallet learns what the write left
+    /// behind, and no kind that writes into a pool had a test for it. Both halves of the path were
+    /// broken and nothing said so: the verifier asked the token history contract for a document
+    /// type these kinds do not have, and it read the proof strictly although the prover merges the
+    /// owner's balance into any batch's proof from protocol version 14.
+    #[tokio::test]
+    async fn should_prove_and_verify_a_token_shield() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9101);
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let shield_bundle = build_shield_bundle(
+            SHIELD_AMOUNT,
+            11,
+            TokenTransitionActionType::Shield,
+            token_id,
+            identity.id(),
+        );
+        let shield = BatchTransition::new_token_shield_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            SHIELD_AMOUNT,
+            shield_bundle,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+
+        let result = process(&platform, &shield);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        let proof = platform
+            .drive
+            .prove_state_transition(&shield, None, platform_version)
+            .expect("prove the shield")
+            .into_data()
+            .expect("proof bytes rather than an error");
+
+        let known_contracts: BTreeMap<Identifier, DataContract> =
+            BTreeMap::from([(contract.id(), contract.clone())]);
+        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &shield,
+            &BlockInfo::default(),
+            &proof,
+            &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
+            platform_version,
+        )
+        .expect("verify the shield proof");
+
+        assert_ne!(root_hash, [0u8; 32], "the verified proof must carry a root");
+
+        // A shield's proof is an affected-state snapshot, not a proof that this transition ran:
+        // the pool write it leaves behind is not attributable to one transition. What it must
+        // carry is the owner's token balance after the write, and the owner's credit balance
+        // beside it — the prover merges that second query into any batch's proof from protocol
+        // version 14, so a verifier reading the proof strictly finds neither.
+        assert_matches!(
+            outcome.result(),
+            StateTransitionProofResult::VerifiedTokenBalance(owner, _)
+                if *owner == identity.id(),
+            "the proof must carry the shielding identity's token balance"
+        );
+        assert!(
+            outcome.owner_balance().is_some(),
+            "the owner's credit balance rides along in the same proof, got {:?}",
+            outcome.owner_balance()
+        );
     }
 
     #[tokio::test]
