@@ -255,9 +255,9 @@ impl DocumentMaxBytesErrorCodeWasm {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentPropertyConstraintErrorCodeWasm {
     /// The written document breaks a rule of its document type's
-    /// `propertyConstraints`: the rule (a comparison, or an `anyOf`, `allOf` or
-    /// `not` of them) does not hold, or evaluating it overflowed, divided by
-    /// zero, raised to a negative power or read a value that is not an integer.
+    /// `propertyConstraints`: the rule does not hold, or evaluating it
+    /// overflowed, divided by zero, raised to a negative power or read a value
+    /// that is not an integer.
     DocumentPropertyConstraintViolated = 10422,
 }
 

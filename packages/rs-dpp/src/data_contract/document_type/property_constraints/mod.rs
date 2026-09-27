@@ -1,7 +1,8 @@
 //! The doctype-level `propertyConstraints` keyword (meta-schema v3, protocol
 //! version 14): named rules every document of the type must meet, each a
-//! condition on the document's integer properties: a comparison of two integer
-//! expressions, or `anyOf`, `allOf` or `not` over conditions.
+//! condition on the document's properties: a comparison of two integer
+//! expressions, a test of whether the document holds a property (`present`,
+//! `absent`), or `anyOf`, `allOf` or `not` over conditions.
 //!
 //! ```json
 //! "propertyConstraints": {
@@ -17,6 +18,9 @@
 //!   },
 //!   "feeWaivedOrAtLeastTen": {
 //!     "anyOf": [{ "equal": ["fee", 0] }, { "greaterThanOrEqual": ["fee", 10] }]
+//!   },
+//!   "discountGivenAboveZero": {
+//!     "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
 //!   }
 //! }
 //! ```
@@ -59,6 +63,8 @@ const POWER: &str = "power";
 const ANY_OF: &str = "anyOf";
 const ALL_OF: &str = "allOf";
 const NOT: &str = "not";
+const PRESENT: &str = "present";
+const ABSENT: &str = "absent";
 
 /// Every key an operand object may hold, for the errors.
 const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power or ifAbsent";
@@ -261,30 +267,41 @@ impl ConstraintExpression {
         }
     }
 
-    /// Appends the dotted paths of the properties the expression reads to
-    /// `paths`, in the order it reads them.
-    fn collect_property_paths<'a>(&'a self, paths: &mut Vec<&'a str>) {
+    /// Appends the properties the expression reads, each by its value, to
+    /// `reads`, in the order it reads them.
+    fn collect_property_reads<'a>(&'a self, reads: &mut Vec<(&'a str, PropertyRead)>) {
         match self {
             ConstraintExpression::Value(_) => {}
-            ConstraintExpression::Property { path, .. } => paths.push(path),
+            ConstraintExpression::Property { path, .. } => reads.push((path, PropertyRead::Value)),
             ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
                 for operand in operands {
-                    operand.collect_property_paths(paths);
+                    operand.collect_property_reads(reads);
                 }
             }
             ConstraintExpression::Subtract(left, right)
             | ConstraintExpression::Divide(left, right)
             | ConstraintExpression::Modulo(left, right)
             | ConstraintExpression::Power(left, right) => {
-                left.collect_property_paths(paths);
-                right.collect_property_paths(paths);
+                left.collect_property_reads(reads);
+                right.collect_property_reads(reads);
             }
         }
     }
 }
 
+/// How a rule reads a property, which decides the properties it may name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PropertyRead {
+    /// By its value, as an operand: an integer property.
+    Value,
+    /// Only whether the document holds it, in a `present` or `absent`: a
+    /// property of any type, an object included.
+    Presence,
+}
+
 /// A rule of `propertyConstraints`, or a condition inside one: a comparison of
-/// two integer expressions, or `anyOf`, `allOf` or `not` over conditions.
+/// two integer expressions, a test of whether the document holds a property,
+/// or `anyOf`, `allOf` or `not` over conditions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PropertyConstraint {
     /// A comparison: the two sides must compare as `comparison` says.
@@ -293,6 +310,13 @@ pub enum PropertyConstraint {
         left: ConstraintExpression,
         right: ConstraintExpression,
     },
+    /// `present`: the document holds the property at the dotted path. One it
+    /// leaves out, or sets to null, is absent, as it is for an operand. Unlike
+    /// an operand, it tells a property left out from one set to 0, and it may
+    /// name a property of any type.
+    Present(String),
+    /// `absent`: the document leaves the property at the dotted path out.
+    Absent(String),
     /// `anyOf`: at least one of two or more conditions holds.
     AnyOf(Vec<PropertyConstraint>),
     /// `allOf`: every one of two or more conditions holds.
@@ -307,10 +331,11 @@ impl PropertyConstraint {
     /// Evaluated left to right, and no further than the outcome needs: a
     /// comparison evaluates its left side, then its right one; `anyOf` checks
     /// its conditions in declared order and holds at the first that holds;
-    /// `allOf` fails at the first that fails; `not` inverts its condition. The
-    /// first fault an evaluated expression meets ([`ConstraintExpression::evaluate`])
-    /// is returned whatever the conditions left unevaluated would say, and `not`
-    /// never turns a fault into a pass. So an earlier condition guards a later
+    /// `allOf` fails at the first that fails; `not` inverts its condition; a
+    /// `present` or `absent` never faults. The first fault an evaluated
+    /// expression meets ([`ConstraintExpression::evaluate`]) is returned
+    /// whatever the conditions left unevaluated would say, and `not` never
+    /// turns a fault into a pass. So an earlier condition guards a later
     /// one: `anyOf: [{ equal: ["b", 0] }, { equal: [{ divide: ["a", "b"] }, 2] }]`
     /// holds for a `b` of 0 without dividing by it, while the same two
     /// conditions the other way round divide by zero.
@@ -324,6 +349,8 @@ impl PropertyConstraint {
                 let (left, right) = (left.evaluate(data)?, right.evaluate(data)?);
                 Ok(comparison.holds(left, right))
             }
+            PropertyConstraint::Present(path) => Ok(is_present(data, path)),
+            PropertyConstraint::Absent(path) => Ok(!is_present(data, path)),
             PropertyConstraint::AnyOf(conditions) => {
                 for condition in conditions {
                     if condition.holds(data)? {
@@ -357,13 +384,15 @@ impl PropertyConstraint {
 
     /// The nodes of the rule, counted against
     /// `SystemLimits::max_property_constraint_nodes`: every comparison and
-    /// logical operator, every arithmetic operator and every operand (an
-    /// integer value, or a property with or without `ifAbsent`).
+    /// logical operator, every `present` or `absent` with the property it
+    /// names, every arithmetic operator and every operand (an integer value, or
+    /// a property with or without `ifAbsent`).
     pub fn node_count(&self) -> usize {
         1 + match self {
             PropertyConstraint::Compare { left, right, .. } => {
                 left.node_count() + right.node_count()
             }
+            PropertyConstraint::Present(_) | PropertyConstraint::Absent(_) => 0,
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
                 conditions.iter().map(PropertyConstraint::node_count).sum()
             }
@@ -374,9 +403,18 @@ impl PropertyConstraint {
     /// The dotted paths of the properties the rule reads, in declared order, a
     /// path read twice listed twice.
     pub fn property_paths(&self) -> Vec<&str> {
-        let mut paths = Vec::new();
-        self.collect_property_paths(&mut paths);
-        paths
+        self.property_reads()
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect()
+    }
+
+    /// The properties the rule reads, each with how it reads it, in declared
+    /// order, a property read twice listed twice.
+    pub fn property_reads(&self) -> Vec<(&str, PropertyRead)> {
+        let mut reads = Vec::new();
+        self.collect_property_reads(&mut reads);
+        reads
     }
 
     /// Where an `anyOf` or `allOf` of the rule lists the same condition twice:
@@ -395,7 +433,9 @@ impl PropertyConstraint {
     /// when it returns `None`.
     fn find_repeated_condition(&self, at: &mut String) -> Option<(String, String)> {
         let (key, conditions) = match self {
-            PropertyConstraint::Compare { .. } => return None,
+            PropertyConstraint::Compare { .. }
+            | PropertyConstraint::Present(_)
+            | PropertyConstraint::Absent(_) => return None,
             PropertyConstraint::AnyOf(conditions) => (ANY_OF, conditions),
             PropertyConstraint::AllOf(conditions) => (ALL_OF, conditions),
             PropertyConstraint::Not(condition) => {
@@ -425,18 +465,21 @@ impl PropertyConstraint {
         None
     }
 
-    fn collect_property_paths<'a>(&'a self, paths: &mut Vec<&'a str>) {
+    fn collect_property_reads<'a>(&'a self, reads: &mut Vec<(&'a str, PropertyRead)>) {
         match self {
             PropertyConstraint::Compare { left, right, .. } => {
-                left.collect_property_paths(paths);
-                right.collect_property_paths(paths);
+                left.collect_property_reads(reads);
+                right.collect_property_reads(reads);
+            }
+            PropertyConstraint::Present(path) | PropertyConstraint::Absent(path) => {
+                reads.push((path, PropertyRead::Presence))
             }
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
                 for condition in conditions {
-                    condition.collect_property_paths(paths);
+                    condition.collect_property_reads(reads);
                 }
             }
-            PropertyConstraint::Not(condition) => condition.collect_property_paths(paths),
+            PropertyConstraint::Not(condition) => condition.collect_property_reads(reads),
         }
     }
 }
@@ -448,8 +491,8 @@ impl PropertyConstraint {
 /// The rules of the declaration's shape are checked here, on every parse: an
 /// object of one or more rules, each named with 1 to 64 letters, digits or
 /// underscores and holding one condition. A condition is an object with one
-/// key: a comparison of exactly two operands, `anyOf` or `allOf` with two or
-/// more conditions, none of them directly the same operator (it says what one
+/// key: a comparison of exactly two operands, `present` or `absent` with a
+/// property path, `anyOf` or `allOf` with two or more conditions, none of them directly the same operator (it says what one
 /// flat list says), or `not` with one condition that is not directly another
 /// `not`. An operand is an integer value, a property path, or
 /// an object with one key: `ifAbsent` with a path and an integer value, `add`
@@ -534,7 +577,7 @@ fn single_entry(value: &Value) -> Option<(&str, &Value)> {
 /// Every key a condition object may hold, for the errors.
 fn condition_keys() -> String {
     format!(
-        "a comparison ({}), anyOf, allOf or not",
+        "a comparison ({}), present, absent, anyOf, allOf or not",
         ConstraintComparison::ALL
             .map(ConstraintComparison::wire_name)
             .join(", ")
@@ -564,7 +607,8 @@ fn enter(at: &mut String, key: &str) -> usize {
 
 /// A condition at `at` (`anyOf[1]`, empty for the rule's own), where the
 /// errors place it, `depth` levels into its rule: an object whose one key is a
-/// comparison listing its two sides, or `anyOf`, `allOf` or `not`. The error is
+/// comparison listing its two sides, `present` or `absent` naming a property,
+/// or `anyOf`, `allOf` or `not`. The error is
 /// the rest of a message naming the rule. `at` is extended for what the
 /// condition holds and trimmed back before a successful return.
 fn parse_condition(
@@ -597,6 +641,17 @@ fn parse_condition(
                 ));
             }
             PropertyConstraint::Not(Box::new(parse_condition(body, at, depth + 1)?))
+        }
+        // What the path names is checked against the parsed document type
+        PRESENT | ABSENT => {
+            let Some(path) = body.as_text() else {
+                return Err(format!("at {at} must name a property path"));
+            };
+            if key == PRESENT {
+                PropertyConstraint::Present(path.to_string())
+            } else {
+                PropertyConstraint::Absent(path.to_string())
+            }
         }
         _ => {
             let Some(comparison) = ConstraintComparison::ALL
@@ -816,6 +871,15 @@ fn integer_value(value: &Value, at: &str) -> Result<i128, String> {
             value.non_qualified_string_representation()
         )
     })
+}
+
+/// Whether `data` holds the property at `path`: absent exactly where
+/// [`property_value`] would take the `if_absent` value.
+fn is_present(data: &Value, path: &str) -> bool {
+    matches!(
+        data.get_optional_value_at_path(path),
+        Ok(Some(value)) if !matches!(value, Value::Null)
+    )
 }
 
 /// The value of the property at `path` in `data`, or `if_absent` when the

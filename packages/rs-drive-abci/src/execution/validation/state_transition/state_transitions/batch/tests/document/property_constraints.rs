@@ -1,7 +1,7 @@
 //! End-to-end coverage for the `propertyConstraints` doctype keyword (protocol
 //! version 14): a document type names rules its documents' integer properties
-//! must meet, each a comparison of two integer expressions or an `anyOf`,
-//! `allOf` or `not` of such conditions. A create or replace
+//! must meet, each a comparison of two integer expressions, a `present` or
+//! `absent` test, or an `anyOf`, `allOf` or `not` of such conditions. A create or replace
 //! that breaks one is consensus-rejected with
 //! `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the rule
 //! and why, and leaves the stored document untouched. A property the document
@@ -38,6 +38,7 @@ mod property_constraints_tests {
     /// * `boostPower`: `ifAbsent(boost, 1) ^ 20 >= 1`, which overflows for a large boost
     /// * `depositCoversOrder`: `(price + fee) * quantity <= deposit`
     /// * `discountBelowPrice`: `discount < price`, an absent discount counting as 0
+    /// * `discountGivenAboveZero`: `discount` is absent or above 0
     /// * `feeWaivedOnlyWithDiscount`: `!(fee == 0 && discount == 0)`
     /// * `feeWaivedOrAtLeastTen`: `fee == 0 || fee >= 10`
     /// * `perUnitDeposit`: `deposit / quantity >= 1`, which divides by zero for no quantity
@@ -71,6 +72,9 @@ mod property_constraints_tests {
                     ]
                 },
                 "discountBelowPrice": { "lessThan": ["discount", "price"] },
+                "discountGivenAboveZero": {
+                    "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
+                },
                 "feeWaivedOnlyWithDiscount": {
                     "not": { "allOf": [{ "equal": ["fee", 0] }, { "equal": ["discount", 0] }] }
                 },
@@ -484,6 +488,36 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// A discount may be left out, but one the offer gives must be above 0: only
+    /// a presence test tells the two apart, since an operand reads a discount left
+    /// out as 0.
+    #[tokio::test]
+    async fn should_tell_a_property_left_out_from_one_set_to_zero() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| document.set("discount", Value::U64(0)))
+            .await;
+        expect_violated(
+            result,
+            "discountGivenAboveZero",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture.create(|_| {}).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture
+                .create(|document| document.set("discount", Value::U64(10)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
     }
 
     #[tokio::test]

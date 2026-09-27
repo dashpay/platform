@@ -1,7 +1,9 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
-use crate::data_contract::document_type::property_constraints::parse_property_constraints;
+use crate::data_contract::document_type::property_constraints::{
+    parse_property_constraints, PropertyRead,
+};
 use crate::data_contract::document_type::reference_lookup::{
     MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
 };
@@ -1870,11 +1872,12 @@ pub(super) fn validate_encrypted_for_declarations(
 }
 
 /// Reads the `propertyConstraints` keyword onto the document type and checks
-/// every property its rules read: an integer property of the type (a nested
-/// one named by its dotted path, as the flattened map names it) that is
-/// neither transient nor inside a transient object. A transient value is never
-/// stored, so a stored document could not be held to a rule reading one. The
-/// declaration's shape ([`parse_property_constraints`]) and these reads are
+/// every property its rules read: by its value, an integer property of the
+/// type (a nested one named by its dotted path, as the flattened map names
+/// it); by its presence, a property of any type, an object included; either
+/// way one that is neither transient nor inside a transient object. A
+/// transient value is never stored, so a stored document could not be held to
+/// a rule reading one. The declaration's shape ([`parse_property_constraints`]) and these reads are
 /// checked on every parse; under full validation, the limits too: at most
 /// `SystemLimits::max_property_constraints` rules, each of at most
 /// `max_property_constraint_nodes` nodes, and no `anyOf` or `allOf` listing
@@ -1912,6 +1915,23 @@ pub(super) fn apply_property_constraints(
     }
 }
 
+/// The property at the dotted `path` of `properties`, an object or a member of
+/// one included, `None` when the path names none.
+fn property_at_path<'a>(
+    properties: &'a IndexMap<String, DocumentProperty>,
+    path: &str,
+) -> Option<&'a DocumentProperty> {
+    let mut segments = path.split('.');
+    let mut property = properties.get(segments.next()?)?;
+    for segment in segments {
+        let DocumentPropertyType::Object(members) = &property.property_type else {
+            return None;
+        };
+        property = members.get(segment)?;
+    }
+    Some(property)
+}
+
 fn apply_property_constraints_v0(
     document_type: &mut DocumentTypeV2,
     document_type_name: &str,
@@ -1926,38 +1946,53 @@ fn apply_property_constraints_v0(
     };
 
     for (name, constraint) in &constraints {
-        for path in constraint.property_paths() {
-            match document_type
-                .flattened_properties
-                .get(path)
-                .map(|property| &property.property_type)
-            {
-                // `is_integer` leaves out the 128-bit types, which the arithmetic holds too
-                Some(property_type)
-                    if property_type.is_integer()
-                        || matches!(
-                            property_type,
-                            DocumentPropertyType::U128 | DocumentPropertyType::I128
-                        ) => {}
-                Some(other) => {
-                    return Err(structure_error(format!(
-                        "rule \"{name}\" reads \"{path}\", which has type {}, not integer",
-                        other.name()
-                    )));
-                }
-                // An object is not in the flattened map either: only its members hold values
-                None => {
-                    return Err(structure_error(format!(
-                        "rule \"{name}\" reads \"{path}\", which is not an integer property of \
-                         the document type (a nested one is named by its dotted path)"
-                    )));
+        for (path, read) in constraint.property_reads() {
+            let reads = match read {
+                PropertyRead::Value => "reads",
+                PropertyRead::Presence => "tests the presence of",
+            };
+            match read {
+                PropertyRead::Value => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    // `is_integer` leaves out the 128-bit types, which the arithmetic holds too
+                    Some(property_type)
+                        if property_type.is_integer()
+                            || matches!(
+                                property_type,
+                                DocumentPropertyType::U128 | DocumentPropertyType::I128
+                            ) => {}
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" reads \"{path}\", which has type {}, not integer",
+                            other.name()
+                        )));
+                    }
+                    // An object is not in the flattened map either: only its members hold values
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" reads \"{path}\", which is not an integer property \
+                             of the document type (a nested one is named by its dotted path)"
+                        )));
+                    }
+                },
+                PropertyRead::Presence => {
+                    if property_at_path(&document_type.properties, path).is_none() {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" tests the presence of \"{path}\", which is not a \
+                             property of the document type (a nested one is named by its dotted \
+                             path)"
+                        )));
+                    }
                 }
             }
             if is_transient(DocumentTypeRef::V2(document_type), path) {
                 return Err(structure_error(format!(
-                    "rule \"{name}\" reads \"{path}\", which is transient or inside a transient \
-                     object: a transient value is never stored, so a stored document could not \
-                     be held to the rule"
+                    "rule \"{name}\" {reads} \"{path}\", which is transient or inside a \
+                     transient object: a transient value is never stored, so a stored document \
+                     could not be held to the rule"
                 )));
             }
         }

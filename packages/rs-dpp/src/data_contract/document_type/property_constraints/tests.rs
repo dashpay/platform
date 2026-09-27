@@ -595,6 +595,15 @@ fn should_find_a_condition_an_any_of_or_all_of_repeats() {
             }),
             Some(("anyOf[0].allOf[1]", "anyOf[0].allOf[0]")),
         ),
+        (
+            platform_value!({ "anyOf": [{ "present": "fee" }, one.clone(), { "present": "fee" }] }),
+            Some(("anyOf[2]", "anyOf[0]")),
+        ),
+        // Testing the presence of a property and its absence are different conditions
+        (
+            platform_value!({ "anyOf": [{ "present": "fee" }, { "absent": "fee" }] }),
+            None,
+        ),
     ] {
         let rule = parse_rule_value(condition.clone());
         assert_eq!(
@@ -603,6 +612,71 @@ fn should_find_a_condition_an_any_of_or_all_of_repeats() {
             "{condition:?}"
         );
     }
+}
+
+// ── present and absent ──────────────────────────────────────────────────
+
+#[test]
+fn should_parse_present_and_absent() {
+    assert_eq!(
+        parse_rule_value(platform_value!({ "present": "meta.total" })),
+        PropertyConstraint::Present("meta.total".to_string())
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({
+            "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
+        })),
+        PropertyConstraint::AnyOf(vec![
+            PropertyConstraint::Absent("discount".to_string()),
+            compare(
+                ConstraintComparison::GreaterThan,
+                property("discount"),
+                ConstraintExpression::Value(0)
+            ),
+        ])
+    );
+
+    for (condition, needle) in [
+        (
+            platform_value!({ "present": 1 }),
+            "rule \"rule\" at present must name a property path",
+        ),
+        (
+            platform_value!({ "absent": ["discount"] }),
+            "rule \"rule\" at absent must name a property path",
+        ),
+        (
+            platform_value!({ "not": { "present": { "add": ["price", 1] } } }),
+            "rule \"rule\" at not.present must name a property path",
+        ),
+        (
+            platform_value!({ "exists": "discount" }),
+            "rule \"rule\" names \"exists\", which is not a comparison (equal, notEqual, \
+             lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual), present, absent, anyOf, \
+             allOf or not",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": condition }), needle);
+    }
+}
+
+/// A presence test is one node, and reads its property by presence, where an operand
+/// reads one by value.
+#[test]
+fn should_count_a_presence_test_as_one_node_reading_by_presence() {
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
+    }));
+    // anyOf, absent discount, greaterThan, discount, 0
+    assert_eq!(rule.node_count(), 5);
+    assert_eq!(
+        rule.property_reads(),
+        [
+            ("discount", PropertyRead::Presence),
+            ("discount", PropertyRead::Value)
+        ]
+    );
+    assert_eq!(rule.property_paths(), ["discount", "discount"]);
 }
 
 // ── evaluation ──────────────────────────────────────────────────────────
@@ -967,4 +1041,45 @@ fn should_count_the_nodes_and_list_the_paths_of_combined_conditions() {
     // anyOf, equal, a, 0, not, equal, ifAbsent b, a
     assert_eq!(rule.node_count(), 8);
     assert_eq!(rule.property_paths(), ["a", "b", "a"]);
+}
+
+/// A property the document leaves out, or sets to null, is absent, as it is for an
+/// operand; one it sets to anything else, 0 and objects included, is present.
+#[test]
+fn should_tell_a_property_left_out_from_one_set_to_zero() {
+    let values = data(&[
+        ("zero", Value::U64(0)),
+        ("empty", Value::Null),
+        ("note", Value::Text("hi".to_string())),
+        ("meta", platform_value!({ "count": 9 })),
+        ("flat", Value::U8(1)),
+    ]);
+    for (path, present) in [
+        ("zero", true),
+        ("note", true),
+        ("meta", true),
+        ("meta.count", true),
+        ("missing", false),
+        ("empty", false),
+        ("meta.missing", false),
+        // An intermediate that is not an object reads as absent
+        ("flat.count", false),
+    ] {
+        let present_rule = parse_rule_value(platform_value!({ "present": path }));
+        let absent_rule = parse_rule_value(platform_value!({ "absent": path }));
+        assert_eq!(present_rule.holds(&values), Ok(present), "present {path}");
+        assert_eq!(absent_rule.holds(&values), Ok(!present), "absent {path}");
+    }
+
+    // Optional, but above zero when given: an operand alone reads a discount left out
+    // as 0, so it cannot say this
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
+    }));
+    assert_eq!(rule.violation(&data(&[])), None);
+    assert_eq!(rule.violation(&data(&[("discount", Value::U64(5))])), None);
+    assert_eq!(
+        rule.violation(&data(&[("discount", Value::U64(0))])),
+        Some(PropertyConstraintViolation::NotMet)
+    );
 }

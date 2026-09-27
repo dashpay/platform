@@ -189,6 +189,83 @@ fn should_parse_combined_conditions_and_check_every_property_they_read() {
     }
 }
 
+/// A system property is not a property of the type: the meta-schema refuses
+/// its `$` when registering, and the parser the path when reading.
+#[test]
+fn should_refuse_a_presence_test_of_a_system_property() {
+    let rules = json!({ "rule": { "present": "$ownerId" } });
+    let registered = parse_order(rules.clone(), true);
+    assert!(
+        registered.as_ref().is_err_and(is_json_schema_error),
+        "the meta-schema should refuse it, got {registered:?}"
+    );
+    expect_structure_error(
+        parse_order(rules, false),
+        "tests the presence of \"$ownerId\", which is not a property of the document type",
+    );
+}
+
+/// `present` and `absent` test a property of any type, an object included, on
+/// both paths; the path must name a property of the type, and not a transient
+/// one.
+#[test]
+fn should_test_the_presence_of_any_property_the_type_declares() {
+    for path in [
+        "note",
+        "ratio",
+        "counts",
+        "meta",
+        "meta.tag",
+        "meta.total",
+        "price",
+    ] {
+        let rules = json!({
+            "rule": { "anyOf": [{ "present": path }, { "absent": "fee" }] }
+        });
+        for full_validation in [true, false] {
+            let document_type = parse_order(rules.clone(), full_validation).unwrap_or_else(|e| {
+                panic!("{path}, full_validation {full_validation}: should parse: {e}")
+            });
+            assert_eq!(
+                document_type.property_constraints()["rule"].property_paths(),
+                [path, "fee"]
+            );
+        }
+    }
+
+    for path in ["missing", "meta.missing", "note.length", "price.value"] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(json!({ "rule": { "present": path } }), full_validation),
+                &format!(
+                    "rule \"rule\" tests the presence of \"{path}\", which is not a property of \
+                     the document type"
+                ),
+            );
+        }
+    }
+
+    for (transient, path) in [("note", "note"), ("meta", "meta"), ("meta", "meta.tag")] {
+        let schema = order_schema(
+            Some(json!({ "rule": { "not": { "absent": path } } })),
+            Some(transient),
+        );
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_dispatched(
+                    schema_value(schema.clone()),
+                    PlatformVersion::latest(),
+                    full_validation,
+                ),
+                &format!(
+                    "rule \"rule\" tests the presence of \"{path}\", which is transient or \
+                     inside a transient object"
+                ),
+            );
+        }
+    }
+}
+
 /// Only an integer property's value is a number the rule can compute with: a
 /// string, a float, an array, an object and a system property are refused on
 /// both paths, as is a path naming nothing.
@@ -475,6 +552,10 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
         }),
         json!({ "rule": { "not": { "not": { "equal": ["price", 1] } } } }),
         json!({ "rule": { "anyOf": [{ "equal": ["price", 1] }, { "equal": ["price"] }] } }),
+        json!({ "rule": { "present": 1 } }),
+        json!({ "rule": { "absent": ["note"] } }),
+        json!({ "rule": { "present": "note", "absent": "fee" } }),
+        json!({ "rule": { "not": { "present": { "add": ["price", 1] } } } }),
     ] {
         let registered = parse_order(rules.clone(), true);
         assert!(
