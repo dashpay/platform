@@ -18,9 +18,10 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   the insert's does, not as subtrees.
 /// * `estimation_costs.stateless_delete_of_non_tree_for_costs` is 1: a delete's estimate prices
 ///   each height of the climb with the layer GroveDB deletes in there, not the one above it.
-/// * The six fee-returning wrappers (`add_document_for_contract`,
+/// * The eight fee-returning wrappers (`add_document`, `add_document_for_contract`,
 ///   `delete_document_for_contract`, `delete_document_for_contract_id`,
-///   `update_document_for_contract`, `update_document_for_contract_id` and
+///   `delete_index_only_document_for_contract`, `update_document_for_contract`,
+///   `update_document_for_contract_id` and
 ///   `update_document_with_serialization_for_contract`) are bumped to `1`: when the caller
 ///   passes no transaction they write and price inside one owned transaction and commit it
 ///   only once `Drive::calculate_fee` succeeded. Pricing an owner-attributed storage
@@ -37,6 +38,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.update
         },
         insert: DriveDocumentInsertMethodVersions {
+            add_document: 1,
             add_document_for_contract: 1,
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.insert
         },
@@ -47,6 +49,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
             remove_reference_for_index_level_for_contract_operations: 2, // changed: the entries layer is described as references
             delete_document_for_contract: 1,
             delete_document_for_contract_id: 1,
+            delete_index_only_document_for_contract: 1,
             ..DRIVE_DOCUMENT_METHOD_VERSIONS_V4.delete
         },
         estimation_costs: DriveDocumentEstimationCostsMethodVersions {
