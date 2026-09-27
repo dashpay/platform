@@ -1569,7 +1569,7 @@ mod tests {
         let document_type = contract
             .document_type_for_name("profile")
             .expect("expected to get document type");
-        let owner_id = random::<[u8; 32]>();
+        let owner_id = [0x41; 32];
         let mut profile = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(owner_id.into()),
@@ -1640,7 +1640,7 @@ mod tests {
 
         // The insert of a new document frees nothing and commits at the latest version. The
         // profile type has a unique owner index, so the second profile needs its own owner.
-        let second_owner_id = random::<[u8; 32]>();
+        let second_owner_id = [0x42; 32];
         let mut second = profile.clone();
         second.set_id(Identifier::from([0x55; 32]));
         second.set_owner_id(Identifier::from(second_owner_id));
@@ -1709,7 +1709,7 @@ mod tests {
             let document_type = contract
                 .document_type_for_name("profile")
                 .expect("expected to get document type");
-            let owner_id = random::<[u8; 32]>();
+            let owner_id = [0x43; 32];
             let profile = json_document_to_document(
                 "tests/supporting_files/contract/dashpay/profile0.json",
                 Some(owner_id.into()),

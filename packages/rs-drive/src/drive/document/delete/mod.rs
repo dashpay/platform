@@ -876,7 +876,7 @@ mod tests {
         let document_type = contract
             .document_type_for_name("person")
             .expect("expected to get document type");
-        let owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let owner_id = [0x44; 32];
         let person_document = json_document_to_document(
             "tests/supporting_files/contract/family/person0.json",
             Some(owner_id.into()),
