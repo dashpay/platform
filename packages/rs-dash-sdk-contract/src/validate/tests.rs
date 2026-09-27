@@ -941,14 +941,14 @@ fn should_report_terminal_not_a_property() {
         .field(FieldSpec::new(property("post"), 0, FieldType::identity()))
         .index(
             IndexSpec::new(index_name("by_post"), vec![path("post")]).index_only(IndexOnlySpec {
-                terminal: Some(path("$createdAt")),
+                terminal: vec![path("$createdAt")],
                 preallocated: false,
                 skip_if_absent: false,
             }),
         )
         .index(
             IndexSpec::new(index_name("by_post2"), vec![path("post")]).index_only(IndexOnlySpec {
-                terminal: Some(path("liker")),
+                terminal: vec![path("liker")],
                 preallocated: false,
                 skip_if_absent: false,
             }),
@@ -975,6 +975,97 @@ fn should_report_ranked_level_not_indexed() {
 }
 
 #[test]
+fn should_carry_a_composite_terminal_in_order_and_report_a_duplicate_component() {
+    let likes = |terminal: Vec<PropertyPath>| {
+        CollectionSpec::documents(collection("likes"))
+            .document_id_field("id")
+            .mutable(false)
+            .index_only(true)
+            .field(FieldSpec::new(property("post"), 0, FieldType::identity()))
+            .field(FieldSpec::new(
+                property("sequence"),
+                1,
+                FieldType::integer(IntegerWidth::U32),
+            ))
+            .index(
+                IndexSpec::new(index_name("by_post"), vec![path("post")]).index_only(
+                    IndexOnlySpec {
+                        terminal,
+                        preallocated: false,
+                        skip_if_absent: false,
+                    },
+                ),
+            )
+    };
+    let manifest = expect_manifest(
+        &ContractDeclaration::new().collection(likes(vec![path("$ownerId"), path("sequence")])),
+    );
+    let index = manifest
+        .collection("likes")
+        .unwrap()
+        .index("by_post")
+        .unwrap();
+    assert_eq!(
+        index.index_only.as_ref().unwrap().terminal,
+        [path("$ownerId"), path("sequence")]
+    );
+    let reversed = expect_manifest(
+        &ContractDeclaration::new().collection(likes(vec![path("sequence"), path("$ownerId")])),
+    );
+    assert_ne!(manifest, reversed);
+    let diagnostics = expect_diagnostics(
+        &ContractDeclaration::new().collection(likes(vec![path("sequence"), path("sequence")])),
+    );
+    assert_eq!(kinds(&diagnostics), ["DuplicateTerminalComponent"]);
+}
+
+#[test]
+fn should_carry_the_no_locking_resolution_into_the_manifest() {
+    let spec = CollectionSpec::documents(collection("names"))
+        .document_id_field("id")
+        .field(FieldSpec::new(property("label"), 0, FieldType::string(63)))
+        .index(
+            IndexSpec::new(index_name("by_label"), vec![path("label")])
+                .unique(true)
+                .contested(
+                    ContestedSpec::masternode_vote(vec![(path("label"), "^[a-z]+$".to_string())])
+                        .resolution(ContestedResolution::MasternodeVoteNoLocking),
+                ),
+        );
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(spec));
+    let index = manifest
+        .collection("names")
+        .unwrap()
+        .index("by_label")
+        .unwrap();
+    assert_eq!(
+        index.contested.as_ref().unwrap().resolution,
+        ContestedResolution::MasternodeVoteNoLocking
+    );
+}
+
+#[test]
+fn should_promote_an_omitted_count_under_range_count_and_reject_an_explicit_not_countable() {
+    let promoted =
+        minimal("c").index(IndexSpec::new(index_name("i"), vec![path("a")]).range_count(true));
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(promoted));
+    let index = manifest.collection("c").unwrap().index("i").unwrap();
+    assert_eq!(index.count, Countability::Countable);
+    assert!(index.range_count);
+    let contradicted = minimal("c").index(
+        IndexSpec::new(index_name("i"), vec![path("a")])
+            .range_count(true)
+            .countability(Countability::NotCountable),
+    );
+    let diagnostics = expect_diagnostics(&ContractDeclaration::new().collection(contradicted));
+    assert_eq!(kinds(&diagnostics), ["ConflictingOption"]);
+    let DiagnosticKind::ConflictingOption { options, .. } = &diagnostics[0].kind else {
+        panic!()
+    };
+    assert_eq!(options, &["range_count", "count"]);
+}
+
+#[test]
 fn should_report_duplicate_ranked_level() {
     let spec = minimal("c").index(
         IndexSpec::new(index_name("i"), vec![path("a")])
@@ -993,7 +1084,7 @@ fn should_report_duplicate_ranked_level() {
 fn should_report_index_only_option_on_stored_collection() {
     let spec = minimal("c").index(IndexSpec::new(index_name("i"), vec![path("a")]).index_only(
         IndexOnlySpec {
-            terminal: None,
+            terminal: vec![],
             preallocated: true,
             skip_if_absent: false,
         },

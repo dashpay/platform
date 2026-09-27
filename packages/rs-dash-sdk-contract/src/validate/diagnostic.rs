@@ -514,6 +514,11 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
+    /// A composite terminal names one component twice.
+    DuplicateTerminalComponent {
+        /// The property path.
+        property: String,
+    },
 }
 
 impl DiagnosticKind {
@@ -626,6 +631,9 @@ impl DiagnosticKind {
             }
             DiagnosticKind::TimeRangeSourceNotRequired { .. } => {
                 ("DSC0062", "TimeRangeSourceNotRequired")
+            }
+            DiagnosticKind::DuplicateTerminalComponent { .. } => {
+                ("DSC0063", "DuplicateTerminalComponent")
             }
         }
     }
@@ -826,6 +834,9 @@ impl fmt::Display for DiagnosticKind {
                 f,
                 "time range buckets `{property}`, which the collection does not require; a system timestamp is populated only when required"
             ),
+            DiagnosticKind::DuplicateTerminalComponent { property } => {
+                write!(f, "terminal component `{property}` named twice")
+            }
         }
     }
 }

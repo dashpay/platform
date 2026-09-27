@@ -68,6 +68,8 @@ pub enum ValueShape {
     BoolOrChoice(&'static Choices),
     /// A bare flag or a list of strings (`ranked_count` / `ranked_count = ["a"]`).
     BoolOrStrList,
+    /// One string or a list of strings (`terminal = "a"` / `terminal = ["a", "b"]`).
+    StrOrStrList,
     /// A nested option list with its own keys (`contested(...)`).
     Nested(&'static [KeySpec]),
     /// A nested map whose keys are property paths (`fields(class = "asc")`).
@@ -193,8 +195,8 @@ pub const GAS_PAID_BY: Choices = Choices {
 
 /// Contested index resolution.
 pub const RESOLUTION: Choices = Choices {
-    allowed: &["masternode_vote"],
-    explain: "the only native contested resolution",
+    allowed: &["masternode_vote", "masternode_vote_no_locking"],
+    explain: "the native contested resolutions: a vote with a lock choice, or a vote that always ends with a winner",
 };
 
 /// Receipt policy.
@@ -588,9 +590,9 @@ const INDEX_KEYS: &[KeySpec] = &[
     },
     KeySpec {
         name: "terminal",
-        value: ValueShape::Str,
+        value: ValueShape::StrOrStrList,
         required: false,
-        doc: "index-only member key property, default `$ownerId`",
+        doc: "index-only member key: one property or an ordered list of properties (a composite terminal), default `$ownerId`",
     },
     KeySpec {
         name: "preallocated",
@@ -1055,6 +1057,8 @@ fn check_value(
         (ValueShape::BoolOrStrList, _) => {
             Err("expects a bare flag, a boolean or a list of strings".to_string())
         }
+        (ValueShape::StrOrStrList, GivenValue::Str(_) | GivenValue::StrList(_)) => Ok(()),
+        (ValueShape::StrOrStrList, _) => Err("expects a string or a list of strings".to_string()),
         (ValueShape::Nested(keys), GivenValue::Nested(options)) => {
             let nested = format!("{attribute}.{}", key.name);
             check_options(&nested, keys, &[], options, diagnostics);
@@ -1477,6 +1481,58 @@ mod tests {
                 GivenOption {
                     name: "count",
                     value: GivenValue::Str("provable"),
+                },
+            ],
+        );
+        assert_eq!(kinds(&diagnostics), ["InvalidOptionValue"]);
+    }
+
+    #[test]
+    fn should_accept_the_no_locking_resolution_and_a_composite_terminal() {
+        let fields = [GivenOption {
+            name: "post",
+            value: GivenValue::Str("asc"),
+        }];
+        let contested = [GivenOption {
+            name: "resolution",
+            value: GivenValue::Str("masternode_vote_no_locking"),
+        }];
+        let diagnostics = check_keys(
+            "index",
+            &[
+                GivenOption {
+                    name: "name",
+                    value: GivenValue::Str("by_post"),
+                },
+                GivenOption {
+                    name: "fields",
+                    value: GivenValue::Nested(&fields),
+                },
+                GivenOption {
+                    name: "contested",
+                    value: GivenValue::Nested(&contested),
+                },
+                GivenOption {
+                    name: "terminal",
+                    value: GivenValue::StrList(&["$ownerId", "sequence"]),
+                },
+            ],
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let diagnostics = check_keys(
+            "index",
+            &[
+                GivenOption {
+                    name: "name",
+                    value: GivenValue::Str("by_post"),
+                },
+                GivenOption {
+                    name: "fields",
+                    value: GivenValue::Nested(&fields),
+                },
+                GivenOption {
+                    name: "terminal",
+                    value: GivenValue::Bool(true),
                 },
             ],
         );

@@ -634,6 +634,21 @@ fn validate_index(
             "range_average needs average to name the property",
         ));
     }
+    // `range_count` implies a countable index, the way the generation 3
+    // native parser promotes an omitted count; an explicit not-countable
+    // beside it says two opposite things. With average sugar present the
+    // count was promoted or diagnosed above already.
+    if index.average.is_none() && range_count && !count.is_countable() {
+        match index.count {
+            None => count = Countability::Countable,
+            Some(_) => diagnostics.push(conflicting_option(
+                &path,
+                "range_count",
+                "count",
+                "range_count implies a countable index; remove the explicit not-countable setting",
+            )),
+        }
+    }
     if let Some(summed) = &sum {
         if !has_top_level_property(fields, summed.as_str()) {
             diagnostics.push(Diagnostic::new(
@@ -721,15 +736,26 @@ fn validate_index(
                 DiagnosticKind::IndexOnlyOptionOnStoredCollection,
             ));
         }
-        if let Some(terminal) = &options.terminal {
-            let is_owner = terminal.as_str() == "$ownerId";
-            if !is_owner && (terminal.is_system() || !has_property_path(fields, terminal)) {
+        let mut seen: Vec<&PropertyPath> = Vec::new();
+        for component in &options.terminal {
+            let is_owner = component.as_str() == "$ownerId";
+            if !is_owner && (component.is_system() || !has_property_path(fields, component)) {
                 diagnostics.push(Diagnostic::new(
                     path.clone(),
                     DiagnosticKind::TerminalNotAProperty {
-                        property: terminal.to_string(),
+                        property: component.to_string(),
                     },
                 ));
+            }
+            if seen.contains(&component) {
+                diagnostics.push(Diagnostic::new(
+                    path.clone(),
+                    DiagnosticKind::DuplicateTerminalComponent {
+                        property: component.to_string(),
+                    },
+                ));
+            } else {
+                seen.push(component);
             }
         }
     }
