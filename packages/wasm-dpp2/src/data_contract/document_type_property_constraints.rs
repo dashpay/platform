@@ -85,6 +85,9 @@ export type PropertyConstraintEqualityOperand =
  * - `in`: an integer expression and two or more distinct integers, or a
  *   string or identifier property (or `$ownerId`) and two or more distinct
  *   strings or base58 identifiers;
+ * - `contains`: a typed array property and the value one of its elements must
+ *   equal, an integer expression, a string or an identifier operand as its
+ *   elements are; an array the document leaves out holds nothing;
  * - `present` / `absent`: whether the document holds a property of any type;
  * - `anyOf` / `allOf` over two or more conditions, `not` over one. Conditions
  *   are checked in order and no further than the outcome needs.
@@ -97,6 +100,7 @@ export type PropertyConstraintCondition =
   | { greaterThan: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { greaterThanOrEqual: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { in: [PropertyConstraintExpression, Array<number | bigint>] | [string | { ifAbsent: [path: string, value: string] }, string[]] }
+  | { contains: [path: string, PropertyConstraintExpression | PropertyConstraintEqualityOperand] }
   | { present: string }
   | { absent: string }
   | { anyOf: PropertyConstraintCondition[] }
@@ -107,7 +111,8 @@ export type PropertyConstraintCondition =
  * How a rule reads a property: `value` as an integer operand, `presence` in
  * `present` or `absent`, `text` compared with strings, `identifier` compared
  * with identifiers, `length` by the size of a string (`length` or
- * `byteLength`), `count` by the items of an array or byte array.
+ * `byteLength`), `count` by the items of an array or byte array, `elements`
+ * by the elements a `contains` looks among.
  */
 export type PropertyConstraintReadKind =
   | 'value'
@@ -115,7 +120,8 @@ export type PropertyConstraintReadKind =
   | 'text'
   | 'identifier'
   | 'length'
-  | 'count';
+  | 'count'
+  | 'elements';
 
 /**
  * A system time or height a rule reads: the block time in milliseconds
@@ -211,6 +217,7 @@ fn read_kind_name(read: PropertyRead) -> &'static str {
         PropertyRead::Identifier => "identifier",
         PropertyRead::Length => "length",
         PropertyRead::Count => "count",
+        PropertyRead::Elements(_) => "elements",
     }
 }
 

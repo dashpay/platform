@@ -66,9 +66,9 @@ const PROPERTY_CONSTRAINTS_KEYWORD: &str = "propertyConstraints";
 /// document type's schema declares it, every property it reads in declared
 /// order (`kind` is `"value"` for an integer operand, `"presence"` for
 /// `present` / `absent`, `"text"` for a string comparison, `"identifier"` for
-/// an identifier comparison, `"length"` for a `length` or `byteLength` operand
-/// and `"count"` for a `count` operand; `$ownerId` is no property and is not
-/// listed), whether it reads `$ownerId`, which makes a transfer or a
+/// an identifier comparison, `"length"` for a `length` or `byteLength` operand,
+/// `"count"` for a `count` operand and `"elements"` for the array a `contains`
+/// looks in; `$ownerId` is no property and is not listed), whether it reads `$ownerId`, which makes a transfer or a
 /// purchase answer to it too, and the system times and heights it reads
 /// (`"$createdAt"`, ...), which make a price update answer to a rule reading
 /// the update's and a transfer or purchase one reading the transfer's. Rules
@@ -396,6 +396,7 @@ fn read_kind_name(read: PropertyRead) -> &'static str {
         PropertyRead::Identifier => "identifier",
         PropertyRead::Length => "length",
         PropertyRead::Count => "count",
+        PropertyRead::Elements(_) => "elements",
     }
 }
 

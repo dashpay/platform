@@ -2,12 +2,14 @@ use super::*;
 use platform_value::platform_value;
 use platform_version::version::PLATFORM_VERSIONS;
 
-/// The paths the unit tests treat as string properties.
-const STRING_PROPERTIES: [&str; 4] = ["status", "from", "to", "meta.state"];
+/// The paths the unit tests treat as string properties, `labels` an array of
+/// strings, as a document type's parse reports one.
+const STRING_PROPERTIES: [&str; 5] = ["status", "from", "to", "meta.state", "labels"];
 
 /// The paths the unit tests treat as identifier properties; every path neither lists
 /// is an integer one.
-const IDENTIFIER_PROPERTIES: [&str; 3] = ["buyerId", "sellerId", "meta.ownerRef"];
+/// `members` is an array of identifiers.
+const IDENTIFIER_PROPERTIES: [&str; 4] = ["buyerId", "sellerId", "meta.ownerRef", "members"];
 
 fn property_kind(path: &str) -> Option<EqualityKind> {
     if STRING_PROPERTIES.contains(&path) {
@@ -1588,8 +1590,8 @@ fn should_parse_present_and_absent() {
         (
             platform_value!({ "exists": "discount" }),
             "rule \"rule\" names \"exists\", which is not a comparison (equal, notEqual, \
-             lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual), in, present, absent, \
-             anyOf, allOf or not",
+             lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual), in, contains, present, \
+             absent, anyOf, allOf or not",
         ),
     ] {
         expect_refusal(platform_value!({ "rule": condition }), needle);
@@ -2588,5 +2590,242 @@ fn should_take_the_system_values_of_a_create_and_of_a_document() {
             updated_at_core_block_height: Some(7),
             ..Default::default()
         }
+    );
+}
+
+// ── contains ────────────────────────────────────────────────────────────
+
+/// What a `contains` looks for is read as the array's elements are: a const
+/// and a bare path among strings or identifiers, an integer expression
+/// otherwise.
+#[test]
+fn should_parse_contains_by_the_kind_of_the_array() {
+    let member = Identifier::new([4; 32]);
+    for (rule, needle, reads, nodes) in [
+        (
+            platform_value!({ "contains": ["labels", { "const": "sale" }] }),
+            ContainsNeedle::TextConstant("sale".to_string()),
+            vec![("labels", PropertyRead::Elements(ElementKind::Text))],
+            3,
+        ),
+        (
+            platform_value!({ "contains": ["labels", "status"] }),
+            ContainsNeedle::TextProperty(TextProperty {
+                path: "status".to_string(),
+                if_absent: None,
+            }),
+            vec![
+                ("labels", PropertyRead::Elements(ElementKind::Text)),
+                ("status", PropertyRead::Text),
+            ],
+            3,
+        ),
+        (
+            platform_value!({ "contains": ["labels", { "ifAbsent": ["status", "sale"] }] }),
+            ContainsNeedle::TextProperty(TextProperty {
+                path: "status".to_string(),
+                if_absent: Some("sale".to_string()),
+            }),
+            vec![
+                ("labels", PropertyRead::Elements(ElementKind::Text)),
+                ("status", PropertyRead::Text),
+            ],
+            3,
+        ),
+        (
+            platform_value!({
+                "contains": ["members", { "const": member.to_string(Encoding::Base58) }]
+            }),
+            ContainsNeedle::IdentifierConstant(member),
+            vec![("members", PropertyRead::Elements(ElementKind::Identifier))],
+            3,
+        ),
+        (
+            platform_value!({ "contains": ["members", "buyerId"] }),
+            ContainsNeedle::IdentifierProperty("buyerId".to_string()),
+            vec![
+                ("members", PropertyRead::Elements(ElementKind::Identifier)),
+                ("buyerId", PropertyRead::Identifier),
+            ],
+            3,
+        ),
+        (
+            platform_value!({ "contains": ["members", "$ownerId"] }),
+            ContainsNeedle::IdentifierProperty("$ownerId".to_string()),
+            vec![("members", PropertyRead::Elements(ElementKind::Identifier))],
+            3,
+        ),
+        (
+            platform_value!({ "contains": ["scores", { "add": ["bonus", 1] }] }),
+            ContainsNeedle::Integer(ConstraintExpression::Add(vec![
+                property("bonus"),
+                ConstraintExpression::Value(1),
+            ])),
+            vec![
+                ("scores", PropertyRead::Elements(ElementKind::Integer)),
+                ("bonus", PropertyRead::Value),
+            ],
+            5,
+        ),
+    ] {
+        let parsed = parse_rule_value(rule.clone());
+        let PropertyConstraint::Contains {
+            array,
+            needle: parsed_needle,
+        } = &parsed
+        else {
+            panic!("{rule:?}: expected a contains, got {parsed:?}");
+        };
+        assert_eq!(array, reads[0].0, "{rule:?}");
+        assert_eq!(parsed_needle, &needle, "{rule:?}");
+        assert_eq!(parsed.property_reads(), reads, "{rule:?}");
+        assert_eq!(parsed.node_count(), nodes, "{rule:?}");
+    }
+
+    // The owner read makes a transfer answer to it; a const is checked against
+    // the elements' enum; a default against the property's
+    let owner_rule = parse_rule_value(platform_value!({ "contains": ["members", "$ownerId"] }));
+    assert!(owner_rule.reads_owner());
+    assert!(owner_rule.reads_change(SystemChange::Transfer));
+    let sale = parse_rule_value(platform_value!({ "contains": ["labels", { "const": "sale" }] }));
+    assert_eq!(sale.text_constants(), [("labels", "sale")]);
+    let defaulted = parse_rule_value(platform_value!({
+        "contains": ["labels", { "ifAbsent": ["status", "sale"] }]
+    }));
+    assert_eq!(defaulted.text_defaults(), [("status", "sale")]);
+    // A system value looked for among integers is read like any operand
+    let created = parse_rule_value(platform_value!({ "contains": ["scores", "$createdAt"] }));
+    assert_eq!(created.system_reads(), [SystemProperty::CreatedAt]);
+}
+
+#[test]
+fn should_refuse_a_malformed_contains() {
+    for (rule, needle) in [
+        (
+            platform_value!({ "contains": ["labels"] }),
+            "at contains must list an array property path and the value looked for among its \
+             elements",
+        ),
+        (
+            platform_value!({ "contains": [5, 1] }),
+            "at contains[0] must name an array property path",
+        ),
+        (
+            platform_value!({ "contains": ["$ownerId", 1] }),
+            "at contains[0] must name an array property path",
+        ),
+        (
+            platform_value!({ "contains": ["scores", { "const": "10" }] }),
+            "at contains[1] is a const, but scores holds no strings or identifiers",
+        ),
+        (
+            platform_value!({ "contains": ["members", { "const": "not base58" }] }),
+            "which is not a base58 identifier of 32 bytes",
+        ),
+        (
+            platform_value!({ "contains": ["labels", 5] }),
+            "at contains[1] must be the path of a string property",
+        ),
+        (
+            platform_value!({ "contains": ["scores", { "divide": ["bonus", 0] }] }),
+            "divides by 0",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": rule }), needle);
+    }
+}
+
+/// A `contains` holds when an element equals what it looks for, whatever form
+/// the document gives an identifier in; an array, a string or an identifier
+/// the document leaves out holds or matches nothing; a fault in the integer it
+/// looks for breaks the rule.
+#[test]
+fn should_look_for_a_value_among_the_elements() {
+    let text =
+        |values: &[&str]| Value::Array(values.iter().map(|value| Value::from(*value)).collect());
+    let none = DocumentSystemValues::default();
+
+    let sale = parse_rule_value(platform_value!({ "contains": ["labels", { "const": "sale" }] }));
+    assert_eq!(
+        sale.holds(&data(&[("labels", text(&["new", "sale"]))]), &none),
+        Ok(true)
+    );
+    assert_eq!(
+        sale.holds(&data(&[("labels", text(&["new"]))]), &none),
+        Ok(false)
+    );
+    assert_eq!(sale.holds(&data(&[]), &none), Ok(false));
+    assert_eq!(
+        sale.holds(&data(&[("labels", Value::Null)]), &none),
+        Ok(false)
+    );
+
+    let own_status = parse_rule_value(platform_value!({
+        "contains": ["labels", { "ifAbsent": ["status", "sale"] }]
+    }));
+    let listing = |status: Option<&str>| {
+        let mut entries = vec![("labels", text(&["new", "sale"]))];
+        if let Some(status) = status {
+            entries.push(("status", Value::from(status)));
+        }
+        data(&entries)
+    };
+    assert_eq!(own_status.holds(&listing(Some("new")), &none), Ok(true));
+    assert_eq!(own_status.holds(&listing(Some("used")), &none), Ok(false));
+    // Left out, the status takes its default
+    assert_eq!(own_status.holds(&listing(None), &none), Ok(true));
+
+    let [a, b, c] = [[1u8; 32], [2; 32], [3; 32]];
+    let members = Value::Array(vec![Value::Identifier(a), Value::Bytes32(b)]);
+    let owner_is_member =
+        parse_rule_value(platform_value!({ "contains": ["members", "$ownerId"] }));
+    let group = data(&[("members", members.clone())]);
+    for (owner, expected) in [
+        (Some(Identifier::new(a)), true),
+        (Some(Identifier::new(b)), true),
+        (Some(Identifier::new(c)), false),
+        (None, false),
+    ] {
+        let system = DocumentSystemValues {
+            owner_id: owner,
+            ..Default::default()
+        };
+        assert_eq!(
+            owner_is_member.holds(&group, &system),
+            Ok(expected),
+            "{owner:?}"
+        );
+    }
+    let buyer_is_member = parse_rule_value(platform_value!({ "contains": ["members", "buyerId"] }));
+    assert_eq!(
+        buyer_is_member.holds(
+            &data(&[
+                ("members", members.clone()),
+                ("buyerId", Value::Identifier(b))
+            ]),
+            &none
+        ),
+        Ok(true)
+    );
+    // A buyer left out is a member of no group
+    assert_eq!(buyer_is_member.holds(&group, &none), Ok(false));
+
+    let next_score = parse_rule_value(platform_value!({
+        "contains": ["scores", { "add": ["bonus", 1] }]
+    }));
+    let scores = |bonus: u64| {
+        data(&[
+            ("scores", Value::Array(vec![Value::U8(3), Value::U64(10)])),
+            ("bonus", Value::U64(bonus)),
+        ])
+    };
+    assert_eq!(next_score.holds(&scores(9), &none), Ok(true));
+    assert_eq!(next_score.holds(&scores(1), &none), Ok(false));
+    let per_unit = parse_rule_value(platform_value!({
+        "contains": ["scores", { "divide": [100, "bonus"] }]
+    }));
+    assert_eq!(
+        per_unit.violation(&data(&[("bonus", Value::U64(0))]), &none),
+        Some(PropertyConstraintViolation::DivisionByZero)
     );
 }

@@ -330,6 +330,61 @@ mod property_constraints_tests {
         fixture
     }
 
+    /// A mutable, transferable `offer` type with the integers
+    /// [`set_valid_offer`] fills and three typed arrays, of `labels`, of
+    /// `members` and of `tiers`, with three rules looking among them:
+    /// `notUsed` (no `"used"` label), `ownerIsMember` (the owner is a member,
+    /// when members are listed) and `quantityListed` (the quantity is one of the
+    /// tiers, when tiers are listed).
+    fn listed_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "transferable": 1,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "labels": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": { "type": "string", "maxLength": 10, "enum": ["new", "used", "sale"] },
+                    "position": 4
+                },
+                "members": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier"
+                    },
+                    "position": 5
+                },
+                "tiers": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": { "type": "integer", "minimum": 0 },
+                    "position": 6
+                }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "notUsed": { "not": { "contains": ["labels", { "const": "used" }] } },
+                "ownerIsMember": {
+                    "anyOf": [{ "absent": "members" }, { "contains": ["members", "$ownerId"] }]
+                },
+                "quantityListed": {
+                    "anyOf": [{ "absent": "tiers" }, { "contains": ["tiers", "quantity"] }]
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
     /// An offer that meets every rule: (100 + 10) * 2 = 220.
     fn set_valid_offer(document: &mut Document) {
         document.set("price", Value::U64(100));
@@ -1682,6 +1737,69 @@ mod property_constraints_tests {
         fixture.block_info = at_block(NOW + DAY_MS / 2, 40);
         assert_matches!(
             fixture.transfer(recipient.id()).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// `contains` read by real writes: a `"used"` label, an owner missing from
+    /// the members and a quantity missing from the tiers are each refused with
+    /// the rule they break; a transfer, which changes the owner, is judged
+    /// against `ownerIsMember` and refused to a non-member, accepted to a member.
+    #[tokio::test]
+    async fn should_judge_contains_on_create_and_transfer() {
+        let mut fixture = OfferFixture::with_schema(listed_offer_schema());
+        let (member, _, _) = fixture.other_identity(7);
+        let (outsider, _, _) = fixture.other_identity(8);
+        let owner = fixture.identity.id();
+        let labels = |values: &[&str]| {
+            Value::Array(values.iter().map(|value| Value::from(*value)).collect())
+        };
+        let members = |ids: &[Identifier]| {
+            Value::Array(
+                ids.iter()
+                    .map(|id| Value::Identifier(id.to_buffer()))
+                    .collect(),
+            )
+        };
+
+        let result = fixture
+            .create(|document| document.set("labels", labels(&["new", "used"])))
+            .await;
+        expect_violated(result, "notUsed", PropertyConstraintViolation::NotMet);
+
+        let result = fixture
+            .create(|document| document.set("members", members(&[member.id()])))
+            .await;
+        expect_violated(result, "ownerIsMember", PropertyConstraintViolation::NotMet);
+
+        // The quantity is 2
+        let result = fixture
+            .create(|document| {
+                document.set("tiers", Value::Array(vec![Value::U64(1), Value::U64(5)]))
+            })
+            .await;
+        expect_violated(
+            result,
+            "quantityListed",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("labels", labels(&["new", "sale"]));
+                    document.set("members", members(&[owner, member.id()]));
+                    document.set("tiers", Value::Array(vec![Value::U64(2), Value::U64(10)]));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture.transfer(outsider.id()).await;
+        expect_violated(result, "ownerIsMember", PropertyConstraintViolation::NotMet);
+        assert_matches!(
+            fixture.transfer(member.id()).await,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
     }
