@@ -122,8 +122,15 @@ impl DocumentIndexOnlyDeleteTransitionActionStructureValidationV0
         // validate it with the same contract validator creates use, which
         // enforces required properties, value types, and rejects unknown
         // keys (system fields included, since the user schema admits none).
+        // The delete carries no owner, and needs none: an indexOnly type
+        // refuses a `propertyConstraints` rule reading `$ownerId`.
         data_contract
-            .validate_document_properties(document_type_name, user_data.into(), platform_version)
+            .validate_document_properties(
+                document_type_name,
+                user_data.into(),
+                None,
+                platform_version,
+            )
             .map_err(Error::Protocol)
     }
 }

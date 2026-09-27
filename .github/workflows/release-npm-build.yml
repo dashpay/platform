@@ -1,0 +1,78 @@
+name: Build release NPM artifacts
+
+# The runner group permits only this reusable workflow at the protected
+# v4.2-dev ref. Callers cannot replace these steps with PR workflow code.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build NPM packages
+    if: >-
+      github.repository == 'dashpay/platform'
+      && (github.event_name == 'release'
+          || (github.event_name == 'workflow_dispatch'
+              && (github.ref == 'refs/heads/v4.2-dev' || startsWith(github.ref, 'refs/tags/'))))
+    runs-on:
+      group: platform-npm-releases
+      labels: [self-hosted, Linux, X64, npm-build]
+    timeout-minutes: 120
+    steps:
+      - name: Reject untrusted release callers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = dashpay/platform
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF" in
+            release:refs/tags/*|workflow_dispatch:refs/tags/*|workflow_dispatch:refs/heads/v4.2-dev) ;;
+            *) echo '::error::NPM release runners accept only release tags or protected-branch dispatches'; exit 1 ;;
+          esac
+
+      - uses: softwareforgood/check-artifact-v4-existence@v0
+        id: check-artifact
+        with:
+          name: js-build-${{ github.sha }}
+
+      # Start each release from a fresh clone so Git configuration and hooks
+      # from earlier releases cannot affect checkout. Release-only build
+      # caches live outside the workspace.
+      - name: Empty the workspace left by earlier jobs
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+        run: |
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Build and pack NPM packages
+        uses: ./.github/actions/npm-release-build
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Get modified files
+        id: diff
+        run: |
+          {
+            echo "files<<EOF"
+            git ls-files --others --exclude-standard
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Upload the archive of built files
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-build-${{ github.sha }}
+          path: |
+            ${{ steps.diff.outputs.files }}
+            npm-packages/*.tgz
+          # Keep the handoff alive long enough to re-run only a failed publish.
+          retention-days: 7
+          if-no-files-found: error
+          include-hidden-files: true
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}

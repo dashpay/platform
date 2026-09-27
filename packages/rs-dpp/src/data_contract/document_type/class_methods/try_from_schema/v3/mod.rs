@@ -1204,23 +1204,21 @@ mod tests {
         PlatformVersion::get(13).expect("protocol version 13 exists")
     }
 
-    /// Generation-specific tests must pin a protocol version that actually
-    /// selects their own generation: `pv14()` silently
-    /// retargets these tests onto a different parser generation and a
-    /// different document meta-schema whenever LATEST moves. PV14 is the
-    /// first protocol version whose `try_from_schema` selects generation 3.
-    fn pv14() -> &'static PlatformVersion {
-        PlatformVersion::get(14).expect("protocol version 14 exists")
+    /// Generation 3 is the latest parser generation, so its tests run at the latest protocol
+    /// version. When a later protocol version selects a new generation, pin these tests to the
+    /// last version that selects generation 3 (see the coding conventions).
+    fn latest() -> &'static PlatformVersion {
+        PlatformVersion::latest()
     }
 
-    /// PV14 accepts the ranked keywords and carries them onto the parsed index
+    /// The latest protocol version accepts the ranked keywords and carries them onto the parsed index
     /// — both when parsed through this generation directly and when reached
     /// the way production reaches it, through the dispatcher. The dispatcher
     /// half is what pins that `try_from_schema: 3` actually routes here.
     #[test]
-    fn ranked_keywords_accepted_at_pv14() {
+    fn ranked_keywords_accepted_at_latest() {
         let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
-        let v2 = parse_with(schema.clone(), pv14(), true)
+        let v2 = parse_with(schema.clone(), latest(), true)
             .expect("meta-schema v3 must accept the ranked index keywords");
 
         let index = v2
@@ -1233,8 +1231,8 @@ mod tests {
         assert!(index.range_countable && index.range_summable);
 
         // Same schema, same platform version, through the real dispatcher.
-        let dispatched = parse_dispatched(schema, pv14(), true)
-            .expect("the dispatcher must route PV14 to a generation that accepts the keywords");
+        let dispatched = parse_dispatched(schema, latest(), true)
+            .expect("the dispatcher must route the latest protocol version to a generation that accepts the keywords");
         let DocumentType::V2(dispatched) = dispatched else {
             panic!("generation 3 produces a V2-shaped document type");
         };
@@ -1244,7 +1242,7 @@ mod tests {
                 .get("byRestaurant")
                 .expect("index parsed under its name")
                 .ranked_averageable,
-            "dispatching at PV14 must reach generation 3, not an earlier generation"
+            "dispatching at the latest protocol version must reach generation 3, not an earlier generation"
         );
     }
 
@@ -1286,13 +1284,14 @@ mod tests {
         }
     }
 
-    /// Same schema, PV14, no full validation: accepted. Pins that the gate is
-    /// the parser *generation* and not the validation mode.
+    /// Same schema, latest protocol version, no full validation: accepted. Pins that the gate
+    /// is the parser *generation* and not the validation mode.
     #[test]
-    fn ranked_keywords_accepted_at_pv14_without_full_validation() {
+    fn ranked_keywords_accepted_at_latest_without_full_validation() {
         let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
-        let v2 = parse_with(schema, pv14(), false)
-            .expect("PV14 structural parse must accept the ranked keywords");
+        let v2 = parse_with(schema, latest(), false).expect(
+            "the latest protocol version's structural parse must accept the ranked keywords",
+        );
         assert!(
             v2.indices
                 .get("byRestaurant")
@@ -1313,7 +1312,7 @@ mod tests {
     #[test]
     fn ranked_countable_satisfied_by_range_averageable_in_meta_schema() {
         let schema = ranked_review_schema(vec![("rankedCountable", true)]);
-        let v2 = parse_with(schema, pv14(), true)
+        let v2 = parse_with(schema, latest(), true)
             .expect("rangeAverageable satisfies rankedCountable's range prerequisite");
         let index = v2
             .indices
@@ -1381,9 +1380,10 @@ mod tests {
     #[test]
     fn ranked_flags_written_out_as_false_do_not_require_a_range_axis() {
         for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
-            let v2 = parse_with(bare_ranked_index_schema(key, false), pv14(), true).unwrap_or_else(
-                |e| panic!("`{key}: false` is an opt-out and must pass full validation: {e:?}"),
-            );
+            let v2 = parse_with(bare_ranked_index_schema(key, false), latest(), true)
+                .unwrap_or_else(|e| {
+                    panic!("`{key}: false` is an opt-out and must pass full validation: {e:?}")
+                });
 
             let index = v2
                 .indices
@@ -1407,7 +1407,7 @@ mod tests {
     #[test]
     fn ranked_flags_set_true_still_require_their_range_axis() {
         for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
-            let result = parse_with(bare_ranked_index_schema(key, true), pv14(), true);
+            let result = parse_with(bare_ranked_index_schema(key, true), latest(), true);
             assert!(
                 result.is_err(),
                 "`{key}: true` with no range axis must be rejected under full validation"
@@ -1437,7 +1437,7 @@ mod tests {
                 "rankedCountable": true,
             }],
         });
-        let result = parse_with(schema, pv14(), false);
+        let result = parse_with(schema, latest(), false);
         assert!(
             result.is_err(),
             "rankedCountable with no range-count layout must be rejected structurally"
@@ -1579,7 +1579,7 @@ mod tests {
     }
 
     fn parse_bound(schema: Value) -> Result<DocumentTypeV2, ProtocolError> {
-        parse_with(schema, pv14(), true)
+        parse_with(schema, latest(), true)
     }
 
     /// Count-ranked and sum-ranked indexes share the 8-byte sort key, so both
@@ -1968,9 +1968,9 @@ mod tests {
     /// paths — and the ranked flags land on the index alongside the
     /// range axes they require.
     #[test]
-    fn compound_ranked_index_accepted_at_pv14() {
+    fn compound_ranked_index_accepted_at_latest() {
         for full_validation in [true, false] {
-            let v2 = parse_with(compound_ranked_schema(vec![]), pv14(), full_validation)
+            let v2 = parse_with(compound_ranked_schema(vec![]), latest(), full_validation)
                 .unwrap_or_else(|e| {
                     panic!(
                         "a compound ranked index must parse \
@@ -2003,7 +2003,7 @@ mod tests {
             vec![("countable", Value::Text("countable".to_string()))],
         )]);
         for full_validation in [true, false] {
-            let error = parse_with(schema.clone(), pv14(), full_validation).expect_err(
+            let error = parse_with(schema.clone(), latest(), full_validation).expect_err(
                 "an aggregating index on the ranked compound's full prefix must be rejected",
             );
             let message = format!("{error:?}");
@@ -2031,14 +2031,14 @@ mod tests {
             "restaurantId",
             vec![("countable", Value::Text("countable".to_string()))],
         )]);
-        parse_with(aggregating_elsewhere, pv14(), true)
+        parse_with(aggregating_elsewhere, latest(), true)
             .expect("an aggregating index off the prefix must not conflict");
 
         // A plain index on the prefix property: terminates at [region]
         // but carries no aggregates, so its value trees stay normal and
         // no wrapper shell is ever needed.
         let plain_prefix = compound_ranked_schema(vec![("byRegion", "region", vec![])]);
-        parse_with(plain_prefix, pv14(), true)
+        parse_with(plain_prefix, latest(), true)
             .expect("a non-aggregating index on the prefix must not conflict");
     }
 
@@ -2168,7 +2168,7 @@ mod tests {
     /// structural path, landing in `ranked_countable_at` with the boolean
     /// terminal axis off.
     #[test]
-    fn prefix_ranked_at_accepted_at_pv14() {
+    fn prefix_ranked_at_accepted_at_latest() {
         for full_validation in [true, false] {
             let schema = prefix_at_schema(
                 &["region", "restaurantId"],
@@ -2177,7 +2177,7 @@ mod tests {
                 32,
                 vec![],
             );
-            let v2 = parse_with(schema, pv14(), full_validation).unwrap_or_else(|e| {
+            let v2 = parse_with(schema, latest(), full_validation).unwrap_or_else(|e| {
                 panic!("the at form must parse (full_validation: {full_validation}): {e}")
             });
             let index = v2.indices.get("byMain").expect("index parsed");
@@ -2189,7 +2189,7 @@ mod tests {
     /// The array form naming both levels passes the meta-schema and
     /// parses into both flags — the both-rankings-on-one-index shape.
     #[test]
-    fn prefix_ranked_at_array_form_accepted_at_pv14() {
+    fn prefix_ranked_at_array_form_accepted_at_latest() {
         for full_validation in [true, false] {
             let schema = prefix_at_schema(
                 &["region", "restaurantId"],
@@ -2204,7 +2204,7 @@ mod tests {
                 32,
                 vec![],
             );
-            let v2 = parse_with(schema, pv14(), full_validation).unwrap_or_else(|e| {
+            let v2 = parse_with(schema, latest(), full_validation).unwrap_or_else(|e| {
                 panic!("the array form must parse (full_validation: {full_validation}): {e}")
             });
             let index = v2.indices.get("byMain").expect("index parsed");
@@ -2245,7 +2245,7 @@ mod tests {
             vec![],
         );
         assert!(
-            parse_with(schema, pv14(), true).is_err(),
+            parse_with(schema, latest(), true).is_err(),
             "meta-schema v3 must demand rangeCountable alongside the at form"
         );
     }
@@ -2272,7 +2272,7 @@ mod tests {
         ] {
             let schema = prefix_at_schema(&["region", "restaurantId"], value, true, 32, vec![]);
             assert!(
-                parse_with(schema, pv14(), true).is_err(),
+                parse_with(schema, latest(), true).is_err(),
                 "the meta-schema must reject the {label} object form"
             );
         }
@@ -2305,7 +2305,7 @@ mod tests {
                     32,
                     vec![(name, properties, flags.clone())],
                 );
-                let error = parse_with(schema, pv14(), full_validation)
+                let error = parse_with(schema, latest(), full_validation)
                     .expect_err("an index conflicting with the at level must be rejected");
                 let message = format!("{error:?}");
                 assert!(
@@ -2326,7 +2326,7 @@ mod tests {
                 32,
                 vec![("byRegionGrade", &["region", "grade"], vec![])],
             );
-            let v2 = parse_with(schema, pv14(), full_validation).unwrap_or_else(|e| {
+            let v2 = parse_with(schema, latest(), full_validation).unwrap_or_else(|e| {
                 panic!(
                     "a plain continuing sibling must be admitted \
                      (full_validation: {full_validation}): {e}"
@@ -2352,7 +2352,7 @@ mod tests {
             32,
             vec![("byGrade", &["grade"], vec![])],
         );
-        parse_with(schema, pv14(), true)
+        parse_with(schema, latest(), true)
             .expect("an index over a different leading property must not conflict");
     }
 
@@ -2377,7 +2377,7 @@ mod tests {
                     vec![("countable", Value::Text("countable".to_string()))],
                 )],
             );
-            let error = parse_with(schema, pv14(), full_validation)
+            let error = parse_with(schema, latest(), full_validation)
                 .expect_err("an aggregating index above the at level must be rejected");
             let message = format!("{error:?}");
             assert!(
@@ -2396,7 +2396,7 @@ mod tests {
             32,
             vec![("byRegion", &["region"], vec![])],
         );
-        parse_with(schema, pv14(), true)
+        parse_with(schema, latest(), true)
             .expect("a plain index on the prefix above the at level must not conflict");
     }
 
@@ -2412,7 +2412,7 @@ mod tests {
             61,
             vec![],
         );
-        parse_with(schema, pv14(), true).expect("61 characters fits the 247-byte ceiling");
+        parse_with(schema, latest(), true).expect("61 characters fits the 247-byte ceiling");
 
         // 62 * 4 = 248 > 247: rejected, naming the at property's bound.
         let schema = prefix_at_schema(
@@ -2422,7 +2422,7 @@ mod tests {
             62,
             vec![],
         );
-        let error = parse_with(schema, pv14(), true)
+        let error = parse_with(schema, latest(), true)
             .expect_err("62 characters exceeds the 247-byte ceiling");
         let msg = format!("{error:?}");
         assert!(
@@ -2537,7 +2537,7 @@ mod tests {
     #[test]
     fn averageable_sugar_satisfies_ranked_countable_under_full_validation() {
         let schema = schema_with_index_entry(sugar_multi_axis_index_entry());
-        let v2 = parse_with(schema, pv14(), true)
+        let v2 = parse_with(schema, latest(), true)
             .expect("the sugar form satisfies every prerequisite in both layers");
         let index = v2
             .indices
@@ -2555,8 +2555,8 @@ mod tests {
             ("rangeAverageable", Value::Bool(true)),
             ("rankedSummable", Value::Bool(true)),
         ]));
-        let v2 =
-            parse_with(schema, pv14(), true).expect("rangeAverageable stands in for rangeSummable");
+        let v2 = parse_with(schema, latest(), true)
+            .expect("rangeAverageable stands in for rangeSummable");
         let index = v2
             .indices
             .get("storeRating")
@@ -2576,7 +2576,7 @@ mod tests {
             ("rangeSummable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]));
-        let v2 = parse_with(schema, pv14(), true)
+        let v2 = parse_with(schema, latest(), true)
             .expect("rangeCountable + rangeSummable stand in for rangeAverageable");
         let index = v2
             .indices
@@ -2596,7 +2596,7 @@ mod tests {
             ("averageable", Value::Text("grade".to_string())),
             ("rankedCountable", Value::Bool(true)),
         ]));
-        let error = parse_with(schema, pv14(), true)
+        let error = parse_with(schema, latest(), true)
             .expect_err("a Count ranking needs a range axis, however it is spelled");
         let msg = format!("{error:?}");
         assert!(
@@ -2613,7 +2613,7 @@ mod tests {
             ("averageable", Value::Text("grade".to_string())),
             ("rankedCountable", Value::Bool(false)),
         ]));
-        let v2 = parse_with(schema, pv14(), true)
+        let v2 = parse_with(schema, latest(), true)
             .expect("an explicit rankedCountable: false asks for no ranking axis");
         let index = v2
             .indices
@@ -2630,7 +2630,7 @@ mod tests {
     fn range_countable_alone_implies_countable_under_full_validation() {
         let schema =
             schema_with_index_entry(index_entry(vec![("rangeCountable", Value::Bool(true))]));
-        let v2 = parse_with(schema, pv14(), true)
+        let v2 = parse_with(schema, latest(), true)
             .expect("rangeCountable alone is a complete declaration");
         let index = v2
             .indices
@@ -2647,7 +2647,7 @@ mod tests {
         let schema =
             schema_with_index_entry(index_entry(vec![("rangeSummable", Value::Bool(true))]));
         let error =
-            parse_with(schema, pv14(), true).expect_err("rangeSummable needs something to sum");
+            parse_with(schema, latest(), true).expect_err("rangeSummable needs something to sum");
         let msg = format!("{error:?}");
         assert!(
             msg.contains("summable"),
@@ -2663,7 +2663,7 @@ mod tests {
             ("countable", Value::Text("notCountable".to_string())),
             ("rangeCountable", Value::Bool(true)),
         ]));
-        let error = parse_with(schema, pv14(), true)
+        let error = parse_with(schema, latest(), true)
             .expect_err("countable: notCountable contradicts rangeCountable: true");
         let msg = format!("{error:?}");
         assert!(
@@ -2703,7 +2703,7 @@ mod tests {
             Value::Text("rangeCountable".to_string()),
             Value::Bool(false),
         ));
-        let error = parse_with(schema_with_index_entry(entry), pv14(), true)
+        let error = parse_with(schema_with_index_entry(entry), latest(), true)
             .expect_err("rangeAverageable: true contradicts an explicit rangeCountable: false");
         let msg = format!("{error:?}");
         assert!(
@@ -2723,7 +2723,7 @@ mod tests {
             ],
             index_entry(vec![]),
         );
-        parse_with(schema, pv14(), true).expect(
+        parse_with(schema, latest(), true).expect(
             "documentsAverageable implies documentsSummable, so rangeSummable is satisfied",
         );
 
@@ -2731,7 +2731,7 @@ mod tests {
             vec![("rangeSummable", Value::Bool(true))],
             index_entry(vec![]),
         );
-        let error = parse_with(schema, pv14(), true)
+        let error = parse_with(schema, latest(), true)
             .expect_err("a doctype-level rangeSummable with nothing to sum is refused");
         let msg = format!("{error:?}");
         assert!(
@@ -2746,7 +2746,7 @@ mod tests {
     #[test]
     fn sugar_form_parses_without_full_validation() {
         let schema = schema_with_index_entry(sugar_multi_axis_index_entry());
-        let v2 = parse_with(schema, pv14(), false)
+        let v2 = parse_with(schema, latest(), false)
             .expect("the structural parser is sugar-aware and accepts the short form");
         let index = v2
             .indices
@@ -2819,7 +2819,7 @@ mod tests {
             "rankedAverageable": true,
             "rankedCountable": true
         });
-        DataContract::from_json(contract_json(short_form), true, pv14())
+        DataContract::from_json(contract_json(short_form), true, latest())
             .expect("the sugar short form registers, so the SDK must accept it too");
 
         let no_range_axis = json!({
@@ -2828,7 +2828,7 @@ mod tests {
             "averageable": "grade",
             "rankedCountable": true
         });
-        let error = DataContract::from_json(contract_json(no_range_axis), true, pv14())
+        let error = DataContract::from_json(contract_json(no_range_axis), true, latest())
             .expect_err("a ranking with no range axis is refused by both layers");
         let msg = format!("{error:?}");
         assert!(

@@ -489,6 +489,7 @@ fn query_charter_documents<const N: usize>(
         processing_fee: outcome.cost(),
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     }));
     Ok(outcome.documents_owned())
 }

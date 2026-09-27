@@ -49,7 +49,12 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
         // Validate user defined properties
 
         let result = data_contract
-            .validate_document_properties(document_type_name, self.data().into(), platform_version)
+            .validate_document_properties(
+                document_type_name,
+                self.data().into(),
+                Some(owner_id),
+                platform_version,
+            )
             .map_err(Error::Protocol)?;
         if !result.is_valid() {
             return Ok(result);

@@ -1,5 +1,5 @@
 use crate::prelude::DataContract;
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 
 mod v0;
@@ -34,6 +34,7 @@ impl DataContractDocumentValidationMethodsV0 for DataContract {
         &self,
         name: &str,
         properties: Value,
+        owner_id: Option<Identifier>,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -42,7 +43,7 @@ impl DataContractDocumentValidationMethodsV0 for DataContract {
             .methods
             .validate_document
         {
-            0 => self.validate_document_properties_v0(name, properties, platform_version),
+            0 => self.validate_document_properties_v0(name, properties, owner_id, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::validate_document_properties".to_string(),
                 known_versions: vec![0],

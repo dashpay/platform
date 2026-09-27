@@ -1,5 +1,9 @@
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::errors::DataContractError;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
@@ -1184,10 +1188,10 @@ mod tests {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ArrayItemType {}
+impl JsonConvertible for ArrayItemType {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ArrayItemType {}
+impl ValueConvertible for ArrayItemType {}
 
 #[cfg(all(
     test,

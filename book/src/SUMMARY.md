@@ -119,4 +119,5 @@
 
 # Appendix
 
+- [Contract Keywords Reference](contract-keywords.md)
 - [API Reference](api-reference.md)

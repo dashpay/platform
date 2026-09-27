@@ -126,10 +126,9 @@ pub struct DriveConfig {
 
     /// How long an epoch lasts, in seconds. Neither read nor written with the rest of the
     /// config: the node sets it from its execution config's `epoch_time_length_s` when it
-    /// opens Drive, so there is one source. Drive reads it only to route the price of a
-    /// document whose type declares a `ttl` to the processing fees (a `ttl` under the fee
-    /// schedule's `processing_route_below_epochs` epochs) or the storage fee pool; the price
-    /// itself follows the schedule's fixed period.
+    /// opens Drive, so there is one source. Drive reads it only to count the epochs a
+    /// document whose type declares a `ttl` has left to live, which its storage fee is paid
+    /// out over; the price itself follows the fee schedule's fixed period.
     #[cfg_attr(
         feature = "serde",
         serde(skip, default = "default_epoch_time_length_s")

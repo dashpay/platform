@@ -25,7 +25,7 @@ pub struct DriveDocumentMethodVersions {
 /// 0 in every table.
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentExpirationMethodVersions {
-    pub insert_documents_expirations_tree: FeatureVersion,
+    pub insert_document_ttl_trees: FeatureVersion,
     pub add_document_expiration_operations: FeatureVersion,
     pub remove_document_expiration_operations: FeatureVersion,
     pub fetch_expired_documents: FeatureVersion,

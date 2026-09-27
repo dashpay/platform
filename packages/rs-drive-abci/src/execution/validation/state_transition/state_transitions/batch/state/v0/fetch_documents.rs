@@ -204,6 +204,7 @@ fn fetch_documents_for_transitions_knowing_contract_and_document_type_v1(
         processing_fee: documents_outcome.cost(),
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     }));
 
     Ok(ConsensusValidationResult::new_with_data(
@@ -332,6 +333,7 @@ fn fetch_document_with_id_v0(
         processing_fee: fee,
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     };
     let mut documents = documents_outcome.documents_owned();
 
@@ -395,6 +397,7 @@ fn fetch_document_with_id_v1(
         processing_fee: documents_outcome.cost(),
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     }));
 
     let mut documents = documents_outcome.documents_owned();
@@ -498,6 +501,7 @@ pub(crate) fn fetch_document_through_lookup(
         processing_fee: documents_outcome.cost(),
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     }));
 
     Ok(documents_outcome.documents_owned().into_iter().next())
@@ -539,6 +543,7 @@ pub(crate) fn has_contested_document_with_document_id<'a>(
         processing_fee: fee,
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
     };
     let documents = documents_outcome.documents_owned();
 

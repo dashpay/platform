@@ -10,6 +10,10 @@ use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
 use crate::document::extended_document::v0::ExtendedDocumentV0;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
@@ -34,10 +38,10 @@ pub enum ExtendedDocument {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ExtendedDocument {}
+impl JsonConvertible for ExtendedDocument {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ExtendedDocument {}
+impl ValueConvertible for ExtendedDocument {}
 
 #[cfg(all(
     test,

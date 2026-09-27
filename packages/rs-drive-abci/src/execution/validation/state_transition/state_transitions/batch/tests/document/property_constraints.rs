@@ -1,10 +1,13 @@
 //! End-to-end coverage for the `propertyConstraints` doctype keyword (protocol
-//! version 14): a document type names rules its documents' integer properties
-//! must meet, each a comparison of two integer expressions. A create or replace
-//! that breaks one is consensus-rejected with
-//! `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the rule
-//! and why, and leaves the stored document untouched. A property the document
-//! leaves out counts as 0, or as its `ifAbsent` value.
+//! version 14): a document type names rules its documents' properties must
+//! meet, each a comparison of two integer expressions, of a string or an
+//! identifier property with constants or with another property of its kind,
+//! an `in` list of values, a `present` or `absent` test, or an `anyOf`,
+//! `allOf` or `not` of such conditions. A create or replace that breaks one is
+//! consensus-rejected with `DocumentPropertyConstraintViolatedError` (basic
+//! code 10422), naming the rule and why, and leaves the stored document
+//! untouched. A property the document leaves out counts as 0 in an operand,
+//! or as its `ifAbsent` value.
 
 use super::*;
 
@@ -19,8 +22,10 @@ mod property_constraints_tests {
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
     use dpp::document::DocumentV0Setters;
+    use dpp::fee::Credits;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::platform_value;
+    use dpp::platform_value::string_encoding::Encoding;
     use dpp::prelude::{DataContract, Identifier, IdentityNonce};
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -31,14 +36,31 @@ mod property_constraints_tests {
     use simple_signer::signer::SimpleSigner;
     use std::collections::{BTreeMap, BTreeSet};
 
+    /// The bytes repeated into the token ids `paidInAcceptedToken` lists, base58.
+    const ACCEPTED_TOKENS: [u8; 2] = [7, 8];
+
     /// A mutable `offer` type whose rules, checked in name order, are:
     ///
     /// * `boostCapped`: `price * ifAbsent(boost, 1) <= 100000`
     /// * `boostPower`: `ifAbsent(boost, 1) ^ 20 >= 1`, which overflows for a large boost
+    /// * `closedAtOnlyWhenClosed`: `closedAt` only on a closed or cancelled offer
+    /// * `closedNeedsClosedAt`: a closed offer carries `closedAt`
     /// * `depositCoversOrder`: `(price + fee) * quantity <= deposit`
     /// * `discountBelowPrice`: `discount < price`, an absent discount counting as 0
+    /// * `discountGivenAboveZero`: `discount` is absent or above 0
+    /// * `discountOnlyWhileOpen`: a discount only on an open offer, a status left out
+    ///   counting as open
+    /// * `feeWaivedOnlyWithDiscount`: `!(fee == 0 && discount == 0)`
+    /// * `feeWaivedOrAtLeastTen`: `fee == 0 || fee >= 10`
+    /// * `paidInAcceptedToken`: a `paymentToken`, when given, is one of [`ACCEPTED_TOKENS`]
     /// * `perUnitDeposit`: `deposit / quantity >= 1`, which divides by zero for no quantity
+    /// * `refundGoesToPayer`: a `refundTo`, when given, is the `payerId`
+    /// * `settlesInAnotherCurrency`: a `settleIn` currency, when given, is not `currency`
+    /// * `tieredFee`: `fee` is one of 0, 10, 25 or 50
+    /// * `waivedFeeIsZero`: `waiveFee * fee == 0`, the boolean reading as 1 or 0
     fn offer_schema() -> Value {
+        let accepted_tokens = ACCEPTED_TOKENS
+            .map(|byte| Value::Text(Identifier::new([byte; 32]).to_string(Encoding::Base58)));
         platform_value!({
             "type": "object",
             "documentsMutable": true,
@@ -48,7 +70,51 @@ mod property_constraints_tests {
                 "quantity": { "type": "integer", "minimum": 0, "maximum": 100, "position": 2 },
                 "deposit": { "type": "integer", "minimum": 0, "position": 3 },
                 "discount": { "type": "integer", "minimum": 0, "maximum": 1000000, "position": 4 },
-                "boost": { "type": "integer", "minimum": 0, "maximum": 100, "position": 5 }
+                "boost": { "type": "integer", "minimum": 0, "maximum": 100, "position": 5 },
+                "waiveFee": { "type": "boolean", "position": 6 },
+                "status": {
+                    "type": "string",
+                    "enum": ["open", "closed", "cancelled"],
+                    "maxLength": 9,
+                    "position": 7
+                },
+                "closedAt": { "type": "integer", "minimum": 0, "position": 8 },
+                "currency": {
+                    "type": "string",
+                    "enum": ["USD", "EUR", "DASH"],
+                    "maxLength": 4,
+                    "position": 9
+                },
+                "settleIn": {
+                    "type": "string",
+                    "enum": ["USD", "EUR", "DASH"],
+                    "maxLength": 4,
+                    "position": 10
+                },
+                "payerId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 11
+                },
+                "refundTo": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 12
+                },
+                "paymentToken": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 13
+                }
             },
             "required": ["price", "fee", "quantity", "deposit"],
             "propertyConstraints": {
@@ -61,6 +127,18 @@ mod property_constraints_tests {
                 "boostPower": {
                     "greaterThanOrEqual": [{ "power": [{ "ifAbsent": ["boost", 1] }, 20] }, 1]
                 },
+                "closedAtOnlyWhenClosed": {
+                    "anyOf": [
+                        { "in": ["status", ["closed", "cancelled"]] },
+                        { "absent": "closedAt" }
+                    ]
+                },
+                "closedNeedsClosedAt": {
+                    "anyOf": [
+                        { "notEqual": ["status", { "const": "closed" }] },
+                        { "present": "closedAt" }
+                    ]
+                },
                 "depositCoversOrder": {
                     "lessThanOrEqual": [
                         { "multiply": [{ "add": ["price", "fee"] }, "quantity"] },
@@ -68,8 +146,71 @@ mod property_constraints_tests {
                     ]
                 },
                 "discountBelowPrice": { "lessThan": ["discount", "price"] },
+                "discountGivenAboveZero": {
+                    "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
+                },
+                "discountOnlyWhileOpen": {
+                    "anyOf": [
+                        { "absent": "discount" },
+                        { "equal": [{ "ifAbsent": ["status", "open"] }, { "const": "open" }] }
+                    ]
+                },
+                "feeWaivedOnlyWithDiscount": {
+                    "not": { "allOf": [{ "equal": ["fee", 0] }, { "equal": ["discount", 0] }] }
+                },
+                "feeWaivedOrAtLeastTen": {
+                    "anyOf": [{ "equal": ["fee", 0] }, { "greaterThanOrEqual": ["fee", 10] }]
+                },
+                "paidInAcceptedToken": {
+                    "anyOf": [
+                        { "absent": "paymentToken" },
+                        { "in": ["paymentToken", accepted_tokens] }
+                    ]
+                },
                 "perUnitDeposit": {
                     "greaterThanOrEqual": [{ "divide": ["deposit", "quantity"] }, 1]
+                },
+                "refundGoesToPayer": {
+                    "anyOf": [{ "absent": "refundTo" }, { "equal": ["refundTo", "payerId"] }]
+                },
+                "settlesInAnotherCurrency": {
+                    "anyOf": [{ "absent": "settleIn" }, { "notEqual": ["settleIn", "currency"] }]
+                },
+                "tieredFee": { "in": ["fee", [0, 10, 25, 50]] },
+                "waivedFeeIsZero": { "equal": [{ "multiply": ["waiveFee", "fee"] }, 0] }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    /// A mutable, transferable and purchasable `offer` type with the integers
+    /// [`set_valid_offer`] fills and one rule, `sellerIsOwner`: a `sellerId`,
+    /// when given, is the offer's owner, `$ownerId`, so a transfer or a purchase
+    /// of an offer naming its seller is refused.
+    fn owned_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "transferable": 1,
+            "tradeMode": 1,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "sellerId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 4
+                }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "sellerIsOwner": {
+                    "anyOf": [{ "absent": "sellerId" }, { "equal": ["sellerId", "$ownerId"] }]
                 }
             },
             "additionalProperties": false
@@ -103,6 +244,11 @@ mod property_constraints_tests {
 
     impl OfferFixture {
         fn new() -> Self {
+            Self::with_schema(offer_schema())
+        }
+
+        /// The fixture with its `offer` type declared by `schema`.
+        fn with_schema(schema: Value) -> Self {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -117,13 +263,7 @@ mod property_constraints_tests {
             )
             .data_contract_owned();
             contract
-                .set_document_schema(
-                    "offer",
-                    offer_schema(),
-                    true,
-                    &mut Vec::new(),
-                    platform_version,
-                )
+                .set_document_schema("offer", schema, true, &mut Vec::new(), platform_version)
                 .expect("expected to add the offer document type");
             platform
                 .drive
@@ -279,6 +419,139 @@ mod property_constraints_tests {
                 self.document = Some(replacement);
             }
             result
+        }
+
+        /// Transfers the stored offer to `recipient`. On success the fixture's
+        /// document becomes the transferred version.
+        async fn transfer(&mut self, recipient: Identifier) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let mut transferred = self
+                .document
+                .clone()
+                .expect("a document must have been created first");
+            transferred
+                .increment_revision()
+                .expect("expected the revision to increment");
+
+            let transition = {
+                let offer_type = self
+                    .contract
+                    .document_type_for_name("offer")
+                    .expect("expected the offer document type");
+                BatchTransition::new_document_transfer_transition_from_document(
+                    transferred.clone(),
+                    offer_type,
+                    recipient,
+                    &self.key,
+                    self.next_nonce,
+                    0,
+                    None,
+                    &self.signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expected the transfer transition")
+            };
+            self.next_nonce += 1;
+
+            let result = self.process(&transition);
+            if matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            ) {
+                transferred.set_owner_id(recipient);
+                self.document = Some(transferred);
+            }
+            result
+        }
+
+        /// Puts the stored offer up for sale at `price`.
+        async fn set_price(&mut self, price: Credits) {
+            let platform_version = PlatformVersion::latest();
+            let mut priced = self
+                .document
+                .clone()
+                .expect("a document must have been created first");
+            priced
+                .increment_revision()
+                .expect("expected the revision to increment");
+
+            let transition = {
+                let offer_type = self
+                    .contract
+                    .document_type_for_name("offer")
+                    .expect("expected the offer document type");
+                BatchTransition::new_document_update_price_transition_from_document(
+                    priced.clone(),
+                    offer_type,
+                    price,
+                    &self.key,
+                    self.next_nonce,
+                    0,
+                    None,
+                    &self.signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expected the update price transition")
+            };
+            self.next_nonce += 1;
+
+            assert_matches!(
+                self.process(&transition),
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "setting the price must succeed"
+            );
+            self.document = Some(priced);
+        }
+
+        /// A second funded identity on the fixture's platform.
+        fn other_identity(&mut self, seed: u64) -> (Identity, SimpleSigner, IdentityPublicKey) {
+            setup_identity(&mut self.platform, seed, dash_to_credits!(0.5))
+        }
+
+        /// `buyer` purchases the stored offer at `price` (its first transition,
+        /// so nonce 1).
+        async fn purchase_by(
+            &mut self,
+            buyer: &(Identity, SimpleSigner, IdentityPublicKey),
+            price: Credits,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let (buyer_identity, buyer_signer, buyer_key) = buyer;
+            let mut bought = self
+                .document
+                .clone()
+                .expect("a document must have been created first");
+            bought
+                .increment_revision()
+                .expect("expected the revision to increment");
+
+            let transition = {
+                let offer_type = self
+                    .contract
+                    .document_type_for_name("offer")
+                    .expect("expected the offer document type");
+                BatchTransition::new_document_purchase_transition_from_document(
+                    bought,
+                    offer_type,
+                    buyer_identity.id(),
+                    price,
+                    buyer_key,
+                    1,
+                    0,
+                    None,
+                    buyer_signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expected the purchase transition")
+            };
+
+            self.process(&transition)
         }
 
         fn stored_offers(&self) -> Vec<Document> {
@@ -437,6 +710,363 @@ mod property_constraints_tests {
         expect_violated(result, "boostPower", PropertyConstraintViolation::Overflow);
 
         assert!(fixture.stored_offers().is_empty());
+    }
+
+    /// A fee of 5 is neither waived nor at least 10, and a waived fee needs a
+    /// discount; a waived fee on a discounted offer meets both rules.
+    #[tokio::test]
+    async fn should_judge_any_of_all_of_and_not() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| document.set("fee", Value::U64(5)))
+            .await;
+        expect_violated(
+            result,
+            "feeWaivedOrAtLeastTen",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| document.set("fee", Value::U64(0)))
+            .await;
+        expect_violated(
+            result,
+            "feeWaivedOnlyWithDiscount",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        // (100 + 0) * 2 = 200 <= 220, and 10 < 100
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("fee", Value::U64(0));
+                    document.set("discount", Value::U64(10));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// A discount may be left out, but one the offer gives must be above 0: only
+    /// a presence test tells the two apart, since an operand reads a discount left
+    /// out as 0.
+    #[tokio::test]
+    async fn should_tell_a_property_left_out_from_one_set_to_zero() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| document.set("discount", Value::U64(0)))
+            .await;
+        expect_violated(
+            result,
+            "discountGivenAboveZero",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture.create(|_| {}).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture
+                .create(|document| document.set("discount", Value::U64(10)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A fee of 20 is not one of the tiers; 25 is. (100 + 25) * 2 = 250 <= 300.
+    #[tokio::test]
+    async fn should_judge_an_in_against_its_listed_values() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| {
+                document.set("fee", Value::U64(20));
+                document.set("deposit", Value::U64(300));
+            })
+            .await;
+        expect_violated(result, "tieredFee", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("fee", Value::U64(25));
+                    document.set("deposit", Value::U64(300));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// A boolean reads as 1 for true and 0 for false: a waived fee must be 0, and
+    /// an offer that does not waive it, or leaves the flag out, may charge one.
+    #[tokio::test]
+    async fn should_read_a_boolean_property_as_one_or_zero() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| document.set("waiveFee", Value::Bool(true)))
+            .await;
+        expect_violated(
+            result,
+            "waivedFeeIsZero",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        // A waived fee of 0 needs a discount (`feeWaivedOnlyWithDiscount`)
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("waiveFee", Value::Bool(true));
+                    document.set("fee", Value::U64(0));
+                    document.set("discount", Value::U64(10));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture
+                .create(|document| document.set("waiveFee", Value::Bool(false)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A string property is compared with constants: a closed offer needs
+    /// `closedAt`, and only a closed or cancelled one may carry it.
+    #[tokio::test]
+    async fn should_compare_a_string_property_with_constants() {
+        let mut fixture = OfferFixture::new();
+        let status = |value: &str| Value::Text(value.to_string());
+
+        let result = fixture
+            .create(|document| document.set("status", status("closed")))
+            .await;
+        expect_violated(
+            result,
+            "closedNeedsClosedAt",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| {
+                document.set("status", status("open"));
+                document.set("closedAt", Value::U64(1000));
+            })
+            .await;
+        expect_violated(
+            result,
+            "closedAtOnlyWhenClosed",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        for (value, closed_at) in [
+            ("closed", Some(1000)),
+            ("cancelled", Some(1000)),
+            ("open", None),
+        ] {
+            assert_matches!(
+                fixture
+                    .create(|document| {
+                        document.set("status", status(value));
+                        if let Some(closed_at) = closed_at {
+                            document.set("closedAt", Value::U64(closed_at));
+                        }
+                    })
+                    .await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "{value}"
+            );
+        }
+        assert_eq!(fixture.stored_offers().len(), 3);
+    }
+
+    /// Two string properties compare their strings: an offer may not settle in
+    /// the currency it is priced in. A currency it leaves out equals none.
+    #[tokio::test]
+    async fn should_compare_two_string_properties() {
+        let mut fixture = OfferFixture::new();
+        let currency = |value: &str| Value::Text(value.to_string());
+
+        let result = fixture
+            .create(|document| {
+                document.set("currency", currency("USD"));
+                document.set("settleIn", currency("USD"));
+            })
+            .await;
+        expect_violated(
+            result,
+            "settlesInAnotherCurrency",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("currency", currency("USD"));
+                    document.set("settleIn", currency("DASH"));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // No price currency: the settlement currency differs from it
+        assert_matches!(
+            fixture
+                .create(|document| document.set("settleIn", currency("EUR")))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A string default stands in for a status the offer leaves out: a discount
+    /// is allowed with no status, as on an open offer, but not on a closed one.
+    #[tokio::test]
+    async fn should_read_a_string_default_for_a_property_left_out() {
+        let mut fixture = OfferFixture::new();
+        let status = |value: &str| Value::Text(value.to_string());
+
+        let result = fixture
+            .create(|document| {
+                document.set("discount", Value::U64(10));
+                document.set("status", status("closed"));
+                document.set("closedAt", Value::U64(1000));
+            })
+            .await;
+        expect_violated(
+            result,
+            "discountOnlyWhileOpen",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| document.set("discount", Value::U64(10)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("discount", Value::U64(10));
+                    document.set("status", status("open"));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// Identifier properties compare with the base58 identifiers an `in` lists
+    /// and with each other: a payment token must be an accepted one, and a
+    /// refund must go to the payer.
+    #[tokio::test]
+    async fn should_compare_identifier_properties() {
+        let mut fixture = OfferFixture::new();
+        let identifier = |byte: u8| Value::Identifier([byte; 32]);
+
+        let result = fixture
+            .create(|document| document.set("paymentToken", identifier(9)))
+            .await;
+        expect_violated(
+            result,
+            "paidInAcceptedToken",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| {
+                document.set("payerId", identifier(1));
+                document.set("refundTo", identifier(2));
+            })
+            .await;
+        expect_violated(
+            result,
+            "refundGoesToPayer",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("paymentToken", identifier(ACCEPTED_TOKENS[1]));
+                    document.set("payerId", identifier(1));
+                    document.set("refundTo", identifier(1));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// A rule reading `$ownerId` holds the offer's seller to its owner: on a
+    /// create, and on a transfer or a purchase, which change the owner.
+    #[tokio::test]
+    async fn should_compare_the_owner_on_create_transfer_and_purchase() {
+        let mut fixture = OfferFixture::with_schema(owned_offer_schema());
+        let owner = fixture.identity.id();
+
+        let result = fixture
+            .create(|document| document.set("sellerId", Value::Identifier([4; 32])))
+            .await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+
+        assert_matches!(
+            fixture
+                .create(|document| document.set("sellerId", Value::Identifier(owner.to_buffer())))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // Transferred, the offer would name a seller that no longer owns it
+        let (recipient, _, _) = fixture.other_identity(961);
+        let result = fixture.transfer(recipient.id()).await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+
+        // Bought, likewise
+        fixture.set_price(1000).await;
+        let buyer = fixture.other_identity(962);
+        let result = fixture.purchase_by(&buyer, 1000).await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+
+        let stored = fixture.stored_offers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].owner_id(),
+            owner,
+            "the refused actions leave the owner"
+        );
+    }
+
+    /// An offer naming no seller moves freely: the rule reading `$ownerId` holds
+    /// whoever owns it.
+    #[tokio::test]
+    async fn should_transfer_an_offer_the_owner_rules_allow() {
+        let mut fixture = OfferFixture::with_schema(owned_offer_schema());
+        assert_matches!(
+            fixture.create(|_| {}).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let (recipient, _, _) = fixture.other_identity(963);
+        assert_matches!(
+            fixture.transfer(recipient.id()).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers()[0].owner_id(), recipient.id());
     }
 
     #[tokio::test]

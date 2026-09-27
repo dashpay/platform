@@ -27,6 +27,31 @@ impl<C> Platform<C> {
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<FeesInPoolsV0, Error> {
+        self.add_distribute_block_fees_into_pools_operations_v0_with_storage(
+            current_epoch,
+            block_fees.processing_fee(),
+            block_fees.storage_fee(),
+            cached_aggregated_storage_fees,
+            transaction,
+            batch,
+            platform_version,
+        )
+    }
+
+    /// The body of v0 with the block's processing fees and the storage fees it adds to the
+    /// storage fee distribution pool given apart, which v1 passes without the lifetime storage
+    /// fees. Split out, operations unchanged, in place in this shipped generation.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn add_distribute_block_fees_into_pools_operations_v0_with_storage(
+        &self,
+        current_epoch: &Epoch,
+        block_processing_fee: Credits,
+        block_storage_fee: Credits,
+        cached_aggregated_storage_fees: Option<Credits>,
+        transaction: TransactionArg,
+        batch: &mut Vec<DriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<FeesInPoolsV0, Error> {
         // update epochs pool processing fees
         let epoch_processing_fees = self
             .drive
@@ -45,7 +70,7 @@ impl<C> Platform<C> {
                 _ => Err(e),
             })?;
 
-        let total_processing_fees = epoch_processing_fees + block_fees.processing_fee();
+        let total_processing_fees = epoch_processing_fees + block_processing_fee;
 
         batch.push(DriveOperation::GroveDBOperation(
             current_epoch.update_processing_fee_pool_operation(total_processing_fees)?,
@@ -59,12 +84,11 @@ impl<C> Platform<C> {
             Some(storage_fees) => storage_fees,
         };
 
-        let total_storage_fees =
-            storage_distribution_credits_in_fee_pool + block_fees.storage_fee();
+        let total_storage_fees = storage_distribution_credits_in_fee_pool + block_storage_fee;
 
         batch.push(DriveOperation::GroveDBOperation(
             update_storage_fee_distribution_pool_operation(
-                storage_distribution_credits_in_fee_pool + block_fees.storage_fee(),
+                storage_distribution_credits_in_fee_pool + block_storage_fee,
             )?,
         ));
 

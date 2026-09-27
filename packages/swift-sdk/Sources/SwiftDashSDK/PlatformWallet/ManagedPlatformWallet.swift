@@ -1710,12 +1710,18 @@ extension ManagedPlatformWallet {
     /// `public_keys` map; the signer's role is to sign with whatever
     /// key was picked.
     ///
+    /// `maxContestFund` is the most, in credits, the identity pays into
+    /// the contest a contested name joins, and the identity must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// name that joins no contest ignores it.
+    ///
     /// Returns the full domain name (e.g. `"alice.dash"`).
     @discardableResult
     public func registerDpnsName(
         identityId: Identifier,
         name: String,
-        signer: KeychainSigner
+        signer: KeychainSigner,
+        maxContestFund: UInt64? = nil
     ) async throws -> String {
         let handle = self.handle
         // Take the raw signer handle outside the Task. `KeychainSigner`
@@ -1731,6 +1737,8 @@ extension ManagedPlatformWallet {
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
+        // `0` asks the Rust side for the current fund to join.
+        let contestFund = maxContestFund ?? 0
         return try await Task.detached(priority: .userInitiated) { () -> String in
             _ = signer
             var outPtr: UnsafeMutablePointer<CChar>? = nil
@@ -1740,6 +1748,7 @@ extension ManagedPlatformWallet {
                         handle,
                         idBp.baseAddress!,
                         namePtr,
+                        contestFund,
                         signerHandle,
                         &outPtr
                     )
@@ -3789,6 +3798,11 @@ extension ManagedPlatformWallet {
     /// converts them to native bytes / identifiers). Pass `"{}"` for a
     /// document type with no required properties.
     ///
+    /// `maxContestFund` is the most, in credits, the owner pays into the
+    /// contest a contested document joins, and the owner must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// document that joins no contest ignores it.
+    ///
     /// Lifetime contract: the `signer` instance MUST stay alive for the
     /// duration of the synchronous FFI call inside this async wrapper
     /// (Rust holds a `passUnretained` ctx pointer to the underlying
@@ -3800,10 +3814,13 @@ extension ManagedPlatformWallet {
         contractId: Identifier,
         documentType: String,
         propertiesJSON: String,
-        signer: KeychainSigner
+        signer: KeychainSigner,
+        maxContestFund: UInt64? = nil
     ) async throws -> (Identifier, String) {
         let handle = self.handle
         let signerHandle = signer.handle
+        // `0` asks the Rust side for the current fund to join.
+        let contestFund = maxContestFund ?? 0
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
@@ -3841,6 +3858,7 @@ extension ManagedPlatformWallet {
                                         contractBp.baseAddress!,
                                         typePtr,
                                         propsPtr,
+                                        contestFund,
                                         signerHandle,
                                         outBp.baseAddress!,
                                         &documentJsonPtr

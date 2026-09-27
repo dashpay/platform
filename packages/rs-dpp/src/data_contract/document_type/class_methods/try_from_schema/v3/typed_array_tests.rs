@@ -986,7 +986,7 @@ fn should_refuse_a_document_whose_typed_array_breaks_its_schema() {
     let contract = charter_contract(platform_version);
 
     contract
-        .validate_document_properties("charter", charter_properties(), platform_version)
+        .validate_document_properties("charter", charter_properties(), None, platform_version)
         .map(|result| assert!(result.is_valid(), "the base document is valid: {result:?}"))
         .expect("validation runs");
 
@@ -1023,7 +1023,7 @@ fn should_refuse_a_document_whose_typed_array_breaks_its_schema() {
             .expect("property applies");
 
         let result = contract
-            .validate_document_properties("charter", properties, platform_version)
+            .validate_document_properties("charter", properties, None, platform_version)
             .expect("validation returns a consensus result, never an error");
 
         let Some(ConsensusError::BasicError(BasicError::JsonSchemaError(error))) =

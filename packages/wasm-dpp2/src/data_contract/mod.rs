@@ -3,6 +3,7 @@ pub mod document;
 pub mod document_type_distinct_from;
 pub mod document_type_encryption;
 pub mod document_type_immutability;
+pub mod document_type_property_constraints;
 pub mod document_type_reference;
 pub mod document_type_typed_arrays;
 pub mod model;
@@ -18,6 +19,10 @@ pub use document_type_encryption::{
 };
 pub use document_type_immutability::{
     DocumentTypeImmutablePropertiesJs, DocumentTypeImmutablePropertiesMapJs,
+};
+pub use document_type_property_constraints::{
+    DocumentPropertyConstraintArrayJs, DocumentPropertyConstraintMapJs,
+    DocumentPropertyConstraintViolationJs,
 };
 pub use document_type_reference::{
     DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs,

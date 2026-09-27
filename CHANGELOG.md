@@ -1,3 +1,97 @@
+## [4.2.0-beta.5](https://github.com/dashpay/platform/compare/v4.2.0-beta.4...v4.2.0-beta.5) (2026-09-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** string equality for enums in propertyConstraints rules (PV14) (#5042)
+* **platform:** pay document ttl storage fees to the epochs the documents live in (PV14) (#5033)
+* **platform:** contenders state the most they pay and are charged the join price (PV14) (#5039)
+* **platform:** boolean operands in propertyConstraints rules (PV14) (#5040)
+* **platform:** in, value membership in propertyConstraints rules (PV14) (#5038)
+* **platform:** present and absent tests in propertyConstraints rules (PV14) (#5037)
+* **platform:** anyOf, allOf and not in propertyConstraints rules (PV14) (#5036)
+* **platform:** a contender's fund doubles for every 50 contenders a contest holds past 250 (PV14) (#5034)
+* **drive-abci:** cap a contest at 1,000 contenders and tally every one (PV14) (#5029)
+* **platform:** documents with a time to live, deleted by the platform (PV14) (#5007)
+* **drive:** an evonode's token claim covers only the epochs it read (PV14) (#5015)
+* **drive-abci:** claw a storage refund back from the epochs it was priced for (PV14) (#5013)
+* **drive-abci:** refuse bytes after a state transition (PV14) (#5011)
+* **drive-abci:** refuse a masternode vote for an identity that is not a contender (PV14) (#5002)
+* **drive:** delete an ended vote poll end date only once none of its polls remain (PV14) (#4996)
+* **drive-abci:** refuse a token mint or direct purchase past the i64::MAX supply ceiling (PV14) (#5000)
+* **drive-abci:** allow contested documents before epoch 4 (#4995)
+* **drive:** merge repeated writes of one balance in a batch so an action fee no longer loses a purchase price (#4987)
+* **platform:** credit repaid identity debt to the processing fee pool (#4985)
+* **dpp:** refuse immutableAllowSetting on a deletableDocument reference (PV14) (#4983)
+* **drive-abci:** re-check a contract reference's owner requirement on every replace of a transferable document (PV14) (#4982)
+* **drive-abci:** refuse a $creatorId key reference on a document without a creator id (PV14) (#4984)
+
+### Features
+
+* **drive-abci:** allow contested documents before epoch 4 ([#4995](https://github.com/dashpay/platform/issues/4995))
+* **platform:** a contender's fund doubles for every 50 contenders a contest holds past 250 (PV14) ([#5034](https://github.com/dashpay/platform/issues/5034))
+* **platform:** anyOf, allOf and not in propertyConstraints rules (PV14) ([#5036](https://github.com/dashpay/platform/issues/5036))
+* **platform:** boolean operands in propertyConstraints rules (PV14) ([#5040](https://github.com/dashpay/platform/issues/5040))
+* **platform:** documents with a time to live, deleted by the platform (PV14) ([#5007](https://github.com/dashpay/platform/issues/5007))
+* **platform:** in, value membership in propertyConstraints rules (PV14) ([#5038](https://github.com/dashpay/platform/issues/5038))
+* **platform:** pay document ttl storage fees to the epochs the documents live in (PV14) ([#5033](https://github.com/dashpay/platform/issues/5033))
+* **platform:** present and absent tests in propertyConstraints rules (PV14) ([#5037](https://github.com/dashpay/platform/issues/5037))
+* **platform:** string equality for enums in propertyConstraints rules (PV14) ([#5042](https://github.com/dashpay/platform/issues/5042))
+* **rs-dapi:** refuse shielded broadcasts from addresses that keep sending invalid proofs ([#5001](https://github.com/dashpay/platform/issues/5001))
+
+
+### Bug Fixes
+
+* **dpp:** refuse immutableAllowSetting on a deletableDocument reference (PV14) ([#4983](https://github.com/dashpay/platform/issues/4983))
+* **drive-abci:** cap a contest at 1,000 contenders and tally every one (PV14) ([#5029](https://github.com/dashpay/platform/issues/5029))
+* **drive-abci:** check the address input limit before verifying witnesses ([#5005](https://github.com/dashpay/platform/issues/5005))
+* **drive-abci:** claw a storage refund back from the epochs it was priced for (PV14) ([#5013](https://github.com/dashpay/platform/issues/5013))
+* **drive-abci:** re-check a contract reference's owner requirement on every replace of a transferable document (PV14) ([#4982](https://github.com/dashpay/platform/issues/4982))
+* **drive-abci:** refuse a $creatorId key reference on a document without a creator id (PV14) ([#4984](https://github.com/dashpay/platform/issues/4984))
+* **drive-abci:** refuse a masternode vote for an identity that is not a contender (PV14) ([#5002](https://github.com/dashpay/platform/issues/5002))
+* **drive-abci:** refuse a token mint or direct purchase past the i64::MAX supply ceiling (PV14) ([#5000](https://github.com/dashpay/platform/issues/5000))
+* **drive-abci:** refuse bytes after a state transition (PV14) ([#5011](https://github.com/dashpay/platform/issues/5011))
+* **drive-abci:** sign and verify vote extensions of a block accepted in another round ([#5028](https://github.com/dashpay/platform/issues/5028))
+* **drive-abci:** verify vote extensions against the withdrawals of their own round ([#5010](https://github.com/dashpay/platform/issues/5010))
+* **drive:** an evonode's token claim covers only the epochs it read (PV14) ([#5015](https://github.com/dashpay/platform/issues/5015))
+* **drive:** delete an ended vote poll end date only once none of its polls remain (PV14) ([#4996](https://github.com/dashpay/platform/issues/4996))
+* **drive:** merge repeated writes of one balance in a batch so an action fee no longer loses a purchase price ([#4987](https://github.com/dashpay/platform/issues/4987))
+* **drive:** read stored group actions without the proof decoding budget ([#5006](https://github.com/dashpay/platform/issues/5006))
+* **platform:** contenders state the most they pay and are charged the join price (PV14) ([#5039](https://github.com/dashpay/platform/issues/5039))
+* **platform:** credit repaid identity debt to the processing fee pool ([#4985](https://github.com/dashpay/platform/issues/4985))
+* **rs-sdk-ffi:** stop probing google.com and testnet quorums on every SDK build ([#5008](https://github.com/dashpay/platform/issues/5008))
+* **sdk:** don't panic in DapiClient::new on an empty address list ([#4964](https://github.com/dashpay/platform/issues/4964))
+
+
+### Performance Improvements
+
+* **drive-abci:** read shielded encrypted notes in one chunk-aligned range read ([#5030](https://github.com/dashpay/platform/issues/5030))
+* **drive:** build batch deletes without copying the pending batch ([#5004](https://github.com/dashpay/platform/issues/5004))
+
+
+### Tests
+
+* **drive:** keep setup_drive's temp directory alive while the drive is open ([#5003](https://github.com/dashpay/platform/issues/5003))
+* **swift-sdk:** run SDKMethodTests against the offline mock SDK instead of live testnet ([#5009](https://github.com/dashpay/platform/issues/5009))
+
+
+### Miscellaneous Chores
+
+* open every pr-description output with a basic explanation section ([#5031](https://github.com/dashpay/platform/issues/5031))
+* sync the pr-description skill with the PR template and title check ([#5032](https://github.com/dashpay/platform/issues/5032))
+
+
+### Continuous Integration
+
+* build release SDKs and NPM packages on self-hosted runners ([#4562](https://github.com/dashpay/platform/issues/4562))
+* re-pin PR Hygiene ([#4975](https://github.com/dashpay/platform/issues/4975))
+* re-pin PR Hygiene ([#4979](https://github.com/dashpay/platform/issues/4979))
+* re-pin PR Hygiene ([#4989](https://github.com/dashpay/platform/issues/4989))
+* re-pin PR Hygiene ([#5016](https://github.com/dashpay/platform/issues/5016))
+* re-pin PR Hygiene ([#5023](https://github.com/dashpay/platform/issues/5023))
+* re-pin PR Hygiene and wake it on a hand-over ([#5020](https://github.com/dashpay/platform/issues/5020))
+* **release:** raise NPM and Swift SDK release job timeouts ([#4974](https://github.com/dashpay/platform/issues/4974))
+
 ## [4.2.0-beta.4](https://github.com/dashpay/platform/compare/v4.2.0-beta.3...v4.2.0-beta.4) (2026-09-24)
 
 

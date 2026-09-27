@@ -9,17 +9,27 @@ struct DocumentTypeDetailsView: View {
     @Environment(\.dismiss) var dismiss
     @State private var expandedIndices: Set<String> = []
     @State private var showingCreateDocument = false
+    /// The type's `propertyConstraints` rules as Rust reads them; `nil` until
+    /// loaded.
+    @State private var propertyConstraints: [DocumentPropertyConstraint]?
+    @State private var propertyConstraintsError: String?
 
     var body: some View {
         List {
             newDocumentSection
             documentInfoSection
             documentSettingsSection
+            propertyConstraintsSection
             documentIndexesSection
             documentPropertiesSection
         }
         .navigationTitle(documentType.name)
         .navigationBarTitleDisplayMode(.inline)
+        // Re-read when the SDK learns the network's protocol version: the
+        // rules are parsed at that version, and none exist below 14.
+        .task(id: appState.platformProtocolVersion) {
+            loadPropertyConstraints()
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -178,6 +188,57 @@ struct DocumentTypeDetailsView: View {
             }
             .font(.subheadline)
             .padding(.vertical, 4)
+        }
+    }
+
+    /// Protocol version 14: named rules every created or replaced document
+    /// must meet, checked in name order. Rust parses them from the stored
+    /// contract; this section only shows what it reports.
+    @ViewBuilder
+    private var propertyConstraintsSection: some View {
+        if let error = propertyConstraintsError {
+            Section("Property Constraints") {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+        } else if let rules = propertyConstraints, !rules.isEmpty {
+            Section {
+                ForEach(rules, id: \.name) { rule in
+                    PropertyConstraintRowView(rule: rule)
+                }
+            } header: {
+                Text("Property Constraints (\(rules.count))")
+            } footer: {
+                Text("Every created or replaced document must meet each rule, checked in name order. A document breaking one is refused (error 10422) and the fee is still charged.")
+            }
+        } else if propertyConstraints != nil, documentType.declaresPropertyConstraints {
+            Section("Property Constraints") {
+                Text("The schema declares propertyConstraints, but the network's protocol version does not enforce them (they take effect at protocol version 14).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func loadPropertyConstraints() {
+        // A schema without the keyword has no rules to read
+        guard documentType.declaresPropertyConstraints else {
+            propertyConstraints = []
+            propertyConstraintsError = nil
+            return
+        }
+        guard let sdk = appState.sdk else {
+            propertyConstraints = nil
+            propertyConstraintsError = "Connect to a network to read the property constraints."
+            return
+        }
+        do {
+            propertyConstraints = try documentType.propertyConstraints(using: sdk)
+            propertyConstraintsError = nil
+        } catch {
+            propertyConstraints = nil
+            propertyConstraintsError = "Could not read the property constraints: \(error.localizedDescription)"
         }
     }
 
@@ -386,6 +447,64 @@ struct ExpandableIndexRowView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// One `propertyConstraints` rule: its name, the rule as declared, what it
+/// reads, and whether an owner change is judged against it too.
+struct PropertyConstraintRowView: View {
+    let rule: DocumentPropertyConstraint
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(rule.name)
+                    .font(.headline)
+                Spacer()
+                if rule.readsOwner {
+                    Text("$ownerId")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.2))
+                        .foregroundColor(.purple)
+                        .cornerRadius(4)
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(rule.prettyRuleJSON)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: true, vertical: true)
+            }
+
+            if !readsText.isEmpty {
+                Text("Reads: \(readsText)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            if rule.readsOwner {
+                Label(
+                    "Reads $ownerId, the document's owner: transfers and purchases are judged against this rule too.",
+                    systemImage: "person.crop.circle.badge.checkmark"
+                )
+                .font(.caption2)
+                .foregroundColor(.purple)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name)")
+    }
+
+    /// Each property the rule reads with how it reads it, repeats dropped.
+    private var readsText: String {
+        var seen = Set<PropertyConstraintRead>()
+        return rule.reads
+            .filter { seen.insert($0).inserted }
+            .map { "\($0.path) (\($0.kind.name))" }
+            .joined(separator: ", ")
     }
 }
 
