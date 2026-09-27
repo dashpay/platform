@@ -2938,6 +2938,164 @@ mod token_pool_mint_burn_claim_purchase_tests {
         assert_eq!(pool_balance(&platform, token_id), 445);
     }
 
+    /// A claim into the pool that would push the supply past the sum item's ceiling is a paid
+    /// consensus error, even where the token configures no max supply.
+    ///
+    /// The supply lives in a sum item, so `i64::MAX` bounds it whether or not a max supply is
+    /// set, and a mint into the pool cannot absorb that bound by saturating: the bundle proves
+    /// exactly the claimed amount entering the pool, so a supply that stopped short would leave
+    /// the pool holding value the supply does not record. Reaching the ceiling therefore has to
+    /// be refused as a consensus error the claimant pays for. Reported as an internal error
+    /// instead, the claim is stripped from the block for free and can be resubmitted forever,
+    /// and the node blames its own code for a release it merely cannot honour.
+    #[tokio::test]
+    async fn should_charge_a_token_claim_to_pool_past_the_supply_ceiling_once_per_identity() {
+        assert_claim_to_pool_past_the_supply_ceiling_is_charged(
+            TokenDistributionType::OncePerIdentity,
+        )
+        .await;
+    }
+
+    /// A transparent claim lets a pre-programmed release saturate the supply, so only its
+    /// once-per-identity kind needs the ceiling. A claim into the pool never saturates, which
+    /// leaves every one of its kinds bounded by it.
+    #[tokio::test]
+    async fn should_charge_a_token_claim_to_pool_past_the_supply_ceiling_pre_programmed() {
+        assert_claim_to_pool_past_the_supply_ceiling_is_charged(
+            TokenDistributionType::PreProgrammed,
+        )
+        .await;
+    }
+
+    async fn assert_claim_to_pool_past_the_supply_ceiling_is_charged(
+        distribution_type: TokenDistributionType,
+    ) {
+        // The largest supply a sum item can hold: one more token of it overflows.
+        const SUPPLY_CEILING: u64 = i64::MAX as u64;
+        const RELEASE: u64 = 445;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9131);
+
+        let (owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (claimant, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let claimant_id = claimant.id();
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(move |configuration: &mut TokenConfiguration| {
+                configuration.set_has_shielded_pool(true);
+                configuration.set_base_supply(SUPPLY_CEILING);
+                configuration.set_max_supply(None);
+                if distribution_type == TokenDistributionType::OncePerIdentity {
+                    configuration
+                        .distribution_rules_mut()
+                        .set_once_per_identity_distribution(Some(
+                            TokenOncePerIdentityDistribution::V0(
+                                TokenOncePerIdentityDistributionV0 { amount: RELEASE },
+                            ),
+                        ));
+                } else {
+                    configuration
+                        .distribution_rules_mut()
+                        .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                            TokenPreProgrammedDistributionV0 {
+                                distributions: [(100, [(claimant_id, RELEASE)].into())].into(),
+                            },
+                        )));
+                }
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        // Only the ceiling can refuse this release: the token sets no max supply of its own.
+        assert_eq!(
+            contract
+                .expected_token_configuration(0)
+                .expect("token configuration")
+                .max_supply(),
+            None
+        );
+        assert_eq!(total_supply(&platform, token_id), SUPPLY_CEILING);
+
+        fast_forward_to_block(&platform, 100, 40, 42, 1, false);
+        let platform_state = platform.state.load();
+        let block_info = BlockInfo {
+            time_ms: 200,
+            height: 41,
+            core_height: 42,
+            epoch: Epoch::new(1).unwrap(),
+        };
+
+        let claim = BatchTransition::new_token_claim_to_pool_transition(
+            token_id,
+            claimant_id,
+            contract.id(),
+            0,
+            distribution_type,
+            None,
+            build_shield_bundle(
+                RELEASE,
+                29,
+                TokenTransitionActionType::ClaimToPool,
+                token_id,
+                claimant_id,
+            ),
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token claim to pool transition");
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[claim.serialize_to_bytes().expect("serialize")],
+                &platform_state,
+                &block_info,
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("process state transition");
+        let [StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
+            actual_fees,
+            ..
+        }] = result.execution_results().as_slice()
+        else {
+            panic!(
+                "a claim past the supply ceiling must be a paid TokenMintPastMaxSupplyError, got {:?}",
+                result.execution_results()
+            );
+        };
+        assert!(
+            actual_fees.processing_fee > 0,
+            "the claimant must pay for the refused claim, or it can be resubmitted for free"
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("commit");
+
+        // Nothing of the claim landed.
+        assert_eq!(total_supply(&platform, token_id), SUPPLY_CEILING);
+        assert_eq!(pool_balance(&platform, token_id), 0);
+        assert_eq!(pool_notes_count(&platform, token_id), 0);
+    }
+
     #[tokio::test]
     async fn test_token_direct_purchase_to_pool() {
         let platform_version = PlatformVersion::latest();
