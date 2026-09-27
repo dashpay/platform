@@ -44,6 +44,20 @@ where
     /// OWN version field (`process_raw_state_transitions`), not this one — but both bump to v1
     /// together in the v13 method set, so the expansion activates atomically. Neither site carries a
     /// version conditional inside a _v0 function; the version is chosen by dispatch.
+    ///
+    /// # Parameters
+    ///
+    /// * `address_balances_in_update`: The block's address-balance update map the credits are
+    ///   merged into, or `None` when the caller does not track them (then nothing is recorded).
+    /// * `added_to_balance_outputs`: The credits the event added to each address, if any.
+    /// * `origin`: Which event family produced the credits; v0 drops `ShieldedSpend` credits.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the credits the version records are merged into the map (an existing
+    ///   `SetCredits` or `AddToCredits` entry grows by the amount, saturating).
+    /// * `Err(Error)` when the method version is unknown.
     pub(in crate::execution) fn record_added_balance_outputs(
         &self,
         address_balances_in_update: Option<&mut BTreeMap<PlatformAddress, CreditOperation>>,
