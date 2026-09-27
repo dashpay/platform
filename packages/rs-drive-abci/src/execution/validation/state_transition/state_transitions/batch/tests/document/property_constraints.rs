@@ -1,12 +1,12 @@
 //! End-to-end coverage for the `propertyConstraints` doctype keyword (protocol
-//! version 14): a document type names rules its documents' integer properties
-//! must meet, each a comparison of two integer expressions or of a string
-//! property with string constants, an `in` list of values, a `present` or
-//! `absent` test, or an `anyOf`, `allOf` or `not` of such conditions. A create or replace
-//! that breaks one is consensus-rejected with
-//! `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the rule
-//! and why, and leaves the stored document untouched. A property the document
-//! leaves out counts as 0, or as its `ifAbsent` value.
+//! version 14): a document type names rules its documents' properties must
+//! meet, each a comparison of two integer expressions, of a string property
+//! with string constants or of two string properties, an `in` list of values,
+//! a `present` or `absent` test, or an `anyOf`, `allOf` or `not` of such
+//! conditions. A create or replace that breaks one is consensus-rejected with
+//! `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the
+//! rule and why, and leaves the stored document untouched. A property the
+//! document leaves out counts as 0 in an operand, or as its `ifAbsent` value.
 
 use super::*;
 
@@ -45,6 +45,7 @@ mod property_constraints_tests {
     /// * `feeWaivedOnlyWithDiscount`: `!(fee == 0 && discount == 0)`
     /// * `feeWaivedOrAtLeastTen`: `fee == 0 || fee >= 10`
     /// * `perUnitDeposit`: `deposit / quantity >= 1`, which divides by zero for no quantity
+    /// * `settlesInAnotherCurrency`: a `settleIn` currency, when given, is not `currency`
     /// * `tieredFee`: `fee` is one of 0, 10, 25 or 50
     /// * `waivedFeeIsZero`: `waiveFee * fee == 0`, the boolean reading as 1 or 0
     fn offer_schema() -> Value {
@@ -65,7 +66,19 @@ mod property_constraints_tests {
                     "maxLength": 9,
                     "position": 7
                 },
-                "closedAt": { "type": "integer", "minimum": 0, "position": 8 }
+                "closedAt": { "type": "integer", "minimum": 0, "position": 8 },
+                "currency": {
+                    "type": "string",
+                    "enum": ["USD", "EUR", "DASH"],
+                    "maxLength": 4,
+                    "position": 9
+                },
+                "settleIn": {
+                    "type": "string",
+                    "enum": ["USD", "EUR", "DASH"],
+                    "maxLength": 4,
+                    "position": 10
+                }
             },
             "required": ["price", "fee", "quantity", "deposit"],
             "propertyConstraints": {
@@ -108,6 +121,9 @@ mod property_constraints_tests {
                 },
                 "perUnitDeposit": {
                     "greaterThanOrEqual": [{ "divide": ["deposit", "quantity"] }, 1]
+                },
+                "settlesInAnotherCurrency": {
+                    "anyOf": [{ "absent": "settleIn" }, { "notEqual": ["settleIn", "currency"] }]
                 },
                 "tieredFee": { "in": ["fee", [0, 10, 25, 50]] },
                 "waivedFeeIsZero": { "equal": [{ "multiply": ["waiveFee", "fee"] }, 0] }
@@ -657,6 +673,45 @@ mod property_constraints_tests {
             );
         }
         assert_eq!(fixture.stored_offers().len(), 3);
+    }
+
+    /// Two string properties compare their strings: an offer may not settle in
+    /// the currency it is priced in. A currency it leaves out equals none.
+    #[tokio::test]
+    async fn should_compare_two_string_properties() {
+        let mut fixture = OfferFixture::new();
+        let currency = |value: &str| Value::Text(value.to_string());
+
+        let result = fixture
+            .create(|document| {
+                document.set("currency", currency("USD"));
+                document.set("settleIn", currency("USD"));
+            })
+            .await;
+        expect_violated(
+            result,
+            "settlesInAnotherCurrency",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("currency", currency("USD"));
+                    document.set("settleIn", currency("DASH"));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // No price currency: the settlement currency differs from it
+        assert_matches!(
+            fixture
+                .create(|document| document.set("settleIn", currency("EUR")))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
     }
 
     #[tokio::test]

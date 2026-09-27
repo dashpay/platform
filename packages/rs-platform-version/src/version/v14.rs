@@ -1051,9 +1051,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     1 for true and 0 for false) and `add`, `subtract`, `multiply`,
 ///     `divide`, `modulo` and `power`; `in`, whether an integer expression
 ///     takes one of two or more distinct integer values; `equal` or `notEqual`
-///     of a string property and a `{ "const": string }`, or `in` of a string
-///     property and two or more distinct strings, a string the document leaves
-///     out equalling no constant; `present` or `absent` naming a property of
+///     of a string property and a `{ "const": string }` or of two bare paths
+///     naming string properties, or `in` of a string property and two or more
+///     distinct strings, a string the document leaves out equalling no
+///     constant and no other string; `present` or `absent` naming a property of
 ///     any type, whether the document holds it (the one way to tell a property
 ///     left out from one set to 0); `anyOf` or `allOf` over two or more
 ///     conditions; or `not` over one. In an operand, a property the document
@@ -1071,9 +1072,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (whose `enum`, if it declares one, lists every constant it is compared
 ///     with), and every path `present` or `absent` tests a property of any
 ///     type, none transient nor inside a transient object; that every
-///     comparison and `in` reads a property; that no `in` lists a value twice;
-///     that an `anyOf` or `allOf` holds none directly of its own kind and a
-///     `not` no `not`; and that no condition or operand nests deeper than
+///     comparison and `in` reads a property; that strings are only compared
+///     for equality; that no `in` lists a value twice; that an `anyOf` or
+///     `allOf` holds none directly of its own kind and a `not` no `not`; and
+///     that no condition or operand nests deeper than
 ///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse. Under full
 ///     validation it holds the limits `SystemLimits::max_property_constraints`
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
