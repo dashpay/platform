@@ -119,6 +119,10 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
+            check_validation_result_with_data!(
+                pool.validate_pool_exists(&self.drive, platform_version)?
+            );
+
             // Anchors are stored as anchor_bytes → block_height_be; extract keys
             let anchors: Vec<Vec<u8>> = bounded_key_elements
                 .into_iter()

@@ -117,6 +117,10 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
+            check_validation_result_with_data!(
+                pool.validate_pool_exists(&self.drive, platform_version)?
+            );
+
             // Non-proved: loop over commitment_tree_get_value for each position
             let pool_path = pool.pool_path_vec();
             let pool_subtree: SubtreePath<Vec<u8>> = pool_path.as_slice().into();

@@ -93,6 +93,10 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
+            check_validation_result_with_data!(
+                pool.validate_pool_exists(&self.drive, platform_version)?
+            );
+
             let nullifiers_path = pool.nullifiers_path_vec();
 
             let entries: Vec<NullifierStatus> = nullifiers
