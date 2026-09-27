@@ -567,7 +567,7 @@ version/
       v1.rs .. v10.rs
     drive_abci_query_versions/
       mod.rs
-      v0.rs .. v3.rs
+      v0.rs .. v2.rs
     drive_abci_withdrawal_constants/
       mod.rs                    # DriveAbciWithdrawalConstants (parameters, not method versions)
       v1.rs .. v3.rs
