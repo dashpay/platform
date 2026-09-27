@@ -1,8 +1,8 @@
 //! End-to-end coverage for the `propertyConstraints` doctype keyword (protocol
 //! version 14): a document type names rules its documents' integer properties
-//! must meet, each a comparison of two integer expressions, an `in` list of
-//! values, a `present` or `absent` test, or an `anyOf`, `allOf` or `not` of
-//! such conditions. A create or replace
+//! must meet, each a comparison of two integer expressions or of a string
+//! property with string constants, an `in` list of values, a `present` or
+//! `absent` test, or an `anyOf`, `allOf` or `not` of such conditions. A create or replace
 //! that breaks one is consensus-rejected with
 //! `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the rule
 //! and why, and leaves the stored document untouched. A property the document
@@ -37,6 +37,8 @@ mod property_constraints_tests {
     ///
     /// * `boostCapped`: `price * ifAbsent(boost, 1) <= 100000`
     /// * `boostPower`: `ifAbsent(boost, 1) ^ 20 >= 1`, which overflows for a large boost
+    /// * `closedAtOnlyWhenClosed`: `closedAt` only on a closed or cancelled offer
+    /// * `closedNeedsClosedAt`: a closed offer carries `closedAt`
     /// * `depositCoversOrder`: `(price + fee) * quantity <= deposit`
     /// * `discountBelowPrice`: `discount < price`, an absent discount counting as 0
     /// * `discountGivenAboveZero`: `discount` is absent or above 0
@@ -56,7 +58,14 @@ mod property_constraints_tests {
                 "deposit": { "type": "integer", "minimum": 0, "position": 3 },
                 "discount": { "type": "integer", "minimum": 0, "maximum": 1000000, "position": 4 },
                 "boost": { "type": "integer", "minimum": 0, "maximum": 100, "position": 5 },
-                "waiveFee": { "type": "boolean", "position": 6 }
+                "waiveFee": { "type": "boolean", "position": 6 },
+                "status": {
+                    "type": "string",
+                    "enum": ["open", "closed", "cancelled"],
+                    "maxLength": 9,
+                    "position": 7
+                },
+                "closedAt": { "type": "integer", "minimum": 0, "position": 8 }
             },
             "required": ["price", "fee", "quantity", "deposit"],
             "propertyConstraints": {
@@ -68,6 +77,18 @@ mod property_constraints_tests {
                 },
                 "boostPower": {
                     "greaterThanOrEqual": [{ "power": [{ "ifAbsent": ["boost", 1] }, 20] }, 1]
+                },
+                "closedAtOnlyWhenClosed": {
+                    "anyOf": [
+                        { "in": ["status", ["closed", "cancelled"]] },
+                        { "absent": "closedAt" }
+                    ]
+                },
+                "closedNeedsClosedAt": {
+                    "anyOf": [
+                        { "notEqual": ["status", { "const": "closed" }] },
+                        { "present": "closedAt" }
+                    ]
                 },
                 "depositCoversOrder": {
                     "lessThanOrEqual": [
@@ -586,6 +607,56 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A string property is compared with constants: a closed offer needs
+    /// `closedAt`, and only a closed or cancelled one may carry it.
+    #[tokio::test]
+    async fn should_compare_a_string_property_with_constants() {
+        let mut fixture = OfferFixture::new();
+        let status = |value: &str| Value::Text(value.to_string());
+
+        let result = fixture
+            .create(|document| document.set("status", status("closed")))
+            .await;
+        expect_violated(
+            result,
+            "closedNeedsClosedAt",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| {
+                document.set("status", status("open"));
+                document.set("closedAt", Value::U64(1000));
+            })
+            .await;
+        expect_violated(
+            result,
+            "closedAtOnlyWhenClosed",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        for (value, closed_at) in [
+            ("closed", Some(1000)),
+            ("cancelled", Some(1000)),
+            ("open", None),
+        ] {
+            assert_matches!(
+                fixture
+                    .create(|document| {
+                        document.set("status", status(value));
+                        if let Some(closed_at) = closed_at {
+                            document.set("closedAt", Value::U64(closed_at));
+                        }
+                    })
+                    .await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "{value}"
+            );
+        }
+        assert_eq!(fixture.stored_offers().len(), 3);
     }
 
     #[tokio::test]

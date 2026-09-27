@@ -399,7 +399,7 @@ try {
 
 ## Property constraints (`propertyConstraints`)
 
-From protocol version 14 a document type can declare rules its documents' properties must meet, each a comparison of two integer expressions built from property paths and integer values, an `in` list of values, a `present` or `absent` test, or `anyOf`, `allOf` or `not` over such conditions:
+From protocol version 14 a document type can declare rules its documents' properties must meet, each a comparison of two integer expressions built from property paths and integer values, an `in` list of values, a comparison of a string property with string constants, a `present` or `absent` test, or `anyOf`, `allOf` or `not` over such conditions:
 
 ```json
 "propertyConstraints": {
@@ -418,11 +418,14 @@ From protocol version 14 a document type can declare rules its documents' proper
   "discountGivenAboveZero": {
     "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
   },
-  "tieredFee": { "in": ["fee", [0, 10, 25, 50]] }
+  "tieredFee": { "in": ["fee", [0, 10, 25, 50]] },
+  "closedNeedsClosedAt": {
+    "anyOf": [{ "notEqual": ["status", { "const": "closed" }] }, { "present": "closedAt" }]
+  }
 }
 ```
 
-The comparisons are `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` and `greaterThanOrEqual`, and the operators `add` and `multiply` (two or more operands) and `subtract`, `divide`, `modulo` and `power` (exactly two). `{ "in": [expression, [values]] }` holds if the expression takes one of two or more distinct integer values. `anyOf` holds if at least one of two or more conditions holds, `allOf` if every one does, and `not` if its one condition does not; conditions are checked in order and `anyOf` stops at the first that holds, so `{ "anyOf": [{ "equal": ["b", 0] }, { "equal": [{ "divide": ["a", "b"] }, 2] }] }` never divides by zero. An operand may read an integer or a boolean property (true as 1, false as 0). A property the document leaves out counts as 0, or as the value of an `ifAbsent` operand naming it; `{ "present": path }` and `{ "absent": path }` tell a property left out from one set to 0, and may name a property of any type. The arithmetic is exact over 128-bit integers, and `divide` and `modulo` are Euclidean, so a remainder is never negative. The rules are fixed when the document type is created.
+The comparisons are `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` and `greaterThanOrEqual`, and the operators `add` and `multiply` (two or more operands) and `subtract`, `divide`, `modulo` and `power` (exactly two). `{ "in": [expression, [values]] }` holds if the expression takes one of two or more distinct integer values. A string property (an enum, say) is compared with `{ "equal": ["status", { "const": "closed" }] }` or `notEqual`, or listed with `{ "in": ["status", ["open", "pending"]] }`; a constant must be one of the property's `enum` values, and a string the document leaves out equals none. `anyOf` holds if at least one of two or more conditions holds, `allOf` if every one does, and `not` if its one condition does not; conditions are checked in order and `anyOf` stops at the first that holds, so `{ "anyOf": [{ "equal": ["b", 0] }, { "equal": [{ "divide": ["a", "b"] }, 2] }] }` never divides by zero. An operand may read an integer or a boolean property (true as 1, false as 0). A property the document leaves out counts as 0, or as the value of an `ifAbsent` operand naming it; `{ "present": path }` and `{ "absent": path }` tell a property left out from one set to 0, and may name a property of any type. The arithmetic is exact over 128-bit integers, and `divide` and `modulo` are Euclidean, so a remainder is never negative. The rules are fixed when the document type is created.
 
 Consensus checks every rule on each create and replace, and rejects a document that breaks one, or whose rule overflows, divides by zero or raises to a negative power. The code reaches JS as `error.code`, and the message names the rule:
 

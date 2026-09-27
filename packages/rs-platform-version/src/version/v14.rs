@@ -1049,33 +1049,37 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `greaterThanOrEqual`) of two integer expressions built from integer
 ///     literals, paths of integer or boolean properties (a boolean reading as
 ///     1 for true and 0 for false) and `add`, `subtract`, `multiply`,
-///     `divide`, `modulo` and `power`; `in`, whether an integer expression takes one of
-///     two or more distinct integer values; `present` or `absent` naming a
-///     property of any type, whether the document holds it (the one way to
-///     tell a property left out from one set to 0); `anyOf` or `allOf` over
-///     two or more conditions; or `not` over one. In an operand, a property
-///     the document leaves out counts as 0, or as the value of an `ifAbsent`
-///     operand naming it. Arithmetic is exact `i128`: `divide` and `modulo`
-///     are Euclidean (the remainder is never negative), and an overflow, a
-///     zero divisor, a negative exponent or a value that is not an integer
-///     refuses the document rather than wrapping. Conditions are checked in
-///     declared order and no further than the outcome needs (`anyOf` stops at
-///     the first that holds, `allOf` at the first that fails), a fault in one
-///     that is checked refuses the document whatever the others say, and `not`
-///     never turns a fault into a pass, so an earlier condition guards a later
-///     one. The parser checks that every path an operand reads names an
-///     integer or boolean property and every path `present` or `absent`
-///     tests names a property of any type, neither transient nor inside a
-///     transient object;
-///     that every comparison and `in` reads a property; that no `in` lists a
-///     value twice; that an `anyOf` or `allOf` holds none directly of its own
-///     kind and a `not` no `not`; and that no condition or operand nests
-///     deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse.
-///     Under full validation it holds the limits
-///     `SystemLimits::max_property_constraints` (16 rules) and
-///     `max_property_constraint_nodes` (32 per rule, every comparison, `in`,
-///     listed value, presence test and logical operator counting as one), and
-///     that no `anyOf` or `allOf` lists the same condition twice.
+///     `divide`, `modulo` and `power`; `in`, whether an integer expression
+///     takes one of two or more distinct integer values; `equal` or `notEqual`
+///     of a string property and a `{ "const": string }`, or `in` of a string
+///     property and two or more distinct strings, a string the document leaves
+///     out equalling no constant; `present` or `absent` naming a property of
+///     any type, whether the document holds it (the one way to tell a property
+///     left out from one set to 0); `anyOf` or `allOf` over two or more
+///     conditions; or `not` over one. In an operand, a property the document
+///     leaves out counts as 0, or as the value of an `ifAbsent` operand naming
+///     it. Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
+///     remainder is never negative), and an overflow, a zero divisor, a
+///     negative exponent or a value that is not an integer refuses the
+///     document rather than wrapping. Conditions are checked in declared order
+///     and no further than the outcome needs (`anyOf` stops at the first that
+///     holds, `allOf` at the first that fails), a fault in one that is checked
+///     refuses the document whatever the others say, and `not` never turns a
+///     fault into a pass, so an earlier condition guards a later one. The
+///     parser checks that every path an operand reads names an integer or
+///     boolean property, every path compared with strings a string property
+///     (whose `enum`, if it declares one, lists every constant it is compared
+///     with), and every path `present` or `absent` tests a property of any
+///     type, none transient nor inside a transient object; that every
+///     comparison and `in` reads a property; that no `in` lists a value twice;
+///     that an `anyOf` or `allOf` holds none directly of its own kind and a
+///     `not` no `not`; and that no condition or operand nests deeper than
+///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse. Under full
+///     validation it holds the limits `SystemLimits::max_property_constraints`
+///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
+///     comparison, `in`, listed value, `const`, presence test and logical
+///     operator counting as one), and that no `anyOf` or `allOf` lists the
+///     same condition twice.
 ///     `DataContract::validate_document_properties` 0 (extended in place, inert
 ///     before this version) calls `validate_property_constraints`
 ///     (`validate_property_constraints` 0) after the schema validation, so

@@ -738,6 +738,195 @@ fn should_hold_an_in_when_its_operand_takes_a_listed_value() {
     assert_eq!(rule.property_reads(), [("kind", PropertyRead::Value)]);
 }
 
+// ── strings ─────────────────────────────────────────────────────────────
+
+fn text_compare(comparison: ConstraintComparison, path: &str, value: &str) -> PropertyConstraint {
+    PropertyConstraint::TextCompare {
+        comparison,
+        path: path.to_string(),
+        value: value.to_string(),
+    }
+}
+
+/// A string constant is a `const` object, since a string on its own is a path; a
+/// comparison with one is the same whichever side it sits on.
+#[test]
+fn should_parse_string_comparisons() {
+    assert_eq!(
+        parse_rule_value(platform_value!({ "equal": ["status", { "const": "closed" }] })),
+        text_compare(ConstraintComparison::Equal, "status", "closed")
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "notEqual": [{ "const": "closed" }, "meta.state"] })),
+        text_compare(ConstraintComparison::NotEqual, "meta.state", "closed")
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "in": ["status", ["pending", "open"]] })),
+        PropertyConstraint::TextIn {
+            path: "status".to_string(),
+            values: BTreeSet::from(["open".to_string(), "pending".to_string()]),
+        }
+    );
+
+    for (condition, needle) in [
+        (
+            platform_value!({ "lessThan": ["status", { "const": "b" }] }),
+            "rule \"rule\" at lessThan compares a string constant, which only equal and notEqual \
+             do",
+        ),
+        (
+            platform_value!({ "equal": ["status", { "const": 5 }] }),
+            "rule \"rule\" at equal[1].const must be a string: an integer is written as itself",
+        ),
+        (
+            platform_value!({ "equal": [{ "const": "a" }, { "const": "b" }] }),
+            "rule \"rule\" reads no property",
+        ),
+        (
+            platform_value!({
+                "anyOf": [
+                    { "equal": ["fee", 1] },
+                    { "notEqual": [{ "const": "a" }, { "const": "a" }] }
+                ]
+            }),
+            "rule \"rule\" at anyOf[1] reads no property",
+        ),
+        // The other side is a property, never an expression or a value
+        (
+            platform_value!({ "equal": [{ "ifAbsent": ["status", 0] }, { "const": "a" }] }),
+            "rule \"rule\" at equal[0] must be a property path: a string constant is compared \
+             with a string property",
+        ),
+        (
+            platform_value!({ "equal": [5, { "const": "a" }] }),
+            "rule \"rule\" at equal[0] must be a property path",
+        ),
+        // A constant is no integer operand
+        (
+            platform_value!({ "equal": [{ "add": ["price", { "const": "a" }] }, 1] }),
+            "rule \"rule\" at equal[0].add[1] is a string constant, which only equal and notEqual \
+             compare",
+        ),
+        (
+            platform_value!({ "in": [{ "const": "a" }, [1, 2]] }),
+            "rule \"rule\" at in[0] is a string constant",
+        ),
+        (
+            platform_value!({ "in": [{ "add": ["status", 1] }, ["open", "closed"]] }),
+            "rule \"rule\" at in[0] must be a property path: an in over strings reads a string \
+             property",
+        ),
+        (
+            platform_value!({ "in": ["status", ["open"]] }),
+            "rule \"rule\" at in[1] must list two or more string values",
+        ),
+        (
+            platform_value!({ "in": ["status", ["open", 2]] }),
+            "rule \"rule\" at in[1][1] must be a string, as the first value is",
+        ),
+        (
+            platform_value!({ "in": ["status", ["open", "closed", "open"]] }),
+            "rule \"rule\" at in[1][2] repeats the value at in[1][0]",
+        ),
+        (
+            platform_value!({ "in": ["fee", [1, "two"]] }),
+            "rule \"rule\" at in[1][1] must be an integer value",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": condition }), needle);
+    }
+}
+
+/// A string property equals a constant when it holds that string; one the document
+/// leaves out, sets to null or holds as something else equals none, so `notEqual`
+/// holds for it and `in` does not.
+#[test]
+fn should_compare_a_string_property_with_constants() {
+    let equal = parse_rule_value(platform_value!({ "equal": ["status", { "const": "closed" }] }));
+    let not_equal =
+        parse_rule_value(platform_value!({ "notEqual": ["status", { "const": "closed" }] }));
+    let in_list = parse_rule_value(platform_value!({ "in": ["status", ["open", "closed"]] }));
+    for (status, is_closed, is_listed) in [
+        (Some(Value::Text("closed".to_string())), true, true),
+        (Some(Value::Text("open".to_string())), false, true),
+        (Some(Value::Text("Closed".to_string())), false, false),
+        (Some(Value::Text(String::new())), false, false),
+        (Some(Value::Null), false, false),
+        (Some(Value::U64(1)), false, false),
+        (None, false, false),
+    ] {
+        let values = match &status {
+            Some(value) => data(&[("status", value.clone())]),
+            None => data(&[]),
+        };
+        assert_eq!(equal.holds(&values), Ok(is_closed), "equal, {status:?}");
+        assert_eq!(
+            not_equal.holds(&values),
+            Ok(!is_closed),
+            "notEqual, {status:?}"
+        );
+        assert_eq!(in_list.holds(&values), Ok(is_listed), "in, {status:?}");
+    }
+
+    // A closed order must carry closedAt
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [{ "notEqual": ["status", { "const": "closed" }] }, { "present": "closedAt" }]
+    }));
+    let closed = Value::Text("closed".to_string());
+    assert_eq!(rule.violation(&data(&[])), None);
+    assert_eq!(
+        rule.violation(&data(&[
+            ("status", closed.clone()),
+            ("closedAt", Value::U64(9))
+        ])),
+        None
+    );
+    assert_eq!(
+        rule.violation(&data(&[("status", closed)])),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+}
+
+/// A string comparison is three nodes, as a comparison of a path with a value; an in over
+/// strings two plus one per value. Both read their property as text, and list their
+/// constants for the enum check.
+#[test]
+fn should_count_and_list_what_a_string_comparison_reads() {
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "equal": ["status", { "const": "closed" }] },
+            { "in": ["kind", ["b", "a", "c"]] }
+        ]
+    }));
+    // anyOf, equal, status, closed, in, kind, a, b, c
+    assert_eq!(rule.node_count(), 9);
+    assert_eq!(
+        rule.property_reads(),
+        [("status", PropertyRead::Text), ("kind", PropertyRead::Text)]
+    );
+    assert_eq!(
+        rule.text_constants(),
+        [
+            ("status", "closed"),
+            ("kind", "a"),
+            ("kind", "b"),
+            ("kind", "c")
+        ]
+    );
+    // Written either way round, the same condition
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "equal": ["status", { "const": "closed" }] },
+            { "equal": ["fee", 1] },
+            { "equal": [{ "const": "closed" }, "status"] }
+        ]
+    }));
+    assert_eq!(
+        rule.repeated_condition(),
+        Some(("anyOf[2]".to_string(), "anyOf[0]".to_string()))
+    );
+}
+
 // ── present and absent ──────────────────────────────────────────────────
 
 #[test]
