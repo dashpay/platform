@@ -58,10 +58,17 @@ use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 use dpp::identifier::Identifier;
-use dpp::prelude::{DataContract, IdentityNonce};
+use dpp::consensus::ConsensusError;
+use dpp::fee::fee_result::FeeResult;
+use dpp::prelude::{
+    ConsensusValidationResult, DataContract, IdentityNonce, UserFeeIncrease,
+};
+use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
 use crate::error::Error;
+use crate::state_transition_action::batch::BatchedTransitionAction;
+use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::{TokenBaseTransitionAction, TokenBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_burn_transition_action::{TokenBurnTransitionAction, TokenBurnTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::token_transition::token_config_update_transition_action::{TokenConfigUpdateTransitionAction, TokenConfigUpdateTransitionActionAccessorsV0};
@@ -276,25 +283,23 @@ impl TokenTransitionAction {
 /// owner's contract nonce carrying `errors`, returned with the fee accrued so far so the
 /// failure is paid.
 pub(crate) fn bump_with_errors(
-    base: &dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition,
-    owner_id: dpp::identifier::Identifier,
-    user_fee_increase: dpp::prelude::UserFeeIncrease,
-    errors: Vec<dpp::consensus::ConsensusError>,
-    fee_result: dpp::fee::fee_result::FeeResult,
+    base: &TokenBaseTransition,
+    owner_id: Identifier,
+    user_fee_increase: UserFeeIncrease,
+    errors: Vec<ConsensusError>,
+    fee_result: FeeResult,
 ) -> (
-    dpp::prelude::ConsensusValidationResult<
-        crate::state_transition_action::batch::BatchedTransitionAction,
-    >,
-    dpp::fee::fee_result::FeeResult,
+    ConsensusValidationResult<BatchedTransitionAction>,
+    FeeResult,
 ) {
-    let bump_action = crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+    let bump_action = BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
         base,
         owner_id,
         user_fee_increase,
     );
     (
-        dpp::prelude::ConsensusValidationResult::new_with_data_and_errors(
-            crate::state_transition_action::batch::BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+        ConsensusValidationResult::new_with_data_and_errors(
+            BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
             errors,
         ),
         fee_result,
