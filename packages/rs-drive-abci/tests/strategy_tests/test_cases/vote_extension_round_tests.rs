@@ -4,6 +4,10 @@
 //! different withdrawal transactions. Precommits of the earlier round are still valid and can
 //! still arrive after this node processed the later proposal, so each vote must be verified
 //! against the block it is for. A vote for a block this node has not accepted is rejected.
+//!
+//! A block accepted in one round can also still be committed after this node refused a later
+//! round's proposal, without Tenderdash processing it again, and it must be finalized as that
+//! block.
 #[cfg(test)]
 mod tests {
     use crate::execution::run_chain_for_strategy;
@@ -12,6 +16,9 @@ mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Setters;
     use dpp::dashcore::hashes::Hash;
     use drive_abci::config::{PlatformConfig, PlatformTestConfig};
+    use drive_abci::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+    use drive_abci::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
+    use drive_abci::mimic::CHAIN_ID;
     use drive_abci::platform_types::platform::Platform;
     use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::rpc::core::MockCoreRPCLike;
@@ -22,9 +29,13 @@ mod tests {
     use tenderdash_abci::proto::abci::response_process_proposal::ProposalStatus;
     use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
     use tenderdash_abci::proto::abci::{
-        ExtendVoteExtension, RequestExtendVote, RequestProcessProposal, RequestVerifyVoteExtension,
+        CommitInfo, ExtendVoteExtension, RequestExtendVote, RequestFinalizeBlock,
+        RequestProcessProposal, RequestVerifyVoteExtension,
     };
     use tenderdash_abci::proto::google::protobuf::Timestamp;
+    use tenderdash_abci::proto::types::{
+        Block, BlockId, Data, EvidenceList, Header, PartSetHeader,
+    };
     use tenderdash_abci::proto::version::Consensus;
     use tenderdash_abci::proto::FromMillis;
     use tenderdash_abci::Application;
@@ -155,6 +166,62 @@ mod tests {
             })
             .expect("expected to extend the vote")
             .vote_extensions
+    }
+
+    /// The request Tenderdash finalizes `proposal` with once it is committed in its own round,
+    /// with `app_hash` in the block header. The commit carries no withdrawal signatures, so the
+    /// block must not have any withdrawal transactions to sign.
+    fn finalize_request(
+        proposal: &RequestProcessProposal,
+        app_hash: Vec<u8>,
+    ) -> RequestFinalizeBlock {
+        RequestFinalizeBlock {
+            commit: Some(CommitInfo {
+                round: proposal.round,
+                quorum_hash: proposal.quorum_hash.clone(),
+                block_signature: vec![0u8; 96],
+                threshold_vote_extensions: vec![],
+            }),
+            misbehavior: vec![],
+            hash: proposal.hash.clone(),
+            height: proposal.height,
+            round: proposal.round,
+            block: Some(Block {
+                header: Some(Header {
+                    version: proposal.version,
+                    chain_id: CHAIN_ID.to_string(),
+                    height: proposal.height,
+                    time: proposal.time,
+                    last_block_id: None,
+                    last_commit_hash: vec![],
+                    data_hash: vec![0u8; 32],
+                    validators_hash: proposal.quorum_hash.clone(),
+                    next_validators_hash: proposal.quorum_hash.clone(),
+                    consensus_hash: vec![0u8; 32],
+                    next_consensus_hash: vec![0u8; 32],
+                    app_hash,
+                    results_hash: vec![0u8; 32],
+                    evidence_hash: vec![],
+                    proposed_app_version: proposal.proposed_app_version,
+                    proposer_pro_tx_hash: proposal.proposer_pro_tx_hash.clone(),
+                    core_chain_locked_height: proposal.core_chain_locked_height,
+                }),
+                data: Some(Data {
+                    txs: proposal.txs.clone(),
+                }),
+                evidence: Some(EvidenceList { evidence: vec![] }),
+                last_commit: None,
+                core_chain_lock: proposal.core_chain_lock_update.clone(),
+            }),
+            block_id: Some(BlockId {
+                hash: proposal.hash.clone(),
+                part_set_header: Some(PartSetHeader {
+                    total: 0,
+                    hash: vec![0u8; 32],
+                }),
+                state_id: vec![0u8; 32],
+            }),
+        }
     }
 
     /// Another validator's precommit for `proposal`, carrying `vote_extensions`
@@ -304,5 +371,186 @@ mod tests {
             VerifyStatus::Accept as i32,
             "votes for the accepted round must still be verified"
         );
+    }
+
+    /// How a round 1 proposal is made unacceptable
+    #[derive(Clone, Copy, Debug)]
+    enum Refusal {
+        /// A protocol version this node does not run, refused before the block is executed
+        BeforeExecution,
+        /// Bytes that decode to no state transition, refused once the block was executed
+        AfterExecution,
+    }
+
+    impl Refusal {
+        fn apply(self, proposal: &mut RequestProcessProposal) {
+            match self {
+                Refusal::BeforeExecution => {
+                    proposal.version = Some(Consensus {
+                        block: 0,
+                        app: PlatformVersion::latest().protocol_version as u64 + 1,
+                    })
+                }
+                Refusal::AfterExecution => proposal.txs = vec![vec![0u8; 10]],
+            }
+        }
+    }
+
+    /// The round of the block execution context this node holds, if it holds one
+    fn block_execution_context_round(outcome: &ChainExecutionOutcome) -> Option<u32> {
+        outcome
+            .abci_app
+            .block_execution_context
+            .read()
+            .unwrap()
+            .as_ref()
+            .map(|block_execution_context| block_execution_context.block_state_info().round())
+    }
+
+    /// The committed root hash of Drive
+    fn committed_root_hash(outcome: &ChainExecutionOutcome) -> [u8; 32] {
+        outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None, &PlatformVersion::latest().drive.grove_version)
+            .unwrap()
+            .expect("expected the committed root hash")
+    }
+
+    /// Accepts the round 0 proposal of the next height and refuses the round 1 proposal made
+    /// unacceptable by `refusal`, returning the round 0 proposal and the app hash it was accepted
+    /// with.
+    fn accept_round_0_and_refuse_round_1(
+        outcome: &ChainExecutionOutcome,
+        refusal: Refusal,
+    ) -> (RequestProcessProposal, Vec<u8>) {
+        let core_height = outcome
+            .abci_app
+            .platform
+            .state
+            .load()
+            .last_committed_core_height();
+        let round_0 = proposal(outcome, 0, core_height, ROUND_0_BLOCK);
+        let mut refused_round_1 = proposal(outcome, 1, core_height, ROUND_1_BLOCK);
+        refusal.apply(&mut refused_round_1);
+
+        let response = outcome
+            .abci_app
+            .process_proposal(round_0.clone())
+            .expect("expected to process the round 0 proposal");
+        assert_eq!(response.status, ProposalStatus::Accept as i32);
+        let round_0_app_hash = response.app_hash;
+
+        let response = outcome
+            .abci_app
+            .process_proposal(refused_round_1)
+            .expect("expected to process the round 1 proposal");
+        assert_eq!(response.status, ProposalStatus::Reject as i32);
+
+        let expected_context_round = match refusal {
+            Refusal::BeforeExecution => None,
+            Refusal::AfterExecution => Some(1),
+        };
+        assert_eq!(
+            block_execution_context_round(outcome),
+            expected_context_round,
+            "test premise: the {refusal:?} refusal left the round 0 block without its block \
+             execution context"
+        );
+
+        (round_0, round_0_app_hash)
+    }
+
+    /// Tenderdash keeps the round state of the block it accepted when this node refuses a later
+    /// round's proposal, so it commits that block without asking this node to process it again.
+    /// The refused proposal has meanwhile replaced the accepted block's transaction and dropped
+    /// or replaced its block execution context, and the block must still be committed with the
+    /// app hash it was accepted with.
+    async fn should_finalize_the_round_0_block_after_round_1_is_refused(refusal: Refusal) {
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config())
+            .build_with_mock_rpc();
+        let outcome = run_chain(&mut platform).await;
+
+        let (round_0, round_0_app_hash) = accept_round_0_and_refuse_round_1(&outcome, refusal);
+
+        outcome
+            .abci_app
+            .finalize_block(finalize_request(&round_0, round_0_app_hash.clone()))
+            .expect("expected to finalize the round 0 block");
+
+        let platform_state = outcome.abci_app.platform.state.load();
+        assert_eq!(
+            platform_state.last_committed_block_height(),
+            round_0.height as u64
+        );
+        assert_eq!(
+            platform_state
+                .last_committed_block_app_hash()
+                .map(Vec::from),
+            Some(round_0_app_hash.clone())
+        );
+        assert_eq!(
+            Vec::from(committed_root_hash(&outcome)),
+            round_0_app_hash,
+            "the committed state must be the one the round 0 block was accepted with"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_finalize_a_block_accepted_in_an_earlier_round_after_a_later_proposal_was_refused_before_execution(
+    ) {
+        should_finalize_the_round_0_block_after_round_1_is_refused(Refusal::BeforeExecution).await;
+    }
+
+    #[tokio::test]
+    async fn should_finalize_a_block_accepted_in_an_earlier_round_after_a_later_proposal_was_refused_after_execution(
+    ) {
+        should_finalize_the_round_0_block_after_round_1_is_refused(Refusal::AfterExecution).await;
+    }
+
+    /// Finalizing a block this node no longer holds the execution of does not trust the app
+    /// hash in its header: when the block's execution gives a different one, nothing is
+    /// committed.
+    #[tokio::test]
+    async fn should_not_finalize_a_block_whose_header_app_hash_differs_from_its_execution() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config())
+            .build_with_mock_rpc();
+        let outcome = run_chain(&mut platform).await;
+
+        let committed_height = outcome
+            .abci_app
+            .platform
+            .state
+            .load()
+            .last_committed_block_height();
+        let root_hash_before = committed_root_hash(&outcome);
+
+        let (round_0, round_0_app_hash) =
+            accept_round_0_and_refuse_round_1(&outcome, Refusal::AfterExecution);
+        let wrong_app_hash = vec![0xFF; 32];
+        assert_ne!(round_0_app_hash, wrong_app_hash);
+
+        let result = outcome
+            .abci_app
+            .finalize_block(finalize_request(&round_0, wrong_app_hash));
+        assert!(
+            result.is_err(),
+            "a block whose execution gives another app hash must not be finalized"
+        );
+
+        assert_eq!(
+            outcome
+                .abci_app
+                .platform
+                .state
+                .load()
+                .last_committed_block_height(),
+            committed_height
+        );
+        assert_eq!(committed_root_hash(&outcome), root_hash_before);
     }
 }
