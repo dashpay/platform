@@ -3,7 +3,8 @@ use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
 use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::ShieldedProofAdmissionKey;
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
-    StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedProofValidationV0,
+    validate_batch_token_pool_nullifiers_unspent, StateTransitionHasShieldedProofValidationV0,
+    StateTransitionShieldedProofValidationV0,
 };
 use crate::platform_types::check_tx_proof_verifier::IdentityProofVerification;
 
@@ -26,7 +27,6 @@ use crate::execution::types::state_transition_container::v0::{
 use crate::execution::validation::state_transition::processor::process_state_transition;
 #[cfg(test)]
 use dpp::serialization::PlatformDeserializableUntrusted;
-#[cfg(test)]
 use dpp::state_transition::StateTransition;
 use dpp::util::hash::hash_single;
 use dpp::validation::ValidationResult;
@@ -193,6 +193,30 @@ where
             let (estimated_fee_result, mut errors) = validation_result.into_data_and_errors()?;
 
             check_tx_result.fee_result = Some(estimated_fee_result);
+
+            // A batch that spends a token shielded pool note the pool already records can only
+            // fail: block validation refuses it on that record. Reading the record costs a few
+            // key lookups against a pool tree; verifying the bundles the batch carries costs a
+            // Halo 2 verification per bundle, which the node would otherwise pay for before
+            // discovering the free reason to refuse. Batches are the only transitions whose pool
+            // bundles are checked against state nowhere in the mempool passes: the pool-paid
+            // transitions do it in their own transformer, which runs here too.
+            //
+            // Both levels read it. The first check keeps such a batch out; the re-check after
+            // every block is what evicts one that was admitted while its note was still unspent,
+            // and without it that batch sits in the mempool until a proposer spends a block slot
+            // on it. A batch's pool checks are in its per-action state validation, which a
+            // re-check does not run.
+            if errors.is_empty() {
+                if let StateTransition::Batch(batch) = &state_transition {
+                    let result = validate_batch_token_pool_nullifiers_unspent(
+                        batch,
+                        platform_ref.drive,
+                        platform_version,
+                    )?;
+                    errors.extend(result.errors);
+                }
+            }
 
             // Orchard verification is intentionally last.
             // The preliminary balance floor includes an identity-write allowance;

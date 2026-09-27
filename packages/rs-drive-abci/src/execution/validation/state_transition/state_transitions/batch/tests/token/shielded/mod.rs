@@ -2,6 +2,7 @@ use super::*;
 use drive::util::grove_operations::DirectQueryType;
 
 mod minimum_pool_notes;
+mod pool_nullifier_admission;
 
 /// Token shielded pool transitions: shield, unshield and shielded transfer inside a batch.
 ///
@@ -5196,12 +5197,17 @@ mod token_pool_outputs_only_copy_tests {
     /// Submits a bundle again after it has landed and returns what the submitter was charged for
     /// it.
     ///
-    /// CheckTx admits it: it does not read the pool. Where CheckTx verifies the kind's bundle and
-    /// the submitter is the bundle's owner, that admission also shows the bundle is valid as the
-    /// submitter's transition; a claim's bundle CheckTx does not verify at all. Block execution
-    /// must then refuse it on the original's first dummy nullifier, which it checks before the
-    /// proof, as a paid failure: the submitter's nonce advances to `nonce` and its fee is
-    /// charged, nothing else moves.
+    /// Both passes refuse it on the original's first dummy nullifier, which the pool now records,
+    /// and each reaches that for its own reasons:
+    ///
+    /// - CheckTx reads the pool's record before verifying any bundle the batch carries, so a
+    ///   repeat never reaches the mempool and no node pays for its Halo 2 verification.
+    /// - Block execution reads the record for itself, with no memory of what admission decided,
+    ///   and refuses the repeat as a paid failure: the submitter's nonce advances to `nonce` and
+    ///   its fee is charged, nothing else moves. This half is what holds if the repeat reaches a
+    ///   block anyway — a proposer of an older build, or one whose pool gained the nullifier
+    ///   between admitting the repeat and proposing it — so the block is driven directly rather
+    ///   than through CheckTx.
     fn assert_repeat_refused_in_block(
         platform: &TempPlatform<MockCoreRPCLike>,
         repeat: &StateTransition,
@@ -5211,13 +5217,17 @@ mod token_pool_outputs_only_copy_tests {
         original: &OrchardBundleParams,
         block_info: Option<&BlockInfo>,
     ) -> Credits {
-        assert_check_tx_accepts(platform, repeat);
+        let first = original.actions[0].nullifier;
+        assert_matches!(
+            assert_check_tx_rejects(platform, repeat).as_slice(),
+            [ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))]
+                if error.nullifier() == first
+        );
         let credits_before = credits(platform, submitter_id);
         let result = match block_info {
             Some(block_info) => process_at(platform, repeat, block_info),
             None => process(platform, repeat),
         };
-        let first = original.actions[0].nullifier;
         assert_matches!(
             result.execution_results().as_slice(),
             [StateTransitionExecutionResult::PaidConsensusError {
@@ -6557,8 +6567,15 @@ mod token_pool_outputs_only_copy_tests {
         )
         .await
         .expect("token mint to pool confirmation");
-        assert_check_tx_accepts(&platform, &close_first);
         let first_nullifier = bundle.actions[0].nullifier;
+        // Admission refuses it on the record the mint left, so no node verifies this bundle a
+        // second time. The block is driven directly, because that refusal is what has to hold if
+        // the signature reaches a block anyway.
+        assert_matches!(
+            assert_check_tx_rejects(&platform, &close_first).as_slice(),
+            [ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))]
+                if error.nullifier() == first_nullifier
+        );
         assert_matches!(
             process(&platform, &close_first)
                 .execution_results()
@@ -6579,9 +6596,10 @@ mod token_pool_outputs_only_copy_tests {
         assert_tokens_conserved(&platform);
     }
 
-    /// CheckTx cannot verify a claim's bundle, whose amount is only known against state, so it
-    /// admits another claimant's copy; in the block, the original's recorded dummy nullifier
-    /// refuses the copy before its proof is looked at.
+    /// CheckTx cannot verify a claim's bundle, whose amount is only known against state, so the
+    /// pool's record is all it has to go on for another claimant's copy — and once the original
+    /// has landed, that record refuses the copy. In the block, the same record refuses it again,
+    /// before its proof is looked at.
     #[tokio::test]
     async fn test_a_claim_to_pool_bundle_copied_by_another_claimant_after_it_landed_is_refused() {
         let platform_version = PlatformVersion::latest();
@@ -6941,6 +6959,7 @@ mod token_pool_outputs_only_copy_tests {
         .expect("client-built token shield");
         assert_check_tx_accepts(&platform, &shield);
         let bundle = proven_bundle(&shield);
+        let bundle_nullifier = bundle.actions[0].nullifier;
 
         let copy = BatchTransition::new_token_shield_transition(
             token_id,
@@ -6987,8 +7006,10 @@ mod token_pool_outputs_only_copy_tests {
             Some(OWNER_INITIAL_BALANCE - 2 * amount)
         );
 
-        // The bundle that just executed, offered again under the copier: CheckTx, which never
-        // reads the pool's record, still refuses it on the owner.
+        // The bundle that just executed, offered again under the copier. CheckTx now has two
+        // reasons to refuse it — the owner its sighash names, and the nullifiers the executed
+        // original left in the pool — and reports the pool's record, because reading it is what
+        // CheckTx does before verifying a bundle.
         let late_copy = BatchTransition::new_token_shield_transition(
             token_id,
             copier.id(),
@@ -7007,9 +7028,8 @@ mod token_pool_outputs_only_copy_tests {
         .expect("token shield transition");
         assert_matches!(
             assert_check_tx_rejects(&platform, &late_copy).as_slice(),
-            [ConsensusError::StateError(
-                StateError::InvalidShieldedProofError(_)
-            )]
+            [ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))]
+                if error.nullifier() == bundle_nullifier
         );
         assert_tokens_conserved(&platform);
     }
