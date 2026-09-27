@@ -84,7 +84,11 @@ dpp method whose own gate is `None` there), or the edit is a pure refactor with
 identical output. "Probably inert" is not enough. If the argument takes more
 than a sentence, or rests on a runtime check inside the shipped module, add a
 generation instead. Inside a new generation the capability is a constant fact
-(`Index::try_from_value_map(map, true)`), not a runtime check.
+(`Index::try_from_value_map(map, true)`), not a runtime check. The places that
+compare `protocol_version` on purpose are the protocol upgrade ladder, the
+`is_allowed` gate for new transition kinds, and genesis content in
+`create_genesis_state` v1; the [Versioned
+Dispatch](../versioning/versioned-dispatch.md) chapter describes all three.
 
 Why: replay safety is structural when a shipped file stays byte-identical, and
 becomes a proof the reviewer has to check the moment it does not. An in-place
