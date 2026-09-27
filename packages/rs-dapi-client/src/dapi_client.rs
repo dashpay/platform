@@ -13,6 +13,8 @@ use tracing::Instrument;
 use crate::address_list::AddressListError;
 use crate::connection_pool::{ConnectionPool, DEFAULT_POOL_CAPACITY};
 use crate::request_settings::AppliedRequestSettings;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::transport::Socks5Proxy;
 use crate::transport::{self, TransportError};
 use crate::{
     transport::{TransportClient, TransportRequest},
@@ -113,6 +115,9 @@ pub struct DapiClient {
     #[cfg(not(target_arch = "wasm32"))]
     /// Certificate Authority certificate to use for verifying the server's certificate.
     pub ca_certificate: Option<Certificate>,
+    #[cfg(not(target_arch = "wasm32"))]
+    /// SOCKS5 proxy every connection is tunnelled through.
+    pub proxy: Option<Socks5Proxy>,
     #[cfg(feature = "dump")]
     pub(crate) dump_dir: Option<std::path::PathBuf>,
 }
@@ -135,6 +140,8 @@ impl DapiClient {
             dump_dir: None,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            proxy: None,
         }
     }
 
@@ -149,6 +156,21 @@ impl DapiClient {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_ca_certificate(mut self, ca_cert: Certificate) -> Self {
         self.ca_certificate = Some(ca_cert);
+
+        self
+    }
+
+    /// Tunnel every connection through a SOCKS5 proxy.
+    ///
+    /// There is no fallback to a direct connection. A request that fails
+    /// because the proxy failed is not retried and does not ban the node
+    /// (see [TransportError::is_proxy_failure]).
+    ///
+    /// # Returns
+    /// [DapiClient] with the proxy set.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_proxy(mut self, proxy: Socks5Proxy) -> Self {
+        self.proxy = Some(proxy);
 
         self
     }
@@ -284,6 +306,8 @@ mod tests {
             max_decoding_message_size: None,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            proxy: None,
         }
     }
 
@@ -690,6 +714,21 @@ mod tests {
         assert!(client.ca_certificate.is_some());
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_dapi_client_with_proxy() {
+        use crate::transport::{ProxyEndpoint, Socks5Auth};
+
+        let address_list: AddressList = "http://127.0.0.1:3000".parse().unwrap();
+        let proxy = Socks5Proxy {
+            endpoint: ProxyEndpoint::Tcp("127.0.0.1:9050".parse().unwrap()),
+            auth: Socks5Auth::RandomPerConnection,
+        };
+        let client =
+            DapiClient::new(address_list, RequestSettings::default()).with_proxy(proxy.clone());
+        assert_eq!(client.proxy, Some(proxy));
+    }
+
     #[cfg(feature = "mocks")]
     #[test]
     fn test_dapi_client_error_mock_serialize_deserialize() {
@@ -1075,7 +1114,9 @@ impl DapiRequestExecutor for DapiClient {
             .override_by(settings)
             .finalize();
         #[cfg(not(target_arch = "wasm32"))]
-        let applied_settings = applied_settings.with_ca_certificate(self.ca_certificate.clone());
+        let applied_settings = applied_settings
+            .with_ca_certificate(self.ca_certificate.clone())
+            .with_proxy(self.proxy.clone());
 
         // Save dump dir for later use
         #[cfg(feature = "dump")]

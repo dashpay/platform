@@ -2,6 +2,8 @@
 
 pub(crate) mod grpc;
 #[cfg(not(target_arch = "wasm32"))]
+mod proxy;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod tonic_channel;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod wasm_channel;
@@ -15,6 +17,8 @@ use std::any;
 use std::fmt::Debug;
 use std::time::Duration;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub use proxy::{ProxyEndpoint, ProxyError, Socks5Auth, Socks5Proxy};
 #[cfg(not(target_arch = "wasm32"))]
 pub use tonic_channel::{
     create_channel, CoreGrpcClient, PlatformGrpcClient, TokioBackonSleeper as BackonSleeper,
@@ -85,17 +89,23 @@ pub enum TransportError {
 impl Clone for TransportError {
     fn clone(&self) -> Self {
         match self {
-            TransportError::Grpc(status) => {
-                // tonic::Status doesn't implement Clone, so we reconstruct it
-                // from its components. Note: this loses the original error source.
-                let cloned_status = dapi_grpc::tonic::Status::with_details_and_metadata(
-                    status.code(),
-                    status.message(),
-                    status.details().to_vec().into(),
-                    status.metadata().clone(),
-                );
-                TransportError::Grpc(cloned_status)
-            }
+            // Keeps the error source, which carries a [ProxyError].
+            TransportError::Grpc(status) => TransportError::Grpc(status.clone()),
+        }
+    }
+}
+
+impl TransportError {
+    /// Whether the request failed because the SOCKS5 proxy failed rather
+    /// than the node (a [ProxyError] is in the error's source chain). Such
+    /// a failure says nothing about the node, so it is neither retried nor
+    /// held against it.
+    pub fn is_proxy_failure(&self) -> bool {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            TransportError::Grpc(status) => proxy::is_proxy_failure(status),
+            #[cfg(target_arch = "wasm32")]
+            TransportError::Grpc(_) => false,
         }
     }
 }

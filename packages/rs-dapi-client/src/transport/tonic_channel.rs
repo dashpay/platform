@@ -1,3 +1,4 @@
+use super::proxy::Socks5Connector;
 use super::TransportError;
 use crate::{request_settings::AppliedRequestSettings, Uri};
 use dapi_grpc::core::v0::core_client::CoreClient;
@@ -10,6 +11,13 @@ pub type PlatformGrpcClient = PlatformClient<Channel>;
 /// Core Client using gRPC transport.
 pub type CoreGrpcClient = CoreClient<Channel>;
 
+/// Connect budget through a proxy when the settings give none: tonic applies
+/// it around the SOCKS5 handshake and TLS, while a request's own deadline
+/// only starts once the connection is up, so a proxy that accepts the TCP
+/// connection and never answers would otherwise hang the request. Dash Core
+/// waits as long for each SOCKS5 reply.
+const PROXY_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+
 /// backon::Sleeper
 // #[derive(Default, Clone, Debug)]
 pub type TokioBackonSleeper = backon::TokioSleeper;
@@ -20,6 +28,9 @@ const HTTP2_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
 const HTTP2_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Create channel (connection) for gRPC transport.
+///
+/// With a proxy in `settings`, every connection of the channel is tunnelled
+/// through it.
 pub fn create_channel(
     uri: Uri,
     settings: Option<&AppliedRequestSettings>,
@@ -48,8 +59,12 @@ pub fn create_channel(
         tls_config = tls_config.with_native_roots();
     }
 
+    let proxy = settings.and_then(|settings| settings.proxy.clone());
     if let Some(settings) = settings {
-        if let Some(timeout) = settings.connect_timeout {
+        let connect_timeout = settings
+            .connect_timeout
+            .or(proxy.is_some().then_some(PROXY_CONNECT_TIMEOUT));
+        if let Some(timeout) = connect_timeout {
             builder = builder.connect_timeout(timeout);
         }
 
@@ -74,7 +89,10 @@ pub fn create_channel(
         )))
     })?;
 
-    Ok(builder.connect_lazy())
+    Ok(match proxy {
+        None => builder.connect_lazy(),
+        Some(proxy) => builder.connect_with_connector_lazy(Socks5Connector(proxy)),
+    })
 }
 
 /// The host of a URI without the brackets an IPv6 literal carries in it
@@ -88,6 +106,7 @@ pub(crate) fn unbracketed(host: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::{ProxyEndpoint, Socks5Auth, Socks5Proxy};
     use crate::RequestSettings;
 
     #[test]
@@ -107,6 +126,12 @@ mod tests {
         let settings = RequestSettings::default()
             .finalize()
             .with_ca_certificate(Some(Certificate::from_pem("fake-pem-data")));
-        create_channel(uri, Some(&settings)).expect("explicit CA");
+        create_channel(uri.clone(), Some(&settings)).expect("explicit CA");
+
+        let settings = settings.with_proxy(Some(Socks5Proxy {
+            endpoint: ProxyEndpoint::Tcp("127.0.0.1:9050".parse().expect("address")),
+            auth: Socks5Auth::None,
+        }));
+        create_channel(uri, Some(&settings)).expect("through a proxy");
     }
 }

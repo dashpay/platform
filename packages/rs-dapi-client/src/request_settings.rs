@@ -1,6 +1,8 @@
 //! DAPI client request settings processing.
 
 #[cfg(not(target_arch = "wasm32"))]
+use crate::transport::Socks5Proxy;
+#[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use std::time::Duration;
 
@@ -83,6 +85,8 @@ impl RequestSettings {
             max_decoding_message_size: self.max_decoding_message_size,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            proxy: None,
         }
     }
 }
@@ -107,6 +111,9 @@ pub struct AppliedRequestSettings {
     /// Certificate Authority certificate to use for verifying the server's certificate.
     #[cfg(not(target_arch = "wasm32"))]
     pub ca_certificate: Option<Certificate>,
+    /// SOCKS5 proxy every connection is tunnelled through.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub proxy: Option<Socks5Proxy>,
 }
 impl AppliedRequestSettings {
     /// Use provided CA certificate for verifying the server's certificate.
@@ -134,9 +141,18 @@ impl AppliedRequestSettings {
         )
     }
 
+    /// Tunnel every connection through the given SOCKS5 proxy.
+    ///
+    /// If set to None, connections are made directly.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn with_proxy(mut self, proxy: Option<Socks5Proxy>) -> Self {
+        self.proxy = proxy;
+        self
+    }
+
     /// Cache key fragment for the [ConnectionPool](crate::ConnectionPool),
     /// covering only the fields that affect the constructed transport client:
-    /// connect timeout, response decoding limit and CA certificate.
+    /// connect timeout, response decoding limit, CA certificate and proxy.
     /// Per-request knobs (request timeout, retries, address banning) are
     /// deliberately excluded so requests that differ only in those reuse the
     /// same pooled connection.
@@ -154,6 +170,8 @@ impl AppliedRequestSettings {
             max_decoding_message_size,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate,
+            #[cfg(not(target_arch = "wasm32"))]
+            proxy,
         } = self;
 
         // The wasm channel builder ignores `connect_timeout`, so it does not
@@ -178,9 +196,15 @@ impl AppliedRequestSettings {
         #[cfg(target_arch = "wasm32")]
         let ca_certificate: Option<String> = None;
 
+        // A proxied and a direct channel to one node never share a key.
+        #[cfg(not(target_arch = "wasm32"))]
+        let proxy = proxy.as_ref().map(Socks5Proxy::connection_key);
+        #[cfg(target_arch = "wasm32")]
+        let proxy: Option<String> = None;
+
         format!(
-            "connect_timeout={:?},max_decoding_message_size={:?},ca_certificate={:?}",
-            connect_timeout, max_decoding_message_size, ca_certificate
+            "connect_timeout={:?},max_decoding_message_size={:?},ca_certificate={:?},proxy={:?}",
+            connect_timeout, max_decoding_message_size, ca_certificate, proxy
         )
     }
 }
@@ -365,5 +389,34 @@ mod tests {
             .finalize()
             .with_ca_certificate(Some(Certificate::from_pem("other-pem-data")));
         assert_ne!(with_ca.connection_key(), with_other_ca.connection_key());
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_connection_key_differs_on_proxy() {
+        use crate::transport::{ProxyEndpoint, Socks5Auth};
+
+        let with_proxy = |auth| {
+            RequestSettings::default()
+                .finalize()
+                .with_proxy(Some(Socks5Proxy {
+                    endpoint: ProxyEndpoint::Tcp("127.0.0.1:9050".parse().expect("address")),
+                    auth,
+                }))
+                .connection_key()
+        };
+        let password = |password: &str| Socks5Auth::Password {
+            username: "alice".to_string(),
+            password: password.to_string(),
+        };
+        let direct = RequestSettings::default().finalize().connection_key();
+
+        assert_ne!(direct, with_proxy(Socks5Auth::None));
+        assert_ne!(
+            with_proxy(Socks5Auth::None),
+            with_proxy(Socks5Auth::RandomPerConnection)
+        );
+        assert_eq!(with_proxy(password("one")), with_proxy(password("two")));
+        assert!(!with_proxy(password("secret")).contains("secret"));
     }
 }
