@@ -144,7 +144,10 @@ where
     Ok(())
 }
 
-fn execute_proposal<'a, A, C>(
+/// Executes the proposal `request` describes, unless the block execution context already holds
+/// its result, and leaves the block execution context and the transaction of an accepted proposal
+/// for `finalize_block`. `finalize_block` also calls it to execute a committed block again.
+pub(super) fn execute_proposal<'a, A, C>(
     app: &A,
     request: proto::RequestProcessProposal,
 ) -> Result<proto::ResponseProcessProposal, Error>
@@ -278,6 +281,10 @@ where
         }
     }
 
+    // Even when the proposal is refused below, the block accepted in an earlier round of this
+    // height loses its block execution context, its transaction and the drive block caches its
+    // execution filled. Tenderdash can still commit that block without asking for it to be
+    // processed again, and `finalize_block` then executes it again.
     if drop_block_execution_context {
         block_execution_context_guard.take();
     }
