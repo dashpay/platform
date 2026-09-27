@@ -75,16 +75,17 @@ pub(crate) fn structure() -> StructureNode {
         .book("data-model/document-ttl.md")
         .describe(
             "Storage fees for storage that lives a known number of epochs (documents with a \
-             time to live), by that number, waiting for the next epoch change to spread them \
-             evenly over those epochs.",
+             time to live), by the epoch they were collected in and that number, waiting for \
+             the next epoch change to spread them evenly over those epochs and remove them.",
         )
         .child(
             StructureNode::dynamic(
-                "lifetime",
-                "lifetime_epochs",
-                KeyMatcher::Len(2),
-                KeyEncoding::U16Be,
-                "How many epochs the storage lives, at most one era",
+                "pool",
+                "collected_epoch_and_lifetime_epochs",
+                KeyMatcher::Len(4),
+                KeyEncoding::Composite,
+                "The epoch the fees were collected in, u16 big endian, then how many epochs \
+                 their storage lives, at most one era, u16 big endian",
             )
             .kind(ElementKind::SumItem)
             .value("credits")

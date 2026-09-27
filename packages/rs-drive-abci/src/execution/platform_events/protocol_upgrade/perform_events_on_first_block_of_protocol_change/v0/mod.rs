@@ -835,9 +835,11 @@ impl<C> Platform<C> {
         self.drive
             .insert_contract_fee_pot_trees(Some(transaction), platform_version)?;
 
-        // The documents expirations tree under `Misc`, which indexes every document of a type
-        // declaring a `ttl` (a keyword protocol version 14 introduces) by when it expires.
-        // Fresh chains call the same helper last in `create_initial_state_structure` v4.
+        // The document time to live trees: the documents expirations tree under `Misc`, which
+        // indexes every document of a type declaring a `ttl` (a keyword protocol version 14
+        // introduces) by when it expires, and the lifetime storage fee pools sum tree under
+        // `Pools`, which holds their storage fees until an epoch change spreads them. Fresh
+        // chains call the same helper last in `create_initial_state_structure` v4.
         self.drive
             .insert_document_ttl_trees(Some(transaction), platform_version)?;
 

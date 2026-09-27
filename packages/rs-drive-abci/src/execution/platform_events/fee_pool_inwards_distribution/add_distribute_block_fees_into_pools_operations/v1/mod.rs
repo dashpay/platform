@@ -5,31 +5,25 @@ use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::fees_in_pools::v0::FeesInPoolsV0;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
-use dpp::fee::fee_result::LifetimeStorageFees;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
-use drive::drive::credit_pools::operations::{
-    delete_lifetime_storage_fee_pool_operation, update_lifetime_storage_fee_pool_operation,
-};
+use drive::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
 use drive::grovedb::TransactionArg;
 use drive::util::batch::DriveOperation;
 
 impl<C> Platform<C> {
     /// v0, except that the part of the block's storage fees for storage that lives a known
-    /// number of epochs (documents with a time to live) goes to the lifetime storage fee pools,
-    /// by that number, instead of the storage fee distribution pool; the next epoch change
-    /// spreads each pool evenly over its epochs.
+    /// number of epochs (documents with a time to live) goes to the lifetime storage fee pools
+    /// of the current epoch, by that number, instead of the storage fee distribution pool; the
+    /// next epoch change spreads each pool evenly over its epochs and removes it.
     ///
-    /// `spread_lifetime_storage_fees` holds the pools the epoch change of this block spread
-    /// (`None` in a block without one): they count as empty, and a pool this block does not
-    /// refill is removed, so the batch touches every pool key once.
-    #[allow(clippy::too_many_arguments)]
+    /// A block adds only to the pools of its own epoch, and an epoch change spreads and removes
+    /// only the pools of earlier epochs, so the two never write the same pool in one batch.
     pub(super) fn add_distribute_block_fees_into_pools_operations_v1(
         &self,
         current_epoch: &Epoch,
         block_fees: &BlockFees,
         cached_aggregated_storage_fees: Option<Credits>,
-        spread_lifetime_storage_fees: Option<&LifetimeStorageFees>,
         transaction: TransactionArg,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
@@ -60,16 +54,18 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        let pools_before = match spread_lifetime_storage_fees {
-            // Spread by this block's epoch change, in this same batch: nothing is left in them.
-            Some(_) => LifetimeStorageFees::new(),
-            None if block_lifetime_storage_fees.is_empty() => LifetimeStorageFees::new(),
-            None => self
-                .drive
-                .fetch_lifetime_storage_fee_pools(transaction, platform_version)?,
-        };
+        if block_lifetime_storage_fees.is_empty() {
+            return Ok(fees_in_pools);
+        }
+        // What the earlier blocks of this epoch collected. The first block of an epoch finds
+        // none: the pools it reads are those of earlier epochs, which its epoch change spreads.
+        let current_epoch_pools = self
+            .drive
+            .fetch_lifetime_storage_fee_pools(transaction, platform_version)?
+            .remove(&current_epoch.index)
+            .unwrap_or_default();
         for (lifetime_epochs, credits) in block_lifetime_storage_fees {
-            let pool_credits = pools_before
+            let pool_credits = current_epoch_pools
                 .get(lifetime_epochs)
                 .copied()
                 .unwrap_or_default()
@@ -78,17 +74,12 @@ impl<C> Platform<C> {
                     "overflow adding to a lifetime storage fee pool",
                 ))?;
             batch.push(DriveOperation::GroveDBOperation(
-                update_lifetime_storage_fee_pool_operation(*lifetime_epochs, pool_credits)?,
+                update_lifetime_storage_fee_pool_operation(
+                    current_epoch.index,
+                    *lifetime_epochs,
+                    pool_credits,
+                )?,
             ));
-        }
-        if let Some(spread_lifetime_storage_fees) = spread_lifetime_storage_fees {
-            for lifetime_epochs in spread_lifetime_storage_fees.keys() {
-                if !block_lifetime_storage_fees.contains_key(lifetime_epochs) {
-                    batch.push(DriveOperation::GroveDBOperation(
-                        delete_lifetime_storage_fee_pool_operation(*lifetime_epochs),
-                    ));
-                }
-            }
         }
 
         Ok(fees_in_pools)
@@ -102,7 +93,10 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::EpochIndex;
+    use dpp::fee::fee_result::LifetimeStorageFees;
     use drive::grovedb::Transaction;
+    use std::collections::BTreeMap;
 
     fn block_fees(storage_fee: Credits, lifetime: &[(u16, Credits)]) -> BlockFees {
         BlockFeesV0 {
@@ -116,18 +110,17 @@ mod tests {
 
     fn distribute(
         platform: &TempPlatform<MockCoreRPCLike>,
+        epoch_index: EpochIndex,
         block_fees: &BlockFees,
-        spread: Option<&LifetimeStorageFees>,
         transaction: &Transaction,
     ) {
         let platform_version = PlatformVersion::latest();
         let mut batch = vec![];
         platform
             .add_distribute_block_fees_into_pools_operations_v1(
-                &Epoch::new(1).expect("epoch"),
+                &Epoch::new(epoch_index).expect("epoch"),
                 block_fees,
-                spread.map(|_| 0),
-                spread,
+                None,
                 Some(transaction),
                 &mut batch,
                 platform_version,
@@ -149,7 +142,7 @@ mod tests {
     fn lifetime_pools(
         platform: &TempPlatform<MockCoreRPCLike>,
         transaction: &Transaction,
-    ) -> LifetimeStorageFees {
+    ) -> BTreeMap<EpochIndex, LifetimeStorageFees> {
         platform
             .drive
             .fetch_lifetime_storage_fee_pools(Some(transaction), PlatformVersion::latest())
@@ -165,8 +158,8 @@ mod tests {
 
         distribute(
             &platform,
+            1,
             &block_fees(1_000_000, &[(1, 300_000), (40, 400_000)]),
-            None,
             &transaction,
         );
         assert_eq!(
@@ -181,41 +174,44 @@ mod tests {
         );
         assert_eq!(
             lifetime_pools(&platform, &transaction),
-            LifetimeStorageFees::from([(1, 300_000), (40, 400_000)])
+            BTreeMap::from([(1, LifetimeStorageFees::from([(1, 300_000), (40, 400_000)]))])
         );
 
-        // The next block adds to the pools.
-        distribute(&platform, &block_fees(100, &[(1, 100)]), None, &transaction);
+        // The next block of the epoch adds to its pools.
+        distribute(&platform, 1, &block_fees(100, &[(1, 100)]), &transaction);
         assert_eq!(
             lifetime_pools(&platform, &transaction),
-            LifetimeStorageFees::from([(1, 300_100), (40, 400_000)])
+            BTreeMap::from([(1, LifetimeStorageFees::from([(1, 300_100), (40, 400_000)]))])
         );
     }
 
     #[test]
-    fn should_refill_or_remove_the_pools_an_epoch_change_spread() {
+    fn should_add_only_to_the_pools_of_the_blocks_epoch() {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let transaction = platform.drive.grove.start_transaction();
         distribute(
             &platform,
+            1,
             &block_fees(107, &[(2, 100), (5, 7)]),
-            None,
             &transaction,
         );
 
-        // The epoch change spread both pools; the block refills one and opens another.
-        let spread = lifetime_pools(&platform, &transaction);
+        // A block of epoch 2 leaves the pools of epoch 1 to the epoch change, which spreads and
+        // removes them, and opens its own.
         distribute(
             &platform,
+            2,
             &block_fees(41, &[(2, 40), (9, 1)]),
-            Some(&spread),
             &transaction,
         );
         assert_eq!(
             lifetime_pools(&platform, &transaction),
-            LifetimeStorageFees::from([(2, 40), (9, 1)])
+            BTreeMap::from([
+                (1, LifetimeStorageFees::from([(2, 100), (5, 7)])),
+                (2, LifetimeStorageFees::from([(2, 40), (9, 1)])),
+            ])
         );
     }
 }

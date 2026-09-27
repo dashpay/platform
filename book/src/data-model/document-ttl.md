@@ -109,10 +109,11 @@ it, so every tree of an expiry time holds at least one entry, and a document del
 leaves nothing the cleanup would have to read.
 
 The storage fees of such documents wait in the **lifetime storage fee pools** under `Pools`,
-a sum tree so the pools' total counts them, one sum item per number of epochs:
+a sum tree so the pools' total counts them, one sum item per epoch they were collected in and
+number of epochs their storage lives:
 
 ```text
-Pools (48) / l / <lifetime in epochs, u16 big endian> -> credits
+Pools (48) / l / <collected in epoch, u16 big endian><lifetime in epochs, u16 big endian> -> credits
 ```
 
 Both trees are created with the initial state structure of protocol version 14 and on the
@@ -148,10 +149,12 @@ document of such a type:
   network's epoch length (the node's `epoch_time_length_s`, handed to Drive through
   `DriveConfig`) and reports the amount under that count
   (`FeeResult::lifetime_storage_fees`). At the end of the block the amounts go to the
-  lifetime storage fee pools (`add_distribute_block_fees_into_pools_operations` v1), and the
-  next epoch change spreads each pool evenly over its number of epochs from the new epoch
-  on, the remainder of the division to the new epoch
-  (`add_distribute_storage_fee_to_epochs_operations` v1), then removes it. A network with
+  lifetime storage fee pools of the current epoch
+  (`add_distribute_block_fees_into_pools_operations` v1), and the next epoch change spreads
+  each pool of an earlier epoch evenly over its number of epochs from the new epoch on, the
+  remainder of the division to the new epoch, and removes it
+  (`add_distribute_storage_fee_to_epochs_operations` v1). A block never adds to a pool its
+  epoch change removes, so the first block of an epoch does both in one batch. A network with
   hour-long epochs therefore pays a year-long document out within 40 hours.
 - **Deletion.** Creating the document prepays, as processing, what its deletion will cost:
   `cleanup_base_processing_cost` (1,200,000), plus `cleanup_processing_cost_per_index_level`
@@ -230,9 +233,8 @@ inert before 14:
   v0), which only an upgrade to 14 runs;
 - one batch per pricing rule in `apply_batch_low_level_drive_operations` v0 and the
   `DocumentTtl` arm of `consume_to_fees_v0`: nothing is tagged ephemeral before 14;
-- `process_block_fees_and_validate_sum_trees` v0 hands the pools the epoch change spread to
-  `add_distribute_block_fees_into_pools_operations`, whose v0, split into a helper with its
-  operations unchanged, ignores them: before 14 the distribution spreads none and no fee
-  result carries lifetime storage fees;
+- `add_distribute_block_fees_into_pools_operations` v0, split into a helper that v1 shares,
+  with its operations unchanged, and `fetch_pending_epoch_refunds` v0, whose query and reading
+  moved unchanged into a helper the lifetime storage fee pools share;
 - the pattern-only edits in `batch_insert_empty_tree_if_not_exists` v0 and
   `convert_drive_operations_to_grove_operations` v0, whose output is unchanged.

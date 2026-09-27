@@ -1640,7 +1640,7 @@ mod fixtures {
         // change.
         let mut batch = GroveDbOpBatch::new();
         batch.push(
-            update_lifetime_storage_fee_pool_operation(2, 1_000)
+            update_lifetime_storage_fee_pool_operation(0, 2, 1_000)
                 .expect("expected the lifetime pool operation"),
         );
         drive

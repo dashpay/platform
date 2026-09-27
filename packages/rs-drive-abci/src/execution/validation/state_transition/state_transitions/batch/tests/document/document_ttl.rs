@@ -687,8 +687,13 @@ mod document_ttl_tests {
             .drive
             .fetch_lifetime_storage_fee_pools(Some(&transaction), PlatformVersion::latest())
             .expect("expected to read the lifetime pools");
-        assert_eq!(pools.len(), 1, "one pool, for one epoch: {pools:?}");
-        assert!(pools.get(&1).copied().unwrap_or_default() > 0);
+        let epoch_0_pools = pools.get(&0).cloned().unwrap_or_default();
+        assert_eq!(
+            (pools.len(), epoch_0_pools.len()),
+            (1, 1),
+            "one pool of epoch 0, for one epoch: {pools:?}"
+        );
+        assert!(epoch_0_pools.get(&1).copied().unwrap_or_default() > 0);
     }
 
     #[tokio::test]

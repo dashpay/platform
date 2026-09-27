@@ -210,7 +210,6 @@ mod tests {
                         &current_epoch,
                         &block_fees,
                         None,
-                        None,
                         Some(transaction),
                         &mut batch,
                         platform_version,
