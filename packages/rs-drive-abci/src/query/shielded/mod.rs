@@ -75,9 +75,12 @@ impl ShieldedPoolSelector {
     ///
     /// Only the unproved reads need this. A proof over a pool that does not exist is a proof of
     /// its absence, which is an answer the client can check against the root hash rather than has
-    /// to trust. That a verifier walks across the missing pool layer and reports `None` is the
-    /// intent; the proved path is covered only as far as returning a proof, so treat the
-    /// verifier's side of it as untested.
+    /// to trust, so the proved reads keep handing one out. Separating the two facts is then the
+    /// verifier's job, and a proof that descends through the pool carries what it needs: the pools
+    /// tree's own Merk proof for the pool's key. `Drive::verify_token_shielded_pool_nullifiers`
+    /// reads that key and refuses a spend status for a pool the chain does not hold, because
+    /// `is_spent: false` is the one absence here that a caller acts on. The other proved reads
+    /// answer a missing pool with the same value an empty pool gives.
     pub(super) fn validate_pool_exists(
         &self,
         drive: &Drive,
@@ -603,9 +606,11 @@ mod tests {
     /// hash rather than has to trust, so it is worth more than the `NotFound` the unproved reads
     /// give. Whoever changes this must change the verifiers with it.
     ///
-    /// This test asserts only that a proof comes back. Whether
-    /// `Drive::verify_pool_notes_count_v0` and its siblings can walk across the absent pool layer
-    /// and report `None` is not covered here and is worth its own test.
+    /// This test asserts only that a proof comes back; what a verifier makes of it is covered on
+    /// the verifier's own side. `Drive::verify_token_shielded_pool_nullifiers` reads the pool's key
+    /// out of the same proof and refuses rather than reporting every nullifier unspent;
+    /// `Drive::verify_pool_notes_count_v0` and the other siblings walk across the absent pool layer
+    /// and report the value an empty pool would give.
     #[test]
     fn proved_queries_answer_a_pool_the_chain_does_not_have_with_an_absence_proof() {
         let (platform, state, version) = setup_platform_with_a_token_pool();
