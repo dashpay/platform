@@ -29,7 +29,12 @@ jobs:
     # Reuse the persistent Linux runner's Cargo registry and a release-only
     # target cache. The publish job stays on a GitHub-hosted runner because npm
     # trusted publishing does not support self-hosted runners.
-    runs-on: [self-hosted, kotlin-ci]
+    #
+    # `release-npm` goes only on runners whose Docker daemon sees the job's
+    # workspace at the same path: the dapi-grpc build bind-mounts workspace
+    # paths into protoc. A runner that itself runs in a container and talks
+    # to the host's daemon mounts empty directories instead.
+    runs-on: [self-hosted, release-npm]
     timeout-minutes: 120
     if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
     # In particular, do not mint an OIDC token for the persistent build host.
@@ -83,6 +88,15 @@ jobs:
           # Always pull: a local image under this tag may have been replaced
           # by an earlier job, and a pull resets the tag to the registry's.
           docker pull rvolosatovs/protoc:4.0.0
+
+          # Fail here, not minutes into the build, on a runner whose Docker
+          # daemon cannot see the workspace (see `runs-on` above).
+          PROTOS="$GITHUB_WORKSPACE/packages/dapi-grpc/protos/core/v0"
+          if ! docker run --rm -v "$PROTOS:$PROTOS" rvolosatovs/protoc:4.0.0 \
+            -I="$PROTOS" --descriptor_set_out=/dev/null core.proto; then
+            echo "::error::Docker on this runner cannot see $GITHUB_WORKSPACE. Remove the release-npm label from $RUNNER_NAME."
+            exit 1
+          fi
 
       - name: Setup Rust
         uses: ./.github/actions/rust

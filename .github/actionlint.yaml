@@ -3,9 +3,12 @@
 # because it can't resolve it against the GitHub-hosted runner names.
 #
 # `rust-ci` must be applied to every runner allowed to take the Rust workspace
-# test job, and `kotlin-ci` to every runner allowed to take the Kotlin SDK job
+# test job, `kotlin-ci` to every runner allowed to take the Kotlin SDK job, and
+# `release-npm` to every runner allowed to build the release NPM packages (its
+# Docker daemon must see the job's workspace at the same path)
 # (Settings -> Actions -> Runners -> <runner> -> Labels).
 self-hosted-runner:
   labels:
     - rust-ci
     - kotlin-ci
+    - release-npm
