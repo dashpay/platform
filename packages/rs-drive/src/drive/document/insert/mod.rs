@@ -51,6 +51,7 @@ mod tests {
     use rand::{random, Rng};
 
     use crate::drive::document::tests::setup_dashpay;
+    use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -68,10 +69,11 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::{Document, DocumentV0Getters};
+    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
+    use dpp::platform_value::{Identifier, Value};
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
@@ -1544,5 +1546,143 @@ mod tests {
             ),
             "expected a document-type error, not DataContractNotFound: {err:?}"
         );
+    }
+
+    /// Overriding an owner-flagged document rewrites its bytes, so pricing it without the
+    /// fee history is rejected from protocol version 15. `add_document` owns its
+    /// transaction when the caller passes none, so the rejected override leaves the stored
+    /// document and the root hash as they were; with the history it commits, and protocol
+    /// version 14 still commits without one.
+    #[test]
+    fn should_leave_a_document_in_place_when_add_document_cannot_price_its_override() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(platform_version),
+        );
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get document type");
+        let owner_id = random::<[u8; 32]>();
+        let mut profile = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+        // A long display name first, so the override below shrinks the stored bytes and
+        // frees owner-flagged storage.
+        profile.set("displayName", Value::Text("a".repeat(24)));
+        fn owned<'a>(document: &'a Document, owner_id: [u8; 32]) -> OwnedDocumentInfo<'a> {
+            OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    document,
+                    Some(Cow::Owned(StorageFlags::SingleEpochOwned(0, owner_id))),
+                )),
+                owner_id: Some(owner_id),
+            }
+        }
+        drive
+            .add_document(
+                owned(&profile, owner_id),
+                contract.id(),
+                "profile",
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert the profile");
+        let root_hash = |drive: &Drive| {
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected a root hash")
+        };
+        let before = root_hash(&drive);
+
+        // The override shrinks the flagged document, freeing owner-attributed bytes; the
+        // bare wrapper passes no history.
+        let mut replaced = profile.clone();
+        replaced.set("displayName", Value::Text("a".to_string()));
+        let result = drive.add_document(
+            owned(&replaced, owner_id),
+            contract.id(),
+            "profile",
+            true,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+            ),
+            "overriding owner-flagged bytes without a fee history must be rejected, got {:?}",
+            result
+        );
+        assert_eq!(
+            root_hash(&drive),
+            before,
+            "a rejected override must not persist"
+        );
+
+        // The insert of a new document frees nothing and commits at the latest version. The
+        // profile type has a unique owner index, so the second profile needs its own owner.
+        let second_owner_id = random::<[u8; 32]>();
+        let mut second = profile.clone();
+        second.set_id(Identifier::from([0x55; 32]));
+        second.set_owner_id(Identifier::from(second_owner_id));
+        drive
+            .add_document(
+                owned(&second, second_owner_id),
+                contract.id(),
+                "profile",
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert a second profile");
+        assert_ne!(root_hash(&drive), before, "the insert was committed");
+
+        // Protocol version 14 prices the shipped shortcut without a history and commits.
+        let frozen_platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(frozen_platform_version));
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            Some(frozen_platform_version),
+        );
+        for (document, override_document) in [(&profile, false), (&replaced, true)] {
+            drive
+                .add_document(
+                    owned(document, owner_id),
+                    contract.id(),
+                    "profile",
+                    override_document,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    frozen_platform_version,
+                )
+                .expect("protocol version 14 prices the shipped shortcut without a history");
+        }
     }
 }
