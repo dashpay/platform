@@ -5,7 +5,8 @@
 //! included, keeps the generic windows and fund.
 
 use crate::execution::validation::state_transition::state_transitions::tests::{
-    create_dpns_identity_name_contest, setup_identity, setup_masternode_voting_identity,
+    create_dpns_identity_name_contest, fill_contest_with_bare_contenders, setup_identity,
+    setup_masternode_voting_identity,
 };
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -36,6 +37,7 @@ use dpp::platform_value::{Bytes32, Identifier, Value};
 use dpp::prelude::IdentityNonce;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
@@ -201,12 +203,14 @@ fn charter_poll(target: Identifier) -> ContestedDocumentResourceVotePoll {
 }
 
 /// A serialized create of a `document_type_name` document of the charter contract holding
-/// `properties`, signed by `applicant`, and the id of the document it creates.
+/// `properties`, signed by `applicant`, and the id of the document it creates. An application
+/// states `contest_fund` as the most it pays into its election, the moderation fund when `None`.
 async fn create_transition(
     charters: &DataContract,
     applicant: &mut Applicant,
     document_type_name: &str,
     properties: BTreeMap<String, Value>,
+    contest_fund: Option<Credits>,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> (Vec<u8>, Identifier) {
@@ -237,7 +241,10 @@ async fn create_transition(
         None,
         signer,
         platform_version,
-        None,
+        Some(StateTransitionCreationOptions {
+            contest_fund,
+            ..Default::default()
+        }),
     )
     .await
     .expect("expected to create the batch transition");
@@ -347,6 +354,7 @@ async fn propose(
                 ]),
             ),
         ]),
+        None,
         rng,
         platform_version,
     )
@@ -386,6 +394,29 @@ async fn application_naming_the_target_as(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> Vec<u8> {
+    application_stating(
+        charters,
+        applicant,
+        target,
+        proposal_id,
+        None,
+        rng,
+        platform_version,
+    )
+    .await
+}
+
+/// [`application_naming_the_target_as`] stating `contest_fund` as the most it pays into the
+/// election, the moderation fund when `None`.
+async fn application_stating(
+    charters: &DataContract,
+    applicant: &mut Applicant,
+    target: Value,
+    proposal_id: Identifier,
+    contest_fund: Option<Credits>,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> Vec<u8> {
     create_transition(
         charters,
         applicant,
@@ -398,6 +429,7 @@ async fn application_naming_the_target_as(
             ),
             (property_names::MEMBERS.to_string(), Value::Array(vec![])),
         ]),
+        contest_fund,
         rng,
         platform_version,
     )
@@ -930,6 +962,86 @@ async fn should_prefund_each_application_with_half_a_dash_and_release_the_remain
         processing_credits(&platform, platform_version) - processing_before,
         remainder,
         "what the votes left is released as processing fees"
+    );
+}
+
+/// A moderation election doubles its own fund once it holds 250 applicants: an application
+/// stating the moderation fund is refused, paid, with twice it, and one stating more joins,
+/// paying twice the moderation fund and keeping the rest
+#[tokio::test]
+async fn should_double_the_moderation_fund_once_an_election_holds_250_applicants() {
+    let (mut platform, platform_version, charters, mut rng) = setup();
+    let moderation_fund = platform_version
+        .fee_version
+        .vote_resolution_fund_fees
+        .moderation_vote_resolution_fund_required_amount;
+
+    let target = elected_target(&platform, 0xA6, ONE_DAY, ONE_DAY, platform_version);
+    let poll = charter_poll(target);
+    let mut alice = applicant(&mut platform, &mut rng);
+    let mut bob = applicant(&mut platform, &mut rng);
+
+    let (start, _) = apply(
+        &platform,
+        &charters,
+        &mut alice,
+        target,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    fill_contest_with_bare_contenders(&platform, &poll, 250, platform_version);
+    let election_fund = prefunded_balance(&platform, &poll, platform_version);
+
+    let proposal_id = propose(
+        &platform,
+        &charters,
+        &mut bob,
+        target,
+        start + 1000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let underpaid = application_stating(
+        &charters,
+        &mut bob,
+        Value::Identifier(target.to_buffer()),
+        proposal_id,
+        Some(moderation_fund),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let ConsensusError::StateError(StateError::DocumentContestNotPaidForError(error)) =
+        process_refused(&platform, underpaid, start + 2000, platform_version)
+    else {
+        panic!("expected the election not to be paid for");
+    };
+    assert_eq!(error.expected_amount(), 2 * moderation_fund);
+    assert_eq!(error.paid_amount(), moderation_fund);
+
+    let bob_before = balance_of(&platform, bob.id(), platform_version);
+    let application = application_stating(
+        &charters,
+        &mut bob,
+        Value::Identifier(target.to_buffer()),
+        proposal_id,
+        Some(3 * moderation_fund),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let fee = process_valid(&platform, application, start + 3000, platform_version);
+    assert_eq!(
+        bob_before - balance_of(&platform, bob.id(), platform_version),
+        2 * moderation_fund + fee.total_base_fee(),
+        "applying costs twice the moderation fund on top of the document fee"
+    );
+    assert_eq!(
+        prefunded_balance(&platform, &poll, platform_version),
+        election_fund + 2 * moderation_fund
     );
 }
 

@@ -437,12 +437,18 @@ extension SDK {
     // MARK: - Document State Transitions
 
     /// Create a new document
+    ///
+    /// `maxContestFund` is the most, in credits, the owner pays into the
+    /// contest a contested document joins, and the owner must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// document that joins no contest ignores it.
     public func documentCreate(
         contractId: String,
         documentType: String,
         ownerIdentity: DPPIdentity,
         properties: [String: Any],
-        signer: OpaquePointer
+        signer: OpaquePointer,
+        maxContestFund: UInt64? = nil
     ) async throws -> [String: Any] {
         let signerBox = SendableOpaque(signer)
         let startTime = Date()
@@ -554,7 +560,10 @@ extension SDK {
                 // 4. Create put settings (null for defaults)
                 let putSettings: UnsafePointer<DashSDKPutSettings>? = nil
                 let tokenPaymentInfo: UnsafePointer<DashSDKTokenPaymentInfo>? = nil
-                let stateTransitionOptions: UnsafePointer<DashSDKStateTransitionCreationOptions>? = nil
+                // Creation options only carry a stated `maxContestFund`; without
+                // one they stay null and rs-sdk states the current fund to join.
+                var stateTransitionOptions = DashSDKStateTransitionCreationOptions()
+                stateTransitionOptions.contest_fund = maxContestFund ?? 0
 
                 // Use the entropy from document creation (already generated)
 
@@ -563,21 +572,23 @@ extension SDK {
                 print("🚀 [DOCUMENT CREATE] This is the NETWORK CALL - using contract from trusted context...")
                 let putStart = Date()
                 var mutableEntropy = entropy  // Create mutable copy for withUnsafePointer
-                let putResult = withUnsafePointer(to: &mutableEntropy) { entropyPtr in
-                    contractId.withCString { contractIdCStr in
-                        documentType.withCString { docTypeCStr in
-                            dash_sdk_document_put_to_platform_and_wait(
-                                handle,
-                                documentHandle,
-                                contractIdCStr,
-                                docTypeCStr,
-                                entropyPtr,
-                                keyHandle,
-                                signerBox.p,
-                                tokenPaymentInfo,
-                                putSettings,
-                                stateTransitionOptions
-                            )
+                let putResult = withUnsafePointer(to: &stateTransitionOptions) { optionsPtr in
+                    withUnsafePointer(to: &mutableEntropy) { entropyPtr in
+                        contractId.withCString { contractIdCStr in
+                            documentType.withCString { docTypeCStr in
+                                dash_sdk_document_put_to_platform_and_wait(
+                                    handle,
+                                    documentHandle,
+                                    contractIdCStr,
+                                    docTypeCStr,
+                                    entropyPtr,
+                                    keyHandle,
+                                    signerBox.p,
+                                    tokenPaymentInfo,
+                                    putSettings,
+                                    maxContestFund == nil ? nil : optionsPtr
+                                )
+                            }
                         }
                     }
                 }

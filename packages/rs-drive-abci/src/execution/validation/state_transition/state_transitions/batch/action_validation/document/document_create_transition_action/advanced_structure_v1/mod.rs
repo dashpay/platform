@@ -59,24 +59,13 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
             match (expected_vote_poll, self.prefunded_voting_balance()) {
                 (
                     Some(VotePoll::ContestedDocumentResourceVotePoll(expected)),
-                    Some((provided, paid_amount)),
+                    Some((provided, _)),
                 ) => {
-                    // A moderation election is prefunded with the moderation fund, every other
-                    // contest with the contested document fund. -->> Changed in V1 <<-- A
-                    // contender pays at least that: joining a contest holding 250 contenders or
-                    // more costs a multiple of it, which state validation checks once it has
-                    // counted them, and everything paid goes to the contest's fund.
-                    let expected_amount = expected.required_vote_resolution_fund(platform_version);
-                    if *paid_amount < expected_amount {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            DocumentContestNotPaidForError::new(
-                                self.base().id(),
-                                expected_amount,
-                                *paid_amount,
-                            )
-                            .into(),
-                        ));
-                    }
+                    // -->> Changed in V1 <<-- The amount is the most the contender pays, and
+                    // what it has to pay depends on how many contenders the contest holds, so
+                    // state validation, which counts them, judges it and refuses a contender
+                    // stating less with the fund it has to pay. V0 wanted exactly the contested
+                    // document fund here.
 
                     // -->> Introduced in V1 <<--
                     // The index name in the prefunded voting balance is chosen by the submitter,
@@ -99,6 +88,8 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                     // -->> End Introduced in V1 <<--
                 }
                 (Some(VotePoll::ContestedDocumentResourceVotePoll(expected)), None) => {
+                    // A contested document stating no fund at all is refused with the contest's
+                    // fund, the least a contest takes: this step does not count contenders
                     let expected_amount = expected.required_vote_resolution_fund(platform_version);
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         DocumentContestNotPaidForError::new(self.base().id(), expected_amount, 0)
@@ -315,52 +306,68 @@ mod tests {
             .collect()
     }
 
-    /// A contender pays the contested document fund: exactly it before protocol version 14, at
-    /// least it from 14, where joining a contest of 250 contenders or more costs a multiple of it
-    #[test]
-    fn should_require_the_contested_dpns_fee_for_each_protocol_version() {
-        for (protocol_version, expected_amount) in [(13, 20_000_000_000), (14, 10_000_000_000)] {
-            let platform_version = PlatformVersion::get(protocol_version).expect("known version");
-            for paid_amount in [
-                9_999_999_999,
-                10_000_000_000,
-                10_000_000_001,
-                20_000_000_000,
-                20_000_000_001,
-            ] {
-                let mut action = create_action(
-                    CONTESTED_LABEL,
-                    Some(CONTESTED_INDEX_NAME),
-                    platform_version,
-                );
-                let DocumentCreateTransitionAction::V0(action_data) = &mut action;
-                action_data
-                    .prefunded_voting_balance
-                    .as_mut()
-                    .expect("prefunded contest")
-                    .1 = paid_amount;
+    /// The action of a DPNS contender stating `paid_amount` as its fund
+    fn dpns_contender_action(
+        paid_amount: Credits,
+        platform_version: &PlatformVersion,
+    ) -> DocumentCreateTransitionAction {
+        let mut action = create_action(
+            CONTESTED_LABEL,
+            Some(CONTESTED_INDEX_NAME),
+            platform_version,
+        );
+        let DocumentCreateTransitionAction::V0(action_data) = &mut action;
+        action_data
+            .prefunded_voting_balance
+            .as_mut()
+            .expect("prefunded contest")
+            .1 = paid_amount;
+        action
+    }
 
-                let errors = validate(&action, platform_version);
-                let contest_errors = contest_errors(&errors);
-                let accepted = if protocol_version < 14 {
-                    paid_amount == expected_amount
-                } else {
-                    paid_amount >= expected_amount
+    /// What a contender states is the most it pays, and what it has to pay depends on how many
+    /// contenders the contest holds, so structure validation leaves the amount to state
+    /// validation, which counts them
+    #[test]
+    fn should_leave_the_contested_dpns_fund_to_state_validation() {
+        let platform_version = PlatformVersion::latest();
+        let fund = required_amount(platform_version);
+        for paid_amount in [0, 1, fund - 1, fund, fund + 1, 2 * fund] {
+            let errors = validate(
+                &dpns_contender_action(paid_amount, platform_version),
+                platform_version,
+            );
+            assert!(
+                contest_errors(&errors).is_empty(),
+                "stating {paid_amount}: {errors:?}"
+            );
+        }
+    }
+
+    /// PROTOCOL_VERSION_13: a contender states exactly the contested document fund
+    #[test]
+    fn should_leave_the_contested_dpns_fund_to_state_validation_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("known version");
+        let fund = required_amount(platform_version);
+        assert_eq!(fund, 20_000_000_000);
+        for paid_amount in [0, fund - 1, fund, fund + 1, 2 * fund] {
+            let errors = validate(
+                &dpns_contender_action(paid_amount, platform_version),
+                platform_version,
+            );
+            let contest_errors = contest_errors(&errors);
+            if paid_amount == fund {
+                assert!(
+                    contest_errors.is_empty(),
+                    "stating {paid_amount}: {errors:?}"
+                );
+            } else {
+                let [StateError::DocumentContestNotPaidForError(error)] = contest_errors.as_slice()
+                else {
+                    panic!("stating {paid_amount}: expected a fee error, got {errors:?}");
                 };
-                if accepted {
-                    assert!(
-                        contest_errors.is_empty(),
-                        "protocol {protocol_version}: {errors:?}"
-                    );
-                } else {
-                    let [StateError::DocumentContestNotPaidForError(error)] =
-                        contest_errors.as_slice()
-                    else {
-                        panic!("protocol {protocol_version}: expected a fee error, got {errors:?}");
-                    };
-                    assert_eq!(error.expected_amount(), expected_amount);
-                    assert_eq!(error.paid_amount(), paid_amount);
-                }
+                assert_eq!(error.expected_amount(), fund);
+                assert_eq!(error.paid_amount(), paid_amount);
             }
         }
     }
@@ -545,10 +552,11 @@ mod tests {
         })
     }
 
-    /// An application in a moderation election prefunds at least the moderation fund, 0.5 Dash;
-    /// the contested document fund every other contest takes is refused.
+    /// An application in a moderation election stating no fund is refused with the moderation
+    /// fund, 0.5 Dash; what one states is judged by state validation, which counts the
+    /// applicants
     #[test]
-    fn should_require_the_moderation_fund_of_a_charter_application() {
+    fn should_refuse_a_charter_application_stating_no_fund_with_the_moderation_fund() {
         let platform_version = PlatformVersion::latest();
         let moderation_fund = platform_version
             .fee_version
@@ -566,7 +574,7 @@ mod tests {
             let action = charter_application_action(paid_amount, platform_version);
             let errors = validate(&action, platform_version);
             let contest_errors = contest_errors(&errors);
-            if paid_amount >= Some(moderation_fund) {
+            if paid_amount.is_some() {
                 assert!(contest_errors.is_empty(), "{errors:?}");
             } else {
                 let [StateError::DocumentContestNotPaidForError(error)] = contest_errors.as_slice()
@@ -574,7 +582,7 @@ mod tests {
                     panic!("paid {paid_amount:?}: expected a fee error, got {errors:?}");
                 };
                 assert_eq!(error.expected_amount(), moderation_fund);
-                assert_eq!(error.paid_amount(), paid_amount.unwrap_or_default());
+                assert_eq!(error.paid_amount(), 0);
             }
         }
     }

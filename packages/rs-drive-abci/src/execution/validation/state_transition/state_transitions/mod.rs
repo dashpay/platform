@@ -172,6 +172,7 @@ pub(in crate::execution) mod tests {
     use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
     use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
     use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
     use dpp::state_transition::StateTransition;
@@ -192,6 +193,10 @@ pub(in crate::execution) mod tests {
     use drive::query::vote_poll_vote_state_query::ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally;
     use drive::query::vote_poll_vote_state_query::{ContestedDocumentVotePollDriveQueryResultType, ResolvedContestedDocumentVotePollDriveQuery};
     use drive::util::test_helpers::setup_contract;
+    use drive::drive::votes::paths::VotePollPaths;
+    use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
+    use drive::fees::op::LowLevelDriveOperation;
+    use drive::grovedb::Element;
     use crate::execution::types::block_execution_context::BlockExecutionContext;
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::expect_match;
@@ -1826,7 +1831,11 @@ pub(in crate::execution) mod tests {
         expect_err: Option<&str>,
         platform_version: &PlatformVersion,
     ) -> Identity {
-        let (identity, result) = add_contender_to_dpns_name_contest_paying(
+        let DpnsContenderJoin {
+            contender: identity,
+            result,
+            ..
+        } = add_contender_to_dpns_name_contest_paying(
             platform,
             platform_state,
             seed,
@@ -1851,24 +1860,34 @@ pub(in crate::execution) mod tests {
         identity
     }
 
+    /// A contender joining a DPNS name contest, see [`add_contender_to_dpns_name_contest_paying`]
+    pub(in crate::execution) struct DpnsContenderJoin {
+        /// The contender
+        pub contender: Identity,
+        /// Its balance once its preorder is in, before its document create
+        pub balance_before_create: Credits,
+        /// How its document create executed
+        pub result: StateTransitionExecutionResult,
+    }
+
     /// Adds a contender to the DPNS name contest on `name` like
-    /// [`add_contender_to_dpns_name_contest`], stating `prefunded_voting_balance` as its fund, and
-    /// holding that much beside 0.5 Dash for fees, instead of the fund the transition is built
-    /// with. Returns the contender and how its document create executed.
+    /// [`add_contender_to_dpns_name_contest`], stating `contest_fund` as the most it pays into
+    /// the contest (the contest's fund when `None`) and holding that much beside 0.5 Dash for
+    /// fees.
     pub(in crate::execution) async fn add_contender_to_dpns_name_contest_paying(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         platform_state: &PlatformState,
         seed: u64,
         name: &str,
-        prefunded_voting_balance: Option<Credits>,
+        contest_fund: Option<Credits>,
         platform_version: &PlatformVersion,
-    ) -> (Identity, StateTransitionExecutionResult) {
+    ) -> DpnsContenderJoin {
         let mut rng = StdRng::seed_from_u64(seed);
 
         let (identity_1, signer_1, key_1) = setup_identity(
             platform,
             rng.gen(),
-            dash_to_credits!(0.5) + prefunded_voting_balance.unwrap_or_default(),
+            dash_to_credits!(0.5) + contest_fund.unwrap_or_default(),
         );
 
         let dpns = platform
@@ -1960,7 +1979,7 @@ pub(in crate::execution) mod tests {
                 .serialize_to_bytes()
                 .expect("expected documents batch serialized state transition");
 
-        let mut documents_batch_create_transition_1 =
+        let documents_batch_create_transition_1 =
             BatchTransition::new_document_creation_transition_from_document(
                 document_1,
                 domain,
@@ -1971,30 +1990,13 @@ pub(in crate::execution) mod tests {
                 None,
                 &signer_1,
                 platform_version,
-                None,
+                Some(StateTransitionCreationOptions {
+                    contest_fund,
+                    ..Default::default()
+                }),
             )
             .await
             .expect("expect to create documents batch transition");
-
-        if let Some(prefunded_voting_balance) = prefunded_voting_balance {
-            let StateTransition::Batch(batch) = &mut documents_batch_create_transition_1 else {
-                panic!("expected a batch transition");
-            };
-            let Some(BatchedTransitionMutRef::Document(DocumentTransition::Create(create))) =
-                batch.first_transition_mut()
-            else {
-                panic!("expected a document create");
-            };
-            create
-                .prefunded_voting_balances_mut()
-                .as_mut()
-                .expect("expected a contested document")
-                .1 = prefunded_voting_balance;
-            documents_batch_create_transition_1
-                .sign_external(&key_1, &signer_1, Some(|_, _| Ok(SecurityLevel::HIGH)))
-                .await
-                .expect("expected to sign");
-        }
 
         let documents_batch_create_serialized_transition_1 = documents_batch_create_transition_1
             .serialize_to_bytes()
@@ -2027,7 +2029,18 @@ pub(in crate::execution) mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.valid_count(), 1);
+        assert_eq!(
+            processing_result.valid_count(),
+            1,
+            "expected the preorder to pass: {:?}",
+            processing_result.execution_results()
+        );
+
+        let balance_before_create = platform
+            .drive
+            .fetch_identity_balance(identity_1.id().to_buffer(), None, platform_version)
+            .expect("expected to fetch the contender's balance")
+            .expect("expected the contender to have a balance");
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -2056,10 +2069,11 @@ pub(in crate::execution) mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        (
-            identity_1,
-            processing_result.into_execution_results().remove(0),
-        )
+        DpnsContenderJoin {
+            contender: identity_1,
+            balance_before_create,
+            result: processing_result.into_execution_results().remove(0),
+        }
     }
 
     pub(in crate::execution) fn verify_dpns_name_contest(
@@ -2284,6 +2298,54 @@ pub(in crate::execution) mod tests {
                 Value::Text(convert_to_homograph_safe_chars(name)),
             ],
         }
+    }
+
+    /// Fills the contest `vote_poll` up to `contenders` contenders with bare contender entries,
+    /// written straight to GroveDB in one batch: a join reads how many contenders a contest
+    /// holds, never what they hold, so this stands in for thousands of contested documents.
+    pub(in crate::execution) fn fill_contest_with_bare_contenders(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        vote_poll: &ContestedDocumentResourceVotePoll,
+        contenders: u64,
+        platform_version: &PlatformVersion,
+    ) {
+        let resolved_vote_poll = vote_poll
+            .resolve(&platform.drive, None, platform_version)
+            .expect("expected to resolve the vote poll");
+        let choices_path = resolved_vote_poll
+            .contenders_path(platform_version)
+            .expect("expected the choices path");
+        let (_, held) = platform
+            .drive
+            .fetch_contested_document_vote_poll_contender_count(
+                &resolved_vote_poll,
+                u16::MAX,
+                &Default::default(),
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected the contender count");
+        let operations = (held as u64..contenders)
+            .map(|n| {
+                let mut key = [0xEEu8; 32];
+                key[24..].copy_from_slice(&n.to_be_bytes());
+                LowLevelDriveOperation::insert_for_known_path_key_element(
+                    choices_path.clone(),
+                    key.to_vec(),
+                    Element::empty_tree(),
+                )
+            })
+            .collect();
+        platform
+            .drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to write the bare contenders");
     }
 
     /// A masternode's signed vote on the DPNS name contest on `name`, serialized as broadcast

@@ -104,7 +104,8 @@ export class DocumentsFacade {
    * Creates a document and resolves to the confirmed Document as Platform
    * committed it, consensus-populated system fields included — keep this
    * instance when you later intend to delete an indexOnly document whose
-   * type requires `$createdAt`.
+   * type requires `$createdAt`. A document of a contested index joins a
+   * contest: `options.contestFund` is the most, in credits, it pays into it.
    */
   async create(options: wasm.DocumentCreateOptions): Promise<wasm.Document> {
     const w = await this.sdk.getWasmSdkConnected();

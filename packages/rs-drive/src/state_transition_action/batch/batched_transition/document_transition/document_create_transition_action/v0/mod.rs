@@ -70,6 +70,11 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
         &self,
     ) -> &Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)>;
 
+    /// Sets what a contested create pays into its contest, which state validation settles at
+    /// the fund to join the contest once it has checked the contender stated at least that. A
+    /// create that joins no contest is left as it is.
+    fn set_prefunded_voting_fund(&mut self, fund: Credits);
+
     /// Get the should store contest info (if it should be stored)
     fn should_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo>;
 

@@ -91,10 +91,15 @@ pub struct DocumentCreateTransitionV0 {
             with = "crate::serialization::json::safe_integer::json_safe_option_string_u64_tuple"
         )
     )]
-    /// Pre funded balance (for unique index conflict resolution voting - the identity will put money
-    /// aside that will be used by voters to vote)
-    /// This is a map of index names to the amount we want to prefund them for
-    /// Since index conflict resolution is not a common feature most often nothing should be added here.
+    /// The fund a contested document puts into the contest it opens or joins, which pays the
+    /// masternode votes that decide it: the name of the contested index, and an amount in credits.
+    /// `None` for a document that joins no contest, which is most documents.
+    ///
+    /// From protocol version 14 the amount is the most the contender is willing to pay. It is
+    /// charged the fund to join the contest (the contest's fund, doubled once the contest holds
+    /// 250 contenders and again for every 50 more), what it stated beyond that stays with it, and
+    /// one stating less is refused. The identity must hold the amount it states. Before 14 the
+    /// amount is exactly the contest's fund, and is what the contender pays.
     pub prefunded_voting_balance: Option<(String, Credits)>,
 }
 

@@ -1286,18 +1286,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contender; version 0 compared at most 100.
 ///
 /// 51. **The fund a contender pays doubles for every 50 contenders a contest
-///     holds past 250**: document create state validation 2 refuses, paid, a
-///     contender whose prefunded voting balance is less than the contest's fund
-///     doubled once the contest holds
-///     `contested_document_contenders_before_fund_doubling` (`FEE_VERSION3`,
-///     250) contenders and again for every
-///     `contested_document_contenders_per_fund_doubling` (50) more
-///     (`DocumentContestNotPaidForError`): 0.1 DASH for the first 250 DPNS
-///     contenders, 0.2 for the next 50, up to 3,276.8 for the 951st to the
-///     1,000th, so filling a contest costs 327,695 DASH where it cost 100.
-///     Document create structure validation 1 accepts a prefunded voting
-///     balance of at least the contest's fund; version 0 wants exactly it.
-///     Everything a contender pays goes to the contest's fund.
+///     holds past 250**: the fund to join a contest is its fund doubled once
+///     the contest holds `contested_document_contenders_before_fund_doubling`
+///     (`FEE_VERSION3`, 250) contenders and again for every
+///     `contested_document_contenders_per_fund_doubling` (50) more: 0.1 DASH
+///     for the first 250 DPNS contenders, 0.2 for the next 50, up to 3,276.8
+///     for the 951st to the 1,000th, so filling a contest costs 327,695 DASH
+///     where it cost 100. A contender's prefunded voting balance is the most it
+///     pays: document create state validation 2 refuses, paid, one stating less
+///     than the fund to join (`DocumentContestNotPaidForError`, carrying that
+///     fund), the first contender of a new contest included, and charges one
+///     stating more only the fund to join, the rest staying with it. Document
+///     create structure validation 1 leaves the amount to state validation;
+///     version 0 wants exactly the contest's fund.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
