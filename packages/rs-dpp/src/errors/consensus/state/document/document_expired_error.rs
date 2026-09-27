@@ -12,7 +12,8 @@ use thiserror::Error;
 /// A document whose type declares a `ttl` has expired (`$createdAt` plus the time to live is
 /// at or before block time), so it can no longer be replaced, transferred, bought, repriced
 /// or restored by a moderator. It still exists until the platform's cleanup deletes it after
-/// a block's state transitions; its owner may still delete it. Protocol version 14.
+/// a block's state transitions; its owner may still delete it where the type's `canBeDeleted`
+/// allows. Protocol version 14.
 #[derive(
     Error,
     Debug,

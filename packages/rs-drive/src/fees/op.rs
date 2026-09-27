@@ -333,7 +333,11 @@ impl LowLevelDriveOperation {
                     // each added byte costs the price of the document's
                     // remaining lifetime, into the storage pool or the
                     // processing fees as its type's `ttl` decides.
-                    // Processing is billed as for any batch.
+                    // Processing is billed as for any batch. Added in
+                    // place in this shipped generation: only a document
+                    // type parsed from the `ttl` keyword, which no
+                    // protocol version before 14 reads, is tagged
+                    // `DocumentTtl`, so no earlier version reaches this arm.
                     let bytes_fee = (cost.storage_cost.added_bytes as u64)
                         .checked_mul(credit_per_byte)
                         .ok_or(Error::Fee(FeeError::Overflow(

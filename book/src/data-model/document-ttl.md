@@ -31,7 +31,8 @@ the document in place.
   never changes. A buyer of an expiring document buys what is left of its life.
 - After each block's state transitions the platform deletes the expired documents, oldest
   first, at most `max_document_expirations_per_block` per block (128 at protocol version
-  14). The rest wait for the next block. A state transition in the block a document expires
+  14), and no more than `max_document_expiration_weight_per_block` (1,024) in weight, where
+  a document weighs 1 plus the index levels of its type. The rest wait for the next block. A state transition in the block a document expires
   in still sees it; a document can therefore outlive its expiry by the part of a block
   before the cleanup, and by more when a backlog builds.
 - The expiry belongs to the document: it is its own `$createdAt` plus the type's `ttl`, both
@@ -40,7 +41,7 @@ the document in place.
 - From its expiry on, a document can no longer be replaced, transferred, bought or repriced,
   and a moderator can no longer restore it: each is refused, paid, with
   `DocumentExpiredError` (40140), whether or not the cleanup has reached the document. Its
-  owner may still delete it, which only removes it sooner. Until the cleanup deletes it, it
+  owner may still delete it where `canBeDeleted` allows, which only removes it sooner. Until the cleanup deletes it, it
   can still be queried and referenced, and it keeps its values in the type's unique indexes:
   a create of the same unique value is refused as a duplicate until the cleanup has run. The
   cleanup deletes a fixed number per block, so a sustained flood of creations with a short
@@ -140,18 +141,23 @@ document of such a type:
   `epoch_time_length_s`, handed to Drive through `DriveConfig`. The route follows the declared
   `ttl`, not the lifetime left, so every write of a document takes the same one.
 - **Deletion.** Creating the document prepays, as processing, what its deletion will cost:
-  `cleanup_base_processing_cost` (1,200,000) plus `cleanup_processing_cost_per_index_level`
+  `cleanup_base_processing_cost` (1,200,000), plus `cleanup_processing_cost_per_index_level`
   (400,000) per index level of the type, where an index counts its properties, times the
-  overlapping windows of a `timeRange` index. The cleanup itself bills nobody.
+  overlapping windows of a `timeRange` index, plus `cleanup_processing_cost_per_document_byte`
+  (420, what removing and reading a byte costs) per byte of the stored document. The cleanup
+  itself bills nobody.
 - **Changes.** A replace, transfer, purchase or price update prices the bytes it adds by the
-  lifetime left at that block and pays no second deletion fee. A deletion by the owner or a
-  moderator pays its own processing like any deletion; the prepaid deletion is the
-  platform's, and is not refunded.
+  lifetime left at that block, and prepays the deletion of the document bytes it adds at
+  `cleanup_processing_cost_per_document_byte`. A deletion by the owner or a moderator pays its
+  own processing like any deletion; the prepaid deletion is the platform's, and is not
+  refunded.
 
 The price never decreases with the lifetime and the route depends on the `ttl` alone, so an
 estimate made at an earlier block time (check_tx) stays an upper bound of the execution. A dry
-run estimates a replace as an insert, the entry and the prepaid deletion included, which only
-raises it. In Drive the document's grove operations are
+run estimates a change as an insert of the changed document
+(`estimate_document_change_as_insert_operations_v1`): without the entry and the deletion the
+creation prepaid, which a change never pays, and with the deletion of all the document's
+bytes, at least what the change adds. In Drive the document's grove operations are
 re-tagged `EphemeralGroveOperation(_, EphemeralPricing::DocumentTtl { .. })` and applied as
 their own GroveDB batch, so their added bytes can be priced apart from the rest of the
 transition (see `apply_batch_low_level_drive_operations`); operations already tagged for a
@@ -162,10 +168,10 @@ transition (see `apply_batch_low_level_drive_operations`); operations already ta
 `validate_document_not_expired` (drive-abci, `state_transition/common`) is the one rule: a
 document of a type with a `ttl` has expired when block time is at or past its `$createdAt`
 plus the `ttl` (Drive's `document_expires_at`, the time its entry is keyed by), the same
-boundary the cleanup deletes at. The batch's state validation (v0, in place, unreachable before
-protocol version 14) calls it once per action through `validate_batched_action_not_expired`,
-an exhaustive match that refuses a replace, transfer, purchase or price update of an expired
-document before the action's own checks. The moderator restore calls it too, judging the
+boundary the cleanup deletes at. The batch's advanced structure validation (v1, protocol
+version 14 only), which check_tx runs too, calls it for every document action through
+`validate_document_action_not_expired`, an exhaustive match that refuses, paid, a replace,
+transfer, purchase or price update of an expired document. The moderator restore calls it too, judging the
 `$createdAt` of the document the removal record's hash pins. A document deletion by its owner
 does not.
 
@@ -173,28 +179,41 @@ does not.
 
 `Platform::expire_documents` runs after the block's state transitions, right after the address
 balance cleanup in `run_block_proposal`, and calls `Drive::remove_expired_documents` with
-`max_document_expirations_per_block`:
+`max_document_expirations_per_block` and `max_document_expiration_weight_per_block`:
 
 1. `fetch_expired_documents` reads, in one query, the entries of the expiry times at or before
    the block time, oldest first, at most the limit of them. Every tree of an expiry time holds
    an entry, so the query visits at most the limit of trees.
-2. Each expired document is checked against state (its contract, document type, `ttl` and
-   stored document, and that the document expires when its entry says) and deleted through
-   `DocumentOperationType::ForceDeleteDocument`, the moderators' deletion, each in its own batch
-   so every index tree the next deletion reads is final. Its entry, and the tree of its expiry
-   time when it was the last, go with it. The fee result is discarded.
-3. An entry without a document to delete is logged and removed; the block's orphans share one
-   batch. None is expected, and failing the block over one would halt the chain.
+2. Each expired document is read and checked against state (its contract, document type,
+   `ttl` and stored document, and that the document expires when its entry says), then
+   deleted from what was read: the deletion an owner runs, without the `canBeDeleted` guard
+   (`delete_read_document_for_contract_operations_v0`). Its entry, and the tree of its expiry
+   time when it was the last, go with it.
+3. An entry without a document to delete is logged and only removed. None is expected, and
+   failing the block over one would halt the chain.
+4. The cleanup stops before a removal that would pass the weight budget (an entry's removal
+   weighs 1), except the block's first, so the backlog always drains.
+
+Every removal goes into one GroveDB batch, applied without a fee, each built against the
+removals queued before it, so every emptiness check sees them.
 
 ## Versioning
 
 Everything rides protocol version 14, unreleased when this landed: the keyword joined document
 meta-schema v3 and the generation 3 parser, the limits joined `SYSTEM_LIMITS_V4`, the fee group
 joined `FEE_VERSION3`, the update rule joined `validate_update` v1, and `expire_documents` is
-`Some(0)` in `DRIVE_ABCI_METHOD_VERSIONS_V10` only. Four shipped generations were edited in
-place, each inert before 14: the deletion hook in `delete_document_for_contract_operations` v0
-and the expiry check in the batch's state validation v0 (`documents_ttl_seconds` is only ever
-`Some` on a document type parsed from the keyword, which no earlier protocol version reads),
-the `expire_documents` call in `run_block_proposal` v0 (the method is `None` before 14), and
-one batch per pricing rule in `apply_batch_low_level_drive_operations` v0 (nothing is tagged
-ephemeral before 14).
+`Some(0)` in `DRIVE_ABCI_METHOD_VERSIONS_V10` only. The shipped generations edited in place are
+inert before 14:
+
+- the deletion hook in `delete_document_for_contract_operations` v0, the reference checks
+  (`documents_can_disappear`) and the restore check of `contract_user_moderation` state v0:
+  `documents_ttl_seconds` is only ever `Some` on a document type parsed from the keyword,
+  which no earlier protocol version reads. The deletion's post-read part moved into
+  `delete_read_document_for_contract_operations_v0` with its operations unchanged;
+- the `expire_documents` call in `run_block_proposal` v0: the method is `None` before 14;
+- the tree's creation in `transition_to_version_14` (`perform_events_on_first_block_of_protocol_change`
+  v0), which only an upgrade to 14 runs;
+- one batch per pricing rule in `apply_batch_low_level_drive_operations` v0 and the
+  `DocumentTtl` arm of `consume_to_fees_v0`: nothing is tagged ephemeral before 14;
+- the pattern-only edits in `batch_insert_empty_tree_if_not_exists` v0 and
+  `convert_drive_operations_to_grove_operations` v0, whose output is unchanged.

@@ -15,7 +15,6 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
-use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 
 /// Refuses an action on a document whose type declares a `ttl` once that has passed:
 /// `$createdAt` plus the time to live at or before block time, the moment the cleanup after
@@ -60,17 +59,13 @@ pub(crate) fn validate_document_not_expired(
     ))
 }
 
-/// [`validate_document_not_expired`] for one action of a batch: replacing, transferring,
-/// buying and repricing an expired document are refused. A create makes a new document, and
-/// its owner's deletion of an expired one only removes it sooner; token actions touch no
-/// document.
-pub(crate) fn validate_batched_action_not_expired(
-    transition: &BatchedTransitionAction,
+/// [`validate_document_not_expired`] for one document action of a batch: replacing,
+/// transferring, buying and repricing an expired document are refused. A create makes a new
+/// document, and its owner's deletion of an expired one only removes it sooner.
+pub(crate) fn validate_document_action_not_expired(
+    document_action: &DocumentTransitionAction,
     block_info: &BlockInfo,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let BatchedTransitionAction::DocumentAction(document_action) = transition else {
-        return Ok(SimpleConsensusValidationResult::new());
-    };
     let (base, created_at) = match document_action {
         DocumentTransitionAction::ReplaceAction(action) => (action.base(), action.created_at()),
         DocumentTransitionAction::TransferAction(action) => {

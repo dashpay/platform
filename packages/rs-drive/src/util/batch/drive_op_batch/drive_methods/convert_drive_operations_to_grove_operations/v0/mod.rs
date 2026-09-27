@@ -73,6 +73,9 @@ impl Drive {
                          repaid an identity's debt; apply them through apply_drive_operations",
                     )));
                 }
+                // `(..)` covers the pricing rule ephemeral operations gained with document time
+                // to live (protocol version 14); the refusal is the same at every protocol
+                // version, and before 14 no operation this converts is ephemeral.
                 if inner_drive_operations.iter().any(|operation| {
                     matches!(
                         operation,

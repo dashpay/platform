@@ -7,7 +7,9 @@ use super::*;
 
 mod document_ttl_tests {
     use super::*;
+    use crate::platform_types::block_proposal::v0::BlockProposal;
     use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::data_contract::document_type::DocumentTypeRef;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
@@ -28,6 +30,7 @@ mod document_ttl_tests {
     use drive::util::grove_operations::DirectQueryType;
     use drive::util::storage_flags::StorageFlags;
     use simple_signer::signer::SimpleSigner;
+    use tenderdash_abci::proto::version::Consensus;
 
     const START_MS: u64 = 1_700_000_000_000;
     const HOUR_S: u64 = 3_600;
@@ -73,10 +76,25 @@ mod document_ttl_tests {
 
     impl NotesFixture {
         fn new() -> Self {
+            Self::on(
+                TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_initial_state_structure(),
+            )
+        }
+
+        /// On a platform holding the genesis state (system contracts included), which a
+        /// proposed block needs.
+        fn with_genesis_state() -> Self {
+            Self::on(
+                TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state(),
+            )
+        }
+
+        fn on(mut platform: TempPlatform<MockCoreRPCLike>) -> Self {
             let platform_version = PlatformVersion::latest();
-            let mut platform = TestPlatformBuilder::new()
-                .build_with_mock_rpc()
-                .set_initial_state_structure();
 
             let (identity, signer, key) = setup_identity(&mut platform, 971, dash_to_credits!(0.5));
             let (buyer, buyer_signer, buyer_key) =
@@ -464,7 +482,7 @@ mod document_ttl_tests {
         // The identity's first transition on the contract stores its contract nonce, at the
         // perpetual storage price; the two compared below only replace it.
         fixture.create("memo", "warm up", START_MS).await;
-        let (_, note_result) = fixture.create("note", "hello", START_MS).await;
+        let (note, note_result) = fixture.create("note", "hello", START_MS).await;
         let (_, memo_result) = fixture.create("memo", "hello", START_MS).await;
         let note_fee = fee_of(&note_result);
         let memo_fee = fee_of(&memo_result);
@@ -474,11 +492,17 @@ mod document_ttl_tests {
             "an hour of storage pays into the processing fees, not the storage pool"
         );
         assert!(memo_fee.storage_fee > 0);
+        let note_bytes = note
+            .serialize(
+                fixture.note_type(),
+                &fixture.contract,
+                PlatformVersion::latest(),
+            )
+            .expect("expected the note to serialize")
+            .len() as u64;
         let cleanup_fee = document_expiration_cleanup_fee(
-            fixture
-                .contract
-                .document_type_for_name("note")
-                .expect("expected the note type"),
+            fixture.note_type(),
+            note_bytes,
             &PlatformVersion::latest().fee_version,
         )
         .expect("expected the cleanup fee");
@@ -497,6 +521,76 @@ mod document_ttl_tests {
         assert!(
             note_fee.total_base_fee() < memo_fee.total_base_fee(),
             "an hour of storage costs less than perpetual storage"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_delete_an_expired_document_at_the_end_of_a_proposed_block() {
+        // Through the production entry point: the cleanup runs inside `run_block_proposal`,
+        // in the block's transaction, after its state transitions.
+        let mut fixture = NotesFixture::with_genesis_state();
+        let (note, result) = fixture.create("note", "hello", START_MS).await;
+        assert!(matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        ));
+        let expires_at = START_MS + HOUR_S * 1000;
+
+        // The last committed block came a millisecond before the note's expiry.
+        fixture.platform.drive.set_genesis_time(START_MS);
+        fast_forward_to_block(&fixture.platform, expires_at - 1, 10, 0, 0, false);
+        let platform_state = fixture.platform.state.load();
+        let transaction = fixture.platform.drive.grove.start_transaction();
+        let raw_state_transitions = vec![];
+        let protocol_version = PlatformVersion::latest().protocol_version as u64;
+        let proposal = BlockProposal {
+            consensus_versions: Consensus {
+                block: 1,
+                app: protocol_version,
+            },
+            block_hash: None,
+            height: 11,
+            round: 0,
+            block_time_ms: expires_at,
+            core_chain_locked_height: 0,
+            core_chain_lock_update: None,
+            proposed_app_version: protocol_version,
+            proposer_pro_tx_hash: [0u8; 32],
+            validator_set_quorum_hash: [0u8; 32],
+            raw_state_transitions: &raw_state_transitions,
+        };
+        // What the proposal does after the block-end cleanups (its validator set update
+        // against this test's empty quorum hash) is not under test.
+        let _ = fixture.platform.run_block_proposal(
+            proposal,
+            false,
+            &platform_state,
+            &transaction,
+            None,
+        );
+
+        let path = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            fixture.contract.id().to_vec(),
+            vec![1],
+            b"note".to_vec(),
+            vec![0],
+        ];
+        let stored = fixture
+            .platform
+            .drive
+            .grove_get_raw_optional(
+                path.as_slice().into(),
+                note.id().as_slice(),
+                DirectQueryType::StatefulDirectQuery,
+                Some(&transaction),
+                &mut vec![],
+                &PlatformVersion::latest().drive,
+            )
+            .expect("expected to read the note");
+        assert!(
+            stored.is_none(),
+            "the block's cleanup deletes the expired note"
         );
     }
 

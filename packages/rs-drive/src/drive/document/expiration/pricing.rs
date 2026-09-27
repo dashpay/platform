@@ -109,10 +109,12 @@ pub fn document_type_weighted_index_levels(document_type: DocumentTypeRef) -> u6
         .fold(0u64, u64::saturating_add)
 }
 
-/// The processing a document of this type prepays for its deletion when it is created: the
-/// schedule's base cost plus its cost per index level of the type.
+/// The processing a document of this type, `document_bytes` long when stored, prepays for its
+/// deletion when it is created: the schedule's base cost, its cost per index level of the
+/// type, and its cost per document byte.
 pub fn document_expiration_cleanup_fee(
     document_type: DocumentTypeRef,
+    document_bytes: u64,
     fee_version: &FeeVersion,
 ) -> Result<Credits, Error> {
     let schedule = &fee_version.document_ttl;
@@ -122,6 +124,28 @@ pub fn document_expiration_cleanup_fee(
         .and_then(|levels_cost| levels_cost.checked_add(schedule.cleanup_base_processing_cost))
         .ok_or(Error::Fee(FeeError::Overflow(
             "overflow pricing the deletion of a document with a time to live",
+        )))?
+        .checked_add(document_expiration_cleanup_fee_for_bytes(
+            document_bytes,
+            fee_version,
+        )?)
+        .ok_or(Error::Fee(FeeError::Overflow(
+            "overflow pricing the deletion of a document with a time to live",
+        )))
+}
+
+/// The processing the deletion of `document_bytes` bytes of a document costs, prepaid for
+/// the whole document when it is created and for the bytes a change adds to it.
+pub fn document_expiration_cleanup_fee_for_bytes(
+    document_bytes: u64,
+    fee_version: &FeeVersion,
+) -> Result<Credits, Error> {
+    fee_version
+        .document_ttl
+        .cleanup_processing_cost_per_document_byte
+        .checked_mul(document_bytes)
+        .ok_or(Error::Fee(FeeError::Overflow(
+            "overflow pricing the deletion of the bytes of a document with a time to live",
         )))
 }
 

@@ -60,5 +60,6 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     min_document_ttl_seconds: None,
     max_document_ttl_seconds: None,
     max_document_expirations_per_block: 0,
+    max_document_expiration_weight_per_block: 0,
     minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
 };

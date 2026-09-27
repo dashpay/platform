@@ -28,6 +28,9 @@ fn pending_tree_already_queued(
     existing_operations: &mut Vec<LowLevelDriveOperation>,
     drive_operation: &LowLevelDriveOperation,
 ) -> Result<bool, Error> {
+    // The `, _` of both patterns below is the pricing rule an ephemeral operation gained with
+    // document time to live (protocol version 14), ignored here: the match reads only the
+    // grove operation, as it did before, at every protocol version.
     let (GroveOperation(candidate) | EphemeralGroveOperation(candidate, _)) = drive_operation
     else {
         return Err(Error::Drive(DriveError::CorruptedCodeExecution(

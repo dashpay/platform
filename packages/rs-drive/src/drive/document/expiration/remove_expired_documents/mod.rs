@@ -19,15 +19,18 @@ pub struct RemovedExpiredDocuments {
 
 impl Drive {
     /// Deletes up to `limit` documents whose time to live has passed at the block's time,
-    /// oldest first. Nobody pays: the documents prepaid their deletion when they were
-    /// created, and the fee results are discarded. Each deletion is its own batch in
-    /// `transaction`, so every index tree the next one reads is in its final state; the
-    /// entries of the deleted documents go with them, and the tree of an expiry time with
-    /// its last entry.
+    /// oldest first, stopping before one that would take the block's removals past
+    /// `weight_budget` (each weighs 1 plus the weighted index levels of its type; the first
+    /// always runs). Nobody pays: the documents prepaid their deletion when they were
+    /// created. Every removal goes into one batch in `transaction`, each built against those
+    /// queued before it; the entries of the deleted documents go with them, and the tree of
+    /// an expiry time with its last entry.
     ///
     /// # Parameters
     /// - `block_info`: the block the cleanup runs at the end of.
     /// - `limit`: the most documents to delete (`max_document_expirations_per_block`).
+    /// - `weight_budget`: the most weight to remove
+    ///   (`max_document_expiration_weight_per_block`).
     /// - `transaction`: the block's transaction.
     /// - `platform_version`: selects the method version.
     ///
@@ -37,6 +40,7 @@ impl Drive {
         &self,
         block_info: &BlockInfo,
         limit: u16,
+        weight_budget: u32,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<RemovedExpiredDocuments, Error> {
@@ -47,7 +51,13 @@ impl Drive {
             .expiration
             .remove_expired_documents
         {
-            0 => self.remove_expired_documents_v0(block_info, limit, transaction, platform_version),
+            0 => self.remove_expired_documents_v0(
+                block_info,
+                limit,
+                weight_budget,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_expired_documents".to_string(),
                 known_versions: vec![0],

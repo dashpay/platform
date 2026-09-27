@@ -61,9 +61,10 @@ pub trait DocumentTypeV2Getters {
 
     /// Whether a document of the type can stop existing once written: its owner may delete
     /// it (`canBeDeleted`), the contract's moderators may (`canBeDeletedByModerators`), or
-    /// the platform deletes it when its `ttl` passes. A reference that must always resolve
-    /// (`permanentDocument`, a lookup, a list element) may only target a type for which
-    /// this is false, and a `deletableDocument` reference only one for which it is true.
+    /// the platform deletes it when its `ttl` passes. A `permanentDocument` reference and a
+    /// list element reference may only target a type for which this is false, and a
+    /// `deletableDocument` reference only one for which it is true; a lookup follows the
+    /// kind it declares.
     fn documents_can_disappear(&self) -> bool;
 
     /// The top-level properties frozen at document creation on a mutable

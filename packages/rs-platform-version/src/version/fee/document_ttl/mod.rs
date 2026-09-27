@@ -31,9 +31,11 @@ pub struct DocumentTtlFeeTier {
 ///   storage. The route follows the declared `ttl`, not the lifetime left, so every write
 ///   of a document, and an estimate of it made at an earlier block time, takes one route.
 /// * A document created with a `ttl` also prepays its deletion as processing:
-///   `cleanup_base_processing_cost` plus `cleanup_processing_cost_per_index_level` for
+///   `cleanup_base_processing_cost`, plus `cleanup_processing_cost_per_index_level` for
 ///   every index level of its document type (each index counts its properties, times the
-///   number of overlapping windows of a `timeRange` index).
+///   number of overlapping windows of a `timeRange` index), plus
+///   `cleanup_processing_cost_per_document_byte` for every byte of the stored document. A
+///   change that grows the document prepays the deletion of the bytes it adds.
 ///
 /// Every earlier schedule carries the same group; it is unread there because the `ttl`
 /// keyword does not parse before protocol version 14.
@@ -52,6 +54,9 @@ pub struct FeeDocumentTtlVersion {
     pub cleanup_base_processing_cost: u64,
     /// Prepaid processing per index level of the document type, charged once on creation.
     pub cleanup_processing_cost_per_index_level: u64,
+    /// Prepaid processing per byte of the stored document: charged on creation for the whole
+    /// document, and on a change for the bytes it adds.
+    pub cleanup_processing_cost_per_document_byte: u64,
 }
 
 #[cfg(test)]

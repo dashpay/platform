@@ -1,6 +1,6 @@
 use crate::drive::document::expiration::pricing::{
-    document_expiration_cleanup_fee, document_expires_at, document_remaining_lifetime_ms,
-    document_ttl_pricing,
+    document_expiration_cleanup_fee, document_expiration_cleanup_fee_for_bytes,
+    document_expires_at, document_remaining_lifetime_ms, document_ttl_pricing,
 };
 use crate::drive::document::expiration::DocumentExpirationEntry;
 use crate::drive::document::paths::contract_documents_primary_key_path;
@@ -16,6 +16,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::DocumentV0Getters;
 use dpp::fee::fee_result::FeeResult;
 
@@ -49,6 +50,67 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        self.add_document_or_estimate_change_operations_v1(
+            document_and_contract_info,
+            override_document,
+            block_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            false,
+            platform_version,
+        )
+    }
+
+    /// The dry run of a change of an existing document (a replace, transfer, purchase or
+    /// price update), estimated as an insert overriding it, which is never cheaper
+    /// (`update_document_for_contract_operations` v1 redirects here). It is v1's insert, except
+    /// that a document whose type declares a `ttl` gets no expirations tree entry and prepays
+    /// only the deletion of the bytes the change may add: the change keeps the entry and the
+    /// deletion its creation prepaid. Update v1 calls this directly: the one table selecting it
+    /// (`DRIVE_DOCUMENT_METHOD_VERSIONS_V4`) also selects this insert.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::drive::document) fn estimate_document_change_as_insert_operations_v1(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        self.add_document_or_estimate_change_operations_v1(
+            document_and_contract_info,
+            true,
+            block_info,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            true,
+            platform_version,
+        )
+    }
+
+    /// The body of [`Self::add_document_for_contract_operations_v1`];
+    /// `estimates_a_change` is set by
+    /// [`Self::estimate_document_change_as_insert_operations_v1`] only.
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    fn add_document_or_estimate_change_operations_v1(
+        &self,
+        document_and_contract_info: DocumentAndContractInfo,
+        override_document: bool,
+        block_info: &BlockInfo,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        estimates_a_change: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
@@ -205,6 +267,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
+                estimates_a_change,
                 platform_version,
             )?;
         }
@@ -234,9 +297,10 @@ impl Drive {
     /// `document_ttl_pricing`), and adds the processing its deletion will cost
     /// (`document_expiration_cleanup_fee`), paid now since nobody pays when it expires.
     ///
-    /// A dry run estimates every change of a document as this insert, a replace included
-    /// (see `update_document_for_contract_operations`). The replace writes no entry and
-    /// prepays no deletion, so its estimate counts both anyway: an upper bound.
+    /// The dry run of a change (`estimates_a_change`) writes no entry and prepays only the
+    /// deletion of the bytes the change may add, at most the whole document: the change keeps
+    /// the entry and the deletion its creation prepaid, and prices them the same way when it
+    /// executes (`update_document_for_contract_operations` v1).
     #[allow(clippy::too_many_arguments)]
     fn add_document_ttl_operations(
         &self,
@@ -249,12 +313,14 @@ impl Drive {
         >,
         transaction: TransactionArg,
         mut batch_operations: Vec<LowLevelDriveOperation>,
+        estimates_a_change: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let document_info = &document_and_contract_info.owned_document_info.document_info;
-        let (document_id, created_at) = match document_info.get_borrowed_document() {
+        let (document_id, created_at, document_bytes) = match document_info.get_borrowed_document()
+        {
             Some(document) => {
                 // The parser refuses `ttl` on a type that does not require `$createdAt`, and
                 // the create action sets it from block time.
@@ -263,26 +329,40 @@ impl Drive {
                         "a document of a type with a time to live must carry $createdAt",
                     ),
                 ))?;
-                (Some(document.id().to_buffer()), Some(created_at))
+                let document_bytes = document
+                    .serialize(document_type, contract, platform_version)?
+                    .len() as u64;
+                (
+                    Some(document.id().to_buffer()),
+                    Some(created_at),
+                    document_bytes,
+                )
             }
-            // A worst-case estimate without a document: it would be created now.
-            None => (None, None),
+            // A worst-case estimate without a document: it would be created now, as large as
+            // its type allows.
+            None => (
+                None,
+                None,
+                u64::from(document_type.estimated_size(platform_version)?),
+            ),
         };
-        let expires_at_ms =
-            document_expires_at(created_at.unwrap_or(block_info.time_ms), ttl_seconds)?;
-        self.add_document_expiration_operations(
-            document_id,
-            &DocumentExpirationEntry {
-                contract_id: contract.id(),
-                document_type_name: document_type.name().clone(),
-            },
-            expires_at_ms,
-            estimated_costs_only_with_layer_info,
-            previous_batch_operations,
-            transaction,
-            &mut batch_operations,
-            platform_version,
-        )?;
+        if !estimates_a_change {
+            let expires_at_ms =
+                document_expires_at(created_at.unwrap_or(block_info.time_ms), ttl_seconds)?;
+            self.add_document_expiration_operations(
+                document_id,
+                &DocumentExpirationEntry {
+                    contract_id: contract.id(),
+                    document_type_name: document_type.name().clone(),
+                },
+                expires_at_ms,
+                estimated_costs_only_with_layer_info,
+                previous_batch_operations,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+        }
 
         let pricing = document_ttl_pricing(
             document_remaining_lifetime_ms(created_at, ttl_seconds, block_info.time_ms)?,
@@ -294,11 +374,20 @@ impl Drive {
             .into_iter()
             .map(|operation| operation.retag_document_ttl(pricing))
             .collect();
-        batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(FeeResult {
-            processing_fee: document_expiration_cleanup_fee(
-                document_type,
+        let cleanup_fee = if estimates_a_change {
+            document_expiration_cleanup_fee_for_bytes(
+                document_bytes,
                 &platform_version.fee_version,
-            )?,
+            )?
+        } else {
+            document_expiration_cleanup_fee(
+                document_type,
+                document_bytes,
+                &platform_version.fee_version,
+            )?
+        };
+        batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(FeeResult {
+            processing_fee: cleanup_fee,
             ..Default::default()
         }));
         Ok(batch_operations)

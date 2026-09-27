@@ -41,4 +41,9 @@ pub const FEE_DOCUMENT_TTL_VERSION1: FeeDocumentTtlVersion = FeeDocumentTtlVersi
     // one index level, 1.94M with two and 2.39M with four. Base plus per level covers each.
     cleanup_base_processing_cost: 1_200_000,
     cleanup_processing_cost_per_index_level: 400_000,
+    // What the deletion pays per byte of the document it removes: the removal
+    // (`storage_processing_credit_per_byte`, 400) and the read of the document
+    // (`storage_load_credit_per_byte`, 20). The measured documents above were small, so the
+    // base and per level costs stand for everything but the document's own bytes.
+    cleanup_processing_cost_per_document_byte: 420,
 };

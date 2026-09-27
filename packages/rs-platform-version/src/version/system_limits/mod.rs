@@ -271,6 +271,15 @@ pub struct SystemLimits {
     /// 0 on protocol versions that predate document expiry, where the event does not run
     /// (`expire_documents` is `None` in their method tables).
     pub max_document_expirations_per_block: u16,
+    /// The most work the document expiry cleanup does in one block, beside
+    /// `max_document_expirations_per_block`: each deleted document weighs 1 plus the weighted
+    /// index levels of its type (every index counts its properties, times the overlapping
+    /// windows of a `timeRange` index), the measure its prepaid deletion fee is sized by.
+    /// The cleanup stops before a document that would pass it, except the block's first, so
+    /// the backlog always drains.
+    ///
+    /// 0 on protocol versions that predate document expiry, where the event does not run.
+    pub max_document_expiration_weight_per_block: u32,
     /// Lowest GroveDB proof envelope version a client accepts from a
     /// current-state response.
     ///

@@ -124,13 +124,15 @@ pub struct DriveConfig {
     )]
     pub network: Network,
 
-    /// How long an epoch lasts, in seconds. Not read from the environment: the node sets it
-    /// from its execution config's `epoch_time_length_s` when it opens Drive, so there is one
-    /// source. Drive reads it to price documents whose type declares a `ttl` by the epochs
-    /// they span and to route that price to the processing or the storage fee pool.
+    /// How long an epoch lasts, in seconds. Neither read nor written with the rest of the
+    /// config: the node sets it from its execution config's `epoch_time_length_s` when it
+    /// opens Drive, so there is one source. Drive reads it only to route the price of a
+    /// document whose type declares a `ttl` to the processing fees (a `ttl` under the fee
+    /// schedule's `processing_route_below_epochs` epochs) or the storage fee pool; the price
+    /// itself follows the schedule's fixed period.
     #[cfg_attr(
         feature = "serde",
-        serde(skip_deserializing, default = "default_epoch_time_length_s")
+        serde(skip, default = "default_epoch_time_length_s")
     )]
     pub epoch_time_length_s: u64,
 }

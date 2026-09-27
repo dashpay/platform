@@ -21,6 +21,9 @@ where
             platform_version
                 .system_limits
                 .max_document_expirations_per_block,
+            platform_version
+                .system_limits
+                .max_document_expiration_weight_per_block,
             Some(transaction),
             platform_version,
         )?;

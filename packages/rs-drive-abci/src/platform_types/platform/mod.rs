@@ -154,8 +154,8 @@ impl<C> Platform<C> {
             }
         };
 
-        // The epoch length is the execution config's; Drive prices documents with a time to
-        // live by it, so it gets the same value rather than a setting of its own.
+        // The epoch length is the execution config's; Drive routes the price of documents with
+        // a time to live by it, so it gets the same value rather than a setting of its own.
         let mut drive_config = config.drive.clone();
         drive_config.epoch_time_length_s = config.execution.epoch_time_length_s;
         let (drive, current_platform_version) =

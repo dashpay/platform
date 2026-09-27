@@ -1,6 +1,6 @@
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::expiration::pricing::{
-    document_remaining_lifetime_ms, document_ttl_pricing,
+    document_expiration_cleanup_fee_for_bytes, document_remaining_lifetime_ms, document_ttl_pricing,
 };
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
@@ -32,6 +32,7 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::fee_result::FeeResult;
 
 use crate::drive::document::paths::{
     contract_document_type_path,
@@ -178,9 +179,8 @@ impl Drive {
             .is_document_size()
             || estimated_costs_only_with_layer_info.is_some()
         {
-            return self.add_document_for_contract_operations_without_ttl_drain(
+            return self.estimate_document_change_as_insert_operations_v1(
                 document_and_contract_info,
-                true, // we say we should override as this skips an unnecessary check
                 block_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
@@ -265,6 +265,9 @@ impl Drive {
             platform_version,
         )?;
 
+        // The stored size of the document before the change, which a type with a `ttl` needs
+        // to prepay the deletion of the bytes the change adds.
+        let old_document_bytes: u64;
         let old_document_info = if let Some(old_document_element) = old_document_element {
             // Accept BOTH plain `Item` (non-summable doctypes) AND
             // `ItemWithSumItem` (summable doctypes — primary storage on
@@ -282,6 +285,7 @@ impl Drive {
                     )))
                 }
             };
+            old_document_bytes = old_serialized_document.len() as u64;
             let document = Document::from_bytes(
                 old_serialized_document.as_slice(),
                 document_type,
@@ -909,7 +913,8 @@ impl Drive {
 
         // A document whose type declares a `ttl` pays for the bytes a change adds by the
         // lifetime it has left; its `$createdAt`, and so its expiry and its expirations tree
-        // entry, never change. No second deletion fee: creation prepaid it.
+        // entry, never change. Its creation prepaid its deletion; a change that grows it
+        // prepays the deletion of the bytes it adds.
         if let Some(ttl_seconds) = document_type.documents_ttl_seconds() {
             let pricing = document_ttl_pricing(
                 document_remaining_lifetime_ms(
@@ -925,6 +930,19 @@ impl Drive {
                 .into_iter()
                 .map(|operation| operation.retag_document_ttl(pricing))
                 .collect();
+            let added_bytes = (document
+                .serialize(document_type, contract, platform_version)?
+                .len() as u64)
+                .saturating_sub(old_document_bytes);
+            if added_bytes > 0 {
+                batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(FeeResult {
+                    processing_fee: document_expiration_cleanup_fee_for_bytes(
+                        added_bytes,
+                        &platform_version.fee_version,
+                    )?,
+                    ..Default::default()
+                }));
+            }
         }
         Ok(batch_operations)
     }

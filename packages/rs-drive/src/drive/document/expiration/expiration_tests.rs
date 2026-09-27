@@ -18,6 +18,7 @@ use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContractFactory;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier, Value};
@@ -211,11 +212,28 @@ fn expiry_tree_exists(drive: &Drive, expires_at_ms: u64) -> bool {
 }
 
 fn remove_expired(drive: &Drive, time_ms: u64, limit: u16) -> RemovedExpiredDocuments {
+    remove_expired_within(
+        drive,
+        time_ms,
+        limit,
+        PlatformVersion::latest()
+            .system_limits
+            .max_document_expiration_weight_per_block,
+    )
+}
+
+fn remove_expired_within(
+    drive: &Drive,
+    time_ms: u64,
+    limit: u16,
+    weight_budget: u32,
+) -> RemovedExpiredDocuments {
     let transaction = drive.grove.start_transaction();
     let removed = drive
         .remove_expired_documents(
             &block_at(time_ms),
             limit,
+            weight_budget,
             Some(&transaction),
             PlatformVersion::latest(),
         )
@@ -620,6 +638,180 @@ fn should_remove_an_entry_whose_document_is_gone() {
 }
 
 #[test]
+fn should_remove_an_orphaned_entry_and_a_document_of_one_expiry_time_with_their_tree() {
+    // Both removals share the block's batch, each built against the other: the second sees
+    // the first's queued removal, so the tree of the time goes with the last entry.
+    let (drive, contract) = setup(TWO_WEEKS_S);
+    let expires_at = START_MS + u64::from(TWO_WEEKS_S) * 1000;
+    // Ids sort by their first byte: the orphan's, 1, is read before the document's, 2.
+    let document = note(2, START_MS, "live");
+    insert(&drive, &contract, "note", &document, true);
+    let transaction = drive.grove.start_transaction();
+    let platform_version = PlatformVersion::latest();
+    let mut operations = vec![];
+    drive
+        .add_document_expiration_operations(
+            Some([1; 32]),
+            &DocumentExpirationEntry {
+                contract_id: contract.id(),
+                document_type_name: "note".to_string(),
+            },
+            expires_at,
+            &mut None,
+            &mut None,
+            Some(&transaction),
+            &mut operations,
+            platform_version,
+        )
+        .expect("queued");
+    drive
+        .apply_batch_low_level_drive_operations(
+            None,
+            Some(&transaction),
+            operations,
+            &mut vec![],
+            &platform_version.drive,
+        )
+        .expect("applied");
+    drive
+        .grove
+        .commit_transaction(transaction)
+        .unwrap()
+        .expect("commits");
+
+    assert_eq!(
+        remove_expired(&drive, expires_at, 128),
+        RemovedExpiredDocuments {
+            deleted_documents: 1,
+            orphaned_entries: 1,
+        }
+    );
+    assert!(stored_document(&drive, &contract, "note", document.id()).is_none());
+    assert!(!expiry_tree_exists(&drive, expires_at));
+}
+
+#[test]
+fn should_stop_the_cleanup_at_the_block_weight_budget() {
+    // A note weighs 3: itself and its type's two single-property indexes.
+    let (drive, contract) = setup(TWO_WEEKS_S);
+    let expires_at = START_MS + u64::from(TWO_WEEKS_S) * 1000;
+    for i in 0..5u8 {
+        insert(
+            &drive,
+            &contract,
+            "note",
+            &note(10 + i, START_MS, &format!("same block {i}")),
+            true,
+        );
+    }
+
+    // 3 + 3 fits in 7, a third note would not.
+    assert_eq!(
+        remove_expired_within(&drive, expires_at, 128, 7).deleted_documents,
+        2
+    );
+    // The first removal of a block always runs, however little the budget.
+    assert_eq!(
+        remove_expired_within(&drive, expires_at, 128, 1).deleted_documents,
+        1
+    );
+    assert_eq!(remove_expired(&drive, expires_at, 128).deleted_documents, 2);
+    assert!(!expiry_tree_exists(&drive, expires_at));
+}
+
+#[test]
+fn should_estimate_a_change_without_the_deletion_its_creation_prepaid() {
+    // A replace keeps the entry and the deletion its creation prepaid, so its dry run must
+    // not count them: raising their price changes nothing.
+    let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup(TWO_WEEKS_S);
+    let document = note(1, START_MS, "hello");
+    insert(&drive, &contract, "note", &document, true);
+    let mut replaced = document.clone();
+    replaced.set("text", Value::Text("a longer text than before".to_string()));
+    replaced.bump_revision();
+    let estimate = |platform_version: &PlatformVersion| {
+        drive
+            .update_document_for_contract(
+                &replaced,
+                &contract,
+                contract.document_type_for_name("note").expect("type"),
+                Some(OWNER),
+                block_at(START_MS + 60_000),
+                false,
+                owner_flags(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("the replace is estimated")
+    };
+    let mut dearer_creation = platform_version.clone();
+    dearer_creation
+        .fee_version
+        .document_ttl
+        .cleanup_base_processing_cost += 1_000_000_000;
+    dearer_creation
+        .fee_version
+        .document_ttl
+        .cleanup_processing_cost_per_index_level += 1_000_000_000;
+    assert_eq!(estimate(platform_version), estimate(&dearer_creation));
+}
+
+#[test]
+fn should_prepay_the_deletion_of_the_bytes_a_change_adds() {
+    let platform_version = PlatformVersion::latest();
+    let mut free_bytes = platform_version.clone();
+    free_bytes
+        .fee_version
+        .document_ttl
+        .cleanup_processing_cost_per_document_byte = 0;
+    let document = note(1, START_MS, "hello");
+    let mut replaced = document.clone();
+    replaced.set("text", Value::Text("a longer text than before".to_string()));
+    replaced.bump_revision();
+    let replace_fee = |platform_version: &PlatformVersion| {
+        let (drive, contract) = setup(TWO_WEEKS_S);
+        insert(&drive, &contract, "note", &document, true);
+        let note_type = contract.document_type_for_name("note").expect("type");
+        let added_bytes = replaced
+            .serialize(note_type, &contract, platform_version)
+            .expect("serializes")
+            .len()
+            - document
+                .serialize(note_type, &contract, platform_version)
+                .expect("serializes")
+                .len();
+        let fee = drive
+            .update_document_for_contract(
+                &replaced,
+                &contract,
+                note_type,
+                Some(OWNER),
+                block_at(START_MS + 60_000),
+                true,
+                owner_flags(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("the replace runs");
+        (fee, added_bytes as u64)
+    };
+    let (fee, added_bytes) = replace_fee(platform_version);
+    let (without_prepay, _) = replace_fee(&free_bytes);
+    assert!(added_bytes > 0);
+    assert_eq!(
+        fee.processing_fee - without_prepay.processing_fee,
+        added_bytes
+            * platform_version
+                .fee_version
+                .document_ttl
+                .cleanup_processing_cost_per_document_byte
+    );
+}
+
+#[test]
 fn should_price_a_short_lived_document_into_processing_and_prepay_its_deletion() {
     let platform_version = PlatformVersion::latest();
     let (drive, contract) = setup(3_600);
@@ -631,22 +823,21 @@ fn should_price_a_short_lived_document_into_processing_and_prepay_its_deletion()
         "a lifetime under two epochs pays nothing into the storage pool"
     );
     assert!(memo_fee.storage_fee > 0);
-    let cleanup_fee = document_expiration_cleanup_fee(
-        contract.document_type_for_name("note").expect("type"),
-        &platform_version.fee_version,
-    )
-    .expect("fee");
+    let note_type = contract.document_type_for_name("note").expect("type");
+    let note_bytes = note(1, START_MS, "hello")
+        .serialize(note_type, &contract, platform_version)
+        .expect("serializes")
+        .len() as u64;
+    let cleanup_fee =
+        document_expiration_cleanup_fee(note_type, note_bytes, &platform_version.fee_version)
+            .expect("fee");
+    let schedule = &platform_version.fee_version.document_ttl;
     assert_eq!(
         cleanup_fee,
-        platform_version
-            .fee_version
-            .document_ttl
-            .cleanup_base_processing_cost
-            + 2 * platform_version
-                .fee_version
-                .document_ttl
-                .cleanup_processing_cost_per_index_level,
-        "two single-property indexes are two index levels"
+        schedule.cleanup_base_processing_cost
+            + 2 * schedule.cleanup_processing_cost_per_index_level
+            + note_bytes * schedule.cleanup_processing_cost_per_document_byte,
+        "two single-property indexes are two index levels, plus the document's bytes"
     );
     // The same create under a schedule whose deletion costs nothing: the difference is the
     // prepaid deletion, exactly.
@@ -659,6 +850,10 @@ fn should_price_a_short_lived_document_into_processing_and_prepay_its_deletion()
         .fee_version
         .document_ttl
         .cleanup_processing_cost_per_index_level = 0;
+    free_deletion
+        .fee_version
+        .document_ttl
+        .cleanup_processing_cost_per_document_byte = 0;
     let (other_drive, other_contract) = setup(3_600);
     let without_prepay = insert_at_version(
         &other_drive,
