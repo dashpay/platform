@@ -840,6 +840,12 @@ impl<C> Platform<C> {
         // CONSENSUS-CRITICAL: the genesis path (`Drive::create_initial_state_structure_v4`) calls
         // the same helper, so a chain born at this version and one upgraded to it build a
         // byte-identical `[Tokens]` subtree.
+        //
+        // Earlier protocol versions select this generation too, directly or through the later
+        // ones that delegate to it, but they cannot reach this insert: the enclosing
+        // `transition_to_version_14` is called only under the
+        // `platform_version.protocol_version >= 14` guard in
+        // `perform_events_on_first_block_of_protocol_change_v0`.
         self.drive
             .insert_token_shielded_pools_root_tree(Some(transaction), platform_version)?;
         Ok(())

@@ -185,6 +185,12 @@ impl TokenDirectPurchaseTransitionActionV0 {
 /// current pricing schedule: an error when the token is not for sale, the buyer agreed to too
 /// little, or the amount is under the minimum sale amount. Shared by `TokenDirectPurchase` and
 /// `TokenDirectPurchaseToPool`. Read costs are added to `fee_result`.
+///
+/// This action has a single version, so the body runs at every protocol version that accepts a
+/// direct purchase, and extracting it had to leave one alone. It does: the price fetch, the fee
+/// accumulation and the two rejections keep their order, the arithmetic is the same saturating
+/// multiply compared against the same required price, and each rejection carries the same single
+/// error as the site it replaced.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn resolve_direct_purchase_price(
     drive: &Drive,

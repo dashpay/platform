@@ -242,6 +242,14 @@ impl TokenClaimTransitionActionV0 {
 /// Shared by `TokenClaim` (`claim_up_to = None`, the current interval) and `TokenClaimToPool`,
 /// whose bundle must prove the exact amount, so the client names the cycle-aligned moment the
 /// perpetual claim pays out to. Read costs are added to `fee_result`.
+///
+/// This action has a single version, so the body runs at every protocol version that accepts a
+/// claim, and extracting it had to leave a plain claim's outcome alone. It does: the state reads
+/// and the fee accumulations keep their order and their position relative to every early return,
+/// each rejection carries the same single error as the site it replaced, and the caller rebuilds
+/// the same nonce bump from the same three arguments. `claim_up_to` is `None` for a plain claim,
+/// which rebinds the current interval to itself; only the claim-into-pool transition passes a
+/// value, and that transition is refused unpaid below the version admitting token pools.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn resolve_token_claim(
     drive: &Drive,

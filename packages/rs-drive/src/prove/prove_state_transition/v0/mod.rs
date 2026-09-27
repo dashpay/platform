@@ -630,6 +630,10 @@ impl Drive {
                     grovedb::SizedQuery::new(query, Some(1), None),
                 );
 
+                // Reading the surplus output through the accessor rather than destructuring
+                // the version 0 body is forced by the transition becoming a versioned enum. For
+                // a version 0 transition the accessor returns that same field, so the proof this
+                // builds for a transition the released protocol versions admit is byte-identical.
                 match st.surplus_output() {
                     Some(surplus_address) => {
                         // Mirror the Unshield arm: also prove the balance of the signed
@@ -687,6 +691,11 @@ impl Drive {
             }
             // The token bundle's spent nullifiers in the token pool bind the exact actions of
             // this transfer.
+            // The three arms below are not dead code: this body is shared by both prove
+            // generations, and the later one reaches them. They cannot be reached on the released
+            // protocol versions, because `active_version_range` places all three of these
+            // transitions at the version that admits token pools and above, and
+            // `decode_untrusted_in_version` refuses a transition outside its range.
             StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
                 use crate::drive::shielded::paths::token_shielded_pool_nullifiers_path_query;
                 use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;

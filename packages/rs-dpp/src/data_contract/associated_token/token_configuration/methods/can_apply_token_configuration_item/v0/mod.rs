@@ -318,6 +318,13 @@ impl TokenConfigurationV0 {
                     goal,
                 ),
             // A V0 configuration has no shielded pool and so no threshold for anyone to change.
+            // The three pool threshold items below cannot reach this generation on the protocol
+            // versions that select it. They are appended at the tail of
+            // `TokenConfigurationChangeItem`, so no existing item's encoding or group action key
+            // moves, and this match has no catch-all, so nothing previously handled is rerouted.
+            // A batch carrying one is refused unpaid by the batch's `is_allowed` gate below the
+            // version that admits token pools, so no transition and no stored group action can
+            // present one here.
             TokenConfigurationChangeItem::MinimumPoolNotesForOutgoing(_)
             | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingControlGroup(_)
             | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_) => false,

@@ -8,6 +8,11 @@ use dpp::state_transition::state_transitions::shielded::shield_from_asset_lock_t
 impl ShieldFromAssetLockTransitionActionV0 {
     /// Transforms the shield from asset lock transition into an action. Every transition version
     /// carries the same fields, so the action does not depend on which one it came from.
+    ///
+    /// Taking the versioned transition and reading it through accessors, rather than the version 0
+    /// body directly, is forced by the transition becoming a versioned enum. For a version 0
+    /// input the action is field for field what it was, and the two protocol versions that select
+    /// this generation admit version 0 alone.
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_transition(
         value: &ShieldFromAssetLockTransition,

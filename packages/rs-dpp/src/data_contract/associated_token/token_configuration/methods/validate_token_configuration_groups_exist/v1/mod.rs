@@ -20,6 +20,14 @@ impl TokenConfiguration {
             return legacy_result;
         }
 
+        // Reading the rules through the enum rather than the narrowed V0 base is
+        // output-identical on the protocol version that selects this generation, which admits
+        // only a version 0 token configuration: the enum's `all_change_control_rules` delegates
+        // straight to the V0 list for a V0 configuration, so the same rules arrive in the same
+        // order and the same first violation wins, and `main_control_group` reads the same V0
+        // field. A configuration of a later format is refused unpaid before any structure
+        // validation runs.
+        //
         // Iterate through the enum rather than narrowing to the V0 base first. The narrowed
         // view cannot see rules a later configuration version adds, and the v0 pass above is
         // the only other place those are reached — through `all_used_group_positions`. Reading

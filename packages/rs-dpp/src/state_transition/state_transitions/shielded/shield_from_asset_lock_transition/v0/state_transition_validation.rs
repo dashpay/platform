@@ -27,6 +27,11 @@ impl StateTransitionStructureValidation for ShieldFromAssetLockTransitionV0 {
 
 /// The structure rules of a `ShieldFromAssetLock`, shared by every transition version: the
 /// versions differ only in the preimage their bundle is proved against, not in their fields.
+///
+/// Extracting this body out of the version 0 implementation is output-identical for the two
+/// protocol versions that admit a version 0 transition: the six checks keep their order, so the
+/// same first failure wins, and each returns the same error with the same message. Those versions
+/// admit version 0 alone, and the version that admits version 1 refuses version 0 outright.
 pub(in crate::state_transition::state_transitions::shielded::shield_from_asset_lock_transition) fn validate_shield_from_asset_lock_structure(
     actions: &[SerializedAction],
     value_balance: u64,

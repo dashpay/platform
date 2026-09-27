@@ -236,6 +236,10 @@ impl BatchTransitionActionV0 {
                     TokenTransitionAction::DirectPurchaseAction(token_purchase),
                 ) => Some(token_purchase.total_agreed_price()),
                 BatchedTransitionAction::TokenAction(
+                    // Previously swallowed by the catch-all below. The action cannot be in a
+                    // batch on the released protocol versions: the purchase-into-pool kind is
+                    // refused unpaid at the batch's `is_allowed` gate before the batch becomes
+                    // actions, so the fold sees the same sequence of prices there.
                     TokenTransitionAction::DirectPurchaseToPoolAction(token_purchase),
                 ) => Some(token_purchase.total_agreed_price()),
                 _ => None,
