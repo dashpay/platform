@@ -64,6 +64,16 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::ContractFeeClaim(_) => Ok(true),
             // Newly decoded token formats need an unpaid activation check even while the
             // older contract basic-structure generations remain frozen.
+            //
+            // This predicate is load-bearing rather than a shortcut: contract basic structure
+            // validation 0 and 1, which protocol versions 10 through 13 select, walk the token
+            // configurations through the version 0 accessors and never ask what format version
+            // they carry. On those versions the format-version check `validate_is_allowed` runs
+            // is the only one there is, and it is reached only where this returns true, so a
+            // token configuration format they do not admit is refused here or nowhere.
+            // Narrowing the predicate means first teaching both of those frozen generations to
+            // validate token configurations. Generation 2 does validate them, which makes this
+            // redundant from protocol version 14 on, and only from there.
             StateTransition::DataContractCreate(st) => Ok(st
                 .data_contract()
                 .tokens()

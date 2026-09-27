@@ -21,10 +21,13 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// it in a batch transition signed by `owner_id`, who must be authorized to mint and pays the
 /// fee in credits. `using_group_info` sets up a group action exactly like a transparent mint.
 ///
-/// The bundle's sighash binds `owner_id` as the minter, which is right for a direct mint and for
-/// the proposal of a group action. Every other signer of a group action must submit the
-/// proposer's bundle unchanged, through `new_token_mint_to_pool_transition`, rather than prove
-/// a bundle of its own here.
+/// A group action mint is proven once, by the proposer
+/// (`GroupStateTransitionInfoProposer`): the group action pins the digest of the actions and the
+/// sighash binds the proposer as the minter, so every other signer submits the proposer's bundle
+/// unchanged through `new_token_mint_to_pool_transition` with
+/// `GroupStateTransitionInfoOtherSigner`. Asking this builder for a fresh bundle on behalf of
+/// another signer is refused, since consensus would reject it as a modification of the group
+/// action.
 #[allow(clippy::too_many_arguments)]
 pub async fn build_token_mint_to_pool_transition<S: Signer<IdentityPublicKey>, P: OrchardProver>(
     token_id: Identifier,
@@ -55,6 +58,14 @@ pub async fn build_token_mint_to_pool_transition<S: Signer<IdentityPublicKey>, P
             amount,
             i64::MAX as u64
         )));
+    }
+    if matches!(
+        using_group_info,
+        Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(_))
+    ) {
+        return Err(ProtocolError::ShieldedBuildError(
+            "a group action mint to pool is proven once by the proposer; another signer submits the proposer's bundle unchanged instead of building its own".to_string(),
+        ));
     }
 
     let extra_sighash_data = token_pool_output_only_extra_sighash_data(
@@ -108,6 +119,7 @@ pub async fn build_token_mint_to_pool_transition<S: Signer<IdentityPublicKey>, P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::group::GroupStateTransitionInfo;
     use crate::shielded::builder::test_helpers::{
         test_identity_key, test_orchard_address, DummyIdentitySigner, TestProver,
     };
@@ -137,5 +149,43 @@ mod tests {
         .expect_err("zero amount must be rejected")
         .to_string();
         assert!(err.contains("greater than zero"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn rejects_a_fresh_bundle_for_another_group_signer() {
+        let key = test_identity_key();
+        let err = build_token_mint_to_pool_transition(
+            Identifier::from([1u8; 32]),
+            Identifier::from([2u8; 32]),
+            Identifier::from([3u8; 32]),
+            0,
+            &test_orchard_address(),
+            100,
+            [0u8; 36],
+            None,
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id: Identifier::from([4u8; 32]),
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &key,
+            1,
+            0,
+            &DummyIdentitySigner,
+            &TestProver,
+            PlatformVersion::latest(),
+        )
+        .await
+        .expect_err("another signer must reuse the proposer's bundle")
+        .to_string();
+        assert!(
+            err.contains("proven once by the proposer"),
+            "unexpected error: {err}"
+        );
     }
 }
