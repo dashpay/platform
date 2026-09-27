@@ -412,6 +412,7 @@ mod tests {
                 .validate_document_properties(
                     &request.document_type_name,
                     Value::from(properties.clone()),
+                    None,
                     platform_version,
                 )
                 .expect("runs");

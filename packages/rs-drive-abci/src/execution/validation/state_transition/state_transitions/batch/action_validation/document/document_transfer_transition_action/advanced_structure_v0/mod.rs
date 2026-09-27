@@ -51,8 +51,24 @@ impl DocumentTransferTransitionActionStructureValidationV0 for DocumentTransferT
         // document must differ from the new owner, which the action already carries on the
         // document. The data was schema-validated when it was written, so every value
         // compared is a 32-byte identifier.
-        document_type
+        let distinct_from_result = document_type
             .validate_distinct_from_properties(
+                self.document().properties(),
+                self.document().owner_id(),
+                platform_version,
+            )
+            .map_err(Error::Protocol)?;
+        if !distinct_from_result.is_valid() {
+            return Ok(distinct_from_result);
+        }
+
+        // Added in place at protocol version 14, inert for every earlier version this
+        // generation serves: `validate_property_constraints` is `None` there, so the call
+        // returns an empty result. From 14, the new owner is judged against the rules of
+        // `propertyConstraints` that read `$ownerId`: the stored properties met every rule
+        // when they were written, and the owner is all this action changes.
+        document_type
+            .validate_property_constraints_for_new_owner(
                 self.document().properties(),
                 self.document().owner_id(),
                 platform_version,

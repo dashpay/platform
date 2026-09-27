@@ -686,7 +686,9 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// `DocumentPropertyConstraintViolatedError` (10422), naming the rule and why (the rule
     /// does not hold, or evaluating it overflowed, divided by zero, raised to a negative
     /// power or read a value that is not an integer). A property the document
-    /// leaves out counts as 0, or as its `ifAbsent` value. Reads the properties alone:
+    /// leaves out counts as 0, or as its `ifAbsent` value, and `$ownerId` reads
+    /// `owner_id`, the document's owner (`None` when the caller does not know it, which
+    /// `$ownerId` then equals no identifier for). Reads the properties and the owner alone:
     /// `DataContract::validate_document_properties` runs it after the schema validation,
     /// so document create and replace, and every client validating a document, apply it.
     ///
@@ -696,6 +698,7 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     fn validate_property_constraints(
         &self,
         data: &Value,
+        owner_id: Option<Identifier>,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>
     where
@@ -709,9 +712,45 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .validate_property_constraints
         {
             None => Ok(SimpleConsensusValidationResult::default()),
-            Some(0) => Ok(self.validate_property_constraints_v0(data)),
+            Some(0) => Ok(self.validate_property_constraints_v0(data, owner_id)),
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_property_constraints".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Judges a stored document's properties, `data`, against the rules of the document
+    /// type's `propertyConstraints` that read `$ownerId`, with `new_owner_id` as the owner,
+    /// in name order: a transfer or a purchase gives the document a new owner and changes
+    /// nothing else, so these are the only rules it can break, and the first broken fails
+    /// with `DocumentPropertyConstraintViolatedError` (10422) as it would on a write. The
+    /// document type's other rules held when the document was written and still do. A type
+    /// with no rule reading `$ownerId` costs nothing, and its data is not copied.
+    ///
+    /// Versioned with [`Self::validate_property_constraints`]: `None` before protocol
+    /// version 14, where no parsed document type carries a rule.
+    fn validate_property_constraints_for_new_owner(
+        &self,
+        data: &BTreeMap<String, Value>,
+        new_owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_property_constraints
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => Ok(self.validate_property_constraints_for_new_owner_v0(data, new_owner_id)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_property_constraints_for_new_owner".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

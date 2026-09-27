@@ -737,24 +737,27 @@ fn should_hold_an_in_when_its_operand_takes_a_listed_value() {
     let rule = parse_rule_value(platform_value!({ "in": ["kind", [1, 3, 7]] }));
     for (kind, holds) in [(1, true), (3, true), (7, true), (2, false), (8, false)] {
         assert_eq!(
-            rule.holds(&data(&[("kind", Value::U64(kind))])),
+            rule.holds(&data(&[("kind", Value::U64(kind))]), None),
             Ok(holds),
             "kind {kind}"
         );
     }
     // An absent operand reads as 0
-    assert_eq!(rule.holds(&data(&[])), Ok(false));
+    assert_eq!(rule.holds(&data(&[]), None), Ok(false));
     let with_zero = parse_rule_value(platform_value!({ "in": ["kind", [0, 1]] }));
-    assert_eq!(with_zero.holds(&data(&[])), Ok(true));
+    assert_eq!(with_zero.holds(&data(&[]), None), Ok(true));
 
     let divided = parse_rule_value(platform_value!({ "in": [{ "divide": [10, "kind"] }, [2, 5]] }));
-    assert_eq!(divided.violation(&data(&[("kind", Value::U64(5))])), None);
     assert_eq!(
-        divided.violation(&data(&[("kind", Value::U64(3))])),
+        divided.violation(&data(&[("kind", Value::U64(5))]), None),
+        None
+    );
+    assert_eq!(
+        divided.violation(&data(&[("kind", Value::U64(3))]), None),
         Some(PropertyConstraintViolation::NotMet)
     );
     assert_eq!(
-        divided.violation(&data(&[("kind", Value::U64(0))])),
+        divided.violation(&data(&[("kind", Value::U64(0))]), None),
         Some(PropertyConstraintViolation::DivisionByZero)
     );
 
@@ -899,13 +902,21 @@ fn should_compare_a_string_property_with_constants() {
             Some(value) => data(&[("status", value.clone())]),
             None => data(&[]),
         };
-        assert_eq!(equal.holds(&values), Ok(is_closed), "equal, {status:?}");
         assert_eq!(
-            not_equal.holds(&values),
+            equal.holds(&values, None),
+            Ok(is_closed),
+            "equal, {status:?}"
+        );
+        assert_eq!(
+            not_equal.holds(&values, None),
             Ok(!is_closed),
             "notEqual, {status:?}"
         );
-        assert_eq!(in_list.holds(&values), Ok(is_listed), "in, {status:?}");
+        assert_eq!(
+            in_list.holds(&values, None),
+            Ok(is_listed),
+            "in, {status:?}"
+        );
     }
 
     // A closed order must carry closedAt
@@ -913,16 +924,16 @@ fn should_compare_a_string_property_with_constants() {
         "anyOf": [{ "notEqual": ["status", { "const": "closed" }] }, { "present": "closedAt" }]
     }));
     let closed = Value::Text("closed".to_string());
-    assert_eq!(rule.violation(&data(&[])), None);
+    assert_eq!(rule.violation(&data(&[]), None), None);
     assert_eq!(
-        rule.violation(&data(&[
-            ("status", closed.clone()),
-            ("closedAt", Value::U64(9))
-        ])),
+        rule.violation(
+            &data(&[("status", closed.clone()), ("closedAt", Value::U64(9))]),
+            None
+        ),
         None
     );
     assert_eq!(
-        rule.violation(&data(&[("status", closed)])),
+        rule.violation(&data(&[("status", closed)]), None),
         Some(PropertyConstraintViolation::NotMet)
     );
 }
@@ -1031,9 +1042,13 @@ fn should_compare_two_string_properties() {
             entries.push(("to", to.clone()));
         }
         let values = data(&entries);
-        assert_eq!(equal.holds(&values), Ok(same), "equal, {from:?} {to:?}");
         assert_eq!(
-            not_equal.holds(&values),
+            equal.holds(&values, None),
+            Ok(same),
+            "equal, {from:?} {to:?}"
+        );
+        assert_eq!(
+            not_equal.holds(&values, None),
             Ok(!same),
             "notEqual, {from:?} {to:?}"
         );
@@ -1143,25 +1158,25 @@ fn should_read_a_string_default_for_a_property_left_out() {
             Some(value) => data(&[("status", value.clone())]),
             None => data(&[]),
         };
-        assert_eq!(open.holds(&values), Ok(is_open), "equal, {status:?}");
-        assert_eq!(listed.holds(&values), Ok(is_open), "in, {status:?}");
+        assert_eq!(open.holds(&values, None), Ok(is_open), "equal, {status:?}");
+        assert_eq!(listed.holds(&values, None), Ok(is_open), "in, {status:?}");
     }
 
     let same_default = parse_rule_value(platform_value!({
         "equal": [{ "ifAbsent": ["from", "USD"] }, { "ifAbsent": ["to", "USD"] }]
     }));
-    assert_eq!(same_default.holds(&data(&[])), Ok(true));
+    assert_eq!(same_default.holds(&data(&[]), None), Ok(true));
     assert_eq!(
-        same_default.holds(&data(&[("to", text_value("USD"))])),
+        same_default.holds(&data(&[("to", text_value("USD"))]), None),
         Ok(true)
     );
     assert_eq!(
-        same_default.holds(&data(&[("to", text_value("EUR"))])),
+        same_default.holds(&data(&[("to", text_value("EUR"))]), None),
         Ok(false)
     );
     // Without defaults, two properties left out are not equal
     let bare = parse_rule_value(platform_value!({ "equal": ["from", "to"] }));
-    assert_eq!(bare.holds(&data(&[])), Ok(false));
+    assert_eq!(bare.holds(&data(&[]), None), Ok(false));
 
     // A default is part of the node it sits in, and listed for the enum check apart
     // from the constants compared
@@ -1311,8 +1326,8 @@ fn should_compare_identifier_properties() {
             Some(value) => data(&[("buyerId", value.clone())]),
             None => data(&[]),
         };
-        assert_eq!(is_a.holds(&values), Ok(equals_a), "equal, {buyer:?}");
-        assert_eq!(listed.holds(&values), Ok(is_listed), "in, {buyer:?}");
+        assert_eq!(is_a.holds(&values, None), Ok(equals_a), "equal, {buyer:?}");
+        assert_eq!(listed.holds(&values, None), Ok(is_listed), "in, {buyer:?}");
     }
 
     let distinct = parse_rule_value(platform_value!({ "notEqual": ["buyerId", "sellerId"] }));
@@ -1326,11 +1341,11 @@ fn should_compare_identifier_properties() {
         }
         data(&entries)
     };
-    assert_eq!(distinct.holds(&pair(Some(a), Some(b))), Ok(true));
-    assert_eq!(distinct.holds(&pair(Some(a), Some(a))), Ok(false));
-    assert_eq!(distinct.holds(&pair(Some(a), None)), Ok(true));
+    assert_eq!(distinct.holds(&pair(Some(a), Some(b)), None), Ok(true));
+    assert_eq!(distinct.holds(&pair(Some(a), Some(a)), None), Ok(false));
+    assert_eq!(distinct.holds(&pair(Some(a), None), None), Ok(true));
     // Two identifiers left out are not equal
-    assert_eq!(distinct.holds(&pair(None, None)), Ok(true));
+    assert_eq!(distinct.holds(&pair(None, None), None), Ok(true));
 
     // A comparison of a path with a constant is three nodes, an in two plus one per value
     assert_eq!(is_a.node_count(), 3);
@@ -1345,6 +1360,107 @@ fn should_compare_identifier_properties() {
     );
     // Identifier constants are not string constants: no enum check reads them
     assert!(is_a.text_constants().is_empty());
+}
+
+// ── $ownerId ───────────────────────────────────────────────────────────
+
+/// `$ownerId`, the document's owner, is an identifier operand: beside an identifier
+/// property, a base58 constant, or as the operand of an `in` over identifiers.
+#[test]
+fn should_parse_the_owner_as_an_identifier_operand() {
+    let (a, a58) = identifier(1);
+    let (b, b58) = identifier(2);
+    assert_eq!(
+        parse_rule_value(platform_value!({ "equal": ["buyerId", "$ownerId"] })),
+        PropertyConstraint::IdentifierCompareProperties {
+            comparison: ConstraintComparison::Equal,
+            left: "buyerId".to_string(),
+            right: "$ownerId".to_string(),
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "notEqual": [{ "const": a58.clone() }, "$ownerId"] })),
+        PropertyConstraint::IdentifierCompare {
+            comparison: ConstraintComparison::NotEqual,
+            path: "$ownerId".to_string(),
+            value: a,
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "in": ["$ownerId", [a58.clone(), b58.clone()]] })),
+        PropertyConstraint::IdentifierIn {
+            path: "$ownerId".to_string(),
+            values: BTreeSet::from([a, b]),
+        }
+    );
+
+    for (condition, needle) in [
+        (
+            platform_value!({ "equal": ["$ownerId", "$ownerId"] }),
+            "rule \"rule\" at equal compares \"$ownerId\" with itself, so it would hold for every \
+             document or for none",
+        ),
+        (
+            platform_value!({ "notEqual": ["buyerId", "buyerId"] }),
+            "rule \"rule\" at notEqual compares \"buyerId\" with itself",
+        ),
+        (
+            platform_value!({ "equal": ["status", "status"] }),
+            "rule \"rule\" at equal compares \"status\" with itself",
+        ),
+        (
+            platform_value!({ "lessThan": ["$ownerId", "buyerId"] }),
+            "rule \"rule\" at lessThan compares identifiers, which only equal and notEqual do",
+        ),
+        (
+            platform_value!({ "equal": ["$ownerId", "status"] }),
+            "rule \"rule\" at equal compares a string property with an identifier property",
+        ),
+        (
+            platform_value!({ "equal": ["$ownerId", { "const": "closed" }] }),
+            "rule \"rule\" at equal[1].const holds \"closed\", which is not a base58 identifier",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": condition }), needle);
+    }
+}
+
+/// `$ownerId` reads the owner the caller gives, and equals nothing when it gives none; it
+/// is no property, so a rule reading it lists no path for it, and says it reads the owner.
+#[test]
+fn should_compare_the_owner() {
+    let (a, a58) = identifier(1);
+    let (b, b58) = identifier(2);
+    let (c, _) = identifier(3);
+    let buyer_owns = parse_rule_value(platform_value!({ "equal": ["buyerId", "$ownerId"] }));
+    let allowed_writers = parse_rule_value(platform_value!({ "in": ["$ownerId", [a58, b58]] }));
+    let buyer =
+        |identifier: Identifier| data(&[("buyerId", Value::Identifier(identifier.to_buffer()))]);
+
+    assert_eq!(buyer_owns.holds(&buyer(a), Some(a)), Ok(true));
+    assert_eq!(buyer_owns.holds(&buyer(a), Some(b)), Ok(false));
+    assert_eq!(buyer_owns.holds(&buyer(a), None), Ok(false));
+    assert_eq!(buyer_owns.holds(&data(&[]), Some(a)), Ok(false));
+    assert_eq!(allowed_writers.holds(&data(&[]), Some(b)), Ok(true));
+    assert_eq!(allowed_writers.holds(&data(&[]), Some(c)), Ok(false));
+    assert_eq!(allowed_writers.holds(&data(&[]), None), Ok(false));
+
+    assert_eq!(
+        buyer_owns.property_reads(),
+        [("buyerId", PropertyRead::Identifier)]
+    );
+    assert!(allowed_writers.property_reads().is_empty());
+    assert!(buyer_owns.reads_owner());
+    assert!(allowed_writers.reads_owner());
+    assert!(parse_rule_value(platform_value!({
+        "anyOf": [{ "equal": ["fee", 1] }, { "not": { "equal": ["sellerId", "$ownerId"] } }]
+    }))
+    .reads_owner());
+    assert!(
+        !parse_rule_value(platform_value!({ "notEqual": ["buyerId", "sellerId"] })).reads_owner()
+    );
+    // equal, buyerId, $ownerId
+    assert_eq!(buyer_owns.node_count(), 3);
 }
 
 // ── present and absent ──────────────────────────────────────────────────
@@ -1629,10 +1745,10 @@ fn should_report_whether_a_rule_holds_and_the_left_fault_first() {
         ])
     };
     // (10 + 2) * 3 = 36
-    assert_eq!(rule.violation(&order(10, 2, 3, 36)), None);
-    assert_eq!(rule.violation(&order(10, 2, 3, 100)), None);
+    assert_eq!(rule.violation(&order(10, 2, 3, 36), None), None);
+    assert_eq!(rule.violation(&order(10, 2, 3, 100), None), None);
     assert_eq!(
-        rule.violation(&order(10, 2, 3, 35)),
+        rule.violation(&order(10, 2, 3, 35), None),
         Some(PropertyConstraintViolation::NotMet)
     );
 
@@ -1645,7 +1761,7 @@ fn should_report_whether_a_rule_holds_and_the_left_fault_first() {
         ("negative", Value::I64(-1)),
     ]);
     assert_eq!(
-        both_sides_fail.violation(&values),
+        both_sides_fail.violation(&values, None),
         Some(PropertyConstraintViolation::DivisionByZero)
     );
 
@@ -1690,17 +1806,21 @@ fn should_combine_conditions_with_any_of_all_of_and_not() {
         (1, 5, false, false),
     ] {
         let values = data(&[("a", Value::U64(a)), ("b", Value::U64(b))]);
-        assert_eq!(any_of.holds(&values), Ok(either), "a {a}, b {b}: anyOf");
-        assert_eq!(all_of.holds(&values), Ok(both), "a {a}, b {b}: allOf");
-        assert_eq!(not.holds(&values), Ok(!either), "a {a}, b {b}: not");
         assert_eq!(
-            any_of.violation(&values),
+            any_of.holds(&values, None),
+            Ok(either),
+            "a {a}, b {b}: anyOf"
+        );
+        assert_eq!(all_of.holds(&values, None), Ok(both), "a {a}, b {b}: allOf");
+        assert_eq!(not.holds(&values, None), Ok(!either), "a {a}, b {b}: not");
+        assert_eq!(
+            any_of.violation(&values, None),
             (!either).then_some(PropertyConstraintViolation::NotMet),
             "a {a}, b {b}"
         );
     }
     // An absent property still counts as 0
-    assert_eq!(any_of.holds(&data(&[("b", Value::U64(5))])), Ok(true));
+    assert_eq!(any_of.holds(&data(&[("b", Value::U64(5))]), None), Ok(true));
 }
 
 /// Conditions are checked in declared order, no further than the outcome needs, so an
@@ -1722,41 +1842,41 @@ fn should_stop_at_the_outcome_and_break_the_rule_on_the_first_fault() {
 
     let values = |a: u64, b: u64| data(&[("a", Value::U64(a)), ("b", Value::U64(b))]);
     let zero_divisor = values(6, 0);
-    assert_eq!(guarded_any_of.violation(&zero_divisor), None);
+    assert_eq!(guarded_any_of.violation(&zero_divisor, None), None);
     assert_eq!(
-        unguarded_any_of.violation(&zero_divisor),
+        unguarded_any_of.violation(&zero_divisor, None),
         Some(PropertyConstraintViolation::DivisionByZero)
     );
     assert_eq!(
-        guarded_all_of.violation(&zero_divisor),
+        guarded_all_of.violation(&zero_divisor, None),
         Some(PropertyConstraintViolation::NotMet)
     );
     assert_eq!(
-        negated.violation(&zero_divisor),
+        negated.violation(&zero_divisor, None),
         Some(PropertyConstraintViolation::DivisionByZero)
     );
 
     // 4 / 2 = 2, 6 / 2 = 3
     for rule in [&guarded_any_of, &unguarded_any_of, &guarded_all_of] {
-        assert_eq!(rule.violation(&values(4, 2)), None, "{rule:?}");
+        assert_eq!(rule.violation(&values(4, 2), None), None, "{rule:?}");
         assert_eq!(
-            rule.violation(&values(6, 2)),
+            rule.violation(&values(6, 2), None),
             Some(PropertyConstraintViolation::NotMet),
             "{rule:?}"
         );
     }
     assert_eq!(
-        negated.violation(&values(4, 2)),
+        negated.violation(&values(4, 2), None),
         Some(PropertyConstraintViolation::NotMet)
     );
-    assert_eq!(negated.violation(&values(6, 2)), None);
+    assert_eq!(negated.violation(&values(6, 2), None), None);
 
     // An allOf stops at the first condition that fails, before a later fault
     let fails_before_the_fault = parse_rule_value(platform_value!({
         "allOf": [{ "equal": ["a", 1] }, { "equal": [{ "divide": ["a", "b"] }, 2] }]
     }));
     assert_eq!(
-        fails_before_the_fault.violation(&zero_divisor),
+        fails_before_the_fault.violation(&zero_divisor, None),
         Some(PropertyConstraintViolation::NotMet)
     );
 }
@@ -1800,8 +1920,16 @@ fn should_tell_a_property_left_out_from_one_set_to_zero() {
     ] {
         let present_rule = parse_rule_value(platform_value!({ "present": path }));
         let absent_rule = parse_rule_value(platform_value!({ "absent": path }));
-        assert_eq!(present_rule.holds(&values), Ok(present), "present {path}");
-        assert_eq!(absent_rule.holds(&values), Ok(!present), "absent {path}");
+        assert_eq!(
+            present_rule.holds(&values, None),
+            Ok(present),
+            "present {path}"
+        );
+        assert_eq!(
+            absent_rule.holds(&values, None),
+            Ok(!present),
+            "absent {path}"
+        );
     }
 
     // Optional, but above zero when given: an operand alone reads a discount left out
@@ -1809,10 +1937,13 @@ fn should_tell_a_property_left_out_from_one_set_to_zero() {
     let rule = parse_rule_value(platform_value!({
         "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
     }));
-    assert_eq!(rule.violation(&data(&[])), None);
-    assert_eq!(rule.violation(&data(&[("discount", Value::U64(5))])), None);
+    assert_eq!(rule.violation(&data(&[]), None), None);
     assert_eq!(
-        rule.violation(&data(&[("discount", Value::U64(0))])),
+        rule.violation(&data(&[("discount", Value::U64(5))]), None),
+        None
+    );
+    assert_eq!(
+        rule.violation(&data(&[("discount", Value::U64(0))]), None),
         Some(PropertyConstraintViolation::NotMet)
     );
 }
@@ -1849,10 +1980,10 @@ fn should_read_a_boolean_as_one_or_zero() {
     }));
     let order =
         |waived: bool, fee: u64| data(&[("waived", Value::Bool(waived)), ("fee", Value::U64(fee))]);
-    assert_eq!(rule.violation(&order(true, 0)), None);
-    assert_eq!(rule.violation(&order(false, 10)), None);
+    assert_eq!(rule.violation(&order(true, 0), None), None);
+    assert_eq!(rule.violation(&order(false, 10), None), None);
     assert_eq!(
-        rule.violation(&order(true, 10)),
+        rule.violation(&order(true, 10), None),
         Some(PropertyConstraintViolation::NotMet)
     );
 }

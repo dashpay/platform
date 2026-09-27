@@ -847,12 +847,52 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// `validate_property_constraints` version 0: every rule of the document type's
     /// `propertyConstraints` is evaluated against `data` in name order, and the first one
     /// broken is reported. A type without rules costs nothing.
-    fn validate_property_constraints_v0(&self, data: &Value) -> SimpleConsensusValidationResult
+    fn validate_property_constraints_v0(
+        &self,
+        data: &Value,
+        owner_id: Option<Identifier>,
+    ) -> SimpleConsensusValidationResult
     where
         Self: DocumentTypeV2Getters,
     {
         for (name, constraint) in self.property_constraints() {
-            if let Some(violation) = constraint.violation(data) {
+            if let Some(violation) = constraint.violation(data, owner_id) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                );
+            }
+        }
+        SimpleConsensusValidationResult::default()
+    }
+
+    /// `validate_property_constraints_for_new_owner` version 0: every rule of the document
+    /// type's `propertyConstraints` that reads `$ownerId` is evaluated against `data` with
+    /// `new_owner_id` as the owner, in name order, and the first one broken is reported.
+    /// The data is copied into a map value only when such a rule exists.
+    fn validate_property_constraints_for_new_owner_v0(
+        &self,
+        data: &BTreeMap<String, Value>,
+        new_owner_id: Identifier,
+    ) -> SimpleConsensusValidationResult
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        let mut owner_rules = self
+            .property_constraints()
+            .iter()
+            .filter(|(_, constraint)| constraint.reads_owner())
+            .peekable();
+        if owner_rules.peek().is_none() {
+            return SimpleConsensusValidationResult::default();
+        }
+        let data = Value::from(data.clone());
+        for (name, constraint) in owner_rules {
+            if let Some(violation) = constraint.violation(&data, Some(new_owner_id)) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
                         self.name().clone(),

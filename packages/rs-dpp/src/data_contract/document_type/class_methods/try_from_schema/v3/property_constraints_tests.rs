@@ -13,7 +13,7 @@ use crate::consensus::basic::basic_error::BasicError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::document_type::property_constraints::PropertyRead;
+use crate::data_contract::document_type::property_constraints::{PropertyConstraint, PropertyRead};
 use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
 use crate::data_contract::DataContract;
 use crate::serialization::{
@@ -533,11 +533,88 @@ fn should_compare_identifier_properties() {
     }
 }
 
-/// A system property is not a property of the type: the meta-schema refuses
-/// its `$` when registering, and the parser the path when reading.
+/// `$ownerId` compares as an identifier on both paths, and reads no property;
+/// an indexOnly type refuses a rule reading it, since its deletes carry no
+/// owner to judge the rule with.
+#[test]
+fn should_compare_the_owner_and_refuse_it_on_an_index_only_type() {
+    let writer = Identifier::new([7; 32]).to_string(Encoding::Base58);
+    let other = Identifier::new([8; 32]).to_string(Encoding::Base58);
+    let rules = json!({
+        "buyerOwns": { "equal": ["buyerId", "$ownerId"] },
+        "knownWriter": { "in": ["$ownerId", [writer, other]] },
+        "sellerIsNotOwner": { "notEqual": ["sellerId", "$ownerId"] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(constraints["buyerOwns"].property_paths(), ["buyerId"]);
+        assert!(constraints["knownWriter"].property_paths().is_empty());
+        assert!(constraints.values().all(PropertyConstraint::reads_owner));
+    }
+
+    let index_only = |rule: serde_json::Value| {
+        schema_value(json!({
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "indices": [{
+                "name": "byTopic",
+                "properties": [{ "topic": "asc" }, { "authorId": "asc" }]
+            }],
+            "properties": {
+                "topic": { "type": "string", "maxLength": 50, "position": 0 },
+                "authorId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 1
+                }
+            },
+            "required": ["topic", "authorId"],
+            "additionalProperties": false,
+            "propertyConstraints": { "rule": rule }
+        }))
+    };
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                index_only(json!({ "equal": ["authorId", "$ownerId"] })),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "rule \"rule\" compares $ownerId, which a delete of an indexOnly document does not \
+             carry",
+        );
+        parse_dispatched(
+            index_only(json!({
+                "notEqual": ["topic", { "const": "x" }]
+            })),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|e| panic!("a rule not reading the owner registers: {e}"));
+    }
+}
+
+/// `$ownerId` is the document's owner, which every document has, not a
+/// property of the type: a presence test of it is refused on both paths, and
+/// any other system property the meta-schema refuses when registering.
 #[test]
 fn should_refuse_a_presence_test_of_a_system_property() {
-    let rules = json!({ "rule": { "present": "$ownerId" } });
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_order(
+                json!({ "rule": { "present": "$ownerId" } }),
+                full_validation,
+            ),
+            "tests the presence of \"$ownerId\", which is not a property of the document type",
+        );
+    }
+    let rules = json!({ "rule": { "present": "$createdAt" } });
     let registered = parse_order(rules.clone(), true);
     assert!(
         registered.as_ref().is_err_and(is_json_schema_error),
@@ -545,7 +622,7 @@ fn should_refuse_a_presence_test_of_a_system_property() {
     );
     expect_structure_error(
         parse_order(rules, false),
-        "tests the presence of \"$ownerId\", which is not a property of the document type",
+        "tests the presence of \"$createdAt\", which is not a property of the document type",
     );
 }
 
@@ -648,14 +725,19 @@ fn should_refuse_a_rule_reading_anything_but_an_integer_property() {
             "$ownerId",
             "reads \"$ownerId\", which is not an integer or boolean property",
         ),
+        (
+            "$createdAt",
+            "reads \"$createdAt\", which is not an integer or boolean property",
+        ),
     ] {
         for full_validation in [true, false] {
             let result = parse_order(
                 json!({ "rule": { "lessThan": [operand, "price"] } }),
                 full_validation,
             );
-            // The meta-schema refuses a `$` in a path when registering
-            if full_validation && operand.starts_with('$') {
+            // The meta-schema refuses a `$` in a path when registering, but for
+            // `$ownerId`, which only a comparison of identifiers may read
+            if full_validation && operand.starts_with('$') && operand != "$ownerId" {
                 assert!(
                     result.as_ref().is_err_and(is_json_schema_error),
                     "{operand}: {result:?}"

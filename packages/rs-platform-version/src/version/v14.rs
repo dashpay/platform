@@ -1057,49 +1057,55 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     constant and no other string unless an `ifAbsent` gives it a string
 ///     default (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum`
 ///     must list too); `equal`, `notEqual` or `in` of an identifier property
-///     likewise, with base58 identifier constants or another identifier
-///     property and no default, an identifier the document leaves out
-///     equalling none; `present` or `absent` naming a property of any type,
-///     whether the document holds it (the one way to tell a property left out
-///     from one set to 0); `anyOf` or `allOf` over two or more conditions; or
-///     `not` over one. In an operand, a property the document leaves out
-///     counts as 0, or as the value of an `ifAbsent` operand naming it.
-///     Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
-///     remainder is never negative), and an overflow, a zero divisor, a
-///     negative exponent or a value that is not an integer refuses the
-///     document rather than wrapping. Conditions are checked in declared order
-///     and no further than the outcome needs (`anyOf` stops at the first that
-///     holds, `allOf` at the first that fails), a fault in one that is checked
-///     refuses the document whatever the others say, and `not` never turns a
-///     fault into a pass, so an earlier condition guards a later one. The
-///     parser checks that every path an operand reads names an integer or
-///     boolean property, every path compared with identifiers an identifier
-///     property, every path compared with strings a string property (whose
-///     `enum`, if it declares one, lists every constant it is compared with),
-///     and every path `present` or `absent` tests a property of any type, none
-///     transient nor inside a transient object; that every comparison and `in`
-///     reads a property; that strings and identifiers are only compared for
-///     equality, and never with each other; that no `in` lists a value twice;
-///     that an `anyOf` or `allOf` holds none directly of its own kind and a
-///     `not` no `not`; and that no condition or operand nests deeper than
-///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse. Under full
-///     validation it holds the limits `SystemLimits::max_property_constraints`
-///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
-///     comparison, `in`, listed value, `const`, presence test and logical
-///     operator counting as one), and that no `anyOf` or `allOf` lists the
-///     same condition twice.
+///     or of `$ownerId`, the document's owner, likewise, with base58
+///     identifier constants or another identifier operand and no default, an
+///     identifier the document leaves out equalling none; `present` or
+///     `absent` naming a property of any type, whether the document holds it
+///     (the one way to tell a property left out from one set to 0); `anyOf` or
+///     `allOf` over two or more conditions; or `not` over one. In an operand, a
+///     property the document leaves out counts as 0, or as the value of an
+///     `ifAbsent` operand naming it. Arithmetic is exact `i128`: `divide` and
+///     `modulo` are Euclidean (the remainder is never negative), and an
+///     overflow, a zero divisor, a negative exponent or a value that is not an
+///     integer refuses the document rather than wrapping. Conditions are
+///     checked in declared order and no further than the outcome needs
+///     (`anyOf` stops at the first that holds, `allOf` at the first that
+///     fails), a fault in one that is checked refuses the document whatever the
+///     others say, and `not` never turns a fault into a pass, so an earlier
+///     condition guards a later one. The parser checks that every path an
+///     operand reads names an integer or boolean property, every path compared
+///     with identifiers an identifier property, every path compared with
+///     strings a string property (whose `enum`, if it declares one, lists every
+///     constant it is compared with), and every path `present` or `absent`
+///     tests a property of any type, none transient nor inside a transient
+///     object; that every comparison and `in` reads a property or the owner;
+///     that nothing is compared with itself; that strings and identifiers are
+///     only compared for equality, and never with each other; that no `in`
+///     lists a value twice; that an `anyOf` or `allOf` holds none directly of
+///     its own kind and a `not` no `not`; that an indexOnly type, whose deletes
+///     carry no owner, reads no `$ownerId`; and that no condition or operand
+///     nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every
+///     parse. Under full validation it holds the limits
+///     `SystemLimits::max_property_constraints` (16 rules) and
+///     `max_property_constraint_nodes` (32 per rule, every comparison, `in`,
+///     listed value, `const`, presence test and logical operator counting as
+///     one), and that no `anyOf` or `allOf` lists the same condition twice.
 ///     `DataContract::validate_document_properties` 0 (extended in place, inert
-///     before this version) calls `validate_property_constraints`
-///     (`validate_property_constraints` 0) after the schema validation, so
-///     document create and replace, and any client validating a document,
-///     refuse a broken rule with `DocumentPropertyConstraintViolatedError`
-///     (10422), naming the rule and why. The rules read no state and change
-///     nothing stored. They are fixed when the document type is created: a
-///     changed `propertyConstraints` is an incompatible schema change on
-///     update. The moderation charters contract declares its first one: a
-///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
-///     charter-specific check, whose error 11001 keeps its place in
-///     `BasicError` but is never produced.
+///     before this version, and taking the document's owner for `$ownerId`)
+///     calls `validate_property_constraints` (`validate_property_constraints`
+///     0) after the schema validation, so document create and replace, and any
+///     client validating a document, refuse a broken rule with
+///     `DocumentPropertyConstraintViolatedError` (10422), naming the rule and
+///     why. A transfer and a purchase, which give the document a new owner,
+///     are judged against the rules reading `$ownerId` with that owner
+///     (`validate_property_constraints_for_new_owner`, beside `distinctFrom` in
+///     their structure validation, in place and inert before this version).
+///     The rules read no state and change nothing stored. They are fixed when
+///     the document type is created: a changed `propertyConstraints` is an
+///     incompatible schema change on update. The moderation charters contract
+///     declares its first one: a `submittedCharter`'s `rewardSplit` members add
+///     up to 100, replacing the charter-specific check, whose error 11001
+///     keeps its place in `BasicError` but is never produced.
 ///
 /// 40. **Elected moderation teams moderate from their stored charter**: seating
 ///     writes nothing. Awarding the contest of item 37 writes the winning
