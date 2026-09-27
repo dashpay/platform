@@ -700,14 +700,28 @@ mod batch_transition_tests {
 
     /// A batch that touches no pool keeps the identifiers it had: its mempool key must not move
     /// because pool kinds exist.
+    ///
+    /// The expected keys are written out rather than rebuilt from the batch, so that a change to
+    /// how a key is spelled — the field order, the encodings, the separator, the nonce's radix —
+    /// fails here. Rebuilding them would restate whatever the code does. Each is the batch's
+    /// owner, the transition's contract and its nonce: owner `[0x02; 32]` from `make_batch_v1`,
+    /// contract `[0xAA; 32]` at nonce 1 for the document and `[0xBB; 32]` at nonce 2 for the
+    /// token, base64 for the identifiers and hex for the nonce.
     #[test]
     fn v1_unique_identifiers_are_unchanged_for_a_batch_without_a_pool_bundle() {
         let batch = make_batch_v1(vec![
             BatchedTransition::Document(make_delete_transition(1)),
             BatchedTransition::Token(make_token_burn_transition(2, 100)),
         ]);
-        let ids = batch.unique_identifiers();
-        assert_eq!(ids.len(), 2, "no nullifier keys to add, got {ids:?}");
+        assert_eq!(
+            batch.unique_identifiers(),
+            vec![
+                "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=\
+                 -qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo=-1",
+                "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=\
+                 -u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7s=-2",
+            ]
+        );
     }
 
     // -----------------------------------------------------------------------

@@ -697,6 +697,18 @@ mod tests {
     /// Only a change of the total reads it. A shielded transfer leaves the total alone and so
     /// meters no read in either mode, which is what keeps what a transfer costs from revealing
     /// how much of the token is shielded.
+    ///
+    /// What is asserted is that the read is booked, in credits, and not merely that both modes
+    /// count one read: the count is equal whenever the read happens at all, so it cannot speak
+    /// to what the quote covers.
+    ///
+    /// It does not yet assert that the quote covers the charge, because it does not. The two
+    /// modes price the same read differently — the estimate from the pool's modelled layer,
+    /// execution from the tree — and the estimate books less than execution charges: 7,460
+    /// credits against 14,180, for a shield and an unshield alike, a shortfall nobody pays.
+    /// Closing it sets what a pool operation costs, which is a decision about the fee schedule
+    /// and not one this test can make; `estimated_fee >= actual_fee` is the assertion that
+    /// belongs here once it is taken.
     #[test]
     fn should_meter_the_pool_total_read_when_estimating_as_well_as_when_applying() {
         let platform_version = PlatformVersion::latest();
@@ -763,11 +775,26 @@ mod tests {
         ] {
             let (estimated_reads, estimated_fee) = metered(balance_change, true);
             let (actual_reads, actual_fee) = metered(balance_change, false);
+
+            // One read of the total per pool update, in both modes: a pool update moves the
+            // total once, so it reads it once.
+            assert_eq!(
+                (estimated_reads, actual_reads),
+                (1, 1),
+                "{balance_change:?} must read the total exactly once in either mode"
+            );
+
+            // Execution charges for the read, so the quote has to book credits for it. Zero
+            // would mean the read reaches state on a path nobody was quoted for.
             assert!(
-                estimated_reads >= actual_reads,
-                "{balance_change:?} meters {actual_reads} read(s) worth {actual_fee} credits when \
-                 applied but only {estimated_reads} worth {estimated_fee} when estimated, so the \
-                 difference is charged to nobody"
+                actual_fee > 0,
+                "{balance_change:?} reads the total when applied but that read costs nothing, so \
+                 there is no charge for the estimate to cover"
+            );
+            assert!(
+                estimated_fee > 0,
+                "{balance_change:?} meters a read worth {actual_fee} credits when applied and \
+                 books {estimated_fee} when estimated, so the read is charged to nobody"
             );
         }
 

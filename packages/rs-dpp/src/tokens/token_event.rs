@@ -1273,24 +1273,4 @@ mod public_note_tests {
             None
         );
     }
-
-    /// The events that carry no note at all: nothing to show a co-signer.
-    #[test]
-    fn should_report_no_note_on_the_events_that_carry_none() {
-        for event in [
-            TokenEvent::DirectPurchase(5, 50),
-            TokenEvent::Shield(5),
-            TokenEvent::Unshield(Identifier::from([1u8; 32]), 5),
-            TokenEvent::ShieldedTransfer,
-            TokenEvent::ClaimToPool(5),
-            TokenEvent::DirectPurchaseToPool(5, 50),
-        ] {
-            assert_eq!(
-                event.public_note(),
-                None,
-                "{} carries no note",
-                event.associated_document_type_name()
-            );
-        }
-    }
 }

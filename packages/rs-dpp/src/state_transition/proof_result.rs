@@ -506,6 +506,21 @@ mod json_convertible_tests {
             vec![(vec![1u8, 2, 3], false), (vec![4u8, 5, 6], false)],
         );
         let json = original.to_json().expect("to_json");
+        // Each nullifier is a `[bytes, spent]` pair and the `false` is on the wire. Asserted on
+        // the wire rather than across a round trip because the round trip cannot see it: a
+        // serializer that wrote the nullifier alone and a deserializer that filled the flag back
+        // in as `false` would agree with each other and hand a client a burn with no spend
+        // status at all.
+        assert_eq!(
+            json,
+            json!({
+                "VerifiedTokenGroupActionWithShieldedNullifiers": [
+                    1,
+                    "actionActive",
+                    [[[1, 2, 3], false], [[4, 5, 6], false]],
+                ],
+            })
+        );
         let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }

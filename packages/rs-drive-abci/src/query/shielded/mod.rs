@@ -767,16 +767,174 @@ mod tests {
         }
     }
 
-    /// The credit pool is built with the initial state structure, so a credit-pool read is never
-    /// gated on the pool's existence — gating it would refuse every shielded credit query.
+    /// A credit-pool read is never refused for the pool not existing. The client does not name
+    /// the credit pool, so there is nothing for an existence gate to refuse, and a gate that
+    /// caught it would refuse every shielded credit query on the network at once.
+    ///
+    /// Asserted through the six unproved reads rather than against the gate helper, because the
+    /// gate is only one of the places a refusal could come from and the helper answering `Ok` is
+    /// not the same fact as a client getting an answer. Each read here is checked for the value
+    /// an empty pool gives, which is what a `NotFound` would have replaced.
     #[test]
-    fn credit_pool_reads_are_not_gated_on_pool_existence() {
-        let (platform, _state, version) = setup_platform(None, Network::Testnet, None);
+    fn unproved_credit_pool_reads_are_never_refused_for_the_pool_not_existing() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        assert!(matches!(
-            ShieldedPoolSelector::Credit.validate_pool_exists(&platform.drive, version),
-            Ok(Ok(()))
-        ));
+        let notes_count = platform
+            .query_shielded_notes_count(
+                GetShieldedNotesCountRequest {
+                    version: Some(NotesCountRequestVersion::V0(
+                        GetShieldedNotesCountRequestV0 {
+                            prove: false,
+                            token_id: None,
+                        },
+                    )),
+                },
+                &state,
+                version,
+            )
+            .expect("expected the query to complete");
+        assert!(notes_count.errors.is_empty(), "{:?}", notes_count.errors);
+        match notes_count.data.and_then(|response| response.version) {
+            Some(NotesCountResponseVersion::V0(v0)) => assert!(matches!(
+                v0.result,
+                Some(get_shielded_notes_count_response_v0::Result::TotalNotesCount(0))
+            )),
+            other => panic!("expected a notes count, got {other:?}"),
+        }
+
+        let encrypted_notes = platform
+            .query_shielded_encrypted_notes(
+                GetShieldedEncryptedNotesRequest {
+                    version: Some(EncryptedNotesRequestVersion::V0(
+                        GetShieldedEncryptedNotesRequestV0 {
+                            start_index: 0,
+                            count: 1,
+                            prove: false,
+                            token_id: None,
+                        },
+                    )),
+                },
+                &state,
+                version,
+            )
+            .expect("expected the query to complete");
+        assert!(
+            encrypted_notes.errors.is_empty(),
+            "{:?}",
+            encrypted_notes.errors
+        );
+        match encrypted_notes.data.and_then(|response| response.version) {
+            Some(EncryptedNotesResponseVersion::V0(v0)) => match v0.result {
+                Some(get_shielded_encrypted_notes_response_v0::Result::EncryptedNotes(notes)) => {
+                    assert!(notes.entries.is_empty())
+                }
+                other => panic!("expected encrypted notes, got {other:?}"),
+            },
+            other => panic!("expected a v0 response, got {other:?}"),
+        }
+
+        let anchors = platform
+            .query_shielded_anchors(
+                GetShieldedAnchorsRequest {
+                    version: Some(AnchorsRequestVersion::V0(GetShieldedAnchorsRequestV0 {
+                        prove: false,
+                        token_id: None,
+                    })),
+                },
+                &state,
+                version,
+            )
+            .expect("expected the query to complete");
+        assert!(anchors.errors.is_empty(), "{:?}", anchors.errors);
+        match anchors.data.and_then(|response| response.version) {
+            Some(AnchorsResponseVersion::V0(v0)) => match v0.result {
+                Some(get_shielded_anchors_response_v0::Result::Anchors(anchors)) => {
+                    assert!(anchors.anchors.is_empty())
+                }
+                other => panic!("expected anchors, got {other:?}"),
+            },
+            other => panic!("expected a v0 response, got {other:?}"),
+        }
+
+        let most_recent_anchor = platform
+            .query_most_recent_shielded_anchor(
+                GetMostRecentShieldedAnchorRequest {
+                    version: Some(MostRecentAnchorRequestVersion::V0(
+                        GetMostRecentShieldedAnchorRequestV0 {
+                            prove: false,
+                            token_id: None,
+                        },
+                    )),
+                },
+                &state,
+                version,
+            )
+            .expect("expected the query to complete");
+        assert!(
+            most_recent_anchor.errors.is_empty(),
+            "{:?}",
+            most_recent_anchor.errors
+        );
+        match most_recent_anchor
+            .data
+            .and_then(|response| response.version)
+        {
+            Some(MostRecentAnchorResponseVersion::V0(v0)) => match v0.result {
+                // The empty-index sentinel this endpoint documents.
+                Some(get_most_recent_shielded_anchor_response_v0::Result::Anchor(anchor)) => {
+                    assert_eq!(anchor, vec![0; 32])
+                }
+                other => panic!("expected an anchor, got {other:?}"),
+            },
+            other => panic!("expected a v0 response, got {other:?}"),
+        }
+
+        let nullifiers = platform
+            .query_shielded_nullifiers(
+                GetShieldedNullifiersRequest {
+                    version: Some(NullifiersRequestVersion::V0(
+                        GetShieldedNullifiersRequestV0 {
+                            nullifiers: vec![vec![0x11; 32]],
+                            prove: false,
+                            token_id: None,
+                        },
+                    )),
+                },
+                &state,
+                version,
+            )
+            .expect("expected the query to complete");
+        assert!(nullifiers.errors.is_empty(), "{:?}", nullifiers.errors);
+        match nullifiers.data.and_then(|response| response.version) {
+            Some(NullifiersResponseVersion::V0(v0)) => match v0.result {
+                Some(get_shielded_nullifiers_response_v0::Result::NullifierStatuses(statuses)) => {
+                    assert!(statuses.entries.iter().all(|status| !status.is_spent))
+                }
+                other => panic!("expected nullifier statuses, got {other:?}"),
+            },
+            other => panic!("expected a v0 response, got {other:?}"),
+        }
+
+        let pool_state = platform
+            .query_shielded_pool_state(
+                GetShieldedPoolStateRequest {
+                    version: Some(PoolStateRequestVersion::V0(GetShieldedPoolStateRequestV0 {
+                        prove: false,
+                        token_id: None,
+                    })),
+                },
+                &state,
+                version,
+            )
+            .expect("expected the query to complete");
+        assert!(pool_state.errors.is_empty(), "{:?}", pool_state.errors);
+        match pool_state.data.and_then(|response| response.version) {
+            Some(PoolStateResponseVersion::V0(v0)) => assert!(matches!(
+                v0.result,
+                Some(get_shielded_pool_state_response_v0::Result::TotalBalance(0))
+            )),
+            other => panic!("expected a total balance, got {other:?}"),
+        }
     }
 
     /// A token pool the chain holds passes the existence gate, and one it does not is refused —
