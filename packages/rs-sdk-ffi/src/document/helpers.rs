@@ -104,7 +104,36 @@ pub unsafe fn convert_state_transition_creation_options(
             Some(options.base_feature_version)
         },
         action_fee_agreement: None,
-        // A contested create states the fund to join its contest, which rs-sdk reads
-        contest_fund: None,
+        // 0 leaves a contested create stating the fund to join, which rs-sdk reads when it signs
+        contest_fund: if options.contest_fund == 0 {
+            None
+        } else {
+            Some(options.contest_fund)
+        },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn creation_options(contest_fund: u64) -> DashSDKStateTransitionCreationOptions {
+        DashSDKStateTransitionCreationOptions {
+            allow_signing_with_any_security_level: false,
+            allow_signing_with_any_purpose: false,
+            batch_feature_version: 0,
+            method_feature_version: 0,
+            base_feature_version: 0,
+            contest_fund,
+        }
+    }
+
+    #[test]
+    fn should_state_the_contest_fund_only_when_it_is_not_zero() {
+        let unset = unsafe { convert_state_transition_creation_options(&creation_options(0)) };
+        assert_eq!(unset, Some(StateTransitionCreationOptions::default()));
+
+        let stated = unsafe { convert_state_transition_creation_options(&creation_options(7)) };
+        assert_eq!(stated.and_then(|options| options.contest_fund), Some(7));
+    }
 }

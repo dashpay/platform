@@ -15,6 +15,7 @@ use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::PutDocument;
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
 use js_sys::Reflect;
@@ -27,8 +28,8 @@ use wasm_dpp2::state_transitions::batch::token_payment_info::{
     TokenPaymentInfoOptionsJs, TokenPaymentInfoWasm,
 };
 use wasm_dpp2::utils::{
-    get_class_type, try_from_options_mut, try_from_options_optional, try_from_options_with,
-    try_to_string, try_to_u64, IntoWasm,
+    get_class_type, try_from_options_mut, try_from_options_optional,
+    try_from_options_optional_with, try_from_options_with, try_to_string, try_to_u64, IntoWasm,
 };
 use wasm_dpp2::IdentitySignerWasm;
 
@@ -125,6 +126,16 @@ export interface DocumentCreateOptions {
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
+   * The most, in credits, the document pays into the contest it joins when its
+   * document type has a contested index. From protocol version 14 it is charged
+   * the fund to join the contest, which doubles once the contest holds 250
+   * contenders and again for every 50 more, and is refused, paid, when that is
+   * more than this. Leave it out to state the fund to join read just before the
+   * document is submitted. A document that joins no contest ignores it.
+   */
+  contestFund?: bigint;
+
+  /**
    * Optional settings for the broadcast operation.
    * Includes retries, timeouts, userFeeIncrease, etc.
    */
@@ -202,9 +213,20 @@ impl WasmSdk {
         let document_type = get_document_type(&data_contract, &document_type_name)?;
 
         // Extract settings from options
-        let settings =
+        let mut settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
+
+        // The most the document pays into the contest it joins
+        if let Some(contest_fund) = try_from_options_optional_with(&options, "contestFund", |v| {
+            try_to_u64(v, "contestFund")
+        })? {
+            settings
+                .get_or_insert_with(Default::default)
+                .state_transition_creation_options
+                .get_or_insert_with(Default::default)
+                .contest_fund = Some(contest_fund);
+        }
 
         // Use PutDocument trait for creation, keeping the confirmed
         // document Platform returns — it carries the consensus-assigned
