@@ -23,6 +23,10 @@ pub use compute_minimum_shielded_fee::{
 // Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
 // builders into their own file. Both the version-dispatching wrappers and their `_v0` impls are
 // re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 pub use sighash::{
     compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
     identity_create_from_shielded_extra_sighash_data_v0,
@@ -215,10 +219,10 @@ pub struct SerializedAction {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for SerializedAction {}
+impl JsonConvertible for SerializedAction {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for SerializedAction {}
+impl ValueConvertible for SerializedAction {}
 
 #[cfg(all(
     test,
