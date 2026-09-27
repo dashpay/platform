@@ -13,6 +13,7 @@ use dpp::consensus::basic::state_transition::{
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
+use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::{PlatformMessageSignable, Signable};
@@ -51,6 +52,11 @@ use dpp::state_transition::{StateTransition, StateTransitionOwned};
 use dpp::util::hash::hash_single;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::tokens::paths::token_shielded_pools_root_path;
+use drive::drive::Drive;
+use drive::grovedb_path::SubtreePath;
+use drive::util::grove_operations::DirectQueryType;
+use std::collections::HashSet;
 
 /// The (identity, nonce) pair CheckTx's `CheckTxProofVerifier` admits Orchard proof work under
 /// for identity-signed shielded transitions, so an identity cannot start unbounded verification
@@ -902,6 +908,94 @@ fn key_not_allowed_in_shielded_creation(
                     .into()
             })
         })
+}
+
+/// Refuses a batch that names a token shielded pool nullifier the pool has already recorded.
+///
+/// CheckTx only. A batch's pool bundles are checked against the pool in block validation, inside
+/// each pool action's state validation, where a failure is a paid one — the identity contract
+/// nonce is consumed and the fee charged. Nothing in the mempool passes reads the pool: a batch
+/// whose note has been spent is admitted, and the node pays for the Halo 2 verification of a
+/// bundle that block validation will refuse on a handful of key lookups. This is those lookups,
+/// run before the verification, so the free reason to refuse is found first.
+///
+/// It cannot change a consensus outcome. What it refuses is refused unpaid, and an unpaid refusal
+/// never reaches a committed block: a proposer leaves such a transition out and `process_proposal`
+/// rejects a block that carries one. Block validation reads the same record for itself and
+/// decides on its own, with no memory of what admission concluded.
+pub(crate) fn validate_batch_token_pool_nullifiers_unspent(
+    batch: &BatchTransition,
+    drive: &Drive,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let mut drive_operations = vec![];
+    let mut pools_without_a_subtree = HashSet::new();
+
+    for transition in batch.transitions_iter() {
+        let (token_id, actions) = match transition {
+            BatchedTransitionRef::Token(token_transition) => {
+                match token_transition.shielded_pool_actions() {
+                    Some(actions) => (token_transition.token_id().to_buffer(), actions),
+                    None => continue,
+                }
+            }
+            // A document whose token cost is paid out of the token's shielded pool spends pool
+            // notes exactly as an unshield does.
+            BatchedTransitionRef::Document(document_transition) => {
+                let base = document_transition.base();
+                let Some(token_payment_info) = base.token_payment_info_ref().as_ref() else {
+                    continue;
+                };
+                let Some(payment) = token_payment_info.shielded_payment() else {
+                    continue;
+                };
+                (
+                    token_payment_info
+                        .token_id(base.data_contract_id())
+                        .to_buffer(),
+                    payment.actions.as_slice(),
+                )
+            }
+        };
+
+        if pools_without_a_subtree.contains(&token_id) {
+            continue;
+        }
+        // A token that never opted into a shielded pool has no pool subtree, and a membership
+        // read under a subtree that is not there is not a read of an empty pool. Such a batch is
+        // refused in the block for naming a pool the token does not have, so there is nothing
+        // for this to find.
+        if !drive.grove_has_raw(
+            SubtreePath::from(&token_shielded_pools_root_path()),
+            &token_id,
+            DirectQueryType::StatefulDirectQuery,
+            None,
+            &mut drive_operations,
+            &platform_version.drive,
+        )? {
+            pools_without_a_subtree.insert(token_id);
+            continue;
+        }
+
+        for action in actions {
+            if drive.has_token_pool_nullifier(
+                &token_id,
+                &action.nullifier,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )? {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(
+                        action.nullifier,
+                    ))
+                    .into(),
+                ));
+            }
+        }
+    }
+
+    Ok(SimpleConsensusValidationResult::new())
 }
 
 /// Verifies every token shielded bundle a batch carries, statelessly.
