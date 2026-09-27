@@ -1,10 +1,13 @@
-//! The class of error a broken doctype-level aggregate rule is reported with.
+//! The class of error a contract failing a stage shared with an earlier
+//! generation is reported with.
 //!
-//! The aggregate stages are shared with generation 2. Generation 3 reports
-//! every rule they enforce as a consensus error, so a transition carrying the
-//! contract is a paid rejection; generation 2 keeps the bare
-//! `ProtocolError::DataContractError` it shipped with at protocol versions 12
-//! and 13, which a node refuses unpaid.
+//! The aggregate stages are shared with generation 2, and the core parse with
+//! generations 1 and 2. Generation 3 reports every rule the aggregate stages
+//! enforce, and every value the core cannot read, as a consensus error, so a
+//! transition carrying the contract is a paid rejection; the earlier
+//! generations keep the bare `ProtocolError::DataContractError` and
+//! `ProtocolError::ValueError` they shipped with at protocol versions 9 to 13,
+//! which a node refuses unpaid.
 
 use super::*;
 use crate::consensus::basic::BasicError;
@@ -175,6 +178,66 @@ fn should_keep_reporting_broken_aggregate_rules_as_bare_errors_at_protocol_versi
                 "expected {needle:?}, got: {error}"
             ),
             other => panic!("expected a bare error containing {needle:?}, got {other:?}"),
+        }
+    }
+}
+
+/// A document type whose second property sits at `position`.
+fn schema_with_second_position(position: u64) -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "amount": {"type": "integer", "minimum": 0, "maximum": 1000, "position": 0},
+            "label": {"type": "string", "maxLength": 20, "position": position},
+        },
+        "additionalProperties": false,
+    })
+}
+
+/// Every value the core parse cannot read, with the validation mode that
+/// reads it: a property `position` too large for a `u32`, read where full
+/// validation checks that the positions are continuous, and a `tokenCost` of
+/// the wrong shape, read on a parse that skips the meta-schema, as
+/// `check_tx`'s does (under full validation the meta-schema refuses it first).
+fn unreadable_core_values() -> Vec<(&'static str, Value, bool)> {
+    vec![
+        (
+            "a position past u32::MAX",
+            schema_with_second_position(u64::from(u32::MAX) + 1),
+            true,
+        ),
+        (
+            "a tokenCost with a text tokenPosition",
+            schema_with_doctype_keys(platform_value!({
+                "tokenCost": {"create": {"tokenPosition": "first", "amount": 1}},
+            })),
+            false,
+        ),
+    ]
+}
+
+#[test]
+fn should_report_every_unreadable_core_value_as_a_consensus_error() {
+    for (what, schema, full_validation) in unreadable_core_values() {
+        match parse_dispatched(schema, PlatformVersion::latest(), full_validation) {
+            Err(ProtocolError::ConsensusError(error)) => match *error {
+                ConsensusError::BasicError(BasicError::ValueError(_)) => {}
+                other => panic!("{what}: expected a value error, got {other}"),
+            },
+            other => panic!("{what}: expected a consensus value error, got {other:?}"),
+        }
+    }
+}
+
+/// Generations 1 and 2 are left as they shipped, like the aggregate stages
+/// above.
+#[test]
+fn should_keep_reporting_unreadable_core_values_as_bare_errors_at_protocol_version_13() {
+    let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+    for (what, schema, full_validation) in unreadable_core_values() {
+        match parse_dispatched(schema, platform_version, full_validation) {
+            Err(ProtocolError::ValueError(_)) => {}
+            other => panic!("{what}: expected a bare value error, got {other:?}"),
         }
     }
 }

@@ -1,10 +1,13 @@
-//! An update adding a document type that breaks a doctype-level aggregate rule, through
-//! `check_tx` and block processing.
+//! An update adding a document type the parser refuses with an error that is not a consensus
+//! error at protocol version 13, through `check_tx` and block processing: one breaking a
+//! doctype-level aggregate rule, one with a value the parser cannot read, and, for the keywords
+//! protocol version 14 introduces, one whose string is too long for the parser to size.
 //!
-//! From protocol version 14 the rule is a consensus error: `check_tx` refuses the update with it,
-//! and a block charges the owner and bumps its contract nonce. At protocol version 13 the parser
-//! reports it as an error of its own: `check_tx` fails, and a block records an internal error,
-//! which leaves the owner untouched and keeps the update out of any block.
+//! From protocol version 14 each is a consensus error: `check_tx` refuses the update with it
+//! where `check_tx` parses that far, and a block charges the owner and bumps its contract nonce.
+//! At protocol version 13 the parser reports it as an error of its own: `check_tx` fails, and a
+//! block records an internal error, which leaves the owner untouched and keeps the update out of
+//! any block.
 
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
@@ -253,4 +256,121 @@ async fn should_keep_refusing_an_update_adding_a_summed_u64_property_unpaid_at_p
     );
     assert_eq!(outcome.nonce_after, outcome.nonce_before);
     assert_eq!(outcome.balance_after, outcome.balance_before);
+}
+
+/// A document type whose second property sits at a position past `u32::MAX`. Positions are only
+/// checked to be continuous under full validation, so `check_tx`, which parses without it, admits
+/// the update, and a block refuses it.
+fn position_past_u32_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "amount": {"type": "integer", "minimum": 0, "maximum": 1000, "position": 0},
+            "label": {
+                "type": "string",
+                "maxLength": 20,
+                "position": u64::from(u32::MAX) + 1,
+            },
+        },
+        "additionalProperties": false,
+    })
+}
+
+#[tokio::test]
+async fn should_refuse_an_update_adding_a_position_past_u32_with_a_paid_consensus_error() {
+    let outcome = update_contract_adding_schema(
+        PlatformVersion::latest().protocol_version,
+        position_past_u32_schema(),
+    )
+    .await;
+
+    assert_matches!(outcome.check_tx.as_deref(), Ok([]));
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::BasicError(BasicError::ValueError(_)),
+            ..
+        }
+    );
+    assert_ne!(
+        outcome.nonce_after, outcome.nonce_before,
+        "the rejection bumps the contract nonce"
+    );
+    assert!(
+        outcome.balance_after < outcome.balance_before,
+        "the rejection is charged: {:?} -> {:?}",
+        outcome.balance_before,
+        outcome.balance_after
+    );
+}
+
+#[tokio::test]
+async fn should_keep_refusing_an_update_adding_a_position_past_u32_unpaid_at_protocol_version_13() {
+    let outcome = update_contract_adding_schema(13, position_past_u32_schema()).await;
+
+    assert_matches!(outcome.check_tx.as_deref(), Ok([]));
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::InternalError(message)
+            if message.contains("integer out of bounds")
+    );
+    assert_eq!(outcome.nonce_after, outcome.nonce_before);
+    assert_eq!(outcome.balance_after, outcome.balance_before);
+}
+
+/// The fragment of the parser's message for an entry payload property it cannot size.
+const ENTRY_PAYLOAD_TOO_LONG_MESSAGE: &str = "may encode to more than 65535 bytes";
+
+#[tokio::test]
+async fn should_refuse_an_update_adding_an_entry_payload_string_too_long_to_size_with_a_paid_consensus_error(
+) {
+    // An indexOnly document type whose entry payload is a string of 16384 characters with no
+    // `maxBytes`: at four bytes a character, more than a `u16` counts.
+    let schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "indices": [
+            {"name": "byRequest", "terminal": ["requestHash", "$ownerId"]},
+        ],
+        "entryPayload": ["reply"],
+        "properties": {
+            "requestHash": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 20,
+                "maxItems": 20,
+                "position": 0,
+            },
+            "reply": {"type": "string", "maxLength": 16384, "position": 1},
+        },
+        "required": ["requestHash", "reply"],
+        "additionalProperties": false,
+    });
+    let outcome =
+        update_contract_adding_schema(PlatformVersion::latest().protocol_version, schema).await;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([ConsensusError::BasicError(BasicError::ContractError(
+            DataContractError::InvalidContractStructure(message)
+        ))]) if message.contains(ENTRY_PAYLOAD_TOO_LONG_MESSAGE)
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::PaidConsensusError { error: ConsensusError::BasicError(
+            BasicError::ContractError(DataContractError::InvalidContractStructure(message))
+        ), .. } if message.contains(ENTRY_PAYLOAD_TOO_LONG_MESSAGE)
+    );
+    assert_ne!(
+        outcome.nonce_after, outcome.nonce_before,
+        "the rejection bumps the contract nonce"
+    );
+    assert!(
+        outcome.balance_after < outcome.balance_before,
+        "the rejection is charged: {:?} -> {:?}",
+        outcome.balance_before,
+        outcome.balance_after
+    );
 }

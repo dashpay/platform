@@ -2681,10 +2681,25 @@ pub(super) fn apply_index_only(
                 payload_property, name,
             )));
         }
-        let max_width = property
-            .property_type
-            .max_byte_size(platform_version)?
-            .unwrap_or(u16::MAX);
+        // A string of 16384 characters or more without `maxBytes` may take
+        // more bytes than a `u16` counts, which `max_byte_size` reports as an
+        // overflow. Fee estimation could not size such an entry at all, so it
+        // is refused as over the cap on an entry's value.
+        let max_width = match property.property_type.max_byte_size(platform_version) {
+            Ok(max_width) => max_width.unwrap_or(u16::MAX),
+            Err(ProtocolError::Overflow(_)) => {
+                return Err(structure_error(format!(
+                    "entryPayload property \"{}\" of indexOnly document type \"{}\" may \
+                     encode to more than {} bytes (maxLength counts characters, each up to \
+                     four bytes), over the {}-byte cap on an entry's value",
+                    payload_property,
+                    name,
+                    u16::MAX,
+                    platform_version.system_limits.max_field_value_size,
+                )));
+            }
+            Err(error) => return Err(error),
+        };
         if max_width == u16::MAX {
             return Err(structure_error(format!(
                 "entryPayload property \"{}\" of indexOnly document type \"{}\" must be \
@@ -2947,6 +2962,8 @@ pub(super) fn apply_index_only(
                     component,
                     &property.property_type,
                 )?;
+                // Cannot overflow: the shape check above bounds a string at
+                // 63 characters.
                 let max_width = property
                     .property_type
                     .max_byte_size(platform_version)?

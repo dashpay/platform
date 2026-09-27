@@ -1460,6 +1460,59 @@ fn rejects_an_unbounded_entry_payload_property() {
     );
 }
 
+/// A string of 16384 characters or more without `maxBytes` may take more
+/// bytes than a `u16` counts, which the size helper reports as an overflow:
+/// it is refused as over the cap on an entry's value, as a consensus error.
+/// One character less is sized, and refused by the cap on the payload's
+/// total; a `maxBytes` bounds either within the cap.
+#[test]
+fn should_refuse_an_entry_payload_string_too_long_to_size() {
+    let with_payload = |definition: Value| {
+        let mut schema = login_response_schema();
+        schema
+            .get_mut("properties")
+            .expect("properties accessible")
+            .expect("properties present")
+            .set_value("encryptedPayload", definition)
+            .expect("property applies");
+        schema
+    };
+    for full_validation in [false, true] {
+        expect_structure_error(
+            parse_with(
+                with_payload(
+                    platform_value!({ "type": "string", "maxLength": 16384, "position": 2 }),
+                ),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "\"encryptedPayload\" of indexOnly document type \"like\" may encode to more than \
+             65535 bytes",
+        );
+        expect_structure_error(
+            parse_with(
+                with_payload(
+                    platform_value!({ "type": "string", "maxLength": 16383, "position": 2 }),
+                ),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "may encode to 65569 bytes, over the 5120-byte cap",
+        );
+        parse_with(
+            with_payload(platform_value!({
+                "type": "string",
+                "maxLength": 16384,
+                "maxBytes": 572,
+                "position": 2,
+            })),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .expect("maxBytes bounds the payload string");
+    }
+}
+
 #[test]
 fn rejects_an_optional_entry_payload_property() {
     let mut schema = login_response_schema();

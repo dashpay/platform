@@ -21,6 +21,7 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
 // Only the ranked key-length rule below names `Index`, and it is validation-only.
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
 #[cfg(feature = "validation")]
@@ -171,9 +172,16 @@ fn validate_ranked_index_property_key_length(
 
     // `None` is only produced by the array and object types, which the
     // property-type check right after this one rejects outright with the
-    // error that actually explains the problem.
-    let Some(worst_case_key_length) = property_type.max_byte_size(platform_version)? else {
-        return Ok(());
+    // error that actually explains the problem. A string of 16384 characters
+    // or more without `maxBytes` may take more bytes than a `u16` counts,
+    // which `max_byte_size` reports as an overflow: that is past every
+    // ranked ceiling, so it is held at `u16::MAX` and refused below like any
+    // other string too long for the index.
+    let worst_case_key_length = match property_type.max_byte_size(platform_version) {
+        Ok(Some(worst_case_key_length)) => worst_case_key_length,
+        Ok(None) => return Ok(()),
+        Err(ProtocolError::Overflow(_)) => u16::MAX,
+        Err(error) => return Err(error),
     };
 
     if worst_case_key_length <= limit {
@@ -248,24 +256,33 @@ const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
 const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
     common::no_ranked_index_key_length_check;
 
-/// Reports a rule broken in a stage shared with generation 2 as a consensus
-/// error, as every other rule of this generation is reported.
+/// Reports a rule broken in a stage shared with an earlier generation as a
+/// consensus error, as every other rule of this generation is reported.
 ///
 /// The doctype-level aggregate stages
 /// ([`common::parse_doctype_aggregate_keywords`] and
 /// [`common::apply_doctype_aggregates`]) return the rules they enforce as a
-/// bare `ProtocolError::DataContractError`. A node takes that for a failure of
-/// its own: the transition carrying the contract is refused without a fee or a
-/// nonce bump, and a block carrying it is rejected. As a consensus error it is
-/// a paid rejection instead, like a contract failing any other rule.
+/// bare `ProtocolError::DataContractError`. The core parse
+/// ([`common::parse_document_type_core`]) lets two malformed values through
+/// as a bare `ProtocolError::ValueError`: a property `position` too large for
+/// a `u32`, read where full validation checks that the positions are
+/// continuous, and a `tokenCost` of the wrong shape, read on a parse that
+/// skips the meta-schema, such as `check_tx`'s. A node takes either for a
+/// failure of its own: the transition carrying the contract is refused
+/// without a fee or a nonce bump, and a block carrying it is rejected. As a
+/// consensus error it is a paid rejection instead, like a contract failing
+/// any other rule.
 ///
-/// The stages themselves keep the bare error, because generation 2 still
-/// reaches them at protocol versions 12 and 13. A node running this code at
-/// those versions must judge a block exactly as a node running the release
-/// that shipped them, and that release refuses such a transition unpaid.
+/// The stages themselves keep the bare errors, because earlier generations
+/// still reach them: generation 2 the aggregate stages at protocol versions
+/// 12 and 13, and generations 1 and 2 the core at protocol versions 9 to 13.
+/// A node running this code at those versions must judge a block exactly as a
+/// node running the release that shipped them, and that release refuses such
+/// a transition unpaid.
 fn consensus_or_protocol_shared_stage_error(error: ProtocolError) -> ProtocolError {
     match error {
         ProtocolError::DataContractError(error) => consensus_or_protocol_data_contract_error(error),
+        ProtocolError::ValueError(error) => consensus_or_protocol_value_error(error),
         error => error,
     }
 }
@@ -424,7 +441,8 @@ fn try_from_schema_generation_3(
                 .no_locking_resolution,
         },
         platform_version,
-    )?;
+    )
+    .map_err(consensus_or_protocol_shared_stage_error)?;
 
     let mut v2: DocumentTypeV2 = v1.into();
     v2.action_fees = action_fees;
@@ -1651,6 +1669,41 @@ mod tests {
             "the error must name maxLength, the 59-character bound and the 239-byte key \
              ceiling it derives from; got {msg}"
         );
+    }
+
+    /// A string of 16384 characters or more without `maxBytes` may take more
+    /// bytes than a `u16` counts, which the size helper reports as an
+    /// overflow. It is past every ranked ceiling, so it is refused with the
+    /// same index error as a string one character too long.
+    #[cfg(feature = "validation")]
+    #[test]
+    fn should_refuse_a_ranked_string_too_long_to_size_with_the_index_error() {
+        use crate::consensus::basic::BasicError;
+
+        for (axis, extras, bound) in [
+            ("rankedCountable", count_ranked_extras(), "61"),
+            ("rankedSummable", sum_ranked_extras(), "61"),
+            ("rankedAverageable", avg_ranked_extras(), "59"),
+        ] {
+            match parse_bound(ranked_bound_schema(string_property(16384), extras)) {
+                Err(ProtocolError::ConsensusError(error)) => match *error {
+                    ConsensusError::BasicError(
+                        BasicError::InvalidIndexedPropertyConstraintError(error),
+                    ) => {
+                        assert_eq!(error.constraint_name(), "maxLength", "{axis}");
+                        assert!(
+                            error
+                                .reason()
+                                .starts_with(&format!("should be less or equal {bound} ")),
+                            "{axis}: expected the {bound}-character bound, got: {}",
+                            error.reason()
+                        );
+                    }
+                    other => panic!("{axis}: expected the index constraint error, got {other}"),
+                },
+                other => panic!("{axis}: expected the index constraint error, got {other:?}"),
+            }
+        }
     }
 
     /// A compound `[region, restaurantId]` avg-ranked index over the same
