@@ -207,9 +207,13 @@ impl DocumentCreateTransitionV0 {
                 data_contract,
                 identity_contract_nonce,
             )?),
+            // `$entropy` is raw bytes, so a text value carries them in base64:
+            // `remove_bytes_32` decodes base64, where the identifier readers
+            // (`remove_hash256_bytes`, `remove_identifier`) decode base58.
             entropy: map
-                .remove_hash256_bytes(property_names::ENTROPY)
-                .map_err(ProtocolError::ValueError)?,
+                .remove_bytes_32(property_names::ENTROPY)
+                .map_err(ProtocolError::ValueError)?
+                .to_buffer(),
             prefunded_voting_balance: map
                 .remove_optional_tuple(property_names::PREFUNDED_VOTING_BALANCE)?,
             data: map,
@@ -726,5 +730,34 @@ mod test {
                 .unwrap(),
             alpha_value
         );
+    }
+
+    /// `$entropy` is a binary field, not an identifier: `to_value_map` writes it
+    /// as `Value::Bytes`, and raw bytes cross JSON as base64 while an identifier
+    /// crosses as base58. Reading the field back therefore has to decode base64,
+    /// or a transition does not survive a trip through its own JSON form.
+    #[test]
+    fn should_read_entropy_as_base64_from_the_json_form() {
+        let data_contract = data_contract_with_dynamic_properties();
+        let entropy = [14_u8; 32];
+
+        let raw_document = platform_value!({
+            "$protocolVersion" : 0u32,
+            "$version" : "0".to_string(),
+            "$id" : Identifier::from([11_u8; 32]),
+            "$type" : "test",
+            "$dataContractId" : Identifier::from([13_u8; 32]),
+            "$identityContractNonce": 0u64,
+            "revision" : 1u32,
+            "$entropy" : BASE64_STANDARD.encode(entropy),
+            "$action": 0u8,
+        });
+
+        let transition = DocumentCreateTransition::from_object(raw_document, data_contract)
+            .expect("a base64 $entropy is what the JSON form writes, so it must parse");
+
+        match transition {
+            DocumentCreateTransition::V0(v0) => assert_eq!(v0.entropy, entropy),
+        }
     }
 }
