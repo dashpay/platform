@@ -18,9 +18,9 @@ pub struct VoteResolutionFundFees {
     /// amount here, so choosing between the two changes nothing before 14.
     pub moderation_vote_resolution_fund_required_amount: u64,
     /// How many contenders a contest holds before the fund a contender joining it pays first
-    /// doubles: joining a contest holding fewer costs the contest's fund. Read with
-    /// `contested_document_contenders_per_fund_doubling`, by contested document create state
-    /// validation 2 only.
+    /// doubles: joining a contest holding fewer, a new one included, costs the contest's fund.
+    /// Read with `contested_document_contenders_per_fund_doubling`, by contested document
+    /// create state validation 2 only.
     pub contested_document_contenders_before_fund_doubling: u16,
     /// How many more contenders a contest holds for each further doubling of the fund a
     /// contender joining it pays: joining a contest holding `n` contenders, at least

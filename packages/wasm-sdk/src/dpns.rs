@@ -388,6 +388,7 @@ impl WasmSdk {
             identity_public_key,
             signer,
             preorder_callback: callback_box,
+            contest_fund: None,
         };
 
         let result = self.as_ref().register_dpns_name(input).await?;

@@ -28,7 +28,7 @@ use crate::platform_types::platform::PlatformStateRef;
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentCreateTransitionActionStateValidationV2
 {
     fn validate_state_v2(
-        &self,
+        &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
@@ -40,7 +40,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
 
 impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitionAction {
     fn validate_state_v2(
-        &self,
+        &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
@@ -65,12 +65,11 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
         // join doubles once it holds `contested_document_contenders_before_fund_doubling`
         // contenders and again for every `contested_document_contenders_per_fund_doubling` more,
         // so filling it costs far more than the fund times the contenders. v1 has let the
-        // document join the contest when it exists; a new contest has no contenders to count,
-        // and structure validation has checked its fund.
-        if let Some((contested_document_resource_vote_poll, paid_amount)) =
+        // document join the contest when it exists; a new contest has no contenders to count.
+        if let Some((contested_document_resource_vote_poll, most_it_pays)) =
             self.prefunded_voting_balance()
         {
-            if self.current_store_contest_info().is_some() {
+            let contenders = if self.current_store_contest_info().is_some() {
                 let max_contenders = platform_version.system_limits.max_contenders_per_contest;
                 let (fee_result, contenders) = platform
                     .drive
@@ -97,25 +96,31 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
                         ),
                     ));
                 }
+                contenders
+            } else {
+                0
+            };
 
-                let expected_amount = required_vote_resolution_fund_to_join(
-                    &contested_document_resource_vote_poll.contract.id(),
-                    &contested_document_resource_vote_poll.document_type_name,
-                    contenders,
-                    platform_version,
-                );
-                if *paid_amount < expected_amount {
-                    return Ok(ConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(StateError::DocumentContestNotPaidForError(
-                            DocumentContestNotPaidForError::new(
-                                self.base().id(),
-                                expected_amount,
-                                *paid_amount,
-                            ),
-                        )),
-                    ));
-                }
+            // The contender states the most it pays and is charged the fund to join, what it
+            // stated beyond that staying with it
+            let fund_to_join = required_vote_resolution_fund_to_join(
+                &contested_document_resource_vote_poll.contract.id(),
+                &contested_document_resource_vote_poll.document_type_name,
+                contenders,
+                platform_version,
+            );
+            if *most_it_pays < fund_to_join {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::DocumentContestNotPaidForError(
+                        DocumentContestNotPaidForError::new(
+                            self.base().id(),
+                            fund_to_join,
+                            *most_it_pays,
+                        ),
+                    )),
+                ));
             }
+            self.set_prefunded_voting_fund(fund_to_join);
         }
 
         // The creator of a document being created is its writer

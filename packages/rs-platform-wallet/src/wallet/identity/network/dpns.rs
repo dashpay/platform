@@ -147,6 +147,7 @@ impl IdentityWallet {
             identity_public_key,
             signer,
             preorder_callback: None,
+            contest_fund: None,
         };
 
         let result = self.sdk.register_dpns_name(input).await?;
@@ -241,6 +242,7 @@ impl IdentityWallet {
             // over ownership / wrap in an Arc per call.
             signer: SignerRef(signer),
             preorder_callback: None,
+            contest_fund: None,
         };
 
         let result = self.sdk.register_dpns_name(input).await.map_err(|e| {

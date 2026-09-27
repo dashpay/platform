@@ -104,5 +104,7 @@ pub unsafe fn convert_state_transition_creation_options(
             Some(options.base_feature_version)
         },
         action_fee_agreement: None,
+        // A contested create states the fund to join its contest, which rs-sdk reads
+        contest_fund: None,
     })
 }

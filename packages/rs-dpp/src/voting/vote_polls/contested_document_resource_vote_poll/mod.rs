@@ -102,7 +102,8 @@ impl ContestedDocumentResourceVotePoll {
     }
 
     /// The prefunded voting balance a contender pays to join this contest while it holds
-    /// `contenders` contenders, see [`required_vote_resolution_fund_to_join`].
+    /// `contenders` contenders, see [`required_vote_resolution_fund_to_join`]. A client reads
+    /// the contenders the contest holds and states this, or more, before it joins.
     pub fn required_vote_resolution_fund_to_join(
         &self,
         contenders: u16,
@@ -144,7 +145,9 @@ pub fn required_vote_resolution_fund(
 /// to the 1,000th, the last a contest accepts, 32,768 times it (3,276.8 Dash for a DPNS name).
 /// Before 14 every contender pays the fund.
 ///
-/// This is the least a contender may pay; everything it pays goes to the contest's fund.
+/// From 14 a contender states the most it will pay: it is charged this, what it stated beyond
+/// it stays with the contender, and one stating less is refused. Before 14 a contender states
+/// exactly the fund, and pays what it states.
 pub fn required_vote_resolution_fund_to_join(
     contract_id: &Identifier,
     document_type_name: &str,

@@ -40,11 +40,14 @@ cap:
 | ... | doubles every 50 | doubles every 50 |
 | 950 to 999 | 3,276.8 Dash | 16,384 Dash |
 
-Filling a DPNS contest to 1,000 contenders costs 327,695 Dash (100 at a flat 0.1 Dash). A contender
-states its fund in its prefunded voting balance, and one stating less than the fund of the contest
-it joins is refused, paid, with `DocumentContestNotPaidForError`, which carries the fund it has to
-pay. A contender may state more; everything it states goes to the contest's fund. Before 14 every
-contender stated exactly the fund, however many had joined.
+Filling a DPNS contest to 1,000 contenders costs 327,695 Dash (100 at a flat 0.1 Dash). A contender's
+prefunded voting balance is the most it is willing to pay: it is charged the fund to join the
+contest it joins, and what it stated beyond that stays with it. One stating less, the first
+contender of a new contest included, is refused, paid, with `DocumentContestNotPaidForError`,
+which carries the fund it has to pay. The SDKs read how many contenders a contest holds and state
+that fund unless the caller names the most it will pay, which lets a join go through while others
+join ahead of it. Before 14 every contender stated exactly the contest's fund, however many had
+joined, and paid what it stated.
 
 The index's `contested.resolution` says how the contest is decided.
 

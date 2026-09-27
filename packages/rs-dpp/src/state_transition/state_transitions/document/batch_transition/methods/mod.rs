@@ -25,6 +25,7 @@ use crate::state_transition::batch_transition::batched_transition::document_tran
     DocumentTransition, DocumentTransitionV0Methods,
 };
 use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
+use crate::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
 use crate::state_transition::batch_transition::BatchTransition;
@@ -60,6 +61,12 @@ pub struct StateTransitionCreationOptions {
     /// The action fees the document transition agrees to pay. Required when the document type
     /// charges a fee for the action (protocol version 14).
     pub action_fee_agreement: Option<DocumentActionFeeAgreement>,
+    /// The most a contested document create is willing to pay into the contest it joins. From
+    /// protocol version 14 it pays the fund to join, which doubles as the contest grows past
+    /// 250 contenders, and is refused, paid, when that is more than this. `None` states the
+    /// contest's fund, what joining a contest holding fewer than 250 contenders costs. A create
+    /// that joins no contest ignores it.
+    pub contest_fund: Option<Credits>,
 }
 
 impl StateTransitionCreationOptions {
@@ -107,6 +114,19 @@ impl StateTransitionCreationOptions {
                 .try_set_action_fee_agreement(action_fee_agreement)?;
         }
         Ok(transition)
+    }
+
+    /// `transition` stating the options' contest fund as the most it pays into its contest, if
+    /// they name one and it is a contested create.
+    pub fn apply_contest_fund(&self, mut transition: DocumentTransition) -> DocumentTransition {
+        if let (Some(contest_fund), DocumentTransition::Create(create)) =
+            (self.contest_fund, &mut transition)
+        {
+            if let Some((_, stated)) = create.prefunded_voting_balances_mut() {
+                *stated = contest_fund;
+            }
+        }
+        transition
     }
 }
 
@@ -1197,5 +1217,53 @@ mod action_fee_agreement_option_tests {
         assert!(StateTransitionCreationOptions::default()
             .validate_base_carries_action_fee_agreement(version_13)
             .is_ok());
+    }
+}
+
+#[cfg(test)]
+mod contest_fund_option_tests {
+    use super::*;
+    use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+
+    fn create(prefunded_voting_balance: Option<(String, Credits)>) -> DocumentTransition {
+        let mut create = DocumentCreateTransition::default();
+        *create.prefunded_voting_balances_mut() = prefunded_voting_balance;
+        DocumentTransition::Create(create)
+    }
+
+    fn stated(transition: &DocumentTransition) -> Option<Credits> {
+        let DocumentTransition::Create(create) = transition else {
+            panic!("expected a document create");
+        };
+        create
+            .prefunded_voting_balance()
+            .as_ref()
+            .map(|(_, credits)| *credits)
+    }
+
+    /// A contested create states the options' contest fund as the most it pays, in place of
+    /// the contest's fund it was built with
+    #[test]
+    fn should_state_the_contest_fund_of_the_options_on_a_contested_create() {
+        let options = StateTransitionCreationOptions {
+            contest_fund: Some(7),
+            ..Default::default()
+        };
+        let contested = create(Some(("parentNameAndLabel".to_string(), 1)));
+
+        assert_eq!(
+            stated(&options.apply_contest_fund(contested.clone())),
+            Some(7)
+        );
+        assert_eq!(
+            stated(&StateTransitionCreationOptions::default().apply_contest_fund(contested)),
+            Some(1),
+            "options without a contest fund keep the one the create was built with"
+        );
+        assert_eq!(
+            stated(&options.apply_contest_fund(create(None))),
+            None,
+            "a create that joins no contest ignores it"
+        );
     }
 }
