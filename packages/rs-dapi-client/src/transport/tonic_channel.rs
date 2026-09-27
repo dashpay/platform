@@ -3,6 +3,8 @@ use crate::{request_settings::AppliedRequestSettings, Uri};
 use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::tonic::transport::{Certificate, Channel, ClientTlsConfig};
+use std::error::Error as _;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Platform Client using gRPC transport.
@@ -24,7 +26,7 @@ pub fn create_channel(
     uri: Uri,
     settings: Option<&AppliedRequestSettings>,
 ) -> Result<Channel, TransportError> {
-    let host = uri.host().expect("Failed to get host from URI").to_string();
+    let host = unbracketed(uri.host().expect("Failed to get host from URI")).to_string();
 
     let mut builder = Channel::builder(uri);
 
@@ -32,7 +34,10 @@ pub fn create_channel(
     // Try to add native roots only on platforms where they're available (not iOS)
     let mut tls_config = ClientTlsConfig::new()
         .with_webpki_roots()
-        .assume_http2(true);
+        .assume_http2(true)
+        // Without an explicit name tonic takes `Uri::host`, which keeps the
+        // brackets of an IPv6 literal and is not a valid TLS server name.
+        .domain_name(host);
 
     // Try to add native roots - this may fail on iOS/Android, which is fine since we have webpki roots
     #[cfg(not(any(
@@ -52,7 +57,7 @@ pub fn create_channel(
 
         if let Some(pem) = settings.ca_certificate.as_ref() {
             let cert = Certificate::from_pem(pem);
-            tls_config = tls_config.ca_certificate(cert).domain_name(host);
+            tls_config = tls_config.ca_certificate(cert);
         };
     }
 
@@ -65,9 +70,75 @@ pub fn create_channel(
         .keep_alive_timeout(HTTP2_KEEP_ALIVE_TIMEOUT)
         .keep_alive_while_idle(false);
 
-    builder = builder
-        .tls_config(tls_config)
-        .expect("Failed to set TLS config");
+    builder = builder.tls_config(tls_config).map_err(invalid_tls_config)?;
 
     Ok(builder.connect_lazy())
+}
+
+/// A TLS configuration tonic rejects, as an `InvalidArgument` status that
+/// keeps the cause: tonic's own message names only the error kind, the cause
+/// (an invalid server name, a malformed certificate) is in its source chain.
+fn invalid_tls_config(error: dapi_grpc::tonic::transport::Error) -> TransportError {
+    let mut message = format!("invalid TLS configuration: {error}");
+    let mut cause = error.source();
+    while let Some(current) = cause {
+        message.push_str(&format!(": {current}"));
+        cause = current.source();
+    }
+    let mut status = dapi_grpc::tonic::Status::invalid_argument(message);
+    status.set_source(Arc::new(error));
+    TransportError::Grpc(status)
+}
+
+/// The host of a URI without the brackets an IPv6 literal carries in it
+/// (`[2001:db8::1]` becomes `2001:db8::1`); any other host is unchanged.
+pub(crate) fn unbracketed(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::RequestSettings;
+
+    #[test]
+    fn should_strip_only_ipv6_brackets() {
+        assert_eq!(unbracketed("[2001:db8::1]"), "2001:db8::1");
+        assert_eq!(unbracketed("127.0.0.1"), "127.0.0.1");
+        assert_eq!(unbracketed("evo.example"), "evo.example");
+    }
+
+    /// `create_channel` used to panic for every IPv6 endpoint: the bracketed
+    /// host is not a valid TLS server name.
+    #[tokio::test]
+    async fn should_create_a_channel_for_an_ipv6_endpoint() {
+        let uri: Uri = "https://[2001:db8::1]:443".parse().expect("uri");
+        create_channel(uri.clone(), None).expect("default roots");
+
+        let settings = RequestSettings::default()
+            .finalize()
+            .with_ca_certificate(Some(Certificate::from_pem("fake-pem-data")));
+        create_channel(uri, Some(&settings)).expect("explicit CA");
+    }
+
+    #[test]
+    fn should_keep_the_cause_of_an_invalid_tls_configuration() {
+        // Not a valid TLS server name.
+        let uri: Uri = "https://foo..bar:1443".parse().expect("uri");
+        let Err(TransportError::Grpc(status)) = create_channel(uri, None) else {
+            panic!("an invalid server name must be rejected");
+        };
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::InvalidArgument);
+        assert!(
+            status.message().contains("invalid dns name"),
+            "{}",
+            status.message()
+        );
+        assert!(
+            status.source().is_some(),
+            "the tonic error stays in the source chain"
+        );
+    }
 }
