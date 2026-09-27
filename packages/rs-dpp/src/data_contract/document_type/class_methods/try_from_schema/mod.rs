@@ -293,26 +293,32 @@ fn insert_values_nested(
                 // reintroduce a nested-property sort — even a correct one — nor a panicking
                 // `position` read here.
 
-                // Create a new set with the prefix removed from the keys
+                // Create a new set with the prefix removed from the keys: an entry for
+                // a member of this object is the object's name, one separator byte, then
+                // the member's own entry.
+                //
+                // Every protocol version reaches this helper, so the match stays
+                // output-identical to the byte-offset slice it replaced: `str::get`
+                // returns that same slice wherever the slice was valid, and `None` (no
+                // member entry) elsewhere. Requiring the separator to be '.' would change
+                // how some schemas that parse today are read, so it needs a new
+                // generation.
                 let stripped_required: BTreeSet<String> = known_required
                     .iter()
                     .filter_map(|key| {
-                        if key.starts_with(&property_key) && key.len() > property_key.len() {
-                            Some(key[property_key.len() + 1..].to_string())
-                        } else {
-                            None
-                        }
+                        key.strip_prefix(property_key.as_str())
+                            .and_then(|rest| rest.get(1..))
+                            .map(str::to_string)
                     })
                     .collect();
 
+                // Matched exactly like `stripped_required` above
                 let stripped_transient: BTreeSet<String> = known_transient
                     .iter()
                     .filter_map(|key| {
-                        if key.starts_with(&property_key) && key.len() > property_key.len() {
-                            Some(key[property_key.len() + 1..].to_string())
-                        } else {
-                            None
-                        }
+                        key.strip_prefix(property_key.as_str())
+                            .and_then(|rest| rest.get(1..))
+                            .map(str::to_string)
                     })
                     .collect();
 
@@ -5356,6 +5362,119 @@ mod tests {
                 .expect("the transform should survive the schema parse")
                 .overlap_factor(),
             1
+        );
+    }
+
+    // ================================================================
+    //  required and transient entries of object members
+    // ================================================================
+
+    /// A document type with one object property, `profile`, whose own
+    /// `required` list names its `name` member; `required` and `transient`
+    /// are the document type's top-level lists.
+    fn object_members_schema(required: &[&str], transient: &[&str]) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "profile": {
+                    "type": "object",
+                    "position": 0,
+                    "properties": {
+                        "name": {"type": "string", "position": 0, "maxLength": 60},
+                        "bio": {"type": "string", "position": 1, "maxLength": 60},
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                },
+            },
+            "required": required,
+            "transient": transient,
+            "additionalProperties": false
+        })
+    }
+
+    /// The members of the `profile` object of [`object_members_schema`].
+    fn profile_members(document_type: &DocumentType) -> &IndexMap<String, DocumentProperty> {
+        let DocumentPropertyType::Object(members) =
+            &document_type.properties()["profile"].property_type
+        else {
+            panic!("profile should parse as an object");
+        };
+        members
+    }
+
+    #[test]
+    fn should_match_required_entries_to_object_members_by_prefix() {
+        for platform_version in [
+            PlatformVersion::latest(),
+            PlatformVersion::get(13).expect("platform version 13 should exist"),
+        ] {
+            let expected = try_document_type_from_schema_on_version(
+                object_members_schema(&["profile"], &[]),
+                platform_version,
+            )
+            .expect("should parse");
+            let document_type = try_document_type_from_schema_on_version(
+                object_members_schema(&["profile", "profileé"], &[]),
+                platform_version,
+            )
+            .expect("an entry naming no member should parse");
+
+            // Every member stays as the object's own list declares it
+            let members = profile_members(&document_type);
+            assert!(members["name"].required);
+            assert!(!members["bio"].required);
+            assert_eq!(document_type.properties(), expected.properties());
+            assert_eq!(
+                document_type.flattened_properties(),
+                expected.flattened_properties()
+            );
+        }
+
+        try_document_type_from_schema_full_validation(object_members_schema(
+            &["profile", "profileé"],
+            &[],
+        ))
+        .expect("an entry naming no member should pass full validation");
+    }
+
+    #[test]
+    fn should_match_transient_entries_to_object_members_by_prefix() {
+        for platform_version in [
+            PlatformVersion::latest(),
+            PlatformVersion::get(13).expect("platform version 13 should exist"),
+        ] {
+            let expected = try_document_type_from_schema_on_version(
+                object_members_schema(&["profile"], &[]),
+                platform_version,
+            )
+            .expect("should parse");
+            let document_type = try_document_type_from_schema_on_version(
+                object_members_schema(&["profile"], &["profileé"]),
+                platform_version,
+            )
+            .expect("an entry naming no member should parse");
+
+            let members = profile_members(&document_type);
+            assert!(!members["name"].transient);
+            assert!(!members["bio"].transient);
+            assert_eq!(document_type.properties(), expected.properties());
+            assert_eq!(
+                document_type.flattened_properties(),
+                expected.flattened_properties()
+            );
+        }
+
+        // From protocol version 14 the validating parse holds every transient
+        // entry to naming a top-level property
+        let err = try_document_type_from_schema_full_validation(object_members_schema(
+            &["profile"],
+            &["profileé"],
+        ))
+        .expect_err("a transient entry naming no top-level property should be refused");
+        assert!(
+            err.to_string().contains("not a top-level property"),
+            "expected the transient entry refusal, got: {err}"
         );
     }
 }
