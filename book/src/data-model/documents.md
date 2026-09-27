@@ -680,7 +680,7 @@ The check runs where the JSON schema validation of a document's properties runs,
 
 ## Property Constraints (`propertyConstraints`)
 
-Protocol version 14 adds the doctype-level `propertyConstraints` keyword: named rules the integer properties of every created or replaced document must meet, where JSON Schema can only bound one property at a time. Each rule is a condition: a comparison of two integer expressions, or `anyOf`, `allOf` or `not` over conditions.
+Protocol version 14 adds the doctype-level `propertyConstraints` keyword: named rules the properties of every created or replaced document must meet, where JSON Schema can only bound one property at a time. Each rule is a condition: a comparison of two integer expressions, a test of whether the document holds a property, or `anyOf`, `allOf` or `not` over conditions.
 
 ```json
 "propertyConstraints": {
@@ -696,13 +696,17 @@ Protocol version 14 adds the doctype-level `propertyConstraints` keyword: named 
   },
   "feeWaivedOrAtLeastTen": {
     "anyOf": [{ "equal": ["fee", 0] }, { "greaterThanOrEqual": ["fee", 10] }]
+  },
+  "discountGivenAboveZero": {
+    "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
   }
 }
 ```
 
-The first rule reads `((price + fee) * quantity) <= deposit`, the last `fee == 0 || fee >= 10`. A rule's name is 1 to 64 letters, digits or underscores, and the rule is a condition, an object with one key:
+The first rule reads `((price + fee) * quantity) <= deposit`, `feeWaivedOrAtLeastTen` reads `fee == 0 || fee >= 10`, and the last lets an offer leave its discount out but not give a discount of 0. A rule's name is 1 to 64 letters, digits or underscores, and the rule is a condition, an object with one key:
 
 - a comparison, `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` or `greaterThanOrEqual`, listing the left and the right expression;
+- `{ "present": path }`, holding if the document holds the property, and `{ "absent": path }`, holding if it leaves it out (a property set to null counts as left out). An operand reads a property the document leaves out as 0, so only these tell "not given" from "given as 0". They may name a property of any type, an object or a member of one included, since they read no value;
 - `{ "anyOf": [...] }`, holding if at least one of two or more conditions holds;
 - `{ "allOf": [...] }`, holding if every one of two or more conditions holds;
 - `{ "not": condition }`, holding if its one condition does not.
@@ -721,11 +725,11 @@ The arithmetic is exact over `i128`. Operands are evaluated left to right, and e
 
 Conditions are checked in declared order and no further than the outcome needs: a comparison evaluates its left side, then its right; `anyOf` stops at the first condition that holds and `allOf` at the first that fails. A fault in a condition that is checked breaks the rule whatever the others would say, and `not` does not turn it into a pass. So an earlier condition guards a later one: `{ "anyOf": [{ "equal": ["b", 0] }, { "equal": [{ "divide": ["a", "b"] }, 2] }] }` holds for a `b` of 0 without dividing by it, while the same two conditions the other way round divide by zero and break the rule.
 
-The parser (generation 3, meta-schema v3) checks the keyword on every parse, stored contracts included: the shape, that every path names an integer property of the type (a nested one by its dotted path) that is neither `transient` nor inside a transient object (a transient value is never stored, so a stored document could not be held to the rule), that every comparison reads at least one property (a constant one would make its rule, or an `anyOf` around it, hold for every document or for none), that no `anyOf` or `allOf` holds one of its own kind directly and no `not` a `not`, that no literal divisor is 0 and no literal exponent negative, and that no condition or operand nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), a constant that keeps a parse without full validation from recursing without bound and that no registrable rule comes near. Under full validation, when a contract registers or updates, it also holds the limits: at most `SystemLimits::max_property_constraints` rules per type (16) and `max_property_constraint_nodes` nodes per rule (32), counting every comparison and logical operator, every arithmetic operator and every operand, and that no `anyOf` or `allOf` lists the same condition twice (conditions that parse alike, so `1` and `1.0` are the same value). The rules are fixed when the document type is created: adding, removing or changing one is an incompatible schema change (`IncompatibleDocumentTypeSchemaError`, 10246), since stored documents were judged against the rules as they were.
+The parser (generation 3, meta-schema v3) checks the keyword on every parse, stored contracts included: the shape, that every path an operand reads names an integer property of the type (a nested one by its dotted path) and every path `present` or `absent` tests names a property of the type, and that neither is `transient` nor inside a transient object (a transient value is never stored, so a stored document could not be held to the rule), that every comparison reads at least one property (a constant one would make its rule, or an `anyOf` around it, hold for every document or for none), that no `anyOf` or `allOf` holds one of its own kind directly and no `not` a `not`, that no literal divisor is 0 and no literal exponent negative, and that no condition or operand nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), a constant that keeps a parse without full validation from recursing without bound and that no registrable rule comes near. Under full validation, when a contract registers or updates, it also holds the limits: at most `SystemLimits::max_property_constraints` rules per type (16) and `max_property_constraint_nodes` nodes per rule (32), counting every comparison and logical operator, every `present` or `absent`, every arithmetic operator and every operand, and that no `anyOf` or `allOf` lists the same condition twice (conditions that parse alike, so `1` and `1.0` are the same value). The rules are fixed when the document type is created: adding, removing or changing one is an incompatible schema change (`IncompatibleDocumentTypeSchemaError`, 10246), since stored documents were judged against the rules as they were.
 
 Enforcement lives in `DataContract::validate_document_properties` (generation 0, extended in place: the call is inert before protocol version 14, where `validate_property_constraints` is `None`), after the schema validation. Document create and replace structure validation call it, so consensus applies the rules, and so does every client that validates a document before sending it. The rules are checked in name order against the document's properties, which for a replace is the whole document, and the first one broken fails with `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the document type, the rule and why: the rule does not hold, or evaluating it overflowed, divided by zero, raised to a negative power or read a value that is not an integer. The check reads no state and changes nothing stored, so it adds no fee; the limits bound its cost. Transfers, purchases and price updates change no property and are not judged.
 
-In Rust the rules are `DocumentTypeV2Getters::property_constraints` (a map from name to `PropertyConstraint`, a comparison or an `anyOf`, `allOf` or `not` of them, empty on types that predate the keyword), each rule's `holds` and `violation` evaluate it against a document's data, and the document check is `DocumentTypeV0Methods::validate_property_constraints`.
+In Rust the rules are `DocumentTypeV2Getters::property_constraints` (a map from name to `PropertyConstraint`: a comparison, a `present` or `absent`, or an `anyOf`, `allOf` or `not` of them, empty on types that predate the keyword; `property_reads` lists what a rule reads and whether by value or by presence), each rule's `holds` and `violation` evaluate it against a document's data, and the document check is `DocumentTypeV0Methods::validate_property_constraints`.
 
 ## Rules and Guidelines
 
