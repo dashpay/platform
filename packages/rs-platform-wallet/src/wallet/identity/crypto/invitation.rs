@@ -43,7 +43,7 @@
 
 use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use dashcore::transaction::special_transaction::TransactionPayload;
-use dashcore::{Network, PrivateKey, ScriptBuf, Transaction};
+use dashcore::{Network, PrivateKey, ScriptBuf, Transaction, TxOut};
 use dpp::prelude::AssetLockProof;
 
 use crate::error::PlatformWalletError;
@@ -514,6 +514,15 @@ pub fn voucher_output_index(
     transaction: &Transaction,
     voucher_key: &SecretKey,
 ) -> Result<u32, PlatformWalletError> {
+    voucher_credit_output(transaction, voucher_key).map(|(index, _)| index)
+}
+
+/// [`voucher_output_index`] plus the selected credit output itself, so a
+/// caller that needs the voucher's value reads it from the same match.
+pub fn voucher_credit_output<'a>(
+    transaction: &'a Transaction,
+    voucher_key: &SecretKey,
+) -> Result<(u32, &'a TxOut), PlatformWalletError> {
     let Some(TransactionPayload::AssetLockPayloadType(payload)) =
         &transaction.special_transaction_payload
     else {
@@ -525,8 +534,9 @@ pub fn voucher_output_index(
     payload
         .credit_outputs
         .iter()
-        .position(|out| out.script_pubkey == expected)
-        .map(|idx| idx as u32)
+        .enumerate()
+        .find(|(_, out)| out.script_pubkey == expected)
+        .map(|(index, out)| (index as u32, out))
         .ok_or_else(|| {
             invalid("voucher key does not control any credit output of the funding transaction")
         })
@@ -766,6 +776,18 @@ mod tests {
         // Voucher output sits at index 2, behind two decoy outputs.
         let tx = asset_lock_tx_paying_voucher_at(&key, 2);
         assert_eq!(voucher_output_index(&tx, &key).unwrap(), 2);
+    }
+
+    /// The credit output comes back with its index, so its value is the
+    /// voucher's, not a decoy's.
+    #[test]
+    fn should_return_the_voucher_credit_output_with_its_index() {
+        let key = voucher();
+        let tx = asset_lock_tx_paying_voucher_at(&key, 2);
+        let (index, output) = voucher_credit_output(&tx, &key).unwrap();
+        assert_eq!(index, 2);
+        assert_eq!(output.value, 100_000, "the decoys before it carry 50_000");
+        assert_eq!(output.script_pubkey, voucher_credit_script(&key));
     }
 
     #[test]

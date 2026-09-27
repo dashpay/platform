@@ -977,6 +977,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockNotTracked(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
             }
+            // A DashPay invitation link for the other network: definitive, so
+            // hosts can say so instead of treating it as undetermined.
+            PlatformWalletError::InvitationNetworkMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidNetwork
+            }
             PlatformWalletError::AssetLockAlreadyConsumed(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
             }
