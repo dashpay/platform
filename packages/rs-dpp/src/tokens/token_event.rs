@@ -815,19 +815,31 @@ impl TokenEvent {
     }
 
     /// Returns a reference to the public note if the variant includes one.
+    ///
+    /// Every variant is listed: the co-signers of a pending group action read the proposer's
+    /// note here while deciding whether to sign, so a variant that carries one and is not
+    /// listed shows them nothing. Adding a variant is then a compile error rather than a note
+    /// that silently goes missing.
     pub fn public_note(&self) -> Option<&str> {
         match self {
-            TokenEvent::Mint(_, _, Some(note))
-            | TokenEvent::Burn(_, _, Some(note))
-            | TokenEvent::Freeze(_, Some(note))
-            | TokenEvent::Unfreeze(_, Some(note))
-            | TokenEvent::DestroyFrozenFunds(_, _, Some(note))
-            | TokenEvent::Transfer(_, Some(note), _, _, _)
-            | TokenEvent::Claim(_, _, Some(note))
-            | TokenEvent::EmergencyAction(_, Some(note))
-            | TokenEvent::ConfigUpdate(_, Some(note))
-            | TokenEvent::ChangePriceForDirectPurchase(_, Some(note)) => Some(note),
-            _ => None,
+            TokenEvent::Mint(_, _, note)
+            | TokenEvent::Burn(_, _, note)
+            | TokenEvent::Freeze(_, note)
+            | TokenEvent::Unfreeze(_, note)
+            | TokenEvent::DestroyFrozenFunds(_, _, note)
+            | TokenEvent::Transfer(_, note, _, _, _)
+            | TokenEvent::Claim(_, _, note)
+            | TokenEvent::EmergencyAction(_, note)
+            | TokenEvent::ConfigUpdate(_, note)
+            | TokenEvent::ChangePriceForDirectPurchase(_, note)
+            | TokenEvent::MintToPool(_, _, note)
+            | TokenEvent::BurnFromPool(_, _, note) => note.as_deref(),
+            TokenEvent::DirectPurchase(_, _)
+            | TokenEvent::Shield(_)
+            | TokenEvent::Unshield(_, _)
+            | TokenEvent::ShieldedTransfer
+            | TokenEvent::ClaimToPool(_)
+            | TokenEvent::DirectPurchaseToPool(_, _) => None,
         }
     }
 
@@ -1210,5 +1222,75 @@ mod tests {
     #[test]
     fn format_note_some_returns_formatted() {
         assert_eq!(format_note(&Some("hello".to_string())), " (note: hello)");
+    }
+}
+
+#[cfg(test)]
+mod public_note_tests {
+    use super::*;
+    use crate::group::action_event::GroupActionEvent;
+
+    fn actions_digest() -> Identifier {
+        Identifier::from([7u8; 32])
+    }
+
+    /// The co-signers of a pending group action read the proposer's note off the event to
+    /// decide whether to sign it. A pool mint or burn carries one like any other proposal.
+    #[test]
+    fn should_show_the_proposers_note_on_a_pool_mint_or_burn() {
+        let mint = TokenEvent::MintToPool(
+            100,
+            actions_digest(),
+            Some("quarterly issuance".to_string()),
+        );
+        assert_eq!(mint.public_note(), Some("quarterly issuance"));
+        assert_eq!(
+            GroupActionEvent::TokenEvent(mint).public_note(),
+            Some("quarterly issuance")
+        );
+
+        let burn = TokenEvent::BurnFromPool(
+            40,
+            actions_digest(),
+            Some("retiring treasury notes".to_string()),
+        );
+        assert_eq!(burn.public_note(), Some("retiring treasury notes"));
+        assert_eq!(
+            GroupActionEvent::TokenEvent(burn).public_note(),
+            Some("retiring treasury notes")
+        );
+    }
+
+    /// A pool mint or burn the proposer left unannotated reads as no note, not as an empty one.
+    #[test]
+    fn should_report_no_note_on_an_unannotated_pool_mint_or_burn() {
+        assert_eq!(
+            TokenEvent::MintToPool(100, actions_digest(), None).public_note(),
+            None
+        );
+        assert_eq!(
+            TokenEvent::BurnFromPool(40, actions_digest(), None).public_note(),
+            None
+        );
+    }
+
+    /// The events that carry no note at all: nothing to show a co-signer.
+    #[test]
+    fn should_report_no_note_on_the_events_that_carry_none() {
+        for event in [
+            TokenEvent::DirectPurchase(5, 50),
+            TokenEvent::Shield(5),
+            TokenEvent::Unshield(Identifier::from([1u8; 32]), 5),
+            TokenEvent::ShieldedTransfer,
+            TokenEvent::ClaimToPool(5),
+            TokenEvent::DirectPurchaseToPool(5, 50),
+        ] {
+            assert_eq!(
+                event.public_note(),
+                None,
+                "{} carries no note",
+                event.associated_document_type_name()
+            );
+        }
     }
 }
