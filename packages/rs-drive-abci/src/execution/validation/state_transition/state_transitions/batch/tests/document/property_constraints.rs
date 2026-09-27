@@ -1,7 +1,8 @@
 //! End-to-end coverage for the `propertyConstraints` doctype keyword (protocol
 //! version 14): a document type names rules its documents' integer properties
-//! must meet, each a comparison of two integer expressions, a `present` or
-//! `absent` test, or an `anyOf`, `allOf` or `not` of such conditions. A create or replace
+//! must meet, each a comparison of two integer expressions, an `in` list of
+//! values, a `present` or `absent` test, or an `anyOf`, `allOf` or `not` of
+//! such conditions. A create or replace
 //! that breaks one is consensus-rejected with
 //! `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the rule
 //! and why, and leaves the stored document untouched. A property the document
@@ -42,6 +43,7 @@ mod property_constraints_tests {
     /// * `feeWaivedOnlyWithDiscount`: `!(fee == 0 && discount == 0)`
     /// * `feeWaivedOrAtLeastTen`: `fee == 0 || fee >= 10`
     /// * `perUnitDeposit`: `deposit / quantity >= 1`, which divides by zero for no quantity
+    /// * `tieredFee`: `fee` is one of 0, 10, 25 or 50
     fn offer_schema() -> Value {
         platform_value!({
             "type": "object",
@@ -83,7 +85,8 @@ mod property_constraints_tests {
                 },
                 "perUnitDeposit": {
                     "greaterThanOrEqual": [{ "divide": ["deposit", "quantity"] }, 1]
-                }
+                },
+                "tieredFee": { "in": ["fee", [0, 10, 25, 50]] }
             },
             "additionalProperties": false
         })
@@ -518,6 +521,32 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A fee of 20 is not one of the tiers; 25 is. (100 + 25) * 2 = 250 <= 300.
+    #[tokio::test]
+    async fn should_judge_an_in_against_its_listed_values() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| {
+                document.set("fee", Value::U64(20));
+                document.set("deposit", Value::U64(300));
+            })
+            .await;
+        expect_violated(result, "tieredFee", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("fee", Value::U64(25));
+                    document.set("deposit", Value::U64(300));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
     }
 
     #[tokio::test]

@@ -189,6 +189,30 @@ fn should_parse_combined_conditions_and_check_every_property_they_read() {
     }
 }
 
+/// An `in` registers on both paths, and its operand reads by value, so it must
+/// read integer properties.
+#[test]
+fn should_parse_an_in_and_hold_its_operand_to_integer_properties() {
+    let rules = json!({
+        "rule": { "in": [{ "add": ["fee", { "ifAbsent": ["meta.total", 0] }] }, [0, 10, 25]] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        assert_eq!(
+            document_type.property_constraints()["rule"].property_paths(),
+            ["fee", "meta.total"]
+        );
+        expect_structure_error(
+            parse_order(
+                json!({ "rule": { "in": ["note", [1, 2]] } }),
+                full_validation,
+            ),
+            "rule \"rule\" reads \"note\", which has type string, not integer",
+        );
+    }
+}
+
 /// A system property is not a property of the type: the meta-schema refuses
 /// its `$` when registering, and the parser the path when reading.
 #[test]
@@ -466,6 +490,26 @@ fn should_hold_the_limits_under_full_validation_only() {
         ),
     );
     parse_order(logical_rule_of(max_nodes + 1), false).expect("a stored contract stays readable");
+
+    // An in is one node, its operand one more, and each value it lists one
+    let in_rule_of = |nodes: usize| {
+        let values: Vec<_> = (0..nodes - 2).map(|value| json!(value)).collect();
+        json!({ "rule": { "in": ["price", values] } })
+    };
+    let document_type =
+        parse_order(in_rule_of(max_nodes), true).expect("the most values an in may list");
+    assert_eq!(
+        document_type.property_constraints()["rule"].node_count(),
+        max_nodes
+    );
+    expect_structure_error(
+        parse_order(in_rule_of(max_nodes + 1), true),
+        &format!(
+            "rule \"rule\" has {} nodes, above the maximum of {max_nodes}",
+            max_nodes + 1
+        ),
+    );
+    parse_order(in_rule_of(max_nodes + 1), false).expect("a stored contract stays readable");
 }
 
 /// No `anyOf` or `allOf` may list the same condition twice, checked when a contract
@@ -556,6 +600,13 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
         json!({ "rule": { "absent": ["note"] } }),
         json!({ "rule": { "present": "note", "absent": "fee" } }),
         json!({ "rule": { "not": { "present": { "add": ["price", 1] } } } }),
+        json!({ "rule": { "in": ["price"] } }),
+        json!({ "rule": { "in": ["price", [1]] } }),
+        json!({ "rule": { "in": ["price", [1, 1]] } }),
+        json!({ "rule": { "in": ["price", [1, 1.5]] } }),
+        json!({ "rule": { "in": ["price", [1, "fee"]] } }),
+        json!({ "rule": { "in": ["price", [1, 2], 3] } }),
+        json!({ "rule": { "in": ["price", 1] } }),
     ] {
         let registered = parse_order(rules.clone(), true);
         assert!(

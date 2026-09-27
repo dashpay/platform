@@ -1,7 +1,8 @@
 //! The doctype-level `propertyConstraints` keyword (meta-schema v3, protocol
 //! version 14): named rules every document of the type must meet, each a
 //! condition on the document's properties: a comparison of two integer
-//! expressions, a test of whether the document holds a property (`present`,
+//! expressions, a test of whether an integer expression takes one of listed
+//! values (`in`), a test of whether the document holds a property (`present`,
 //! `absent`), or `anyOf`, `allOf` or `not` over conditions.
 //!
 //! ```json
@@ -21,7 +22,8 @@
 //!   },
 //!   "discountGivenAboveZero": {
 //!     "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
-//!   }
+//!   },
+//!   "tieredFee": { "in": ["fee", [0, 10, 25, 50]] }
 //! }
 //! ```
 //!
@@ -48,7 +50,7 @@ use crate::consensus::basic::document::PropertyConstraintViolation;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 use platform_value::{Value, ValueMapHelper};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 /// The operand key naming a property together with the value it takes when
@@ -65,6 +67,7 @@ const ALL_OF: &str = "allOf";
 const NOT: &str = "not";
 const PRESENT: &str = "present";
 const ABSENT: &str = "absent";
+const IN: &str = "in";
 
 /// Every key an operand object may hold, for the errors.
 const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power or ifAbsent";
@@ -300,8 +303,9 @@ pub enum PropertyRead {
 }
 
 /// A rule of `propertyConstraints`, or a condition inside one: a comparison of
-/// two integer expressions, a test of whether the document holds a property,
-/// or `anyOf`, `allOf` or `not` over conditions.
+/// two integer expressions, a test of whether an integer expression takes one
+/// of listed values, a test of whether the document holds a property, or
+/// `anyOf`, `allOf` or `not` over conditions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PropertyConstraint {
     /// A comparison: the two sides must compare as `comparison` says.
@@ -309,6 +313,12 @@ pub enum PropertyConstraint {
         comparison: ConstraintComparison,
         left: ConstraintExpression,
         right: ConstraintExpression,
+    },
+    /// `in`: the expression takes one of two or more distinct integer values,
+    /// what an `anyOf` of `equal`s says in far fewer nodes.
+    In {
+        operand: ConstraintExpression,
+        values: BTreeSet<i128>,
     },
     /// `present`: the document holds the property at the dotted path. One it
     /// leaves out, or sets to null, is absent, as it is for an operand. Unlike
@@ -349,6 +359,9 @@ impl PropertyConstraint {
                 let (left, right) = (left.evaluate(data)?, right.evaluate(data)?);
                 Ok(comparison.holds(left, right))
             }
+            PropertyConstraint::In { operand, values } => {
+                Ok(values.contains(&operand.evaluate(data)?))
+            }
             PropertyConstraint::Present(path) => Ok(is_present(data, path)),
             PropertyConstraint::Absent(path) => Ok(!is_present(data, path)),
             PropertyConstraint::AnyOf(conditions) => {
@@ -384,14 +397,15 @@ impl PropertyConstraint {
 
     /// The nodes of the rule, counted against
     /// `SystemLimits::max_property_constraint_nodes`: every comparison and
-    /// logical operator, every `present` or `absent` with the property it
-    /// names, every arithmetic operator and every operand (an integer value, or
-    /// a property with or without `ifAbsent`).
+    /// logical operator, every `in` and each value it lists, every `present` or
+    /// `absent` with the property it names, every arithmetic operator and every
+    /// operand (an integer value, or a property with or without `ifAbsent`).
     pub fn node_count(&self) -> usize {
         1 + match self {
             PropertyConstraint::Compare { left, right, .. } => {
                 left.node_count() + right.node_count()
             }
+            PropertyConstraint::In { operand, values } => operand.node_count() + values.len(),
             PropertyConstraint::Present(_) | PropertyConstraint::Absent(_) => 0,
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
                 conditions.iter().map(PropertyConstraint::node_count).sum()
@@ -418,12 +432,13 @@ impl PropertyConstraint {
     }
 
     /// Where an `anyOf` or `allOf` of the rule lists the same condition twice:
-    /// the repeat's place and the earlier one's (`anyOf[2]` and `anyOf[0]`), the
-    /// first found in declared order, `None` when no list does. Conditions are
-    /// alike when they parse alike, so `1` and `1.0` are the same value, and so
-    /// are `"price"` and `{ "ifAbsent": ["price", 0] }`. Checked under full
-    /// validation with the limits, which bound the lists it compares; a stored
-    /// rule was checked when its contract registered.
+    /// the repeat's place and the earlier one's (`anyOf[2]` and `anyOf[0]`),
+    /// the first found in declared order, `None` when no list does. Conditions
+    /// are alike when they parse alike, so `1` and `1.0` are the same value,
+    /// `"price"` and `{ "ifAbsent": ["price", 0] }` the same operand, and two
+    /// `in`s listing the same values in another order the same condition.
+    /// Checked under full validation with the limits, which bound the lists it
+    /// compares; a stored rule was checked when its contract registered.
     pub fn repeated_condition(&self) -> Option<(String, String)> {
         self.find_repeated_condition(&mut String::new())
     }
@@ -434,6 +449,7 @@ impl PropertyConstraint {
     fn find_repeated_condition(&self, at: &mut String) -> Option<(String, String)> {
         let (key, conditions) = match self {
             PropertyConstraint::Compare { .. }
+            | PropertyConstraint::In { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => return None,
             PropertyConstraint::AnyOf(conditions) => (ANY_OF, conditions),
@@ -471,6 +487,7 @@ impl PropertyConstraint {
                 left.collect_property_reads(reads);
                 right.collect_property_reads(reads);
             }
+            PropertyConstraint::In { operand, .. } => operand.collect_property_reads(reads),
             PropertyConstraint::Present(path) | PropertyConstraint::Absent(path) => {
                 reads.push((path, PropertyRead::Presence))
             }
@@ -491,17 +508,19 @@ impl PropertyConstraint {
 /// The rules of the declaration's shape are checked here, on every parse: an
 /// object of one or more rules, each named with 1 to 64 letters, digits or
 /// underscores and holding one condition. A condition is an object with one
-/// key: a comparison of exactly two operands, `present` or `absent` with a
-/// property path, `anyOf` or `allOf` with two or more conditions, none of them directly the same operator (it says what one
-/// flat list says), or `not` with one condition that is not directly another
-/// `not`. An operand is an integer value, a property path, or
-/// an object with one key: `ifAbsent` with a path and an integer value, `add`
-/// or `multiply` with two or more operands, or `subtract`, `divide`, `modulo`
-/// or `power` with exactly two. An integer value may be spelled as a float with
-/// no fractional part, as the meta-schema's `integer` type admits one. A
-/// literal 0 divisor, a literal negative exponent, a comparison that reads no
-/// property, which would hold for every document or for none, and a condition
-/// or operand deeper than [`MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH`] are refused.
+/// key: a comparison of exactly two operands, `in` with an operand and a list
+/// of two or more distinct integer values, `present` or `absent` with a
+/// property path, `anyOf` or `allOf` with two or more conditions, none of them
+/// directly the same operator (it says what one flat list says), or `not` with
+/// one condition that is not directly another `not`. An operand is an integer
+/// value, a property path, or an object with one key: `ifAbsent` with a path
+/// and an integer value, `add` or `multiply` with two or more operands, or
+/// `subtract`, `divide`, `modulo` or `power` with exactly two. An integer value
+/// may be spelled as a float with no fractional part, as the meta-schema's
+/// `integer` type admits one. A literal 0 divisor, a literal negative exponent,
+/// a comparison or `in` that reads no property, which would hold for every
+/// document or for none, and a condition or operand deeper than
+/// [`MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH`] are refused.
 /// What the paths name is checked against the parsed document type, and the
 /// limits and that no list repeats a condition under full validation, by
 /// parser generation 3.
@@ -577,7 +596,7 @@ fn single_entry(value: &Value) -> Option<(&str, &Value)> {
 /// Every key a condition object may hold, for the errors.
 fn condition_keys() -> String {
     format!(
-        "a comparison ({}), present, absent, anyOf, allOf or not",
+        "a comparison ({}), in, present, absent, anyOf, allOf or not",
         ConstraintComparison::ALL
             .map(ConstraintComparison::wire_name)
             .join(", ")
@@ -605,12 +624,12 @@ fn enter(at: &mut String, key: &str) -> usize {
     parent
 }
 
-/// A condition at `at` (`anyOf[1]`, empty for the rule's own), where the
-/// errors place it, `depth` levels into its rule: an object whose one key is a
-/// comparison listing its two sides, `present` or `absent` naming a property,
-/// or `anyOf`, `allOf` or `not`. The error is
-/// the rest of a message naming the rule. `at` is extended for what the
-/// condition holds and trimmed back before a successful return.
+/// A condition at `at` (`anyOf[1]`, empty for the rule's own), where the errors
+/// place it, `depth` levels into its rule: an object whose one key is a
+/// comparison listing its two sides, `in` listing an operand and its values,
+/// `present` or `absent` naming a property, or `anyOf`, `allOf` or `not`. The
+/// error is the rest of a message naming the rule. `at` is extended for what
+/// the condition holds and trimmed back before a successful return.
 fn parse_condition(
     value: &Value,
     at: &mut String,
@@ -641,6 +660,28 @@ fn parse_condition(
                 ));
             }
             PropertyConstraint::Not(Box::new(parse_condition(body, at, depth + 1)?))
+        }
+        IN => {
+            let Some([operand, values]) = body.as_array().map(Vec::as_slice) else {
+                return Err(format!(
+                    "at {at} must list an integer expression and the values it may take"
+                ));
+            };
+            let base = at.len();
+            at.push_str("[0]");
+            let operand = parse_expression(operand, at, depth + 1)?;
+            at.truncate(base);
+            if !operand.reads_property() {
+                at.truncate(parent);
+                return Err(format!(
+                    "{}reads no property, so it would hold for every document or for none",
+                    located(at)
+                ));
+            }
+            at.push_str("[1]");
+            let values = in_values(values, at)?;
+            at.truncate(base);
+            PropertyConstraint::In { operand, values }
         }
         // What the path names is checked against the parsed document type
         PRESENT | ABSENT => {
@@ -712,6 +753,34 @@ fn condition_list(
         at.truncate(base);
     }
     Ok(parsed)
+}
+
+/// The values an `in` lists at `at` (`in[1]`): two or more integer literals,
+/// no two alike, `1` and `1.0` being the same value. A duplicate is refused on
+/// every parse: unlike a repeated condition it costs a set insertion to find.
+fn in_values(values: &Value, at: &mut String) -> Result<BTreeSet<i128>, String> {
+    let Some(values) = values.as_array().filter(|values| values.len() >= 2) else {
+        return Err(format!("at {at} must list two or more integer values"));
+    };
+    let base = at.len();
+    // Each value with the index it first appears at, for the errors
+    let mut seen = BTreeMap::new();
+    for (index, value) in values.iter().enumerate() {
+        // Writing to a `String` cannot fail
+        let _ = write!(at, "[{index}]");
+        if !is_number(value) {
+            return Err(format!("at {at} must be an integer value"));
+        }
+        let integer = integer_value(value, at)?;
+        if let Some(earlier) = seen.insert(integer, index) {
+            return Err(format!(
+                "at {at} repeats the value at {}[{earlier}]",
+                &at[..base]
+            ));
+        }
+        at.truncate(base);
+    }
+    Ok(seen.into_keys().collect())
 }
 
 /// An operand at `at` (`lessThan[0].add[1]`), where the errors place it,

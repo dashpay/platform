@@ -169,8 +169,8 @@ pub struct DocumentTypeV2 {
     /// The rules every created or replaced document must meet, by name, in the
     /// order they are checked (`propertyConstraints` keyword, protocol version
     /// 14): each a condition on the document's properties, a comparison of two
-    /// integer expressions, a `present` or `absent` test, or an `anyOf`, `allOf`
-    /// or `not` of conditions. Empty on document types that declare none. The
+    /// integer expressions, an `in` list of values, a `present` or `absent`
+    /// test, or an `anyOf`, `allOf` or `not` of conditions. Empty on document types that declare none. The
     /// parser (`apply_property_constraints`) holds every property an operand
     /// reads to be an integer, and every property a rule reads to be neither
     /// transient nor inside a transient object.
