@@ -556,4 +556,29 @@ mod json_convertible_tests {
         let recovered = StateTransitionProofResult::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
+    /// `TryInto` cannot tell a pool balance from a token balance, and is not meant to.
+    ///
+    /// `derive_more::TryInto` writes one impl per distinct field-type list, so variants that share
+    /// one share an impl and a successful conversion says nothing about which variant was held.
+    /// `TokenAmount` and `Credits` are both `u64`, so the pool balance shares its list with
+    /// `VerifiedTokenBalance`. This is the enum's existing shape, not something the pool variants
+    /// introduce: `VerifiedMasternodeVote` and `VerifiedNextDistribution` are both `(Vote)` and
+    /// have always shared an impl the same way. Match on the variant to discriminate; this test
+    /// exists so that a change to the derive, or to either field type, shows up here rather than
+    /// silently in a caller.
+    #[test]
+    fn should_convert_a_pool_balance_through_the_token_balance_impl_it_shares() {
+        let id = Identifier::from([7u8; 32]);
+        let pool = StateTransitionProofResult::VerifiedTokenShieldedPoolBalance(id, 42);
+        let converted: (Identifier, u64) = pool
+            .try_into()
+            .expect("the shared impl accepts a pool balance");
+        assert_eq!(converted, (id, 42));
+
+        let balance = StateTransitionProofResult::VerifiedTokenBalance(id, 42);
+        let converted: (Identifier, u64) = balance
+            .try_into()
+            .expect("and accepts a token balance identically");
+        assert_eq!(converted, (id, 42));
+    }
 }

@@ -646,6 +646,12 @@ impl Drive {
                             // history contract. Only a kind that reaches this closure has one, so
                             // looking it up any earlier fails for every pool transition, whatever
                             // the token's history settings say.
+                            //
+                            // Moving the lookup cannot change what a released version verifies:
+                            // every kind those versions admit resolves a document type in both
+                            // schema versions of the history contract, which this change leaves
+                            // untouched, so the lookup that used to run before the branch still
+                            // succeeds here and yields the same type and the same errors.
                             let token_history_document_type = token_transition
                                 .historical_document_type(&token_history_contract)?;
                             let query = SingleDocumentDriveQuery {
@@ -2260,6 +2266,9 @@ impl Drive {
                 })?;
                 let outpoint_bytes: [u8; 36] = outpoint.into();
 
+                // Read through the accessor rather than by destructuring the transition, which
+                // stopped compiling once the enum gained a variant. Same field, same value, so
+                // nothing a released version verifies moves.
                 let surplus_output = st.surplus_output();
 
                 // Build the outpoint sub-query exactly as the prove side does (same path, same key).
