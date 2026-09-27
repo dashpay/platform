@@ -40,7 +40,6 @@ use dpp::state_transition::batch_transition::token_shielded_transfer_transition:
 use dpp::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_to_pool_transition::v0::v0_methods::TokenMintToPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_burn_from_pool_transition::v0::v0_methods::TokenBurnFromPoolTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_claim_to_pool_transition::v0::v0_methods::TokenClaimToPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_direct_purchase_to_pool_transition::v0::v0_methods::TokenDirectPurchaseToPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -217,23 +216,10 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
             StateTransition::Batch(batch) => batch
                 .transitions_iter()
                 .map(|transition| match transition {
-                    BatchedTransitionRef::Token(TokenTransition::Shield(t)) => t.actions().len(),
-                    BatchedTransitionRef::Token(TokenTransition::Unshield(t)) => t.actions().len(),
-                    BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(t)) => {
-                        t.actions().len()
-                    }
-                    BatchedTransitionRef::Token(TokenTransition::MintToPool(t)) => {
-                        t.actions().len()
-                    }
-                    BatchedTransitionRef::Token(TokenTransition::BurnFromPool(t)) => {
-                        t.actions().len()
-                    }
-                    BatchedTransitionRef::Token(TokenTransition::ClaimToPool(t)) => {
-                        t.actions().len()
-                    }
-                    BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(t)) => {
-                        t.actions().len()
-                    }
+                    BatchedTransitionRef::Token(token_transition) => token_transition
+                        .shielded_pool_actions()
+                        .map(|actions| actions.len())
+                        .unwrap_or(0),
                     BatchedTransitionRef::Document(document_transition) => document_transition
                         .base()
                         .token_payment_info_ref()
@@ -241,7 +227,6 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                         .and_then(|info| info.shielded_payment())
                         .map(|payment| payment.actions.len())
                         .unwrap_or(0),
-                    _ => 0,
                 })
                 .sum(),
             _ => 0,
@@ -261,19 +246,15 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 batch
                     .transitions_iter()
                     .find_map(|transition| match transition {
-                        BatchedTransitionRef::Token(
-                            token_transition @ (TokenTransition::Shield(_)
-                            | TokenTransition::Unshield(_)
-                            | TokenTransition::ShieldedTransfer(_)
-                            | TokenTransition::MintToPool(_)
-                            | TokenTransition::BurnFromPool(_)
-                            | TokenTransition::ClaimToPool(_)
-                            | TokenTransition::DirectPurchaseToPool(_)),
-                        ) => Some(ShieldedProofAdmissionKey::IdentityContract {
-                            identity_id: owner_id,
-                            contract_id: token_transition.data_contract_id().to_buffer(),
-                            nonce: token_transition.identity_contract_nonce(),
-                        }),
+                        BatchedTransitionRef::Token(token_transition)
+                            if token_transition.shielded_pool_actions().is_some() =>
+                        {
+                            Some(ShieldedProofAdmissionKey::IdentityContract {
+                                identity_id: owner_id,
+                                contract_id: token_transition.data_contract_id().to_buffer(),
+                                nonce: token_transition.identity_contract_nonce(),
+                            })
+                        }
                         BatchedTransitionRef::Document(document_transition)
                             if document_transition
                                 .base()

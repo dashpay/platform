@@ -7,9 +7,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::token_transition::{
-    TokenTransition, TokenTransitionV0Methods,
-};
+use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
@@ -408,15 +406,9 @@ fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 
         StateTransition::Batch(batch) => batch
             .transitions_iter()
             .filter_map(|transition| match transition {
-                BatchedTransitionRef::Token(
-                    token_transition @ (TokenTransition::Shield(_)
-                    | TokenTransition::Unshield(_)
-                    | TokenTransition::ShieldedTransfer(_)
-                    | TokenTransition::MintToPool(_)
-                    | TokenTransition::BurnFromPool(_)
-                    | TokenTransition::ClaimToPool(_)
-                    | TokenTransition::DirectPurchaseToPool(_)),
-                ) => Some(token_transition.token_id().to_buffer()),
+                BatchedTransitionRef::Token(token_transition) => token_transition
+                    .shielded_pool_actions()
+                    .map(|_| token_transition.token_id().to_buffer()),
                 BatchedTransitionRef::Document(document_transition) => {
                     let base = document_transition.base();
                     base.token_payment_info_ref()
@@ -424,7 +416,6 @@ fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 
                         .filter(|info| info.shielded_payment().is_some())
                         .map(|info| info.token_id(base.data_contract_id()).to_buffer())
                 }
-                _ => None,
             })
             .collect(),
         StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
