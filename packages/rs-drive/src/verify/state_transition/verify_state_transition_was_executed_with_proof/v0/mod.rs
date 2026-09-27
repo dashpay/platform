@@ -68,7 +68,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule, VerifiedTokenShieldedPoolBalance, VerifiedShieldedNullifiers};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedContractDocumentRemoval, VerifiedContractFeeClaim, VerifiedContractModerationListStatuses, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithShieldedNullifiers, VerifiedTokenGroupActionWithShieldedPoolBalance, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule, VerifiedTokenShieldedPoolBalance, VerifiedShieldedNullifiers};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1175,22 +1175,69 @@ impl Drive {
                             TokenTransition::MintToPool(_)
                             | TokenTransition::ClaimToPool(_)
                             | TokenTransition::DirectPurchaseToPool(_) => {
-                                let (root_hash, Some(balance)) =
-                                    Drive::verify_token_shielded_pool_state(
-                                        proof,
-                                        token_id.into_buffer(),
-                                        carries_owner_balance,
-                                        platform_version,
-                                    )?
-                                else {
-                                    return Err(Error::Proof(ProofError::IncorrectProof(
-                                        "proof did not contain the token shielded pool balance expected to exist because of state transition (notes created in the pool)".to_string(),
-                                    )));
-                                };
-                                Ok((
-                                    root_hash,
-                                    VerifiedTokenShieldedPoolBalance(token_id, balance),
-                                ))
+                                // Of these three only a mint into the pool can be proposed as a
+                                // group action; a claim and a direct purchase into the pool
+                                // derive no action id. The branch is on the group info all the
+                                // same, because that is what the prover branches on when it
+                                // decides whether to merge the group signer query into the proof.
+                                if let Some(group_state_transition_info) =
+                                    token_transition.base().using_group_info()
+                                {
+                                    let (_root_hash, status, sum_power) =
+                                        Drive::verify_action_signer_and_total_power(
+                                            proof,
+                                            data_contract_id,
+                                            group_state_transition_info.group_contract_position,
+                                            None,
+                                            group_state_transition_info.action_id,
+                                            owner_id,
+                                            true,
+                                            platform_version,
+                                        )?;
+
+                                    let (root_hash, balance) =
+                                        Drive::verify_token_shielded_pool_state(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            true,
+                                            platform_version,
+                                        )?;
+                                    // A group action creates no notes until the last required
+                                    // signature arrives, so only a closed action must show a
+                                    // pool. While it is active the balance is whatever the pool
+                                    // already held, and is absent for a pool never yet used.
+                                    if status == GroupActionStatus::ActionClosed
+                                        && balance.is_none()
+                                    {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not contain the token shielded pool balance expected to exist because the closed group action created notes in the pool".to_string(),
+                                        )));
+                                    }
+
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenGroupActionWithShieldedPoolBalance(
+                                            sum_power, status, balance,
+                                        ),
+                                    ))
+                                } else {
+                                    let (root_hash, Some(balance)) =
+                                        Drive::verify_token_shielded_pool_state(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            carries_owner_balance,
+                                            platform_version,
+                                        )?
+                                    else {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not contain the token shielded pool balance expected to exist because of state transition (notes created in the pool)".to_string(),
+                                        )));
+                                    };
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenShieldedPoolBalance(token_id, balance),
+                                    ))
+                                }
                             }
                             TokenTransition::BurnFromPool(token_burn_from_pool_transition) => {
                                 let nullifiers: Vec<Vec<u8>> = token_burn_from_pool_transition
@@ -1198,22 +1245,70 @@ impl Drive {
                                     .iter()
                                     .map(|action| action.nullifier.to_vec())
                                     .collect();
-                                let (root_hash, statuses) =
-                                    Drive::verify_token_shielded_pool_nullifiers(
-                                        proof,
-                                        token_id.into_buffer(),
-                                        &nullifiers,
-                                        carries_owner_balance,
-                                        platform_version,
-                                    )?;
-                                if statuses.len() != nullifiers.len()
-                                    || statuses.iter().any(|(_, spent)| !spent)
+                                if let Some(group_state_transition_info) =
+                                    token_transition.base().using_group_info()
                                 {
-                                    return Err(Error::Proof(ProofError::IncorrectProof(
-                                        "proof did not show every nullifier of the token burn from pool as spent".to_string(),
-                                    )));
+                                    let (_root_hash, status, sum_power) =
+                                        Drive::verify_action_signer_and_total_power(
+                                            proof,
+                                            data_contract_id,
+                                            group_state_transition_info.group_contract_position,
+                                            None,
+                                            group_state_transition_info.action_id,
+                                            owner_id,
+                                            true,
+                                            platform_version,
+                                        )?;
+
+                                    let (root_hash, statuses) =
+                                        Drive::verify_token_shielded_pool_nullifiers(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            &nullifiers,
+                                            true,
+                                            platform_version,
+                                        )?;
+                                    if statuses.len() != nullifiers.len() {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not show the spend status of every nullifier of the token burn from pool".to_string(),
+                                        )));
+                                    }
+                                    // A group action spends nothing until the last required
+                                    // signature arrives, so only a closed action must show every
+                                    // nullifier spent. While it is active they all read unspent,
+                                    // and that is what tells a client the burn has not run.
+                                    if status == GroupActionStatus::ActionClosed
+                                        && statuses.iter().any(|(_, spent)| !spent)
+                                    {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not show every nullifier of the closed group action burning from the pool as spent".to_string(),
+                                        )));
+                                    }
+
+                                    Ok((
+                                        root_hash,
+                                        VerifiedTokenGroupActionWithShieldedNullifiers(
+                                            sum_power, status, statuses,
+                                        ),
+                                    ))
+                                } else {
+                                    let (root_hash, statuses) =
+                                        Drive::verify_token_shielded_pool_nullifiers(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            &nullifiers,
+                                            carries_owner_balance,
+                                            platform_version,
+                                        )?;
+                                    if statuses.len() != nullifiers.len()
+                                        || statuses.iter().any(|(_, spent)| !spent)
+                                    {
+                                        return Err(Error::Proof(ProofError::IncorrectProof(
+                                            "proof did not show every nullifier of the token burn from pool as spent".to_string(),
+                                        )));
+                                    }
+                                    Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
                                 }
-                                Ok((root_hash, VerifiedShieldedNullifiers(statuses)))
                             }
                         }
                     }
@@ -2988,17 +3083,23 @@ impl Drive {
                         | TokenTransition::EmergencyAction(_)
                         | TokenTransition::ConfigUpdate(_)
                         | TokenTransition::Claim(_) => true,
-                        // Balance snapshots: the moved amount cannot be tied to one shield or
-                        // unshield. A shielded transfer's spent nullifiers exist only if it
-                        // executed.
+                        // Balance snapshots: the moved amount cannot be tied to one shield, one
+                        // unshield, or one creation of notes in a pool.
                         TokenTransition::Shield(_)
                         | TokenTransition::Unshield(_)
-                        | TokenTransition::MintToPool(_)
                         | TokenTransition::ClaimToPool(_)
                         | TokenTransition::DirectPurchaseToPool(_) => false,
-                        TokenTransition::ShieldedTransfer(_) | TokenTransition::BurnFromPool(_) => {
-                            true
-                        }
+                        // A mint into the pool leaves only the pool's new total behind, which no
+                        // single transition owns. Proposed as a group action it is bound the way
+                        // every other grouped kind is: by the signer's recorded entry under the
+                        // action id this transition derives.
+                        TokenTransition::MintToPool(_) => grouped,
+                        // A shielded transfer's spent nullifiers exist only if it executed.
+                        TokenTransition::ShieldedTransfer(_) => true,
+                        // Ungrouped, the pool nullifiers this burn spends exist only if it
+                        // executed. Grouped, the signer's recorded entry binds it whether or not
+                        // the action has gathered enough power to close.
+                        TokenTransition::BurnFromPool(_) => true,
                     }
                 }
             },

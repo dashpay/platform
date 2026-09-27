@@ -1814,15 +1814,20 @@ mod token_pool_mint_burn_claim_purchase_tests {
     use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+    use dpp::data_contract::DataContract;
+    use dpp::group::group_action_status::GroupActionStatus;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::shielded::{serialized_actions_digest, token_burn_from_pool_extra_sighash_data_v0};
+    use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
     use dpp::state_transition::batch_transition::{
         TokenBurnFromPoolTransition, TokenSetPriceForDirectPurchaseTransition,
     };
     use dpp::state_transition::StateTransition;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+    use drive::drive::Drive;
     use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
 
     fn total_supply(platform: &TempPlatform<MockCoreRPCLike>, token_id: Identifier) -> u64 {
         platform
@@ -2539,6 +2544,305 @@ mod token_pool_mint_burn_claim_purchase_tests {
             &burn_bundle.actions[0].nullifier
         ));
         assert_tokens_conserved(&platform);
+    }
+
+    /// Proving a pool group action's proposal. A group action writes nothing into the pool until
+    /// the last required signature arrives: the operation converters push the pool write only
+    /// when the action closes, while the signer's power entry is recorded on every signature. A
+    /// proposal's proof therefore shows an untouched pool — no notes created, no nullifiers
+    /// spent — and the verifier has to read it as an open action rather than as a burn or mint
+    /// that failed to happen.
+    #[tokio::test]
+    async fn test_a_pool_group_action_proposal_proof_verifies_as_an_open_action() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9107);
+
+        let (proposer, proposer_signer, proposer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (confirmer, confirmer_signer, confirmer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            proposer.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                enable_shielded_pool(token_configuration);
+                let group_rules = |position| {
+                    ChangeControlRules::V0(ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(position),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    })
+                };
+                // Burning and minting are put under groups of their own so that the burn can
+                // close while the mint proposal is still open: a proof's action status is read
+                // from the group's active and closed action trees, so one group holding an open
+                // action and a closed one at the same time cannot be resolved to either.
+                token_configuration.set_manual_burning_rules(group_rules(0));
+                token_configuration.set_manual_minting_rules(group_rules(1));
+            }),
+            None,
+            Some(
+                [
+                    (
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(proposer.id(), 1), (confirmer.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    ),
+                    (
+                        1,
+                        Group::V0(GroupV0 {
+                            members: [(proposer.id(), 1), (confirmer.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    ),
+                ]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+        let token = token_id.to_buffer();
+        let known_contracts: BTreeMap<Identifier, DataContract> =
+            BTreeMap::from([(contract.id(), contract.clone())]);
+        let verify = |transition: &StateTransition| {
+            let proof = platform
+                .drive
+                .prove_state_transition(transition, None, platform_version)
+                .expect("prove the pool group transition")
+                .into_data()
+                .expect("proof bytes rather than an error");
+            Drive::verify_state_transition_was_executed_with_proof(
+                transition,
+                &BlockInfo::default(),
+                &proof,
+                &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
+                platform_version,
+            )
+        };
+
+        // Fund the pool so the burn below has a note to spend.
+        let shield = BatchTransition::new_token_shield_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            10_000,
+            build_shield_bundle(
+                10_000,
+                31,
+                TokenTransitionActionType::Shield,
+                token_id,
+                proposer.id(),
+            ),
+            &proposer_key,
+            2,
+            0,
+            &proposer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+        assert_matches!(
+            process(&platform, &shield).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // --- A mint into the pool, proposed by one of two required signers.
+        let mint_amount = 2_000;
+        let mint_proposal = BatchTransition::new_token_mint_to_pool_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            mint_amount,
+            build_shield_bundle(
+                mint_amount,
+                34,
+                TokenTransitionActionType::MintToPool,
+                token_id,
+                proposer.id(),
+            ),
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(1)),
+            &proposer_key,
+            3,
+            0,
+            &proposer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token mint to pool proposal");
+        assert_matches!(
+            process(&platform, &mint_proposal)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        // One signature of two: the pool holds only what the shield put there.
+        assert_eq!(pool_balance(&platform, token_id), 10_000);
+
+        let (_root_hash, outcome) = verify(&mint_proposal).expect(
+            "an open mint-to-pool proposal's proof must verify: nothing was minted yet, so the \
+             proof can only show the group action and the pool as it stands",
+        );
+        assert_matches!(
+            outcome.result(),
+            StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedPoolBalance(
+                power,
+                status,
+                balance,
+            ) => {
+                assert_eq!(*power, 1, "one of the two required signatures is recorded");
+                assert_eq!(*status, GroupActionStatus::ActionActive);
+                assert_eq!(
+                    *balance,
+                    Some(10_000),
+                    "the mint has not run, so the pool still holds only the shielded amount"
+                );
+            },
+            "an open mint-to-pool proposal must be reported as a group action over the pool"
+        );
+        assert!(
+            outcome.is_execution_proved(),
+            "the signer's power entry sits under the action id derived from this transition, so \
+             the proof binds this proposal's execution"
+        );
+
+        // --- A burn out of the pool, proposed by one of two required signers.
+        let (note, anchor, merkle_path) = spendable_note(6_000, 32);
+        insert_token_pool_anchor(&platform, token_id, &anchor);
+        let burn_amount = 4_000;
+        let extra = token_burn_from_pool_extra_sighash_data_v0(
+            &token,
+            &proposer.id().to_buffer(),
+            burn_amount,
+        );
+        let (burn_bundle, _) =
+            build_spend_bundle(note, merkle_path, anchor, burn_amount, &extra, 33);
+        let proposer_nonce = 4;
+        let burn_proposal = BatchTransition::new_token_burn_from_pool_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            burn_amount,
+            burn_bundle.clone(),
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &proposer_key,
+            proposer_nonce,
+            0,
+            &proposer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token burn from pool proposal");
+        assert_matches!(
+            process(&platform, &burn_proposal)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert!(!nullifier_is_spent(
+            &platform,
+            token_id,
+            &burn_bundle.actions[0].nullifier
+        ));
+
+        let (_root_hash, outcome) = verify(&burn_proposal).expect(
+            "an open burn-from-pool proposal's proof must verify: no nullifier is spent until \
+             the action closes, so demanding every nullifier spent rejects a valid proposal",
+        );
+        assert_matches!(
+            outcome.result(),
+            StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
+                power,
+                status,
+                statuses,
+            ) => {
+                assert_eq!(*power, 1, "one of the two required signatures is recorded");
+                assert_eq!(*status, GroupActionStatus::ActionActive);
+                assert_eq!(statuses.len(), burn_bundle.actions.len());
+                assert!(
+                    statuses.iter().all(|(_, spent)| !*spent),
+                    "an open action has spent nothing, got {statuses:?}"
+                );
+            },
+            "an open burn-from-pool proposal must be reported as a group action over the pool"
+        );
+
+        // --- The confirmation closes the action, and now the burn really has happened.
+        let action_id = TokenBurnFromPoolTransition::calculate_action_id_with_fields(
+            &token,
+            proposer.id().as_bytes(),
+            proposer_nonce,
+            burn_amount,
+            &serialized_actions_digest(&burn_bundle.actions),
+        );
+        let burn_confirmation = BatchTransition::new_token_burn_from_pool_transition(
+            token_id,
+            confirmer.id(),
+            contract.id(),
+            0,
+            burn_amount,
+            burn_bundle.clone(),
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &confirmer_key,
+            2,
+            0,
+            &confirmer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token burn from pool confirmation");
+        assert_matches!(
+            process(&platform, &burn_confirmation)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert!(nullifier_is_spent(
+            &platform,
+            token_id,
+            &burn_bundle.actions[0].nullifier
+        ));
+
+        let (_root_hash, outcome) =
+            verify(&burn_confirmation).expect("the closing signature's proof must verify");
+        assert_matches!(
+            outcome.result(),
+            StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
+                power,
+                status,
+                statuses,
+            ) => {
+                assert_eq!(*power, 2, "both required signatures are recorded");
+                assert_eq!(*status, GroupActionStatus::ActionClosed);
+                assert!(
+                    statuses.iter().all(|(_, spent)| *spent),
+                    "a closed burn has spent every nullifier it named, got {statuses:?}"
+                );
+            },
+            "the closing signature must still be reported as a group action over the pool"
+        );
     }
 
     #[tokio::test]

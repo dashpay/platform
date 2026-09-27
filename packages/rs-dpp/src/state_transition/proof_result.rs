@@ -106,7 +106,14 @@ pub enum StateTransitionProofResult {
     VerifiedShieldedNullifiers(Vec<(Vec<u8>, bool)>),
     /// The proven total balance of a token's shielded pool (token id, balance). Returned by the
     /// pool transitions that only create notes (mint, claim and purchase into the pool).
-    VerifiedTokenShieldedPoolBalance(Identifier, TokenAmount),
+    VerifiedTokenShieldedPoolBalance(
+        Identifier,
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        TokenAmount,
+    ),
     VerifiedShieldedNullifiersWithAddressInfos(
         Vec<(Vec<u8>, bool)>,
         #[cfg_attr(
@@ -164,6 +171,30 @@ pub enum StateTransitionProofResult {
     /// and carries the transition's reason. A document id is produced at most once, so the
     /// record is of this document and of no other.
     VerifiedContractDocumentRemoval(Identifier, String, Identifier, ContractDocumentRemoval),
+    /// Returned by a `MintToPool` submitted as a group action: the signer's recorded power, the
+    /// action's status, and the token shielded pool's total balance. A group action writes into
+    /// the pool only once the last required signature arrives, so while the action is active the
+    /// balance is the one the pool already held, and is absent for a pool that has never held a
+    /// note. A closed action has minted, so its balance is present.
+    VerifiedTokenGroupActionWithShieldedPoolBalance(
+        GroupSumPower,
+        GroupActionStatus,
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_option_u64")
+        )]
+        Option<TokenAmount>,
+    ),
+    /// Returned by a `BurnFromPool` submitted as a group action: the signer's recorded power, the
+    /// action's status, and the spend status of every nullifier the burn names
+    /// (`(nullifier_bytes, spent)`). A group action spends nothing until the last required
+    /// signature arrives, so while the action is active every nullifier reads unspent; a closed
+    /// action has spent them all.
+    VerifiedTokenGroupActionWithShieldedNullifiers(
+        GroupSumPower,
+        GroupActionStatus,
+        Vec<(Vec<u8>, bool)>,
+    ),
 }
 
 /// The guarantee a verified state-transition proof establishes.
@@ -409,6 +440,62 @@ mod json_convertible_tests {
         );
         let json = original.to_json().expect("to_json");
         assert_eq!(json["VerifiedTokenBalance"][1], json!("9007199254740993"));
+        let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    /// A token shielded pool's balance is a `u64` in a tuple variant that `#[json_safe_fields]`
+    /// cannot reach, so the JS-safe helper has to sit on the field itself. Past
+    /// `Number.MAX_SAFE_INTEGER` it must serialize as a JSON string, or a JS consumer reads a
+    /// silently rounded pool balance.
+    #[test]
+    fn verified_token_shielded_pool_balance_large_amount_serializes_as_string() {
+        use crate::serialization::JsonConvertible;
+        let original = StateTransitionProofResult::VerifiedTokenShieldedPoolBalance(
+            Identifier::new([0xcd; 32]),
+            9_007_199_254_740_993, // 2^53 + 1
+        );
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json["VerifiedTokenShieldedPoolBalance"][1],
+            json!("9007199254740993")
+        );
+        let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    /// The pool balance a group action's proof carries is an optional `u64`, equally out of the
+    /// macro's reach, and equally lossy in JS without the helper.
+    #[test]
+    fn verified_token_group_action_with_shielded_pool_balance_large_amount_serializes_as_string() {
+        use crate::serialization::JsonConvertible;
+        let original = StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedPoolBalance(
+            1,
+            GroupActionStatus::ActionActive,
+            Some(9_007_199_254_740_993), // 2^53 + 1
+        );
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json["VerifiedTokenGroupActionWithShieldedPoolBalance"][2],
+            json!("9007199254740993")
+        );
+        let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    /// A group action burning out of a pool reports each named nullifier's spend status. An
+    /// action still gathering signatures has spent nothing, and the round trip has to preserve
+    /// those `false` flags rather than dropping them — they are what tells a client the burn has
+    /// not run yet.
+    #[test]
+    fn verified_token_group_action_with_shielded_nullifiers_round_trips_unspent_flags() {
+        use crate::serialization::JsonConvertible;
+        let original = StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
+            1,
+            GroupActionStatus::ActionActive,
+            vec![(vec![1u8, 2, 3], false), (vec![4u8, 5, 6], false)],
+        );
+        let json = original.to_json().expect("to_json");
         let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }

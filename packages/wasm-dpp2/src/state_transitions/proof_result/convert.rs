@@ -22,10 +22,12 @@ use super::shielded::{
     VerifiedIdentityWithShieldedNullifiersWasm, VerifiedShieldedNullifiersWasm,
     VerifiedShieldedNullifiersWithAddressInfosWasm,
     VerifiedShieldedNullifiersWithWithdrawalDocumentWasm,
+    VerifiedTokenGroupActionWithShieldedNullifiersWasm,
 };
 use super::token::{
     VerifiedTokenActionWithDocumentWasm, VerifiedTokenBalanceAbsenceWasm, VerifiedTokenBalanceWasm,
-    VerifiedTokenGroupActionWithDocumentWasm, VerifiedTokenGroupActionWithTokenBalanceWasm,
+    VerifiedTokenGroupActionWithDocumentWasm, VerifiedTokenGroupActionWithShieldedPoolBalanceWasm,
+    VerifiedTokenGroupActionWithTokenBalanceWasm,
     VerifiedTokenGroupActionWithTokenIdentityInfoWasm,
     VerifiedTokenGroupActionWithTokenPricingScheduleWasm, VerifiedTokenIdentitiesBalancesWasm,
     VerifiedTokenIdentityInfoWasm, VerifiedTokenPricingScheduleWasm,
@@ -78,7 +80,9 @@ export type StateTransitionProofResultType =
   | VerifiedIdentityWithShieldedNullifiers
   | VerifiedContractModerationListStatuses
   | VerifiedContractFeeClaim
-  | VerifiedContractDocumentRemoval;
+  | VerifiedContractDocumentRemoval
+  | VerifiedTokenGroupActionWithShieldedPoolBalance
+  | VerifiedTokenGroupActionWithShieldedNullifiers;
 "#;
 
 #[wasm_bindgen]
@@ -299,6 +303,28 @@ pub fn convert_proof_result(
             }
             .into()
         }
+
+        StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedPoolBalance(
+            power,
+            status,
+            maybe_balance,
+        ) => VerifiedTokenGroupActionWithShieldedPoolBalanceWasm {
+            group_power: power,
+            action_status: action_status_to_string(status),
+            balance: maybe_balance,
+        }
+        .into(),
+
+        StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
+            power,
+            status,
+            nullifiers,
+        ) => VerifiedTokenGroupActionWithShieldedNullifiersWasm::new(
+            power,
+            action_status_to_string(status),
+            build_nullifier_map(nullifiers),
+        )
+        .into(),
 
         StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(
             nullifiers,
