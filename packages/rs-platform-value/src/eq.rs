@@ -159,6 +159,13 @@ impl Value {
     ///   stored at a narrower width, or an object whose members were
     ///   reordered by schema position, still compares equal.
     /// * Otherwise falls back to normal `==` (`PartialEq`) behaviour.
+    ///
+    /// Shipped generations call this at every protocol version: the document
+    /// replace transition transformer v0 uses it to decide which fields a
+    /// replace changed, and `is_equal_ignoring_timestamps` v0 uses it when a
+    /// client verifies a state transition proof. A change to its result for
+    /// some pair of values changes their output everywhere; make such a change
+    /// a new versioned method instead of editing this function.
     pub fn equal_underlying_data(&self, other: &Value) -> bool {
         // 1) bytes-like cross-variant equality
         if let (Ok(a), Ok(b)) = (self.as_bytes_slice(), other.as_bytes_slice()) {

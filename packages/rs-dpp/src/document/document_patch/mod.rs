@@ -1,5 +1,9 @@
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -25,10 +29,10 @@ pub struct DocumentPatch {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for DocumentPatch {}
+impl JsonConvertible for DocumentPatch {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for DocumentPatch {}
+impl ValueConvertible for DocumentPatch {}
 
 #[cfg(all(
     test,

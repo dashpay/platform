@@ -4,6 +4,10 @@ use crate::data_contract::associated_token::token_marketplace_rules::v0::TokenTr
 use crate::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::GroupContractPosition;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{DecodeUntrusted, Encode};
 use platform_serialization::de::Decode;
@@ -841,10 +845,10 @@ mod tests {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenConfigurationChangeItem {}
+impl JsonConvertible for TokenConfigurationChangeItem {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenConfigurationChangeItem {}
+impl ValueConvertible for TokenConfigurationChangeItem {}
 
 #[cfg(all(
     test,

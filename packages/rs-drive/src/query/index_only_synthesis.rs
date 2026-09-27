@@ -34,9 +34,14 @@
 //! the index the query resolved is an error, never a partial document.
 
 use crate::drive::document::{decode_index_only_entry_payload, INDEX_ONLY_ROW_COMMITMENT_SIZE};
+use crate::drive::RootTree;
 use crate::error::drive::DriveError;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::{index_admissible_for_skip_if_absent, DriveDocumentQuery};
+use crate::query::{
+    index_admissible_for_skip_if_absent, BestIndexOutcome, DriveDocumentQuery, InternalClauses,
+    WhereClause,
+};
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -60,17 +65,17 @@ pub(crate) struct IndexOnlyTerminalRoute<'a> {
     pub index: &'a Index,
     /// The clause on the index's terminal property; `None` only for the
     /// first keyset page (order-by on the terminal, no cursor clause yet).
-    pub terminal_clause: Option<&'a crate::query::WhereClause>,
+    pub terminal_clause: Option<&'a WhereClause>,
     /// `(position, clause)` of a range / `in` clause on a prefix
     /// property. When present the terminal clause is always an equality.
-    pub prefix_pivot: Option<(usize, &'a crate::query::WhereClause)>,
+    pub prefix_pivot: Option<(usize, &'a WhereClause)>,
     /// COMPOSITE terminals only: the equality clauses on the terminal's
     /// leading components, in component order (`terminal_clause` is `None`
     /// on a composite terminal).
-    pub terminal_equalities: Vec<&'a crate::query::WhereClause>,
+    pub terminal_equalities: Vec<&'a WhereClause>,
     /// COMPOSITE terminals only: the one range / `in` clause on the first
     /// component after the equality-bound ones, if any.
-    pub terminal_tail: Option<&'a crate::query::WhereClause>,
+    pub terminal_tail: Option<&'a WhereClause>,
 }
 
 impl DriveDocumentQuery<'_> {
@@ -131,9 +136,10 @@ impl DriveDocumentQuery<'_> {
         // on an index prefix property".
         let clause_roles = self.internal_clauses.classify_fields(self.document_type);
         let names_a_terminal = clause_roles.values().any(|roles| roles.terminal)
-            || self.order_by.keys().any(|field| {
-                crate::query::InternalClauses::classify_field(self.document_type, field).terminal
-            });
+            || self
+                .order_by
+                .keys()
+                .any(|field| InternalClauses::classify_field(self.document_type, field).terminal);
         if !names_a_terminal {
             return Ok(None);
         }
@@ -211,11 +217,8 @@ impl DriveDocumentQuery<'_> {
         }
         let is_component = |field: &str| components.iter().any(|component| component == field);
 
-        let shape_error = |message: &str| {
-            Error::Query(crate::error::query::QuerySyntaxError::Unsupported(
-                message.to_string(),
-            ))
-        };
+        let shape_error =
+            |message: &str| Error::Query(QuerySyntaxError::Unsupported(message.to_string()));
 
         // A single-component terminal carries at most one clause, on that
         // component. A composite terminal binds its components in order:
@@ -241,7 +244,7 @@ impl DriveDocumentQuery<'_> {
                 (terminal_clause, Vec::new(), None)
             }
             None => {
-                let mut equalities: Vec<&crate::query::WhereClause> = Vec::new();
+                let mut equalities: Vec<&WhereClause> = Vec::new();
                 for component in components {
                     match self.internal_clauses.equal_clauses.get(component.as_str()) {
                         Some(clause) => equalities.push(clause),
@@ -291,7 +294,7 @@ impl DriveDocumentQuery<'_> {
                     }
                     direction = Some(order.ascending);
                 }
-                let tail_candidates: Vec<&crate::query::WhereClause> = self
+                let tail_candidates: Vec<&WhereClause> = self
                     .internal_clauses
                     .range_clause
                     .iter()
@@ -330,7 +333,7 @@ impl DriveDocumentQuery<'_> {
                 .iter()
                 .position(|property| property.name == field)
         };
-        let mut prefix_pivot: Option<(usize, &crate::query::WhereClause)> = None;
+        let mut prefix_pivot: Option<(usize, &WhereClause)> = None;
         for clause in self
             .internal_clauses
             .range_clause
@@ -373,17 +376,15 @@ impl DriveDocumentQuery<'_> {
                          orderBy limited to the index",
                     ));
                 }
-                let ranged: Option<&crate::query::WhereClause> = terminal_clause
+                let ranged: Option<&WhereClause> = terminal_clause
                     .filter(|clause| clause.operator.is_range())
                     .or(terminal_tail.filter(|clause| clause.operator.is_range()));
                 if let Some(ranged) = ranged {
                     if !self.order_by.contains_key(ranged.field.as_str()) {
-                        return Err(Error::Query(
-                            crate::error::query::QuerySyntaxError::MissingOrderByForRange(
-                                "a range or `in` clause on an indexOnly terminal property \
+                        return Err(Error::Query(QuerySyntaxError::MissingOrderByForRange(
+                            "a range or `in` clause on an indexOnly terminal property \
                                  requires an orderBy on that property",
-                            ),
-                        ));
+                        )));
                     }
                 }
             }
@@ -422,12 +423,10 @@ impl DriveDocumentQuery<'_> {
                     }
                 }
                 if !self.order_by.contains_key(pivot_clause.field.as_str()) {
-                    return Err(Error::Query(
-                        crate::error::query::QuerySyntaxError::MissingOrderByForRange(
-                            "a range or `in` clause on an indexOnly prefix property \
+                    return Err(Error::Query(QuerySyntaxError::MissingOrderByForRange(
+                        "a range or `in` clause on an indexOnly prefix property \
                              requires an orderBy on that property",
-                        ),
-                    ));
+                    )));
                 }
             }
         }
@@ -682,11 +681,9 @@ impl DriveDocumentQuery<'_> {
                 Value::Array(values) if values.len() == 2 => {
                     Ok((values[0].clone(), values[1].clone()))
                 }
-                _ => Err(Error::Query(
-                    crate::error::query::QuerySyntaxError::InvalidBetweenClause(
-                        "when using between operator you must provide a tuple array of values",
-                    ),
-                )),
+                _ => Err(Error::Query(QuerySyntaxError::InvalidBetweenClause(
+                    "when using between operator you must provide a tuple array of values",
+                ))),
             }
         };
         match tail.operator {
@@ -748,13 +745,11 @@ impl DriveDocumentQuery<'_> {
                 }
             }
             WhereOperator::StartsWith => {
-                return Err(Error::Query(
-                    crate::error::query::QuerySyntaxError::Unsupported(
-                        "startsWith is not supported on a composite indexOnly terminal \
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "startsWith is not supported on a composite indexOnly terminal \
                          component"
-                            .to_string(),
-                    ),
-                ));
+                        .to_string(),
+                )));
             }
         }
         Ok(query)
@@ -785,11 +780,11 @@ impl DriveDocumentQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<&Index, Error> {
         match self.select_best_index(platform_version)? {
-            crate::query::BestIndexOutcome::Matched(index) => {
+            BestIndexOutcome::Matched(index) => {
                 Self::refuse_bucketed_index_only_synthesis(index)?;
                 Ok(index)
             }
-            crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
+            BestIndexOutcome::NoIndexMatches(no_index_error) => {
                 match self.index_only_terminal_clause_selection(platform_version)? {
                     Some(route) => Ok(route.index),
                     None => Err(no_index_error),
@@ -810,16 +805,14 @@ impl DriveDocumentQuery<'_> {
     /// fires exactly on "documents in this time bucket" requests.
     fn refuse_bucketed_index_only_synthesis(index: &Index) -> Result<(), Error> {
         if index.time_range.is_some() {
-            return Err(Error::Query(
-                crate::error::query::QuerySyntaxError::Unsupported(
-                    "IN_TIME_RANGE document queries are not supported on an indexOnly type: \
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "IN_TIME_RANGE document queries are not supported on an indexOnly type: \
                      the bucketed entries carry bucket-start time granularity, so documents \
                      cannot be synthesized from them; use the count aggregate surfaces over \
                      the bucketed index, or query the raw entries through a non-bucketed \
                      index"
-                        .to_string(),
-                ),
-            ));
+                    .to_string(),
+            )));
         }
         Ok(())
     }
@@ -835,7 +828,7 @@ impl DriveDocumentQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Option<grovedb::PathQuery>, Error> {
         match self.select_best_index(platform_version)? {
-            crate::query::BestIndexOutcome::Matched(index) => {
+            BestIndexOutcome::Matched(index) => {
                 // Refused here as well as in `index_only_query_index` so
                 // the prover and the no-proof executor fail before
                 // building a path query the synthesis side would refuse.
@@ -860,7 +853,7 @@ impl DriveDocumentQuery<'_> {
                 }
                 Ok(None)
             }
-            crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
+            BestIndexOutcome::NoIndexMatches(no_index_error) => {
                 match self.index_only_terminal_clause_selection(platform_version)? {
                     Some(route) => self
                         .index_only_terminal_path_query(
@@ -884,14 +877,12 @@ impl DriveDocumentQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<Document>), Error> {
         if self.start_at.is_some() {
-            return Err(Error::Query(
-                crate::error::query::QuerySyntaxError::Unsupported(
-                    "startAt/startAfter cannot address an indexOnly position (the synthesized \
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "startAt/startAfter cannot address an indexOnly position (the synthesized \
                      document id is a one-way hash of it); paginate with a range clause on \
                      the terminal property ordered by the terminal, with a limit"
-                        .to_string(),
-                ),
-            ));
+                    .to_string(),
+            )));
         }
 
         let path_query = self.construct_path_query(None, platform_version)?;
@@ -934,14 +925,12 @@ impl DriveDocumentQuery<'_> {
         use grovedb::query_result_type::QueryResultType;
 
         if self.start_at.is_some() {
-            return Err(Error::Query(
-                crate::error::query::QuerySyntaxError::Unsupported(
-                    "startAt/startAfter cannot address an indexOnly position (the synthesized \
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "startAt/startAfter cannot address an indexOnly position (the synthesized \
                      document id is a one-way hash of it); paginate with a range clause on \
                      the terminal property ordered by the terminal, with a limit"
-                        .to_string(),
-                ),
-            ));
+                    .to_string(),
+            )));
         }
 
         let path_query = self.construct_path_query_operations(
@@ -1013,13 +1002,11 @@ pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<
                 || index.properties.iter().any(|p| p.name == CREATED_AT);
             carries_owner && !carries_created_at && !index.skip_if_absent
         })
-        .ok_or(Error::Query(
-            crate::error::query::QuerySyntaxError::Unsupported(
-                "executed-transition proofs for an indexOnly type need an \
+        .ok_or(Error::Query(QuerySyntaxError::Unsupported(
+            "executed-transition proofs for an indexOnly type need an \
                  $ownerId-bearing, non-skipIfAbsent index that does not involve $createdAt"
-                    .to_string(),
-            ),
-        ))
+                .to_string(),
+        )))
 }
 
 /// The grove path and member key of the entry a transition's values
@@ -1050,11 +1037,9 @@ pub fn index_only_entry_path_and_key_from_values(
             .get_optional_at_path(property_name)
             .ok()
             .flatten()
-            .ok_or(Error::Query(
-                crate::error::query::QuerySyntaxError::Unsupported(
-                    "the transition's values do not cover the index's properties".to_string(),
-                ),
-            ))?;
+            .ok_or(Error::Query(QuerySyntaxError::Unsupported(
+                "the transition's values do not cover the index's properties".to_string(),
+            )))?;
         document_type
             .serialize_value_for_key(property_name, value, platform_version)
             .map_err(|e| Error::Protocol(Box::new(e)))
@@ -1073,7 +1058,7 @@ pub fn index_only_entry_path_and_key_from_values(
     }
 
     let mut path: Vec<Vec<u8>> = Vec::with_capacity(5 + index.properties.len() * 2);
-    path.push(vec![crate::drive::RootTree::DataContractDocuments as u8]);
+    path.push(vec![RootTree::DataContractDocuments as u8]);
     path.push(contract_id.to_vec());
     path.push(vec![1]);
     path.push(document_type.name().as_bytes().to_vec());
@@ -1309,13 +1294,11 @@ pub fn synthesize_index_only_document(
         }
     }
 
-    let owner_id = owner_id.ok_or(Error::Query(
-        crate::error::query::QuerySyntaxError::Unsupported(
-            "documents cannot be synthesized from an index that carries no $ownerId; \
+    let owner_id = owner_id.ok_or(Error::Query(QuerySyntaxError::Unsupported(
+        "documents cannot be synthesized from an index that carries no $ownerId; \
              query through an owner-bearing index"
-                .to_string(),
-        ),
-    ))?;
+            .to_string(),
+    )))?;
 
     // Deterministic content-scoped id (see module docs). Every
     // variable-length component is length-framed (`u32_be(len) ‖ bytes`)
