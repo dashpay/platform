@@ -79,8 +79,8 @@ impl<'de> Deserialize<'de> for TokenDistributionRecipient {
                 // 4.0.0-beta.4 used bare strings / externally-tagged maps, and
                 // this message is the only hint users get on ingest failure.
                 f.write_str(
-                    "TokenDistributionRecipient as a map with a `type` discriminator, \
-                     e.g. {\"type\": \"contractOwner\"} or {\"type\": \"identity\", \"identity\": \"<base58>\"} \
+                    "TokenDistributionRecipient as a map with a `$type` discriminator, \
+                     e.g. {\"$type\": \"contractOwner\"} or {\"$type\": \"identity\", \"identity\": \"<base58>\"} \
                      (the pre-4.0.0-beta.4 shapes \"ContractOwner\" / {\"Identity\": \"<base58>\"} are no longer accepted)",
                 )
             }
@@ -250,8 +250,8 @@ impl<'de> Deserialize<'de> for TokenDistributionResolvedRecipient {
 
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 f.write_str(
-                    "TokenDistributionResolvedRecipient as a map with a `type` discriminator, \
-                     e.g. {\"type\": \"identity\", \"identity\": \"<base58>\"} \
+                    "TokenDistributionResolvedRecipient as a map with a `$type` discriminator, \
+                     e.g. {\"$type\": \"identity\", \"identity\": \"<base58>\"} \
                      (the pre-4.0.0-beta.4 externally-tagged {\"Identity\": \"<base58>\"} shape is no longer accepted)",
                 )
             }
