@@ -3391,6 +3391,34 @@ mod tests {
              in-place-upgraded v14 node.\n{}",
             diffs.join("\n"),
         );
+
+        // `collect_subtree_diffs` walks the children AT `[Tokens]` and below, so it cannot see
+        // the shape of the `[Tokens]` Merk itself — and a new root-level key is inserted exactly
+        // there. Two lineages can therefore agree on every child and still carry different
+        // `root_key`s, which is a different app hash. Read the element that holds it.
+        let root_element = |platform: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+                            txn: drive::grovedb::TransactionArg| {
+            platform
+                .drive
+                .grove
+                .get_raw(
+                    drive::grovedb_path::SubtreePath::empty(),
+                    &[RootTree::Tokens as u8],
+                    txn,
+                    &platform_version_14.drive.grove_version,
+                )
+                .unwrap()
+                .expect("expected to read the [Tokens] root element")
+        };
+        assert_eq!(
+            root_element(&platform_a, None),
+            root_element(&platform_b, Some(&txn_b)),
+            "CONSENSUS FORK: the [Tokens] Merk itself is shaped differently on a fresh genesis-v14 \
+             node and an in-place-upgraded one, so their root hashes differ even though every \
+             child matches"
+        );
     }
 
     /// CONSENSUS-CRITICAL equivalence guard for the v11→v12 boundary.
