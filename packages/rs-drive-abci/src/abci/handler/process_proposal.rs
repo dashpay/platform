@@ -106,14 +106,17 @@ where
     Ok(response)
 }
 
-/// Keeps the unsigned withdrawal transactions of the proposal just accepted, which validators
-/// precommitting it sign in their vote extensions. A later round replaces the block execution
-/// context, and votes of this round can still arrive after that.
+/// Keeps the vote extensions validators precommitting the proposal just accepted sign for its
+/// unsigned withdrawal transactions. A later round replaces the block execution context, and
+/// votes of this round can still arrive after that.
 fn keep_withdrawals_of_accepted_proposal<A>(app: &A) -> Result<(), Error>
 where
     A: BlockExecutionApplication,
 {
-    let block_execution_context_guard = app.block_execution_context().read().unwrap();
+    let block_execution_context_guard = app
+        .block_execution_context()
+        .read()
+        .expect("poisoned only after a panic, which stops the node");
     let block_execution_context =
         block_execution_context_guard
             .as_ref()
@@ -128,14 +131,14 @@ where
 
     app.unsigned_withdrawal_txs_by_round()
         .write()
-        .unwrap()
+        .expect("poisoned only after a panic, which stops the node")
         .insert(
             block_state_info.height(),
             block_state_info.round(),
             block_hash,
             block_execution_context
                 .unsigned_withdrawal_transactions()
-                .clone(),
+                .into(),
         );
 
     Ok(())
