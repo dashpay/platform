@@ -1,0 +1,33 @@
+name: Runner image candidate
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, closed]
+    branches: [master, 'v*-dev', 'ci/*']
+    paths: ['.github/runner-requirements.json']
+
+# This is trusted base-branch orchestration. Never check out PR code or select
+# the control revision from PR data. Build/publish execute on separate hosted VMs.
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  statuses: write
+
+concurrency:
+  group: ${{ github.event.action == 'closed' && format('runner-image-promote-{0}', github.event.pull_request.base.ref) || format('runner-image-pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: ${{ github.event.action != 'closed' }}
+
+jobs:
+  image:
+    if: >-
+      (github.event.action != 'closed' && !github.event.pull_request.draft)
+      || (github.event.action == 'closed' && github.event.pull_request.merged)
+    uses: dashpay/dash-selfhosted-image/.github/workflows/platform-candidate.yml@baf8849b900555d66714e0e1fcffdff669b9e404
+    with:
+      pull_request: ${{ github.event.pull_request.number }}
+      control_revision: baf8849b900555d66714e0e1fcffdff669b9e404
+      mode: ${{ github.event.action == 'closed' && 'promote' || 'candidate' }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
