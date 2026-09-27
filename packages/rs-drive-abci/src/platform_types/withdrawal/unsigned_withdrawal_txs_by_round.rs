@@ -1,23 +1,24 @@
 //! The unsigned withdrawal transactions of every proposal accepted at the current height
 
-use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
 use std::collections::BTreeMap;
+use tenderdash_abci::proto::abci::ExtendVoteExtension;
 
-/// The unsigned withdrawal transactions of one accepted proposal
+/// The vote extensions validators sign for the withdrawal transactions of one accepted proposal
 #[derive(Debug, Clone)]
 struct AcceptedProposalWithdrawals {
     block_hash: [u8; 32],
-    transactions: UnsignedWithdrawalTxs,
+    vote_extensions: Vec<ExtendVoteExtension>,
 }
 
 /// The unsigned withdrawal transactions of every proposal this node accepted at the current
-/// height, by round.
+/// height, by round, kept as the vote extensions validators sign for them.
 ///
 /// A withdrawal transaction carries the chain-locked core height of the proposal that built it
 /// as its request height, so two rounds of one height whose proposers saw different chain locks
 /// ask validators to sign different transactions. A vote extension is verified against the
-/// proposal of its own round, which the block execution context alone cannot give: it only
-/// holds the last proposal processed.
+/// block it is for, which the block execution context alone cannot give: it only holds the last
+/// proposal processed. A block's withdrawal transactions do not depend on the round it is
+/// proposed in, so a block re-proposed in a later round asks for the same signatures.
 ///
 /// This is node memory, not consensus state.
 #[derive(Debug, Default, Clone)]
@@ -27,15 +28,14 @@ pub struct UnsignedWithdrawalTxsByRound {
 }
 
 impl UnsignedWithdrawalTxsByRound {
-    /// Keeps the withdrawal transactions of the block `block_hash`, accepted at `height` and
-    /// `round`, in place of any block kept for that round. Blocks of another height are
-    /// forgotten.
+    /// Keeps the vote extensions of the block `block_hash`, accepted at `height` and `round`, in
+    /// place of any block kept for that round. Blocks of another height are forgotten.
     pub fn insert(
         &mut self,
         height: u64,
         round: u32,
         block_hash: [u8; 32],
-        transactions: UnsignedWithdrawalTxs,
+        vote_extensions: Vec<ExtendVoteExtension>,
     ) {
         if self.height != height {
             self.rounds.clear();
@@ -46,32 +46,41 @@ impl UnsignedWithdrawalTxsByRound {
             round,
             AcceptedProposalWithdrawals {
                 block_hash,
-                transactions,
+                vote_extensions,
             },
         );
     }
 
-    /// The withdrawal transactions of the block `block_hash` at `height` and `round`, or `None`
-    /// when this node has not accepted that block.
+    /// The vote extensions of the block `block_hash` at `height`, as accepted at `round` or, when
+    /// this node accepted that block in another round, as accepted there. `None` when this node
+    /// has not accepted that block.
     pub fn get(
         &self,
         height: u64,
         round: u32,
         block_hash: &[u8],
-    ) -> Option<&UnsignedWithdrawalTxs> {
+    ) -> Option<&[ExtendVoteExtension]> {
         if self.height != height {
             return None;
         }
 
+        let is_block =
+            |proposal: &&AcceptedProposalWithdrawals| proposal.block_hash.as_slice() == block_hash;
+
         self.rounds
             .get(&round)
-            .filter(|proposal| proposal.block_hash.as_slice() == block_hash)
-            .map(|proposal| &proposal.transactions)
+            .filter(is_block)
+            .or_else(|| self.rounds.values().find(is_block))
+            .map(|proposal| proposal.vote_extensions.as_slice())
     }
 
-    /// Forgets every block, once their height is finalized
-    pub fn clear(&mut self) {
-        self.rounds.clear();
+    /// Whether a block this node accepted at `height` asks for no withdrawal signatures
+    pub fn has_block_without_withdrawals(&self, height: u64) -> bool {
+        self.height == height
+            && self
+                .rounds
+                .values()
+                .any(|proposal| proposal.vote_extensions.is_empty())
     }
 }
 
@@ -79,55 +88,74 @@ impl UnsignedWithdrawalTxsByRound {
 mod tests {
     use super::*;
     use crate::test::helpers::withdrawals::unsigned_withdrawal_transactions;
-    use tenderdash_abci::proto::abci::ExtendVoteExtension;
 
     const ROUND_0_BLOCK: [u8; 32] = [0xA0; 32];
     const ROUND_1_BLOCK: [u8; 32] = [0xA1; 32];
 
-    fn extensions(transactions: &UnsignedWithdrawalTxs) -> Vec<ExtendVoteExtension> {
-        transactions.into()
+    fn extensions(core_height: u32) -> Vec<ExtendVoteExtension> {
+        (&unsigned_withdrawal_transactions(core_height)).into()
     }
 
     #[test]
     fn should_keep_the_withdrawals_of_each_round_apart() {
-        let round_0 = unsigned_withdrawal_transactions(1000);
-        let round_1 = unsigned_withdrawal_transactions(1001);
-
         let mut by_round = UnsignedWithdrawalTxsByRound::default();
-        by_round.insert(10, 0, ROUND_0_BLOCK, round_0.clone());
-        by_round.insert(10, 1, ROUND_1_BLOCK, round_1.clone());
+        by_round.insert(10, 0, ROUND_0_BLOCK, extensions(1000));
+        by_round.insert(10, 1, ROUND_1_BLOCK, extensions(1001));
 
-        let kept_round_0 = by_round
-            .get(10, 0, &ROUND_0_BLOCK)
-            .expect("round 0 is kept after round 1");
-        let kept_round_1 = by_round
-            .get(10, 1, &ROUND_1_BLOCK)
-            .expect("round 1 is kept");
-
-        assert_eq!(extensions(kept_round_0), extensions(&round_0));
-        assert_eq!(extensions(kept_round_1), extensions(&round_1));
+        assert_eq!(
+            by_round.get(10, 0, &ROUND_0_BLOCK),
+            Some(extensions(1000).as_slice()),
+            "round 0 is kept after round 1"
+        );
+        assert_eq!(
+            by_round.get(10, 1, &ROUND_1_BLOCK),
+            Some(extensions(1001).as_slice())
+        );
         assert_ne!(
-            extensions(kept_round_0),
-            extensions(kept_round_1),
+            extensions(1000),
+            extensions(1001),
             "test premise: the request height makes the two rounds' transactions differ"
         );
     }
 
     #[test]
-    fn should_not_answer_for_a_block_or_round_it_did_not_accept() {
+    fn should_answer_for_a_block_accepted_in_another_round() {
         let mut by_round = UnsignedWithdrawalTxsByRound::default();
-        by_round.insert(10, 0, ROUND_0_BLOCK, unsigned_withdrawal_transactions(1000));
+        by_round.insert(10, 0, ROUND_0_BLOCK, extensions(1000));
+
+        assert_eq!(
+            by_round.get(10, 1, &ROUND_0_BLOCK),
+            Some(extensions(1000).as_slice())
+        );
+    }
+
+    #[test]
+    fn should_prefer_the_block_accepted_in_the_same_round() {
+        let mut by_round = UnsignedWithdrawalTxsByRound::default();
+        by_round.insert(10, 0, ROUND_0_BLOCK, extensions(1000));
+        by_round.insert(10, 1, ROUND_0_BLOCK, extensions(1001));
+
+        assert_eq!(
+            by_round.get(10, 1, &ROUND_0_BLOCK),
+            Some(extensions(1001).as_slice())
+        );
+    }
+
+    #[test]
+    fn should_not_answer_for_a_block_it_did_not_accept() {
+        let mut by_round = UnsignedWithdrawalTxsByRound::default();
+        by_round.insert(10, 0, ROUND_0_BLOCK, extensions(1000));
 
         assert!(by_round.get(10, 0, &ROUND_1_BLOCK).is_none());
-        assert!(by_round.get(10, 1, &ROUND_0_BLOCK).is_none());
+        assert!(by_round.get(10, 1, &ROUND_1_BLOCK).is_none());
         assert!(by_round.get(11, 0, &ROUND_0_BLOCK).is_none());
     }
 
     #[test]
     fn should_replace_the_block_kept_for_a_round() {
         let mut by_round = UnsignedWithdrawalTxsByRound::default();
-        by_round.insert(10, 0, ROUND_0_BLOCK, unsigned_withdrawal_transactions(1000));
-        by_round.insert(10, 0, ROUND_1_BLOCK, unsigned_withdrawal_transactions(1001));
+        by_round.insert(10, 0, ROUND_0_BLOCK, extensions(1000));
+        by_round.insert(10, 0, ROUND_1_BLOCK, extensions(1001));
 
         assert!(by_round.get(10, 0, &ROUND_0_BLOCK).is_none());
         assert!(by_round.get(10, 0, &ROUND_1_BLOCK).is_some());
@@ -136,23 +164,25 @@ mod tests {
     #[test]
     fn should_start_a_new_height_empty() {
         let mut by_round = UnsignedWithdrawalTxsByRound::default();
-        by_round.insert(10, 0, ROUND_0_BLOCK, unsigned_withdrawal_transactions(1000));
-        by_round.insert(11, 1, ROUND_1_BLOCK, unsigned_withdrawal_transactions(1001));
+        by_round.insert(10, 0, ROUND_0_BLOCK, vec![]);
+        by_round.insert(11, 1, ROUND_1_BLOCK, extensions(1001));
 
         assert!(by_round.get(10, 0, &ROUND_0_BLOCK).is_none());
         assert!(by_round.get(11, 0, &ROUND_0_BLOCK).is_none());
         assert!(by_round.get(11, 1, &ROUND_1_BLOCK).is_some());
+        assert!(!by_round.has_block_without_withdrawals(10));
     }
 
     #[test]
-    fn should_forget_every_block_when_cleared() {
+    fn should_tell_whether_a_block_of_the_height_has_no_withdrawals() {
         let mut by_round = UnsignedWithdrawalTxsByRound::default();
-        by_round.insert(10, 0, ROUND_0_BLOCK, unsigned_withdrawal_transactions(1000));
-        by_round.insert(10, 1, ROUND_1_BLOCK, unsigned_withdrawal_transactions(1001));
+        assert!(!by_round.has_block_without_withdrawals(10));
 
-        by_round.clear();
+        by_round.insert(10, 0, ROUND_0_BLOCK, extensions(1000));
+        assert!(!by_round.has_block_without_withdrawals(10));
 
-        assert!(by_round.get(10, 0, &ROUND_0_BLOCK).is_none());
-        assert!(by_round.get(10, 1, &ROUND_1_BLOCK).is_none());
+        by_round.insert(10, 1, ROUND_1_BLOCK, vec![]);
+        assert!(by_round.has_block_without_withdrawals(10));
+        assert!(!by_round.has_block_without_withdrawals(11));
     }
 }

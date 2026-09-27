@@ -40,12 +40,6 @@ where
             "block execution context must be set in block begin handler for finalize block",
         )))?;
 
-    // The height is decided, so no more of its votes will be verified
-    app.unsigned_withdrawal_txs_by_round()
-        .write()
-        .unwrap()
-        .clear();
-
     let platform_version = block_execution_context
         .block_platform_state()
         .current_platform_version()?;
@@ -549,39 +543,6 @@ mod tests {
             cache.committed_generation(),
             "committed-state reads that began before the commit must no longer be able to publish"
         );
-    }
-
-    /// The withdrawals kept to verify vote extensions of the height's rounds are forgotten once
-    /// the height is finalized, so the next height starts with none.
-    #[test]
-    fn should_forget_the_withdrawals_of_every_round_when_the_height_is_finalized() {
-        let mut config = PlatformConfig::default_testnet();
-        config.testing_configs.block_commit_signature_verification = false;
-        let platform: TempPlatform<MockCoreRPCLike> = TestPlatformBuilder::new()
-            .with_config(config)
-            .with_latest_protocol_version()
-            .build_with_mock_rpc()
-            .set_genesis_state();
-        let app = FullAbciApplication::new(&platform.platform);
-        let other_round_block_hash = [3u8; 32];
-
-        {
-            let mut by_round = app.unsigned_withdrawal_txs_by_round.write().unwrap();
-            by_round.insert(1, 0, BLOCK_HASH, UnsignedWithdrawalTxs::default());
-            by_round.insert(
-                1,
-                1,
-                other_round_block_hash,
-                UnsignedWithdrawalTxs::default(),
-            );
-        }
-
-        finalize_real_block(&platform, &app, 1, 1_700_000_000_000, None)
-            .expect("the block must finalize");
-
-        let by_round = app.unsigned_withdrawal_txs_by_round.read().unwrap();
-        assert!(by_round.get(1, 0, &BLOCK_HASH).is_none());
-        assert!(by_round.get(1, 1, &other_round_block_hash).is_none());
     }
 
     /// Records the events emitted while `capture` runs, to assert a failure is observable.

@@ -1,9 +1,9 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication};
 use crate::error::Error;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
-use tenderdash_abci::proto::abci::ExtendVoteExtension;
 
 /// Verifies that another validator's precommit asks for signatures on exactly the withdrawal
 /// transactions this node built for the same block.
@@ -31,25 +31,39 @@ where
     let height: u64 = height as u64;
     let round: u32 = round as u32;
 
-    // Each round of a height has its own proposal, and its withdrawal transactions carry that
-    // proposal's chain-locked core height as their request height. A later round whose proposer
-    // saw a newer chain lock asks validators to sign different transactions, so a vote is
-    // compared with what we built for the block it is for, never with another round's.
+    // A vote is compared with what we built for the block it is for, never with the last
+    // proposal processed (see `UnsignedWithdrawalTxsByRound`).
     let withdrawals_by_round = app.unsigned_withdrawal_txs_by_round().read().unwrap();
 
-    let Some(expected_withdrawals) = withdrawals_by_round.get(height, round, &hash) else {
+    let Some(expected_extensions) = withdrawals_by_round.get(height, round, &hash) else {
         // We have not accepted the block this vote is for: its proposal has not reached us yet,
-        // or it belongs to another height. We reject it, because nothing else we could check
-        // tells an honest vote from one a relaying peer altered. The block signature does not
-        // cover vote extensions, and ours carry a sign request id that binds them to neither
-        // height nor round, so any peer can drop some or all of a precommit's extensions, or
-        // swap in the same validator's extensions from another round, and the vote still
-        // verifies. Counting such votes could let extensions other than the block's reach the
-        // recovery threshold, and the commit they form would then fail in `finalize_block`.
+        // or it belongs to another height. The block signature does not cover vote extensions,
+        // and ours carry a sign request id that binds them to neither height nor round, so any
+        // peer can drop some or all of a precommit's extensions, or swap in the same validator's
+        // extensions from another round, and the vote still verifies. Counting such votes could
+        // let extensions other than the block's reach the recovery threshold, and the commit
+        // they form would then fail in `finalize_block`.
         //
-        // A dropped vote is not lost for good: a peer that learns we lack it can send it again
-        // once we have accepted the block, and a node that falls behind catches up through the
-        // commit.
+        // An empty vote is the one exception we can check. Every round of a height dequeues from
+        // the same committed queue, so while no protocol upgrade can switch the platform version
+        // at an epoch boundary, a block without withdrawals at this height means every block at
+        // it has none. Dropping extensions leaves an empty vote empty, and extensions swapped in
+        // from elsewhere are not empty.
+        if vote_extensions.is_empty() && withdrawals_by_round.has_block_without_withdrawals(height)
+        {
+            let platform_state = app.platform().state.load();
+
+            if platform_state.next_epoch_protocol_version()
+                == platform_state.current_protocol_version_in_consensus()
+            {
+                return Ok(proto::ResponseVerifyVoteExtension {
+                    status: VerifyStatus::Accept.into(),
+                });
+            }
+        }
+
+        // A rejected vote is sent again only while we stay in its round and a peer holds +2/3
+        // precommits for one block. Otherwise this node catches up once the others commit.
         tracing::debug!(
             block_hash = hex::encode(&hash),
             "votes extensions for height: {}, round: {} are rejected because we have not accepted a proposal for that block",
@@ -62,9 +76,7 @@ where
         });
     };
 
-    if expected_withdrawals != vote_extensions.as_slice() {
-        let expected_extensions: Vec<ExtendVoteExtension> = expected_withdrawals.into();
-
+    if expected_extensions != vote_extensions.as_slice() {
         tracing::error!(
             received_extensions = ?vote_extensions,
             ?expected_extensions,
@@ -97,6 +109,8 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use crate::test::helpers::withdrawals::unsigned_withdrawal_transactions;
+    use std::sync::Arc;
+    use tenderdash_abci::proto::abci::ExtendVoteExtension;
 
     const HEIGHT: u64 = 10;
     const ROUND_0_BLOCK: [u8; 32] = [0xA0; 32];
@@ -147,12 +161,7 @@ mod tests {
         app.unsigned_withdrawal_txs_by_round
             .write()
             .unwrap()
-            .insert(
-                HEIGHT,
-                0,
-                ROUND_0_BLOCK,
-                unsigned_withdrawal_transactions(ROUND_0_CORE_HEIGHT),
-            );
+            .insert(HEIGHT, 0, ROUND_0_BLOCK, round_0_extensions());
     }
 
     /// Round 1 accepted at `HEIGHT`, at the newer `ROUND_1_CORE_HEIGHT`
@@ -160,17 +169,12 @@ mod tests {
         app.unsigned_withdrawal_txs_by_round
             .write()
             .unwrap()
-            .insert(
-                HEIGHT,
-                1,
-                ROUND_1_BLOCK,
-                unsigned_withdrawal_transactions(ROUND_1_CORE_HEIGHT),
-            );
+            .insert(HEIGHT, 1, ROUND_1_BLOCK, round_1_extensions());
     }
 
     /// Round 1 was proposed at a newer chain-locked core height than round 0, and this node
     /// processed it last. A round 0 precommit carries round 0's withdrawal transactions and is
-    /// valid; it used to be compared with round 1's and rejected.
+    /// valid.
     #[test]
     fn should_accept_a_vote_for_an_earlier_round_at_an_older_core_height() {
         let platform = platform();
@@ -259,7 +263,7 @@ mod tests {
         app.unsigned_withdrawal_txs_by_round
             .write()
             .unwrap()
-            .insert(HEIGHT, 0, ROUND_0_BLOCK, UnsignedWithdrawalTxs::default());
+            .insert(HEIGHT, 0, ROUND_0_BLOCK, vec![]);
 
         assert_eq!(
             verify(&app, HEIGHT, 0, ROUND_0_BLOCK, vec![]),
@@ -271,10 +275,8 @@ mod tests {
         );
     }
 
-    /// Only round 0 is accepted. Nothing tells an honest round 1 vote from one whose
-    /// extensions a relaying peer stripped, or replaced with the same validator's round 0
-    /// extensions, whose signatures are bound to neither height nor round. The last case
-    /// matches the only proposal this node processed, and used to be accepted.
+    /// Only round 0 is accepted. Nothing tells an honest round 1 vote from one whose extensions
+    /// a relaying peer stripped or replaced with the same validator's round 0 extensions.
     #[test]
     fn should_reject_a_vote_for_a_round_this_node_has_not_accepted() {
         let platform = platform();
@@ -330,5 +332,71 @@ mod tests {
                 VerifyStatus::Reject as i32
             );
         }
+    }
+
+    /// A block this node accepted in round 0, re-proposed and voted for in round 1, asks for the
+    /// same signatures.
+    #[test]
+    fn should_accept_a_vote_for_a_block_accepted_in_another_round() {
+        let platform = platform();
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+        accept_round_0(&app);
+
+        assert_eq!(
+            verify(&app, HEIGHT, 1, ROUND_0_BLOCK, round_0_extensions()),
+            VerifyStatus::Accept as i32
+        );
+        assert_eq!(
+            verify(&app, HEIGHT, 1, ROUND_0_BLOCK, vec![]),
+            VerifyStatus::Reject as i32
+        );
+    }
+
+    /// A block this node accepted at the height has no withdrawals, so no block at it has any: an
+    /// empty vote for another block is accepted, and a vote carrying extensions is not.
+    #[test]
+    fn should_accept_an_empty_vote_for_another_block_at_a_height_without_withdrawals() {
+        let platform = platform();
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+        app.unsigned_withdrawal_txs_by_round
+            .write()
+            .unwrap()
+            .insert(HEIGHT, 0, ROUND_0_BLOCK, vec![]);
+
+        assert_eq!(
+            verify(&app, HEIGHT, 1, ROUND_1_BLOCK, vec![]),
+            VerifyStatus::Accept as i32
+        );
+        assert_eq!(
+            verify(&app, HEIGHT, 1, ROUND_1_BLOCK, round_1_extensions()),
+            VerifyStatus::Reject as i32
+        );
+        assert_eq!(
+            verify(&app, HEIGHT + 1, 0, ROUND_1_BLOCK, vec![]),
+            VerifyStatus::Reject as i32
+        );
+    }
+
+    /// With a protocol upgrade pending, a round whose block time crosses the epoch boundary runs
+    /// another platform version, which may dequeue differently: an empty vote for a block this
+    /// node has not accepted is rejected.
+    #[test]
+    fn should_reject_an_empty_vote_for_another_block_while_a_protocol_upgrade_is_pending() {
+        let platform = platform();
+        let mut platform_state = platform.state.load().as_ref().clone();
+        *platform_state.next_epoch_protocol_version_mut() =
+            platform_state.current_protocol_version_in_consensus() + 1;
+        platform.state.store(Arc::new(platform_state));
+
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+        app.unsigned_withdrawal_txs_by_round
+            .write()
+            .unwrap()
+            .insert(HEIGHT, 0, ROUND_0_BLOCK, vec![]);
+
+        assert_eq!(
+            verify(&app, HEIGHT, 1, ROUND_1_BLOCK, vec![]),
+            VerifyStatus::Reject as i32
+        );
     }
 }
