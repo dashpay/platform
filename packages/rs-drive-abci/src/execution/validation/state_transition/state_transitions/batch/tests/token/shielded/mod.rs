@@ -1297,8 +1297,11 @@ mod token_shielded_pool_tests {
             token_a,
             identity.id(),
         );
-        let dummy_nullifiers: Vec<[u8; 32]> =
-            bundle.actions.iter().map(|action| action.nullifier).collect();
+        let dummy_nullifiers: Vec<[u8; 32]> = bundle
+            .actions
+            .iter()
+            .map(|action| action.nullifier)
+            .collect();
         assert!(
             !dummy_nullifiers.is_empty(),
             "an outputs-only bundle reveals a dummy nullifier per action"
