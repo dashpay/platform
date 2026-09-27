@@ -3725,6 +3725,16 @@ impl DocumentPropertyType {
         )
     }
 
+    /// Whether the value is one identifier, whether or not the property
+    /// carries its own `refersTo` reference. A typed array of identifiers is
+    /// not one.
+    pub fn is_identifier(&self) -> bool {
+        matches!(
+            self,
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+        )
+    }
+
     pub fn sanitize_value_mut(&self, value: &mut Value) {
         match (self, value.clone()) {
             // Convert hex or base64 strings to byte arrays for ByteArray fields

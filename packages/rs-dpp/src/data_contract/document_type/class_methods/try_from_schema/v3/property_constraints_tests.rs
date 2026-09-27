@@ -684,10 +684,14 @@ fn should_compare_identifier_properties_that_declare_refers_to() {
                     "{name}"
                 );
             }
-            assert_eq!(
-                constraints["knownBuyer"].holds(&order(Identifier::new([9; 32])), None),
-                Ok(false)
-            );
+            // The seller's id as the buyer's: listed nowhere, and equal to the seller
+            for name in ["knownBuyer", "buyerIsNotSeller"] {
+                assert_eq!(
+                    constraints[name].holds(&order(Identifier::new([9; 32])), None),
+                    Ok(false),
+                    "{name}"
+                );
+            }
         }
     }
 
