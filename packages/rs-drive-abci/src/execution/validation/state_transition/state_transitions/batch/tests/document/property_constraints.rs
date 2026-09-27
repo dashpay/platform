@@ -1,6 +1,7 @@
 //! End-to-end coverage for the `propertyConstraints` doctype keyword (protocol
 //! version 14): a document type names rules its documents' integer properties
-//! must meet, each a comparison of two integer expressions. A create or replace
+//! must meet, each a comparison of two integer expressions or an `anyOf`,
+//! `allOf` or `not` of such conditions. A create or replace
 //! that breaks one is consensus-rejected with
 //! `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the rule
 //! and why, and leaves the stored document untouched. A property the document

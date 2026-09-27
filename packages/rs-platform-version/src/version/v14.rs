@@ -1061,13 +1061,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     an earlier condition guards a later one. The parser checks that every
 ///     path names an integer property that is neither transient nor inside a
 ///     transient object, that every comparison reads a property, that an
-///     `anyOf` or `allOf` holds no two alike conditions and none directly of
-///     its own kind, that a `not` holds no `not` directly, and that no
-///     condition or operand nests deeper than
-///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse, and under
-///     full validation the limits `SystemLimits::max_property_constraints` (16
-///     rules) and `max_property_constraint_nodes` (32 per rule, every
-///     comparison and logical operator counting as one).
+///     `anyOf` or `allOf` holds none directly of its own kind, that a `not`
+///     holds no `not` directly, and that no condition or operand nests deeper
+///     than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse, and
+///     under full validation the limits `SystemLimits::max_property_constraints`
+///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
+///     comparison and logical operator counting as one) and that no `anyOf` or
+///     `allOf` lists the same condition twice.
 ///     `DataContract::validate_document_properties` 0 (extended in place, inert
 ///     before this version) calls `validate_property_constraints`
 ///     (`validate_property_constraints` 0) after the schema validation, so

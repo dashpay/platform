@@ -1877,7 +1877,8 @@ pub(super) fn validate_encrypted_for_declarations(
 /// declaration's shape ([`parse_property_constraints`]) and these reads are
 /// checked on every parse; under full validation, the limits too: at most
 /// `SystemLimits::max_property_constraints` rules, each of at most
-/// `max_property_constraint_nodes` nodes.
+/// `max_property_constraint_nodes` nodes, and no `anyOf` or `allOf` listing
+/// the same condition twice.
 ///
 /// Only parser generation 3 calls it, once the core parse has run the
 /// meta-schema, so under full validation a malformed declaration is the
@@ -1977,6 +1978,11 @@ fn apply_property_constraints_v0(
             if nodes > usize::from(max_nodes) {
                 return Err(structure_error(format!(
                     "rule \"{name}\" has {nodes} nodes, above the maximum of {max_nodes}"
+                )));
+            }
+            if let Some((repeat, earlier)) = constraint.repeated_condition() {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" at {repeat} repeats the condition at {earlier}"
                 )));
             }
         }

@@ -32,7 +32,8 @@
 //! [`parse_property_constraints`] checks the declaration's shape on every
 //! parse, [`MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH`] included. Which properties a
 //! rule may read is checked against the parsed document type by parser
-//! generation 3, and the limits on the rules under full validation only.
+//! generation 3, and the limits on the rules, and that no `anyOf` or `allOf`
+//! repeats a condition, under full validation only.
 //! Nothing here is serialized: a document type rebuilds its rules from its
 //! stored schema whenever the contract is loaded.
 
@@ -243,6 +244,23 @@ impl ConstraintExpression {
         }
     }
 
+    /// Whether the expression reads at least one property.
+    fn reads_property(&self) -> bool {
+        match self {
+            ConstraintExpression::Value(_) => false,
+            ConstraintExpression::Property { .. } => true,
+            ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
+                operands.iter().any(ConstraintExpression::reads_property)
+            }
+            ConstraintExpression::Subtract(left, right)
+            | ConstraintExpression::Divide(left, right)
+            | ConstraintExpression::Modulo(left, right)
+            | ConstraintExpression::Power(left, right) => {
+                left.reads_property() || right.reads_property()
+            }
+        }
+    }
+
     /// Appends the dotted paths of the properties the expression reads to
     /// `paths`, in the order it reads them.
     fn collect_property_paths<'a>(&'a self, paths: &mut Vec<&'a str>) {
@@ -361,6 +379,52 @@ impl PropertyConstraint {
         paths
     }
 
+    /// Where an `anyOf` or `allOf` of the rule lists the same condition twice:
+    /// the repeat's place and the earlier one's (`anyOf[2]` and `anyOf[0]`), the
+    /// first found in declared order, `None` when no list does. Conditions are
+    /// alike when they parse alike, so `1` and `1.0` are the same value, and so
+    /// are `"price"` and `{ "ifAbsent": ["price", 0] }`. Checked under full
+    /// validation with the limits, which bound the lists it compares; a stored
+    /// rule was checked when its contract registered.
+    pub fn repeated_condition(&self) -> Option<(String, String)> {
+        self.find_repeated_condition(&mut String::new())
+    }
+
+    /// [`Self::repeated_condition`] for the condition at `at` (empty for the
+    /// rule's own), which is extended as the walk descends and trimmed back
+    /// when it returns `None`.
+    fn find_repeated_condition(&self, at: &mut String) -> Option<(String, String)> {
+        let (key, conditions) = match self {
+            PropertyConstraint::Compare { .. } => return None,
+            PropertyConstraint::AnyOf(conditions) => (ANY_OF, conditions),
+            PropertyConstraint::AllOf(conditions) => (ALL_OF, conditions),
+            PropertyConstraint::Not(condition) => {
+                let parent = enter(at, NOT);
+                let found = condition.find_repeated_condition(at);
+                at.truncate(parent);
+                return found;
+            }
+        };
+        let parent = enter(at, key);
+        let base = at.len();
+        for (index, condition) in conditions.iter().enumerate() {
+            if let Some(earlier) = conditions[..index]
+                .iter()
+                .position(|earlier| earlier == condition)
+            {
+                return Some((format!("{at}[{index}]"), format!("{at}[{earlier}]")));
+            }
+            // Writing to a `String` cannot fail
+            let _ = write!(at, "[{index}]");
+            if let Some(found) = condition.find_repeated_condition(at) {
+                return Some(found);
+            }
+            at.truncate(base);
+        }
+        at.truncate(parent);
+        None
+    }
+
     fn collect_property_paths<'a>(&'a self, paths: &mut Vec<&'a str>) {
         match self {
             PropertyConstraint::Compare { left, right, .. } => {
@@ -385,9 +449,9 @@ impl PropertyConstraint {
 /// object of one or more rules, each named with 1 to 64 letters, digits or
 /// underscores and holding one condition. A condition is an object with one
 /// key: a comparison of exactly two operands, `anyOf` or `allOf` with two or
-/// more conditions, no two alike and none of them directly the same operator
-/// (it says what one flat list says), or `not` with one condition that is not
-/// directly another `not`. An operand is an integer value, a property path, or
+/// more conditions, none of them directly the same operator (it says what one
+/// flat list says), or `not` with one condition that is not directly another
+/// `not`. An operand is an integer value, a property path, or
 /// an object with one key: `ifAbsent` with a path and an integer value, `add`
 /// or `multiply` with two or more operands, or `subtract`, `divide`, `modulo`
 /// or `power` with exactly two. An integer value may be spelled as a float with
@@ -396,7 +460,8 @@ impl PropertyConstraint {
 /// property, which would hold for every document or for none, and a condition
 /// or operand deeper than [`MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH`] are refused.
 /// What the paths name is checked against the parsed document type, and the
-/// limits under full validation, by parser generation 3.
+/// limits and that no list repeats a condition under full validation, by
+/// parser generation 3.
 pub fn parse_property_constraints(
     schema: &Value,
     document_type_name: &str,
@@ -486,6 +551,17 @@ fn located(at: &str) -> String {
     }
 }
 
+/// Extends `at`, where a condition sits in its rule (empty for the rule's
+/// own), to the place of its `key`, returning the length to trim it back to.
+fn enter(at: &mut String, key: &str) -> usize {
+    let parent = at.len();
+    if parent > 0 {
+        at.push('.');
+    }
+    at.push_str(key);
+    parent
+}
+
 /// A condition at `at` (`anyOf[1]`, empty for the rule's own), where the
 /// errors place it, `depth` levels into its rule: an object whose one key is a
 /// comparison listing its two sides, or `anyOf`, `allOf` or `not`. The error is
@@ -509,11 +585,7 @@ fn parse_condition(
             condition_keys()
         ));
     };
-    let parent = at.len();
-    if parent > 0 {
-        at.push('.');
-    }
-    at.push_str(key);
+    let parent = enter(at, key);
     let condition = match key {
         ANY_OF => PropertyConstraint::AnyOf(condition_list(body, key, at, depth + 1)?),
         ALL_OF => PropertyConstraint::AllOf(condition_list(body, key, at, depth + 1)?),
@@ -539,19 +611,18 @@ fn parse_condition(
                 ));
             };
             let (left, right) = operand_pair(body, at, depth + 1)?;
-            let compare = PropertyConstraint::Compare {
-                comparison,
-                left,
-                right,
-            };
-            if compare.property_paths().is_empty() {
+            if !left.reads_property() && !right.reads_property() {
                 at.truncate(parent);
                 return Err(format!(
                     "{}reads no property, so it would hold for every document or for none",
                     located(at)
                 ));
             }
-            compare
+            PropertyConstraint::Compare {
+                comparison,
+                left,
+                right,
+            }
         }
     };
     at.truncate(parent);
@@ -559,8 +630,9 @@ fn parse_condition(
 }
 
 /// The two or more conditions the `anyOf` or `allOf` named `key` lists at
-/// `at`, `depth` levels into their rule: none of them directly another `key`,
-/// which says what one flat list says, and no two alike.
+/// `at`, `depth` levels into their rule, none of them directly another `key`,
+/// which says what one flat list says. That no two are alike is checked under
+/// full validation ([`PropertyConstraint::repeated_condition`]).
 fn condition_list(
     conditions: &Value,
     key: &str,
@@ -571,7 +643,7 @@ fn condition_list(
         return Err(format!("at {at} must list two or more conditions"));
     };
     let base = at.len();
-    let mut parsed: Vec<PropertyConstraint> = Vec::with_capacity(values.len());
+    let mut parsed = Vec::with_capacity(values.len());
     for (index, value) in values.iter().enumerate() {
         // Writing to a `String` cannot fail
         let _ = write!(at, "[{index}]");
@@ -581,14 +653,7 @@ fn condition_list(
                  says: list its conditions in the outer {key}"
             ));
         }
-        let condition = parse_condition(value, at, depth)?;
-        if let Some(earlier) = parsed.iter().position(|earlier| *earlier == condition) {
-            return Err(format!(
-                "at {at} repeats the condition at {}[{earlier}]",
-                &at[..base]
-            ));
-        }
-        parsed.push(condition);
+        parsed.push(parse_condition(value, at, depth)?);
         at.truncate(base);
     }
     Ok(parsed)

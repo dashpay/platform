@@ -482,15 +482,6 @@ fn should_refuse_a_malformed_condition() {
             platform_value!({ "not": { "not": one.clone() } }),
             "rule \"rule\" at not.not is a not directly inside a not",
         ),
-        (
-            platform_value!({ "anyOf": [one.clone(), two.clone(), one.clone()] }),
-            "rule \"rule\" at anyOf[2] repeats the condition at anyOf[0]",
-        ),
-        // Alike once parsed: JSON does not tell `1` from `1.0`
-        (
-            platform_value!({ "allOf": [one.clone(), { "equal": ["price", 1.0] }] }),
-            "rule \"rule\" at allOf[1] repeats the condition at allOf[0]",
-        ),
         // Every comparison reads a property, not only the rule as a whole: a constant
         // one would make the anyOf hold for every document
         (
@@ -538,8 +529,80 @@ fn should_refuse_conditions_nested_deeper_than_the_parse_depth_cap() {
     parse(nested(MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH - 1)).expect("at the cap");
     expect_refusal(
         nested(MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH),
-        &format!("nests deeper than {MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH} levels"),
+        &format!("equal[0] nests deeper than {MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH} levels"),
     );
+    // One level more puts the comparison itself past the cap, inside the anyOf of
+    // the first level, and the condition parse refuses it before its operands
+    expect_refusal(
+        nested(MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH + 1),
+        &format!("anyOf[0] nests deeper than {MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH} levels"),
+    );
+}
+
+/// A list that repeats a condition is found where it sits, the first in declared
+/// order, comparing conditions as they parse. The parse itself accepts it: the check
+/// runs under full validation.
+#[test]
+fn should_find_a_condition_an_any_of_or_all_of_repeats() {
+    let one = platform_value!({ "equal": ["price", 1] });
+    let two = platform_value!({ "equal": ["price", 2] });
+    let fee = platform_value!({ "equal": ["fee", 1] });
+    for (condition, expected) in [
+        (
+            platform_value!({ "anyOf": [one.clone(), two.clone()] }),
+            None,
+        ),
+        // The same condition in two different lists is no repeat
+        (
+            platform_value!({
+                "allOf": [
+                    { "anyOf": [one.clone(), fee.clone()] },
+                    { "anyOf": [one.clone(), two.clone()] }
+                ]
+            }),
+            None,
+        ),
+        (
+            platform_value!({ "anyOf": [one.clone(), two.clone(), one.clone()] }),
+            Some(("anyOf[2]", "anyOf[0]")),
+        ),
+        // Alike once parsed: JSON does not tell `1` from `1.0`, and a path on its own
+        // reads as `ifAbsent` 0
+        (
+            platform_value!({ "allOf": [one.clone(), { "equal": ["price", 1.0] }] }),
+            Some(("allOf[1]", "allOf[0]")),
+        ),
+        (
+            platform_value!({
+                "anyOf": [one.clone(), { "equal": [{ "ifAbsent": ["price", 0] }, 1] }]
+            }),
+            Some(("anyOf[1]", "anyOf[0]")),
+        ),
+        // Found through a not, inside a nested list
+        (
+            platform_value!({
+                "allOf": [
+                    fee.clone(),
+                    { "not": { "anyOf": [two.clone(), one.clone(), two.clone()] } }
+                ]
+            }),
+            Some(("allOf[1].not.anyOf[2]", "allOf[1].not.anyOf[0]")),
+        ),
+        // The first repeat in declared order
+        (
+            platform_value!({
+                "anyOf": [{ "allOf": [fee.clone(), fee.clone()] }, one.clone(), one.clone()]
+            }),
+            Some(("anyOf[0].allOf[1]", "anyOf[0].allOf[0]")),
+        ),
+    ] {
+        let rule = parse_rule_value(condition.clone());
+        assert_eq!(
+            rule.repeated_condition(),
+            expected.map(|(repeat, earlier)| (repeat.to_string(), earlier.to_string())),
+            "{condition:?}"
+        );
+    }
 }
 
 // ── evaluation ──────────────────────────────────────────────────────────
