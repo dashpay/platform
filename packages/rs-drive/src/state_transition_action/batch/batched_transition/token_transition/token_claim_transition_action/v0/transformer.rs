@@ -623,9 +623,7 @@ mod tests {
     //!   * the `From<TokenDistributionResolvedRecipient> for TokenDistributionRecipient` roundtrip
     //!   * `ClaimAction` variant dispatch / clone / enum wrapper accessors
     use dpp::balances::credits::TokenAmount;
-    use dpp::block::epoch::EpochIndex;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{
         TokenDistributionRecipient, TokenDistributionResolvedRecipient,
     };

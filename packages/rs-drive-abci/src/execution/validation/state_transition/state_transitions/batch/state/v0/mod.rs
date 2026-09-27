@@ -300,6 +300,11 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         transaction,
                         platform_version,
                     )?,
+                    // Every token shielded pool arm below is unreachable on the protocol
+                    // versions that select this generation. The pool transition kinds are refused
+                    // at the batch's `is_allowed` gate until the version that admits them, and a
+                    // document cost paid out of a pool travels in `TokenPaymentInfo::V1`, whose
+                    // `active_version_range` opens at that same version.
                     TokenTransitionAction::ShieldAction(shield_action) => shield_action
                         .validate_state(
                             platform,

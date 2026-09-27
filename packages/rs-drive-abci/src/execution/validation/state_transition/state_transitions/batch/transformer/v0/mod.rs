@@ -753,6 +753,10 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 Ok(batched_action)
             }
+            // Every token shielded pool arm below is unreachable in this generation. The
+            // protocol versions that select it, 1 through 11, refuse each pool transition kind at
+            // the batch's `is_allowed` gate, and the version that admits those kinds does not
+            // select this generation at all. The arms exist so the match stays exhaustive.
             TokenTransition::Shield(token_shield) => {
                 let (batched_action, fee_result) = TokenShieldTransitionAction::try_from_borrowed_token_shield_transition_with_contract_lookup(drive, owner_id, token_shield, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())

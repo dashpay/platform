@@ -19,6 +19,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         let anchors_path = shielded_credit_pool_anchors_path();
+        // The pool's path is a parameter now, and the credit pool passes the very path this
+        // function used to build for itself: every protocol version that selects this
+        // generation sees the same operations against the same tree.
         self.has_anchor_in_pool_v0(
             &anchors_path,
             anchor,
