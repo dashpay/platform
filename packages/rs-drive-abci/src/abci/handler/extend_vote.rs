@@ -25,45 +25,51 @@ where
         round,
     } = request;
     let block_execution_context_guard = app.block_execution_context().read().unwrap();
+
+    // Verify Tenderdash that it called this handler correctly
+    if let Some(block_execution_context) = block_execution_context_guard.as_ref() {
+        if block_execution_context
+            .block_state_info()
+            .matches_current_block(height as u64, round as u32, block_hash.clone())?
+        {
+            // Extend votes with unsigned withdrawal transactions
+            // we only want to sign the hash of the transaction
+            let vote_extensions = block_execution_context
+                .unsigned_withdrawal_transactions()
+                .into();
+
+            return Ok(proto::ResponseExtendVote { vote_extensions });
+        }
+    }
+
+    // Tenderdash signs again a block it locked in an earlier round without processing it in
+    // this round. That round's proposal has replaced the block execution context meanwhile, or
+    // left none when it was rejected before execution. A block's withdrawal transactions do not
+    // depend on the round, so sign the ones we built when we accepted it.
+    if let Some(vote_extensions) = app
+        .unsigned_withdrawal_txs_by_round()
+        .read()
+        .expect("poisoned only after a panic, which stops the node")
+        .get(height as u64, round as u32, &block_hash)
+    {
+        return Ok(proto::ResponseExtendVote {
+            vote_extensions: vote_extensions.to_vec(),
+        });
+    }
+
     let block_execution_context =
         block_execution_context_guard
             .as_ref()
             .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                 "block execution context must be set in block begin handler for extend votes",
             )))?;
-
-    // Verify Tenderdash that it called this handler correctly
     let block_state_info = &block_execution_context.block_state_info();
 
-    if !block_state_info.matches_current_block(height as u64, round as u32, block_hash.clone())? {
-        // Tenderdash signs again a block it locked in an earlier round without processing it in
-        // this round. A block's withdrawal transactions do not depend on the round, so sign the
-        // ones we built when we accepted it.
-        if let Some(vote_extensions) = app
-            .unsigned_withdrawal_txs_by_round()
-            .read()
-            .expect("poisoned only after a panic, which stops the node")
-            .get(height as u64, round as u32, &block_hash)
-        {
-            return Ok(proto::ResponseExtendVote {
-                vote_extensions: vote_extensions.to_vec(),
-            });
-        }
-
-        return Err(AbciError::RequestForWrongBlockReceived(format!(
-            "received extend votes request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-            height, round, hex::encode(block_hash),
-            block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string())
-        )).into());
-    }
-
-    // Extend votes with unsigned withdrawal transactions
-    // we only want to sign the hash of the transaction
-    let vote_extensions = block_execution_context
-        .unsigned_withdrawal_transactions()
-        .into();
-
-    Ok(proto::ResponseExtendVote { vote_extensions })
+    Err(AbciError::RequestForWrongBlockReceived(format!(
+        "received extend votes request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
+        height, round, hex::encode(block_hash),
+        block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string())
+    )).into())
 }
 
 #[cfg(test)]
@@ -255,6 +261,48 @@ mod tests {
             .write()
             .unwrap()
             .replace(context);
+
+        let kept_extensions: Vec<proto::ExtendVoteExtension> =
+            (&unsigned_withdrawal_transactions(1000)).into();
+        app.unsigned_withdrawal_txs_by_round
+            .write()
+            .unwrap()
+            .insert(10, 0, [0xAA; 32], kept_extensions.clone());
+
+        let response = extend_vote::<_, MockCoreRPCLike>(
+            &app,
+            proto::RequestExtendVote {
+                hash: vec![0xAA; 32],
+                height: 10,
+                round: 1,
+            },
+        )
+        .expect("extend_vote should sign the kept withdrawals");
+        assert_eq!(response.vote_extensions, kept_extensions);
+
+        let result = extend_vote::<_, MockCoreRPCLike>(
+            &app,
+            proto::RequestExtendVote {
+                hash: vec![0xBB; 32],
+                height: 10,
+                round: 1,
+            },
+        );
+        assert!(
+            result.is_err(),
+            "a block this node has not accepted must not be signed"
+        );
+    }
+
+    /// A later round's proposal rejected before execution leaves no block execution context, and
+    /// Tenderdash can still sign the block it locked in an earlier round.
+    #[test]
+    fn should_sign_a_block_accepted_in_an_earlier_round_without_a_block_execution_context() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
 
         let kept_extensions: Vec<proto::ExtendVoteExtension> =
             (&unsigned_withdrawal_transactions(1000)).into();
