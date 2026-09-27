@@ -198,9 +198,10 @@ where
             // fail: block validation refuses it on that record. Reading the record costs a few
             // key lookups against a pool tree; verifying the bundles the batch carries costs a
             // Halo 2 verification per bundle, which the node would otherwise pay for before
-            // discovering the free reason to refuse. Batches are the only transitions whose pool
-            // bundles are checked against state nowhere in the mempool passes: the pool-paid
-            // transitions do it in their own transformer, which runs here too.
+            // discovering the free reason to refuse. A batch needed this read of its own: the
+            // pool-paid transitions check their bundles against state in their own transformer,
+            // which runs here, while a batch's pool checks live in per-action state validation,
+            // which does not.
             //
             // Both levels read it. The first check keeps such a batch out; the re-check after
             // every block is what evicts one that was admitted while its note was still unspent,

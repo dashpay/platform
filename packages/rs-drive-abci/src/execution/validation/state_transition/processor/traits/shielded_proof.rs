@@ -910,9 +910,9 @@ fn key_not_allowed_in_shielded_creation(
 ///
 /// CheckTx only. A batch's pool bundles are checked against the pool in block validation, inside
 /// each pool action's state validation, where a failure is a paid one — the identity contract
-/// nonce is consumed and the fee charged. Nothing in the mempool passes reads the pool: a batch
-/// whose note has been spent is admitted, and the node pays for the Halo 2 verification of a
-/// bundle that block validation will refuse on a handful of key lookups. This is those lookups,
+/// nonce is consumed and the fee charged. Before this check, no mempool pass read the pool at all:
+/// a batch whose note had been spent was admitted, and the node paid for the Halo 2 verification of
+/// a bundle that block validation would refuse on a handful of key lookups. This is those lookups,
 /// run before the verification, so the free reason to refuse is found first.
 ///
 /// It cannot change a consensus outcome. What it refuses is refused unpaid, and an unpaid refusal

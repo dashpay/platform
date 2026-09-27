@@ -178,8 +178,10 @@ pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 20;
 /// pays the proposer only the remainder, so a component under the real cost comes out of the
 /// proposer's reward for the proof it verified and leaves the storage pool short of an item the
 /// chain then carries forever. Recipient state is not reachable where the number is needed in any
-/// case: the fee is fixed by the SDK builder on the client and re-derived by the stateless
-/// `validate_minimum_shielded_fee` gate, and neither reads a balance.
+/// case: the builder that fixes the fee takes no drive and no transaction, and the stateless
+/// `validate_minimum_shielded_fee` gate that re-derives it takes neither either, so no balance is
+/// reachable from where the number is decided. (That builder has no caller outside tests yet; the
+/// argument is about what it can read, not about who calls it.)
 ///
 /// The second reason is decisive even where that state IS reachable, and it is why the cheap case
 /// must not be split out later as an optimisation: `credit_amount` is public and must equal this

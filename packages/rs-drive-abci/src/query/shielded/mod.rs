@@ -74,17 +74,20 @@ impl ShieldedPoolSelector {
     /// answered as the first.
     ///
     /// Only the unproved reads need this. A proof over a pool that does not exist is a proof of
-    /// its absence, which `Drive::verify_pool_notes_count_v0` and its siblings verify against the
-    /// root hash and report as `None` — an answer the client can check rather than has to trust.
+    /// its absence, which is an answer the client can check against the root hash rather than has
+    /// to trust. That a verifier walks across the missing pool layer and reports `None` is the
+    /// intent; the proved path is covered only as far as returning a proof, so treat the
+    /// verifier's side of it as untested.
     pub(super) fn validate_pool_exists(
         &self,
         drive: &Drive,
         platform_version: &PlatformVersion,
     ) -> Result<Result<(), QueryError>, Error> {
         match self {
-            // The credit pool's subtree is part of the initial state structure of every version
-            // that serves these queries, so its absence would be corrupted state rather than a
-            // client naming a pool that was never created.
+            // The credit pool is not named by the client, so there is nothing here to refuse: a
+            // caller cannot ask for a credit pool that was never created the way it can ask for a
+            // token's. Versions that serve these queries before the credit pool exists read it as
+            // empty, which is what they did before this check was added.
             ShieldedPoolSelector::Credit => Ok(Ok(())),
             ShieldedPoolSelector::Token(token_id) => {
                 let pools_root = token_shielded_pools_root_path();
@@ -596,11 +599,13 @@ mod tests {
 
     /// The proved reads keep answering a pool the chain does not have with a proof, deliberately.
     ///
-    /// GroveDB proves the pool's absence, and the verifiers
-    /// (`Drive::verify_pool_notes_count_v0` and its siblings) read that proof against the root
-    /// hash and report `None`. That is an answer the client checks rather than has to trust, so
-    /// it is worth more than the `NotFound` the unproved reads give. Whoever changes this must
-    /// change the verifiers with it.
+    /// GroveDB proves the pool's absence, which is an answer the client checks against the root
+    /// hash rather than has to trust, so it is worth more than the `NotFound` the unproved reads
+    /// give. Whoever changes this must change the verifiers with it.
+    ///
+    /// This test asserts only that a proof comes back. Whether
+    /// `Drive::verify_pool_notes_count_v0` and its siblings can walk across the absent pool layer
+    /// and report `None` is not covered here and is worth its own test.
     #[test]
     fn proved_queries_answer_a_pool_the_chain_does_not_have_with_an_absence_proof() {
         let (platform, state, version) = setup_platform_with_a_token_pool();
