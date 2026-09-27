@@ -2,7 +2,7 @@ name: Build release NPM packages
 description: Compile and pack on the provisioned unprivileged Linux image
 inputs:
   cache-name:
-    description: Persistent Cargo target cache name
+    description: Cargo target directory name (job-local on disposable release runners)
     default: release-npm-target
 runs:
   using: composite
@@ -24,7 +24,7 @@ runs:
       uses: ./.github/actions/rust
       with:
         target: wasm32-unknown-unknown
-        # The runner persists the Cargo registry between runs.
+        # Never restore a shared Rust build cache into a release.
         cache: 'false'
         system-dependencies: verify
 
@@ -54,6 +54,10 @@ runs:
 
     - name: Setup Node.JS
       uses: ./.github/actions/nodejs
+      with:
+        # PR image validation may use its own caches; release jobs must not
+        # import executable state from the ordinary CI cache namespace.
+        cache: ${{ env.DASH_RELEASE_RUNNER != '1' }}
 
     - name: Install Cargo binstall
       uses: cargo-bins/cargo-binstall@v1.3.1

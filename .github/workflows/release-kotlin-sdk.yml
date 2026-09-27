@@ -19,12 +19,22 @@ name: Release Kotlin SDK
 on:
   workflow_call:
     inputs:
+      dry_run:
+        description: 'Build and upload CI artifacts only; never attach or publish'
+        type: boolean
+        required: false
+        default: false
       tag:
         description: 'Platform release tag (vX.Y.Z[-pre.N])'
         required: true
         type: string
   workflow_dispatch:
     inputs:
+      dry_run:
+        description: 'Build and upload CI artifacts only; never attach or publish'
+        type: boolean
+        required: false
+        default: false
       tag:
         description: >-
           Existing platform release tag to (re-)release the Kotlin SDK for.
@@ -37,14 +47,16 @@ on:
 jobs:
   build-and-release:
     name: Build release AAR (arm64-v8a + x86_64)
-    # Same persistent runner as kotlin-sdk-build.yml, so the multi-hour
-    # cargo/NDK build reuses its warm ~/.cargo and target/ caches instead of
-    # building cold on a hosted runner. No fork PR guard is needed here: the
-    # workflow only triggers on release/workflow_dispatch (via release.yml),
-    # never on pull_request. The maven-central-deploy job below deliberately
-    # stays on a hosted runner so the environment-scoped publishing secrets
-    # never touch the persistent machine.
-    runs-on: [self-hosted, kotlin-ci]
+    # Fresh runner, registration, HOME and workspace for exactly one job.
+    # Publication remains hosted; no publishing credentials enter this pool.
+    if: >-
+      github.repository == 'dashpay/platform'
+      && (github.event_name == 'release'
+          || (github.event_name == 'workflow_dispatch'
+              && (github.ref_protected || startsWith(github.ref, 'refs/tags/'))))
+    runs-on:
+      group: platform-release-builds
+      labels: [self-hosted, Linux, X64, 'platform-release-${{ github.run_id }}-${{ github.run_attempt }}-kotlin']
     timeout-minutes: 180
     permissions:
       contents: read # release attachment runs on an ephemeral hosted job
@@ -65,27 +77,24 @@ jobs:
       sha: ${{ steps.resolve-sha.outputs.sha }}
 
     steps:
-      # Same idempotent host check as kotlin-sdk-build.yml, plus gh (used by
-      # the tag validation below and preinstalled only on hosted images). Runs
-      # before checkout so the validation step can rely on gh.
-      - name: Ensure runner dependencies
+      - name: Verify disposable release runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${DASH_RELEASE_RUNNER:-}" = 1
+          test "${DASH_RELEASE_RUN_ID:-}" = "$GITHUB_RUN_ID"
+          test "${DASH_RELEASE_RUN_ATTEMPT:-}" = "$GITHUB_RUN_ATTEMPT"
+          test "${DASH_RELEASE_KIND:-}" = kotlin
+
+      # Verify prebaked native tools. A release job has no sudo or Docker.
+      - name: Verify runner dependencies
         run: |
           set -euo pipefail
 
-          MISSING=()
           for pkg in build-essential cmake curl gh jq libgmp-dev libpulse0 libssl-dev libx11-xcb1 pkg-config python3 unzip zip; do
-            dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+            dpkg-query -W -f='${Status}' "$pkg" | grep -Fx 'install ok installed'
           done
-          if [ ${#MISSING[@]} -gt 0 ]; then
-            echo "Installing: ${MISSING[*]}"
-            sudo apt-get update -qq
-            sudo apt-get install -qq --yes "${MISSING[@]}"
-          fi
-
-          if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --no-modify-path --default-toolchain none
-          fi
+          test -x "$HOME/.cargo/bin/rustup"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       # A workflow_dispatch `tag` input is free-form and actions/checkout would
@@ -147,17 +156,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Releasing Kotlin SDK ${VERSION} for platform release ${TAG}"
 
-      # PR jobs run in this same workspace on this persistent runner. Git
-      # state they leave behind (.git/hooks, .git/config, .git/info/attributes)
-      # would run inside actions/checkout's own `git checkout`, before any
-      # later cleanup could remove it, and stale jniLibs or gradle outputs
-      # must never leak into a release AAR. Start from an empty directory and
-      # a fresh clone; the release build cache lives outside the workspace.
-      - name: Empty the workspace left by earlier jobs
-        run: |
-          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} + \
-            || sudo -n find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-
+      # No previous job's Git configuration, hooks or build state exists here.
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -171,6 +170,9 @@ jobs:
         id: resolve-sha
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Verify release image contract
+        run: ci-image-contract verify .github/runner-requirements.json
+
       - name: Verify JDK 17
         run: |
           JAVA_HOME_RESOLVED=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
@@ -180,21 +182,18 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME_RESOLVED" >> "$GITHUB_ENV"
           echo "$JAVA_HOME_RESOLVED/bin" >> "$GITHUB_PATH"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: >-
-            platforms;android-35
-            build-tools;35.0.0
-            ndk;28.1.13356709
+      - name: Verify prebaked Android SDK
+        run: |
+          test -f "$ANDROID_SDK_ROOT/platforms/android-35/android.jar"
+          test -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt2"
+          test -x "$ANDROID_SDK_ROOT/ndk/28.1.13356709/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,x86_64-linux-android
 
-      # No actions/cache here: the persistent runner keeps ~/.cargo between
-      # runs, and the release target cache below lives outside the workspace.
+      # Job-local only: the host destroys HOME and this cache with the runner.
       - name: Prepare release Cargo target cache
         uses: ./.github/actions/release-cargo-target-cache
         with:
@@ -236,6 +235,8 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
 
       - name: Build release AAR
         working-directory: packages/kotlin-sdk
@@ -251,7 +252,7 @@ jobs:
           printf '%s\n' "$BUILT_SHA" > "dash-sdk-android-${VERSION}.commit.txt"
 
       # Release attachment runs on a fresh hosted runner so release-write
-      # credentials never reach the persistent build machine.
+      # credentials never reach the disposable build runner.
       - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
@@ -276,6 +277,7 @@ jobs:
   attach-release:
     name: Attach AAR to platform release
     needs: build-and-release
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -352,7 +354,7 @@ jobs:
     # selected ref) skips this job cleanly instead of failing at the
     # environment policy; Maven for such tags goes through the manual
     # runbook in packages/kotlin-sdk/PUBLISHING.md.
-    if: ${{ needs.build-and-release.result == 'success' && needs.attach-release.result == 'success' && github.ref == format('refs/tags/{0}', inputs.tag) }}
+    if: ${{ !inputs.dry_run && needs.build-and-release.result == 'success' && needs.attach-release.result == 'success' && github.ref == format('refs/tags/{0}', inputs.tag) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -459,6 +461,8 @@ jobs:
       - name: Setup Gradle
         if: steps.secrets-gate.outputs.proceed == 'true' && steps.maven-check.outputs.already_published != 'true'
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
 
       # Stages the signed release AAR + sources/javadoc jars into
       # sdk/build/staging-deploy. Task dependencies enforce the publish

@@ -1,7 +1,8 @@
 # NPM release runners
 
-NPM release compilation uses `[self-hosted, Linux, X64, npm-build]` in the
-restricted `platform-npm-releases` runner group. Publishing
+NPM release compilation uses a fresh single-job runner with a unique
+`platform-release-<run-id>-<attempt>-npm` label in the `platform-release-builds`
+runner group. Kotlin releases use the same lifecycle with a `-kotlin` label. Publishing
 continues on GitHub-hosted Ubuntu with OIDC; the builder receives no publishing
 credentials. The `npm-release-build` action is shared by releases and image
 validation so both compile and pack with the same setup.
@@ -16,15 +17,17 @@ TypeScript generation comes from the workspace's pinned `ts-protoc-gen` dependen
 
 Image-owned native dependencies are verified, never installed using sudo. Rust,
 Node and the pinned WASM tools use writable runner/user locations. Cargo targets
-remain outside the checkout; each release starts with a fresh workspace. The
+remain in job-local HOME; each release starts with fresh runner, HOME and workspace state. The
 runner needs no Docker CLI/socket or KVM device.
 
 ## Provisioning and promotion
 
 Use the reviewed `dashpay/dash-selfhosted-image` recipe and a tested immutable
-image digest, not a moving tag. Register dedicated release capacity with `npm-build` only after
-the NPM validation workflow succeeds on that image. Drain old registrations before
-replacement; retain their image/configuration for rollback. Old release tags
+image digest, not a moving tag. Deploy the host-side disposable release controller
+only after the NPM validation workflow succeeds on that image. Do not add generic
+release labels to persistent CI registrations. See the
+[controller installation and cleanup runbook](https://github.com/dashpay/dash-selfhosted-image/blob/main/docs/disposable-releases.md).
+Old release tags
 still contain their original workflows and do not automatically gain this fix.
 
 Requirements-changing PRs select a candidate label bound to the complete PR head
@@ -54,32 +57,47 @@ checks committed generated output, tests failure recovery and validates packing.
 
 Local setup and generator test commands are in `packages/dapi-grpc/README.md`.
 
+After installing the controller, use the `release.yml` dispatch with
+`tag=npm-test:<version>` on a protected development branch for a non-publishing
+NPM build. For Kotlin, dispatch `release-kotlin-sdk.yml` from the protected branch
+with an existing published `tag` and `dry_run=true`: compilation/artifact upload
+run, but release attachment and Maven publication are both skipped. Check that
+the image contract matches the selected source. Neither controller unit tests
+nor an image smoke test establishes that these end-to-end jobs pass.
+
 ## Separate PR and release state
 
-The `platform-npm-releases` organization runner group must select only the
-`dashpay/platform` repository and restrict execution to:
+The `platform-release-builds` organization runner group selects only
+`dashpay/platform` and contains only controller-created one-job registrations.
+Each build requests:
 
-```text
-dashpay/platform/.github/workflows/release-npm-build.yml@refs/heads/v4.2-dev
+```yaml
+runs-on:
+  group: platform-release-builds
+  labels: [self-hosted, Linux, X64, 'platform-release-${{ github.run_id }}-${{ github.run_attempt }}-npm']
 ```
 
-Protect that branch with the normal maintainer review policy. `release.yml`
-invokes that protected reusable workflow; the reusable workflow rejects PR
-callers and arbitrary branch dispatches before checkout. A PR cannot select the
-release group by changing its own workflow to request the `npm-build` label.
-The group-level selected-workflow restriction is a required operator setting,
-not something a repository workflow can grant itself.
+There is no fallback to `npm-build`, `rust-ci` or `kotlin-ci`. Without the
+controller, builds stay queued. Runtime markers reject accidental routing to an
+ordinary runner; they are not cryptographic attestation. The host controller
+independently checks repository, event, workflow, run, attempt and commit before
+creating fresh JIT capacity. Only one job can consume each registration; the host
+destroys its container/processes, HOME, registration and workspace afterward.
 
-Use separate runner containers/VMs and separate registration, workspace, HOME,
-Cargo registry and target-cache storage for PR and release pools. Do not mount
-the same cache volumes into both pools. Release caches can persist between
-releases; no PR may write them. Ordinary PR validation uses `npm-pr`; image
-candidates continue to use fresh one-job registrations and volumes. Do not add
-`npm-pr`, `rust-ci` or `kotlin-ci` to the release registration.
+**Ordinary PR caching is unchanged.** PR validation keeps its own persistent
+Cargo/Gradle/Yarn caches. Releases reuse the prebaked image/toolchains but never
+mount PR state or restore shared executable dependency caches. Yarn caching is
+opted out only for the release runtime; Kotlin release build/publication disable
+Gradle cache restores. A cold release compile is the intentional tradeoff; do not
+reintroduce shared caches to speed it up without reviewing their writer trust.
 
-For another maintained branch, create its reviewed protected reusable-workflow
-ref and corresponding group policy explicitly. Do not wildcard the workflow
-restriction or allow PR refs. Validate the policy by attempting a PR job that
-requests the release group: it must be rejected, while a permitted release dry
-run succeeds. The workflow guard is defense in depth; enabling the release
-pool without its group restriction does not establish this boundary.
+`release.yml` calls its local reusable workflow, so the workflow travels with the
+release source. Port it and the matching image requirements to 4.3; the host
+controller needs no branch-specific allowlist. Branch protection, trusted tags,
+fork approvals and hosted publishing authorization remain necessary. Optional
+selected-workflow group restrictions are defense in depth, not the mechanism
+that erases prior-job state. Labels alone are not authorization.
+
+This assumes a trusted host and pinned image. A fresh container does not repair
+host compromise or retroactively secure old release tags/artifacts. Merge/deploy
+the controller before relying on this workflow change for a release.
