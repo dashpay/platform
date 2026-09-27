@@ -65,6 +65,26 @@ mod tests {
         run_chain_for_strategy(platform, 2, strategy(), config(), 15, &mut None, &mut None).await
     }
 
+    /// Runs the chain and queues one withdrawal transaction for the next height. Returns the
+    /// outcome with the round 0 proposal for that height, at the last chain-locked core height.
+    async fn run_chain_with_queued_withdrawal(
+        platform: &mut Platform<MockCoreRPCLike>,
+    ) -> (ChainExecutionOutcome<'_>, RequestProcessProposal) {
+        let outcome = run_chain(platform).await;
+
+        queue_withdrawal_transaction(&outcome);
+
+        let round_0_core_height = outcome
+            .abci_app
+            .platform
+            .state
+            .load()
+            .last_committed_core_height();
+        let round_0 = proposal(&outcome, 0, round_0_core_height, ROUND_0_BLOCK);
+
+        (outcome, round_0)
+    }
+
     /// Puts one untied withdrawal transaction in the queue the next height dequeues from, and
     /// moves the committed app hash with it. Only the queue entry is written: there is no
     /// matching withdrawal document, the transaction index counter is not advanced, and the
@@ -152,7 +172,7 @@ mod tests {
         }
     }
 
-    /// The vote extensions this node signs when it precommits `proposal`, which it processed last
+    /// The vote extensions this node signs when it precommits `proposal`
     fn extend_vote(
         outcome: &ChainExecutionOutcome,
         proposal: &RequestProcessProposal,
@@ -224,6 +244,42 @@ mod tests {
         }
     }
 
+    /// Whether this node signs a precommit for `proposal`
+    fn signs(outcome: &ChainExecutionOutcome, proposal: &RequestProcessProposal) -> bool {
+        outcome
+            .abci_app
+            .extend_vote(RequestExtendVote {
+                hash: proposal.hash.clone(),
+                height: proposal.height,
+                round: proposal.round,
+            })
+            .is_ok()
+    }
+
+    /// Processes `proposal`, which this node must accept, and returns the vote extensions it
+    /// signs when it precommits it
+    fn accept(
+        outcome: &ChainExecutionOutcome,
+        proposal: &RequestProcessProposal,
+    ) -> Vec<ExtendVoteExtension> {
+        let response = outcome
+            .abci_app
+            .process_proposal(proposal.clone())
+            .expect("expected to process the proposal");
+        assert_eq!(response.status, ProposalStatus::Accept as i32);
+
+        extend_vote(outcome, proposal)
+    }
+
+    /// Processes `proposal`, which this node must reject
+    fn reject(outcome: &ChainExecutionOutcome, proposal: &RequestProcessProposal) {
+        let response = outcome
+            .abci_app
+            .process_proposal(proposal.clone())
+            .expect("expected to process the proposal");
+        assert_eq!(response.status, ProposalStatus::Reject as i32);
+    }
+
     /// Another validator's precommit for `proposal`, carrying `vote_extensions`
     fn verify(
         outcome: &ChainExecutionOutcome,
@@ -251,25 +307,15 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config())
             .build_with_mock_rpc();
-        let outcome = run_chain(&mut platform).await;
+        let (outcome, round_0) = run_chain_with_queued_withdrawal(&mut platform).await;
+        let round_1 = proposal(
+            &outcome,
+            1,
+            round_0.core_chain_locked_height + 1,
+            ROUND_1_BLOCK,
+        );
 
-        queue_withdrawal_transaction(&outcome);
-
-        let round_0_core_height = outcome
-            .abci_app
-            .platform
-            .state
-            .load()
-            .last_committed_core_height();
-        let round_0 = proposal(&outcome, 0, round_0_core_height, ROUND_0_BLOCK);
-        let round_1 = proposal(&outcome, 1, round_0_core_height + 1, ROUND_1_BLOCK);
-
-        let response = outcome
-            .abci_app
-            .process_proposal(round_0.clone())
-            .expect("expected to process the round 0 proposal");
-        assert_eq!(response.status, ProposalStatus::Accept as i32);
-        let round_0_extensions = extend_vote(&outcome, &round_0);
+        let round_0_extensions = accept(&outcome, &round_0);
 
         // Before round 1 is processed, a round 1 precommit carrying the same validator's round 0
         // extensions still verifies in Tenderdash and matches the only proposal this node
@@ -285,12 +331,7 @@ mod tests {
             "a round 0 precommit whose extensions were stripped must be rejected"
         );
 
-        let response = outcome
-            .abci_app
-            .process_proposal(round_1.clone())
-            .expect("expected to process the round 1 proposal");
-        assert_eq!(response.status, ProposalStatus::Accept as i32);
-        let round_1_extensions = extend_vote(&outcome, &round_1);
+        let round_1_extensions = accept(&outcome, &round_1);
 
         assert_eq!(
             round_0_extensions.len(),
@@ -326,39 +367,38 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config())
             .build_with_mock_rpc();
-        let outcome = run_chain(&mut platform).await;
-
-        queue_withdrawal_transaction(&outcome);
-
-        let round_0_core_height = outcome
-            .abci_app
-            .platform
-            .state
-            .load()
-            .last_committed_core_height();
-        let round_0 = proposal(&outcome, 0, round_0_core_height, ROUND_0_BLOCK);
-        let mut rejected_round_1 = proposal(&outcome, 1, round_0_core_height + 1, ROUND_1_BLOCK);
+        let (outcome, round_0) = run_chain_with_queued_withdrawal(&mut platform).await;
+        let mut rejected_round_1 = proposal(
+            &outcome,
+            1,
+            round_0.core_chain_locked_height + 1,
+            ROUND_1_BLOCK,
+        );
         // Bytes that decode to no state transition make the proposal unacceptable
         rejected_round_1.txs = vec![vec![0u8; 10]];
 
-        let response = outcome
-            .abci_app
-            .process_proposal(round_0.clone())
-            .expect("expected to process the round 0 proposal");
-        assert_eq!(response.status, ProposalStatus::Accept as i32);
-        let round_0_extensions = extend_vote(&outcome, &round_0);
+        let round_0_extensions = accept(&outcome, &round_0);
+        reject(&outcome, &rejected_round_1);
 
-        let response = outcome
+        // The rejected proposal was executed, and its context replaced the accepted round's
+        let rejected_extensions: Vec<ExtendVoteExtension> = outcome
             .abci_app
-            .process_proposal(rejected_round_1.clone())
-            .expect("expected to process the round 1 proposal");
-        assert_eq!(response.status, ProposalStatus::Reject as i32);
-        let rejected_extensions = extend_vote(&outcome, &rejected_round_1);
+            .block_execution_context
+            .read()
+            .unwrap()
+            .as_ref()
+            .expect("the rejected proposal left its block execution context")
+            .unsigned_withdrawal_transactions()
+            .into();
 
         assert_eq!(
             rejected_extensions.len(),
             1,
             "test premise: the rejected proposal built a withdrawal transaction"
+        );
+        assert!(
+            !signs(&outcome, &rejected_round_1),
+            "a proposal this node rejected must not be signed"
         );
 
         assert_eq!(
@@ -381,36 +421,21 @@ mod tests {
         let mut platform = TestPlatformBuilder::new()
             .with_config(config())
             .build_with_mock_rpc();
-        let outcome = run_chain(&mut platform).await;
-
-        queue_withdrawal_transaction(&outcome);
-
-        let round_0_core_height = outcome
-            .abci_app
-            .platform
-            .state
-            .load()
-            .last_committed_core_height();
-        let round_0 = proposal(&outcome, 0, round_0_core_height, ROUND_0_BLOCK);
-        let mut rejected_round_1 = proposal(&outcome, 1, round_0_core_height + 1, ROUND_1_BLOCK);
+        let (outcome, round_0) = run_chain_with_queued_withdrawal(&mut platform).await;
+        let mut rejected_round_1 = proposal(
+            &outcome,
+            1,
+            round_0.core_chain_locked_height + 1,
+            ROUND_1_BLOCK,
+        );
         // A protocol version this node does not run is refused before the block is executed
         rejected_round_1.version = Some(Consensus {
             block: 0,
             app: PlatformVersion::latest().protocol_version as u64 + 1,
         });
 
-        let response = outcome
-            .abci_app
-            .process_proposal(round_0.clone())
-            .expect("expected to process the round 0 proposal");
-        assert_eq!(response.status, ProposalStatus::Accept as i32);
-        let round_0_extensions = extend_vote(&outcome, &round_0);
-
-        let response = outcome
-            .abci_app
-            .process_proposal(rejected_round_1.clone())
-            .expect("expected to process the round 1 proposal");
-        assert_eq!(response.status, ProposalStatus::Reject as i32);
+        let round_0_extensions = accept(&outcome, &round_0);
+        reject(&outcome, &rejected_round_1);
 
         assert!(
             outcome
@@ -438,14 +463,7 @@ mod tests {
         );
 
         assert!(
-            outcome
-                .abci_app
-                .extend_vote(RequestExtendVote {
-                    hash: rejected_round_1.hash.clone(),
-                    height: rejected_round_1.height,
-                    round: rejected_round_1.round,
-                })
-                .is_err(),
+            !signs(&outcome, &rejected_round_1),
             "the rejected block must not be signed"
         );
     }
@@ -520,11 +538,7 @@ mod tests {
         assert_eq!(response.status, ProposalStatus::Accept as i32);
         let round_0_app_hash = response.app_hash;
 
-        let response = outcome
-            .abci_app
-            .process_proposal(refused_round_1)
-            .expect("expected to process the round 1 proposal");
-        assert_eq!(response.status, ProposalStatus::Reject as i32);
+        reject(outcome, &refused_round_1);
 
         let expected_context_round = match refusal {
             Refusal::BeforeExecution => None,
