@@ -1609,3 +1609,114 @@ fn should_leave_a_ban_in_place_when_the_bare_wrapper_cannot_price_its_removal() 
         ContractModerationStatus::default(),
     );
 }
+
+/// Rewriting an identity's warning entry frees the previous entry's moderator-flagged bytes,
+/// so pricing it without the fee history is rejected from protocol version 15. The wrapper
+/// owns its transaction when the caller passes none, so the rejected rewrite leaves the
+/// entry and the root hash as they were; protocol version 14 still rewrites without one.
+#[test]
+fn should_leave_a_warning_in_place_when_the_bare_wrapper_cannot_price_its_replacement() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = moderated_contract_keeping(false, false, true);
+    insert(&drive, &contract, platform_version);
+    let contract_id = contract.id();
+    let moderator = contract.owner_id();
+    let target = identity(0x71);
+    // A long first entry, so replacing it with the short one below shrinks the stored bytes
+    // and frees moderator-flagged storage; a same-size or growing rewrite frees nothing.
+    let first = warning(1_000, &"first strike ".repeat(8));
+    let second = warning(2_000, "cleared");
+    let lists = [ContractModerationList::Warnings];
+
+    drive
+        .add_contract_warning(
+            contract_id,
+            target,
+            std::slice::from_ref(&first),
+            false,
+            moderator,
+            &BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        )
+        .expect("expected to warn");
+    let before = root_hash(&drive, platform_version);
+
+    let result = drive.add_contract_warning(
+        contract_id,
+        target,
+        std::slice::from_ref(&second),
+        true,
+        moderator,
+        &BlockInfo::default(),
+        true,
+        None,
+        platform_version,
+    );
+    assert!(
+        matches!(
+            result,
+            Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
+        ),
+        "rewriting a flagged entry without a fee history must be rejected, got {:?}",
+        result
+    );
+    assert_eq!(
+        root_hash(&drive, platform_version),
+        before,
+        "a rejected replacement must not persist"
+    );
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &lists,
+        warned_with(vec![first.clone()]),
+    );
+
+    // The production funnel carries the history and commits the rewrite.
+    apply_moderation(
+        &drive,
+        ContractModerationOperationType::AddWarning {
+            contract_id,
+            identity_id: target,
+            warnings: vec![second.clone()],
+            replaces_existing: true,
+            moderator_id: moderator,
+        },
+        &BlockInfo::default(),
+        true,
+        platform_version,
+    )
+    .expect("expected to replace the warning with the fee history");
+    assert_status(
+        &drive,
+        contract_id,
+        target,
+        &lists,
+        warned_with(vec![second.clone()]),
+    );
+
+    // Protocol version 14 prices the shipped shortcut without a history and commits.
+    let frozen_platform_version = PlatformVersion::get(14).expect("protocol version 14");
+    let drive = setup_drive_with_initial_state_structure(Some(frozen_platform_version));
+    let contract = moderated_contract_keeping(false, false, true);
+    insert(&drive, &contract, frozen_platform_version);
+    for (warnings, replaces_existing) in [(vec![first], false), (vec![second], true)] {
+        drive
+            .add_contract_warning(
+                contract.id(),
+                target,
+                &warnings,
+                replaces_existing,
+                contract.owner_id(),
+                &BlockInfo::default(),
+                true,
+                None,
+                frozen_platform_version,
+            )
+            .expect("protocol version 14 prices the shipped shortcut without a history");
+    }
+}
