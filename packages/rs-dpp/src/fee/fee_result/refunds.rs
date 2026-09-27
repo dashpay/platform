@@ -118,6 +118,12 @@ impl FeeRefunds {
 
                         // TODO Add in multipliers once they have been made
 
+                        // The shipped generation validated the current epoch as a side effect of
+                        // pricing at it. Generation 1 prices at the storage epoch, so the current
+                        // epoch must be checked on its own: the distribution helper below adds
+                        // one to it, and an index above MAX_EPOCH must be an error, not a panic.
+                        Epoch::new(current_epoch_index)?;
+
                         let storage_rate = Epoch::new(epoch_index)?
                             .cost_for_known_cost_item(previous_fee_versions, StorageDiskUsageCreditPerByte);
 
@@ -241,6 +247,7 @@ impl IntoIterator for FeeRefunds {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::block::epoch::MAX_EPOCH;
     use once_cell::sync::Lazy;
     use platform_version::version::fee::storage::FeeStorageVersion;
     use platform_version::version::fee::v1::FEE_VERSION1;
@@ -356,6 +363,41 @@ mod tests {
 
                 assert!(credits_per_epoch.get(&0).is_none());
                 assert!(credits_per_epoch.get(&1).is_some());
+            }
+        }
+
+        #[test]
+        fn should_reject_a_current_epoch_above_the_maximum_in_both_generations() {
+            // An index above MAX_EPOCH cannot be an Epoch. The shipped generation rejects it
+            // while pricing at the current epoch; generation 1 must reject it explicitly, since
+            // it prices at the storage epoch and the distribution helper adds one to the
+            // current index.
+            let identity_id = [7; 32];
+            for current_epoch in [MAX_EPOCH + 1, u16::MAX] {
+                for generation in [Generation::Shipped, Generation::V1] {
+                    let storage_removal = BytesPerEpochByIdentifier::from_iter([(
+                        identity_id,
+                        IntMap::from_iter([(0, 100)]),
+                    )]);
+                    let result = match generation {
+                        Generation::Shipped => FeeRefunds::from_storage_removal(
+                            storage_removal,
+                            current_epoch,
+                            EPOCHS_PER_ERA,
+                            &EPOCH_CHANGE_FEE_VERSION_TEST,
+                        ),
+                        Generation::V1 => FeeRefunds::from_storage_removal_v1(
+                            storage_removal,
+                            current_epoch,
+                            EPOCHS_PER_ERA,
+                            &EPOCH_CHANGE_FEE_VERSION_TEST,
+                        ),
+                    };
+                    assert!(
+                        matches!(result, Err(ProtocolError::Overflow(_))),
+                        "current epoch {current_epoch} must be an overflow error"
+                    );
+                }
             }
         }
 
