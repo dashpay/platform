@@ -25,6 +25,8 @@ Generate a pull request title and description for the current branch using the p
    - What specific code changes were made
    - Whether there are breaking changes
    - What tests were added or modified
+   - What value the change adds, and for whom
+   - What could go wrong: consensus impact, behaviour users could notice, slow or flaky tests
 
 4. Output a suggested PR title using conventional commits format:
    - Scopes: `sdk`, `drive`, `dpp`, `dapi`, `dashmate`, `wasm-dpp`, `wasm-sdk`, `platform`
@@ -32,11 +34,19 @@ Generate a pull request title and description for the current branch using the p
    - Add `!` after the type for breaking changes (e.g. `feat!:`)
    - Format: **Suggested title:** `type(scope): description`
 
-5. Fill in this PR template (preserve all HTML comments exactly as shown):
+5. Fill in this PR template (preserve all HTML comments exactly as shown). The `## Basic explanation` section always comes first; the sections after it follow `.github/PULL_REQUEST_TEMPLATE.md`:
 
 ```markdown
 <!--- Provide a general summary of your changes in the Title above -->
 <!--- Pull request titles must use the [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/#summary) format -->
+
+## Basic explanation
+
+**What this does:** <The change in the most basic terms, for a reader who does not know this code. Explain any jargon in passing, or avoid it.>
+
+**Value:** <What gets better and for whom (users, wallets, node operators, the network). Give a number when there is one.>
+
+**Risks:** <What could go wrong, sized honestly: say "Low" and why when it is low. Mention consensus impact, behaviour users could notice, and slow or flaky tests.>
 
 ## Issue being fixed or feature implemented
 <!--- Why is this change required? What problem does it solve? -->
@@ -80,6 +90,7 @@ Output the entire PR description (title + body) as a single raw Markdown code bl
 
 ## Guidelines
 
+- Always open with `## Basic explanation`: three short paragraphs (what it does, value, risks) that someone outside this code can follow. For a security fix, keep it neutral: describe what the fix does, not how the bug could be exploited
 - Keep the description **concise** — avoid walls of text. Prefer short bullet points over paragraphs
 - Be specific — reference file paths, struct/function names, and types
 - For "How Has This Been Tested?", check `git diff` for new `*test*`, `*spec*` files. Briefly describe what tests cover (1 line per test file), not every individual test case
