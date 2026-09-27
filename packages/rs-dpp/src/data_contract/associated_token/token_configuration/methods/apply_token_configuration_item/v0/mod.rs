@@ -151,10 +151,12 @@ impl TokenConfigurationV0 {
                     .trade_mode_change_rules_mut()
                     .set_admin_action_takers(admin_group);
             }
-            // A V0 configuration has no shielded pool and so no threshold to change;
-            // `can_apply_token_configuration_item` refuses these items for it.
-            // The three pool threshold items below cannot reach this generation on the protocol
-            // versions that select it. They are appended at the tail of
+            // A V0 configuration has no shielded pool and so no threshold to change. This arm is
+            // reached at protocol version 14 for such a token, and never applies anything:
+            // `can_apply_token_configuration_item` has already refused the item, so the change
+            // ends as a paid `UnauthorizedTokenActionError` rather than here.
+            // Released protocol versions cannot reach these items at all: they are appended at
+            // the tail of
             // `TokenConfigurationChangeItem`, so no existing item's encoding or group action key
             // moves, and this match has no catch-all, so nothing previously handled is rerouted.
             // A batch carrying one is refused unpaid by the batch's `is_allowed` gate below the

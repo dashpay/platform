@@ -318,8 +318,10 @@ impl TokenConfigurationV0 {
                     goal,
                 ),
             // A V0 configuration has no shielded pool and so no threshold for anyone to change.
-            // The three pool threshold items below cannot reach this generation on the protocol
-            // versions that select it. They are appended at the tail of
+            // This arm is reached at protocol version 14 for such a token and refuses the item,
+            // which is what turns the change into a paid `UnauthorizedTokenActionError`.
+            // Released protocol versions cannot reach these items at all: they are appended at
+            // the tail of
             // `TokenConfigurationChangeItem`, so no existing item's encoding or group action key
             // moves, and this match has no catch-all, so nothing previously handled is rerouted.
             // A batch carrying one is refused unpaid by the batch's `is_allowed` gate below the

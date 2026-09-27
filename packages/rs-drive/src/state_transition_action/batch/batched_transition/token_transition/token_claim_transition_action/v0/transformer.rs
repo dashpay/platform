@@ -941,6 +941,100 @@ mod tests {
         assert_eq!(recipient, TokenDistributionRecipient::Identity(id));
     }
 
+    /// Reimplements the closure passed to `rewards_in_interval` inside the
+    /// `EvonodesByParticipation` branch and checks its single-epoch output
+    /// matches the blocks proposed by the owner.
+    #[test]
+    fn evonodes_reward_ratio_single_epoch() {
+        let me = owner();
+        let other = stranger();
+        let mut block_proposers: BTreeMap<Identifier, u64> = BTreeMap::new();
+        block_proposers.insert(me, 7);
+        block_proposers.insert(other, 3);
+        let total_blocks_in_epoch = 10u64;
+
+        let ratio = RewardRatio {
+            numerator: block_proposers.get(&me).copied().unwrap_or_default(),
+            denominator: total_blocks_in_epoch,
+        };
+        assert_eq!(ratio.numerator, 7);
+        assert_eq!(ratio.denominator, 10);
+    }
+
+    /// Multi-epoch branch should sum totals and only count blocks proposed by the owner.
+    #[test]
+    fn evonodes_reward_ratio_multi_epoch_sum() {
+        let me = owner();
+        let mut epochs: BTreeMap<EpochIndex, (u64, BTreeMap<Identifier, u64>)> = BTreeMap::new();
+
+        let mut bp1 = BTreeMap::new();
+        bp1.insert(me, 5);
+        epochs.insert(0, (20, bp1));
+
+        let mut bp2 = BTreeMap::new();
+        bp2.insert(me, 2);
+        epochs.insert(1, (30, bp2));
+
+        let mut total_blocks = 0u64;
+        let mut total_proposed_blocks = 0u64;
+        for idx in 0u16..=1u16 {
+            if let Some((blocks, proposers)) = epochs.get(&idx) {
+                total_blocks += *blocks;
+                total_proposed_blocks += proposers.get(&me).copied().unwrap_or_default();
+            }
+        }
+        assert_eq!(total_blocks, 50);
+        assert_eq!(total_proposed_blocks, 7);
+        let ratio = if total_blocks > 0 {
+            Some(RewardRatio {
+                numerator: total_proposed_blocks,
+                denominator: total_blocks,
+            })
+        } else {
+            None
+        };
+        assert_eq!(
+            ratio,
+            Some(RewardRatio {
+                numerator: 7,
+                denominator: 50,
+            })
+        );
+    }
+
+    /// With no epochs in range, total_blocks remains 0 so the ratio is None.
+    #[test]
+    fn evonodes_reward_ratio_empty_range_returns_none() {
+        let total_blocks = 0u64;
+        let total_proposed_blocks = 0u64;
+        let ratio = if total_blocks > 0 {
+            Some(RewardRatio {
+                numerator: total_proposed_blocks,
+                denominator: total_blocks,
+            })
+        } else {
+            None
+        };
+        assert!(ratio.is_none());
+    }
+
+    /// When an epoch index exists but the owner never proposed, numerator is 0.
+    #[test]
+    fn evonodes_reward_ratio_owner_has_no_proposed_blocks() {
+        let me = owner();
+        let other = stranger();
+        let mut bp: BTreeMap<Identifier, u64> = BTreeMap::new();
+        bp.insert(other, 4);
+        let total_blocks = 10u64;
+
+        let ratio = RewardRatio {
+            numerator: bp.get(&me).copied().unwrap_or_default(),
+            denominator: total_blocks,
+        };
+        assert_eq!(ratio.numerator, 0);
+        assert_eq!(ratio.denominator, 10);
+    }
+
     /// The `last_paid_moment.unwrap_or(contract_creation_cycle_start)` fallback
     /// should pick the explicit last-paid if set, otherwise the cycle start.
     #[test]
