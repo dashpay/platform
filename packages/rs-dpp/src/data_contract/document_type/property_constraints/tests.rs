@@ -599,6 +599,13 @@ fn should_find_a_condition_an_any_of_or_all_of_repeats() {
             platform_value!({ "anyOf": [{ "present": "fee" }, one.clone(), { "present": "fee" }] }),
             Some(("anyOf[2]", "anyOf[0]")),
         ),
+        // An in lists a set: the same values in another order are the same condition
+        (
+            platform_value!({
+                "anyOf": [{ "in": ["fee", [1, 2]] }, one.clone(), { "in": ["fee", [2, 1]] }]
+            }),
+            Some(("anyOf[2]", "anyOf[0]")),
+        ),
         // Testing the presence of a property and its absence are different conditions
         (
             platform_value!({ "anyOf": [{ "present": "fee" }, { "absent": "fee" }] }),
@@ -612,6 +619,123 @@ fn should_find_a_condition_an_any_of_or_all_of_repeats() {
             "{condition:?}"
         );
     }
+}
+
+// ── in ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn should_parse_in() {
+    assert_eq!(
+        parse_rule_value(platform_value!({ "in": ["kind", [7, 1, 3.0]] })),
+        PropertyConstraint::In {
+            operand: property("kind"),
+            values: BTreeSet::from([1, 3, 7]),
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "in": [{ "modulo": ["quantity", 10] }, [0, 5]] })),
+        PropertyConstraint::In {
+            operand: ConstraintExpression::Modulo(
+                Box::new(property("quantity")),
+                Box::new(ConstraintExpression::Value(10))
+            ),
+            values: BTreeSet::from([0, 5]),
+        }
+    );
+
+    for (condition, needle) in [
+        (
+            platform_value!({ "in": ["kind"] }),
+            "rule \"rule\" at in must list an integer expression and the values it may take",
+        ),
+        (
+            platform_value!({ "in": "kind" }),
+            "rule \"rule\" at in must list an integer expression and the values it may take",
+        ),
+        (
+            platform_value!({ "in": ["kind", [1, 2], [3]] }),
+            "rule \"rule\" at in must list an integer expression and the values it may take",
+        ),
+        (
+            platform_value!({ "in": ["kind", [1]] }),
+            "rule \"rule\" at in[1] must list two or more integer values",
+        ),
+        (
+            platform_value!({ "in": ["kind", 1] }),
+            "rule \"rule\" at in[1] must list two or more integer values",
+        ),
+        // A listed value is a literal, never a path or an expression
+        (
+            platform_value!({ "in": ["kind", [1, "fee"]] }),
+            "rule \"rule\" at in[1][1] must be an integer value",
+        ),
+        (
+            platform_value!({ "in": ["kind", [1, { "add": [1, 1] }]] }),
+            "rule \"rule\" at in[1][1] must be an integer value",
+        ),
+        (
+            platform_value!({ "in": ["kind", [1, 2.5]] }),
+            "rule \"rule\" at in[1][1] holds 2.5, which is not an integer",
+        ),
+        // Alike once parsed: JSON does not tell `1` from `1.0`
+        (
+            platform_value!({ "in": ["kind", [1, 2, 1.0]] }),
+            "rule \"rule\" at in[1][2] repeats the value at in[1][0]",
+        ),
+        (
+            platform_value!({ "in": [5, [1, 5]] }),
+            "rule \"rule\" reads no property",
+        ),
+        (
+            platform_value!({
+                "anyOf": [{ "equal": ["fee", 1] }, { "in": [{ "add": [1, 2] }, [1, 3]] }]
+            }),
+            "rule \"rule\" at anyOf[1] reads no property",
+        ),
+        (
+            platform_value!({ "in": [{ "divide": ["kind", 0] }, [1, 2]] }),
+            "rule \"rule\" at in[0].divide divides by 0",
+        ),
+        (
+            platform_value!({ "not": { "in": [{ "sum": ["kind", 1] }, [1, 2]] } }),
+            "rule \"rule\" at not.in[0] names \"sum\", which is not one of add",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": condition }), needle);
+    }
+}
+
+/// An `in` holds when its operand takes a listed value, a fault in the operand breaks the
+/// rule, and it is one node plus one per value.
+#[test]
+fn should_hold_an_in_when_its_operand_takes_a_listed_value() {
+    let rule = parse_rule_value(platform_value!({ "in": ["kind", [1, 3, 7]] }));
+    for (kind, holds) in [(1, true), (3, true), (7, true), (2, false), (8, false)] {
+        assert_eq!(
+            rule.holds(&data(&[("kind", Value::U64(kind))])),
+            Ok(holds),
+            "kind {kind}"
+        );
+    }
+    // An absent operand reads as 0
+    assert_eq!(rule.holds(&data(&[])), Ok(false));
+    let with_zero = parse_rule_value(platform_value!({ "in": ["kind", [0, 1]] }));
+    assert_eq!(with_zero.holds(&data(&[])), Ok(true));
+
+    let divided = parse_rule_value(platform_value!({ "in": [{ "divide": [10, "kind"] }, [2, 5]] }));
+    assert_eq!(divided.violation(&data(&[("kind", Value::U64(5))])), None);
+    assert_eq!(
+        divided.violation(&data(&[("kind", Value::U64(3))])),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    assert_eq!(
+        divided.violation(&data(&[("kind", Value::U64(0))])),
+        Some(PropertyConstraintViolation::DivisionByZero)
+    );
+
+    // in, kind, and one per value
+    assert_eq!(rule.node_count(), 5);
+    assert_eq!(rule.property_reads(), [("kind", PropertyRead::Value)]);
 }
 
 // ── present and absent ──────────────────────────────────────────────────
@@ -652,8 +776,8 @@ fn should_parse_present_and_absent() {
         (
             platform_value!({ "exists": "discount" }),
             "rule \"rule\" names \"exists\", which is not a comparison (equal, notEqual, \
-             lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual), present, absent, anyOf, \
-             allOf or not",
+             lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual), in, present, absent, \
+             anyOf, allOf or not",
         ),
     ] {
         expect_refusal(platform_value!({ "rule": condition }), needle);

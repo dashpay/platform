@@ -117,9 +117,9 @@ pub(crate) mod property_names {
     /// See `parse_doctype_reference` in `try_from_schema`.
     pub const CREATOR_REFERS_TO: &str = "creatorRefersTo";
     /// Doctype-level object of named rules, each a condition on the document's
-    /// properties (a comparison of two integer expressions, a `present` or
-    /// `absent` test, or an `anyOf`, `allOf` or `not` of conditions) that every
-    /// created or replaced document must meet. Meta-schema v3+ (protocol version 14). See
+    /// properties (a comparison of two integer expressions, an `in` list of
+    /// values, a `present` or `absent` test, or an `anyOf`, `allOf` or `not` of
+    /// conditions) that every created or replaced document must meet. Meta-schema v3+ (protocol version 14). See
     /// `parse_property_constraints` in `property_constraints`.
     pub const PROPERTY_CONSTRAINTS: &str = "propertyConstraints";
     pub const DISTINCT_FROM: &str = "distinctFrom";
