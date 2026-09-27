@@ -49,7 +49,7 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    processing pool.
 /// 3. **Pricing before commit**: the Drive entry points that own their
 ///    transaction when a caller passes none (`apply_drive_operations` v2,
-///    the eight document wrappers v1, `update_contract` v3,
+///    the ten document wrappers v1, `update_contract` v3,
 ///    `apply_contract_with_serialization` v1, `add_group_action` v1, the
 ///    moderation writers v1) price the batch before committing it, so the
 ///    error in item 1 never leaves a write persisted without its fee
