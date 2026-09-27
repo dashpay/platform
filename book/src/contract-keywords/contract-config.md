@@ -53,7 +53,7 @@ A first version of a small social contract. Its config states the defaults expli
 | `config` | object | Contract-wide settings: see [`config`](#config) below. Absent means the defaults. | 1 |
 | `documentSchemas` | object | The document types, by name. See [`documentSchemas`](#documentschemas). | 1 |
 | `schemaDefs` | object | Definitions every document type may point at with `$ref`. An update may add definitions, not remove them (`IncompatibleDataContractSchemaError`, 10213). | 1 |
-| `groups` | object | Groups of identities that act together, each member with a voting power, whose approval some token actions need. See [Contract Groups](../data-model/contract-groups.md). | 9 |
+| `groups` | object | Groups of identities that act together, each member with a voting power, whose approval some token actions need. See [Data Contracts](../data-model/data-contracts.md#what-v1-added). Not the same thing as a [contract group](../data-model/contract-groups.md), a set of contracts. | 9 |
 | `tokens` | object | The contract's tokens, keyed by position `0`, `1`, and so on. Document types may charge them with [`tokenCost`](token-cost.md). | 9 |
 | `keywords` | array of strings | Search keywords. See [`keywords` and `description`](#keywords-and-description). | 9 |
 | `description` | string | A short description for search. See [`keywords` and `description`](#keywords-and-description). | 9 |
@@ -202,5 +202,5 @@ A declaration keeps at least one list, unless a document type sets `canBeDeleted
 
 - [Data Contracts](../data-model/data-contracts.md) for the contract structure and its versions.
 - [Contract Moderation](../data-model/contract-moderation.md) for the lists, the moderation transition and elected teams.
-- [Contract Groups](../data-model/contract-groups.md) for `groups`.
+- [Contract Groups](../data-model/contract-groups.md) for contract groups, sets of contracts, which a create transition may register or join (not the contract's `groups`).
 - [Contract Keywords](../contract-keywords.md) for the document type keywords.
