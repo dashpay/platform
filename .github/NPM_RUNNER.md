@@ -58,7 +58,7 @@ checks committed generated output, tests failure recovery and validates packing.
 Local setup and generator test commands are in `packages/dapi-grpc/README.md`.
 
 After installing the controller, use the `release.yml` dispatch with
-`tag=npm-test:<version>` on a protected development branch for a non-publishing
+`tag=npm-test:v<package.json version>` on a protected development branch for a non-publishing
 NPM build. For Kotlin, dispatch `release-kotlin-sdk.yml` from the protected branch
 with an existing published `tag` and `dry_run=true`: compilation/artifact upload
 run, but release attachment and Maven publication are both skipped. Check that
