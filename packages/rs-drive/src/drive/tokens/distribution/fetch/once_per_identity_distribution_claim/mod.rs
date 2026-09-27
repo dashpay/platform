@@ -11,6 +11,20 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Fetches the block time at which an identity claimed a token's once-per-identity
     /// distribution, or `None` if the identity has not claimed it.
+    ///
+    /// # Parameters
+    ///
+    /// * `token_id`: The token.
+    /// * `identity_id`: The identity whose claim is read.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(TimestampMillis))` with the block time of the claim, `Ok(None)` when the
+    ///   identity has not claimed it.
+    /// * `Err(Error)` when the method version is unknown, the read fails, or the stored claim
+    ///   is not an 8 byte item.
     pub fn fetch_once_per_identity_distribution_claim(
         &self,
         token_id: [u8; 32],
@@ -29,6 +43,21 @@ impl Drive {
 
     /// Fetches the block time at which an identity claimed a token's once-per-identity
     /// distribution, accumulating the read operations for fee calculation.
+    ///
+    /// # Parameters
+    ///
+    /// * `token_id`: The token.
+    /// * `identity_id`: The identity whose claim is read.
+    /// * `drive_operations`: The operations accumulator the read is appended to, for billing.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(TimestampMillis))` with the block time of the claim, `Ok(None)` when the
+    ///   identity has not claimed it.
+    /// * `Err(Error)` when the method version is unknown, the read fails, or the stored claim
+    ///   is not an 8 byte item.
     pub fn fetch_once_per_identity_distribution_claim_operations(
         &self,
         token_id: [u8; 32],

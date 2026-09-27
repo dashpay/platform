@@ -12,6 +12,17 @@ impl Drive {
     /// The full record under `saved_state` is rewritten only when its heavy
     /// fields change; this small companion carries the block info and quorum
     /// hashes for every block in between.
+    ///
+    /// # Parameters
+    ///
+    /// * `state_bytes`: The serialized per-block part of the platform state.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once `state_bytes` replaces the stored per-block part in auxiliary storage.
+    /// * `Err(Error)` when the method version is unknown or the auxiliary write fails.
     pub fn store_platform_state_recent_bytes(
         &self,
         state_bytes: &[u8],

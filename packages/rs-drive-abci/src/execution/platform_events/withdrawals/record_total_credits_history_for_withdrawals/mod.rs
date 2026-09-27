@@ -21,6 +21,20 @@ where
     /// move the total in a block) and before the app hash is taken; blocks that leave the total
     /// untouched cost one read and no write. Until an entry is a day old the limit applies its
     /// bootstrap rule, so pooling never depends on this block's entry.
+    ///
+    /// # Parameters
+    ///
+    /// * `block_info`: The block being executed; its time keys the new entry.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version; its withdrawal constants bound the prune.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the history holds this block's total (unchanged when the total equals the
+    ///   latest entry), or at once when the protocol version has no history (the method version
+    ///   is `None`).
+    /// * `Err(Error)` when the method version (or the Drive method it calls) is unknown or not
+    ///   active, the total credits are missing from state, or a read or write fails.
     pub(in crate::execution) fn record_total_credits_history_for_withdrawals(
         &self,
         block_info: &BlockInfo,
