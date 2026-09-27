@@ -2080,8 +2080,10 @@ fn validate_pricing_mode_selection(
 /// Extract the optional `priceTiers` field from the raw JS options object.
 ///
 /// Returns `Ok(None)` when the field is absent, null, or undefined.
-/// Returns `Err` when the field is present but malformed (wrong type,
-/// empty, non-numeric keys, non-bigint/integer values, zero amount key, etc.).
+/// Returns `Err` when the field is present but cannot be converted: not an
+/// object, non-numeric keys, non-bigint/integer values, or two keys that parse to
+/// the same token amount. An empty map and a zero amount key pass through;
+/// whether the schedule is valid is left to rs-dpp's structure validation.
 fn extract_price_tiers(
     options: &JsValue,
 ) -> Result<Option<BTreeMap<TokenAmount, Credits>>, WasmSdkError> {
@@ -2724,6 +2726,14 @@ impl WasmSdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An empty tier map is passed through as an empty schedule: rs-dpp's structure
+    /// validation refuses it, not the SDK.
+    #[test]
+    fn should_pass_an_empty_tier_map_through() {
+        let tiers = build_price_tiers(Vec::new()).expect("an empty map should build");
+        assert!(tiers.is_empty());
+    }
 
     /// A tier at token amount `0` is passed through unchanged: rs-dpp accepts it (a purchase
     /// of any amount falls in it), so the SDK does not refuse it either.
