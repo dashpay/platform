@@ -115,6 +115,18 @@ pub struct SystemLimits {
     ///   cap means batch-scoped nullifier deduplication and a delta-based pool balance write,
     ///   not just making the ignored cases above pass.
     ///
+    /// * The batch minimum balance pre-check reserves the compute fee of every shielded pool
+    ///   bundle a batch carries, on top of `document_batch_sub_transition` per sub-transition.
+    ///   It refuses nobody who could have paid only because a bundle-carrying sub-transition's
+    ///   metered fee is itself far above that flat minimum: the band the floor newly refuses is
+    ///   `metered_fee < flat_minimum` wide, and one pool action's ~550 metered storage bytes
+    ///   price it two orders of magnitude above the 100,000 flat minimum, so the band is empty.
+    ///   A cap above one does not by itself change that — the floor and the charge are both
+    ///   per sub-transition — but a later change that lets a batch carry a bundle alongside
+    ///   sub-transitions cheaper than the flat minimum would reopen it, and the floor would
+    ///   then start refusing batches that fee validation would have executed. Recheck the
+    ///   inequality rather than assuming it.
+    ///
     /// Five cases in `rs-drive`'s `batched_group_drain` suite are `#[ignore]`d for exactly this
     /// reason; the rest of that suite runs. Anyone raising this cap should un-ignore those five
     /// first and make them pass.

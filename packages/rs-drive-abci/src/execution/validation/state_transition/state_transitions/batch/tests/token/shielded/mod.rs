@@ -855,10 +855,16 @@ mod token_shielded_pool_tests {
             dpp::shielded::compute_shielded_verification_fee(PADDED_ACTIONS, platform_version)
                 .expect("shielded compute fee");
 
-        // Funded well past the preliminary batch minimum — which has no Orchard component — so
-        // the rejection has to come from the full fee estimate, and exactly one compute fee
-        // short of affording the batch.
-        let (identity, signer, key) = setup_identity(&mut platform, rng.gen(), compute_fee);
+        // Funded with exactly what the preliminary batch minimum asks of a bundle-carrying
+        // batch — the flat per-sub-transition minimum plus that same compute fee — so the
+        // identity clears admission's own floor and the rejection has to come from the full
+        // fee estimate, one compute fee short of affording the batch.
+        let batch_minimum = platform_version
+            .fee_version
+            .state_transition_min_fees
+            .document_batch_sub_transition;
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), compute_fee + batch_minimum);
         let (contract, token_id) = create_token_contract_with_owner_identity(
             &mut platform,
             identity.id(),
