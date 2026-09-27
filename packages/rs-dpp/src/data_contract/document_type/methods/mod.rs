@@ -786,12 +786,19 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
 mod tests {
     use super::*;
     use crate::data_contract::config::DataContractConfig;
-    use crate::data_contract::document_type::DocumentType;
+    use crate::data_contract::document_type::{DocumentType, CONTRACT_VERSION_STAMP_MAX_SIZE};
     use platform_value::{platform_value, Identifier};
 
     /// Build a document type from a schema using latest platform version.
     fn build_doc_type(name: &str, schema: Value) -> DocumentType {
-        let platform_version = PlatformVersion::latest();
+        build_doc_type_at(name, schema, PlatformVersion::latest())
+    }
+
+    fn build_doc_type_at(
+        name: &str,
+        schema: Value,
+        platform_version: &PlatformVersion,
+    ) -> DocumentType {
         let config = DataContractConfig::default_for_version(platform_version)
             .expect("should create default config");
         DocumentType::try_from_schema(
@@ -808,6 +815,129 @@ mod tests {
             platform_version,
         )
         .expect("should build doc type")
+    }
+
+    // --------------------------------------------------------------
+    // DocumentTypeV0Methods::estimated_size
+    // --------------------------------------------------------------
+
+    /// A note type with one `text` property.
+    fn note_schema(text: Value) -> Value {
+        platform_value!({
+            "type": "object",
+            "properties": {"text": text},
+            "additionalProperties": false,
+        })
+    }
+
+    /// A string of up to 20000 characters without `maxBytes`: up to 80000
+    /// bytes, past `u16::MAX`.
+    fn long_text() -> Value {
+        platform_value!({"type": "string", "maxLength": 20000, "position": 0})
+    }
+
+    #[test]
+    fn should_estimate_a_string_past_16383_characters_as_a_string_without_max_length() {
+        let platform_version = PlatformVersion::latest();
+        let long = build_doc_type("note", note_schema(long_text()));
+        let unbounded = build_doc_type(
+            "note",
+            note_schema(platform_value!({"type": "string", "position": 0})),
+        );
+
+        let estimated_size = long
+            .as_ref()
+            .estimated_size(platform_version)
+            .expect("the long string is estimated");
+        assert_eq!(
+            estimated_size,
+            unbounded
+                .as_ref()
+                .estimated_size(platform_version)
+                .expect("the unbounded string is estimated")
+        );
+        // Half of u16::MAX, rounded up, and the contract-version stamp
+        assert_eq!(estimated_size, 32768 + CONTRACT_VERSION_STAMP_MAX_SIZE);
+    }
+
+    #[test]
+    fn should_estimate_a_typed_array_of_strings_past_16383_characters() {
+        let platform_version = PlatformVersion::latest();
+        let list = build_doc_type(
+            "list",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "string", "maxLength": 20000},
+                        "maxItems": 2,
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false,
+            }),
+        );
+
+        // Between the one-byte count of an empty list and u16::MAX
+        assert_eq!(
+            list.as_ref()
+                .estimated_size(platform_version)
+                .expect("the typed array is estimated"),
+            32768 + CONTRACT_VERSION_STAMP_MAX_SIZE
+        );
+    }
+
+    /// Generation 0, which protocol version 13 selects, still fails on the
+    /// overflow.
+    #[test]
+    fn should_fail_the_estimate_of_a_string_past_16383_characters_at_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("expected version 13");
+        let long = build_doc_type_at("note", note_schema(long_text()), platform_version);
+
+        assert!(matches!(
+            long.as_ref().estimated_size(platform_version),
+            Err(ProtocolError::Overflow(_))
+        ));
+    }
+
+    /// Below 16384 characters both generations size every property alike;
+    /// generation 1 adds only the contract-version stamp.
+    #[test]
+    fn should_estimate_bounded_properties_as_protocol_version_13_does_plus_the_stamp() {
+        let platform_version = PlatformVersion::latest();
+        let platform_version_13 = PlatformVersion::get(13).expect("expected version 13");
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "minLength": 3, "maxLength": 16383, "position": 0},
+                "count": {"type": "integer", "minimum": 0, "maximum": 1000, "position": 1},
+                "data": {"type": "array", "byteArray": true, "maxItems": 64, "position": 2},
+                "owner": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 3
+                }
+            },
+            "additionalProperties": false,
+        });
+        let at_latest = build_doc_type("doc", schema.clone());
+        let at_13 = build_doc_type_at("doc", schema, platform_version_13);
+
+        assert_eq!(
+            at_latest
+                .as_ref()
+                .estimated_size(platform_version)
+                .expect("estimated"),
+            at_13
+                .as_ref()
+                .estimated_size(platform_version_13)
+                .expect("estimated")
+                + CONTRACT_VERSION_STAMP_MAX_SIZE
+        );
     }
 
     // --------------------------------------------------------------

@@ -642,10 +642,26 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// Generation 0 plus the document serialization format 3
     /// contract-version stamp varint. Selected together with format 3 by
     /// the version table.
+    ///
+    /// Each property is sized by
+    /// [`DocumentPropertyType::saturating_middle_byte_size_ceil`]: a string
+    /// of 16384 or more characters without `maxBytes` has a byte bound past
+    /// `u16::MAX`, which generation 0 fails on with an overflow and this
+    /// generation holds at `u16::MAX`. Every other type is sized as
+    /// generation 0 sizes it, and the total saturates as generation 0's does.
     fn estimated_size_v1(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
-        Ok(self
-            .estimated_size_v0(platform_version)?
-            .saturating_add(CONTRACT_VERSION_STAMP_MAX_SIZE))
+        let mut total_size = 0u16;
+
+        for document_property in self.flattened_properties().values() {
+            if let Some(size) = document_property
+                .property_type
+                .saturating_middle_byte_size_ceil(platform_version)?
+            {
+                total_size = total_size.saturating_add(size);
+            }
+        }
+
+        Ok(total_size.saturating_add(CONTRACT_VERSION_STAMP_MAX_SIZE))
     }
 
     fn max_size_v0(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
