@@ -40,11 +40,11 @@ class SelectorTests(unittest.TestCase):
                               "event": "pull_request_target", "conclusion": "success"},
         }
 
-    def select(self, event=None):
+    def select(self, event=None, kind="rust"):
         self.event.write_text(json.dumps(event if event is not None else {"pull_request": self.pr}))
         with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(self.event)}), \
              patch.object(runner, "api", side_effect=lambda path: self.responses[path]):
-            runner.select(self.manifest, "rust", self.output, 0)
+            runner.select(self.manifest, kind, self.output, 0)
         return dict(line.split("=", 1) for line in self.output.read_text().splitlines())
 
     def test_non_pr_and_unchanged_pr_use_existing_pool(self):
@@ -57,6 +57,11 @@ class SelectorTests(unittest.TestCase):
         labels = json.loads(output["labels"])
         self.assertEqual(labels[-1], f"platform-image-pr-4702-{HEAD}-{DIGEST[7:]}-rust")
         self.assertEqual(output["image_changed"], "true")
+
+    def test_npm_candidates_and_ordinary_pool_have_distinct_labels(self):
+        labels = json.loads(self.select(kind="npm")["labels"])
+        self.assertEqual(labels[-1], f"platform-image-pr-4702-{HEAD}-{DIGEST[7:]}-npm")
+        self.assertEqual(json.loads(self.select({}, kind="npm")["labels"]), ["self-hosted", "npm-build"])
 
     def test_new_head_or_closed_pr_rejects_stale_run(self):
         event = {"pull_request": copy.deepcopy(self.pr)}

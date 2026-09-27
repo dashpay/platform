@@ -12,6 +12,9 @@ inputs:
   components:
     description: List of additional Rust toolchain components to install
     required: false
+  system-dependencies:
+    description: Install native packages on hosted runners, or verify a provisioned image
+    default: install
   cache:
     description: Enable Rust cache
     required: false
@@ -21,6 +24,16 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Validate native dependency mode
+      shell: bash
+      env:
+        DEPENDENCY_MODE: ${{ inputs.system-dependencies }}
+      run: |
+        case "$DEPENDENCY_MODE" in
+          install|verify) ;;
+          *) echo "::error::Unknown native dependency mode"; exit 1 ;;
+        esac
+
     - name: Read shared runner tool requirements
       shell: bash
       run: python3 .github/scripts/runner-image.py env
@@ -144,7 +157,7 @@ runs:
     # This composite is also used by hosted release, nightly and book jobs.
     # Keep their bootstrap path; only persistent runners require a prebaked image.
     - name: Install native dependencies on ephemeral GitHub-hosted Linux
-      if: runner.os == 'Linux' && runner.environment == 'github-hosted'
+      if: runner.os == 'Linux' && runner.environment == 'github-hosted' && inputs.system-dependencies == 'install'
       shell: bash
       run: |
         sudo apt-get update
