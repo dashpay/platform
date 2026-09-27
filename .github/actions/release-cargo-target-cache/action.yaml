@@ -22,7 +22,8 @@ runs:
   using: composite
   steps:
     - name: Prepare release Cargo target cache
-      shell: bash
+      # Quoted: a self-hosted runner's temp directory can contain spaces.
+      shell: bash --noprofile --norc -e -o pipefail "{0}"
       env:
         CACHE_NAME: ${{ inputs.name }}
         MAX_GIB: ${{ inputs.max-gib }}

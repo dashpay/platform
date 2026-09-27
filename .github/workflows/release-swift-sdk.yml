@@ -53,6 +53,10 @@ jobs:
     concurrency:
       group: release-swift-sdk-${{ inputs.tag }}
       cancel-in-progress: false
+    defaults:
+      run:
+        # The runner's work/temp directory can be on a volume with spaces.
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
 
     steps:
       # The tag validation below needs gh before checkout; hosted images ship
@@ -138,8 +142,26 @@ jobs:
           xcodebuild -version
           swift --version
 
-      - name: Set up Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@stable
+      # Composite actions choose their own shell and do not inherit the quoted
+      # script path above, so rustup is set up inline as in
+      # swift-sdk-build.yml. The build uses the rust-toolchain.toml channel.
+      - name: Set up Rust toolchain
+        env:
+          RUSTUP_PERMIT_COPY_RENAME: "1"
+        run: |
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          export PATH="$CARGO_HOME/bin:$PATH"
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused \
+              --location --silent --show-error --fail https://sh.rustup.rs \
+              | sh -s -- --default-toolchain none --no-modify-path -y
+          fi
+          {
+            echo "CARGO_HOME=$CARGO_HOME"
+            echo "CARGO_INCREMENTAL=${CARGO_INCREMENTAL-0}"
+            echo "CARGO_TERM_COLOR=${CARGO_TERM_COLOR-always}"
+          } >> "$GITHUB_ENV"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
 
       # Restore-only, matching swift-sdk-build.yml: the persistent runner
       # keeps ~/.cargo between runs, so saving it back would just re-upload
@@ -155,8 +177,11 @@ jobs:
             cargo-registry-
 
       - name: Add iOS Rust targets
+        env:
+          RUSTUP_PERMIT_COPY_RENAME: "1"
         run: |
           rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+          rustc --version --verbose
 
       # Fresh, checksum-verified copy in this job's temp directory. The runner's
       # tool cache persists between jobs, so a protoc left there by an earlier

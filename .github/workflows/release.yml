@@ -344,6 +344,11 @@ jobs:
           echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
           echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
+      # --provenance=false keeps what `yarn npm publish` did before. After a
+      # trusted-publishing token exchange from a public repository, npm turns
+      # provenance on unless it is set explicitly, and the registry then
+      # rejects every package whose repository.url does not name
+      # github.com/dashpay/platform (all but wasm-drive-verify today).
       - name: Publish NPM packages
         if: github.event_name == 'release'
         env:
@@ -371,7 +376,7 @@ jobs:
               200)
                 jq -e --arg version "$version" '.versions[$version] != null' "$RUNNER_TEMP/npm-metadata.json" >/dev/null || {
                   jq -e . "$RUNNER_TEMP/npm-metadata.json" >/dev/null || { echo "::error::Invalid registry response for $name."; exit 1; }
-                  npm publish "$tarball" --ignore-scripts --access public --tag "$NPM_TAG"
+                  npm publish "$tarball" --ignore-scripts --provenance=false --access public --tag "$NPM_TAG"
                   continue
                 }
                 echo "::notice::$name@$version already exists on $REGISTRY; skipping."
@@ -382,7 +387,7 @@ jobs:
                 exit 1
                 ;;
             esac
-            npm publish "$tarball" --ignore-scripts --access public --tag "$NPM_TAG"
+            npm publish "$tarball" --ignore-scripts --provenance=false --access public --tag "$NPM_TAG"
           done
 
       - name: Dry-run NPM packages
@@ -392,7 +397,7 @@ jobs:
         run: |
           set -euo pipefail
           for tarball in release-artifacts/npm-packages/*.tgz; do
-            npm publish "$tarball" --ignore-scripts --dry-run --access public --tag "$NPM_TAG"
+            npm publish "$tarball" --ignore-scripts --provenance=false --dry-run --access public --tag "$NPM_TAG"
           done
 
   release-drive-image:
