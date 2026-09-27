@@ -716,3 +716,81 @@ mod minimum_pool_notes_json_tests {
         assert_eq!(decoded.minimum_pool_notes_for_outgoing(), 0);
     }
 }
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod unknown_configuration_key_tests {
+    use super::*;
+    use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+    use crate::serialization::{JsonConvertible, ValueConvertible};
+
+    /// A V0 configuration's JSON with `hasShieldedPool` bolted on: what a caller writes when
+    /// they ask for a pool but leave the format version at 0.
+    fn v0_json_asking_for_a_pool() -> serde_json::Value {
+        let mut json = TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
+            .to_json()
+            .expect("to_json");
+        json.as_object_mut()
+            .expect("configuration object")
+            .insert("hasShieldedPool".to_string(), serde_json::Value::Bool(true));
+        json
+    }
+
+    #[test]
+    fn should_refuse_a_pool_asked_for_at_format_version_0_rather_than_drop_it() {
+        let json = v0_json_asking_for_a_pool();
+        let decoded = TokenConfiguration::from_json(json);
+        assert!(
+            decoded.is_err(),
+            "a configuration asking for a pool must not decode as a token that can never \
+             have one, got {:?}",
+            decoded.map(|configuration| configuration.has_shielded_pool())
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_pool_asked_for_at_format_version_0_on_the_value_wire_too() {
+        let mut value = TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
+            .to_object()
+            .expect("to_object");
+        value.as_map_mut().expect("configuration map").push((
+            platform_value::Value::Text("hasShieldedPool".to_string()),
+            platform_value::Value::Bool(true),
+        ));
+        let decoded = TokenConfiguration::from_object(value);
+        assert!(
+            decoded.is_err(),
+            "the contract ingest path must refuse the same configuration, got {:?}",
+            decoded.map(|configuration| configuration.has_shielded_pool())
+        );
+    }
+
+    /// The V0 fields reach a V1 configuration through `serde(flatten)`, which drops the
+    /// strictness the V0 variant is read with. A V1 configuration must keep decoding.
+    #[test]
+    fn should_still_decode_a_pooled_configuration_whose_v0_fields_are_flattened() {
+        let mut configuration =
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        configuration.set_has_shielded_pool(true);
+
+        let json = configuration.to_json().expect("to_json");
+        assert_eq!(
+            json.get("$formatVersion").and_then(|v| v.as_str()),
+            Some("1")
+        );
+        assert_eq!(
+            TokenConfiguration::from_json(json).expect("from_json"),
+            configuration
+        );
+
+        let value = configuration.to_object().expect("to_object");
+        assert_eq!(
+            TokenConfiguration::from_object(value).expect("from_object"),
+            configuration
+        );
+    }
+}
