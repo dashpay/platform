@@ -2,6 +2,9 @@ use crate::abci::app::{BlockExecutionApplication, PlatformApplication, Transacti
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::metrics;
+#[cfg(debug_assertions)]
+use crate::perf::{self, PhaseTimer};
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
@@ -20,7 +23,7 @@ where
 {
     let _timer = crate::metrics::abci_request_duration("finalize_block");
     #[cfg(debug_assertions)]
-    let mut phases = crate::perf::PhaseTimer::new("finalize_block");
+    let mut phases = PhaseTimer::new("finalize_block");
 
     let transaction_guard = app.transaction().read().unwrap();
     let transaction =
@@ -197,11 +200,11 @@ where
             });
         match result {
             Ok(()) => {
-                crate::metrics::abci_last_checkpoint_height(block_height);
+                metrics::abci_last_checkpoint_height(block_height);
                 tracing::debug!(block_height, "created grovedb checkpoint");
             }
             Err(error) => {
-                crate::metrics::abci_checkpoint_failed();
+                metrics::abci_checkpoint_failed();
                 tracing::error!(
                     ?error,
                     block_height,
@@ -221,7 +224,7 @@ where
     #[cfg(debug_assertions)]
     drop(phases);
     #[cfg(debug_assertions)]
-    crate::perf::end_block(block_height);
+    perf::end_block(block_height);
 
     Ok(proto::ResponseFinalizeBlock {
         retain_height: 0,

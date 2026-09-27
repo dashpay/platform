@@ -5,6 +5,11 @@ mod v0_methods;
 
 #[cfg(any(feature = "value-conversion", feature = "json-conversion"))]
 use crate::data_contract::DataContract;
+#[cfg(all(
+    feature = "serde-conversion",
+    any(feature = "json-conversion", feature = "value-conversion")
+))]
+use crate::serialization;
 use crate::state_transition::batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
 #[cfg(any(feature = "value-conversion", feature = "json-conversion"))]
@@ -43,10 +48,10 @@ pub enum TokenBaseTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenBaseTransition {}
+impl serialization::JsonConvertible for TokenBaseTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenBaseTransition {}
+impl serialization::ValueConvertible for TokenBaseTransition {}
 
 impl Default for TokenBaseTransition {
     fn default() -> Self {

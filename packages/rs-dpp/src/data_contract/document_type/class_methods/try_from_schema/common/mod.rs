@@ -22,7 +22,7 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::{Index, IndexGrammarAdmissions};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
@@ -873,7 +873,7 @@ fn parse_indices(
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
                             .as_slice(),
-                        crate::data_contract::document_type::index::IndexGrammarAdmissions {
+                        IndexGrammarAdmissions {
                             ranked: ctx.generation.admit_ranked,
                             time_range: ctx.generation.admit_time_range,
                             terminal: ctx.generation.admit_index_terminal,

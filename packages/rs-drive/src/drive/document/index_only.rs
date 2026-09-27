@@ -24,7 +24,7 @@ use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::index_only_item_estimated_value_size;
 use crate::drive::document::time_range_ttl::entry_key_bucket_start;
-use crate::drive::Drive;
+use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -140,7 +140,7 @@ impl Drive {
         }
 
         let prefix: Vec<Vec<u8>> = vec![
-            vec![crate::drive::RootTree::DataContractDocuments as u8],
+            vec![RootTree::DataContractDocuments as u8],
             contract_id.to_vec(),
             vec![1],
             document_type.name().as_bytes().to_vec(),
