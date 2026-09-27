@@ -975,6 +975,96 @@ fn should_report_ranked_level_not_indexed() {
 }
 
 #[test]
+fn should_accept_a_flat_index_keyed_by_its_terminal_and_reject_one_without_either() {
+    let likes = |properties: Vec<PropertyPath>, terminal: Vec<PropertyPath>| {
+        CollectionSpec::documents(collection("likes"))
+            .document_id_field("id")
+            .mutable(false)
+            .index_only(true)
+            .field(FieldSpec::new(property("post"), 0, FieldType::identity()))
+            .index(
+                IndexSpec::new(index_name("by_post_owner"), properties).index_only(IndexOnlySpec {
+                    terminal,
+                    preallocated: false,
+                    skip_if_absent: false,
+                }),
+            )
+    };
+    let manifest = expect_manifest(
+        &ContractDeclaration::new().collection(likes(vec![], vec![path("post"), path("$ownerId")])),
+    );
+    let index = manifest
+        .collection("likes")
+        .unwrap()
+        .index("by_post_owner")
+        .unwrap();
+    assert!(index.properties.is_empty());
+    assert_eq!(index.index_only.as_ref().unwrap().terminal.len(), 2);
+    let diagnostics =
+        expect_diagnostics(&ContractDeclaration::new().collection(likes(vec![], vec![])));
+    assert_eq!(kinds(&diagnostics), ["IndexWithoutProperties"]);
+}
+
+#[test]
+fn should_carry_the_entry_payload_sorted_and_report_unknown_or_repeated_properties() {
+    let base = || {
+        CollectionSpec::documents(collection("logins"))
+            .document_id_field("id")
+            .mutable(false)
+            .index_only(true)
+            .field(FieldSpec::new(
+                property("request"),
+                0,
+                FieldType::identity(),
+            ))
+            .field(FieldSpec::new(property("key"), 1, FieldType::bytes(33)))
+            .field(FieldSpec::new(property("cipher"), 2, FieldType::bytes(256)))
+            .index(
+                IndexSpec::new(index_name("by_request"), vec![path("request")])
+                    .index_only(IndexOnlySpec::default()),
+            )
+    };
+    let manifest = expect_manifest(
+        &ContractDeclaration::new().collection(
+            base()
+                .entry_payload(property("key"))
+                .entry_payload(property("cipher")),
+        ),
+    );
+    assert_eq!(
+        manifest.collection("logins").unwrap().entry_payload,
+        [property("cipher"), property("key")]
+    );
+    let reordered = expect_manifest(
+        &ContractDeclaration::new().collection(
+            base()
+                .entry_payload(property("cipher"))
+                .entry_payload(property("key")),
+        ),
+    );
+    assert_eq!(manifest, reordered);
+    let diagnostics = expect_diagnostics(
+        &ContractDeclaration::new().collection(
+            base()
+                .entry_payload(property("ghost"))
+                .entry_payload(property("key"))
+                .entry_payload(property("key")),
+        ),
+    );
+    assert_eq!(
+        kinds(&diagnostics),
+        [
+            "EntryPayloadPropertyUnknown",
+            "DuplicateEntryPayloadProperty"
+        ]
+    );
+    let diagnostics = expect_diagnostics(
+        &ContractDeclaration::new().collection(minimal("c").entry_payload(property("a"))),
+    );
+    assert_eq!(kinds(&diagnostics), ["IndexOnlyOptionOnStoredCollection"]);
+}
+
+#[test]
 fn should_carry_a_composite_terminal_in_order_and_report_a_duplicate_component() {
     let likes = |terminal: Vec<PropertyPath>| {
         CollectionSpec::documents(collection("likes"))
