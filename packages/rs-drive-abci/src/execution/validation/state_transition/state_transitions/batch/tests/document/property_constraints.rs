@@ -1069,6 +1069,38 @@ mod property_constraints_tests {
         assert_eq!(fixture.stored_offers()[0].owner_id(), recipient.id());
     }
 
+    /// A `sellerId` that declares `refersTo` an identity is compared with
+    /// `$ownerId` as any identifier property is: the contract registers, a
+    /// create naming another existing identity as seller is refused, one naming
+    /// the owner is accepted, and a transfer is refused.
+    #[tokio::test]
+    async fn should_compare_an_identifier_property_that_declares_refers_to() {
+        let mut schema = owned_offer_schema();
+        schema["properties"]["sellerId"]["refersTo"] = platform_value!({ "type": "identity" });
+        let mut fixture = OfferFixture::with_schema(schema);
+        let owner = fixture.identity.id();
+        let (other, _, _) = fixture.other_identity(964);
+
+        let result = fixture
+            .create(|document| document.set("sellerId", Value::Identifier(other.id().to_buffer())))
+            .await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| document.set("sellerId", Value::Identifier(owner.to_buffer())))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture.transfer(other.id()).await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+        let stored = fixture.stored_offers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].owner_id(), owner);
+    }
+
     #[tokio::test]
     async fn should_judge_a_replace_against_the_rules() {
         let mut fixture = OfferFixture::new();

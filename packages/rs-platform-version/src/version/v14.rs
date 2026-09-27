@@ -1057,19 +1057,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     constant and no other string unless an `ifAbsent` gives it a string
 ///     default (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum`
 ///     must list too); `equal`, `notEqual` or `in` of an identifier property
-///     or of `$ownerId`, the document's owner, likewise, with base58
-///     identifier constants or another identifier operand and no default, an
-///     identifier the document leaves out equalling none; `present` or
-///     `absent` naming a property of any type, whether the document holds it
-///     (the one way to tell a property left out from one set to 0); `anyOf` or
-///     `allOf` over two or more conditions; or `not` over one. In an operand, a
-///     property the document leaves out counts as 0, or as the value of an
-///     `ifAbsent` operand naming it. Arithmetic is exact `i128`: `divide` and
-///     `modulo` are Euclidean (the remainder is never negative), and an
-///     overflow, a zero divisor, a negative exponent or a value that is not an
-///     integer refuses the document rather than wrapping. Conditions are
-///     checked in declared order and no further than the outcome needs
-///     (`anyOf` stops at the first that holds, `allOf` at the first that
+///     (one declaring `refersTo` included) or of `$ownerId`, the document's
+///     owner, likewise, with base58 identifier constants or another identifier
+///     operand and no default, an identifier the document leaves out equalling
+///     none; `present` or `absent` naming a property of any type, whether the
+///     document holds it (the one way to tell a property left out from one set
+///     to 0); `anyOf` or `allOf` over two or more conditions; or `not` over
+///     one. In an operand, a property the document leaves out counts as 0, or
+///     as the value of an `ifAbsent` operand naming it. Arithmetic is exact
+///     `i128`: `divide` and `modulo` are Euclidean (the remainder is never
+///     negative), and an overflow, a zero divisor, a negative exponent or a
+///     value that is not an integer refuses the document rather than wrapping.
+///     Conditions are checked in declared order and no further than the outcome
+///     needs (`anyOf` stops at the first that holds, `allOf` at the first that
 ///     fails), a fault in one that is checked refuses the document whatever the
 ///     others say, and `not` never turns a fault into a pass, so an earlier
 ///     condition guards a later one. The parser checks that every path an

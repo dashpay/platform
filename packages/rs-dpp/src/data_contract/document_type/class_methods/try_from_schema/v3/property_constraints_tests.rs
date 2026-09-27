@@ -600,6 +600,125 @@ fn should_compare_the_owner_and_refuse_it_on_an_index_only_type() {
     }
 }
 
+/// An identifier property that declares `refersTo` is an identifier property
+/// all the same: on both paths it compares with a const, with another
+/// identifier property whether or not that one declares `refersTo`, with
+/// `$ownerId` and in an `in`, and the rules judge its value as they judge any
+/// identifier's; read as a number, it is refused as any identifier is.
+#[test]
+fn should_compare_identifier_properties_that_declare_refers_to() {
+    let token = Identifier::new([7; 32]);
+    let other = Identifier::new([8; 32]);
+    let rules = json!({
+        "boughtWithToken": { "equal": ["buyerId", { "const": token.to_string(Encoding::Base58) }] },
+        "buyerIsNotSeller": { "notEqual": ["buyerId", "sellerId"] },
+        "buyerOwns": { "equal": ["buyerId", "$ownerId"] },
+        "knownBuyer": {
+            "in": [
+                "buyerId",
+                [token.to_string(Encoding::Base58), other.to_string(Encoding::Base58)]
+            ]
+        }
+    });
+    let referring_schema = |rules: serde_json::Value, referring: &[&str]| {
+        let mut schema = order_schema(Some(rules), None);
+        for path in referring {
+            schema["properties"][*path]["refersTo"] = json!({ "type": "identity" });
+        }
+        schema_value(schema)
+    };
+
+    for referring in [&["buyerId"][..], &["sellerId"], &["buyerId", "sellerId"]] {
+        for full_validation in [true, false] {
+            let document_type = parse_dispatched(
+                referring_schema(rules.clone(), referring),
+                PlatformVersion::latest(),
+                full_validation,
+            )
+            .unwrap_or_else(|e| {
+                panic!("{referring:?}, full_validation {full_validation}: should parse: {e}")
+            });
+            for path in referring {
+                assert!(matches!(
+                    document_type.flattened_properties()[*path].property_type,
+                    DocumentPropertyType::IdentifierWithReference(_)
+                ));
+            }
+            let constraints = document_type.property_constraints();
+            assert_eq!(
+                constraints["buyerIsNotSeller"].property_reads(),
+                [
+                    ("buyerId", PropertyRead::Identifier),
+                    ("sellerId", PropertyRead::Identifier)
+                ]
+            );
+            for name in ["boughtWithToken", "buyerOwns", "knownBuyer"] {
+                assert_eq!(
+                    constraints[name].property_reads(),
+                    [("buyerId", PropertyRead::Identifier)],
+                    "{name}"
+                );
+            }
+            assert!(constraints["buyerOwns"].reads_owner());
+
+            let order = |buyer: Identifier| {
+                platform_value!({
+                    "buyerId": buyer,
+                    "sellerId": Identifier::new([9; 32]),
+                })
+            };
+            for (name, owner, holds_for_token, holds_for_other) in [
+                ("boughtWithToken", None, true, false),
+                ("buyerIsNotSeller", None, true, true),
+                ("buyerOwns", Some(token), true, false),
+                ("knownBuyer", None, true, true),
+            ] {
+                assert_eq!(
+                    constraints[name].holds(&order(token), owner),
+                    Ok(holds_for_token),
+                    "{name}"
+                );
+                assert_eq!(
+                    constraints[name].holds(&order(other), owner),
+                    Ok(holds_for_other),
+                    "{name}"
+                );
+            }
+            assert_eq!(
+                constraints["knownBuyer"].holds(&order(Identifier::new([9; 32])), None),
+                Ok(false)
+            );
+        }
+    }
+
+    for (rules, needle) in [
+        (
+            json!({ "rule": { "equal": ["buyerId", "price"] } }),
+            "rule \"rule\" reads \"buyerId\", which has type identifier, not integer or boolean: \
+             an identifier property is compared",
+        ),
+        (
+            json!({ "rule": { "equal": ["note", "buyerId"] } }),
+            "rule \"rule\" at equal compares a string property with an identifier property",
+        ),
+        (
+            json!({ "rule": { "lessThan": ["buyerId", "sellerId"] } }),
+            "rule \"rule\" at lessThan compares identifiers, which only equal and notEqual do",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_dispatched(
+                    referring_schema(rules.clone(), &["buyerId"]),
+                    PlatformVersion::latest(),
+                    full_validation,
+                ),
+                needle,
+            );
+        }
+    }
+}
+
 /// `$ownerId` is the document's owner, which every document has, not a
 /// property of the type: a presence test of it is refused on both paths, and
 /// any other system property the meta-schema refuses when registering.
