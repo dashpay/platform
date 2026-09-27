@@ -626,7 +626,8 @@ mod tests {
     //! These cover:
     //!   * the pre-programmed distribution filtering + "distribution after last paid" lookup
     //!   * the `wrong_claimant_error` resolution logic
-    //!   * `RewardRatio` computation used inside the `EvonodesByParticipation` closure
+    //!   * the `RewardRatio` arithmetic that `Drive::evonode_participation_rewards` applies for
+    //!     the `EvonodesByParticipation` branch, reproduced here
     //!   * recipient resolution for each `TokenDistributionInfo` variant
     //!   * the `From<TokenDistributionResolvedRecipient> for TokenDistributionRecipient` roundtrip
     //!   * `ClaimAction` variant dispatch / clone / enum wrapper accessors
