@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -197,9 +198,19 @@ impl Drive {
                 platform_version,
                 previous_fee_versions,
             ),
+            1 => self.delete_index_only_document_for_contract_v1(
+                document,
+                contract,
+                document_type,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "delete_index_only_document_for_contract".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
