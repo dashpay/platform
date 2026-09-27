@@ -4,7 +4,8 @@ use crate::drive::credit_pools::epochs::epoch_key_constants::{
     KEY_START_TIME,
 };
 use crate::drive::credit_pools::epochs::epochs_root_tree_key_constants::{
-    KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
+    KEY_LIFETIME_STORAGE_FEE_POOLS, KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL,
+    KEY_UNPAID_EPOCH_INDEX,
 };
 use crate::drive::RootTree;
 use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
@@ -58,6 +59,36 @@ pub(crate) fn structure() -> StructureNode {
         .describe(
             "The oldest epoch whose proposers have not been \
              paid yet.",
+        ),
+    )
+    .child(
+        StructureNode::fixed(
+            "lifetime_storage_fee_pools",
+            KEY_LIFETIME_STORAGE_FEE_POOLS,
+            "LifetimeStorageFeePools",
+            "KEY_LIFETIME_STORAGE_FEE_POOLS",
+        )
+        .ascii()
+        .kind(ElementKind::SumTree)
+        .since(14)
+        .source(ROOT_KEYS)
+        .book("data-model/document-ttl.md")
+        .describe(
+            "Storage fees for storage that lives a known number of epochs (documents with a \
+             time to live), by that number, waiting for the next epoch change to spread them \
+             evenly over those epochs.",
+        )
+        .child(
+            StructureNode::dynamic(
+                "lifetime",
+                "lifetime_epochs",
+                KeyMatcher::Len(2),
+                KeyEncoding::U16Be,
+                "How many epochs the storage lives, at most one era",
+            )
+            .kind(ElementKind::SumItem)
+            .value("credits")
+            .describe("The storage fees to spread over that many epochs."),
         ),
     )
     .child(

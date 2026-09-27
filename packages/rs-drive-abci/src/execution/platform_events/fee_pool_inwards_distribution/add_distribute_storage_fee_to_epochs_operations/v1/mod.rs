@@ -2,15 +2,51 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::storage_fee_distribution_outcome;
 use crate::platform_types::platform::Platform;
+use dpp::balances::credits::Creditable;
 use dpp::block::epoch::EpochIndex;
 use dpp::fee::epoch::distribution::{
     distribute_storage_fee_to_epochs_collection,
     subtract_refunds_priced_in_epoch_from_epoch_credits_collection,
 };
 use dpp::fee::epoch::SignedCreditsPerEpoch;
+use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 use drive::util::batch::GroveDbOpBatch;
+
+/// Adds `credits` to the `lifetime_epochs` epochs from `current_epoch_index` in equal parts,
+/// the remainder of the division to the current epoch.
+fn spread_credits_over_epochs(
+    credits_per_epochs: &mut SignedCreditsPerEpoch,
+    credits: Credits,
+    current_epoch_index: EpochIndex,
+    lifetime_epochs: u16,
+) -> Result<(), Error> {
+    let lifetime_epochs = lifetime_epochs.max(1);
+    let share = credits / u64::from(lifetime_epochs);
+    let remainder = credits % u64::from(lifetime_epochs);
+    for offset in 0..lifetime_epochs {
+        let epoch_index =
+            current_epoch_index
+                .checked_add(offset)
+                .ok_or(ExecutionError::Overflow(
+                    "overflow indexing the epochs a lifetime storage fee covers",
+                ))?;
+        let epoch_credits = if offset == 0 {
+            share + remainder
+        } else {
+            share
+        };
+        let epoch_credits = epoch_credits.to_signed()?;
+        let entry = credits_per_epochs.entry(epoch_index).or_default();
+        *entry = entry
+            .checked_add(epoch_credits)
+            .ok_or(ExecutionError::Overflow(
+                "overflow adding a lifetime storage fee to an epoch",
+            ))?;
+    }
+    Ok(())
+}
 
 impl<C> Platform<C> {
     /// Adds operations to the GroveDB op batch which distribute storage fees
@@ -44,6 +80,27 @@ impl<C> Platform<C> {
             current_epoch_index,
             self.config.drive.epochs_per_era,
         )?;
+
+        // Spread each lifetime storage fee pool evenly over its epochs, from the current one;
+        // what the division leaves goes to the current epoch. The block's fees then refill
+        // or remove the pools (`add_distribute_block_fees_into_pools_operations` v1).
+        let spread_lifetime_storage_fees = self
+            .drive
+            .fetch_lifetime_storage_fee_pools(transaction, platform_version)?;
+        let mut total_distributed_storage_fees = storage_distribution_fees;
+        for (lifetime_epochs, credits) in &spread_lifetime_storage_fees {
+            spread_credits_over_epochs(
+                &mut credits_per_epochs,
+                *credits,
+                current_epoch_index,
+                *lifetime_epochs,
+            )?;
+            total_distributed_storage_fees = total_distributed_storage_fees
+                .checked_add(*credits)
+                .ok_or(ExecutionError::Overflow(
+                "overflow adding the lifetime storage fees distributed at an epoch change",
+            ))?;
+        }
 
         // Deduct pending refunds from the epochs they were refunded for. Shares of epochs that
         // closed before the current one come out of the current epoch
@@ -83,9 +140,10 @@ impl<C> Platform<C> {
 
         Ok(
             storage_fee_distribution_outcome::v0::StorageFeeDistributionOutcome {
-                total_distributed_storage_fees: storage_distribution_fees,
+                total_distributed_storage_fees,
                 leftovers,
                 refunded_epochs_count,
+                spread_lifetime_storage_fees,
             },
         )
     }
@@ -101,10 +159,13 @@ mod tests {
     use dpp::block::epoch::Epoch;
     use dpp::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
     use dpp::fee::epoch::{perpetual_storage_epochs, CreditsPerEpoch};
+    use dpp::fee::fee_result::LifetimeStorageFees;
     use dpp::fee::Credits;
     use drive::config::DriveConfig;
     use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
-    use drive::drive::credit_pools::operations::update_storage_fee_distribution_pool_operation;
+    use drive::drive::credit_pools::operations::{
+        update_lifetime_storage_fee_pool_operation, update_storage_fee_distribution_pool_operation,
+    };
     use drive::drive::Drive;
     use drive::grovedb::Transaction;
     use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -205,6 +266,58 @@ mod tests {
                 PlatformVersion::latest(),
             )
             .expect("should get storage fees")
+    }
+
+    #[test]
+    fn should_spread_each_lifetime_storage_fee_pool_evenly_over_its_epochs() {
+        let platform = setup_platform();
+        let transaction = platform.drive.grove.start_transaction();
+        let platform_version = PlatformVersion::latest();
+
+        let mut batch = GroveDbOpBatch::new();
+        for (lifetime_epochs, credits) in [(2, 1_001), (3, 30)] {
+            batch.push(
+                update_lifetime_storage_fee_pool_operation(lifetime_epochs, credits)
+                    .expect("should return operation"),
+            );
+        }
+        platform
+            .drive
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply batch");
+
+        let current_epoch_index = 5;
+        let pools_range = 0..current_epoch_index + 5;
+        let pools_before = epoch_storage_pools(&platform, pools_range.clone(), &transaction);
+
+        let mut batch = GroveDbOpBatch::new();
+        let outcome = platform
+            .add_distribute_storage_fee_to_epochs_operations(
+                current_epoch_index,
+                Some(current_epoch_index - 1),
+                Some(&transaction),
+                &mut batch,
+                platform_version,
+            )
+            .expect("should distribute the pools");
+        platform
+            .drive
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply batch");
+
+        assert_eq!(
+            outcome.spread_lifetime_storage_fees,
+            LifetimeStorageFees::from([(2, 1_001), (3, 30)])
+        );
+        assert_eq!(outcome.total_distributed_storage_fees, 1_031);
+        let pools_after = epoch_storage_pools(&platform, pools_range.clone(), &transaction);
+        let added: Vec<Credits> = pools_after
+            .iter()
+            .zip(&pools_before)
+            .map(|(after, before)| after - before)
+            .collect();
+        // Epoch 5 takes its shares and the remainder, then each epoch of a pool its share.
+        assert_eq!(added, vec![0, 0, 0, 0, 0, 501 + 10, 500 + 10, 10, 0, 0]);
     }
 
     #[test]

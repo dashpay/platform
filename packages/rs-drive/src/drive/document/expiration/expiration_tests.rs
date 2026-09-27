@@ -20,7 +20,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
-use dpp::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::{FeeResult, LifetimeStorageFees};
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
@@ -812,17 +812,20 @@ fn should_prepay_the_deletion_of_the_bytes_a_change_adds() {
 }
 
 #[test]
-fn should_price_a_short_lived_document_into_processing_and_prepay_its_deletion() {
+fn should_pay_a_short_lived_document_over_its_epoch_and_prepay_its_deletion() {
     let platform_version = PlatformVersion::latest();
     let (drive, contract) = setup(3_600);
     let note_fee = insert(&drive, &contract, "note", &note(1, START_MS, "hello"), true);
     let memo_fee = insert(&drive, &contract, "memo", &note(2, START_MS, "hello"), true);
 
+    // An hour lives in one epoch: its whole storage fee is paid out over that epoch.
+    assert!(note_fee.storage_fee > 0);
     assert_eq!(
-        note_fee.storage_fee, 0,
-        "a lifetime under two epochs pays nothing into the storage pool"
+        note_fee.lifetime_storage_fees,
+        LifetimeStorageFees::from([(1, note_fee.storage_fee)])
     );
     assert!(memo_fee.storage_fee > 0);
+    assert!(memo_fee.lifetime_storage_fees.is_empty());
     let note_type = contract.document_type_for_name("note").expect("type");
     let note_bytes = note(1, START_MS, "hello")
         .serialize(note_type, &contract, platform_version)
@@ -875,7 +878,7 @@ fn should_price_a_short_lived_document_into_processing_and_prepay_its_deletion()
 }
 
 #[test]
-fn should_price_a_long_lived_document_into_the_storage_pool() {
+fn should_pay_a_long_lived_document_over_the_epochs_it_lives() {
     let (drive, contract) = setup(31_536_000);
     let note_fee = insert(&drive, &contract, "note", &note(1, START_MS, "hello"), true);
     let memo_fee = insert(&drive, &contract, "memo", &note(2, START_MS, "hello"), true);
@@ -883,9 +886,13 @@ fn should_price_a_long_lived_document_into_the_storage_pool() {
         .fee_version
         .document_ttl
         .credit_per_byte_per_period;
-    // A year of 365 days is exactly 40 pricing periods of 9.125 days.
+    // A year of 365 days is exactly 40 pricing periods, and epochs, of 9.125 days.
     assert!(note_fee.storage_fee > 0);
     assert_eq!(note_fee.storage_fee % (40 * per_period), 0);
+    assert_eq!(
+        note_fee.lifetime_storage_fees,
+        LifetimeStorageFees::from([(40, note_fee.storage_fee)])
+    );
     assert!(note_fee.storage_fee < memo_fee.storage_fee);
 }
 

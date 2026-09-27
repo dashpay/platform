@@ -126,6 +126,12 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             storage_fee_distribution_outcome
                 .as_ref()
                 .map(|outcome| outcome.leftovers),
+            // The lifetime storage fee pools this epoch change spread. Added in place in this
+            // shipped generation: before protocol version 14 the distribution spreads none and
+            // `add_distribute_block_fees_into_pools_operations` v0 does not read them.
+            storage_fee_distribution_outcome
+                .as_ref()
+                .map(|outcome| &outcome.spread_lifetime_storage_fees),
             Some(transaction),
             &mut batch,
             platform_version,
@@ -261,6 +267,7 @@ mod tests {
                 storage_fee: 100000,
                 processing_fee: 10000,
                 refunds_per_epoch: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
+                ..Default::default()
             }
             .into();
 

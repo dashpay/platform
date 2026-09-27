@@ -35,7 +35,6 @@ pub const FEE_DOCUMENT_TTL_VERSION1: FeeDocumentTtlVersion = FeeDocumentTtlVersi
     ],
     credit_per_byte_per_period: 34,
     pricing_period_seconds: 788_400, // 9.125 days, mainnet's epoch length
-    processing_route_below_epochs: 2,
     // Measured on protocol version 14 (drive `delete_document_for_contract` of a document of
     // a type with a `ttl`, averaged over ten documents): about 1.53M credits of processing with
     // one index level, 1.94M with two and 2.39M with four. Base plus per level covers each.

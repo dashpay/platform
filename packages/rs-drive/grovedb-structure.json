@@ -1915,6 +1915,48 @@
         "description": "Credits collected as fees and not yet paid out. A sum tree, so its total is every credit held by the pools.",
         "children": [
           {
+            "id": "pools.lifetime_storage_fee_pools",
+            "key": {
+              "type": "fixed",
+              "hex": "6c",
+              "label": "LifetimeStorageFeePools",
+              "constant": "KEY_LIFETIME_STORAGE_FEE_POOLS",
+              "ascii": true
+            },
+            "kinds": [
+              "SumTree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/credit_pools/epochs/epochs_root_tree_key_constants.rs",
+            "book": "data-model/document-ttl.md",
+            "description": "Storage fees for storage that lives a known number of epochs (documents with a time to live), by that number, waiting for the next epoch change to spread them evenly over those epochs.",
+            "children": [
+              {
+                "id": "pools.lifetime_storage_fee_pools.lifetime",
+                "key": {
+                  "type": "dynamic",
+                  "name": "lifetime_epochs",
+                  "matcher": {
+                    "type": "len",
+                    "len": 2
+                  },
+                  "encoding": "u16_be",
+                  "description": "How many epochs the storage lives, at most one era"
+                },
+                "kinds": [
+                  "SumItem"
+                ],
+                "value": "credits",
+                "since": 14,
+                "presence": "always",
+                "source": "packages/rs-drive/src/drive/credit_pools/epochs/epochs_root_tree_key_constants.rs",
+                "description": "The storage fees to spread over that many epochs.",
+                "children": []
+              }
+            ]
+          },
+          {
             "id": "pools.pending_epoch_refunds",
             "key": {
               "type": "fixed",

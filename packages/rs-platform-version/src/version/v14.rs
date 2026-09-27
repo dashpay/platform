@@ -1244,7 +1244,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     tree under `Misc` (created by `create_initial_state_structure` 4 and
 ///     `transition_to_version_14`), and pay the `document_ttl` group of `FEE_VERSION3`: a
 ///     price per byte for the time they live (tiers up to seven days, then per 9.125 days),
-///     into the processing fees for a `ttl` under two epochs and the storage pool otherwise,
+///     paid out to the epochs they live in (at most one era) through the lifetime storage fee
+///     pools under `Pools` (`add_distribute_block_fees_into_pools_operations` 1),
 ///     plus their deletion prepaid as processing (per index level and per document byte; a
 ///     change that grows a document prepays its added bytes). From its expiry on, a
 ///     document can no longer be replaced, transferred, bought, repriced or restored by a

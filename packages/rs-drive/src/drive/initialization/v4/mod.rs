@@ -108,7 +108,7 @@ impl Drive {
         // document of a type declaring a `ttl` by the time it expires. After the batch apply,
         // which creates `Misc`, and through the same helper as the upgrade path
         // (`Platform::transition_to_version_14`), in the same position: last.
-        self.insert_documents_expirations_tree(transaction, platform_version)?;
+        self.insert_document_ttl_trees(transaction, platform_version)?;
 
         Ok(())
     }

@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -7,6 +8,7 @@ use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::fees_in_pools::v0::FeesInPoolsV0;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
+use dpp::fee::fee_result::LifetimeStorageFees;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::util::batch::DriveOperation;
@@ -42,11 +44,13 @@ impl<C> Platform<C> {
     /// This function will return an `Error::Execution` variant with `ExecutionError::UnknownVersionMismatch`
     /// in the case when the provided version number does not match any known versions of the
     /// `add_distribute_block_fees_into_pools_operations` method.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::execution::platform_events) fn add_distribute_block_fees_into_pools_operations(
         &self,
         current_epoch: &Epoch,
         block_fees: &BlockFees,
         cached_aggregated_storage_fees: Option<Credits>,
+        spread_lifetime_storage_fees: Option<&LifetimeStorageFees>,
         transaction: TransactionArg,
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
@@ -65,9 +69,20 @@ impl<C> Platform<C> {
                 batch,
                 platform_version,
             ),
+            // v1 (protocol version 14): lifetime storage fees go to the lifetime storage fee
+            // pools.
+            1 => self.add_distribute_block_fees_into_pools_operations_v1(
+                current_epoch,
+                block_fees,
+                cached_aggregated_storage_fees,
+                spread_lifetime_storage_fees,
+                transaction,
+                batch,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "add_distribute_block_fees_into_pools_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

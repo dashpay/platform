@@ -106,9 +106,17 @@ The entry is written with the document and removed with it, whoever deletes it (
 in `force_delete_document_for_contract_operations`, which the owner's, the moderators' and the
 cleanup's deletions share). The last entry of an expiry time takes the tree of that time with
 it, so every tree of an expiry time holds at least one entry, and a document deleted early
-leaves nothing the cleanup would have to read. The expirations tree itself is created with the
-initial state structure of protocol version 14 and on the first block of protocol version 14,
-through one helper (`Drive::insert_documents_expirations_tree`).
+leaves nothing the cleanup would have to read.
+
+The storage fees of such documents wait in the **lifetime storage fee pools** under `Pools`,
+a sum tree so the pools' total counts them, one sum item per number of epochs:
+
+```text
+Pools (48) / l / <lifetime in epochs, u16 big endian> -> credits
+```
+
+Both trees are created with the initial state structure of protocol version 14 and on the
+first block of protocol version 14, through one helper (`Drive::insert_document_ttl_trees`).
 
 ## Fees
 
@@ -134,12 +142,17 @@ document of such a type:
   byte, 5% of it paid out in the first year) pro rata, rounded up. A one-year `ttl` pays
   40 × 34 = 1,360 credits per byte, about what a permanent document deleted after a year
   keeps paying net of its refund.
-- **Route.** A document of a type whose `ttl` is shorter than `processing_route_below_epochs`
-  epochs (two) of the network pays that amount into the current epoch's processing fees; one
-  of a longer `ttl` into the storage fee distribution pool, which spreads it over future
-  epochs like any storage fee. Here the epoch is the network's: the node's
-  `epoch_time_length_s`, handed to Drive through `DriveConfig`. The route follows the declared
-  `ttl`, not the lifetime left, so every write of a document takes the same one.
+- **Payout.** That amount is a storage fee, paid out to the epochs the document lives in
+  rather than over the 50 eras of the perpetual storage distribution. Drive counts the
+  epochs its remaining lifetime spans, rounded up and at most one era (40 epochs), with the
+  network's epoch length (the node's `epoch_time_length_s`, handed to Drive through
+  `DriveConfig`) and reports the amount under that count
+  (`FeeResult::lifetime_storage_fees`). At the end of the block the amounts go to the
+  lifetime storage fee pools (`add_distribute_block_fees_into_pools_operations` v1), and the
+  next epoch change spreads each pool evenly over its number of epochs from the new epoch
+  on, the remainder of the division to the new epoch
+  (`add_distribute_storage_fee_to_epochs_operations` v1), then removes it. A network with
+  hour-long epochs therefore pays a year-long document out within 40 hours.
 - **Deletion.** Creating the document prepays, as processing, what its deletion will cost:
   `cleanup_base_processing_cost` (1,200,000), plus `cleanup_processing_cost_per_index_level`
   (400,000) per index level of the type, where an index counts its properties, times the
@@ -152,8 +165,10 @@ document of such a type:
   own processing like any deletion; the prepaid deletion is the platform's, and is not
   refunded.
 
-The price never decreases with the lifetime and the route depends on the `ttl` alone, so an
-estimate made at an earlier block time (check_tx) stays an upper bound of the execution. A dry
+The price never decreases with the lifetime, so an estimate made at an earlier block time
+(check_tx) stays an upper bound of the execution; where the amount is paid out does not change
+what the writer pays, and a fee increase the writer offers, which multiplies processing only,
+never multiplies it. A dry
 run estimates a change as an insert of the changed document
 (`estimate_document_change_as_insert_operations_v1`): without the entry and the deletion the
 creation prepaid, which a change never pays, and with the deletion of all the document's
@@ -215,5 +230,9 @@ inert before 14:
   v0), which only an upgrade to 14 runs;
 - one batch per pricing rule in `apply_batch_low_level_drive_operations` v0 and the
   `DocumentTtl` arm of `consume_to_fees_v0`: nothing is tagged ephemeral before 14;
+- `process_block_fees_and_validate_sum_trees` v0 hands the pools the epoch change spread to
+  `add_distribute_block_fees_into_pools_operations`, whose v0, split into a helper with its
+  operations unchanged, ignores them: before 14 the distribution spreads none and no fee
+  result carries lifetime storage fees;
 - the pattern-only edits in `batch_insert_empty_tree_if_not_exists` v0 and
   `convert_drive_operations_to_grove_operations` v0, whose output is unchanged.

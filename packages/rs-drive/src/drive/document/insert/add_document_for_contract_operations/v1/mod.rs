@@ -366,8 +366,8 @@ impl Drive {
 
         let pricing = document_ttl_pricing(
             document_remaining_lifetime_ms(created_at, ttl_seconds, block_info.time_ms)?,
-            ttl_seconds,
             self.config.epoch_time_length_s,
+            self.config.epochs_per_era,
             &platform_version.fee_version,
         )?;
         let mut batch_operations: Vec<LowLevelDriveOperation> = batch_operations

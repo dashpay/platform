@@ -1,6 +1,7 @@
 use crate::drive::credit_pools::epochs::epochs_root_tree_key_constants::{
     KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
 };
+use crate::drive::credit_pools::paths::lifetime_storage_fee_pools_vec_path;
 use crate::drive::credit_pools::pools_vec_path;
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -28,6 +29,30 @@ pub fn update_storage_fee_distribution_pool_operation(
         Element::new_sum_item(storage_fee.to_signed()?),
     )
     .dont_check_for_backwards_references())
+}
+
+#[cfg(feature = "server")]
+/// Sets the lifetime storage fee pool of `lifetime_epochs` to `credits`
+pub fn update_lifetime_storage_fee_pool_operation(
+    lifetime_epochs: u16,
+    credits: Credits,
+) -> Result<QualifiedGroveDbOp, Error> {
+    Ok(QualifiedGroveDbOp::insert_or_replace_op(
+        lifetime_storage_fee_pools_vec_path(),
+        lifetime_epochs.to_be_bytes().to_vec(),
+        Element::new_sum_item(credits.to_signed()?),
+    )
+    .dont_check_for_backwards_references())
+}
+
+#[cfg(feature = "server")]
+/// Removes the lifetime storage fee pool of `lifetime_epochs`, once spread over its epochs
+pub fn delete_lifetime_storage_fee_pool_operation(lifetime_epochs: u16) -> QualifiedGroveDbOp {
+    QualifiedGroveDbOp::delete_op(
+        lifetime_storage_fee_pools_vec_path(),
+        lifetime_epochs.to_be_bytes().to_vec(),
+    )
+    .dont_check_for_backwards_references()
 }
 
 #[cfg(feature = "server")]
