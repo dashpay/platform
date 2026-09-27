@@ -3,6 +3,7 @@ mod v0;
 use crate::fee::Credits;
 use crate::shielded::{
     SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES, SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES,
+    SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES,
 };
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -269,7 +270,13 @@ pub fn compute_token_shielded_transfer_with_shielded_fee_fee(
 }
 
 /// The fee of a `TokenUnshieldWithShieldedFee`: both bundles plus the recipient's token
-/// balance item.
+/// balance item, priced as the insert it is for a recipient who has never held this token.
+///
+/// The recipient only has to be an existing identity, not an existing holder, so the balance item
+/// usually does not exist yet and the write creates it. The component is the insert's cost for
+/// every recipient alike: `credit_amount` is public and must equal this fee exactly, so a fee that
+/// distinguished the two cases would publish whether the recipient is holding this token for the
+/// first time. See [`SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES`].
 pub fn compute_token_unshield_with_shielded_fee_fee(
     token_actions: usize,
     fee_actions: usize,
@@ -278,7 +285,7 @@ pub fn compute_token_unshield_with_shielded_fee_fee(
     compute_token_pool_paid_shielded_fee(
         token_actions,
         fee_actions,
-        SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES,
+        SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES,
         platform_version,
     )
 }
