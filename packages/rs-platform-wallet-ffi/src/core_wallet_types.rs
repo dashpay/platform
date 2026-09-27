@@ -15,6 +15,45 @@ pub struct OutPointFFI {
     pub vout: u32,
 }
 
+impl OutPointFFI {
+    /// The one authority for building this value, for callers that hold a
+    /// txid and an index rather than an `OutPoint` — the additive UTXO path
+    /// (`record_utxos_ffi`) is exactly that shape.
+    ///
+    /// This value is the join key a sweep's `released_outpoints` uses to
+    /// find additive-path rows on the host side, so byte-order drift
+    /// between hand-rolled copies would silently unlink them: the release
+    /// would match nothing and the coin would stay spent. Both this and the
+    /// `From<&OutPoint>` impl below exist so no site has to spell the copy
+    /// out again.
+    pub fn new(txid: &dashcore::Txid, vout: u32) -> Self {
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(txid.as_ref());
+        Self { txid: bytes, vout }
+    }
+}
+
+impl From<&dashcore::OutPoint> for OutPointFFI {
+    /// Conversion for callers holding a whole `OutPoint`; delegates to
+    /// [`OutPointFFI::new`], which is where the byte copy lives.
+    fn from(outpoint: &dashcore::OutPoint) -> Self {
+        Self::new(&outpoint.txid, outpoint.vout)
+    }
+}
+
+impl From<&OutPointFFI> for dashcore::OutPoint {
+    /// The inverse of [`OutPointFFI::new`] — the one authority for reading
+    /// an outpoint a host hands back (a page cursor, a classification
+    /// query), so the byte order round-trips exactly.
+    fn from(outpoint: &OutPointFFI) -> Self {
+        use dashcore::hashes::Hash as _;
+        dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array(outpoint.txid),
+            vout: outpoint.vout,
+        }
+    }
+}
+
 /// Outpoint of a TXO that was spent, paired with the spending
 /// transaction's txid. Replaces the bare `OutPointFFI` on
 /// `AccountChangeSetFFI.utxos_spent` so the Swift persister can
@@ -26,6 +65,73 @@ pub struct OutPointFFI {
 pub struct SpentOutPointFFI {
     pub outpoint: OutPointFFI,
     pub spending_txid: [u8; 32],
+}
+
+/// `UtxoCreditVerdictFFI::verdict`: the wallet observed a block at
+/// `spent_at_height` spending the outpoint before the output was
+/// recognised, so the engine never credited it (rust-dashcore#649 skip;
+/// the spender may be unrecorded — rust-dashcore#992).
+pub const UTXO_CREDIT_VERDICT_OBSERVED_SPENT: u8 = 1;
+/// `UtxoCreditVerdictFFI::verdict`: the record is an unconfirmed
+/// transaction whose input a block already spent; nothing it created was
+/// credited and no sweep will delete its row.
+pub const UTXO_CREDIT_VERDICT_DOOMED: u8 = 2;
+/// `UtxoCreditVerdictFFI::verdict`: not credited for a reason the bridge
+/// cannot name (spent, abandoned or swept between emit and drain, or an
+/// account-level spent mark). Carries no context: a persister must not
+/// hand the coin back as unspent on this delivery, and must not mark it
+/// spent on this evidence alone.
+pub const UTXO_CREDIT_VERDICT_UNCREDITED: u8 = 3;
+
+/// The engine's verdict on one `Received` / `Change` output that this
+/// round's records carry but the engine did NOT credit to the owning
+/// account — delivered through the size-negotiated extension slot
+/// `on_persist_wallet_changeset_utxo_verdicts_fn`, BEFORE the round's
+/// changeset callback, so a persister can consult it while it
+/// materialises the round's `utxos_added` entries. Absence of an outpoint
+/// here means credited: the ordinary case.
+///
+/// Rides the extension rather than `WalletChangeSetFFI` / `UtxoEntryFFI`
+/// for the layout reason documented on `WalletChangeSetFFI`: both cross
+/// by bare pointer, so a field appended to either cannot be proven present
+/// to a consumer built after a producer, while the extension's
+/// `struct_size` is exactly that proof.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct UtxoCreditVerdictFFI {
+    /// The output the verdict is about.
+    pub outpoint: OutPointFFI,
+    /// One of the `UTXO_CREDIT_VERDICT_*` constants.
+    pub verdict: u8,
+    /// Height of the block observed spending the outpoint when `verdict`
+    /// is [`UTXO_CREDIT_VERDICT_OBSERVED_SPENT`]; 0 otherwise.
+    pub spent_at_height: u32,
+}
+
+/// Project a changeset's credit verdicts into their C mirrors for the
+/// extension slot, in outpoint order (the map's own ordering — stable,
+/// so a host log of a round is reproducible).
+pub(crate) fn build_utxo_credit_verdicts_for_callback(
+    cs: &platform_wallet::changeset::CoreChangeSet,
+) -> Vec<UtxoCreditVerdictFFI> {
+    use platform_wallet::changeset::changeset::UtxoCreditVerdict;
+    cs.utxo_credit_verdicts
+        .iter()
+        .map(|(outpoint, verdict)| {
+            let (code, spent_at_height) = match verdict {
+                UtxoCreditVerdict::ObservedSpent { height } => {
+                    (UTXO_CREDIT_VERDICT_OBSERVED_SPENT, *height)
+                }
+                UtxoCreditVerdict::Doomed => (UTXO_CREDIT_VERDICT_DOOMED, 0),
+                UtxoCreditVerdict::Uncredited => (UTXO_CREDIT_VERDICT_UNCREDITED, 0),
+            };
+            UtxoCreditVerdictFFI {
+                outpoint: OutPointFFI::from(outpoint),
+                verdict: code,
+                spent_at_height,
+            }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +343,81 @@ pub struct WalletChangeSetFFI {
     /// `proof.rs` can't fire until SPV re-applies a fresh CL).
     pub last_applied_chain_lock_bytes: *mut u8,
     pub last_applied_chain_lock_bytes_len: usize,
+    // This struct's layout is FROZEN here. It crosses the C ABI by bare
+    // pointer — `on_persist_wallet_changeset_fn` carries no size or version
+    // field — so appending anything makes the pairing of a new callback
+    // with an older native producer read past the end of the producer's
+    // allocation: the callback signature and the manager-create entry
+    // points are unchanged, so nothing stops that pairing, and a capability
+    // bit gates semantics, not memory layout — it cannot make an
+    // out-of-bounds read safe. The round's sweep batches, briefly appended
+    // here, now travel through the size-tagged
+    // `PersistenceCallbacksExtension` sweep callback instead (see
+    // `persistence.rs`), whose declared `struct_size` is exactly the proof
+    // of presence this struct cannot give. New per-round payloads must take
+    // that same route.
+}
+
+/// One sweep: the transactions it removed, the transaction that beat them,
+/// and the coins its removal actually freed.
+///
+/// Delivered through `PersistenceCallbacksExtension`'s
+/// `on_persist_wallet_changeset_sweeps_fn` — deliberately NOT a field on
+/// [`WalletChangeSetFFI`], whose bare-pointer ABI cannot prove to a newer
+/// consumer that an older producer allocated the field (see the layout note
+/// there). The batches arrive in the order the wallet emitted them, and the
+/// only subtractive part of a persistence round rides here: each entry
+/// describes the wallet as that sweep saw it, and a later entry can keep a
+/// coin spent that an earlier one freed. **A persister must apply them in
+/// sequence** — folding them together lets the first answer outlive the
+/// last one that is actually true. Ignoring them leaves dead rows that are
+/// handed back at the next load and re-create a balance the wallet has
+/// already corrected.
+#[repr(C)]
+/// # Null at count 0
+///
+/// `txids` and `released_outpoints` are BOTH null when their count is zero —
+/// a batch can carry an empty release set, and (defensively) an empty txid
+/// list. A consumer must check each pointer before forming a slice from it:
+/// `slice::from_raw_parts(null, 0)` is undefined behaviour in Rust, not a
+/// harmless empty slice, and a naive host binding would dereference null.
+pub struct SweepBatchFFI {
+    /// Removed transactions, raw 32-byte txids. Delete these rows and every
+    /// UTXO they created.
+    pub txids: *const [u8; 32],
+    pub txids_count: usize,
+    /// The transaction whose arrival settled the inputs. Final, and not
+    /// necessarily wallet-relevant — it can pay entirely to outside
+    /// addresses and never reach this store at all, which is why what it
+    /// took cannot be worked out by looking it up.
+    pub superseded_by: [u8; 32],
+    /// Of the inputs the removed transactions claimed, the ones that came
+    /// free. Everything else they claimed was taken by `superseded_by` and
+    /// stays spent — a persister holds every input of what it deletes, so
+    /// this is the only thing telling it which to hand back.
+    pub released_outpoints: *const OutPointFFI,
+    pub released_outpoints_count: usize,
+    /// Whether `winner_mined_height` is meaningful. `false` means the sweep
+    /// was triggered by an InstantSend-locked winner still waiting to be
+    /// mined (upstream's only other trigger — an unlocked mempool arrival
+    /// never sweeps), and the winner has NO finality horizon: a persister
+    /// must still create a durable placeholder for a held-but-unfunded
+    /// input — under DIP-10 the lock alone settles it, and the placeholder
+    /// is the only claim that survives a restart — but must leave it
+    /// UNSTAMPED and never collect an unstamped placeholder (the winner has
+    /// no mining deadline, so no watermark proves its funding output
+    /// delivered-or-never; only funding materialisation, a later
+    /// block-context re-stamp, or a release resolves it). Re-pointing an
+    /// existing placeholder on such a sweep must keep (not clear) any
+    /// stamp it already carries.
+    pub has_winner_mined_height: bool,
+    /// Mined height of `superseded_by` when `has_winner_mined_height` —
+    /// the winner's own block, carried from the sweep event because the
+    /// winner may never appear anywhere else in this wallet's stream. A
+    /// persister stamps it onto the placeholder it writes for a
+    /// held-but-unfunded input, and collects that placeholder exactly when
+    /// `min(chainlock_height, synced_height)` reaches the stamp.
+    pub winner_mined_height: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -518,6 +699,82 @@ impl WalletChangeSetFFI {
             last_applied_chain_lock_bytes_len,
         }
     }
+}
+
+/// Backing storage for one [`SweepBatchFFI`]'s nested buffers. The C struct
+/// borrows into it, so the caller keeps this alive for the callback window —
+/// the same `(entries, storage)` discipline
+/// `build_address_pools_for_callback` uses, rather than `Box::into_raw` +
+/// a paired free: nothing outlives the call, so nothing needs a free path.
+pub(crate) struct SweepBatchStorage {
+    txids: Vec<[u8; 32]>,
+    released: Vec<OutPointFFI>,
+}
+
+/// Build the C mirrors of a changeset's sweep batches for the extension
+/// sweep callback (`on_persist_wallet_changeset_sweeps_fn`), preserving the
+/// wallet's emission order — the one property a persister cannot recover on
+/// its own, since a later batch can keep a coin spent that an earlier one
+/// freed. Sweeps travel wallet-scoped, not per account: the upstream events
+/// are wallet-scoped, and the persister deletes by txid — the row it
+/// deletes carries its own account link.
+pub(crate) fn build_sweep_batches_for_callback(
+    cs: &platform_wallet::changeset::CoreChangeSet,
+) -> (Vec<SweepBatchFFI>, Vec<SweepBatchStorage>) {
+    let storage: Vec<SweepBatchStorage> = cs
+        .sweeps
+        .iter()
+        .map(|batch| SweepBatchStorage {
+            txids: batch
+                .txids
+                .iter()
+                .map(|txid| {
+                    let mut raw = [0u8; 32];
+                    raw.copy_from_slice(txid.as_ref());
+                    raw
+                })
+                .collect(),
+            released: batch
+                .released_outpoints
+                .iter()
+                .map(OutPointFFI::from)
+                .collect(),
+        })
+        .collect();
+
+    let batches: Vec<SweepBatchFFI> = cs
+        .sweeps
+        .iter()
+        .zip(storage.iter())
+        .map(|(batch, backing)| {
+            let mut superseded_by = [0u8; 32];
+            superseded_by.copy_from_slice(batch.superseded_by.as_ref());
+            SweepBatchFFI {
+                // `*const`, built straight from `as_ptr()`: the storage is
+                // borrowed immutably here, and `Vec::as_ptr` does not permit
+                // writes through the pointer or anything derived from it.
+                // Casting to `*mut` would advertise a C ABI that a callback
+                // could take literally, breaking Rust's aliasing rules.
+                txids: if backing.txids.is_empty() {
+                    std::ptr::null()
+                } else {
+                    backing.txids.as_ptr()
+                },
+                txids_count: backing.txids.len(),
+                superseded_by,
+                released_outpoints: if backing.released.is_empty() {
+                    std::ptr::null()
+                } else {
+                    backing.released.as_ptr()
+                },
+                released_outpoints_count: backing.released.len(),
+                has_winner_mined_height: batch.winner_mined_height.is_some(),
+                winner_mined_height: batch.winner_mined_height.unwrap_or(0),
+            }
+        })
+        .collect();
+
+    (batches, storage)
 }
 
 /// Returns the account "index" the FFI surfaces in `account_index`.
@@ -892,13 +1149,10 @@ fn record_new_utxos_ffi(
             let script_bytes = txout.script_pubkey.as_bytes().to_vec();
             let script_len = script_bytes.len();
             let script_ptr = vec_to_ptr_u8(script_bytes, script_len);
-            let mut txid = [0u8; 32];
-            txid.copy_from_slice(rec.txid.as_ref());
             Some(UtxoEntryFFI {
-                outpoint: OutPointFFI {
-                    txid,
-                    vout: d.index,
-                },
+                // Through the shared authority: this is the row a sweep's
+                // release later joins against by outpoint.
+                outpoint: OutPointFFI::new(&rec.txid, d.index),
                 amount: txout.value,
                 address: address.into_raw(),
                 script_pubkey: script_ptr,
@@ -926,13 +1180,8 @@ fn record_spent_outpoints_ffi(
         .iter()
         .filter_map(|d| {
             let input = rec.transaction.input.get(d.index as usize)?;
-            let mut txid = [0u8; 32];
-            txid.copy_from_slice(input.previous_output.txid.as_ref());
             Some(SpentOutPointFFI {
-                outpoint: OutPointFFI {
-                    txid,
-                    vout: input.previous_output.vout,
-                },
+                outpoint: OutPointFFI::from(&input.previous_output),
                 spending_txid,
             })
         })
@@ -1309,14 +1558,7 @@ fn tx_record_to_ffi(
         tr.transaction
             .input
             .iter()
-            .map(|input| {
-                let mut prev_txid = [0u8; 32];
-                prev_txid.copy_from_slice(input.previous_output.txid.as_ref());
-                OutPointFFI {
-                    txid: prev_txid,
-                    vout: input.previous_output.vout,
-                }
-            })
+            .map(|input| OutPointFFI::from(&input.previous_output))
             .collect()
     };
     let input_outpoints_count = input_outpoints_vec.len();
@@ -1922,3 +2164,92 @@ mod tests {
         unsafe { crate::wallet::platform_wallet_manager_free_masternodes_v2(v2, 2) };
     }
 }
+
+// ---------------------------------------------------------------------------
+// Wallet UTXO inventory and outpoint classification (store reconcile)
+// ---------------------------------------------------------------------------
+
+/// One row of a wallet's UTXO inventory page — the C mirror of
+/// `platform_wallet::manager::accessors::WalletUtxoRow`, with the owning
+/// account projected into the same flat tag layout `AccountSpecFFI` and
+/// `AccountBalanceEntryFFI` use, so a store that keys rows by account can
+/// file a healed row under the right one.
+///
+/// Returned by `platform_wallet_wallet_utxos_page`; every row's `address`
+/// and `script_pubkey` allocations belong to Rust and are released by
+/// `platform_wallet_wallet_utxos_page_free`.
+#[repr(C)]
+#[derive(Debug)]
+pub struct WalletUtxoEntryFFI {
+    pub type_tag: crate::wallet_restore_types::AccountTypeTagFFI,
+    pub standard_tag: crate::wallet_restore_types::StandardAccountTypeTagFFI,
+    pub index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
+    pub outpoint: OutPointFFI,
+    pub value_duffs: u64,
+    /// Base58Check address of the output, as the engine holds it. Never
+    /// null; an empty string when the script has no address form.
+    pub address: *mut c_char,
+    /// Null when `script_pubkey_len == 0`.
+    pub script_pubkey: *mut u8,
+    pub script_pubkey_len: usize,
+    pub height: u32,
+    pub is_confirmed: bool,
+    pub is_instantlocked: bool,
+    pub is_coinbase: bool,
+    pub is_locked: bool,
+}
+
+/// Cursor for `platform_wallet_wallet_utxos_page`: the owning account (the
+/// raw tag layout of `AccountSpecFFI`, validated on the Rust side) and
+/// outpoint of the LAST row of the previous page. Pass null to start.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct WalletUtxoCursorFFI {
+    pub type_tag: u8,
+    pub standard_tag: u8,
+    pub index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
+    pub outpoint: OutPointFFI,
+}
+
+/// One store row handed to `platform_wallet_classify_outpoints`: the
+/// account the store files the coin under (raw `AccountSpecFFI` tag
+/// layout), the outpoint, and the script the store recorded for it. Every
+/// pointer is valid for the duration of the call only.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct OutpointOwnershipQueryFFI {
+    pub type_tag: u8,
+    pub standard_tag: u8,
+    pub index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
+    pub outpoint: OutPointFFI,
+    pub script_pubkey: *const u8,
+    pub script_pubkey_len: usize,
+}
+
+/// `platform_wallet_classify_outpoints` answer: the engine has no opinion
+/// (a funding transaction this session never processed — after a restart
+/// the finalized set is empty, so absence proves nothing).
+pub const OUTPOINT_CLASS_UNKNOWN: u8 = 0;
+/// `platform_wallet_classify_outpoints` answer: the coin is in a funds
+/// account's live UTXO set.
+pub const OUTPOINT_CLASS_UNSPENT: u8 = 1;
+/// `platform_wallet_classify_outpoints` answer: the owning account knows
+/// the funding txid, owns the script, and does not hold the coin — the
+/// engine skipped it for a spent reason or consumed it. The one class a
+/// reconciler may act on.
+pub const OUTPOINT_CLASS_KNOWN_UNCREDITED: u8 = 2;
+/// `platform_wallet_classify_outpoints` answer: the owning account's pools
+/// do not monitor the script; the engine could never have credited it.
+pub const OUTPOINT_CLASS_NOT_OWNED: u8 = 3;

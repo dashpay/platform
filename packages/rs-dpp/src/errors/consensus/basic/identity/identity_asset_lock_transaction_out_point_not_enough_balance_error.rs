@@ -2,13 +2,24 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::fee::Credits;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::Txid;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
 )]
 #[error("Asset lock transaction {transaction_id} output {output_index} only has {credits_left} credits left out of {initial_asset_lock_credits} initial credits on the asset lock but needs {credits_required} credits to start processing")]
 #[platform_serialize(unversioned)]
@@ -70,3 +81,18 @@ impl From<IdentityAssetLockTransactionOutPointNotEnoughBalanceError> for Consens
         Self::BasicError(BasicError::IdentityAssetLockTransactionOutPointNotEnoughBalanceError(err))
     }
 }
+
+impl<C> DecodeUntrusted<C> for IdentityAssetLockTransactionOutPointNotEnoughBalanceError {
+    fn decode_untrusted<D: bincode::de::UntrustedDecoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self {
+            transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+            output_index: DecodeUntrusted::decode_untrusted(decoder)?,
+            initial_asset_lock_credits: DecodeUntrusted::decode_untrusted(decoder)?,
+            credits_left: DecodeUntrusted::decode_untrusted(decoder)?,
+            credits_required: DecodeUntrusted::decode_untrusted(decoder)?,
+        })
+    }
+}
+bincode::impl_borrow_decode_untrusted!(IdentityAssetLockTransactionOutPointNotEnoughBalanceError);

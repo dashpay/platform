@@ -2,7 +2,7 @@ use derive_more::{Display, From};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use platform_value::Identifier;
-use bincode::{Encode, Decode};
+use bincode::{Encode, Decode, DecodeUntrusted};
 use platform_version::version::PlatformVersion;
 use crate::balances::credits::TokenAmount;
 use crate::block::block_info::BlockInfo;
@@ -11,6 +11,7 @@ use crate::data_contract::associated_token::token_configuration::accessors::v0::
 use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
 use crate::data_contract::associated_token::token_distribution_key::{TokenDistributionType, TokenDistributionTypeWithResolvedRecipient};
 use crate::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+use crate::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use crate::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{TokenDistributionRecipient, TokenDistributionResolvedRecipient};
 use crate::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
 use crate::data_contract::DataContract;
@@ -45,7 +46,7 @@ pub const TOKEN_HISTORY_ID_BYTES: [u8; 32] = [
     187, 110, 233, 128, 63, 48, 172, 29, 210, 108,
 ];
 
-#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -644,6 +645,15 @@ impl TokenTransitionV0Methods for TokenTransition {
                             }
                         };
                         TokenDistributionTypeWithResolvedRecipient::Perpetual(recipient)
+                    }
+                    TokenDistributionType::OncePerIdentity => {
+                        if distribution_rules
+                            .once_per_identity_distribution()
+                            .is_none()
+                        {
+                            return Err(ProtocolError::NotSupported("Token claiming of once per identity distribution is not supported on this token".to_string()));
+                        }
+                        TokenDistributionTypeWithResolvedRecipient::OncePerIdentity(owner_id)
                     }
                 };
 

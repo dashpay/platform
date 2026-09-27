@@ -98,7 +98,7 @@ Formats 0–2 have no stamp; documents read from them deserialize with `contract
 
 ### `$id` (32 bytes)
 
-The document's unique identifier, written as raw bytes. This is a 256-bit value derived from the contract ID, owner ID, document type name, and entropy via double SHA-256.
+The document's unique identifier, written as raw bytes. This is a 256-bit value derived from the contract ID, owner ID, document type name, entropy and (protocol v14+) the identity contract nonce of the create transition via double SHA-256.
 
 ### `$ownerId` (32 bytes)
 
@@ -184,7 +184,7 @@ All numeric values use **big-endian** byte order.
 | `byteArray` (variable size) | varint length prefix + raw bytes |
 | `identifier` | 32 bytes raw |
 | `date` | 8 bytes big-endian f64 (when optional: `0xff` prefix + 8 bytes) |
-| `array` | varint element count + each element encoded in sequence |
+| `array` (typed array, protocol v14) | varint element count + each element encoded exactly as a required property of the element's type (rows above): an identifier element is 32 raw bytes, an integer element takes the width its bounds give it, a fixed-size byte array element is raw, a string or variable-size byte array element has a varint length prefix. Elements never carry a presence byte |
 | `object` | Nested fields serialized recursively in their schema position order |
 
 **Note on date types**: User-property `date` fields are encoded as **f64** (8 bytes). System timestamps (`$createdAt`, `$updatedAt`, `$transferredAt`) are **u64** milliseconds. Both are 8 bytes big-endian but use different numeric representations.
@@ -284,4 +284,6 @@ See `packages/rs-scripts/README.md` for full usage details.
 
 6. **ByteArray encoding depends on size constraints.** Fixed-size byte arrays (where `minItems == maxItems` in the schema) have no length prefix. Variable-size byte arrays have a varint length prefix. Check the schema to know which encoding is used.
 
-7. **In version 3, the same document type can produce different property layouts.** A property annotated with `requiredSince` is presence-flagged in documents stamped below the annotation and raw in documents stamped at or above it. Two version-3 documents of the same type may therefore differ in layout — always read the stamp varint and resolve each property's requiredness against it before decoding the properties section.
+7. **A typed array's element width comes from its `items` schema.** Each element is laid out as a required property of the element's type, so an integer element bounded `0`..`100` is 1 byte and an unbounded one 8, and a fixed-size byte array or identifier element has no length prefix. Parse the `items` schema exactly as a property schema to know the width, including the contract's `sizedIntegerTypes` setting.
+
+8. **In version 3, the same document type can produce different property layouts.** A property annotated with `requiredSince` is presence-flagged in documents stamped below the annotation and raw in documents stamped at or above it. Two version-3 documents of the same type may therefore differ in layout — always read the stamp varint and resolve each property's requiredness against it before decoding the properties section.

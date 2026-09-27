@@ -25,6 +25,10 @@ use grovedb::Element;
 mod delete;
 #[cfg(feature = "server")]
 mod estimation_costs;
+/// Document expiry: the expirations tree of documents whose type declares a `ttl`, their
+/// pricing, and the cleanup that deletes them once expired
+#[cfg(feature = "server")]
+pub mod expiration;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod get_fetch;
 #[cfg(feature = "server")]
@@ -34,7 +38,11 @@ mod insert;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
+pub use insert_contested::ContestWindows;
+#[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod update;
 #[cfg(all(
@@ -61,6 +69,11 @@ pub(crate) mod ranked_index_tree_type;
 #[cfg(feature = "server")]
 pub(crate) mod index_level_tree_types;
 
+/// Shared TTL semantics for time-range indexes — see
+/// `book/src/drive/time-range-ttl.md`.
+#[cfg(feature = "server")]
+pub(crate) mod time_range_ttl;
+
 /// indexOnly entry probes: entry path/key derivation shared by the write
 /// path and the ABCI state-validation probes
 #[cfg(feature = "server")]
@@ -71,11 +84,23 @@ pub mod index_only;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_only_row_commitment;
 
+/// The entry payload of an indexOnly document type: the value slot after
+/// the row commitment, its encoding and its fee-estimation bounds.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod index_only_entry_payload;
+
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_entry_payload::{
+    decode_index_only_entry_payload, encode_index_only_entry_payload,
+    encode_index_only_entry_payload_value, index_only_entry_payload_max_size,
+    index_only_item_estimated_value_size,
+};
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use index_only_row_commitment::index_only_row_commitment;
 #[cfg(feature = "server")]
 pub use index_only_row_commitment::index_only_row_commitment_with_preimage_size;
 #[cfg(any(feature = "server", feature = "verify"))]
+pub use index_only_row_commitment::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 pub use index_only_row_commitment::INDEX_ONLY_ROW_COMMITMENT_SIZE;
 
 /// How many document history entries to fetch at once. This mirrors contract history

@@ -368,6 +368,27 @@ public final class SDK: @unchecked Sendable {
     self.network = network
   }
 
+  /// Offline SDK over the FFI mock (`dash_sdk_create_handle_with_mock`), for
+  /// tests. Its DAPI client never opens a connection: it answers only from
+  /// the recorded `msg_*.json` responses in `vectorsDirectory` (proofs are
+  /// still verified, against its `quorum_pubkey-*.json` keys) and fails any
+  /// other request. `nil` loads no vectors. The FFI builds the mock for
+  /// mainnet, which `network` reports.
+  internal init(mockVectorsDirectory vectorsDirectory: String?) throws {
+    let mockHandle: OpaquePointer?
+    if let vectorsDirectory {
+      mockHandle = vectorsDirectory.withCString { dash_sdk_create_handle_with_mock($0) }
+    } else {
+      mockHandle = dash_sdk_create_handle_with_mock(nil)
+    }
+    guard let mockHandle else {
+      throw SDKError.internalError(
+        "Failed to create mock SDK from \(vectorsDirectory ?? "no vectors")")
+    }
+    handle = mockHandle
+    network = Network(ffiNetwork: dash_sdk_get_network(mockHandle))
+  }
+
   /// Run `body` with two optional C-string pointers. Each input string,
   /// when non-nil, is materialized into a NUL-terminated C buffer that is
   /// valid for the duration of the call; nil inputs pass through as nil

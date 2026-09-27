@@ -1,0 +1,126 @@
+{
+  "$formatVersion": "1",
+  "id": "9pVVuzFxM5zrbtfJwac6Fyc3QPciz17W5GhkpMB9hBgo",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "draft": {
+      "type": "object",
+      "canBeDeleted": true,
+      "documentsMutable": true,
+      "properties": {
+        "topic": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "canBeDeleted": false,
+      "properties": {
+        "content": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "comment": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "draftId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "deletableDocument",
+            "documentType": "ghost"
+          }
+        },
+        "topic": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        },
+        "body": {
+          "type": "string",
+          "position": 2,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "gatedComment": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "draftId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "deletableDocument",
+            "documentType": "draft",
+            "propertyAgreement": {
+              "$ownerId": "$ownerId"
+            }
+          }
+        },
+        "body": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "draftId"
+      ],
+      "additionalProperties": false
+    },
+    "pinnedComment": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "immutable": [
+        "draftId"
+      ],
+      "properties": {
+        "draftId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "deletableDocument",
+            "documentType": "draft"
+          }
+        },
+        "body": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

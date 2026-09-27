@@ -30,10 +30,11 @@ use crate::error::query::QueryError;
 use dapi_grpc::platform::v0::get_documents_request::{
     document_field_value,
     get_documents_request_v1::{select, Select as ProtoSelect},
-    having_aggregate, having_clause, order_clause, DocumentFieldValue as ProtoDocumentFieldValue,
-    HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
-    OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
-    WhereOperator as ProtoWhereOperator,
+    having_aggregate, having_clause, order_clause,
+    time_range_selection::Selector as ProtoTimeRangeSelector,
+    DocumentFieldValue as ProtoDocumentFieldValue, HavingAggregate as ProtoHavingAggregate,
+    HavingClause as ProtoHavingClause, OrderClause as ProtoOrderClause,
+    WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
 };
 use dpp::platform_value::Value;
 use drive::query::TimeRangeGridSpec;
@@ -90,102 +91,90 @@ pub(super) fn is_time_range_clause(clause: &ProtoWhereClause) -> bool {
 }
 
 /// Decode an `IN_TIME_RANGE` wire where clause into its
-/// `(field, selector, grid)`. Two operand shapes:
+/// `(field, selector, grid)`.
 ///
-/// - `DocumentFieldValue.text` — the bare selector (`"newest"` /
-///   `"oldest"`). Unambiguous only while exactly one grid buckets the
-///   field; the resolver rejects it otherwise.
-/// - `DocumentFieldValue.list` — `[text(selector), uint64(range),
-///   uint64(step)]` or `[…, uint64(phase)]`, naming one grid in the
-///   contract's own declared units (seconds). Required when several grids
-///   bucket the field. Like the contract grammar and the storage key, a
-///   zero phase is spelled by omission — the three-element form — so every
-///   grid has exactly one wire spelling.
+/// The operand is the typed `WhereClause.time_range` message
+/// (`TimeRangeSelection`); the generic `value` operand must be unset — the
+/// selection is not a field value, and a clause carrying both would be two
+/// spellings of one question. Shape rules, each rejected explicitly:
+///
+/// - `selector` must be a known discriminant (`NEWEST` / `OLDEST` /
+///   `BY_START`); unknown integers are wire-level garbage.
+/// - `BY_START` requires `start_ms` (the window's start, a millisecond
+///   timestamp on the grid — alignment itself is the resolver's check,
+///   since only it sees the contract); the relative selectors must NOT
+///   carry `start_ms` — one wire spelling per meaning.
+/// - `grid`, when present, names one of the field's grids in the
+///   contract's own declared seconds and must carry non-zero `range` and
+///   `step` (zero is proto3's absent-field default, so an all-default
+///   `Grid` is indistinguishable from a forgotten one — rejected here with
+///   a better message than the resolver's no-such-grid miss). A zero
+///   `phase` IS the canonical spelling of a phaseless grid, matching the
+///   contract grammar where `phase` is an omittable key.
 pub(super) fn time_range_clause_from_proto(
     clause: ProtoWhereClause,
 ) -> Result<(String, TimeRangeSelector, Option<TimeRangeGridSpec>), QueryError> {
     let field = clause.field;
-    let parse_selector = |text: &str| {
-        TimeRangeSelector::from_string(text).ok_or_else(|| {
-            QueryError::InvalidArgument(format!(
-                "IN_TIME_RANGE selector must be \"newest\" or \"oldest\", got \"{}\"",
-                text
-            ))
-        })
-    };
-    match clause.value.and_then(|v| v.variant) {
-        Some(document_field_value::Variant::Text(selector_text)) => {
-            Ok((field, parse_selector(&selector_text)?, None))
+    if clause.value.is_some() {
+        return Err(QueryError::InvalidArgument(format!(
+            "IN_TIME_RANGE clause on field '{}' must not set `value`: the operand is the \
+             typed `time_range` selection",
+            field
+        )));
+    }
+    let selection = clause.time_range.ok_or_else(|| {
+        QueryError::InvalidArgument(format!(
+            "IN_TIME_RANGE clause on field '{}' has no `time_range` selection set",
+            field
+        ))
+    })?;
+    let proto_selector = ProtoTimeRangeSelector::try_from(selection.selector).map_err(|_| {
+        QueryError::InvalidArgument(format!(
+            "unknown TimeRangeSelection.Selector discriminant on field '{}': {} (valid \
+             values: NEWEST = 0, OLDEST = 1, BY_START = 2)",
+            field, selection.selector
+        ))
+    })?;
+    let selector = match (proto_selector, selection.start_ms) {
+        (ProtoTimeRangeSelector::Newest, None) => TimeRangeSelector::Newest,
+        (ProtoTimeRangeSelector::Oldest, None) => TimeRangeSelector::Oldest,
+        (ProtoTimeRangeSelector::ByStart, Some(start_ms)) => {
+            TimeRangeSelector::ByStart { start_ms }
         }
-        Some(document_field_value::Variant::List(list)) => {
-            let mut values = list.values.into_iter();
-            let selector = match values.next().and_then(|v| v.variant) {
-                Some(document_field_value::Variant::Text(s)) => parse_selector(&s)?,
-                _ => {
-                    return Err(QueryError::InvalidArgument(format!(
-                        "IN_TIME_RANGE list operand on field '{}' must start with the \
-                         text selector \"newest\" or \"oldest\"",
-                        field
-                    )))
-                }
-            };
-            let mut grid_number = |name: &str| -> Result<u64, QueryError> {
-                match values.next().and_then(|v| v.variant) {
-                    Some(document_field_value::Variant::Uint64Value(n)) => Ok(n),
-                    _ => Err(QueryError::InvalidArgument(format!(
-                        "IN_TIME_RANGE list operand on field '{}' must carry the grid's \
-                         {} as a uint64 of seconds, exactly as the contract declares it",
-                        field, name
-                    ))),
-                }
-            };
-            let range_seconds = grid_number("range")?;
-            let step_seconds = grid_number("step")?;
-            let phase_seconds = match values.next() {
-                None => 0,
-                Some(v) => match v.variant {
-                    Some(document_field_value::Variant::Uint64Value(0)) => {
-                        return Err(QueryError::InvalidArgument(format!(
-                            "IN_TIME_RANGE list operand on field '{}': a zero phase is \
-                             spelled by omission (use the three-element form), so every \
-                             grid has exactly one wire spelling",
-                            field
-                        )))
-                    }
-                    Some(document_field_value::Variant::Uint64Value(n)) => n,
-                    _ => {
-                        return Err(QueryError::InvalidArgument(format!(
-                            "IN_TIME_RANGE list operand on field '{}' must carry the \
-                             grid's phase as a uint64 of seconds",
-                            field
-                        )))
-                    }
-                },
-            };
-            if values.next().is_some() {
+        (ProtoTimeRangeSelector::ByStart, None) => {
+            return Err(QueryError::InvalidArgument(format!(
+                "IN_TIME_RANGE BY_START on field '{}' requires `start_ms` naming the \
+                 window's start (a millisecond timestamp on the grid)",
+                field
+            )))
+        }
+        (ProtoTimeRangeSelector::Newest | ProtoTimeRangeSelector::Oldest, Some(_)) => {
+            return Err(QueryError::InvalidArgument(format!(
+                "IN_TIME_RANGE on field '{}': `start_ms` is only meaningful with \
+                 BY_START; the relative selectors resolve their window from block time",
+                field
+            )))
+        }
+    };
+    let grid = selection
+        .grid
+        .map(|grid| {
+            if grid.range == 0 || grid.step == 0 {
                 return Err(QueryError::InvalidArgument(format!(
-                    "IN_TIME_RANGE list operand on field '{}' takes at most \
-                     [selector, range, step, phase]",
+                    "IN_TIME_RANGE grid on field '{}' must carry the contract's declared \
+                     `range` and `step` (non-zero seconds); a zero phase is the canonical \
+                     spelling of a phaseless grid",
                     field
                 )));
             }
-            Ok((
-                field,
-                selector,
-                Some(TimeRangeGridSpec {
-                    range_seconds,
-                    step_seconds,
-                    phase_seconds,
-                }),
-            ))
-        }
-        _ => Err(QueryError::InvalidArgument(format!(
-            "IN_TIME_RANGE clause on field '{}' must carry either a text operand \
-             (\"newest\" / \"oldest\") or a list operand [selector, range, step] / \
-             [selector, range, step, phase] naming one of the field's grids",
-            field
-        ))),
-    }
+            Ok(TimeRangeGridSpec {
+                range_seconds: grid.range,
+                step_seconds: grid.step,
+                phase_seconds: grid.phase,
+            })
+        })
+        .transpose()?;
+    Ok((field, selector, grid))
 }
 
 /// Map a wire [`ProtoDocumentFieldValue`] onto a
@@ -257,6 +246,17 @@ fn value_from_proto_at_depth(
 /// and value-shape failures.
 pub(super) fn where_clause_from_proto(clause: ProtoWhereClause) -> Result<WhereClause, QueryError> {
     let operator = where_operator_from_proto(clause.operator)?;
+    // `time_range` is IN_TIME_RANGE's operand and those clauses are
+    // partitioned out before this conversion (see `is_time_range_clause`),
+    // so on any clause reaching here a set `time_range` is a malformed mix
+    // of the two operand kinds.
+    if clause.time_range.is_some() {
+        return Err(QueryError::InvalidArgument(format!(
+            "WhereClause on field '{}' sets `time_range`, which is only valid with the \
+             IN_TIME_RANGE operator",
+            clause.field
+        )));
+    }
     let value = clause.value.ok_or_else(|| {
         QueryError::InvalidArgument(format!(
             "WhereClause on field '{}' has no value set; every clause must carry a \

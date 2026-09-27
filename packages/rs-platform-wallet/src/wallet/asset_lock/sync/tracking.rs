@@ -2,6 +2,7 @@
 
 use crate::broadcaster::TransactionBroadcaster;
 use dashcore::OutPoint;
+use std::collections::BTreeMap;
 
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::changeset::changeset::PlatformWalletChangeSet;
@@ -11,7 +12,95 @@ use crate::error::PlatformWalletError;
 use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
 
+/// One resume's hold on an outpoint's cleanup-exclusion window.
+///
+/// Held from the moment the resume snapshots the tracked row until it has
+/// sent the transaction and recorded that send by advancing the row — the
+/// span in which the resume is committed to broadcasting a transaction it
+/// has already read out of the map. While it stands,
+/// [`untrack_asset_lock`](AssetLockManager::untrack_asset_lock) refuses to
+/// remove the row, which is what keeps the initial build's rejection
+/// cleanup from releasing the funding reservation and the in-broadcast
+/// fence under a send that is still coming.
+///
+/// A claim releases on drop until the resume observes local finality or
+/// enters a broadcast that may have side effects. From that point it becomes
+/// sticky: cancellation cannot prove that releasing the inputs is safe, so
+/// the exclusion survives until a status transition makes the `Built`
+/// cleanup inapplicable. Exits proven to be pre-dispatch restore ordinary
+/// RAII release.
+pub(crate) struct ResumeDispatchClaim<'a> {
+    claims: &'a std::sync::Mutex<BTreeMap<OutPoint, usize>>,
+    out_point: OutPoint,
+    release_on_drop: bool,
+}
+
+impl ResumeDispatchClaim<'_> {
+    /// Preserve cleanup exclusion if this future is cancelled before it can
+    /// record the transaction's send or proof.
+    pub(crate) fn preserve_on_drop(&mut self) {
+        self.release_on_drop = false;
+    }
+
+    /// Restore ordinary RAII release after the current attempt is proven not
+    /// to have left the device and no local finality was observed.
+    pub(crate) fn release_on_drop(&mut self) {
+        self.release_on_drop = true;
+    }
+}
+
+impl Drop for ResumeDispatchClaim<'_> {
+    fn drop(&mut self) {
+        if !self.release_on_drop {
+            return;
+        }
+        // Recover from poisoning rather than skipping the release: a claim
+        // that outlived its resume would block the rejection cleanup — and
+        // with it the funding reservation's release — for the process's
+        // remaining lifetime.
+        let mut claims = self.claims.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(count) = claims.get_mut(&self.out_point) {
+            *count -= 1;
+            if *count == 0 {
+                claims.remove(&self.out_point);
+            }
+        }
+    }
+}
+
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Claim `out_point`'s dispatch window for a resume that is about to
+    /// broadcast.
+    ///
+    /// MUST be called while the resume still holds the wallet read guard it
+    /// snapshotted the tracked row under. That is where the serialization
+    /// against the rejection cleanup comes from: the cleanup reads the claim
+    /// under the wallet WRITE guard, so a claim taken under the read guard is
+    /// either already visible to it — and the row is kept — or the cleanup
+    /// went first, removed the row, and the snapshot the claim would have
+    /// protected never happened.
+    pub(crate) fn claim_resume_dispatch(&self, out_point: OutPoint) -> ResumeDispatchClaim<'_> {
+        *self
+            .resume_dispatch_claims
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entry(out_point)
+            .or_insert(0) += 1;
+        ResumeDispatchClaim {
+            claims: &self.resume_dispatch_claims,
+            out_point,
+            release_on_drop: true,
+        }
+    }
+
+    /// Whether active or sticky resume state excludes rejected-build cleanup.
+    fn resume_cleanup_excluded(&self, out_point: &OutPoint) -> bool {
+        self.resume_dispatch_claims
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(out_point)
+    }
+
     /// Snapshot the funding role, bound index and status used to authorize an
     /// existing-lock resume. Taking all three under one read lock avoids a
     /// role/status time-of-check/time-of-use split in the resolver.
@@ -59,17 +148,41 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// re-broadcast a transaction whose inputs may have been re-spent.
     ///
     /// Idempotent: returns an empty changeset if the outpoint is not
-    /// tracked. Guarded on the row still being
-    /// [`Built`](AssetLockStatus::Built): if a concurrent flow advanced it
-    /// (e.g. a `resume_asset_lock` that re-broadcast in the window between
-    /// the rejected broadcast and this cleanup), the progress is kept
-    /// rather than clobbered. The caller queues the changeset (call sites
-    /// live in `asset_lock/build.rs`, inside the module).
+    /// tracked. Guarded twice over, and both guards mean the same thing —
+    /// that the transaction may be live or committed to dispatch, so the row
+    /// and everything that pins its inputs must stay:
+    ///
+    /// 1. The row must still be [`Built`](AssetLockStatus::Built). A resume
+    ///    that already re-broadcast advanced it, recording an attempt that was
+    ///    not definitely rejected before dispatch.
+    /// 2. No active or sticky cleanup exclusion may remain
+    ///    ([`claim_resume_dispatch`](Self::claim_resume_dispatch)). A resume
+    ///    that has snapshotted the row but not yet sent is still `Built`, and
+    ///    cancellation after a possible send or observed proof can leave it
+    ///    there. Guard 1 alone cannot distinguish either case from a clean
+    ///    pre-dispatch exit.
+    ///
+    /// Refusing on either guard is what the caller reads back out of the
+    /// changeset: an empty `removed` set keeps the funding reservation and
+    /// the in-broadcast fence held and turns the definite-rejection verdict
+    /// into the unknown outcome, whose contract — row tracked, inputs
+    /// reserved, do not retry — is the one that actually holds. The caller
+    /// queues the changeset (call sites live in `asset_lock/build.rs`,
+    /// inside the module).
     pub(crate) async fn untrack_asset_lock(&self, out_point: &OutPoint) -> AssetLockChangeSet {
         let mut wm = self.wallet_manager.write().await;
+        // Read under the write guard, which is what makes this atomic
+        // against a resume claiming the window under its read guard.
+        let cleanup_excluded = self.resume_cleanup_excluded(out_point);
         let mut cs = AssetLockChangeSet::default();
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
             match info.tracked_asset_locks.get(out_point) {
+                Some(_) if cleanup_excluded => tracing::warn!(
+                    outpoint = %out_point,
+                    "untrack_asset_lock: resume state excludes cleanup of this Built lock — \
+                     leaving it tracked, since its transaction may already be live or \
+                     committed to dispatch"
+                ),
                 Some(entry) if entry.status == AssetLockStatus::Built => {
                     info.tracked_asset_locks.remove(out_point);
                     cs.removed.insert(*out_point);
@@ -86,14 +199,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 
     // NOTE: there is deliberately no `untrack_unproven_broadcast_asset_lock`
-    // companion here. A `Rejected` verdict from a re-broadcast describes only
-    // that attempt (with the production `SpvBroadcaster`: an unstarted client
-    // or zero connected peers), never the ORIGINAL broadcast that moved the
-    // row to `Broadcast` in an earlier process — so it is not evidence that
-    // the transaction is absent from the network, and removing the row on it
-    // deleted tracking for possibly-mined asset locks during ordinary offline
-    // relaunches. `resume_asset_lock` now surfaces the typed error and leaves
-    // the row untouched.
+    // companion here. `Broadcast` records an attempt that was not definitely
+    // rejected before dispatch, not that the network accepted it. A `Rejected`
+    // verdict from a later attempt says only that attempt did not dispatch
+    // (with the production `SpvBroadcaster`: an unstarted client or zero
+    // connected peers), so it cannot prove that no earlier attempt reached the
+    // network. Removing the row would therefore discard tracking for a
+    // possibly-mined asset lock during an ordinary offline relaunch.
+    // `resume_asset_lock` surfaces the typed error and leaves the row untouched.
 
     /// Mark a tracked asset lock as
     /// [`Consumed`](AssetLockStatus::Consumed) after a successful
@@ -159,6 +272,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     entry.status = AssetLockStatus::Consumed;
                     entry.proof = None; // one-shot — never relevant after consumption
                     cs.asset_locks.insert(*out_point, (&*entry).into());
+                    // A tombstone is beyond rejected-build cleanup, so no
+                    // resume claim — active or sticky — has anything left
+                    // to exclude. Same release `advance_asset_lock_status`
+                    // performs when a row leaves `Built`.
+                    self.resume_dispatch_claims
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(out_point);
                 }
                 Some(_) => {
                     tracing::debug!(
@@ -271,12 +392,45 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// Returns an [`AssetLockChangeSet`] carrying a full snapshot of the
     /// updated entry.
+    ///
+    /// [`Consumed`](AssetLockStatus::Consumed) is absorbing: a tombstone is
+    /// never overwritten, and the attempt fails as
+    /// [`PlatformWalletError::AssetLockAlreadyConsumed`]. A resume snapshots
+    /// the row and then suspends — on the transport, the send and the proof
+    /// wait — and an explicit funding flow can consume the very same lock in
+    /// that interval. Letting the stale resume land its `Broadcast` /
+    /// `InstantSendLocked` / `ChainLocked` afterwards would resurrect a
+    /// spent lock in memory, and the wallet would offer it for reuse until
+    /// the next restart or reconciliation put the tombstone back.
     pub(crate) async fn advance_asset_lock_status(
         &self,
         out_point: &OutPoint,
         new_status: AssetLockStatus,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) -> Result<AssetLockChangeSet, PlatformWalletError> {
+        self.advance_asset_lock_status_if(out_point, |_| true, new_status, proof)
+            .await
+            .map(|advanced| advanced.expect("an unconditional advance always applies"))
+    }
+
+    /// [`advance_asset_lock_status`](Self::advance_asset_lock_status) gated
+    /// on the row's CURRENT status: the transition applies only when
+    /// `expected(&current)` holds, and returns `Ok(None)` — row untouched —
+    /// when it does not. `Consumed` stays absorbing regardless of the
+    /// predicate.
+    ///
+    /// For a transition whose evidence is bound to a particular prior state.
+    /// A `Built` → `Broadcast` advance records an attempt that was not
+    /// definitely rejected before dispatch. A row that a concurrent flow has
+    /// meanwhile carried to a proof-bearing status must not be regressed to;
+    /// the predicate is therefore "still `Built`".
+    pub(crate) async fn advance_asset_lock_status_if(
+        &self,
+        out_point: &OutPoint,
+        expected: impl FnOnce(&AssetLockStatus) -> bool,
+        new_status: AssetLockStatus,
+        proof: Option<dpp::prelude::AssetLockProof>,
+    ) -> Result<Option<AssetLockChangeSet>, PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
         let info = wm
             .get_wallet_info_mut(&self.wallet_id)
@@ -287,6 +441,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point
             ))
         })?;
+        if entry.status == AssetLockStatus::Consumed {
+            tracing::warn!(
+                outpoint = %out_point,
+                attempted = ?new_status,
+                "advance_asset_lock_status: the lock was consumed while this \
+                 transition was in flight; keeping the tombstone"
+            );
+            return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
+        }
+        if !expected(&entry.status) {
+            tracing::info!(
+                outpoint = %out_point,
+                current = ?entry.status,
+                attempted = ?new_status,
+                "advance_asset_lock_status: the row moved on while this \
+                 transition was in flight; leaving it where it is"
+            );
+            return Ok(None);
+        }
         entry.status = new_status;
         if proof.is_some() {
             entry.proof = proof;
@@ -294,6 +467,171 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         let mut cs = AssetLockChangeSet::default();
         cs.asset_locks.insert(*out_point, (&*entry).into());
-        Ok(cs)
+        if entry.status != AssetLockStatus::Built {
+            // The status now excludes rejected-build cleanup on its own.
+            // Clear both active claims and sticky claims left by cancelled
+            // resumes; their eventual drops tolerate the absent entry.
+            self.resume_dispatch_claims
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(out_point);
+        }
+        Ok(Some(cs))
+    }
+
+    /// [`advance_asset_lock_status_if`](Self::advance_asset_lock_status_if)
+    /// that also CLEARS the row's proof.
+    ///
+    /// The sibling treats `None` as "leave the proof alone", which every other
+    /// caller wants. Dropping a proof is its own intent — a row whose proof
+    /// Platform refused must not keep it, or the next resume replays it — so it
+    /// gets its own entry point rather than a flag on that one.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn advance_asset_lock_status_clearing_proof_if(
+        &self,
+        out_point: &OutPoint,
+        expected: impl FnOnce(&AssetLockStatus) -> bool,
+        new_status: AssetLockStatus,
+    ) -> Result<Option<AssetLockChangeSet>, PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let entry = info.tracked_asset_locks.get_mut(out_point).ok_or_else(|| {
+            PlatformWalletError::AssetLockProofWait(format!(
+                "Asset lock {} is not tracked",
+                out_point
+            ))
+        })?;
+        if entry.status == AssetLockStatus::Consumed {
+            return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
+        }
+        if !expected(&entry.status) {
+            return Ok(None);
+        }
+        entry.status = new_status;
+        entry.proof = None;
+
+        let mut cs = AssetLockChangeSet::default();
+        cs.asset_locks.insert(*out_point, (&*entry).into());
+        Ok(Some(cs))
+    }
+
+    /// Whether a rejected submission needs its persisted Chain proof taken
+    /// off the row: the proof submitted was a ChainLock proof, and Platform
+    /// rejected it because the transaction is not in a block at or below its
+    /// height.
+    ///
+    /// An InstantSend submission is not this shape, and any other rejection
+    /// says nothing about the proof's height.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn rejected_chain_proof_needs_invalidation(
+        submitted: &dpp::prelude::AssetLockProof,
+        error: &dash_sdk::Error,
+    ) -> bool {
+        matches!(submitted, dpp::prelude::AssetLockProof::Chain(_))
+            && crate::error::is_asset_lock_proof_transaction_height_invalid(error)
+    }
+
+    /// Take a rejected Chain proof off a `ChainLocked` row and put the row on
+    /// whatever the wallet's own record can still support.
+    ///
+    /// Defence in depth: a looked-up height is only used once the SPV header
+    /// chain and the block's merkle root confirm the transaction, but Platform
+    /// judges the proof from its own Core view, which can disagree (a reorg, a
+    /// lagging node). The proof is persisted before it is submitted, so left in
+    /// place [`validate_or_upgrade_proof`](Self::validate_or_upgrade_proof)
+    /// would hand the same rejected proof back on every later resume.
+    ///
+    /// The replacement comes from the record, not from the caller: a
+    /// zero-timeout [`wait_for_proof`](Self::wait_for_proof) reads what local
+    /// finality supports right now.
+    ///
+    /// - an InstantSend proof — the row goes back to `InstantSendLocked` and
+    ///   the next resume runs the height lookup again;
+    /// - a *different* Chain proof — the row keeps `ChainLocked` with that one;
+    /// - the same proof, or none at all — the row drops to `Broadcast` with no
+    ///   proof, which is the arm that rebuilds a proof from scratch
+    ///   (`sync::recovery`'s `(Broadcast, None)`).
+    ///
+    /// Best-effort by design: a row that has moved off `ChainLocked` is left
+    /// alone, and no failure here is propagated — the caller still returns
+    /// Platform's rejection.
+    ///
+    /// Only the shielded fund path submits a proof it upgraded itself, so this
+    /// is `shielded`-gated to avoid a dead-code warning without it.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn invalidate_rejected_chain_proof(
+        &self,
+        out_point: &OutPoint,
+        submitted: &dpp::prelude::AssetLockProof,
+        error: &dash_sdk::Error,
+    ) {
+        if !Self::rejected_chain_proof_needs_invalidation(submitted, error) {
+            return;
+        }
+
+        let from_record = self
+            .wait_for_proof(out_point, Some(std::time::Duration::ZERO))
+            .await
+            .ok();
+        let (status, replacement) = match &from_record {
+            Some(proof @ dpp::prelude::AssetLockProof::Instant(_)) => {
+                (AssetLockStatus::InstantSendLocked, Some(proof.clone()))
+            }
+            Some(proof @ dpp::prelude::AssetLockProof::Chain(_)) if proof != submitted => {
+                (AssetLockStatus::ChainLocked, Some(proof.clone()))
+            }
+            // The record offers nothing better than the proof Platform just
+            // refused, so drop the proof rather than keep replaying it.
+            _ => (AssetLockStatus::Broadcast, None),
+        };
+
+        let advanced = match &replacement {
+            Some(proof) => {
+                self.advance_asset_lock_status_if(
+                    out_point,
+                    |current| *current == AssetLockStatus::ChainLocked,
+                    status.clone(),
+                    Some(proof.clone()),
+                )
+                .await
+            }
+            // Nothing better to put there: the refused proof has to go, which
+            // the sibling above would not do.
+            None => {
+                self.advance_asset_lock_status_clearing_proof_if(
+                    out_point,
+                    |current| *current == AssetLockStatus::ChainLocked,
+                    status.clone(),
+                )
+                .await
+            }
+        };
+        match advanced {
+            Ok(Some(cs)) => {
+                self.queue_asset_lock_changeset(cs);
+                tracing::warn!(
+                    outpoint = %out_point,
+                    new_status = ?status,
+                    replaced_with_record_proof = replacement.is_some(),
+                    "Platform rejected the ChainLock proof's height; the row was taken off it"
+                );
+            }
+            Ok(None) => {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    "Platform rejected the ChainLock proof's height, but the row had already \
+                     moved off ChainLocked; leaving it alone"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    outpoint = %out_point,
+                    error = %e,
+                    "failed to take the row off the rejected ChainLock proof"
+                );
+            }
+        }
     }
 }

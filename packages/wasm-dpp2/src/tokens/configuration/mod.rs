@@ -10,6 +10,7 @@ pub mod group;
 pub mod keeps_history_rules;
 pub mod localization;
 pub mod marketplace_rules;
+pub mod once_per_identity_distribution;
 pub mod perpetual_distribution;
 pub mod pre_programmed_distribution;
 pub mod reward_distribution_type;

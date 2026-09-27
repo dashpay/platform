@@ -1,0 +1,356 @@
+{
+  "$formatVersion": "1",
+  "id": "5v2TWJ1Mv6hQrN8mDRpJvSkqAqh3FzsoD1qXQwuYAbNk",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "reason": {
+      "type": "object",
+      "canBeDeleted": false,
+      "documentsMutable": true,
+      "properties": {
+        "topic": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 63
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "draft": {
+      "type": "object",
+      "canBeDeleted": true,
+      "documentsMutable": true,
+      "properties": {
+        "topic": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 63
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "submittedCharter": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "reasons": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "permanentDocument",
+              "documentType": "reason"
+            }
+          },
+          "position": 0
+        },
+        "title": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "plainCharter": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "reasons": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier"
+          },
+          "position": 0
+        },
+        "title": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "gatedCharter": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "reasons": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "permanentDocument",
+              "documentType": "reason",
+              "propertyAgreement": {
+                "$ownerId": "$ownerId"
+              }
+            }
+          },
+          "position": 0
+        },
+        "title": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "topicCharter": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "reasons": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "permanentDocument",
+              "documentType": "reason",
+              "propertyAgreement": {
+                "topic": "topic"
+              }
+            }
+          },
+          "position": 0
+        },
+        "topic": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 63
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "draftList": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "drafts": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "deletableDocument",
+              "documentType": "draft"
+            }
+          },
+          "position": 0
+        },
+        "body": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "nestedCharter": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "team": {
+          "type": "object",
+          "position": 0,
+          "properties": {
+            "members": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 16,
+              "items": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "refersTo": {
+                  "type": "permanentDocument",
+                  "documentType": "reason"
+                }
+              },
+              "position": 0
+            }
+          },
+          "additionalProperties": false
+        },
+        "title": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "foreignCharter": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "reasons": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "permanentDocument",
+              "contractId": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+              "documentType": "note"
+            }
+          },
+          "position": 0
+        },
+        "title": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "contractList": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "contracts": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "contract",
+              "contractRequirements": {
+                "owner": "self"
+              }
+            }
+          },
+          "position": 0
+        },
+        "title": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "repeatCharter": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "reasons": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "refersTo": {
+              "type": "permanentDocument",
+              "documentType": "reason"
+            }
+          },
+          "position": 0
+        },
+        "title": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "repeatPlainCh": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "properties": {
+        "reasons": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier"
+          },
+          "position": 0
+        },
+        "title": {
+          "type": "string",
+          "position": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

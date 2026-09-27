@@ -2,7 +2,7 @@ mod from_document;
 pub mod v0_methods;
 
 use crate::prelude::Revision;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 
 #[cfg(feature = "serde-conversion")]
@@ -17,7 +17,7 @@ mod property_names {
     pub const REVISION: &str = "$revision";
 }
 
-#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display, DecodeUntrusted)]
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
     feature = "serde-conversion",

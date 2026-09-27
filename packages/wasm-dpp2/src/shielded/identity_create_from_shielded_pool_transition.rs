@@ -6,7 +6,7 @@ use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_
 use crate::utils::try_vec_to_fixed_bytes;
 use crate::utils::{try_from_options, try_from_options_with, try_to_array};
 use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
 use dpp::state_transition::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
@@ -257,7 +257,7 @@ impl IdentityCreateFromShieldedPoolTransitionWasm {
     pub fn from_bytes(
         bytes: Vec<u8>,
     ) -> WasmDppResult<IdentityCreateFromShieldedPoolTransitionWasm> {
-        let st = StateTransition::deserialize_from_bytes(&bytes)?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(&bytes)?;
         match st {
             StateTransition::IdentityCreateFromShieldedPool(inner) => Ok(inner.into()),
             _ => Err(WasmDppError::invalid_argument(

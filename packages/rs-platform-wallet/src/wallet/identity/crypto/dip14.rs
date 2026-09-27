@@ -434,9 +434,9 @@ mod tests {
         // the 107-byte DIP-14 serialization (ends in a Normal256 child) and
         // encrypts to 128 bytes — failing the contract's maxItems: 96.
         //
-        // The earlier `account_xpub.encode()` producer emitted the 107-byte
-        // form (107 != 69); this assertion pins the byte-exact compact layout
-        // so a revert to `encode()` is caught.
+        // `account_xpub.encode()` would emit the 107-byte form (107 != 69);
+        // this assertion pins the byte-exact compact layout so a switch to
+        // `encode()` is caught.
         let wallet = test_wallet(Network::Testnet);
         let (sender, recipient) = test_identifiers();
 

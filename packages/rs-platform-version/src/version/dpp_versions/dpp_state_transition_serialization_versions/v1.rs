@@ -25,6 +25,11 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V1: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        identity_key_limits_update_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
         identity_top_up_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
@@ -61,6 +66,16 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V1: DPPStateTransitionSerializ
             default_current_version: 0,
         },
         contract_update_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_user_moderation_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        contract_fee_claim_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,
@@ -160,6 +175,16 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V1: DPPStateTransitionSerializ
             default_current_version: 0,
         },
         identity_create_from_shielded_pool_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        shield_from_identity_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
+        identity_top_up_from_shielded_pool_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,

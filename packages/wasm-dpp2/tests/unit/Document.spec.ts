@@ -11,7 +11,7 @@ import {
   document2,
   documentBytes,
 } from './mocks/Document/index.js';
-import { fromHexString } from './utils/hex.ts';
+import { fromHexString, toHexString } from './utils/hex.ts';
 
 let PlatformVersion: typeof wasm.PlatformVersion;
 
@@ -75,6 +75,83 @@ describe('Document', () => {
       const documentInstance = createDocument({ id });
 
       expect(documentInstance).to.be.an.instanceof(wasm.Document);
+    });
+
+    it('should derive the entropy-only placeholder id when no nonce is given', () => {
+      const documentInstance = createDocument({ entropy: fixedEntropy });
+
+      // the pre-14 derivation, which is all that can be computed without the
+      // nonce of the create transition
+      const placeholder = wasm.Document.generateId(
+        documentTypeName,
+        ownerId,
+        dataContractId,
+        fixedEntropy,
+        undefined,
+        13,
+      );
+
+      expect(documentInstance.id.toBytes()).to.deep.equal(placeholder);
+    });
+
+    it('should derive the final id when the identity contract nonce is given', () => {
+      const documentInstance = new wasm.Document({
+        properties: document,
+        documentTypeName,
+        dataContractId,
+        ownerId,
+        entropy: fixedEntropy,
+        identityContractNonce: BigInt(5),
+      });
+
+      const expected = wasm.Document.generateId(
+        documentTypeName,
+        ownerId,
+        dataContractId,
+        fixedEntropy,
+        BigInt(5),
+      );
+
+      expect(documentInstance.id.toBytes()).to.deep.equal(expected);
+      expect(documentInstance.id.toBytes()).to.not.deep.equal(
+        createDocument({ entropy: fixedEntropy }).id.toBytes(),
+      );
+    });
+
+    it('should accept an explicit id that equals the one derived from the nonce', () => {
+      const derived = wasm.Document.generateId(
+        documentTypeName,
+        ownerId,
+        dataContractId,
+        fixedEntropy,
+        BigInt(5),
+      );
+
+      const documentInstance = new wasm.Document({
+        properties: document,
+        documentTypeName,
+        dataContractId,
+        ownerId,
+        entropy: fixedEntropy,
+        id: derived,
+        identityContractNonce: BigInt(5),
+      });
+
+      expect(documentInstance.id.toBytes()).to.deep.equal(derived);
+    });
+
+    it('should reject an explicit id that differs from the one derived from the nonce', () => {
+      // the nonce fixes the id; an explicit id that disagrees could be
+      // referenced by another document but never created
+      expect(() => new wasm.Document({
+        properties: document,
+        documentTypeName,
+        dataContractId,
+        ownerId,
+        entropy: fixedEntropy,
+        id,
+        identityContractNonce: BigInt(5),
+      })).to.throw(/does not match the id .* derived .* identityContractNonce 5/);
     });
   });
 
@@ -195,10 +272,120 @@ describe('Document', () => {
   });
 
   describe('generateId()', () => {
+    // The vector `Document::generate_document_id_v1` pins in rs-dpp: contract
+    // [1; 32], owner [2; 32], type "note", entropy [7; 32], nonce 1. Every
+    // client derives this id on its own, so the layout is consensus.
+    const pinnedContractId = new Uint8Array(32).fill(1);
+    const pinnedOwnerId = new Uint8Array(32).fill(2);
+    const pinnedEntropy = new Uint8Array(32).fill(7);
+    const pinnedId = 'e574ae73396611a517691d1f89275b6e99642cb9c176ce8cf879b1665c50f15f';
+
     it('should generate id', () => {
-      const generatedId = wasm.Document.generateId('note', ownerId, dataContractId);
+      const generatedId = wasm.Document.generateId('note', ownerId, dataContractId, undefined, BigInt(1));
 
       expect(Array.from(generatedId).length).to.equal(32);
+    });
+
+    it('should reproduce the pinned nonce-derived id', () => {
+      const generatedId = wasm.Document.generateId(
+        'note',
+        pinnedOwnerId,
+        pinnedContractId,
+        pinnedEntropy,
+        BigInt(1),
+      );
+
+      expect(toHexString(generatedId)).to.equal(pinnedId);
+    });
+
+    it('should reproduce the pinned id at an explicit latest platform version', () => {
+      const generatedId = wasm.Document.generateId(
+        'note',
+        pinnedOwnerId,
+        pinnedContractId,
+        pinnedEntropy,
+        BigInt(1),
+        PlatformVersion.latest(),
+      );
+
+      expect(toHexString(generatedId)).to.equal(pinnedId);
+    });
+
+    it('should derive a different id for every nonce', () => {
+      const first = wasm.Document.generateId('note', pinnedOwnerId, pinnedContractId, pinnedEntropy, BigInt(1));
+      const second = wasm.Document.generateId('note', pinnedOwnerId, pinnedContractId, pinnedEntropy, BigInt(2));
+
+      expect(toHexString(first)).to.not.equal(toHexString(second));
+    });
+
+    it('should keep the entropy in the id', () => {
+      const first = wasm.Document.generateId('note', pinnedOwnerId, pinnedContractId, pinnedEntropy, BigInt(1));
+      const second = wasm.Document.generateId(
+        'note',
+        pinnedOwnerId,
+        pinnedContractId,
+        new Uint8Array(32).fill(8),
+        BigInt(1),
+      );
+
+      expect(toHexString(first)).to.not.equal(toHexString(second));
+    });
+
+    it('should require the nonce from protocol version 14', () => {
+      expect(() => wasm.Document.generateId('note', pinnedOwnerId, pinnedContractId, pinnedEntropy))
+        .to.throw(/identityContractNonce/);
+    });
+
+    it('should ignore the nonce before protocol version 14', () => {
+      const withoutNonce = wasm.Document.generateId(
+        'note',
+        pinnedOwnerId,
+        pinnedContractId,
+        pinnedEntropy,
+        undefined,
+        13,
+      );
+      const withNonce = wasm.Document.generateId(
+        'note',
+        pinnedOwnerId,
+        pinnedContractId,
+        pinnedEntropy,
+        BigInt(1),
+        new PlatformVersion(13),
+      );
+
+      expect(toHexString(withoutNonce)).to.equal(toHexString(withNonce));
+      expect(toHexString(withoutNonce)).to.not.equal(pinnedId);
+    });
+  });
+
+  describe('setIdForCreation()', () => {
+    it('should give the document the id its create transition will carry', () => {
+      const documentInstance = createDocument({ id, entropy: fixedEntropy });
+
+      documentInstance.setIdForCreation(BigInt(3));
+
+      const expected = wasm.Document.generateId(
+        documentTypeName,
+        ownerId,
+        dataContractId,
+        fixedEntropy,
+        BigInt(3),
+      );
+      expect(documentInstance.id.toBytes()).to.deep.equal(expected);
+      expect(documentInstance.id.toBase58()).to.not.equal(id);
+    });
+
+    it('should throw for a document without entropy', () => {
+      const dataContract = wasm.DataContract.fromJSON(dataContractValue, false);
+      const documentInstance = wasm.Document.fromBytes(
+        fromHexString(documentBytes),
+        dataContract,
+        'note',
+        new PlatformVersion(1),
+      );
+
+      expect(() => documentInstance.setIdForCreation(BigInt(1))).to.throw(/entropy/);
     });
   });
 
@@ -255,6 +442,44 @@ describe('Document', () => {
       documentInstance.properties = document2;
 
       expect(documentInstance.properties).to.deep.equal(document2);
+    });
+
+    it('should surface identifier-typed properties as base58 strings', () => {
+      const contractWithIdentifier = {
+        ...dataContractValue,
+        documentSchemas: {
+          note: {
+            type: 'object',
+            properties: {
+              message: { type: 'string', position: 0 },
+              authorId: {
+                type: 'array',
+                byteArray: true,
+                contentMediaType: 'application/x.dash.dpp.identifier',
+                minItems: 32,
+                maxItems: 32,
+                position: 1,
+              },
+            },
+            additionalProperties: false,
+          },
+        },
+      };
+      const dataContract = wasm.DataContract.fromJSON(contractWithIdentifier, false);
+      const documentInstance = createDocument({
+        id,
+        properties: { message: 'hi', authorId: id },
+        dataContractId: dataContract.id.toBase58(),
+      });
+
+      const bytes = documentInstance.toBytes(dataContract, new PlatformVersion(1));
+      const restored = wasm.Document.fromBytes(bytes, dataContract, 'note', new PlatformVersion(1));
+
+      // The schema-typed decode yields Value::Identifier for authorId,
+      // and the properties getter surfaces it as base58 — the form
+      // where-clauses accept back as a cursor.
+      expect(restored.properties.authorId).to.equal(id);
+      expect(restored.properties.message).to.equal('hi');
     });
   });
 

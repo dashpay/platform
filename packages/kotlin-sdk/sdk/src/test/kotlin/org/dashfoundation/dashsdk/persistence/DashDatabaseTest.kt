@@ -233,6 +233,80 @@ class DashDatabaseTest {
     }
 
     @Test
+    fun schemaIsAtVersion14WithTheSweepHoldIndexes() = runTest {
+        // The sweep-hold columns land in ONE migration (10 → 11), with the
+        // two `pending_inputs` indexes the sweep's claimed-row lookup
+        // (`spendingTxid`) and the end-of-round collector
+        // (`walletId, isSweptTombstone, winnerMinedHeight`) rely on.
+        // 11 → 12 adds the identity key usage limits columns on top,
+        // 12 → 13 the contract bounds kind, and 13 → 14 the token
+        // once-per-identity distribution block.
+        assertEquals(14, db.openHelper.readableDatabase.version)
+        val indexes = mutableSetOf<String>()
+        db.openHelper.readableDatabase.query("PRAGMA index_list('pending_inputs')").use { c ->
+            val nameColumn = c.getColumnIndexOrThrow("name")
+            while (c.moveToNext()) indexes += c.getString(nameColumn)
+        }
+        assertTrue(indexes.contains("index_pending_inputs_spendingTxid"))
+        assertTrue(indexes.contains("index_pending_inputs_walletId_isSweptTombstone_winnerMinedHeight"))
+    }
+
+    @Test
+    fun shouldHaveANullableContractBoundsKindColumnOnPublicKeys() = runTest {
+        // Version 13 (12 → 13): nullable with no default, so a legacy row
+        // reads back NULL and the restore path infers its kind.
+        var found = false
+        db.openHelper.readableDatabase.query("PRAGMA table_info('public_keys')").use { c ->
+            val name = c.getColumnIndexOrThrow("name")
+            val type = c.getColumnIndexOrThrow("type")
+            val notNull = c.getColumnIndexOrThrow("notnull")
+            val default = c.getColumnIndexOrThrow("dflt_value")
+            while (c.moveToNext()) {
+                if (c.getString(name) != "contractBoundsKind") continue
+                found = true
+                assertEquals("INTEGER", c.getString(type))
+                assertEquals(0, c.getInt(notNull))
+                assertTrue(c.isNull(default))
+            }
+        }
+        assertTrue(found)
+    }
+
+    @Test
+    fun shouldHaveANullableOncePerIdentityDistributionColumnOnTokens() = runTest {
+        // Version 14 (13 → 14): nullable with no default, so a row written
+        // before it reads back NULL until its block is backfilled.
+        var found = false
+        db.openHelper.readableDatabase.query("PRAGMA table_info('tokens')").use { c ->
+            val name = c.getColumnIndexOrThrow("name")
+            val type = c.getColumnIndexOrThrow("type")
+            val notNull = c.getColumnIndexOrThrow("notnull")
+            val default = c.getColumnIndexOrThrow("dflt_value")
+            while (c.moveToNext()) {
+                if (c.getString(name) != "oncePerIdentityDistribution") continue
+                found = true
+                assertEquals("TEXT", c.getString(type))
+                assertEquals(0, c.getInt(notNull))
+                assertTrue(c.isNull(default))
+            }
+        }
+        assertTrue(found)
+    }
+
+    @Test
+    fun advanceChainLockHeightIsANarrowMonotonicMaxWrite() = runTest {
+        db.walletDao().upsert(WalletEntity(walletId = walletId, networkRaw = 1, name = "w", syncedHeight = 7))
+        assertEquals(1, db.walletDao().advanceChainLockHeight(walletId, 500, 1L))
+        assertEquals(500, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
+        assertEquals(1, db.walletDao().advanceChainLockHeight(walletId, 400, 2L))
+        assertEquals("a stale height never lowers it", 500, db.walletDao().getByWalletId(walletId)!!.lastAppliedChainLockHeight)
+        val row = db.walletDao().getByWalletId(walletId)!!
+        assertEquals("sibling columns are untouched", 7, row.syncedHeight)
+        assertEquals("w", row.name)
+        assertEquals(0, db.walletDao().advanceChainLockHeight(ByteArray(32) { 9 }, 1, 3L))
+    }
+
+    @Test
     fun storageCountsCoverEveryTable() = runTest {
         val counts = db.storageCountsDao()
         assertEquals(0L, counts.countWallets().first())

@@ -419,7 +419,7 @@ mod tests {
         assert!(manager.location_index().is_empty());
     }
 
-    /// The cross-launch half of dashpay/platform#4365: an incomplete scan
+    /// The cross-launch half of the missed-identity shape: an incomplete scan
     /// verdict restored from the start state must still say "incomplete", or
     /// the next launch takes the warm shortcut over an identity set that was
     /// never fully probed.

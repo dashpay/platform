@@ -1,0 +1,2191 @@
+//! End-to-end coverage for **composite document queries**: a page of
+//! posts plus everything a feed card renders for it — like and repost
+//! counts, the quoted posts, the reposts, the authors' profiles (in
+//! another contract), the quoted authors' profiles (derived from a
+//! sub-query rather than the page), and the viewer's own likes — as ONE
+//! merged proof against the `yappr-feed` fixture.
+//!
+//! Pinned here: no-proof/proof parity (the verifier's composed result
+//! equals the server's materialized result), the empty-page shape, the
+//! validation rejections, the fail-closed behaviour on a page-only proof
+//! (what a node ignoring the sub-queries would serve), the dangling
+//! reference refusal, and by-id routing when the page and a join share
+//! the primary tree.
+
+use crate::error::Error;
+use crate::query::{
+    BindingSource, DriveDocumentQuery, DriveSubQuery, InternalClauses, OrderClause,
+    SubQueryBinding, SubQueryKind, SubQueryResult, WhereClause, WhereOperator, MAX_SUB_QUERIES,
+};
+use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::util::storage_flags::StorageFlags;
+use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dpp::platform_value::{Identifier, Value};
+use dpp::prelude::DataContract;
+use dpp::tests::json_document::json_document_to_contract;
+use dpp::version::PlatformVersion;
+use std::collections::BTreeMap;
+
+const FEED_CONTRACT: &str = "tests/supporting_files/contract/yappr-feed/yappr-feed-contract.json";
+/// The feed contract with `post` deletable and every reference to it a
+/// `refersTo: deletableDocument` one.
+const DELETABLE_POSTS_FEED_CONTRACT: &str =
+    "tests/supporting_files/contract/yappr-feed/yappr-feed-deletable-posts-contract.json";
+const DASHPAY_CONTRACT: &str = "tests/supporting_files/contract/dashpay/dashpay-contract.json";
+
+const POST_A: [u8; 32] = [0xA1; 32];
+const POST_B: [u8; 32] = [0xB2; 32];
+const POST_C: [u8; 32] = [0xC3; 32];
+const POST_D: [u8; 32] = [0xD4; 32];
+const MISSING_POST: [u8; 32] = [0xE5; 32];
+const OWNER_1: [u8; 32] = [0x11; 32];
+const OWNER_2: [u8; 32] = [0x22; 32];
+const OWNER_3: [u8; 32] = [0x33; 32];
+
+fn platform_version() -> &'static PlatformVersion {
+    PlatformVersion::latest()
+}
+
+/// A drive with the feed contract and the dashpay contract (whose
+/// `profile` type, keyed by `$ownerId`, plays the cross-contract lookup).
+fn setup() -> (crate::drive::Drive, DataContract, DataContract) {
+    setup_with_feed(FEED_CONTRACT)
+}
+
+fn setup_with_feed(feed_contract: &str) -> (crate::drive::Drive, DataContract, DataContract) {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let mut contracts = Vec::new();
+    for path in [feed_contract, DASHPAY_CONTRACT] {
+        let contract =
+            json_document_to_contract(path, false, pv).expect("expected to parse the contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the contract");
+        contracts.push(contract);
+    }
+    let dashpay = contracts.pop().expect("dashpay");
+    let feed = contracts.pop().expect("feed");
+    (drive, feed, dashpay)
+}
+
+fn insert(drive: &crate::drive::Drive, contract: &DataContract, type_name: &str, doc: &Document) {
+    let document_type = contract
+        .document_type_for_name(type_name)
+        .expect("doctype exists");
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((doc, None)),
+                    owner_id: None,
+                },
+                contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version(),
+            None,
+        )
+        .expect("insert document");
+}
+
+fn build(contract: &DataContract, type_name: &str, seed: u64) -> Document {
+    contract
+        .document_type_for_name(type_name)
+        .expect("doctype exists")
+        .random_document(Some(seed), platform_version())
+        .expect("random document")
+}
+
+fn insert_post(
+    drive: &crate::drive::Drive,
+    contract: &DataContract,
+    id: [u8; 32],
+    owner: [u8; 32],
+    hashtag: &str,
+    quoted: Option<[u8; 32]>,
+    seed: u64,
+) {
+    let mut doc = build(contract, "post", seed);
+    let mut props = BTreeMap::new();
+    props.insert("hashtag".to_string(), Value::Text(hashtag.to_string()));
+    props.insert("message".to_string(), Value::Text(format!("post {seed}")));
+    if let Some(quoted) = quoted {
+        props.insert("quotedPostId".to_string(), Value::Identifier(quoted));
+    }
+    doc.set_properties(props);
+    doc.set_id(Identifier::from(id));
+    doc.set_owner_id(Identifier::from(owner));
+    // Posts carry a creation time in seed order, so the
+    // `byHashtagCreated` timeline reads newest-first as C, B, A.
+    doc.set_created_at(Some(seed * 1_000));
+    insert(drive, contract, "post", &doc);
+}
+
+fn insert_like(
+    drive: &crate::drive::Drive,
+    contract: &DataContract,
+    owner: [u8; 32],
+    post: [u8; 32],
+    hashtag: &str,
+    seed: u64,
+) {
+    let mut doc = build(contract, "like", seed);
+    let mut props = BTreeMap::new();
+    props.insert("hashtag".to_string(), Value::Text(hashtag.to_string()));
+    props.insert("postId".to_string(), Value::Identifier(post));
+    doc.set_properties(props);
+    doc.set_owner_id(Identifier::from(owner));
+    insert(drive, contract, "like", &doc);
+}
+
+fn insert_repost(
+    drive: &crate::drive::Drive,
+    contract: &DataContract,
+    owner: [u8; 32],
+    post: [u8; 32],
+    seed: u64,
+) {
+    let mut doc = build(contract, "repost", seed);
+    let mut props = BTreeMap::new();
+    props.insert("postId".to_string(), Value::Identifier(post));
+    doc.set_properties(props);
+    doc.set_owner_id(Identifier::from(owner));
+    insert(drive, contract, "repost", &doc);
+}
+
+fn insert_profile(
+    drive: &crate::drive::Drive,
+    dashpay: &DataContract,
+    owner: [u8; 32],
+    display_name: &str,
+    seed: u64,
+) {
+    let mut doc = build(dashpay, "profile", seed);
+    let mut props = BTreeMap::new();
+    props.insert(
+        "displayName".to_string(),
+        Value::Text(display_name.to_string()),
+    );
+    doc.set_properties(props);
+    doc.set_owner_id(Identifier::from(owner));
+    insert(drive, dashpay, "profile", &doc);
+}
+
+/// The feed fixture: three `dash` posts (the page), one `btc` post two
+/// of them quote, likes, reposts and two profiles.
+///
+/// | post | owner | tag  | quotes | likes by      | reposts by     |
+/// |------|-------|------|--------|---------------|----------------|
+/// | A    | 1     | dash | D      | 1, 2          | 2              |
+/// | B    | 2     | dash | —      | 1             | 1, 3           |
+/// | C    | 3     | dash | D      | —             | —              |
+/// | D    | 3     | btc  | —      | 3             | —              |
+///
+/// Profiles exist for owners 1 and 3 only.
+fn seed_feed(drive: &crate::drive::Drive, feed: &DataContract, dashpay: &DataContract) {
+    insert_post(drive, feed, POST_D, OWNER_3, "btc", None, 4);
+    insert_post(drive, feed, POST_A, OWNER_1, "dash", Some(POST_D), 1);
+    insert_post(drive, feed, POST_B, OWNER_2, "dash", None, 2);
+    insert_post(drive, feed, POST_C, OWNER_3, "dash", Some(POST_D), 3);
+    insert_like(drive, feed, OWNER_1, POST_A, "dash", 10);
+    insert_like(drive, feed, OWNER_2, POST_A, "dash", 11);
+    insert_like(drive, feed, OWNER_1, POST_B, "dash", 12);
+    insert_like(drive, feed, OWNER_3, POST_D, "btc", 13);
+    insert_repost(drive, feed, OWNER_2, POST_A, 20);
+    insert_repost(drive, feed, OWNER_1, POST_B, 21);
+    insert_repost(drive, feed, OWNER_3, POST_B, 22);
+    insert_profile(drive, dashpay, OWNER_1, "one", 30);
+    insert_profile(drive, dashpay, OWNER_3, "three", 31);
+}
+
+fn page_by_hashtag<'a>(
+    contract: &'a DataContract,
+    hashtag: &str,
+    limit: Option<u16>,
+) -> DriveDocumentQuery<'a> {
+    DriveDocumentQuery {
+        contract,
+        document_type: contract.document_type_for_name("post").expect("post"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(hashtag.to_string()),
+            }],
+            platform_version(),
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit,
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    }
+}
+
+/// The feed's timeline page (issue #4728's shape): `hashtag == <tag>`
+/// and `$createdAt > 0` on the `byHashtagCreated` index, ordered by the
+/// index's properties with the newest post first.
+fn timeline_page<'a>(
+    contract: &'a DataContract,
+    hashtag: &str,
+    limit: u16,
+) -> DriveDocumentQuery<'a> {
+    let mut page = page_by_hashtag(contract, hashtag, Some(limit));
+    page.internal_clauses = InternalClauses::extract_from_clauses(
+        vec![
+            WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(hashtag.to_string()),
+            },
+            WhereClause {
+                field: "$createdAt".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::U64(0),
+            },
+        ],
+        platform_version(),
+    )
+    .expect("timeline page");
+    page.order_by.insert(
+        "hashtag".to_string(),
+        OrderClause {
+            field: "hashtag".to_string(),
+            ascending: true,
+        },
+    );
+    page.order_by.insert(
+        "$createdAt".to_string(),
+        OrderClause {
+            field: "$createdAt".to_string(),
+            ascending: false,
+        },
+    );
+    page
+}
+
+fn bound<'a>(
+    contract: &'a DataContract,
+    type_name: &str,
+    kind: SubQueryKind,
+    source: BindingSource,
+    source_property: &str,
+    field: &str,
+    limit: Option<u16>,
+) -> DriveSubQuery<'a> {
+    DriveSubQuery {
+        contract,
+        document_type: contract.document_type_for_name(type_name).expect("doctype"),
+        kind,
+        where_clauses: vec![],
+        order_by: vec![],
+        limit,
+        binding: Some(SubQueryBinding {
+            source,
+            source_property: source_property.to_string(),
+            field: field.to_string(),
+        }),
+    }
+}
+
+/// Sub-query positions in [`feed_query`].
+const LIKE_COUNTS: usize = 0;
+const QUOTED_POSTS: usize = 1;
+const REPOSTS: usize = 2;
+const AUTHOR_PROFILES: usize = 3;
+const QUOTED_AUTHOR_PROFILES: usize = 4;
+const VIEWER_LIKES: usize = 5;
+
+/// The whole feed composition: like counts, the quoted posts, the
+/// reposts themselves (their count is a client-side length; a count on
+/// the same `byPost` index would read the value trees the documents
+/// lookup descends past), the authors' profiles, the quoted authors'
+/// profiles. `viewer` adds the "which of these did I like" lookup on
+/// the indexOnly `like` type — proof-path only, since its `byLiker`
+/// projection does not cover every property and so cannot be
+/// materialized into a non-proof response.
+fn feed_query<'a>(
+    feed: &'a DataContract,
+    dashpay: &'a DataContract,
+    viewer: Option<[u8; 32]>,
+) -> DriveDocumentQuery<'a> {
+    let mut sub_queries = vec![
+        bound(
+            feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        ),
+        bound(
+            feed,
+            "post",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "quotedPostId",
+            "$id",
+            None,
+        ),
+        bound(
+            feed,
+            "repost",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            Some(50),
+        ),
+        // Profiles are unique per owner: value-bounded, so no limit.
+        bound(
+            dashpay,
+            "profile",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$ownerId",
+            "$ownerId",
+            None,
+        ),
+        bound(
+            dashpay,
+            "profile",
+            SubQueryKind::Documents,
+            BindingSource::SubQuery(QUOTED_POSTS),
+            "$ownerId",
+            "$ownerId",
+            None,
+        ),
+    ];
+    if let Some(viewer) = viewer {
+        // `byLiker` is `[$ownerId] → postId`: with the owner fixed, the
+        // terminal postId is unique per value — value-bounded, no limit.
+        let mut marks = bound(
+            feed,
+            "like",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        );
+        marks.where_clauses = vec![WhereClause {
+            field: "$ownerId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(viewer),
+        }];
+        sub_queries.push(marks);
+    }
+    page_by_hashtag(feed, "dash", Some(10)).with_sub_queries(sub_queries)
+}
+
+fn ids(documents: &[Document]) -> Vec<[u8; 32]> {
+    documents.iter().map(|d| d.id().to_buffer()).collect()
+}
+
+fn counts(result: &SubQueryResult) -> BTreeMap<[u8; 32], u64> {
+    result
+        .counts()
+        .iter()
+        .map(|entry| {
+            let key: [u8; 32] = entry.key.as_slice().try_into().expect("identifier key");
+            (key, entry.count.expect("present count"))
+        })
+        .collect()
+}
+
+fn post_ids_of(result: &SubQueryResult, property: &str) -> Vec<[u8; 32]> {
+    result
+        .documents()
+        .iter()
+        .map(|d| {
+            d.properties()
+                .get(property)
+                .expect("property present")
+                .to_identifier()
+                .expect("identifier")
+                .to_buffer()
+        })
+        .collect()
+}
+
+fn owner_ids(documents: &[Document]) -> Vec<[u8; 32]> {
+    documents.iter().map(|d| d.owner_id().to_buffer()).collect()
+}
+
+#[test]
+fn should_preserve_join_order_before_deriving_later_bindings() {
+    let (drive, feed, dashpay) = setup();
+    insert_post(&drive, &feed, POST_C, OWNER_1, "btc", None, 3);
+    insert_post(&drive, &feed, POST_D, OWNER_3, "btc", None, 4);
+    insert_post(&drive, &feed, POST_A, OWNER_1, "dash", Some(POST_D), 1);
+    insert_post(&drive, &feed, POST_B, OWNER_2, "dash", Some(POST_C), 2);
+    insert_profile(&drive, &dashpay, OWNER_1, "one", 30);
+    insert_profile(&drive, &dashpay, OWNER_3, "three", 31);
+    let query = feed_query(&feed, &dashpay, None);
+    let pv = platform_version();
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(
+        ids(materialized.sub_results[QUOTED_POSTS].documents()),
+        vec![POST_D, POST_C],
+        "the page references quoted posts in the opposite order to their ids"
+    );
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("a feed with two quoted authors verifies");
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+#[test]
+fn should_route_counts_by_complete_positions_including_overlapping_queries() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut sub_queries: Vec<_> = [OWNER_1, OWNER_2, OWNER_3]
+        .into_iter()
+        .map(|owner| {
+            let mut count = bound(
+                &feed,
+                "repost",
+                SubQueryKind::Count,
+                BindingSource::Page,
+                "$id",
+                "postId",
+                None,
+            );
+            count.where_clauses.push(WhereClause {
+                field: "$ownerId".into(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(owner),
+            });
+            count
+        })
+        .collect();
+    // This count has a deeper base path, but shares terminals with the
+    // first and third counts. Both shallower selections still own them.
+    let mut owners_of_b = bound(
+        &feed,
+        "repost",
+        SubQueryKind::Count,
+        BindingSource::Page,
+        "$ownerId",
+        "$ownerId",
+        None,
+    );
+    owners_of_b.where_clauses.push(WhereClause {
+        field: "postId".into(),
+        operator: WhereOperator::Equal,
+        value: Value::Identifier(POST_B),
+    });
+    sub_queries.push(owners_of_b);
+    let query = page_by_hashtag(&feed, "dash", Some(10)).with_sub_queries(sub_queries);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    for result in [&materialized, &verified] {
+        for (index, post) in [POST_B, POST_A, POST_B].into_iter().enumerate() {
+            assert_eq!(result.sub_results[index].counts().len(), 1);
+            assert_eq!(
+                counts(&result.sub_results[index]),
+                BTreeMap::from([(post, 1)])
+            );
+        }
+        assert_eq!(result.sub_results[3].counts().len(), 2);
+        assert_eq!(
+            counts(&result.sub_results[3]),
+            BTreeMap::from([(OWNER_1, 1), (OWNER_3, 1)])
+        );
+    }
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+#[test]
+fn should_reject_conflicting_document_directions_even_when_the_page_is_empty() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut lookup = bound(
+        &feed,
+        "repost",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "$id",
+        "postId",
+        Some(1),
+    );
+    lookup.order_by.push(OrderClause {
+        field: "postId".into(),
+        ascending: false,
+    });
+    let mut profiles = bound(
+        &dashpay,
+        "profile",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "$ownerId",
+        "$ownerId",
+        None,
+    );
+    profiles.order_by.push(OrderClause {
+        field: "$ownerId".into(),
+        ascending: false,
+    });
+    let sibling = DriveSubQuery {
+        contract: &feed,
+        document_type: feed.document_type_for_name("post").expect("post"),
+        kind: SubQueryKind::Documents,
+        where_clauses: vec![],
+        order_by: vec![OrderClause {
+            field: "$id".into(),
+            ascending: false,
+        }],
+        limit: Some(1),
+        binding: None,
+    };
+    for sub_query in [lookup, profiles, sibling] {
+        for hashtag in ["dash", "empty"] {
+            let query =
+                page_by_hashtag(&feed, hashtag, Some(10)).with_sub_queries(vec![sub_query.clone()]);
+            for result in [
+                drive
+                    .query_composite_documents(&query, None, None, pv)
+                    .map(|_| ()),
+                drive
+                    .query_composite_documents_with_proof(&query, pv)
+                    .map(|_| ()),
+                query.verify_composite_documents_proof(&[], pv).map(|_| ()),
+            ] {
+                assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
+                assert!(result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("must match the page's direction"));
+            }
+        }
+    }
+}
+
+#[test]
+fn should_reject_count_tree_descents_but_allow_disjoint_count_selections() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    insert_repost(&drive, &feed, OWNER_3, POST_D, 23);
+    let pv = platform_version();
+    let total = bound(
+        &feed,
+        "repost",
+        SubQueryKind::Count,
+        BindingSource::Page,
+        "$id",
+        "postId",
+        None,
+    );
+    let mut per_owner = total.clone();
+    per_owner.where_clauses.push(WhereClause {
+        field: "$ownerId".into(),
+        operator: WhereOperator::Equal,
+        value: Value::Identifier(OWNER_1),
+    });
+    let mut query =
+        page_by_hashtag(&feed, "dash", Some(10)).with_sub_queries(vec![total, per_owner]);
+    for result in [
+        drive
+            .query_composite_documents(&query, None, None, pv)
+            .map(|_| ()),
+        drive
+            .query_composite_documents_with_proof(&query, pv)
+            .map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("another component descends"), "{error}");
+    }
+
+    // The total now selects D's count tree, while the per-owner query
+    // descends through A/B/C. Their actual selections do not overlap.
+    query.sub_queries[0]
+        .binding
+        .as_mut()
+        .expect("bound")
+        .source_property = "quotedPostId".into();
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("disjoint counts materialize")
+        .result;
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("disjoint counts prove");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("disjoint counts verify");
+    assert_eq!(
+        counts(&verified.sub_results[0]),
+        BTreeMap::from([(POST_D, 1)])
+    );
+    assert_eq!(
+        counts(&verified.sub_results[1]),
+        BTreeMap::from([(POST_B, 1)])
+    );
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+#[test]
+fn should_preserve_descending_documents_and_key_ordered_counts() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut page = page_by_hashtag(&feed, "dash", Some(3));
+    page.internal_clauses = InternalClauses::extract_from_clauses(
+        vec![WhereClause {
+            field: "$id".into(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Identifier(POST_A),
+                Value::Identifier(POST_B),
+                Value::Identifier(POST_C),
+            ]),
+        }],
+        pv,
+    )
+    .expect("by-id page");
+    page.order_by.insert(
+        "$id".into(),
+        OrderClause {
+            field: "$id".into(),
+            ascending: false,
+        },
+    );
+    // Keep the sibling on another type's primary tree so its limited
+    // branch cannot overlap the page or the by-id join.
+    let sibling = DriveSubQuery {
+        contract: &feed,
+        document_type: feed.document_type_for_name("repost").expect("repost"),
+        kind: SubQueryKind::Documents,
+        where_clauses: vec![],
+        order_by: vec![OrderClause {
+            field: "$id".into(),
+            ascending: false,
+        }],
+        limit: Some(1),
+        binding: None,
+    };
+    let mut sub_queries = vec![
+        bound(
+            &feed,
+            "post",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "quotedPostId",
+            "$id",
+            None,
+        ),
+        bound(
+            &feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        ),
+        sibling,
+    ];
+    // A later count also verifies that a descending sibling is a valid
+    // binding source and its limit is applied before deriving values.
+    sub_queries.push(bound(
+        &feed,
+        "like",
+        SubQueryKind::Count,
+        BindingSource::SubQuery(2),
+        "postId",
+        "postId",
+        None,
+    ));
+    let query = page.with_sub_queries(sub_queries);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(
+        ids(&materialized.page_documents),
+        vec![POST_C, POST_B, POST_A]
+    );
+    assert_eq!(materialized.sub_results[2].documents().len(), 1);
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+    // The count bound to the sibling derived exactly the one post the
+    // sibling's limit left it: A carries two likes, B one.
+    let sibling_posts = post_ids_of(&verified.sub_results[2], "postId");
+    assert_eq!(sibling_posts.len(), 1);
+    let expected_likes = if sibling_posts[0] == POST_A { 2 } else { 1 };
+    assert_eq!(
+        counts(&verified.sub_results[3]),
+        BTreeMap::from([(sibling_posts[0], expected_likes)]),
+        "the sibling-bound count covers the sibling's single derived post"
+    );
+}
+
+/// The full round trip: the server's materialized result and the
+/// verifier's composed result agree component for component.
+#[test]
+fn should_answer_the_feed_composition_with_proof_parity() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let query = feed_query(&feed, &dashpay, None);
+
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("no-proof composite executes")
+        .result;
+    let (proof, page) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("composite proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the merged proof verifies");
+
+    // The page: the three `dash` posts, in index order.
+    assert_eq!(
+        ids(&materialized.page_documents),
+        vec![POST_A, POST_B, POST_C]
+    );
+    assert_eq!(ids(&page), vec![POST_A, POST_B, POST_C]);
+    assert_eq!(verified.page_documents, materialized.page_documents);
+
+    for result in [&materialized, &verified] {
+        assert_eq!(
+            counts(&result.sub_results[LIKE_COUNTS]),
+            BTreeMap::from([(POST_A, 2), (POST_B, 1)]),
+            "C has no like tree and D is off the page"
+        );
+        assert_eq!(
+            ids(result.sub_results[QUOTED_POSTS].documents()),
+            vec![POST_D],
+            "A and C both quote D: one derived id, one document"
+        );
+        assert_eq!(
+            post_ids_of(&result.sub_results[REPOSTS], "postId"),
+            vec![POST_A, POST_B, POST_B]
+        );
+        assert_eq!(
+            owner_ids(result.sub_results[AUTHOR_PROFILES].documents()),
+            vec![OWNER_1, OWNER_3],
+            "owner 2 has no profile: a proven absence, not an error"
+        );
+        assert_eq!(
+            owner_ids(result.sub_results[QUOTED_AUTHOR_PROFILES].documents()),
+            vec![OWNER_3],
+            "derived from the quoted-posts sub-query, not the page"
+        );
+    }
+    assert_eq!(verified.sub_results, materialized.sub_results);
+    for result in [&materialized, &verified] {
+        assert!(result.sub_result_missing_ids.iter().all(Vec::is_empty));
+    }
+}
+
+/// The viewer's own likes ride the same proof as an indexOnly lookup
+/// pinned on `$ownerId`: the synthesized projections carry the post ids
+/// the viewer liked among the page.
+#[test]
+fn should_prove_the_viewers_marks_as_an_index_only_lookup() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let query = feed_query(&feed, &dashpay, Some(OWNER_1));
+
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("composite proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the merged proof verifies");
+
+    assert_eq!(
+        post_ids_of(&verified.sub_results[VIEWER_LIKES], "postId"),
+        vec![POST_A, POST_B]
+    );
+    assert!(verified.sub_results[VIEWER_LIKES]
+        .documents()
+        .iter()
+        .all(|like| like.owner_id().to_buffer() == OWNER_1));
+
+    let query = feed_query(&feed, &dashpay, Some(OWNER_2));
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("composite proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(
+        post_ids_of(&verified.sub_results[VIEWER_LIKES], "postId"),
+        vec![POST_A]
+    );
+}
+
+/// An empty page derives nothing: every sub-query is empty and the proof
+/// is the page's alone.
+#[test]
+fn should_prove_an_empty_page_alone() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut query = feed_query(&feed, &dashpay, Some(OWNER_1));
+    let sub_queries = std::mem::take(&mut query.sub_queries);
+    query = page_by_hashtag(&feed, "nothing", Some(10)).with_sub_queries(sub_queries);
+
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("executes")
+        .result;
+    assert!(materialized.page_documents.is_empty());
+    assert!(materialized
+        .sub_results
+        .iter()
+        .all(|result| result.documents().is_empty() && result.counts().is_empty()));
+
+    let (proof, page) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    assert!(page.is_empty());
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert!(verified.page_documents.is_empty());
+    assert_eq!(verified.sub_results.len(), query.sub_queries.len());
+}
+
+/// A proof covering only the page — what a node that ignores the
+/// sub-queries would serve — cannot satisfy the merged query.
+#[test]
+fn should_refuse_a_page_only_proof() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let query = feed_query(&feed, &dashpay, None);
+
+    let mut page_alone = query.clone();
+    page_alone.sub_queries = vec![];
+    let (page_only_proof, _cost) = page_alone
+        .execute_with_proof(&drive, None, None, pv)
+        .expect("the page alone proves");
+    assert!(
+        query
+            .verify_composite_documents_proof(&page_only_proof, pv)
+            .is_err(),
+        "a page-only proof must fail the composite verification"
+    );
+}
+
+/// The plain (page-only) surfaces refuse a query carrying sub-queries
+/// instead of silently proving or verifying the page alone — on the
+/// verify side that silence would report the whole composition verified.
+#[test]
+fn should_refuse_composite_queries_on_plain_surfaces() {
+    let (drive, feed, dashpay) = setup();
+    let pv = platform_version();
+    let query = feed_query(&feed, &dashpay, None);
+
+    let refused = drive
+        .query_documents(query.clone(), None, false, None, None)
+        .expect_err("plain query_documents must refuse sub-queries");
+    assert!(
+        refused.to_string().contains("would silently ignore"),
+        "{refused}"
+    );
+    let refused = query
+        .clone()
+        .execute_with_proof(&drive, None, None, pv)
+        .expect_err("the plain proof surface must refuse sub-queries");
+    assert!(
+        refused.to_string().contains("would silently ignore"),
+        "{refused}"
+    );
+    let refused = query
+        .verify_proof(&[], pv)
+        .expect_err("the plain verifier must refuse sub-queries");
+    assert!(
+        refused.to_string().contains("would silently ignore"),
+        "{refused}"
+    );
+}
+
+/// A by-id join whose derived id has no document is an invalid proof
+/// (and corrupted state on the server): a permanentDocument reference
+/// cannot dangle.
+#[test]
+fn should_refuse_a_dangling_reference() {
+    let (drive, feed, _dashpay) = setup();
+    insert_post(
+        &drive,
+        &feed,
+        POST_A,
+        OWNER_1,
+        "dash",
+        Some(MISSING_POST),
+        1,
+    );
+    let pv = platform_version();
+    let query = page_by_hashtag(&feed, "dash", Some(10)).with_sub_queries(vec![bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )]);
+
+    let refused = drive.query_composite_documents(&query, None, None, pv);
+    assert!(
+        matches!(refused, Err(Error::Proof(_))),
+        "expected the missing-document refusal, got {refused:?}"
+    );
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the proof itself generates");
+    assert!(
+        query.verify_composite_documents_proof(&proof, pv).is_err(),
+        "the verifier must refuse a dangling reference"
+    );
+}
+
+/// When the page is itself a by-ids fetch and a join targets the same
+/// type, both land in the primary tree: the page keeps its own ids, the
+/// join keeps the derived ones.
+#[test]
+fn should_tell_a_by_ids_page_from_a_join_on_the_same_type() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let post_type = feed.document_type_for_name("post").expect("post");
+    let page = DriveDocumentQuery {
+        contract: &feed,
+        document_type: post_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![Value::Identifier(POST_A), Value::Identifier(POST_B)]),
+            }),
+            primary_key_equal_clause: None,
+            in_clauses: vec![],
+            range_clause: None,
+            equal_clauses: Default::default(),
+        },
+        offset: None,
+        limit: Some(2),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    let query = page.with_sub_queries(vec![bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )]);
+
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("executes")
+        .result;
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    for result in [&materialized, &verified] {
+        assert_eq!(ids(&result.page_documents), vec![POST_A, POST_B]);
+        assert_eq!(ids(result.sub_results[0].documents()), vec![POST_D]);
+    }
+}
+
+#[test]
+fn should_reject_invalid_composite_shapes() {
+    let (drive, feed, dashpay) = setup();
+    let pv = platform_version();
+    let base = feed_query(&feed, &dashpay, Some(OWNER_1));
+    let expect_unsupported = |query: DriveDocumentQuery, what: &str| {
+        let result = drive.query_composite_documents(&query, None, None, pv);
+        assert!(
+            matches!(result, Err(Error::Query(_))),
+            "{what}: expected a query rejection, got {result:?}"
+        );
+    };
+
+    let mut no_limit = base.clone();
+    no_limit.limit = None;
+    expect_unsupported(no_limit, "page without a limit");
+
+    let mut oversized = base.clone();
+    oversized.limit = Some(101);
+    expect_unsupported(oversized, "page limit above the bound-value cap");
+
+    let mut none = base.clone();
+    none.sub_queries.clear();
+    expect_unsupported(none, "no sub-queries");
+
+    let mut too_many = base.clone();
+    let extra = too_many.sub_queries[LIKE_COUNTS].clone();
+    while too_many.sub_queries.len() <= MAX_SUB_QUERIES {
+        too_many.sub_queries.push(extra.clone());
+    }
+    expect_unsupported(too_many, "more sub-queries than the cap");
+
+    let mut counted_with_limit = base.clone();
+    counted_with_limit.sub_queries[LIKE_COUNTS].limit = Some(5);
+    expect_unsupported(counted_with_limit, "count with a limit");
+
+    let mut unbound_count = base.clone();
+    unbound_count.sub_queries[LIKE_COUNTS].binding = None;
+    expect_unsupported(unbound_count, "unbound count");
+
+    let mut join_without_reference = base.clone();
+    join_without_reference.sub_queries[QUOTED_POSTS]
+        .binding
+        .as_mut()
+        .expect("bound")
+        .source_property = "$ownerId".to_string();
+    expect_unsupported(
+        join_without_reference,
+        "by-id join from a non-refersTo source",
+    );
+
+    let mut join_with_limit = base.clone();
+    join_with_limit.sub_queries[QUOTED_POSTS].limit = Some(5);
+    expect_unsupported(join_with_limit, "by-id join with a limit");
+
+    let mut filtered_join = base.clone();
+    filtered_join.sub_queries[QUOTED_POSTS]
+        .where_clauses
+        .push(WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("dash".to_string()),
+        });
+    for result in [
+        filtered_join
+            .sub_query_document_query(
+                &filtered_join.sub_queries[QUOTED_POSTS],
+                &[Identifier::from(POST_D)],
+                pv,
+            )
+            .map(|_| ()),
+        drive
+            .query_composite_documents(&filtered_join, None, None, pv)
+            .map(|_| ()),
+        drive
+            .query_composite_documents_with_proof(&filtered_join, pv)
+            .map(|_| ()),
+        filtered_join
+            .verify_composite_documents_proof(&[], pv)
+            .map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
+        assert!(result.unwrap_err().to_string().contains("no fixed clauses"));
+    }
+
+    let mut lookup_without_limit = base.clone();
+    lookup_without_limit.sub_queries[REPOSTS].limit = None;
+    expect_unsupported(lookup_without_limit, "non-unique lookup without a limit");
+
+    let mut bounded_lookup_with_limit = base.clone();
+    bounded_lookup_with_limit.sub_queries[AUTHOR_PROFILES].limit = Some(20);
+    expect_unsupported(
+        bounded_lookup_with_limit,
+        "value-bounded lookup with a limit",
+    );
+
+    let mut forward_binding = base.clone();
+    forward_binding.sub_queries[LIKE_COUNTS]
+        .binding
+        .as_mut()
+        .expect("bound")
+        .source = BindingSource::SubQuery(QUOTED_POSTS);
+    expect_unsupported(forward_binding, "binding to a later sub-query");
+
+    let mut bound_to_a_count = base.clone();
+    bound_to_a_count.sub_queries[QUOTED_AUTHOR_PROFILES]
+        .binding
+        .as_mut()
+        .expect("bound")
+        .source = BindingSource::SubQuery(LIKE_COUNTS);
+    expect_unsupported(bound_to_a_count, "binding to a count sub-query");
+
+    let mut fixed_on_bound_field = base.clone();
+    fixed_on_bound_field.sub_queries[REPOSTS]
+        .where_clauses
+        .push(WhereClause {
+            field: "postId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(POST_A),
+        });
+    expect_unsupported(fixed_on_bound_field, "fixed clause on the bound field");
+
+    let mut unknown_property = base.clone();
+    unknown_property.sub_queries[LIKE_COUNTS]
+        .binding
+        .as_mut()
+        .expect("bound")
+        .source_property = "nope".to_string();
+    expect_unsupported(unknown_property, "unknown source property");
+
+    let mut non_identifier_property = base.clone();
+    non_identifier_property.sub_queries[LIKE_COUNTS]
+        .binding
+        .as_mut()
+        .expect("bound")
+        .source_property = "hashtag".to_string();
+    expect_unsupported(non_identifier_property, "non-identifier source property");
+
+    let mut ordered_join = base.clone();
+    ordered_join.sub_queries[QUOTED_POSTS].order_by = vec![OrderClause {
+        field: "hashtag".to_string(),
+        ascending: true,
+    }];
+    expect_unsupported(ordered_join, "ordered by-id join");
+
+    let mut count_on_a_looked_up_index = base.clone();
+    count_on_a_looked_up_index.sub_queries.push(bound(
+        &feed,
+        "repost",
+        SubQueryKind::Count,
+        BindingSource::Page,
+        "$id",
+        "postId",
+        None,
+    ));
+    expect_unsupported(
+        count_on_a_looked_up_index,
+        "count on the index a documents lookup reads through",
+    );
+}
+
+#[test]
+fn should_check_count_and_document_descents_against_the_actual_bound_values() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    insert_repost(&drive, &feed, OWNER_3, POST_D, 23);
+    let pv = platform_version();
+    let mut query = page_by_hashtag(&feed, "dash", Some(10)).with_sub_queries(vec![
+        bound(
+            &feed,
+            "repost",
+            SubQueryKind::Count,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        ),
+        DriveSubQuery {
+            contract: &feed,
+            document_type: feed.document_type_for_name("repost").expect("repost"),
+            kind: SubQueryKind::Documents,
+            where_clauses: vec![WhereClause {
+                field: "postId".into(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(POST_B),
+            }],
+            order_by: vec![],
+            limit: None,
+            binding: Some(SubQueryBinding {
+                source: BindingSource::Page,
+                source_property: "$ownerId".into(),
+                field: "$ownerId".into(),
+            }),
+        },
+    ]);
+    for result in [
+        drive
+            .query_composite_documents(&query, None, None, pv)
+            .map(|_| ()),
+        drive
+            .query_composite_documents_with_proof(&query, pv)
+            .map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("another component descends"), "{error}");
+    }
+
+    // Moving the document selection to D leaves the A/B/C count trees
+    // untouched, although the base paths still nest on the same index.
+    query.sub_queries[1].where_clauses[0].value = Value::Identifier(POST_D);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("disjoint counts and documents materialize")
+        .result;
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("disjoint counts and documents prove");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("disjoint counts and documents verify");
+    assert_eq!(
+        counts(&verified.sub_results[0]),
+        BTreeMap::from([(POST_A, 1), (POST_B, 2)])
+    );
+    assert_eq!(
+        post_ids_of(&verified.sub_results[1], "postId"),
+        vec![POST_D]
+    );
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+/// A minimal request never conflicts with the page's direction: a
+/// documents sub-query the caller left unordered on its bound field walks
+/// the page's way, so a descending page with default lookups merges and
+/// verifies, while an explicit ordering that disagrees is still refused.
+#[test]
+fn should_inherit_the_page_direction_for_unordered_lookups() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let descending_page = || {
+        let mut page = page_by_hashtag(&feed, "dash", Some(3));
+        page.internal_clauses = InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "$id".into(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::Identifier(POST_A),
+                    Value::Identifier(POST_B),
+                    Value::Identifier(POST_C),
+                ]),
+            }],
+            pv,
+        )
+        .expect("by-id page");
+        page.order_by.insert(
+            "$id".into(),
+            OrderClause {
+                field: "$id".into(),
+                ascending: false,
+            },
+        );
+        page
+    };
+    let like_counts = || {
+        bound(
+            &feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        )
+    };
+    let round_trip = |query: &DriveDocumentQuery, what: &str| {
+        let materialized = drive
+            .query_composite_documents(query, None, None, pv)
+            .unwrap_or_else(|e| panic!("{what} materializes: {e}"))
+            .result;
+        assert_eq!(
+            ids(&materialized.page_documents),
+            vec![POST_C, POST_B, POST_A]
+        );
+        let (proof, _) = drive
+            .query_composite_documents_with_proof(query, pv)
+            .unwrap_or_else(|e| panic!("{what} proves: {e}"));
+        let (_, verified) = query
+            .verify_composite_documents_proof(&proof, pv)
+            .unwrap_or_else(|e| panic!("{what} verifies: {e}"));
+        assert_eq!(verified.page_documents, materialized.page_documents);
+        assert_eq!(verified.sub_results, materialized.sub_results);
+        materialized
+    };
+
+    // The feed shape: cross-contract profiles, the viewer's marks (both
+    // value-bounded) and a count, none of them ordered by the caller.
+    let mut viewer_likes = bound(
+        &feed,
+        "like",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "$id",
+        "postId",
+        None,
+    );
+    viewer_likes.where_clauses = vec![WhereClause {
+        field: "$ownerId".into(),
+        operator: WhereOperator::Equal,
+        value: Value::Identifier(OWNER_1),
+    }];
+    let feed_shape = descending_page().with_sub_queries(vec![
+        bound(
+            &dashpay,
+            "profile",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$ownerId",
+            "$ownerId",
+            None,
+        ),
+        viewer_likes,
+        like_counts(),
+    ]);
+    let result = round_trip(&feed_shape, "the descending feed shape");
+    // The lookups inherited the page's direction: descending by their
+    // bound field.
+    assert_eq!(
+        owner_ids(result.sub_results[0].documents()),
+        vec![OWNER_3, OWNER_1],
+        "profiles walk owners descending"
+    );
+    assert_eq!(
+        post_ids_of(&result.sub_results[1], "postId"),
+        vec![POST_B, POST_A],
+        "the viewer's likes, posts descending"
+    );
+    assert_eq!(
+        counts(&result.sub_results[2]),
+        BTreeMap::from([(POST_A, 2), (POST_B, 1)])
+    );
+
+    // A limited lookup under the page's own contract. Its limit caps the
+    // rows it returns in total, in walk order, like an ordinary `IN`
+    // query's: walking posts descending, the one row is B's.
+    let limited_lookup = descending_page().with_sub_queries(vec![
+        bound(
+            &feed,
+            "repost",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            Some(1),
+        ),
+        like_counts(),
+    ]);
+    let result = round_trip(&limited_lookup, "the limited lookup");
+    assert_eq!(
+        post_ids_of(&result.sub_results[0], "postId"),
+        vec![POST_B],
+        "the single repost row comes from the highest post id"
+    );
+
+    // Both at once: the cross-contract lookup lifts the merged root to the
+    // tree root, so the page's contract becomes a synthesized split that
+    // the limited lookup descends into. grovedb #851 gives that split the
+    // inputs' direction; before it, this descending composition was
+    // refused while its ascending twin merged.
+    let combined = descending_page().with_sub_queries(vec![
+        bound(
+            &dashpay,
+            "profile",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$ownerId",
+            "$ownerId",
+            None,
+        ),
+        bound(
+            &feed,
+            "repost",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            Some(1),
+        ),
+        like_counts(),
+    ]);
+    let result = round_trip(&combined, "the cross-contract shape with a limited lookup");
+    assert_eq!(
+        owner_ids(result.sub_results[0].documents()),
+        vec![OWNER_3, OWNER_1]
+    );
+    assert_eq!(post_ids_of(&result.sub_results[1], "postId"), vec![POST_B]);
+
+    // An explicit ordering that disagrees with the page is still refused,
+    // on every entry point.
+    let mut conflicting = limited_lookup.clone();
+    conflicting.sub_queries[0].order_by.push(OrderClause {
+        field: "postId".into(),
+        ascending: true,
+    });
+    for result in [
+        drive
+            .query_composite_documents(&conflicting, None, None, pv)
+            .map(|_| ()),
+        drive
+            .query_composite_documents_with_proof(&conflicting, pv)
+            .map(|_| ()),
+        conflicting
+            .verify_composite_documents_proof(&[], pv)
+            .map(|_| ()),
+    ] {
+        assert!(matches!(result, Err(Error::Query(_))), "{result:?}");
+        assert!(result.unwrap_err().to_string().contains("outer ordering"));
+    }
+}
+
+#[test]
+fn should_reject_zero_limits() {
+    let (drive, feed, dashpay) = setup();
+    let pv = platform_version();
+    let base = feed_query(&feed, &dashpay, None);
+
+    let mut zero_page = base.clone();
+    zero_page.limit = Some(0);
+    let refused = zero_page
+        .validate_composite(pv)
+        .expect_err("a zero page limit is refused");
+    assert!(refused.to_string().contains("at least 1"), "{refused}");
+
+    let mut zero_lookup = base.clone();
+    zero_lookup.sub_queries[REPOSTS].limit = Some(0);
+    let refused = zero_lookup
+        .validate_composite(pv)
+        .expect_err("a zero lookup limit is refused");
+    assert!(refused.to_string().contains("at least 1"), "{refused}");
+
+    let mut zero_sibling = base;
+    zero_sibling.sub_queries.push(DriveSubQuery {
+        contract: &feed,
+        document_type: feed.document_type_for_name("repost").expect("repost"),
+        kind: SubQueryKind::Documents,
+        where_clauses: vec![],
+        order_by: vec![],
+        limit: Some(0),
+        binding: None,
+    });
+    let refused = zero_sibling
+        .validate_composite(pv)
+        .expect_err("a zero sibling limit is refused");
+    assert!(refused.to_string().contains("at least 1"), "{refused}");
+    drop(drive);
+}
+
+#[test]
+fn should_reject_a_bound_field_that_is_not_identifier_typed() {
+    let (drive, feed, dashpay) = setup();
+    let pv = platform_version();
+    let mut query = feed_query(&feed, &dashpay, None);
+    // `hashtag` is a string: no derived identifier could ever match it.
+    query.sub_queries.push(bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "$id",
+        "hashtag",
+        Some(5),
+    ));
+    let refused = query
+        .validate_composite(pv)
+        .expect_err("a string bound field is refused");
+    assert!(
+        refused.to_string().contains("not identifier-typed"),
+        "{refused}"
+    );
+    drop(drive);
+}
+
+/// A bound sub-query that derives nothing contributes no branch, so the
+/// merged root is decided by the components that are always present.
+/// A limited page with a sub-query below its own path would land at the
+/// root on any page where the other bound sub-queries derive nothing;
+/// that is refused up front rather than failing on such a page.
+#[test]
+fn should_reject_a_limited_page_a_sub_query_below_it_could_leave_at_the_merged_root() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    // The page walks `like` through [hashtag, postId] with the hashtag
+    // fixed; the lookup fixes the postId too and binds the terminal, so
+    // its path extends the page's.
+    let like_type = feed.document_type_for_name("like").expect("like");
+    let page = DriveDocumentQuery {
+        contract: &feed,
+        document_type: like_type,
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            }],
+            pv,
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(10),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    let mut below_the_page = bound(
+        &feed,
+        "like",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "$ownerId",
+        "$ownerId",
+        None,
+    );
+    below_the_page.where_clauses = vec![
+        WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("dash".to_string()),
+        },
+        WhereClause {
+            field: "postId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(POST_A),
+        },
+    ];
+    let query = page.with_sub_queries(vec![
+        below_the_page,
+        // A bound sub-query elsewhere: present on some pages, absent
+        // on others, so the merged root moves with the data.
+        bound(
+            &feed,
+            "post",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "postId",
+            "$id",
+            None,
+        ),
+    ]);
+    let refused = query
+        .validate_composite(pv)
+        .expect_err("a limited page above a sub-query is refused");
+    assert!(
+        refused.to_string().contains("lands at the merged root"),
+        "{refused}"
+    );
+}
+
+/// A `$id ==` page lowers with a limit of one whatever its limit says;
+/// the proof query drops it like a `$id IN` page's, so the page and a
+/// join on its type share the primary tree without a budget to lift.
+#[test]
+fn should_prove_a_single_id_page_with_a_join_on_the_same_type() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut page = page_by_hashtag(&feed, "dash", Some(1));
+    page.internal_clauses = InternalClauses::extract_from_clauses(
+        vec![WhereClause {
+            field: "$id".into(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(POST_A),
+        }],
+        pv,
+    )
+    .expect("by-id page");
+    let query = page.with_sub_queries(vec![bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(ids(&materialized.page_documents), vec![POST_A]);
+    assert_eq!(ids(materialized.sub_results[0].documents()), vec![POST_D]);
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+#[test]
+fn should_reject_two_limited_lookups_on_one_index_path() {
+    let (drive, feed, dashpay) = setup();
+    let pv = platform_version();
+    let mut query = feed_query(&feed, &dashpay, None);
+    // A second limited repost lookup on `byPost`, bound to the quoted
+    // posts: budgets never blend, so the two could never be merged.
+    query.sub_queries.push(bound(
+        &feed,
+        "repost",
+        SubQueryKind::Documents,
+        BindingSource::SubQuery(QUOTED_POSTS),
+        "$id",
+        "postId",
+        Some(20),
+    ));
+    let refused = query
+        .validate_composite(pv)
+        .expect_err("two limited lookups on one index path are refused");
+    assert!(refused.to_string().contains("carries a limit"), "{refused}");
+    drop(drive);
+}
+
+/// A feed page selected from the `[hashtag, $createdAt]` timeline index
+/// with an explicit range and a descending order, plus a like count
+/// bound to it, is ONE merged proof (issue #4728: on dev.9 the merged
+/// proof of this shape failed to verify with "more data than limit"
+/// whenever the timeline held more keys than the page's limit).
+#[test]
+fn should_prove_an_ordered_timeline_page_with_a_bound_count() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let like_counts = || {
+        bound(
+            &feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            None,
+        )
+    };
+    let round_trip = |query: &DriveDocumentQuery, expected: Vec<[u8; 32]>, what: &str| {
+        let materialized = drive
+            .query_composite_documents(query, None, None, pv)
+            .unwrap_or_else(|e| panic!("{what} materializes: {e}"))
+            .result;
+        assert_eq!(ids(&materialized.page_documents), expected, "{what}");
+        let (proof, _) = drive
+            .query_composite_documents_with_proof(query, pv)
+            .unwrap_or_else(|e| panic!("{what} proves: {e}"));
+        let (_, verified) = query
+            .verify_composite_documents_proof(&proof, pv)
+            .unwrap_or_else(|e| panic!("{what} verifies: {e}"));
+        assert_eq!(verified.page_documents, materialized.page_documents);
+        assert_eq!(verified.sub_results, materialized.sub_results);
+        materialized
+    };
+
+    // A limit the page does not fill: the whole timeline comes back.
+    let full = timeline_page(&feed, "dash", 20).with_sub_queries(vec![like_counts()]);
+    let result = round_trip(
+        &full,
+        vec![POST_C, POST_B, POST_A],
+        "the unfilled timeline page",
+    );
+    assert_eq!(
+        counts(&result.sub_results[0]),
+        BTreeMap::from([(POST_A, 2), (POST_B, 1)])
+    );
+
+    // A limit the page fills: the newest two, and only their counts.
+    let cut = timeline_page(&feed, "dash", 2).with_sub_queries(vec![like_counts()]);
+    let result = round_trip(&cut, vec![POST_C, POST_B], "the filled timeline page");
+    assert_eq!(
+        counts(&result.sub_results[0]),
+        BTreeMap::from([(POST_B, 1)])
+    );
+}
+
+/// A timeline page whose only bound sub-query derives nothing is a proof
+/// of the page alone; it is built and read in the same lifted-limit form
+/// as a merged one, so the page's proof shape does not depend on what
+/// its sub-queries derived.
+#[test]
+fn should_prove_a_timeline_page_alone_in_the_merged_limit_form() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    // Two more `btc` posts quoting nothing: the timeline holds three
+    // keys, the page takes the newest two, and the quoted-post join
+    // derives no value.
+    const POST_E: [u8; 32] = [0xF6; 32];
+    const POST_F: [u8; 32] = [0xF7; 32];
+    insert_post(&drive, &feed, POST_E, OWNER_1, "btc", None, 5);
+    insert_post(&drive, &feed, POST_F, OWNER_2, "btc", None, 6);
+    let query = timeline_page(&feed, "btc", 2).with_sub_queries(vec![bound(
+        &feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(ids(&materialized.page_documents), vec![POST_F, POST_E]);
+    assert!(materialized.sub_results[0].documents().is_empty());
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+/// A limited lookup that feeds a later binding is itself bootstrapped
+/// out of the merged proof. Its index level holds one key per bound
+/// value, more than its limit, so it too must be read under the cap the
+/// merge lifted its limit into.
+#[test]
+fn should_bootstrap_a_limited_lookup_that_feeds_a_later_binding() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let query = timeline_page(&feed, "dash", 20).with_sub_queries(vec![
+        // One repost across the page's three posts (A and B have some).
+        bound(
+            &feed,
+            "repost",
+            SubQueryKind::Documents,
+            BindingSource::Page,
+            "$id",
+            "postId",
+            Some(1),
+        ),
+        // The likes of whichever post that repost points at.
+        bound(
+            &feed,
+            "like",
+            SubQueryKind::Count,
+            BindingSource::SubQuery(0),
+            "postId",
+            "postId",
+            None,
+        ),
+    ]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    assert_eq!(
+        ids(&materialized.page_documents),
+        vec![POST_C, POST_B, POST_A]
+    );
+    let reposted = post_ids_of(&materialized.sub_results[0], "postId");
+    assert_eq!(reposted.len(), 1, "the lookup's limit holds");
+    let expected_likes = if reposted[0] == POST_A { 2 } else { 1 };
+    assert_eq!(
+        counts(&materialized.sub_results[1]),
+        BTreeMap::from([(reposted[0], expected_likes)])
+    );
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+/// An empty index branch on the page's walk. The fixture preallocates
+/// `like.byHashtagPost` buckets when a post is inserted, so post C,
+/// which nobody liked, holds an empty bucket the newest-first walk
+/// visits before B's and A's. Grovedb charges that bucket against a
+/// global limit but not against the per-instance cap the proof carries,
+/// so a page materialized through the plain lowering would stop one row
+/// short of the proven page, and the counts derived from it would leave
+/// the proof missing a branch. Materialization runs the proof's own
+/// query, so both sides agree.
+#[test]
+fn should_materialize_the_page_under_the_proofs_budget_past_an_empty_index_branch() {
+    let (drive, feed, dashpay) = setup();
+    seed_feed(&drive, &feed, &dashpay);
+    let pv = platform_version();
+    let mut page = DriveDocumentQuery {
+        contract: &feed,
+        document_type: feed.document_type_for_name("like").expect("like"),
+        internal_clauses: InternalClauses::extract_from_clauses(
+            vec![WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("dash".to_string()),
+            }],
+            pv,
+        )
+        .expect("clauses extract"),
+        offset: None,
+        limit: Some(2),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+    page.order_by.insert(
+        "postId".to_string(),
+        OrderClause {
+            field: "postId".to_string(),
+            ascending: false,
+        },
+    );
+    let query = page.with_sub_queries(vec![bound(
+        &feed,
+        "repost",
+        SubQueryKind::Count,
+        BindingSource::Page,
+        "postId",
+        "postId",
+        None,
+    )]);
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("materializes")
+        .result;
+    // Past C's empty bucket: B's one like, then the first of A's two.
+    let liked: Vec<[u8; 32]> = materialized
+        .page_documents
+        .iter()
+        .map(|d| {
+            d.properties()
+                .get("postId")
+                .expect("postId present")
+                .to_identifier()
+                .expect("identifier")
+                .to_buffer()
+        })
+        .collect();
+    assert_eq!(liked, vec![POST_B, POST_A]);
+    assert_eq!(
+        counts(&materialized.sub_results[0]),
+        BTreeMap::from([(POST_A, 1), (POST_B, 2)])
+    );
+    let (proof, _) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("proves");
+    let (_, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("verifies");
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+}
+
+/// Five quoted posts in key order (tagged "btc", so they stay off the
+/// "dash" page) and the five page posts quoting them.
+const QUOTED: [[u8; 32]; 5] = [[0x10; 32], [0x20; 32], [0x30; 32], [0x40; 32], [0x50; 32]];
+const QUOTING: [[u8; 32]; 5] = [[0x91; 32], [0x92; 32], [0x93; 32], [0x94; 32], [0x95; 32]];
+
+/// Inserts every quoted post except `missing`, and every quoting post.
+fn setup_quoting_page(missing: &[[u8; 32]]) -> (crate::drive::Drive, DataContract) {
+    let (drive, feed, _dashpay) = setup();
+    for (i, quoted) in QUOTED.iter().enumerate() {
+        if !missing.contains(quoted) {
+            insert_post(&drive, &feed, *quoted, OWNER_2, "btc", None, 1 + i as u64);
+        }
+        insert_post(
+            &drive,
+            &feed,
+            QUOTING[i],
+            OWNER_1,
+            "dash",
+            Some(*quoted),
+            10 + i as u64,
+        );
+    }
+    (drive, feed)
+}
+
+fn quoted_posts_join(feed: &DataContract) -> DriveDocumentQuery<'_> {
+    page_by_hashtag(feed, "dash", Some(10)).with_sub_queries(vec![bound(
+        feed,
+        "post",
+        SubQueryKind::Documents,
+        BindingSource::Page,
+        "quotedPostId",
+        "$id",
+        None,
+    )])
+}
+
+/// The by-id join's counterpart of the chained soundness pair, half
+/// one: with a quoted post NOT in state, the honest merged proof still
+/// satisfies grovedb's verification of the full derived query, so the
+/// absence is proven and only the assembly refuses the result today.
+#[test]
+fn should_prove_the_absence_of_a_missing_joined_document() {
+    let pv = platform_version();
+    let mut cases: Vec<Vec<[u8; 32]>> = QUOTED.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[1], QUOTED[2]]);
+    cases.push(QUOTED.to_vec());
+
+    for missing in cases {
+        let (drive, feed) = setup_quoting_page(&missing);
+        let query = quoted_posts_join(&feed);
+        let (proof, page_documents) = drive
+            .query_composite_documents_with_proof(&query, pv)
+            .expect("the proof generates whether or not the quoted posts exist");
+        let derived = query
+            .derive_all(&page_documents, |_| None)
+            .expect("derived values");
+        assert_eq!(derived[0].len(), QUOTED.len());
+
+        let (page, sub_path_queries) = query
+            .proof_path_queries(&derived, pv)
+            .expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
+            .expect("merged query");
+        let (_root, trios) =
+            grovedb::GroveDb::verify_query(&proof, &merged, &pv.drive.grove_version)
+                .expect("grovedb verifies the merged query with the missing ids in it");
+        let proved_quoted: Vec<([u8; 32], bool)> = trios
+            .into_iter()
+            .filter_map(|(_, key, element)| {
+                let id: [u8; 32] = key.as_slice().try_into().ok()?;
+                QUOTED.contains(&id).then_some((id, element.is_some()))
+            })
+            .collect();
+        let present: Vec<[u8; 32]> = proved_quoted
+            .iter()
+            .filter(|(_, is_present)| *is_present)
+            .map(|(id, _)| *id)
+            .collect();
+        let expected: Vec<[u8; 32]> = QUOTED
+            .iter()
+            .filter(|post| !missing.contains(post))
+            .copied()
+            .collect();
+        assert_eq!(present, expected, "missing {missing:?}");
+
+        let refused = query.verify_composite_documents_proof(&proof, pv);
+        assert!(
+            matches!(refused, Err(Error::Proof(_))),
+            "the assembly is what refuses a dangling join today, got {refused:?}"
+        );
+    }
+}
+
+/// Half two: withholding an EXISTING quoted post's id from the join
+/// component leaves the proof without coverage for a key the verifier's
+/// re-derived query demands; grovedb refuses it before any assembly
+/// rule.
+#[test]
+fn should_reject_a_proof_withholding_an_existing_joined_document() {
+    let pv = platform_version();
+    let (drive, feed) = setup_quoting_page(&[]);
+    let query = quoted_posts_join(&feed);
+    let (_honest_proof, page_documents) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the honest proof generates");
+    let honest = query
+        .derive_all(&page_documents, |_| None)
+        .expect("derived values");
+
+    let mut cases: Vec<Vec<[u8; 32]>> = QUOTED.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[1], QUOTED[2]]);
+    cases.push(vec![QUOTED[0], QUOTED[4]]);
+
+    for withheld in cases {
+        let mut served = honest.clone();
+        served[0].retain(|id| !withheld.contains(&id.to_buffer()));
+        let (page, sub_path_queries) = query.proof_path_queries(&served, pv).expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
+            .expect("merged query");
+        let dishonest_proof = drive
+            .grove
+            .prove_query(&merged, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+
+        let refused = query.verify_composite_documents_proof(&dishonest_proof, pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "withholding {:?} must be refused by grovedb, got {refused:?}",
+            withheld.iter().map(|id| id[0]).collect::<Vec<_>>()
+        );
+    }
+}
+
+fn delete_post(drive: &crate::drive::Drive, contract: &DataContract, id: [u8; 32]) {
+    drive
+        .delete_document_for_contract(
+            Identifier::from(id),
+            contract,
+            "post",
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version(),
+            None,
+        )
+        .expect("expected to delete the post");
+}
+
+/// A by-id join off a `deletableDocument` property leaves a deleted
+/// quoted post out instead of failing the composition, and a later
+/// binding derives from the quoted posts that are still there. The same
+/// state under a `permanentDocument` join is refused
+/// (`should_refuse_a_dangling_reference`).
+#[test]
+fn should_leave_out_a_deleted_document_of_a_deletable_document_join() {
+    let (drive, feed, dashpay) = setup_with_feed(DELETABLE_POSTS_FEED_CONTRACT);
+    seed_feed(&drive, &feed, &dashpay);
+    // A fourth `dash` post quoting A, so the join derives [D, A].
+    insert_post(&drive, &feed, [0xF6; 32], OWNER_2, "dash", Some(POST_A), 5);
+    delete_post(&drive, &feed, POST_D);
+    let pv = platform_version();
+    let query = feed_query(&feed, &dashpay, None);
+
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("a deleted quoted post does not fail a deletableDocument join")
+        .result;
+    let (proof, _page) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("composite proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the proof verifies with the deleted quoted post proven absent");
+
+    assert_eq!(
+        ids(&materialized.page_documents),
+        vec![POST_A, POST_B, POST_C, [0xF6; 32]]
+    );
+    assert_eq!(
+        ids(materialized.sub_results[QUOTED_POSTS].documents()),
+        vec![POST_A],
+        "D was deleted, A is still there"
+    );
+    assert_eq!(
+        owner_ids(materialized.sub_results[QUOTED_AUTHOR_PROFILES].documents()),
+        vec![OWNER_1],
+        "derived from the quoted posts that are still in state"
+    );
+    let mut expected_missing = vec![Vec::new(); query.sub_queries.len()];
+    expected_missing[QUOTED_POSTS] = vec![Identifier::from(POST_D)];
+    assert_eq!(
+        materialized.sub_result_missing_ids, expected_missing,
+        "only the by-id join reports, and it reports the deleted post"
+    );
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+    assert_eq!(
+        verified.sub_result_missing_ids,
+        materialized.sub_result_missing_ids
+    );
+}
+
+/// What makes leaving a deleted document out safe, on the composite
+/// surface: a prover still cannot pass an EXISTING quoted post off as
+/// deleted. No assembly rule stands behind this one, only grovedb.
+#[test]
+fn should_reject_a_proof_withholding_an_existing_document_of_a_deletable_document_join() {
+    let pv = platform_version();
+    let (drive, feed, _dashpay) = setup_with_feed(DELETABLE_POSTS_FEED_CONTRACT);
+    for (i, quoted) in QUOTED.iter().enumerate() {
+        insert_post(&drive, &feed, *quoted, OWNER_2, "btc", None, 1 + i as u64);
+        insert_post(
+            &drive,
+            &feed,
+            QUOTING[i],
+            OWNER_1,
+            "dash",
+            Some(*quoted),
+            10 + i as u64,
+        );
+    }
+    // One quoted post really is deleted, so honest holes and withheld
+    // posts mix.
+    delete_post(&drive, &feed, QUOTED[3]);
+    let query = quoted_posts_join(&feed);
+    let (honest_proof, page_documents) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the honest proof generates");
+    let honest = query
+        .derive_all(&page_documents, |_| None)
+        .expect("derived values");
+    assert_eq!(honest[0].len(), QUOTED.len());
+
+    let existing: Vec<[u8; 32]> = QUOTED
+        .iter()
+        .filter(|post| **post != QUOTED[3])
+        .copied()
+        .collect();
+    let mut cases: Vec<Vec<[u8; 32]>> = existing.iter().map(|post| vec![*post]).collect();
+    cases.push(vec![QUOTED[2], QUOTED[4]]);
+
+    for withheld in cases {
+        let mut served = honest.clone();
+        served[0].retain(|id| !withheld.contains(&id.to_buffer()));
+        let (page, sub_path_queries) = query.proof_path_queries(&served, pv).expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
+            .expect("merged query");
+        let dishonest_proof = drive
+            .grove
+            .prove_query(&merged, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+
+        let refused = query.verify_composite_documents_proof(&dishonest_proof, pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "withholding {:?} must be refused by grovedb, got {refused:?}",
+            withheld.iter().map(|id| id[0]).collect::<Vec<_>>()
+        );
+    }
+
+    // The honest proof of the same state verifies, one quoted post short.
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&honest_proof, pv)
+        .expect("the honest proof verifies");
+    assert_eq!(ids(verified.sub_results[0].documents()), existing);
+    assert_eq!(
+        verified.sub_result_missing_ids,
+        vec![vec![Identifier::from(QUOTED[3])]]
+    );
+}

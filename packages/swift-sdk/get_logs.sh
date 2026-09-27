@@ -3,15 +3,15 @@ set -euo pipefail
 
 # Extract a single SwiftDashSDK session's logs from an iOS Simulator
 #
-# `LoggingPreferences.configure()` (SDKLogger.swift) calls
-# `platform_wallet_enable_file_logging` at app startup, which lays
-# out one file per `tracing` bucket under a session-stamped root:
+# `LoggingPreferences.configure()` (SDKLogger.swift) independently starts
+# Swift and Rust file sinks under a session-stamped root:
 #
 #     <sandbox>/Library/Logs/SwiftDashSDK/<YYYY-MM-DDTHH-mm-ss>/
-#         dash-sdk/run.log
-#         platform-wallet/run.log
-#         dash-spv/run.log
-#         key-wallet/run.log
+#         swift/run.log
+#         dash_sdk/run.log
+#         platform_wallet/run.log
+#         dash_spv/run.log
+#         key_wallet/run.log
 #         grpc/run.log
 #
 # This script picks a simulator + app container, then lets the

@@ -105,6 +105,28 @@ struct DocumentTypeDetailsView: View {
                     Spacer()
                 }
 
+                // Protocol version 14: a mutable type can still freeze
+                // individual top-level properties at creation. A replace that
+                // touches one is rejected by consensus (code 40128), so name
+                // them here and in the replace form.
+                let immutability = documentType.immutability
+                if !immutability.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(
+                            "Immutable: \(immutability.immutableProperties.joined(separator: ", "))",
+                            systemImage: "lock.fill"
+                        )
+                        .foregroundColor(.orange)
+
+                        if !immutability.immutableAllowSetting.isEmpty {
+                            Text("Settable once while absent: \(immutability.immutableAllowSetting.joined(separator: ", "))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 HStack {
                     Label("Can Be Deleted", systemImage: documentType.documentsCanBeDeleted ? "trash.circle.fill" : "trash.circle")
                         .foregroundColor(documentType.documentsCanBeDeleted ? .red : .secondary)
@@ -401,6 +423,14 @@ struct PropertyRowView: View {
 
             // Property attributes
             propertyAttributesView
+
+            // A typed array (protocol version 14): what its elements are
+            if let dict = propertyDict,
+               let typedArray = DocumentTypedArray(path: propertyName, propertySchema: dict) {
+                Label(typedArray.summary, systemImage: "list.bullet")
+                    .font(.caption2)
+                    .foregroundColor(.purple)
+            }
 
             // Sub-properties for objects
             if propertyType == "object", let dict = propertyDict {

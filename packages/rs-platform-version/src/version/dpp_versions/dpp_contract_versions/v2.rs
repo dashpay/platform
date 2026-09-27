@@ -24,6 +24,7 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
         validate_update: 0,
         schema: 0,
         validate_groups: 0,
+        validate_moderation_config: 0,
         equal_ignoring_time_fields: 0,
         registration_cost: 1, //changed to version 1
     },
@@ -44,6 +45,11 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
             // This version predates the `refersTo` reference keyword
             apply_property_reference: None,
             apply_required_since: None,
+            apply_distinct_from: None,
+            apply_encrypted_for: None,
+            apply_max_bytes: None,
+            parse_typed_array: None,
+            parse_property_constraints: None,
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
@@ -61,9 +67,15 @@ pub const CONTRACT_VERSIONS_V2: DPPContractVersions = DPPContractVersions {
             max_size: 0,
             serialize_value_for_key: 0,
             deserialize_value_for_key: 0,
+            validate_distinct_from: None,
+            validate_encrypted_property_shapes: None,
+            validate_max_bytes: None,
+            validate_property_constraints: None,
+            canonical_contested_index_values: None,
         },
     },
     token_versions: TokenVersions {
         validate_structure_interval: 0,
+        validate_pre_programmed_distribution_amounts: 0,
     },
 };

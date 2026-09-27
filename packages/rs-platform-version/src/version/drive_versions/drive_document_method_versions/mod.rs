@@ -1,4 +1,4 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
@@ -15,11 +15,34 @@ pub struct DriveDocumentMethodVersions {
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
     pub primary_key_tree_type: FeatureVersion,
+    pub expiration: DriveDocumentExpirationMethodVersions,
+}
+
+/// Drive methods of document expiry: the expirations tree under `Misc` that indexes every
+/// document of a type declaring a `ttl` by the time it expires, and the cleanup that
+/// deletes expired documents after each block's state transitions. Reachable from protocol
+/// version 14 only, the first version whose parser reads the `ttl` keyword; the slots are
+/// 0 in every table.
+#[derive(Clone, Debug, Default)]
+pub struct DriveDocumentExpirationMethodVersions {
+    pub insert_documents_expirations_tree: FeatureVersion,
+    pub add_document_expiration_operations: FeatureVersion,
+    pub remove_document_expiration_operations: FeatureVersion,
+    pub fetch_expired_documents: FeatureVersion,
+    pub remove_expired_documents: FeatureVersion,
+    pub add_estimation_costs_for_document_expiration: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub query_documents: FeatureVersion,
+    /// Chained document queries (provable semi-join): the version slot
+    /// shared by the no-proof and the two-proof execution paths.
+    pub query_chained_documents: FeatureVersion,
+    /// Composite document queries (a page plus sub-queries derived from
+    /// its results, one merged proof): the version slot shared by the
+    /// no-proof and the proof execution paths.
+    pub query_composite_documents: FeatureVersion,
     pub query_contested_documents: FeatureVersion,
     pub query_contested_documents_vote_state: FeatureVersion,
     pub query_documents_with_flags: FeatureVersion,
@@ -110,6 +133,11 @@ pub struct DriveDocumentInsertContestedMethodVersions {
     pub add_contested_indices_for_contract_operations: FeatureVersion,
     pub add_contested_reference_and_vote_subtree_to_document_operations: FeatureVersion,
     pub add_contested_vote_subtree_for_non_identities_operations: FeatureVersion,
+    /// Reads the join window and the vote window of a moderation election (an
+    /// `electedCharter` contest) from the elected moderation declaration of the contract it
+    /// contends for. `None` before protocol version 14, when no such contest exists and every
+    /// contest keeps the generic windows.
+    pub fetch_charter_election_windows: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -152,6 +180,7 @@ pub struct DriveDocumentIndexUniquenessMethodVersions {
     pub validate_document_transfer_transition_action_uniqueness: FeatureVersion,
     pub validate_document_purchase_transition_action_uniqueness: FeatureVersion,
     pub validate_document_update_price_transition_action_uniqueness: FeatureVersion,
+    pub validate_restored_document_uniqueness: FeatureVersion,
 }
 
 #[cfg(test)]

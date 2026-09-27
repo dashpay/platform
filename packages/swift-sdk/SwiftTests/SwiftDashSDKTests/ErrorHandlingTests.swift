@@ -58,7 +58,7 @@ final class ErrorHandlingTests: XCTestCase {
         )
 
         // The structured available/required duffs ride the message string —
-        // PlatformWalletFFIResult is ABI-frozen at code + message — so the
+        // PlatformWalletFFIResult carries no per-error value fields, so the
         // typed error must carry them through unaltered.
         let rendered = "asset lock coin selection is short: available 18000000 duffs, "
             + "required 100000000 duffs"
@@ -71,6 +71,218 @@ final class ErrorHandlingTests: XCTestCase {
         }
         XCTAssertEqual(message, rendered)
         XCTAssertEqual(error.errorDescription, rendered)
+    }
+
+    /// The persister block (49-54). Each code must decode from its
+    /// generated C constant, keep its own raw value, and reach a typed
+    /// `PlatformWalletError` case — the three edits a new code needs on
+    /// this side. Without the `init(ffi:)` arm a code compiles fine and
+    /// silently degrades to `.errorUnknown`, losing the classification the
+    /// Rust side went to the trouble of carrying across.
+    func testPersisterFFIResultMappings() {
+        let mappings: [(PlatformWalletFFIResultCode, PlatformWalletResultCode, Int32)] = [
+            (
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_LOAD_TRANSIENT,
+                .errorPersisterLoadTransient, 49
+            ),
+            (
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_LOAD_FATAL,
+                .errorPersisterLoadFatal, 50
+            ),
+            (
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_STORE_TRANSIENT,
+                .errorPersisterStoreTransient, 51
+            ),
+            (
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_STORE_FATAL,
+                .errorPersisterStoreFatal, 52
+            ),
+            (
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_STORE_CONSTRAINT,
+                .errorPersisterStoreConstraint, 53
+            ),
+            (
+                PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_RESTORE,
+                .errorPersisterRestore, 54
+            ),
+        ]
+
+        for (ffi, expected, rawValue) in mappings {
+            XCTAssertEqual(PlatformWalletResultCode(ffi: ffi), expected)
+            XCTAssertNotEqual(PlatformWalletResultCode(ffi: ffi), .errorUnknown)
+            // Hand-mirrored ABI, not a derived ordinal.
+            XCTAssertEqual(expected.rawValue, rawValue)
+        }
+    }
+
+    /// The two retryable persister codes must arrive as their own typed
+    /// cases carrying the Rust message, and must not be confused with the
+    /// non-retryable siblings that share an operation.
+    func testPersisterTypedErrorCases() {
+        let busy = "failed to persist wallet registration changeset: "
+            + "persistence backend error (Transient): database is locked"
+        let storeTransient = PlatformWalletError(
+            code: .errorPersisterStoreTransient,
+            message: busy
+        )
+        guard case .persisterStoreTransient(let storeMessage) = storeTransient else {
+            return XCTFail("expected typed persisterStoreTransient error")
+        }
+        XCTAssertEqual(storeMessage, busy)
+        // The chain stays reachable for logs — on the associated value and
+        // on failureReason — but must never be the alert text.
+        XCTAssertEqual(storeTransient.failureReason, busy)
+
+        guard case .persisterStoreConstraint = PlatformWalletError(
+            code: .errorPersisterStoreConstraint,
+            message: "constraint failed"
+        ) else {
+            return XCTFail("a constraint violation must not read as a transient or fatal store")
+        }
+
+        guard case .persisterLoadTransient = PlatformWalletError(
+            code: .errorPersisterLoadTransient,
+            message: busy
+        ) else {
+            return XCTFail("expected typed persisterLoadTransient error")
+        }
+
+        guard case .persisterRestore(let restoreMessage) = PlatformWalletError(
+            code: .errorPersisterRestore,
+            message: "failed to restore persisted platform-address state: wallet is locked"
+        ) else {
+            return XCTFail("expected typed persisterRestore error")
+        }
+        XCTAssertEqual(
+            restoreMessage,
+            "failed to restore persisted platform-address state: wallet is locked"
+        )
+    }
+
+    /// `errorDescription` is what a default SwiftUI alert renders, so the
+    /// persister cases must answer it with an instruction rather than the
+    /// Rust error chain — and must not describe a failed write as a failed
+    /// read. The chain belongs on `failureReason`.
+    func testPersisterErrorsSplitUserTextFromDiagnostics() {
+        let busy = "failed to persist wallet registration changeset: "
+            + "persistence backend error (Transient): database is locked"
+        let expected: [(PlatformWalletResultCode, String)] = [
+            (.errorPersisterLoadTransient, "The wallet database is busy. Try again in a moment."),
+            (.errorPersisterStoreTransient, "The wallet database is busy. Try again in a moment."),
+            (
+                .errorPersisterLoadFatal,
+                "The wallet data could not be read and may need to be restored."
+            ),
+            (
+                .errorPersisterRestore,
+                "The wallet data could not be read and may need to be restored."
+            ),
+            (
+                .errorPersisterStoreFatal,
+                "The wallet data could not be saved and may need to be restored."
+            ),
+            (
+                .errorPersisterStoreConstraint,
+                "The wallet data could not be saved and may need to be restored."
+            ),
+        ]
+
+        for (code, userText) in expected {
+            let error = PlatformWalletError(code: code, message: busy)
+            XCTAssertEqual(error.errorDescription, userText, "code \(code)")
+            XCTAssertEqual(error.failureReason, busy, "code \(code) must keep the chain for logs")
+        }
+    }
+
+    // MARK: - Consensus rejections
+
+    /// The four consensus families decode from their generated C constants,
+    /// and the `None` value is absence rather than a family: it is what
+    /// pairs with `consensus_code == 0`.
+    func testShouldMapEveryConsensusErrorKindFromFFI() {
+        let mappings: [(PlatformWalletFFIConsensusErrorKind, PlatformConsensusError.Kind)] = [
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_BASIC, .basic),
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_SIGNATURE, .signature),
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_FEE, .fee),
+            (PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE, .state),
+        ]
+        for (ffi, expected) in mappings {
+            XCTAssertEqual(PlatformConsensusError.Kind(ffi: ffi), expected)
+        }
+        XCTAssertNil(
+            PlatformConsensusError.Kind(ffi: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_NONE)
+        )
+    }
+
+    /// A rejection Rust left on the catch-all code reaches the host as the
+    /// typed consensus case, carrying Platform's own code and family plus the
+    /// message the `.unknown` case would have carried. 40722 is the second
+    /// once-per-identity token claim, which the example app branches on.
+    func testShouldSurfaceAConsensusRejectionOnTheCatchAllCode() {
+        let rendered = "Token operation failed: Token claim failed: identity already claimed"
+        let error = PlatformWalletError(
+            code: .errorUnknown,
+            message: rendered,
+            consensus: PlatformConsensusError(code: 40722, kind: .state)
+        )
+
+        guard case .consensusRejection(let consensus, let message) = error else {
+            return XCTFail("expected typed consensusRejection error, got \(error)")
+        }
+        XCTAssertEqual(consensus.code, 40722)
+        XCTAssertEqual(consensus.kind, .state)
+        XCTAssertEqual(message, rendered)
+        XCTAssertEqual(error.errorDescription, rendered)
+        // The accessor is what callers branch on, so it must agree.
+        XCTAssertEqual(error.consensusError, consensus)
+    }
+
+    /// The catch-all without a verdict stays `.unknown`, and a dedicated code
+    /// keeps its own case even when a verdict rides along: the wallet layer
+    /// chose that classification and it carries what the case exists for.
+    func testShouldNotTurnEveryFailureIntoAConsensusRejection() {
+        let plain = PlatformWalletError(code: .errorUnknown, message: "timed out")
+        guard case .unknown = plain else {
+            return XCTFail("a catch-all with no verdict must stay unknown, got \(plain)")
+        }
+        XCTAssertNil(plain.consensusError)
+
+        let dedicated = PlatformWalletError(
+            code: .errorAddressNonceMismatch,
+            message: "submitted nonce 1, Platform expected 2",
+            consensus: PlatformConsensusError(code: 40603, kind: .state)
+        )
+        guard case .addressNonceMismatch = dedicated else {
+            return XCTFail("a dedicated code must keep its case, got \(dedicated)")
+        }
+        XCTAssertNil(dedicated.consensusError)
+    }
+
+    /// The result wrapper reads the verdict off the C struct's own fields, so
+    /// a result with no rejection reports none rather than a zero code.
+    func testShouldReadTheConsensusVerdictFromTheFFIResult() {
+        let rejected = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN,
+                message: nil,
+                consensus_code: 40722,
+                consensus_kind: PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE
+            )
+        )
+        XCTAssertEqual(
+            rejected.consensusError,
+            PlatformConsensusError(code: 40722, kind: .state)
+        )
+
+        // The two-field convenience init is the "this side invented the
+        // failure" shape, and must not fabricate a rejection.
+        let invented = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NULL_POINTER,
+                message: nil
+            )
+        )
+        XCTAssertNil(invented.consensusError)
     }
 
     func testPlatformWalletNotFoundFFIResultMapping() {
@@ -94,6 +306,43 @@ final class ErrorHandlingTests: XCTestCase {
             ),
             .errorSigningKeyUnavailable
         )
+    }
+
+    func testShouldPreserveShieldedRecoveryErrorsFromFFI() {
+        let corrupted = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_CORRUPTED
+        )
+        let keysRequired = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_RECOVERY_KEYS_REQUIRED
+        )
+        XCTAssertEqual(corrupted.rawValue, 56)
+        XCTAssertEqual(keysRequired.rawValue, 57)
+        let detail = "Cannot read durable identity recovery record"
+        guard case .shieldedRecoveryCorrupted(let corruptedMessage) = PlatformWalletError(
+            code: corrupted, message: detail
+        ) else { return XCTFail("lost typed corruption error") }
+        guard case .shieldedRecoveryKeysRequired(let keyMessage) = PlatformWalletError(
+            code: keysRequired, message: detail
+        ) else { return XCTFail("lost typed keys-required error") }
+        XCTAssertEqual(corruptedMessage, detail)
+        XCTAssertEqual(keyMessage, detail)
+    }
+
+    func testShouldPreserveShieldedIdentityDebitPendingFFIResult() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_DEBIT_PENDING
+        )
+        XCTAssertEqual(code, .errorShieldedIdentityDebitPending)
+        XCTAssertEqual(code.rawValue, 55)
+
+        let rendered = "Identity has an unresolved shielded debit; "
+            + "this request was not started. Wait for shielded sync"
+        let error = PlatformWalletError(code: code, message: rendered)
+        guard case .shieldedIdentityDebitPending(let message) = error else {
+            return XCTFail("expected typed shieldedIdentityDebitPending error")
+        }
+        XCTAssertEqual(message, rendered)
+        XCTAssertEqual(error.errorDescription, rendered)
     }
 
     func testShieldedInsufficientBalanceFFIResultMapping() {
@@ -529,6 +778,13 @@ final class ErrorHandlingTests: XCTestCase {
     // MARK: - Core broadcast outcome mapping
 
     func testCoreBroadcastOutcomeMapping() throws {
+        XCTAssertEqual(PlatformWalletResultCode.errorTransactionBroadcastRejected.rawValue, 26)
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED
+            ),
+            .errorTransactionBroadcastRejected
+        )
         XCTAssertEqual(
             try CoreTransactionBroadcastOutcome(
                 resultCode: .success,

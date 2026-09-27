@@ -4,9 +4,11 @@ use crate::errors::ProtocolError;
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -25,13 +27,15 @@ pub mod v0;
     Encode,
     Decode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     Debug,
     Clone,
     PartialEq,
     Eq,
     PartialOrd,
     From,
+    DecodeUntrusted,
 )]
 #[serde(tag = "$formatVersion")]
 #[platform_serialize(unversioned)]

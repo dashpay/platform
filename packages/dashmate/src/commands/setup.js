@@ -34,6 +34,7 @@ export default class SetupCommand extends BaseCommand {
     'debug-logs': Flags.boolean({ char: 'd', description: 'enable debug logs', allowNo: true }),
     'node-count': Flags.integer({ char: 'c', description: 'number of nodes to setup' }),
     'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks' }),
+    'enable-tor': Flags.boolean({ description: 'run a Tor sidecar so Core reaches onion peers and publishes an onion service (default: enabled)', allowNo: true }),
 
     verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
   };
@@ -56,6 +57,7 @@ export default class SetupCommand extends BaseCommand {
       'node-count': nodeCount,
       'debug-logs': debugLogs,
       'miner-interval': minerInterval,
+      'enable-tor': enableTor,
       verbose: isVerbose,
     },
     configFile,
@@ -165,6 +167,7 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
         nodeCount,
         debugLogs,
         minerInterval,
+        enableTor,
         isVerbose,
       });
     } catch (e) {

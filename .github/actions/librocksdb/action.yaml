@@ -6,9 +6,9 @@ name: "librocksdb"
 description: "Build and install librocksdb"
 inputs:
   version:
-    description: RocksDB version, eg. "9.9.3"
+    description: RocksDB version, eg. "11.8.1"
     required: false
-    default: "9.9.3"
+    default: "11.8.1"
   force:
     description: Force rebuild
     required: false

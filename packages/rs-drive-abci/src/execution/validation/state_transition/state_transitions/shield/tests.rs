@@ -1380,12 +1380,7 @@ mod tests {
                 .expect("shield affected-state verification should succeed");
 
             assert!(
-                matches!(
-                    outcome,
-                    dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(
-                        _
-                    )
-                ),
+                !outcome.is_execution_proved(),
                 "a shield state proof must not be treated as execution evidence, got {outcome:?}"
             );
         }

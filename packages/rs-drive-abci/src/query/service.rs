@@ -20,11 +20,19 @@ use dapi_grpc::platform::v0::{
     GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
     GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
     GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
-    GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest,
-    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
-    GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
-    GetDataContractsResponse, GetDocumentHistoryRequest, GetDocumentHistoryResponse,
-    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetContestedResourcesRequest, GetContestedResourcesResponse,
+    GetContractDocumentRemovalsRequest, GetContractDocumentRemovalsResponse,
+    GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractGroupInfoRequest,
+    GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
+    GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
+    GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
+    GetContractModerationStatusRequest, GetContractModerationStatusResponse,
+    GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest,
+    GetDataContractHistoryResponse, GetDataContractRequest, GetDataContractResponse,
+    GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
+    GetDataContractsLatestVersionsResponse, GetDataContractsRequest, GetDataContractsResponse,
+    GetDocumentHistoryRequest, GetDocumentHistoryResponse, GetDocumentsRequest,
+    GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
     GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
     GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
@@ -37,9 +45,11 @@ use dapi_grpc::platform::v0::{
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
     GetIdentityByNonUniquePublicKeyHashRequest, GetIdentityByNonUniquePublicKeyHashResponse,
     GetIdentityByPublicKeyHashRequest, GetIdentityByPublicKeyHashResponse,
-    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse, GetIdentityKeysRequest,
-    GetIdentityKeysResponse, GetIdentityNonceRequest, GetIdentityNonceResponse, GetIdentityRequest,
-    GetIdentityResponse, GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
+    GetIdentityContractNonceRequest, GetIdentityContractNonceResponse,
+    GetIdentityKeysRemainingBudgetsRequest, GetIdentityKeysRemainingBudgetsResponse,
+    GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest,
+    GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
+    GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
     GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse,
     GetMostRecentShieldedAnchorRequest, GetMostRecentShieldedAnchorResponse,
     GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
@@ -331,6 +341,18 @@ impl PlatformService for QueryService {
         .await
     }
 
+    async fn get_identity_keys_remaining_budgets(
+        &self,
+        request: Request<GetIdentityKeysRemainingBudgetsRequest>,
+    ) -> Result<Response<GetIdentityKeysRemainingBudgetsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_identity_keys_remaining_budgets,
+            "get_identity_keys_remaining_budgets",
+        )
+        .await
+    }
+
     async fn get_identity_balance(
         &self,
         request: Request<GetIdentityBalanceRequest>,
@@ -387,6 +409,114 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_data_contracts,
             "get_data_contracts",
+        )
+        .await
+    }
+
+    async fn get_data_contracts_by_range(
+        &self,
+        request: Request<GetDataContractsByRangeRequest>,
+    ) -> Result<Response<GetDataContractsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_data_contracts_by_range,
+            "get_data_contracts_by_range",
+        )
+        .await
+    }
+
+    async fn get_data_contracts_latest_versions(
+        &self,
+        request: Request<GetDataContractsLatestVersionsRequest>,
+    ) -> Result<Response<GetDataContractsLatestVersionsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_data_contracts_latest_versions,
+            "get_data_contracts_latest_versions",
+        )
+        .await
+    }
+
+    async fn get_contract_group_info(
+        &self,
+        request: Request<GetContractGroupInfoRequest>,
+    ) -> Result<Response<GetContractGroupInfoResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_group_info,
+            "get_contract_group_info",
+        )
+        .await
+    }
+
+    async fn get_contract_moderation_status(
+        &self,
+        request: Request<GetContractModerationStatusRequest>,
+    ) -> Result<Response<GetContractModerationStatusResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_moderation_status,
+            "get_contract_moderation_status",
+        )
+        .await
+    }
+
+    async fn get_contract_document_removals(
+        &self,
+        request: Request<GetContractDocumentRemovalsRequest>,
+    ) -> Result<Response<GetContractDocumentRemovalsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_document_removals,
+            "get_contract_document_removals",
+        )
+        .await
+    }
+
+    async fn get_contract_moderation_entries(
+        &self,
+        request: Request<GetContractModerationEntriesRequest>,
+    ) -> Result<Response<GetContractModerationEntriesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_moderation_entries,
+            "get_contract_moderation_entries",
+        )
+        .await
+    }
+
+    async fn get_contract_fee_pots(
+        &self,
+        request: Request<GetContractFeePotsRequest>,
+    ) -> Result<Response<GetContractFeePotsResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_fee_pots,
+            "get_contract_fee_pots",
+        )
+        .await
+    }
+
+    async fn get_contract_group_members(
+        &self,
+        request: Request<GetContractGroupMembersRequest>,
+    ) -> Result<Response<GetContractGroupMembersResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_group_members,
+            "get_contract_group_members",
+        )
+        .await
+    }
+
+    async fn get_contract_groups_for_contract(
+        &self,
+        request: Request<GetContractGroupsForContractRequest>,
+    ) -> Result<Response<GetContractGroupsForContractResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_contract_groups_for_contract,
+            "get_contract_groups_for_contract",
         )
         .await
     }
@@ -991,6 +1121,7 @@ fn query_error_into_status(error: QueryError) -> Status {
         QueryError::NotFound(message) => Status::not_found(message),
         QueryError::InvalidArgument(message) => Status::invalid_argument(message),
         QueryError::Query(error) => Status::invalid_argument(error.to_string()),
+        QueryError::TooManyElements(message) => Status::invalid_argument(message),
         QueryError::ResourceExhausted(message) => Status::resource_exhausted(message),
         _ => {
             tracing::error!("unexpected query error: {:?}", error);

@@ -15,6 +15,9 @@ use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
+use dash_sdk::platform::transition::update_identity_key_limits::{
+    raised_key_limits, UpdateIdentityKeyLimits,
+};
 use js_sys::BigInt;
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
@@ -517,7 +520,9 @@ export interface IdentityUpdateOptions {
 
   /**
    * Array of public keys to add to the identity.
-   * Use IdentityPublicKeyInCreation to create new keys.
+   * Use IdentityPublicKeyInCreation to create new keys. A key built with `totalBudget` or
+   * `expiresAt` is registered with those limits (protocol version 14); the signer must hold
+   * its private key as well as the master key, since a new key signs its own registration.
    */
   addPublicKeys?: IdentityPublicKeyInCreation[];
 
@@ -829,5 +834,103 @@ impl WasmSdk {
         .await?;
 
         Ok(())
+    }
+}
+
+// ============================================================================
+// Identity Key Limits Update
+// ============================================================================
+
+#[wasm_bindgen(typescript_custom_section)]
+const IDENTITY_KEY_LIMITS_UPDATE_OPTIONS_TS: &str = r#"
+/**
+ * Options for raising the limits of one of an identity's authentication keys
+ * (protocol version 14). At least one of addBudget and expiresAt must be given.
+ */
+export interface IdentityKeyLimitsUpdateOptions {
+  /** The identity holding the key: the new total is computed from the key as it holds it */
+  identity: Identity;
+  /** The key whose limits are raised */
+  keyId: number;
+  /** Credits added to the key's total budget, and to what is left of it */
+  addBudget?: bigint;
+  /** The new expiry of the key in milliseconds, later than its current one */
+  expiresAt?: bigint;
+  /** Signer holding a MASTER key, or a CRITICAL authentication key without limits and without contract bounds, of the identity */
+  signer: IdentitySigner;
+  /** Optional broadcast settings */
+  settings?: PutSettings;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityKeyLimitsUpdateOptions")]
+    pub type IdentityKeyLimitsUpdateOptionsJs;
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityKeyLimitsUpdateOptionsInput {
+    key_id: u32,
+    #[serde(default)]
+    add_budget: Option<u64>,
+    #[serde(default)]
+    expires_at: Option<u64>,
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Raises the limits of one of the identity's authentication keys: adds credits to its
+    /// total budget (and to what is left of it), or moves its expiry later. An update only
+    /// ever loosens limits, and what consensus would refuse and charge for (a limit the key
+    /// does not have, a value that does not raise it) is refused here before anything is
+    /// signed. Signed by a MASTER key, or a CRITICAL authentication key without limits and
+    /// without contract bounds, that the signer holds.
+    ///
+    /// @param options - The identity, the key, what to raise, and the signer
+    /// @returns The key as it is stored after the update
+    #[wasm_bindgen(js_name = "identityUpdateKeyLimits")]
+    pub async fn identity_update_key_limits(
+        &self,
+        options: IdentityKeyLimitsUpdateOptionsJs,
+    ) -> Result<IdentityPublicKeyWasm, WasmSdkError> {
+        // Extract complex types first (borrows &options)
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Deserialize simple fields last (consumes options)
+        let parsed: IdentityKeyLimitsUpdateOptionsInput = deserialize_required_query(
+            options,
+            "Options object is required",
+            "identity key limits update options",
+        )?;
+
+        // The wire carries absolute values; the SDK turns "add" into a total from the key the
+        // identity holds and refuses what consensus would charge for. An update that sets
+        // neither field is left to consensus (10539, unpaid), which is the one home of that rule.
+        let (total_budget, expires_at) = raised_key_limits(
+            &identity,
+            parsed.key_id,
+            parsed.add_budget,
+            parsed.expires_at,
+        )
+        .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
+
+        let updated_key = identity
+            .update_key_limits(
+                self.inner_sdk(),
+                parsed.key_id,
+                total_budget,
+                expires_at,
+                None,
+                signer,
+                settings,
+            )
+            .await?;
+
+        Ok(updated_key.into())
     }
 }

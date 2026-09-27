@@ -61,6 +61,23 @@ interface WalletDao {
     )
     suspend fun updateName(walletId: ByteArray, name: String?, nowMillis: Long): Int
 
+    /**
+     * Record the round's numeric chainlock height, monotonic max — a
+     * stale round's chainlock never lowers the finality boundary, matching
+     * the SQLite store's `upsert_sync_state`. A narrow column write rather
+     * than a full-row [upsert], so it cannot clobber a sibling column the
+     * header slot wrote moments earlier in the same round.
+     *
+     * @param nowMillis epoch millis for the `lastUpdated` stamp.
+     * @return number of rows updated (0 when the wallet row is gone).
+     */
+    @Query(
+        "UPDATE wallets SET lastAppliedChainLockHeight = " +
+            "MAX(COALESCE(lastAppliedChainLockHeight, -1), :height), " +
+            "lastUpdated = :nowMillis WHERE walletId = :walletId"
+    )
+    suspend fun advanceChainLockHeight(walletId: ByteArray, height: Int, nowMillis: Long): Int
+
     @Delete
     suspend fun delete(wallet: WalletEntity)
 

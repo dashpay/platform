@@ -25,7 +25,7 @@ use crate::execution::check_tx::CheckTxLevel;
 ///
 pub(in crate::execution) fn state_transition_to_execution_event_for_check_tx<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
-    state_transition: StateTransition,
+    state_transition: &StateTransition,
     check_tx_level: CheckTxLevel,
     proof_verifier: &CheckTxProofVerifier,
     platform_version: &PlatformVersion,

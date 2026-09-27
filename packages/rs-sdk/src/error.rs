@@ -1,4 +1,5 @@
 //! Definitions of errors
+use crate::platform::encrypted_for::EncryptedForError;
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
 pub use dash_context_provider::ContextProviderError;
@@ -9,7 +10,7 @@ use dpp::consensus::basic::state_transition::{
 };
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::consensus::ConsensusError;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersionError;
 use dpp::{dashcore_rpc, ProtocolError};
@@ -131,6 +132,10 @@ pub enum Error {
     /// Contains the last meaningful error that caused addresses to be banned.
     #[error("no available addresses to retry, last error: {0}")]
     NoAvailableAddressesToRetry(Box<Error>),
+
+    /// A property declared `encryptedFor` could not be encrypted or decrypted
+    #[error(transparent)]
+    EncryptedFor(#[from] EncryptedForError),
 }
 
 impl From<dash_platform_queries::Error> for Error {
@@ -160,8 +165,8 @@ impl TryFrom<StateTransitionBroadcastErrorProto> for StateTransitionBroadcastErr
 
     fn try_from(value: StateTransitionBroadcastErrorProto) -> Result<Self, Self::Error> {
         let cause = if !value.data.is_empty() {
-            let consensus_error =
-                ConsensusError::deserialize_from_bytes(&value.data).map_err(|e| {
+            let consensus_error = ConsensusError::deserialize_from_bytes_untrusted(&value.data)
+                .map_err(|e| {
                     tracing::debug!("Failed to deserialize consensus error: {}", e);
 
                     Error::Protocol(e)
@@ -192,7 +197,7 @@ impl From<DapiClientError> for Error {
                 return consensus_error_value
                     .to_bytes()
                     .map(|bytes| {
-                        ConsensusError::deserialize_from_bytes(&bytes)
+                        ConsensusError::deserialize_from_bytes_untrusted(&bytes)
                             .map(|consensus_error| {
                                 Self::Protocol(ProtocolError::ConsensusError(Box::new(
                                     consensus_error,

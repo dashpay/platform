@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use super::composite_document_query::{drive_sub_queries, sub_queries_to_proto, CompositeSubQuery};
 use crate::error::Error;
 use dapi_grpc::platform::v0::get_documents_request::Version::{V0, V1};
 use dapi_grpc::platform::v0::{
@@ -11,10 +12,12 @@ use dapi_grpc::platform::v0::{
         get_documents_request_v0::Start,
         get_documents_request_v1::{select, Select as ProtoSelect, Start as V1Start},
         having_aggregate, having_clause, order_clause,
+        time_range_selection::{Grid as ProtoTimeRangeGrid, Selector as ProtoTimeRangeSelector},
         DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV0,
         GetDocumentsRequestV1, HavingAggregate as ProtoHavingAggregate,
         HavingClause as ProtoHavingClause, OrderClause as ProtoOrderClause,
-        WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
+        TimeRangeSelection as ProtoTimeRangeSelection, WhereClause as ProtoWhereClause,
+        WhereOperator as ProtoWhereOperator,
     },
     GetDocumentsRequest, Proof, ResponseMetadata,
 };
@@ -66,6 +69,10 @@ pub struct TimeRangeClause {
 /// required to correctly verify proofs returned by the Dash Platform.
 ///
 /// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveDocumentQuery] using [TryFrom] trait.
+///
+/// Add related document or count queries with [`Self::with_sub_query`].
+/// Fetch these compositions as [`drive_proof_verifier::CompositeDocuments`]
+/// to receive both the page and its verified sub-results.
 #[derive(Debug, Clone, PartialEq, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
@@ -166,6 +173,11 @@ pub struct DocumentQuery {
     pub offset: Option<u32>,
     /// first object to start with
     pub start: Option<Start>,
+    /// Related document and count queries derived from this page. Empty for
+    /// ordinary document or aggregate queries. Fetch nonempty compositions
+    /// as [`drive_proof_verifier::CompositeDocuments`].
+    #[cfg_attr(feature = "mocks", serde(default))]
+    pub sub_queries: Vec<CompositeSubQuery>,
 }
 
 /// Which end of a ranking a
@@ -210,10 +222,23 @@ impl DocumentQuery {
             limit: 0,
             offset: None,
             start: None,
+            sub_queries: vec![],
         })
     }
 
+    /// Ordinary document and aggregate proof results cannot represent sub-queries.
+    pub(super) fn ensure_no_sub_queries(&self) -> Result<(), drive_proof_verifier::Error> {
+        if !self.sub_queries.is_empty() {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: "this result type cannot return sub-queries; fetch the query as CompositeDocuments".to_string(),
+            });
+        }
+        Ok(())
+    }
+
     /// Create new document query based on a [DriveDocumentQuery].
+    ///
+    /// Preserves sub-queries, including their contracts and bindings.
     ///
     /// Fails when the drive query carries time-range resolution provenance
     /// (`resolved_time_ranges`): the resolved bucket equality cannot be
@@ -245,12 +270,15 @@ impl DocumentQuery {
     }
 
     /// Restrict the query to a single time-range bucket of `field`
-    /// (a timestamp covered by a `timeRange` index), selecting either the
-    /// [`TimeRangeSelector::Newest`] or [`TimeRangeSelector::Oldest`] currently
-    /// active range. Emitted as an `IN_TIME_RANGE` clause on the v1 wire and
-    /// resolved server-side from the current block time; the proof verifier
-    /// re-derives the identical bucket from the quorum-signed response
-    /// metadata time. Requires protocol version 14+ — the first version
+    /// (a timestamp covered by a `timeRange` index). The relative selectors
+    /// ([`TimeRangeSelector::Newest`] / [`TimeRangeSelector::Oldest`]) pick a
+    /// currently active range, resolved server-side from the current block
+    /// time; the proof verifier re-derives the identical bucket from the
+    /// quorum-signed response metadata time. A
+    /// [`TimeRangeSelector::ByStart`] selection names a window absolutely —
+    /// current or historic — by its grid-aligned start, which both sides
+    /// read straight from the query. Emitted as an `IN_TIME_RANGE` clause
+    /// on the v1 wire. Requires protocol version 14+ — the first version
     /// whose contract grammar hosts `timeRange` indexes.
     ///
     /// The bare selector is unambiguous only while exactly one grid buckets
@@ -527,6 +555,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         Self: Sized + 'a,
     {
         let mut request: Self::Request = request.into();
+        request.ensure_no_sub_queries()?;
         let response: Self::Response = response.into();
 
         // A time-range (`IN_TIME_RANGE`) selection is resolved to a concrete
@@ -666,6 +695,9 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
         value: DocumentQuery,
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
+        if !value.sub_queries.is_empty() {
+            value.check_composite_shape()?;
+        }
         let DocumentQuery {
             select,
             data_contract,
@@ -678,6 +710,7 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             limit,
             offset,
             start,
+            sub_queries,
         } = value;
 
         let feature_version = platform_version
@@ -695,6 +728,12 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
 
         match feature_version {
             0 => {
+                if !sub_queries.is_empty() {
+                    return Err(Error::Config(
+                        "composite document queries require the V1 documents wire (Platform v3.1+)"
+                            .to_string(),
+                    ));
+                }
                 if !time_range_clauses.is_empty() {
                     return Err(Error::Config(
                         "time range (IN_TIME_RANGE) queries require protocol version 14+; the \
@@ -749,6 +788,7 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
                     select,
                     group_by,
                     having,
+                    sub_queries_to_proto(sub_queries)?,
                 )
             }
             n => Err(Error::Config(format!(
@@ -773,56 +813,47 @@ fn encode_v1(
     select: SelectProjection,
     group_by: Vec<String>,
     having: Vec<HavingClause>,
+    sub_queries: Vec<platform_proto::get_documents_request::get_documents_request_v1::SubQuery>,
 ) -> Result<GetDocumentsRequest, Error> {
     let mut where_clauses = where_clauses
         .into_iter()
         .map(where_clause_to_proto)
         .collect::<Result<Vec<_>, _>>()?;
-    // Append time-range selections as `IN_TIME_RANGE` clauses. A grid-less
-    // selection rides as the bare `"newest"`/`"oldest"` text operand; a
-    // grid-targeted one as the list operand `[selector, range, step]` /
-    // `[selector, range, step, phase]` in the contract's declared seconds
-    // (zero phase spelled by omission — one wire spelling per grid, the
-    // same rule the contract grammar and the storage key follow). The
-    // server resolves them to a concrete bucket from current block time;
-    // the verifier re-derives the same bucket from the signed response
-    // metadata time.
+    // Append time-range selections as `IN_TIME_RANGE` clauses carrying the
+    // typed `time_range` operand (`value` stays unset — the selection is
+    // not a field value). The grid, when named, repeats the contract's
+    // declared seconds verbatim; a zero phase is proto3's default, so a
+    // phaseless grid has exactly one wire spelling by construction. The
+    // server resolves the relative selectors to a concrete bucket from
+    // current block time and the verifier re-derives the same bucket from
+    // the signed response metadata time; a `ByStart` selection carries its
+    // window's start in the query itself, so both sides read it verbatim.
     for TimeRangeClause {
         field,
         selector,
         grid,
     } in time_range_clauses
     {
-        let selector_value = ProtoDocumentFieldValue {
-            variant: Some(document_field_value::Variant::Text(
-                selector.as_str().to_string(),
-            )),
-        };
-        let operand = match grid {
-            None => selector_value,
-            Some(spec) => {
-                let uint = |n: u64| ProtoDocumentFieldValue {
-                    variant: Some(document_field_value::Variant::Uint64Value(n)),
-                };
-                let mut values = vec![
-                    selector_value,
-                    uint(spec.range_seconds),
-                    uint(spec.step_seconds),
-                ];
-                if spec.phase_seconds != 0 {
-                    values.push(uint(spec.phase_seconds));
-                }
-                ProtoDocumentFieldValue {
-                    variant: Some(document_field_value::Variant::List(
-                        document_field_value::ValueList { values },
-                    )),
-                }
+        let (proto_selector, start_ms) = match selector {
+            TimeRangeSelector::Newest => (ProtoTimeRangeSelector::Newest, None),
+            TimeRangeSelector::Oldest => (ProtoTimeRangeSelector::Oldest, None),
+            TimeRangeSelector::ByStart { start_ms } => {
+                (ProtoTimeRangeSelector::ByStart, Some(start_ms))
             }
         };
         where_clauses.push(ProtoWhereClause {
             field,
             operator: ProtoWhereOperator::InTimeRange as i32,
-            value: Some(operand),
+            value: None,
+            time_range: Some(ProtoTimeRangeSelection {
+                selector: proto_selector as i32,
+                start_ms,
+                grid: grid.map(|spec| ProtoTimeRangeGrid {
+                    range: spec.range_seconds,
+                    step: spec.step_seconds,
+                    phase: spec.phase_seconds,
+                }),
+            }),
         });
     }
     let order_by = order_by_clauses
@@ -876,6 +907,8 @@ fn encode_v1(
             // deciding here which paths may carry an offset would put
             // a second copy of that rule in the SDK.
             offset,
+            chained: None,
+            sub_queries,
         })),
     })
 }
@@ -977,6 +1010,8 @@ fn encode_v0(
 impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
     type Error = crate::error::Error;
 
+    /// Preserves sub-queries through SDK request construction and proof verification.
+    ///
     /// Fallible by necessity: a drive query carrying `resolved_time_ranges`
     /// holds bucket-start equalities whose meaning lives in the provenance,
     /// and `DocumentQuery` has no field to carry it — the original
@@ -1027,6 +1062,11 @@ impl<'a> TryFrom<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             limit,
             offset,
             start,
+            sub_queries: value
+                .sub_queries
+                .iter()
+                .map(CompositeSubQuery::from)
+                .collect(),
         })
     }
 }
@@ -1035,7 +1075,7 @@ impl<'a> TryFrom<DriveDocumentQuery<'a>> for DocumentQuery {
     type Error = crate::error::Error;
 
     /// By-value twin of the by-reference conversion above — same
-    /// provenance rejection, same rationale.
+    /// sub-query preservation and provenance rejection, same rationale.
     fn try_from(value: DriveDocumentQuery<'a>) -> Result<Self, Self::Error> {
         DocumentQuery::try_from(&value)
     }
@@ -1045,6 +1085,9 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
     type Error = crate::error::Error;
 
     fn try_from(request: &'a DocumentQuery) -> Result<Self, Self::Error> {
+        if !request.sub_queries.is_empty() {
+            request.check_composite_shape()?;
+        }
         // A pending (unresolved) time-range selection MUST be resolved into a
         // concrete bucket-equality clause before a drive query can be built —
         // see `resolve_time_range_clauses_with_metadata_time`. Silently
@@ -1159,6 +1202,7 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
             // selections assign the fields they resolved onto the returned
             // query; everything else is a raw query.
             resolved_time_ranges: vec![],
+            sub_queries: drive_sub_queries(request)?,
         };
 
         Ok(query)
@@ -1176,15 +1220,19 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
 /// produced by the SDK's typical WhereClause builders, so a
 /// rejection here flags an unsupported caller construction at the
 /// wire boundary rather than silently dropping the value.
-fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereClause, Error> {
+pub(crate) fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereClause, Error> {
     Ok(ProtoWhereClause {
         field: clause.field,
         operator: where_operator_to_proto(clause.operator) as i32,
         value: Some(value_to_proto(clause.value)?),
+        // The typed IN_TIME_RANGE operand; never set on an ordinary value
+        // clause (time-range selections are encoded by `encode_v1` itself,
+        // from `time_range_clauses`).
+        time_range: None,
     })
 }
 
-fn order_clause_to_proto(clause: OrderClause) -> ProtoOrderClause {
+pub(crate) fn order_clause_to_proto(clause: OrderClause) -> ProtoOrderClause {
     // Drive's `OrderClause` carries a plain `field: String` —
     // emit the field-target variant of the wire's `target` oneof.
     // The aggregate-target variant (`ORDER BY COUNT(*)`) is
@@ -1448,7 +1496,7 @@ mod encode_version_gate_tests {
     }
 
     #[test]
-    fn a_time_range_query_encodes_the_operator_for_protocol_version_14() {
+    fn a_time_range_query_encodes_the_typed_operand_for_protocol_version_14() {
         let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
         let request = GetDocumentsRequest::try_from_platform_versioned(
             newest_time_range_query(),
@@ -1458,15 +1506,65 @@ mod encode_version_gate_tests {
         let Some(V1(v1)) = request.version else {
             panic!("protocol version 14 encodes on the v1 wire");
         };
-        let operators: Vec<i32> = v1
-            .where_clauses
-            .iter()
-            .map(|clause| clause.operator)
-            .collect();
+        let [clause] = v1.where_clauses.as_slice() else {
+            panic!("the pending selector must ride as exactly one IN_TIME_RANGE clause");
+        };
+        assert_eq!(clause.operator, ProtoWhereOperator::InTimeRange as i32);
         assert_eq!(
-            operators,
-            vec![ProtoWhereOperator::InTimeRange as i32],
-            "the pending selector must ride as exactly one IN_TIME_RANGE clause"
+            clause.value, None,
+            "the selection is not a field value; the generic operand stays unset"
+        );
+        let selection = clause
+            .time_range
+            .as_ref()
+            .expect("the typed operand carries the selection");
+        assert_eq!(selection.selector, ProtoTimeRangeSelector::Newest as i32);
+        assert_eq!(selection.start_ms, None);
+        assert_eq!(selection.grid, None, "a grid-less selection names no grid");
+    }
+
+    #[test]
+    fn a_by_start_selection_encodes_its_window_start_and_grid() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+        let query = DocumentQuery::new(post_contract(), "post")
+            .expect("the fixture has this document type")
+            .with_time_range_grid(
+                "$createdAt",
+                TimeRangeSelector::ByStart {
+                    start_ms: 1_756_684_800_000,
+                },
+                TimeRangeGridSpec {
+                    range_seconds: 86_400,
+                    step_seconds: 86_400,
+                    phase_seconds: 0,
+                },
+            );
+        let request = GetDocumentsRequest::try_from_platform_versioned(query, platform_version)
+            .expect("protocol version 14 hosts timeRange indexes");
+        let Some(V1(v1)) = request.version else {
+            panic!("protocol version 14 encodes on the v1 wire");
+        };
+        let [clause] = v1.where_clauses.as_slice() else {
+            panic!("the selection must ride as exactly one IN_TIME_RANGE clause");
+        };
+        let selection = clause
+            .time_range
+            .as_ref()
+            .expect("the typed operand carries the selection");
+        assert_eq!(selection.selector, ProtoTimeRangeSelector::ByStart as i32);
+        assert_eq!(
+            selection.start_ms,
+            Some(1_756_684_800_000),
+            "the absolute window start rides in the query itself"
+        );
+        assert_eq!(
+            selection.grid,
+            Some(ProtoTimeRangeGrid {
+                range: 86_400,
+                step: 86_400,
+                phase: 0,
+            }),
+            "the grid repeats the contract's declared seconds verbatim"
         );
     }
 

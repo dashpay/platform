@@ -4,9 +4,16 @@ use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-/// Generate a mock proof for testing
+/// Generate a mock proof for testing.
+///
+/// The buffer starts with the bincode-encoded GroveDB V1 envelope
+/// discriminant so it clears the envelope policy that every public entry
+/// point applies first; the rest is filler that never decodes as a proof.
 pub fn mock_proof(size: usize) -> Vec<u8> {
-    vec![0xAB; size]
+    let mut proof = bincode::encode_to_vec(1u32, bincode::config::standard().with_big_endian())
+        .expect("encode V1 envelope discriminant");
+    proof.resize(size.max(proof.len()), 0xAB);
+    proof
 }
 
 /// Generate a mock 32-byte identifier

@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -20,6 +21,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,6 +32,7 @@ import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
@@ -76,6 +79,10 @@ import org.dashfoundation.example.util.truncateMiddle
  * supplies the wallet handle, owner id, and the wallet's shared signer
  * handle (like `DocumentWithPriceScreen`).
  *
+ * A typed array (protocol version 14: an array declared by an `items`
+ * schema) gets one row per element, sent as a JSON array of the element's
+ * own kind; see [TypedArrayEditor].
+ *
  * Byte-array fields are entered as hex and identifier fields as base58;
  * both ride to Rust as strings, where the schema-driven sanitize step
  * decodes them to native bytes. The confirmed canonical JSON the FFI
@@ -117,6 +124,8 @@ fun CreateDocumentScreen(
     val textValues = remember { mutableStateMapOf<String, String>() }
     val boolValues = remember { mutableStateMapOf<String, Boolean>() }
     val touchedBools = remember { mutableStateSetOf<String>() }
+    // Typed array rows keyed by property name, one form string per element.
+    val listValues = remember { mutableStateMapOf<String, List<String>>() }
 
     var isSubmitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -232,6 +241,7 @@ fun CreateDocumentScreen(
                             textValues = textValues,
                             boolValues = boolValues,
                             touchedBools = touchedBools,
+                            listValues = listValues,
                         )
                     }
                     if (required.isNotEmpty()) {
@@ -255,7 +265,7 @@ fun CreateDocumentScreen(
                 val ownerId = owner ?: return@SubmitButton
                 val mgr = manager ?: return@SubmitButton
                 val propertiesJson = try {
-                    buildPropertiesJson(properties, required, textValues, boolValues, touchedBools)
+                    buildPropertiesJson(properties, required, textValues, boolValues, touchedBools, listValues)
                 } catch (e: Exception) {
                     error = "Could not encode document fields: ${e.message}"
                     return@SubmitButton
@@ -311,9 +321,11 @@ internal fun DocumentPropertyField(
     textValues: MutableMap<String, String>,
     boolValues: MutableMap<String, Boolean>,
     touchedBools: MutableSet<String>,
+    listValues: MutableMap<String, List<String>>,
     tagPrefix: String = "createDocument.field",
 ) {
     val type = prop.stringField("type")
+    val typedArray = remember(name, prop) { documentTypedArray(name, prop) }
     val isByteArray = prop.boolField("byteArray") == true
     val isIdentifier = prop.stringField("contentMediaType")?.contains("identifier") == true
     val tag = "$tagPrefix.$name"
@@ -326,6 +338,14 @@ internal fun DocumentPropertyField(
             }
         }
         when {
+            typedArray != null -> TypedArrayEditor(
+                typedArray = typedArray,
+                rows = listValues[name].orEmpty(),
+                onRowsChange = { listValues[name] = it },
+                enabled = enabled,
+                tag = tag,
+            )
+
             type == "boolean" -> Switch(
                 checked = boolValues[name] ?: false,
                 onCheckedChange = {
@@ -386,6 +406,141 @@ internal fun DocumentPropertyField(
     }
 }
 
+/**
+ * The editor for one typed array: a row per element with an input suited to
+ * the element kind (a picker when the items declare an `enum`, a switch for
+ * booleans, a number field for integers and numbers, base58 text for
+ * identifiers, hex text for byte arrays, plain text for strings), a remove
+ * button per row, and an add button that stops at `maxItems`. Each row shows
+ * why its text would be refused, using [typedArrayElement]. Rows carry the
+ * testTags `<tag>.<index>` and `<tag>.<index>.remove`; the add button is
+ * `<tag>.add`.
+ */
+@Composable
+private fun TypedArrayEditor(
+    typedArray: DocumentTypedArray,
+    rows: List<String>,
+    onRowsChange: (List<String>) -> Unit,
+    enabled: Boolean,
+    tag: String,
+) {
+    val item = typedArray.items
+    val options = typedArrayOptions(item)
+    Column(modifier = Modifier.fillMaxWidth().testTag(tag)) {
+        rows.forEachIndexed { index, raw ->
+            val update = { value: String ->
+                onRowsChange(rows.toMutableList().also { it[index] = value })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    when {
+                        options != null -> AccessiblePicker(
+                            label = "Item ${index + 1}",
+                            options = options,
+                            selected = raw.takeIf { it in options } ?: options.first(),
+                            optionLabel = { it },
+                            testTag = "$tag.$index",
+                            enabled = enabled,
+                            onSelected = update,
+                        )
+
+                        item is TypedArrayItem.BooleanItem -> Switch(
+                            checked = raw == "true",
+                            onCheckedChange = { update(it.toString()) },
+                            enabled = enabled,
+                            modifier = Modifier.testTag("$tag.$index"),
+                        )
+
+                        else -> OutlinedTextField(
+                            value = raw,
+                            onValueChange = update,
+                            label = { Text(typedArrayRowHint(item, index)) },
+                            singleLine = true,
+                            enabled = enabled,
+                            keyboardOptions = when (item) {
+                                is TypedArrayItem.IntegerItem, is TypedArrayItem.NumberItem ->
+                                    KeyboardOptions(keyboardType = KeyboardType.Number)
+                                else -> KeyboardOptions.Default
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("$tag.$index"),
+                        )
+                    }
+                    val problem = typedArrayElement(item, raw) as? TypedArrayElement.Invalid
+                    if (problem != null) {
+                        Text(
+                            problem.reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = { onRowsChange(rows.toMutableList().also { it.removeAt(index) }) },
+                    enabled = enabled,
+                    modifier = Modifier.testTag("$tag.$index.remove"),
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = "Remove item ${index + 1}")
+                }
+            }
+        }
+        val maxItems = typedArray.maxItems
+        TextButton(
+            onClick = { onRowsChange(rows + typedArrayNewRow(item)) },
+            enabled = enabled && (maxItems == null || rows.size < maxItems),
+            modifier = Modifier.testTag("$tag.add"),
+        ) {
+            Text("Add item")
+        }
+        Text(
+            "${typedArray.summary} · ${rows.size} entered",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** The `enum` of an element kind as form strings, or null when none is declared. */
+internal fun typedArrayOptions(item: TypedArrayItem): List<String>? = when (item) {
+    is TypedArrayItem.IntegerItem -> item.allowedValues?.map { it.toString() }
+    is TypedArrayItem.NumberItem -> item.allowedValues?.map { it.toString() }
+    is TypedArrayItem.BooleanItem -> item.allowedValues?.map { it.toString() }
+    is TypedArrayItem.StringItem -> item.allowedValues
+    is TypedArrayItem.ByteArrayItem, TypedArrayItem.IdentifierItem -> null
+}?.takeIf { it.isNotEmpty() }
+
+/** The starting text of a newly added row: the first enum value, or `false`, or blank. */
+internal fun typedArrayNewRow(item: TypedArrayItem): String =
+    typedArrayOptions(item)?.first()
+        ?: if (item is TypedArrayItem.BooleanItem) "false" else ""
+
+private fun typedArrayRowHint(item: TypedArrayItem, index: Int): String {
+    val what = when (item) {
+        is TypedArrayItem.IntegerItem -> rangeHint("Integer", item.minimum?.toString(), item.maximum?.toString())
+        is TypedArrayItem.NumberItem -> rangeHint("Number", item.minimum?.toString(), item.maximum?.toString())
+        is TypedArrayItem.StringItem -> when {
+            item.minLength != null && item.maxLength != null -> "Text (${item.minLength} to ${item.maxLength} chars)"
+            item.maxLength != null -> "Text (max ${item.maxLength} chars)"
+            item.minLength != null -> "Text (min ${item.minLength} chars)"
+            else -> "Text"
+        }
+        is TypedArrayItem.ByteArrayItem -> when {
+            item.minSize != null && item.minSize == item.maxSize -> "Hex bytes (${item.minSize} bytes)"
+            item.maxSize != null -> "Hex bytes (max ${item.maxSize} bytes)"
+            else -> "Hex bytes"
+        }
+        TypedArrayItem.IdentifierItem -> "Base58 identifier"
+        is TypedArrayItem.BooleanItem -> "Boolean"
+    }
+    return "Item ${index + 1}: $what"
+}
+
+private fun rangeHint(kind: String, min: String?, max: String?): String = when {
+    min != null && max != null -> "$kind ($min to $max)"
+    max != null -> "$kind (max $max)"
+    min != null -> "$kind (min $min)"
+    else -> kind
+}
+
 internal fun stringHint(prop: JsonObject): String {
     val min = prop.intField("minLength")
     val max = prop.intField("maxLength")
@@ -415,7 +570,9 @@ internal fun numericHint(prop: JsonObject): String {
  * `false` for some schemas). Byte-array (hex) and identifier (base58)
  * fields pass through as strings — the schema-driven sanitize decodes
  * them Rust-side. `object` fields are parsed so they serialize as nested
- * objects rather than a JSON string. Throws on invalid `object` JSON.
+ * objects rather than a JSON string. A typed array is built from
+ * [listValues] by [typedArrayJson]. Throws on invalid `object` JSON and on a
+ * typed array element, count or repeat consensus would refuse.
  */
 internal fun buildPropertiesJson(
     properties: JsonObject,
@@ -423,6 +580,7 @@ internal fun buildPropertiesJson(
     textValues: Map<String, String>,
     boolValues: Map<String, Boolean>,
     touchedBools: Set<String>,
+    listValues: Map<String, List<String>> = emptyMap(),
 ): String = buildJsonObject {
     for ((name, propEl) in properties) {
         val prop = propEl as? JsonObject ?: continue
@@ -446,8 +604,18 @@ internal fun buildPropertiesJson(
             }
 
             "array" -> {
+                val typedArray = documentTypedArray(name, prop)
                 val raw = textValues[name]?.trim().orEmpty()
-                if (raw.isNotEmpty()) {
+                if (typedArray != null) {
+                    // Typed array: one JSON value per row, of the element's
+                    // own kind. An optional one with no rows is omitted; a
+                    // required one is sent even when empty, so minItems is
+                    // judged here rather than by a paid rejection.
+                    val rows = listValues[name].orEmpty()
+                    if (rows.isNotEmpty() || name in required) {
+                        put(name, typedArrayJson(name, typedArray, rows))
+                    }
+                } else if (raw.isNotEmpty()) {
                     if (prop.boolField("byteArray") == true) {
                         // Hex (byte array) or base58 (identifier) — string.
                         put(name, raw)

@@ -10,7 +10,7 @@
 //! `platform-wallet` crate"; the Swift side only renders the form,
 //! marshals the values, and persists the confirmed document.
 //!
-//! Mirrors the post-#3541 identity-flow shape:
+//! Mirrors the identity-flow shape:
 //!   - The library function takes a `Signer<IdentityPublicKey>`
 //!     reference so the FFI's external `KeychainSigner` trampoline can
 //!     route signing back to Swift / Keychain without crossing seed
@@ -310,8 +310,7 @@ impl IdentityWallet {
             .map_err(|e| {
                 // Preserve a structured key-unavailable signer failure so the
                 // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`
-                // (dashpay/platform#4183 review).
+                // operation failures get stringified into `InvalidIdentityData`.
                 crate::error::preserve_signer_key_unavailable_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to put document to platform: {e}"
@@ -538,8 +537,7 @@ impl IdentityWallet {
             .map_err(|e| {
                 // Preserve a structured key-unavailable signer failure so the
                 // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`
-                // (dashpay/platform#4183 review).
+                // operation failures get stringified into `InvalidIdentityData`.
                 crate::error::preserve_signer_key_unavailable_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to replace document: {e}"
@@ -591,8 +589,7 @@ impl IdentityWallet {
             .map_err(|e| {
                 // Preserve a structured key-unavailable signer failure so the
                 // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`
-                // (dashpay/platform#4183 review).
+                // operation failures get stringified into `InvalidIdentityData`.
                 crate::error::preserve_signer_key_unavailable_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to delete document: {e}"
@@ -655,8 +652,7 @@ impl IdentityWallet {
                 // Typed trade rejections (not-for-sale / price-changed /
                 // insufficient credits) and the structured key-unavailable
                 // signer failure survive; only genuine operation failures
-                // get stringified into `InvalidIdentityData`
-                // (dashpay/platform#4183 review).
+                // get stringified into `InvalidIdentityData`.
                 crate::error::promote_document_trade_error_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to transfer document: {e}"
@@ -718,8 +714,7 @@ impl IdentityWallet {
             .map_err(|e| {
                 // Typed trade rejections and the structured key-unavailable
                 // signer failure survive; only genuine operation failures
-                // get stringified into `InvalidIdentityData`
-                // (dashpay/platform#4183 review).
+                // get stringified into `InvalidIdentityData`.
                 crate::error::promote_document_trade_error_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to set document price: {e}"
@@ -789,7 +784,7 @@ impl IdentityWallet {
                 // behind the wallet's pre-flight — and the structured
                 // key-unavailable signer failure survive; only genuine
                 // operation failures get stringified into
-                // `InvalidIdentityData` (dashpay/platform#4183 review).
+                // `InvalidIdentityData`.
                 crate::error::promote_document_trade_error_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to purchase document: {e}"

@@ -49,10 +49,12 @@ impl IdentityManager {
         // Updating an existing identity — find it across both buckets.
         if let Some(existing) = self.locate_mut(&id) {
             if entry.revision >= existing.identity.revision() {
-                existing.identity.set_balance(entry.balance);
+                existing.restore_persisted_balance(
+                    entry.balance,
+                    entry.last_updated_balance_block_time,
+                );
                 existing.identity.set_revision(entry.revision);
             }
-            existing.last_updated_balance_block_time = entry.last_updated_balance_block_time;
             existing.last_synced_keys_block_time = entry.last_synced_keys_block_time;
             existing.status = entry.status;
             *existing.dashpay_profile_mut() = entry.dashpay_profile;
@@ -165,7 +167,7 @@ impl IdentityManager {
     ///
     /// Layers the public-key record into the DPP `Identity`'s
     /// `public_keys` map (overwriting any existing slot with the same
-    /// `KeyID`). Private-key data is no longer kept on
+    /// `KeyID`). Private-key data is not kept on
     /// `ManagedIdentity` (it lives in the iOS Keychain on the client
     /// side); the `(wallet_id, derivation_indices)` breadcrumb on the
     /// entry tells the client how to re-derive the scalar.

@@ -2,7 +2,6 @@
 
 use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
-use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::BinaryData;
@@ -12,9 +11,12 @@ use dpp::ProtocolError;
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::transfer::TransferToIdentity;
+use dash_sdk::platform::transition::transfer::{
+    TransferToIdentity, TransferToIdentityWithMetadata,
+};
 
 use crate::error::PlatformWalletError;
+use crate::BlockTime;
 
 use super::*;
 
@@ -96,8 +98,8 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*from_id))?
         };
 
-        let (sender_balance, _receiver_balance) = identity
-            .transfer_credits(
+        let ((sender_balance, _receiver_balance), metadata) = identity
+            .transfer_credits_with_metadata(
                 &self.sdk,
                 *to_id,
                 amount,
@@ -109,8 +111,7 @@ impl IdentityWallet {
             .map_err(|e| {
                 // Preserve a structured key-unavailable signer failure so the
                 // FFI boundary can still restore code 31; only genuine
-                // operation failures get stringified into `InvalidIdentityData`
-                // (dashpay/platform#4183 review).
+                // operation failures get stringified into `InvalidIdentityData`.
                 crate::error::preserve_signer_key_unavailable_or(e, |e| {
                     PlatformWalletError::InvalidIdentityData(format!(
                         "Failed to transfer credits: {}",
@@ -129,14 +130,11 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(from_id) {
-                managed.identity.set_balance(sender_balance);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %from_id,
-                        error = %e,
-                        "Failed to persist identity balance update after transfer (external signer)"
-                    );
-                }
+                managed.persist_confirmed_balance(
+                    sender_balance,
+                    BlockTime::from(metadata),
+                    &self.persister,
+                );
             }
         }
 

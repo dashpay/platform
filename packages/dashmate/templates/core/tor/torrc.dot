@@ -1,0 +1,13 @@
+# Rendered by dashmate. The Tor container shares Core's network namespace, so
+# every address below is loopback from Core's point of view.
+DataDirectory /var/lib/tor
+Log notice stdout
+
+# Core dials onion peers through this proxy (dash.conf: onion=).
+SocksPort 127.0.0.1:9050
+
+# Core creates and publishes its own onion service over the control port
+# (dash.conf: torcontrol= / torpassword= / listenonion=1). The service key is
+# persisted by Core in its data directory, so the address survives restarts.
+ControlPort 127.0.0.1:9051
+HashedControlPassword {{= it.hashTorControlPassword(it.core.tor.control.password) }}

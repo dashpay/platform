@@ -1,8 +1,21 @@
-use dpp::data_contract::document_type::{DocumentPropertyType, TimeRangeTransform};
+#[cfg(feature = "server")]
+use dpp::data_contract::document_type::DocumentPropertyType;
+use dpp::data_contract::document_type::TimeRangeTransform;
 use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
+    // Chained-query building blocks: the result shape and the join-value
+    // cap. The join itself is a by-id join sub-query in
+    // [`DriveDocumentQuery::sub_queries`].
+    chained_document_query::{ChainedDocumentsResult, MAX_CHAINED_JOIN_VALUES},
+    // Composite-query building blocks: the sub-query shapes carried by
+    // [`DriveDocumentQuery::sub_queries`] and the assembled result. The
+    // verifier needs them all to rebuild and route the merged proof.
+    composite_document_query::{
+        BindingSource, CompositeDocumentsResult, DriveSubQuery, SubQueryBinding, SubQueryKind,
+        SubQueryResult, MAX_BOUND_VALUES, MAX_SUB_QUERIES,
+    },
     conditions::{ValueClause, WhereClause, WhereOperator},
     // Average-query verifier-shareable types — same split as sum:
     // `AverageEntry` is the per-key `(count, sum)` pair the verifier
@@ -287,6 +300,20 @@ pub mod drive_document_ranked_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod index_only_synthesis;
 
+/// Chained document queries — a provable semi-join: an inner indexOnly
+/// [`DriveDocumentQuery`] whose proven `refersTo` values become the outer
+/// query's primary keys (carried as a single by-id join in
+/// [`DriveDocumentQuery::sub_queries`]), proven against one state root.
+/// See the module docs.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod chained_document_query;
+
+/// Composite document queries — a [`DriveDocumentQuery`] page plus
+/// sub-queries derived from its proven results (joins, lookups, counts),
+/// proven as one merged proof against one state root. See the module docs.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod composite_document_query;
+
 /// Joint count-and-sum no-prove executor surface — backs the AVG
 /// no-prove path's unified single-walk dispatch. See its module
 /// docstring for the perf / atomicity contract. Server-only because
@@ -408,7 +435,7 @@ impl InternalClauses {
             {
                 roles.index_property = true;
             }
-            if index.terminal.as_deref() == Some(field) {
+            if index.terminal_contains(field) {
                 roles.terminal = true;
             }
             if roles.index_property && roles.terminal {
@@ -686,9 +713,15 @@ impl From<InternalClauses> for Vec<WhereClause> {
     }
 }
 
-/// Which active time range a `TOP(timeRange(...))` selection resolves to,
-/// when the index's ranges overlap (`range > step`). Time-range queries are a
-/// v1-only feature; the v0 query surface is unaffected.
+/// Which window of a `timeRange` grid an `IN_TIME_RANGE` selection resolves
+/// to. Time-range queries are a v1-only feature; the v0 query surface is
+/// unaffected.
+///
+/// The two relative selectors are resolved against an authoritative "now"
+/// (block time on the server, the quorum-signed metadata time on the
+/// verifier); [`Self::ByStart`] names a window absolutely, so its resolution
+/// reads the query alone and needs no clock at all — which is what makes
+/// historic windows addressable.
 #[cfg(any(feature = "server", feature = "verify"))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -700,24 +733,41 @@ pub enum TimeRangeSelector {
     /// The oldest range still active at now. Covers a near-full trailing
     /// window of ~range of history. Best for "trending over the last window".
     Oldest,
+    /// The range starting exactly at `start_ms` (a millisecond timestamp).
+    /// Must lie on the grid — `phase + k * step`, the same values
+    /// [`TimeRangeTransform::containing_buckets`] produces and the storage
+    /// keys spell — or resolution rejects it (see
+    /// [`TimeRangeTransform::is_bucket_start`]). A window with no documents,
+    /// including one that has not started yet, is a provable empty answer
+    /// rather than an error.
+    ByStart {
+        /// The selected window's start on the millisecond timeline.
+        start_ms: u64,
+    },
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
 impl TimeRangeSelector {
-    /// The selector's wire spelling — the `IN_TIME_RANGE` clause's operand on
-    /// the v1 `getDocuments` wire. The single source of truth for the string
-    /// form: the SDK encoder, the drive-abci decoder and the wasm-sdk JSON
-    /// parser all go through these two functions (and the serde derive above
-    /// is renamed to match), so the spellings cannot drift apart.
+    /// The selector's JSON spelling — the `selector` string of the wasm-sdk
+    /// query surface. The single source of truth for the string form: the
+    /// wasm-sdk JSON parser and every error message quote these spellings.
+    /// (The gRPC wire does not use them: since the typed
+    /// `TimeRangeSelection` operand, the selector rides as a proto enum.)
+    ///
+    /// [`Self::ByStart`] names its *kind* only — the `start_ms` payload
+    /// rides in a separate JSON field, so [`Self::from_string`] cannot
+    /// construct it and parsers of the full shape handle it themselves.
     pub fn as_str(&self) -> &'static str {
         match self {
             TimeRangeSelector::Newest => "newest",
             TimeRangeSelector::Oldest => "oldest",
+            TimeRangeSelector::ByStart { .. } => "byStart",
         }
     }
 
-    /// Parses the wire spelling. Returns `None` for anything but the exact
-    /// strings [`Self::as_str`] produces.
+    /// Parses the spelling of the payload-free selectors. Returns `None`
+    /// for anything else — including `"byStart"`, whose `start_ms` payload
+    /// a bare string cannot carry (see [`Self::as_str`]).
     pub fn from_string(value: &str) -> Option<Self> {
         match value {
             "newest" => Some(TimeRangeSelector::Newest),
@@ -787,11 +837,16 @@ impl ResolvedTimeRange {
 /// [`WhereClause`] on the bucketed source field, using the named grid's
 /// `timeRange` transform and an authoritative `block_time_ms`.
 ///
-/// The server supplies `block_time_ms` from current block time and the
-/// verifier re-derives it from the quorum-signed response metadata `time_ms`,
-/// so both produce the identical concrete equality query — the existing
-/// index/count proofs apply unchanged and the engine never needs a dedicated
-/// time-range operator.
+/// For the relative selectors the server supplies `block_time_ms` from
+/// current block time and the verifier re-derives it from the quorum-signed
+/// response metadata `time_ms`, so both produce the identical concrete
+/// equality query — the existing index/count proofs apply unchanged and the
+/// engine never needs a dedicated time-range operator. A
+/// [`TimeRangeSelector::ByStart`] selection reads its start from the query
+/// itself (validated to lie on the grid) and consults `block_time_ms` only
+/// to reject windows past a declared `ttl`'s horizon — a window that may be
+/// mid-drainage must not serve a truncated answer, and since drainage only
+/// touches expired buckets, every window this resolver admits is complete.
 ///
 /// `grid` selects among several time-range indexes on the same field: `None`
 /// is accepted only while exactly one grid buckets the field (the common
@@ -847,9 +902,9 @@ pub fn resolve_time_range_bucket_clause(
         None => {
             if grids.len() > 1 {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                    "field \"{}\" is bucketed by {} different grids; the IN_TIME_RANGE operand \
-                     must name one as [selector, range, step] or [selector, range, step, phase] \
-                     (seconds, as the contract declares them)",
+                    "field \"{}\" is bucketed by {} different grids; the IN_TIME_RANGE \
+                     selection must name one in its `grid` (range/step/phase, in seconds, \
+                     as the contract declares them)",
                     field,
                     grids.len()
                 ))));
@@ -861,6 +916,45 @@ pub fn resolve_time_range_bucket_clause(
     let bucket_start = match selector {
         TimeRangeSelector::Newest => transform.newest_active_start(block_time_ms),
         TimeRangeSelector::Oldest => transform.oldest_active_start(block_time_ms),
+        // Absolute selection: the start comes from the query itself, so the
+        // clock is consulted only for the TTL gate — prover and verifier
+        // agree by construction (the verifier passes the signed time_ms).
+        // Only grid membership is checked; an empty (or not-yet-started)
+        // window is a provable empty answer, not an invalid question.
+        TimeRangeSelector::ByStart { start_ms } => {
+            if !transform.is_bucket_start(start_ms) {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "byStart {} on \"{}\" is not a window start of the grid range={}s \
+                     step={}s phase={}s: starts are phase + k*step on the millisecond \
+                     timeline, and an off-grid start is rejected rather than snapped",
+                    start_ms,
+                    field,
+                    transform.range_seconds,
+                    transform.step_seconds,
+                    transform.phase_seconds
+                ))));
+            }
+            // TTL gate: an expired window may be mid-drainage, and a
+            // partially drained window would serve a truncated answer that
+            // looks authoritative. Drainage only ever touches expired
+            // buckets (same `bucket_expired` predicate), so everything on
+            // the queryable side of this gate is complete — and rejecting
+            // the question is deterministic where "whatever the drain has
+            // left" is not. The verifier resolves this clause with the
+            // quorum-signed response `time_ms`, so a node cannot serve an
+            // expired window's remnants past a verifying client.
+            if transform.bucket_expired(start_ms, block_time_ms) {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "byStart {} on \"{}\" is past the ttl horizon ({}s): expired windows \
+                     drain lazily and may be mid-removal, so they are not queryable — \
+                     entries under this index live at most `ttl` past their window's start",
+                    start_ms,
+                    field,
+                    transform.ttl_seconds.unwrap_or_default()
+                ))));
+            }
+            Some(start_ms)
+        }
     }
     .ok_or(Error::Query(QuerySyntaxError::Unsupported(format!(
         "no time range on \"{}\" is active yet: the block time predates the grid's phase \
@@ -1038,6 +1132,25 @@ pub struct DriveDocumentQuery<'a> {
     ///
     /// Empty for every raw query.
     pub resolved_time_ranges: Vec<ResolvedTimeRange>,
+    /// The composite sub-queries: queries whose `IN` clauses are derived
+    /// from this query's proven results (by-id joins, indexed lookups,
+    /// counts — see the [`composite_document_query`] module docs), listed
+    /// in binding order (a sub-query may only bind an earlier one) and
+    /// answered together with this query as ONE merged grovedb proof.
+    ///
+    /// Empty for an ordinary documents query, which is what every plain
+    /// entry point requires: a query carrying sub-queries is served by
+    /// `Drive::query_composite_documents` /
+    /// `query_composite_documents_with_proof` and verified by
+    /// `verify_composite_documents_proof`, and the plain
+    /// query/proof/verify surfaces refuse it rather than silently prove
+    /// the page alone.
+    ///
+    /// Never parsed from the wire: every `from_cbor` / `from_value` /
+    /// `from_typed_clauses` entry point leaves this empty; composite
+    /// requests are built programmatically (see
+    /// [`Self::with_sub_queries`]).
+    pub sub_queries: Vec<DriveSubQuery<'a>>,
 }
 
 impl<'a> DriveDocumentQuery<'a> {
@@ -1069,6 +1182,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         }
     }
 
@@ -1086,6 +1200,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included: true,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         }
     }
 
@@ -1107,7 +1222,71 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included: true,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         }
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Extends this query into a composite one: `self` becomes the page
+    /// and `sub_queries` are derived from its proven results — see
+    /// [`Self::sub_queries`] and the [`composite_document_query`] module
+    /// docs.
+    pub fn with_sub_queries(mut self, sub_queries: Vec<DriveSubQuery<'a>>) -> Self {
+        self.sub_queries = sub_queries;
+        self
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Appends a by-id join sub-query: `source_property`'s values, read
+    /// off this query's proven documents, become the `$id`s of
+    /// `document_type` documents fetched from the same contract. The
+    /// property must carry a `refersTo: permanentDocument` declaration
+    /// targeting `document_type`, so every derived id resolves.
+    ///
+    /// This is the one shape the chained surface
+    /// (`Drive::query_chained_documents`,
+    /// `verify_chained_documents_proof`) requires exactly one of, and one
+    /// of the composite sub-query shapes. A cross-contract by-id join
+    /// (composite only) is built by pushing a [`DriveSubQuery`] with the
+    /// target contract instead.
+    pub fn with_by_id_join(
+        mut self,
+        source_property: impl Into<String>,
+        document_type: DocumentTypeRef<'a>,
+    ) -> Self {
+        self.sub_queries.push(DriveSubQuery {
+            contract: self.contract,
+            document_type,
+            kind: SubQueryKind::Documents,
+            where_clauses: vec![],
+            order_by: vec![],
+            limit: None,
+            binding: Some(SubQueryBinding {
+                source: BindingSource::Page,
+                source_property: source_property.into(),
+                field: document::property_names::ID.to_string(),
+            }),
+        });
+        self
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Refuses a query carrying composite sub-queries on a plain
+    /// (page-only) surface, which would otherwise silently ignore them —
+    /// on the verify side that would mean reporting the composition
+    /// verified when only the page was.
+    pub(crate) fn ensure_no_sub_queries(&self, surface: &str) -> Result<(), Error> {
+        if self.sub_queries.is_empty() {
+            return Ok(());
+        }
+        Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "this query carries {} sub-queries, which {} would silently ignore; execute and \
+             verify it on the composite surface (query_composite_documents / \
+             verify_composite_documents_proof) or, for a single by-id join, the chained one \
+             (query_chained_documents / verify_chained_documents_proof)",
+            self.sub_queries.len(),
+            surface,
+        ))))
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -1334,6 +1513,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included,
             block_time_ms,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         })
     }
 
@@ -1481,6 +1661,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included,
             block_time_ms,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         })
     }
 
@@ -1646,6 +1827,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at_included,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         })
     }
 
@@ -1754,7 +1936,10 @@ impl<'a> DriveDocumentQuery<'a> {
         // addressed by document id, so a by-id query has no tree to land on.
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-            if self.document_type.index_only() && self.is_for_primary_key() {
+            if self.document_type.index_only()
+                && self.is_for_primary_key()
+                && !self.index_only_flat_scan_applies()
+            {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
                     "indexOnly documents cannot be fetched by id: there is no primary-key \
                      tree; query through one of the type's indexes"
@@ -1796,6 +1981,7 @@ impl<'a> DriveDocumentQuery<'a> {
             }
         }
 
+        let cursor_included = self.start_at_included || self.pads_cursor_page(platform_version);
         let (starts_at_document, start_at_path_query) = match &self.start_at {
             None => Ok((None, None)),
             Some(starts_at) => {
@@ -1845,7 +2031,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         self.document_type,
                         platform_version,
                     )?;
-                    Ok((Some((document, self.start_at_included)), Some(path_query)))
+                    Ok((Some((document, cursor_included)), Some(path_query)))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentPath(
                         "Holding paths should only have items",
@@ -1866,6 +2052,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 platform_version,
             )
         }?;
+        self.pad_cursor_page_limit(&mut main_path_query, platform_version)?;
         if !include_start_at_for_proof {
             return Ok(main_path_query);
         }
@@ -1884,23 +2071,73 @@ impl<'a> DriveDocumentQuery<'a> {
                 &platform_version.drive.grove_version,
             )
             .map_err(Error::from)?;
-            merged.query.limit = limit.map(|a| a.saturating_add(1));
-            // The merged root must be walked ascending regardless of the
-            // page's `orderBy` direction: the `limit + 1` above reserves
-            // one result slot for the cursor document, and the prover
-            // spends the budget in root traversal order. Ascending, the
-            // cursor branch (key `[0]`) is visited first and takes its
-            // reserved slot; descending, the index branch sorts first,
-            // consumes the whole budget mid-timeline, and the prover then
-            // omits the cursor subtree's lower layer — an unverifiable
-            // proof (the verifier extracts the cursor document from the
-            // proof before rebuilding the main query). Only this
-            // synthesized root flips: each input's own query lands intact
-            // inside a subquery branch, keeping in-branch result order.
-            // The verifier never rebuilds the merged query — it runs the
-            // cursor and main queries as separate subset queries — so the
-            // root's direction is not client-visible.
-            merged.query.query.left_to_right = true;
+            // Where the merge lands decides how the two queries combine. An
+            // index-ordered page lives under its index tree while the cursor
+            // lookup lives under the primary-key tree, so the merge synthesizes
+            // a root one level above both with each query in its own branch.
+            // A `$id`-ordered page addresses the primary-key tree directly: the
+            // cursor lookup shares that path (or, for a history-keeping type,
+            // sits one level below it), so the merge point is the page query's
+            // own root layer and the merged query IS that layer.
+            let cursor_on_page_layer = merged.path == main_path_query.path;
+            // The cursor's key on that shared layer: the cursor query's own key
+            // when both paths coincide, otherwise the path component the cursor
+            // query descends through.
+            let cursor_key_on_page_layer: Option<&[u8]> = if !cursor_on_page_layer {
+                None
+            } else if let Some(component) = start_at_path_query.path.get(merged.path.len()) {
+                Some(component.as_slice())
+            } else {
+                match start_at_path_query.query.query.items.as_slice() {
+                    [QueryItem::Key(cursor_key)] => Some(cursor_key.as_slice()),
+                    _ => None,
+                }
+            };
+            // On a shared layer the cursor row is already one of the page's
+            // rows whenever the page's own items cover it (an inclusive
+            // `startAt` on a range, or an `in` list that names the cursor). It
+            // then needs no reserved slot: reserving one would make the layer
+            // return `limit + 1` rows matching the page query, which the
+            // verifier rejects as more data than its limit.
+            let cursor_row_in_page = cursor_key_on_page_layer.is_some_and(|cursor_key| {
+                main_path_query
+                    .query
+                    .query
+                    .items
+                    .iter()
+                    .any(|item| item.contains(cursor_key))
+            });
+            merged.query.limit = limit.map(|a| {
+                if cursor_row_in_page {
+                    a
+                } else {
+                    a.saturating_add(1)
+                }
+            });
+            if !cursor_on_page_layer {
+                // A synthesized root must be walked ascending regardless of
+                // the page's `orderBy` direction: the `limit + 1` above
+                // reserves one result slot for the cursor document, and the
+                // prover spends the budget in root traversal order. Ascending,
+                // the cursor branch (key `[0]`) is visited first and takes its
+                // reserved slot; descending, the index branch sorts first,
+                // consumes the whole budget mid-timeline, and the prover then
+                // omits the cursor subtree's lower layer — an unverifiable
+                // proof (the verifier extracts the cursor document from the
+                // proof before rebuilding the main query). Only this
+                // synthesized root flips: each input's own query lands intact
+                // inside a subquery branch, keeping in-branch result order.
+                // The verifier never rebuilds the merged query — it runs the
+                // cursor and main queries as separate subset queries — so the
+                // root's direction is not client-visible.
+                //
+                // A shared layer has no synthesized root to flip: the merged
+                // query IS the page query's own layer, which the verifier
+                // walks in the requested direction, and the cursor row sits at
+                // the page's boundary, so the requested direction reaches it
+                // first anyway.
+                merged.query.query.left_to_right = true;
+            }
             Ok(merged)
         } else {
             Ok(main_path_query)
@@ -1919,7 +2156,10 @@ impl<'a> DriveDocumentQuery<'a> {
         // addressed by document id, so a by-id query has no tree to land on.
         {
             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-            if self.document_type.index_only() && self.is_for_primary_key() {
+            if self.document_type.index_only()
+                && self.is_for_primary_key()
+                && !self.index_only_flat_scan_applies()
+            {
                 return Err(Error::Query(QuerySyntaxError::Unsupported(
                     "indexOnly documents cannot be fetched by id: there is no primary-key \
                      tree; query through one of the type's indexes"
@@ -1959,9 +2199,10 @@ impl<'a> DriveDocumentQuery<'a> {
             }
         }
 
-        let starts_at_document = starts_at_document
-            .map(|starts_at_document| (starts_at_document, self.start_at_included));
-        if self.is_for_primary_key() {
+        let cursor_included = self.start_at_included || self.pads_cursor_page(platform_version);
+        let starts_at_document =
+            starts_at_document.map(|starts_at_document| (starts_at_document, cursor_included));
+        let mut path_query = if self.is_for_primary_key() {
             self.get_primary_key_path_query(
                 document_type_path,
                 starts_at_document,
@@ -1973,7 +2214,149 @@ impl<'a> DriveDocumentQuery<'a> {
                 starts_at_document,
                 platform_version,
             )
+        }?;
+        self.pad_cursor_page_limit(&mut path_query, platform_version)?;
+        Ok(path_query)
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Whether a `startAfter` cursor on this query is lowered as `startAt`
+    /// with one extra result slot, the cursor document then being dropped
+    /// from the page by [`Self::strip_cursor_from_page`].
+    ///
+    /// GroveDB charges a result slot for every visited subtree whose
+    /// subquery yields nothing, and the prover accounts the same way. A
+    /// lowering that visits the cursor's branch or index key looking for
+    /// rows *after* the cursor therefore pays that slot whenever nothing
+    /// follows, which is nearly every page on unique-valued data: pages
+    /// came back one row short, and a limit of one came back empty while
+    /// later rows remained. Keeping the cursor document in the walk keeps
+    /// every subtree on its path non-empty, and documents sharing its
+    /// index key continue by document id. The primary-key path has no
+    /// subtrees to charge and is left alone, as is the released (protocol
+    /// version 13) lowering.
+    pub fn pads_cursor_page(&self, platform_version: &PlatformVersion) -> bool {
+        use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+        self.start_at.is_some()
+            && !self.start_at_included
+            && !self.is_for_primary_key()
+            && !self.document_type.index_only()
+            && platform_version
+                .drive
+                .methods
+                .document
+                .query
+                .non_primary_key_path_query
+                >= 1
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Reserves the cursor document's slot on a padded `startAfter` page
+    /// (see [`Self::pads_cursor_page`]). A page offset is folded into the
+    /// fetch and applied by [`Self::strip_cursor_from_page`] once the
+    /// cursor document is gone: left to GroveDB, the offset would consume
+    /// the cursor row itself and the page would start one row early.
+    fn pad_cursor_page_limit(
+        &self,
+        path_query: &mut PathQuery,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        if !self.pads_cursor_page(platform_version) {
+            return Ok(());
         }
+        let offset = path_query.query.offset.take().unwrap_or(0);
+        if let Some(limit) = path_query.query.limit {
+            let padded = limit
+                .checked_add(1)
+                .and_then(|limit| limit.checked_add(offset))
+                .ok_or_else(|| {
+                    Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "limit {limit} and offset {offset} are too large together with a \
+                         startAfter cursor"
+                    )))
+                })?;
+            path_query.query.limit = Some(padded);
+        }
+        Ok(())
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    /// Drops the cursor document from a page produced by a padded
+    /// `startAfter` query (see [`Self::pads_cursor_page`]), applies the
+    /// query's offset, and trims the page back to the query's limit,
+    /// returning the page with the number of rows the offset skipped.
+    /// When the cursor document matches the query it is the page's first
+    /// row, since the lowering excludes everything ordered before it; a
+    /// cursor outside the query's clauses is simply absent and the trim
+    /// restores the limit.
+    pub(crate) fn strip_cursor_from_page(
+        &self,
+        mut serialized_documents: Vec<Vec<u8>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Vec<Vec<u8>>, u16), Error> {
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use dpp::document::DocumentV0Getters;
+        if !self.pads_cursor_page(platform_version) {
+            return Ok((serialized_documents, 0));
+        }
+        let Some(start_at) = self.start_at else {
+            return Ok((serialized_documents, 0));
+        };
+        if let Some(first) = serialized_documents.first() {
+            let document = Document::from_bytes(first, self.document_type, platform_version)?;
+            if document.id().to_buffer() == start_at {
+                serialized_documents.remove(0);
+            }
+        }
+        let skipped = (self.offset.unwrap_or(0) as usize).min(serialized_documents.len());
+        serialized_documents.drain(..skipped);
+        if let Some(limit) = self.limit {
+            serialized_documents.truncate(limit as usize);
+        }
+        Ok((serialized_documents, skipped as u16))
+    }
+
+    #[cfg(feature = "server")]
+    /// [`Self::strip_cursor_from_page`] over query result elements.
+    fn strip_cursor_from_elements(
+        &self,
+        mut elements: QueryResultElements,
+        platform_version: &PlatformVersion,
+    ) -> Result<(QueryResultElements, u16), Error> {
+        use dpp::document::DocumentV0Getters;
+        use grovedb::query_result_type::QueryResultElement;
+        if !self.pads_cursor_page(platform_version) {
+            return Ok((elements, 0));
+        }
+        let Some(start_at) = self.start_at else {
+            return Ok((elements, 0));
+        };
+        let first_element = match elements.elements.first() {
+            Some(QueryResultElement::ElementResultItem(element))
+            | Some(QueryResultElement::KeyElementPairResultItem((_, element)))
+            | Some(QueryResultElement::PathKeyElementTrioResultItem((_, _, element))) => {
+                Some(element)
+            }
+            None => None,
+        };
+        let first_is_cursor = match first_element {
+            Some(Element::Item(bytes, _)) => {
+                Document::from_bytes(bytes, self.document_type, platform_version)?
+                    .id()
+                    .to_buffer()
+                    == start_at
+            }
+            _ => false,
+        };
+        if first_is_cursor {
+            elements.elements.remove(0);
+        }
+        let skipped = (self.offset.unwrap_or(0) as usize).min(elements.elements.len());
+        elements.elements.drain(..skipped);
+        if let Some(limit) = self.limit {
+            elements.elements.truncate(limit as usize);
+        }
+        Ok((elements, skipped as u16))
     }
 
     #[cfg(any(feature = "server", feature = "verify"))]
@@ -2416,6 +2799,7 @@ impl<'a> DriveDocumentQuery<'a> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, u64), Error> {
+        self.ensure_no_sub_queries("execute_with_proof")?;
         let mut drive_operations = vec![];
         let items = self.execute_with_proof_internal(
             drive,
@@ -2472,6 +2856,7 @@ impl<'a> DriveDocumentQuery<'a> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<Vec<u8>>, u64), Error> {
+        self.ensure_no_sub_queries("execute_with_proof_only_get_elements")?;
         let mut drive_operations = vec![];
         let (root_hash, items) = self.execute_with_proof_only_get_elements_internal(
             drive,
@@ -2530,6 +2915,7 @@ impl<'a> DriveDocumentQuery<'a> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
+        self.ensure_no_sub_queries("execute_raw_results_no_proof")?;
         let mut drive_operations = vec![];
         let (items, skipped) = self.execute_raw_results_no_proof_internal(
             drive,
@@ -2581,7 +2967,12 @@ impl<'a> DriveDocumentQuery<'a> {
                 // the route (no primary-key tree; keyset pagination) — let
                 // them reach it instead of preempting with the coverage
                 // refusal below, which would misdescribe the problem.
-                if !self.is_for_primary_key() && self.start_at.is_none() {
+                // A clause-free flat scan is classified as a primary-key
+                // query, but still synthesizes an index projection and must
+                // pass the same coverage check as a filtered query.
+                if (!self.is_for_primary_key() || self.index_only_flat_scan_applies())
+                    && self.start_at.is_none()
+                {
                     let index = self.index_only_query_index(platform_version)?;
                     let covers_every_property = self
                         .document_type
@@ -2591,7 +2982,8 @@ impl<'a> DriveDocumentQuery<'a> {
                             !matches!(property.property_type, DocumentPropertyType::Object(_))
                         })
                         .all(|(name, _)| {
-                            index.terminal.as_deref() == Some(name.as_str())
+                            index.terminal_contains(name)
+                                || self.document_type.entry_payload().contains(name.as_str())
                                 || index
                                     .properties
                                     .iter()
@@ -2663,9 +3055,8 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             _ => {
                 let (data, skipped) = query_result?;
-                {
-                    Ok((data, skipped))
-                }
+                let (data, cursor_skipped) = self.strip_cursor_from_page(data, platform_version)?;
+                Ok((data, skipped.saturating_add(cursor_skipped)))
             }
         }
     }
@@ -2707,9 +3098,9 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             _ => {
                 let (data, skipped) = query_result?;
-                {
-                    Ok((data, skipped))
-                }
+                let (data, cursor_skipped) =
+                    self.strip_cursor_from_elements(data, platform_version)?;
+                Ok((data, skipped.saturating_add(cursor_skipped)))
             }
         }
     }
@@ -2791,7 +3182,6 @@ mod tests {
     use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::option::Option::None;
-    use tempfile::TempDir;
 
     use crate::drive::Drive;
     use crate::query::{
@@ -2804,7 +3194,7 @@ mod tests {
     use serde_json::Value::Null;
 
     use crate::config::DriveConfig;
-    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contracts::SystemDataContract;
@@ -2818,11 +3208,9 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     fn setup_family_contract() -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive(None);
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -2850,11 +3238,9 @@ mod tests {
     }
 
     fn setup_withdrawal_contract() -> (Drive, DataContract) {
-        let tmp_dir = TempDir::new().unwrap();
-
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive = setup_drive(None);
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -3159,6 +3545,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let path_query = query_asc
@@ -3550,6 +3937,7 @@ mod tests {
                 range_seconds: 21_600,
                 step_seconds: 7_200,
                 phase_seconds: 0,
+                ttl_seconds: None,
             },
         }];
         let equality = WhereClause {
@@ -3586,6 +3974,115 @@ mod tests {
 
         validate_resolved_time_range_clause_shapes(&[other], &resolved)
             .expect_err("a resolved field with no equality at all must be rejected");
+    }
+
+    /// The TTL horizon gate: an expired window may be mid-drainage, so
+    /// `byStart` must reject it rather than serve whatever the drain has
+    /// left. The boundary is the drain's own predicate — a window starting
+    /// exactly at the horizon is not yet expired and stays queryable — and
+    /// an index without a `ttl` keeps serving arbitrarily old windows.
+    #[test]
+    fn by_start_rejects_windows_past_the_ttl_horizon() {
+        use crate::query::{resolve_time_range_bucket_clause, TimeRangeSelector};
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+        use dpp::prelude::Identifier;
+
+        let factory =
+            DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+        let hour_ms: u64 = 3_600_000;
+        let build = |seed: u8, with_ttl: bool| {
+            let mut time_range = vec![
+                (
+                    Value::Text("on".to_string()),
+                    Value::Text("$createdAt".to_string()),
+                ),
+                (Value::Text("range".to_string()), Value::U64(7_200)),
+                (Value::Text("step".to_string()), Value::U64(7_200)),
+            ];
+            if with_ttl {
+                time_range.push((Value::Text("ttl".to_string()), Value::U64(14_400)));
+            }
+            let index_map = vec![
+                (
+                    Value::Text("name".to_string()),
+                    Value::Text("trending".to_string()),
+                ),
+                (
+                    Value::Text("properties".to_string()),
+                    Value::Array(vec![
+                        platform_value!({"$createdAt": "asc"}),
+                        platform_value!({"hashtag": "asc"}),
+                    ]),
+                ),
+                (Value::Text("timeRange".to_string()), Value::Map(time_range)),
+                (
+                    Value::Text("countable".to_string()),
+                    Value::Text("countable".to_string()),
+                ),
+            ];
+            let document_schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "hashtag": {"type": "string", "maxLength": 61, "position": 0},
+                },
+                "required": ["hashtag", "$createdAt"],
+                "indices": Value::Array(vec![Value::Map(index_map)]),
+                "additionalProperties": false,
+            });
+            factory
+                .create_with_value_config(
+                    Identifier::from([seed; 32]),
+                    0,
+                    platform_value!({ "post": document_schema }),
+                    None,
+                    None,
+                )
+                .expect("contract registers")
+                .data_contract_owned()
+        };
+
+        let ttl_contract = build(101, true);
+        let standing_contract = build(102, false);
+        let expired_start = 5_000 * hour_ms;
+        let block_time = expired_start + 6 * hour_ms;
+
+        let resolve = |contract: &DataContract, start_ms: u64| {
+            resolve_time_range_bucket_clause(
+                "$createdAt",
+                TimeRangeSelector::ByStart { start_ms },
+                None,
+                contract
+                    .document_type_for_name("post")
+                    .expect("document type"),
+                block_time,
+            )
+        };
+
+        let error = resolve(&ttl_contract, expired_start)
+            .expect_err("a window past the ttl horizon must be rejected, not served");
+        assert!(
+            error.to_string().contains("ttl horizon"),
+            "the rejection names the horizon: {error}"
+        );
+        resolve(&ttl_contract, expired_start + 2 * hour_ms).expect(
+            "a window starting exactly at the horizon is not expired — same \
+             strictly-below boundary the drain uses",
+        );
+        resolve(&ttl_contract, expired_start + 4 * hour_ms)
+            .expect("a live window resolves normally");
+        resolve_time_range_bucket_clause(
+            "$createdAt",
+            TimeRangeSelector::Newest,
+            None,
+            ttl_contract
+                .document_type_for_name("post")
+                .expect("document type"),
+            block_time,
+        )
+        .expect("relative selectors never address expired windows and stay unaffected");
+        resolve(&standing_contract, expired_start)
+            .expect("without a ttl, arbitrarily old windows stay queryable");
     }
 
     #[test]
@@ -3642,6 +4139,7 @@ mod tests {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         // Create a document that we are starting at, which may be missing 'transactionIndex'
@@ -3759,6 +4257,7 @@ mod tests {
                 start_at_included: false,
                 block_time_ms: None,
                 resolved_time_ranges: vec![],
+                sub_queries: vec![],
             }
         }
 

@@ -1,8 +1,10 @@
 use crate::consensus::basic::data_contract::DocumentTypesAreMissingError;
 use crate::consensus::basic::decode::DecodingError;
 use crate::consensus::basic::BasicError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
@@ -12,7 +14,16 @@ use crate::ProtocolError;
 
 // @append_only
 #[derive(
-    Error, Debug, PartialEq, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone,
+    Error,
+    Debug,
+    PartialEq,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    Encode,
+    Decode,
+    Clone,
+    DecodeUntrusted,
 )]
 pub enum DataContractError {
     #[error(transparent)]

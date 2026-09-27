@@ -295,3 +295,31 @@ mod shielded_pool_gating_tests {
         assert_eq!(stp13.cleanup_recent_block_storage_address_balances, Some(0));
     }
 }
+
+#[cfg(test)]
+mod token_math_gating_tests {
+    use super::*;
+
+    // The token-reward evaluator switches from platform-libm `f64` math (v0, architecture
+    // dependent on musl) to the pinned `libm` crate (v1) at v14. Both architectures must switch
+    // at the same height, so the gate is a token feature version, not a binary default.
+    #[test]
+    fn distribution_function_evaluate_deterministic_math_gated_to_v14() {
+        let v13 = PlatformVersion::get(13).expect("protocol version 13 must exist");
+        let v14 = PlatformVersion::get(14).expect("protocol version 14 must exist");
+        assert_eq!(
+            v13.dpp
+                .token_versions
+                .distribution_function_evaluate_version,
+            0,
+            "v13 must keep the legacy platform-libm evaluator so old blocks replay unchanged"
+        );
+        assert_eq!(
+            v14.dpp
+                .token_versions
+                .distribution_function_evaluate_version,
+            1,
+            "v14 must use the deterministic libm-crate evaluator"
+        );
+    }
+}

@@ -151,12 +151,26 @@ jobs:
           test -w /dev/kvm
           ls -l /dev/kvm
 
+      - name: Align Android emulator configuration paths
+        run: |
+          # android-emulator-runner puts AVD data in $HOME/.android/avd.
+          # An inherited user/emulator-home override can make avdmanager
+          # write the .ini elsewhere, leaving the emulator unable to find it.
+          mkdir -p "$HOME/.android/avd"
+          {
+            printf 'ANDROID_USER_HOME=%s/.android\n' "$HOME"
+            printf 'ANDROID_EMULATOR_HOME=%s/.android\n' "$HOME"
+            printf 'ANDROID_SDK_HOME=%s\n' "$HOME"
+          } >> "$GITHUB_ENV"
+
       - name: Run instrumented FFI smoke test (API 35 emulator)
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_6
+          # Avoid sharing the default "test" AVD with other jobs on this host.
+          avd-name: platform-${{ github.run_id }}-${{ github.run_attempt }}
           disable-animations: true
           emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none -dns-server 8.8.8.8,1.1.1.1
           working-directory: packages/kotlin-sdk
@@ -194,6 +208,15 @@ jobs:
             for attempt in 1 2 3; do adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard; adb shell input text 1234; adb shell input keyevent KEYCODE_ENTER; sleep 2; adb shell wm dismiss-keyguard; sleep 1; adb shell dumpsys trust | grep -q 'deviceLocked=0' && exit 0; done; echo "::error::Emulator is still locked (deviceLocked=1); Keystore-backed tests would fail spuriously."; adb shell dumpsys trust; exit 1
 
             ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
+
+      - name: Remove this run's emulator device
+        if: always()
+        env:
+          CI_AVD_NAME: platform-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          if [ -f "$HOME/.android/avd/$CI_AVD_NAME.ini" ]; then
+            avdmanager delete avd --name "$CI_AVD_NAME"
+          fi
 
       - name: Upload test reports on failure
         if: failure()

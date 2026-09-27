@@ -7,6 +7,7 @@ impl DocumentBaseTransitionV1Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(_) => None,
             DocumentBaseTransition::V1(v1) => v1.token_payment_info,
+            DocumentBaseTransition::V2(v2) => v2.token_payment_info,
         }
     }
 
@@ -14,6 +15,7 @@ impl DocumentBaseTransitionV1Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(_) => &None,
             DocumentBaseTransition::V1(v1) => v1.token_payment_info_ref(),
+            DocumentBaseTransition::V2(v2) => v2.token_payment_info_ref(),
         }
     }
 
@@ -21,6 +23,7 @@ impl DocumentBaseTransitionV1Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(_) => {}
             DocumentBaseTransition::V1(v1) => v1.set_token_payment_info(token_payment_info),
+            DocumentBaseTransition::V2(v2) => v2.set_token_payment_info(token_payment_info),
         }
     }
 
@@ -28,6 +31,7 @@ impl DocumentBaseTransitionV1Methods for DocumentBaseTransition {
         match self {
             DocumentBaseTransition::V0(_) => {}
             DocumentBaseTransition::V1(v1) => v1.clear_token_payment_info(),
+            DocumentBaseTransition::V2(v2) => v2.clear_token_payment_info(),
         }
     }
 }

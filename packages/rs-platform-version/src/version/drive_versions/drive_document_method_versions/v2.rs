@@ -1,8 +1,9 @@
 use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentDeleteMethodVersions, DriveDocumentEstimationCostsMethodVersions,
-    DriveDocumentIndexUniquenessMethodVersions, DriveDocumentInsertContestedMethodVersions,
-    DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
-    DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
+    DriveDocumentExpirationMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
+    DriveDocumentInsertContestedMethodVersions, DriveDocumentInsertMethodVersions,
+    DriveDocumentMethodVersions, DriveDocumentQueryMethodVersions,
+    DriveDocumentUpdateMethodVersions,
 };
 
 /// This was introduced in protocol v10 to deal with changes in queries for document uniqueness
@@ -11,6 +12,8 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
             query_documents: 0,
+            query_chained_documents: 0,
+            query_composite_documents: 0,
             query_contested_documents: 0,
             query_contested_documents_vote_state: 0,
             query_documents_with_flags: 0,
@@ -61,6 +64,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             add_contested_indices_for_contract_operations: 0,
             add_contested_reference_and_vote_subtree_to_document_operations: 0,
             add_contested_vote_subtree_for_non_identities_operations: 0,
+            fetch_charter_election_windows: None,
         },
         update: DriveDocumentUpdateMethodVersions {
             add_update_multiple_documents_operations: 0,
@@ -82,6 +86,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 1, // Changed
             validate_document_purchase_transition_action_uniqueness: 1, // Changed
             validate_document_update_price_transition_action_uniqueness: 1, // Changed
+            validate_restored_document_uniqueness: 0,
         },
         // FROZEN AT 0 for platform versions 10 and 11. Both protocol
         // versions select this table (`DRIVE_DOCUMENT_METHOD_VERSIONS_V2`)
@@ -116,4 +121,12 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
         // stop, so a future change to the v1 arm doesn't need to
         // re-prove v0 ≡ v1 for every pre-v12 corner case.
         primary_key_tree_type: 0,
+        expiration: DriveDocumentExpirationMethodVersions {
+            insert_documents_expirations_tree: 0,
+            add_document_expiration_operations: 0,
+            remove_document_expiration_operations: 0,
+            fetch_expired_documents: 0,
+            remove_expired_documents: 0,
+            add_estimation_costs_for_document_expiration: 0,
+        },
     };

@@ -943,7 +943,7 @@ mod tests {
     #[tokio::test]
     async fn extended_public_key_matches_wallet_derivation_for_dashpay_path() {
         use key_wallet::account::AccountType;
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -960,8 +960,7 @@ mod tests {
         .expect("DashPay receiving path");
 
         // Old route: resident-seed wallet from the same mnemonic.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -999,7 +998,7 @@ mod tests {
     /// this pins them equal.
     #[tokio::test]
     async fn ecdh_shared_secret_matches_wallet_derivation() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -1012,8 +1011,7 @@ mod tests {
 
         // Old route: resident-seed wallet from the same mnemonic → derive the
         // scalar at `path` → ECDH through the single crypto source.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -1053,7 +1051,7 @@ mod tests {
     /// this pins the signer route equal to `Wallet`'s and confirms the inverse.
     #[tokio::test]
     async fn account_reference_matches_wallet_derivation_and_round_trips() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -1065,8 +1063,7 @@ mod tests {
 
         // Old route: resident-seed wallet from the same mnemonic → derive the
         // scalar at `path` → mask through the single accountReference source.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -1117,7 +1114,7 @@ mod tests {
     /// so contactInfo the signer seals is readable by the reference clients.
     #[tokio::test]
     async fn contact_info_seal_open_round_trips_and_matches_wallet_derivation() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -1153,8 +1150,7 @@ mod tests {
         );
 
         // Parity: encToUserId equals a resident wallet's derive+encrypt.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)

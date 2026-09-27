@@ -232,7 +232,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // reserved machine marker a signer stamps at POSITION 0 of its own
         // rendering (`MnemonicResolverCoreSigner::NotFound` in production), so
         // key unavailability is recognized by that position-0 check — never a
-        // substring sniff (#4183 review) — and it must happen BEFORE the
+        // substring sniff — and it must happen BEFORE the
         // "signer rejected the digest at {path}: " context is prepended, which
         // would push the marker mid-string where no permitted check can see it.
         let (signature, public_key) = signer
@@ -641,8 +641,8 @@ mod tests {
 
     /// The marker only counts at position 0 of the signer's rendering: a
     /// mid-string mention stays `MessageSigningFailed`, never key-unavailable —
-    /// promoting it would be the substring sniff #4183's review rejected, and
-    /// would misroute a generic failure into the host's key repair.
+    /// promoting it would be a substring sniff, and would misroute a generic
+    /// failure into the host's key repair.
     #[tokio::test]
     async fn mid_string_marker_is_not_promoted_during_message_signing() {
         let (wm, wallet_id, _, address) =

@@ -36,6 +36,7 @@ import org.dashfoundation.example.navigation.TokenActionPermissions
 import org.dashfoundation.example.services.tokens.ChangeControlRules
 import org.dashfoundation.example.services.tokens.TokenAmounts
 import org.dashfoundation.example.services.tokens.TokenDistributionChangeRules
+import org.dashfoundation.example.services.tokens.TokenOncePerIdentityDistribution
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.util.Base58
@@ -187,6 +188,7 @@ fun TokenDetailsScreen(tokenIdHex: String, navController: NavHostController) {
 
             if (current.perpetualDistribution != null ||
                 current.preProgrammedDistribution != null ||
+                current.oncePerIdentityDistribution != null ||
                 current.newTokensDestinationIdentity != null
             ) {
                 FormSection(title = "Distribution") {
@@ -197,6 +199,12 @@ fun TokenDetailsScreen(tokenIdHex: String, navController: NavHostController) {
                     LabeledContent(
                         "Pre-programmed",
                         if (current.preProgrammedDistribution != null) "Configured" else "None",
+                    )
+                    LabeledContent(
+                        "Once per identity",
+                        TokenOncePerIdentityDistribution.parse(current.oncePerIdentityDistribution)
+                            ?.let { "${TokenAmounts.format(it.amount, current.decimals)} per identity" }
+                            ?: "None",
                     )
                     current.newTokensDestinationIdentity?.let {
                         LabeledContent(

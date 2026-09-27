@@ -7,7 +7,6 @@ use dpp::prefunded_specialized_balance::PrefundedSpecializedBalanceIdentifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use dpp::state_transition::StateTransitionEstimatedFeeValidation;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::types::execution_operation::ValidationOperation;
@@ -64,14 +63,20 @@ impl MasternodeVoteTransitionBalanceValidationV0 for MasternodeVoteTransition {
             ));
         };
 
-        let required_fee = self.calculate_min_required_fee(platform_version)?;
+        // What executing the vote deducts from the fund. Until 4.2 the vote's minimum fee was
+        // required here instead, a smaller amount, so a fund between the two passed this check
+        // and the vote failed inside execution.
+        let single_vote_cost = platform_version
+            .fee_version
+            .vote_resolution_fund_fees
+            .contested_document_single_vote_cost;
 
-        if balance < required_fee {
+        if balance < single_vote_cost {
             return Ok(ConsensusValidationResult::new_with_error(
                 PrefundedSpecializedBalanceInsufficientError::new(
                     balance_id,
                     balance,
-                    required_fee,
+                    single_vote_cost,
                 )
                 .into(),
             ));

@@ -1,4 +1,4 @@
-use crate::VersionAttributes;
+use crate::{DecodeTrust, TrustNames, VersionAttributes};
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::quote;
@@ -15,10 +15,29 @@ pub(super) fn derive_platform_deserialize_struct(
     let VersionAttributes {
         crate_name,
         unversioned,
+        trust,
         platform_serialize_limit,
         platform_serialize_into,
         ..
     } = version_attributes;
+
+    let TrustNames {
+        decode_from_slice,
+        deserializable,
+        deserialize_with_bytes_len,
+        deserialize_no_limit_with_bytes_len,
+        from_versioned_structure,
+        versioned_deserialize,
+        limit_from_versioned_structure,
+        versioned_limit_deserialize,
+    } = trust.names();
+
+    if !unversioned && trust == DecodeTrust::Untrusted {
+        panic!(
+            "PlatformDeserializeUntrusted needs `platform_serialize(unversioned)`: a versioned \
+             structure decodes through PlatformVersionedDecode, which has no untrusted form"
+        );
+    }
 
     // Extract the generics.
     let generics = &input.generics;
@@ -51,49 +70,55 @@ pub(super) fn derive_platform_deserialize_struct(
         )
     };
 
-    let deserialize_into = match platform_serialize_into {
+    // Every body yields the value together with the number of bytes it took.
+    let decode_with_len = match platform_serialize_into {
         Some(inner) => quote! {
             #config
-            let inner: #inner = bincode::decode_from_slice(bytes, config).map(|(a, _)| a)?;
-            Ok(inner.into())
+            let (inner, consumed): (#inner, usize) = #decode_from_slice(bytes, config)?;
+            Ok((inner.into(), consumed))
         },
         None => {
             if !unversioned {
                 quote! {
                     #config
-                    platform_serialization::platform_versioned_decode_from_slice(&bytes, config, platform_version).map(|(a, _)| a)#limit_err
+                    platform_serialization::platform_versioned_decode_from_slice(&bytes, config, platform_version)#limit_err
                 }
             } else {
                 quote! {
                     #config
-                        bincode::decode_from_slice(bytes, config).map(|(a,_)| a)
-                        #limit_err
+                    #decode_from_slice(bytes, config)#limit_err
                 }
             }
         }
     };
 
+    // The versioned entry points hand back the value alone.
+    let decode = quote! {
+        { #decode_with_len }.map(|(value, _)| value)
+    };
+
     // if we have passthrough or untagged we can't decode directly
 
-    let bincode_decode_body: proc_macro2::TokenStream =
+    // Only the trusted derive emits the ordinary `PlatformVersionedDecode` body,
+    // so a type deriving both trust levels gets it exactly once.
+    let bincode_decode_body: proc_macro2::TokenStream = if trust == DecodeTrust::Trusted {
         crate::derive_bincode::derive_decode_inner(token_stream_input.clone())
             .unwrap_or_else(|e| e.into_token_stream())
-            .into();
-
-    // let bincode_decode_body = quote! {
-    //         #bincode_decode_body
-    //     };
+            .into()
+    } else {
+        quote! {}
+    };
 
     let expanded = if unversioned {
         quote! {
-            impl #impl_generics #crate_name::serialization::PlatformDeserializable for #name #ty_generics #where_clause
+            impl #impl_generics #crate_name::serialization::#deserializable for #name #ty_generics #where_clause
             {
-                fn deserialize_from_bytes(bytes: &[u8]) -> Result<Self, #error_type> {
-                    #deserialize_into
+                fn #deserialize_with_bytes_len(bytes: &[u8]) -> Result<(Self, usize), #error_type> {
+                    #decode_with_len
                 }
 
-                fn deserialize_from_bytes_no_limit(bytes: &[u8]) -> Result<Self, #error_type> {
-                    #deserialize_into
+                fn #deserialize_no_limit_with_bytes_len(bytes: &[u8]) -> Result<(Self, usize), #error_type> {
+                    #decode_with_len
                 }
             }
 
@@ -101,17 +126,17 @@ pub(super) fn derive_platform_deserialize_struct(
         }
     } else {
         quote! {
-            impl #impl_generics #crate_name::serialization::PlatformDeserializableFromVersionedStructure for #name #ty_generics #where_clause
+            impl #impl_generics #crate_name::serialization::#from_versioned_structure for #name #ty_generics #where_clause
             {
-                fn versioned_deserialize(bytes: &[u8], platform_version: &#crate_name::version::PlatformVersion) -> Result<Self, #error_type> {
-                    #deserialize_into
+                fn #versioned_deserialize(bytes: &[u8], platform_version: &#crate_name::version::PlatformVersion) -> Result<Self, #error_type> {
+                    #decode
                 }
             }
-            impl #impl_generics #crate_name::serialization::PlatformLimitDeserializableFromVersionedStructure for #name #ty_generics #where_clause
+            impl #impl_generics #crate_name::serialization::#limit_from_versioned_structure for #name #ty_generics #where_clause
             {
 
-                fn versioned_limit_deserialize(bytes: &[u8], platform_version: &#crate_name::version::PlatformVersion) -> Result<Self, #error_type> {
-                    #deserialize_into
+                fn #versioned_limit_deserialize(bytes: &[u8], platform_version: &#crate_name::version::PlatformVersion) -> Result<Self, #error_type> {
+                    #decode
                 }
             }
 

@@ -9,6 +9,27 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use tenderdash_abci::proto::abci::ResponsePrepareProposal;
 
+/// What our own `PrepareProposal` left behind for a later `ProcessProposal` to answer from.
+///
+/// Tenderdash computes the block hash only once `PrepareProposal` has returned, so the context
+/// left behind carries no block hash and `ProcessProposal` has to recognise the prepared block
+/// by the inputs it executed instead. Most of those are kept elsewhere already — height, round,
+/// block time, proposer and core chain locked height in the block state info, the transactions
+/// and the core chain lock update in the response — and the two below are the ones nothing else
+/// retains.
+#[derive(Debug, Clone)]
+pub struct ProposerResults {
+    /// The response `PrepareProposal` returned, replayed verbatim when the block coming back
+    /// through `ProcessProposal` is the one that was prepared.
+    pub response: ResponsePrepareProposal,
+    /// The app version this node voted for in the block it prepared.
+    /// `update_validator_proposed_app_version` writes it to state, so it moves the app hash.
+    pub proposed_app_version: u64,
+    /// The quorum the prepared block's unsigned withdrawal transactions were built against,
+    /// and which is asked to sign them on extend vote.
+    pub validator_set_quorum_hash: [u8; 32],
+}
+
 /// V0 of the Block execution context
 #[derive(Debug, Clone)]
 pub struct BlockExecutionContextV0 {
@@ -22,8 +43,8 @@ pub struct BlockExecutionContextV0 {
     pub block_address_balance_changes: BTreeMap<PlatformAddress, Credits>,
     /// Block state
     pub block_platform_state: PlatformState,
-    /// The response prepare proposal if proposed by us
-    pub proposer_results: Option<ResponsePrepareProposal>,
+    /// The prepare proposal results if proposed by us
+    pub proposer_results: Option<ProposerResults>,
 }
 /// A trait defining getter methods for interacting with a BlockExecutionContextV0.
 pub trait BlockExecutionContextV0Getters {
@@ -40,7 +61,7 @@ pub trait BlockExecutionContextV0Getters {
     fn block_platform_state(&self) -> &PlatformState;
 
     /// Returns a reference of the proposer_results field.
-    fn proposer_results(&self) -> Option<&ResponsePrepareProposal>;
+    fn proposer_results(&self) -> Option<&ProposerResults>;
 }
 
 /// A trait defining setter methods for interacting with a BlockExecutionContextV0.
@@ -58,7 +79,7 @@ pub trait BlockExecutionContextV0Setters {
     fn set_block_platform_state(&mut self, state: PlatformState);
 
     /// Sets the proposer_results field.
-    fn set_proposer_results(&mut self, results: Option<ResponsePrepareProposal>);
+    fn set_proposer_results(&mut self, results: Option<ProposerResults>);
 }
 
 /// A trait defining methods for interacting with a BlockExecutionContextV0.
@@ -73,7 +94,7 @@ pub trait BlockExecutionContextV0MutableGetters {
     fn block_platform_state_mut(&mut self) -> &mut PlatformState;
 
     /// Returns a mutable reference to the proposer_results field.
-    fn proposer_results_mut(&mut self) -> Option<&mut ResponsePrepareProposal>;
+    fn proposer_results_mut(&mut self) -> Option<&mut ProposerResults>;
 
     /// Returns a mut reference of the withdrawal_transactions field.
     fn unsigned_withdrawal_transactions_mut(&mut self) -> &mut UnsignedWithdrawalTxs;
@@ -91,7 +112,7 @@ pub trait BlockExecutionContextV0OwnedGetters {
     fn block_platform_state_owned(self) -> PlatformState;
 
     /// Consumes the BlockExecutionContextV0 and returns the proposer_results field.
-    fn proposer_results_owned(self) -> Option<ResponsePrepareProposal>;
+    fn proposer_results_owned(self) -> Option<ProposerResults>;
 }
 
 impl BlockExecutionContextV0Getters for BlockExecutionContextV0 {
@@ -116,7 +137,7 @@ impl BlockExecutionContextV0Getters for BlockExecutionContextV0 {
     }
 
     /// Returns a reference to the proposer_results field.
-    fn proposer_results(&self) -> Option<&ResponsePrepareProposal> {
+    fn proposer_results(&self) -> Option<&ProposerResults> {
         self.proposer_results.as_ref()
     }
 }
@@ -139,7 +160,7 @@ impl BlockExecutionContextV0Setters for BlockExecutionContextV0 {
         self.block_platform_state = state;
     }
     /// Sets the proposer_results field.
-    fn set_proposer_results(&mut self, results: Option<ResponsePrepareProposal>) {
+    fn set_proposer_results(&mut self, results: Option<ProposerResults>) {
         self.proposer_results = results;
     }
 }
@@ -161,7 +182,7 @@ impl BlockExecutionContextV0MutableGetters for BlockExecutionContextV0 {
     }
 
     /// Returns a mutable reference to the proposer_results field.
-    fn proposer_results_mut(&mut self) -> Option<&mut ResponsePrepareProposal> {
+    fn proposer_results_mut(&mut self) -> Option<&mut ProposerResults> {
         self.proposer_results.as_mut()
     }
 
@@ -186,8 +207,8 @@ impl BlockExecutionContextV0OwnedGetters for BlockExecutionContextV0 {
         self.block_platform_state
     }
 
-    /// Consumes the object and returns the owned `ResponsePrepareProposal`.
-    fn proposer_results_owned(self) -> Option<ResponsePrepareProposal> {
+    /// Consumes the object and returns the owned `ProposerResults`.
+    fn proposer_results_owned(self) -> Option<ProposerResults> {
         self.proposer_results
     }
 }

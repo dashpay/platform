@@ -1,18 +1,63 @@
+import CoreData
 import Foundation
+import Dispatch
 import SwiftData
 
 /// Factory for creating SwiftData model containers for Dash Platform persistence
 public enum DashModelContainer {
-    /// Every registered schema version's model list, parameterised on the
-    /// one model whose shape differs between versions.
-    ///
-    /// Ordering is load-bearing only in the sense that it must not need to
-    /// change: keeping `assetLock` in the slot the live `PersistentAssetLock`
-    /// occupied means a frozen version's list is positionally identical to
-    /// what that version shipped.
-    private static func allModelTypes(
+    /// Accepted V1 graph. Every registered type stays frozen: relationship
+    /// destinations can otherwise rebind by entity name to a changed live type.
+    private static func frozenModelGraph(
         assetLock: any PersistentModel.Type
     ) -> [any PersistentModel.Type] {
+        [
+            DashSchemaV1.PersistentIdentity.self,
+            DashSchemaV1.PersistentDPNSName.self,
+            DashSchemaV1.PersistentDashpayProfile.self,
+            DashSchemaV1.PersistentDashpayContactProfile.self,
+            DashSchemaV1.PersistentDashpayContactRequest.self,
+            DashSchemaV1.PersistentDashpayPayment.self,
+            DashSchemaV1.PersistentDashpayIgnoredSender.self,
+            DashSchemaV1.PersistentDocument.self,
+            DashSchemaV1.PersistentDataContract.self,
+            DashSchemaV1.PersistentPublicKey.self,
+            DashSchemaV1.PersistentTokenBalance.self,
+            DashSchemaV1.PersistentKeyword.self,
+            DashSchemaV1.PersistentToken.self,
+            DashSchemaV1.PersistentDocumentType.self,
+            DashSchemaV1.PersistentIndex.self,
+            DashSchemaV1.PersistentProperty.self,
+            DashSchemaV1.PersistentTokenHistoryEvent.self,
+            DashSchemaV1.PersistentPlatformAddress.self,
+            DashSchemaV1.PersistentPlatformAddressesSyncState.self,
+            DashSchemaV1.PersistentWallet.self,
+            DashSchemaV1.PersistentAccount.self,
+            DashSchemaV1.PersistentCoreAddress.self,
+            DashSchemaV1.PersistentTransaction.self,
+            DashSchemaV1.PersistentTxo.self,
+            DashSchemaV1.PersistentPendingInput.self,
+            DashSchemaV1.PersistentWalletManagerMetadata.self,
+            DashSchemaV1.PersistentShieldedNote.self,
+            DashSchemaV1.PersistentShieldedOutgoingNote.self,
+            DashSchemaV1.PersistentShieldedSyncState.self,
+            DashSchemaV1.PersistentShieldedActivity.self,
+            DashSchemaV1.PersistentShieldedViewingKey.self,
+            assetLock,
+            DashSchemaV1.PersistentInvitation.self,
+            DashSchemaV1.PersistentMasternode.self
+        ]
+    }
+
+    /// The exact model set registered as schema V1. Keep frozen: staged
+    /// migration identifies an existing store by this schema's checksum.
+    fileprivate static var v1ModelTypes: [any PersistentModel.Type] {
+        frozenModelGraph(assetLock: DashSchemaV1.PersistentAssetLock.self)
+    }
+
+    /// Live models for the next App Store schema. A release snapshot does not
+    /// replace these types until a subsequent shape change introduces a new live
+    /// version; callers must continue fetching the top-level model types.
+    public static var modelTypes: [any PersistentModel.Type] {
         [
             PersistentIdentity.self,
             PersistentDPNSName.self,
@@ -45,33 +90,12 @@ public enum DashModelContainer {
             PersistentShieldedSyncState.self,
             PersistentShieldedActivity.self,
             PersistentShieldedViewingKey.self,
-            assetLock,
+            PersistentAssetLock.self,
             PersistentInvitation.self,
-            PersistentMasternode.self
+            PersistentMasternode.self,
+            PersistentTrackedMasternode.self,
+            PersistentIdentityBalanceMetadata.self
         ]
-    }
-
-    /// The exact model set registered as schema V1. Keep frozen: staged
-    /// migration identifies an existing store by this schema's checksum, so
-    /// this list may only reference models whose shape is frozen (see
-    /// `DashSchemaFrozenModels.swift`).
-    fileprivate static var v1ModelTypes: [any PersistentModel.Type] {
-        allModelTypes(assetLock: DashSchemaV1.PersistentAssetLock.self)
-    }
-
-    /// The exact model set registered as schema V2 — V1 plus
-    /// `PersistentTrackedMasternode`. Frozen for the same reason as
-    /// `v1ModelTypes`.
-    fileprivate static var v2ModelTypes: [any PersistentModel.Type] {
-        v1ModelTypes + [PersistentTrackedMasternode.self]
-    }
-
-    /// All persistent model types in the current Dash SDK schema (V3).
-    /// Unlike `v1ModelTypes` / `v2ModelTypes` this list tracks the LIVE
-    /// models, so it moves whenever a model gains a property — which is
-    /// exactly why the released versions above must not.
-    public static var modelTypes: [any PersistentModel.Type] {
-        allModelTypes(assetLock: PersistentAssetLock.self) + [PersistentTrackedMasternode.self]
     }
 
     /// Create the schema for all Dash Platform models
@@ -79,7 +103,12 @@ public enum DashModelContainer {
         Schema(versionedSchema: DashSchemaV3.self)
     }
 
-    /// Create a persistent model container for storing data
+    /// Create a persistent model container for storing data.
+    /// This synchronous call can copy and migrate a full database and block for
+    /// seconds. Do not call it on a UI actor. Apps with an explicit local URL
+    /// can use `createAsync(url:)` to open on the SDK's dedicated queue.
+    /// The legacy compatibility bridge is local-only; CloudKit uses the normal
+    /// migration plan because copying SQLite cannot preserve its sync state.
     /// - Parameters:
     ///   - cloudKit: Whether to enable CloudKit sync (default: disabled)
     ///   - groupContainer: App group container configuration
@@ -95,14 +124,153 @@ public enum DashModelContainer {
             groupContainer: groupContainer,
             cloudKitDatabase: cloudKit ? .automatic : .none
         )
+        return try makeContainer(configuration: modelConfiguration, bridgeLegacyStore: !cloudKit)
+    }
 
-        // Always wire the migration plan so stores created by an older SDK
-        // advance through the registered versioned schemas.
-        return try ModelContainer(
-            for: schema,
-            migrationPlan: DashMigrationPlan.self,
-            configurations: [modelConfiguration]
+    /// Open (or create) the store at an explicit file URL through the same
+    /// schema and migration plan as `create(cloudKit:groupContainer:)`. The
+    /// migration tests use it to open stores written by older builds exactly
+    /// the way the app would. This synchronous call can block for seconds;
+    /// use `createAsync(url:)` on startup or from a UI actor.
+    public static func create(url: URL) throws -> ModelContainer {
+        let modelConfiguration = ModelConfiguration(
+            schema: schema,
+            url: url,
+            allowsSave: true,
+            cloudKitDatabase: .none
         )
+        return try makeContainer(configuration: modelConfiguration)
+    }
+
+    private static let storeOpenQueue = DispatchQueue(
+        label: "org.dash.swift-sdk.store-open", qos: .userInitiated)
+
+    /// Open and migrate a local store without blocking the caller's actor.
+    /// Only the Sendable container crosses the queue; create/use contexts on
+    /// their owning actor after this returns. Callers sharing a URL should
+    /// coalesce in-flight opens and retain one container for that store.
+    public static func createAsync(url: URL) async throws -> ModelContainer {
+        try await withCheckedThrowingContinuation { continuation in
+            storeOpenQueue.async {
+                do {
+                    let container = try autoreleasepool { try create(url: url) }
+                    continuation.resume(returning: container)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// The one place a persistent container is built: the live schema is
+    /// constructed first (`schema`), and the container then runs the
+    /// migration plan over it. That order is what the frozen versions are
+    /// tested against, because it is the order under which a mixed
+    /// live/frozen graph would rebind a released version's entities.
+    private static func makeContainer(
+        configuration: ModelConfiguration,
+        bridgeLegacyStore: Bool = true
+    ) throws -> ModelContainer {
+        SDKLogger.event("store_open_started", category: .persistence,
+                        fields: ["target_version": .publicText("3.0.0")])
+        do {
+            let container: ModelContainer
+            if bridgeLegacyStore {
+                container = try DashLegacySchemaBridge.open(
+                    configuration: configuration, schema: schema, plan: DashMigrationPlan.self)
+            } else {
+                container = try ModelContainer(
+                    for: schema,
+                    migrationPlan: try migrationPlan(at: configuration.url, defaultPlan: DashMigrationPlan.self),
+                    configurations: [configuration])
+            }
+            SDKLogger.event("store_open_succeeded", category: .persistence,
+                            fields: ["target_version": .publicText("3.0.0")])
+            return container
+        } catch {
+            logMigrationFailure(error)
+            throw error
+        }
+    }
+
+    /// Error descriptions/userInfo can include rows, URLs and other private
+    /// values. Record only a known system domain (or the error's type) and code.
+    private static func logMigrationFailure(_ error: Error) {
+        let nsError = error as NSError
+        let systemDomains: Set<String> = [NSCocoaErrorDomain, NSPOSIXErrorDomain, NSOSStatusErrorDomain, "NSSQLiteErrorDomain"]
+        let domain = systemDomains.contains(nsError.domain) ? nsError.domain : String(reflecting: type(of: error))
+        SDKLogger.event("store_open_failed", category: .persistence, severity: .error,
+                        fields: ["error_domain": .publicText(domain), "error_code": .integer(Int64(nsError.code)),
+                                 "target_version": .publicText("3.0.0")])
+    }
+
+    /// Select by the complete stored model identity, after journal recovery.
+    /// Accepted V1 contains fields absent from the real historical V2; sending
+    /// it through V2 would delete those values before V3 adds the fields again.
+    /// `identity` resolves a schema's stored identity; tests inject a failing
+    /// probe to pin which routes may depend on it. Only labels whose route is
+    /// undecidable without it (1.0.0, 2.0.0) consult the probe at all.
+    static func migrationPlan(
+        at url: URL, defaultPlan: any SchemaMigrationPlan.Type,
+        identity: (any VersionedSchema.Type) throws -> DashLegacySchemaBridge.Identity
+            = DashLegacySchemaBridge.identity(for:)
+    ) throws -> any SchemaMigrationPlan.Type {
+        guard ObjectIdentifier(defaultPlan) == ObjectIdentifier(DashMigrationPlan.self) else { return defaultPlan }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            SDKLogger.event("store_migration_route", category: .persistence, fields: [
+                "route": .publicText("new-store"), "target_version": .publicText("3.0.0")])
+            return defaultPlan
+        }
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url)
+        let versions = metadata[NSStoreModelVersionIdentifiersKey] as? [String]
+        let hashes = metadata[NSStoreModelVersionHashesKey] as? [String: Data]
+        let checksum = metadata["NSStoreModelVersionChecksumKey"] as? String
+        // Only validated schema metadata is public diagnostic material. Never
+        // log arbitrary strings from malformed store metadata or any store path.
+        let safeVersions = versions.flatMap { values -> String? in
+            guard !values.isEmpty, values.count <= 4,
+                  values.allSatisfy({ $0.count <= 32 && $0.range(of: #"^\d+\.\d+\.\d+$"#, options: .regularExpression) != nil }) else { return nil }
+            return values.joined(separator: ",")
+        } ?? "unavailable"
+        let safeChecksum = checksum.flatMap { Data(base64Encoded: $0)?.count == 32 ? $0 : nil } ?? "unavailable"
+        func logRoute(_ route: String) {
+            SDKLogger.event("store_migration_route", category: .persistence, fields: [
+                "source_version": .publicText(safeVersions), "source_checksum": .publicText(safeChecksum),
+                "route": .publicText(route), "target_version": .publicText("3.0.0")])
+        }
+        func matches(_ type: any VersionedSchema.Type) throws -> Bool {
+            let expected = try identity(type)
+            return hashes == expected.hashes && (checksum == nil || checksum == expected.checksum)
+        }
+        // A 1.0.0 label alone cannot choose between the accepted-V1 route and
+        // the legacy bridge, and the default plan has no V1 stage, so a failed
+        // probe stays fatal here: the open fails with the probe's own error
+        // instead of an inapplicable plan, and the store is untouched.
+        if versions == ["1.0.0"], try matches(DashSchemaV1.self) {
+            logRoute("accepted-v1-to-v3")
+            return DashAcceptedV1MigrationPlan.self
+        }
+        if versions == ["2.0.0"] {
+            // The immediately preceding candidate used the current graph with
+            // a V2 label. Accept its exact shape, never arbitrary beta V2 data.
+            // A probe failure is equally undecidable and refuses the same way.
+            let historical = try matches(DashSchemaV2.self)
+            let previousCurrent = try !historical && matches(DashSchemaV3.self)
+            guard historical || previousCurrent else {
+                logRoute("unsupported-v2")
+                throw DashLegacyStoreSQLite.Failure.unsupported(
+                    "The database identifies itself as schema 2.0.0 but its model does not match the supported historical or current schema. The original database has not been replaced. Contact support; do not delete the app.")
+            }
+            logRoute(historical ? "historical-v2-to-v3" : "previous-live-v2-current-shape")
+        } else if versions == ["3.0.0"] {
+            // Same plan either way. Opening a current store must neither wait
+            // on nor fail with a schema probe that could only refine this line;
+            // `source_checksum` above already identifies the exact graph.
+            logRoute("labelled-current-v3")
+        } else {
+            logRoute("ordinary-current-plan")
+        }
+        return defaultPlan
     }
 
     /// Create an in-memory model container for testing
@@ -112,151 +280,42 @@ public enum DashModelContainer {
             schema: schema,
             isStoredInMemoryOnly: true
         )
-
-        return try ModelContainer(
-            for: schema,
-            migrationPlan: DashMigrationPlan.self,
-            configurations: [modelConfiguration]
-        )
+        return try makeContainer(configuration: modelConfiguration)
     }
 }
 
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self, DashSchemaV2.self, DashSchemaV3.self]
+        [DashSchemaV2.self, DashSchemaV3.self]
     }
 
     public static var stages: [MigrationStage] {
         [
-            .lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV2.self),
             .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self)
         ]
     }
 }
 
-/// Version 1 of the Dash Platform schema
-/// Includes `PersistentCoreAddress` to match the example app's former container schema.
-/// The model is additive with optional relationships, so existing narrower stores can
-/// use SwiftData's lightweight migration path.
+/// Separate compatibility route: V1 has fields missing from historical V2.
+/// Never insert V2 between this baseline and the current schema.
+enum DashAcceptedV1MigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self] }
+    static var stages: [MigrationStage] {
+        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self)]
+    }
+}
+
+/// The accepted historical baseline, pinned by the unchanged generated V1
+/// models and `Fixtures/SchemaStores/dash-v1.store`. Preserve those definitions
+/// and fixture bytes when introducing later schema versions.
 ///
-/// Note: this V1 identifier has accumulated several destructive
-/// dev-only changes that cannot be expressed via the lightweight
-/// migration path:
-///   - `PersistentTransaction.txid` and the renamed
-///     `PersistentTxo.outpoint` switched from `String` to raw `Data`
-///     (unique-attribute retype).
-///   - The `PersistentUtxo` model was renamed to `PersistentTxo`,
-///     gained `walletId` + `spendingTransaction`, and the schema
-///     topology shifted: `PersistentTransaction` lost both
-///     `walletId` and `account` and now hangs on transactions purely
-///     through the `outputs` / `inputs` TXO relationships.
-///   - `PersistentAccount.outputs` (the cascade-owned
-///     `[PersistentTxo]` collection paired with
-///     `PersistentTxo.account`) was removed. Per-account TXOs are
-///     now derived through `coreAddresses.flatMap(\.txos)` —
-///     `PersistentTxo.account` survives as a one-way fallback
-///     pointer with no inverse. Removing the inverse changes the
-///     relationship topology for the underlying SQLite store, so
-///     existing dev stores can't be opened with the new schema.
-///   - `PersistentAccount.wallet` was tightened from
-///     `PersistentWallet?` to non-optional `PersistentWallet`. Every
-///     account currently belongs to a wallet; the type system now
-///     reflects that invariant. Switching the optionality of a
-///     relationship column rewrites the SQLite schema, so existing
-///     dev stores can't be reused.
-///   - `PersistentWallet.isWatchOnly` and
-///     `PersistentAccount.isWatchOnly` were removed. The runtime
-///     watch-only state lives on the native `Wallet` /
-///     `ManagedAccount` (FFI-backed); persisting it on the SwiftData
-///     side was redundant and the persister never wrote it.
-///   - `PersistentDPNSName` was added (cascade-owned by
-///     `PersistentIdentity` via the new `dpnsNames` relationship)
-///     so DPNS labels are persisted instead of recomputed on every
-///     `IdentityDetailView` open. Existing dev stores predate the
-///     row collection and rebuild on next sync; the changeset's
-///     append-only merge policy populates the new rows from the
-///     persister callback.
-///   - `PersistentDashpayProfile` was added (cascade-owned by
-///     `PersistentIdentity` via the new `dashpayProfile` optional
-///     relationship). Mirrors `IdentityEntry::dashpay_profile` from
-///     the FFI so DashPay profile fields (display name, public
-///     message, avatar URL / hash / fingerprint, bio) are persisted
-///     across launches instead of being refetched. Existing dev
-///     stores predate the row and rebuild on next profile sync; the
-///     persister upserts in place via
-///     `PlatformWalletPersistenceHandler.upsertDashpayProfile`.
-///   - `PersistentDashpayContactRequest` was added (cascade-owned by
-///     `PersistentIdentity` via the new `contactRequests` collection).
-///     Mirrors `ContactChangeSet::sent_requests` /
-///     `incoming_requests` / `established` projected through the new
-///     `on_persist_contacts_fn` FFI callback, with one row per
-///     `(network, owner, contact, isOutgoing)` quad. Existing dev
-///     stores predate the row collection and rebuild on next
-///     DashPay contact sync.
-///   - `PersistentDashpayContactRequest` gained the additive
-///     `paymentChannelBroken` column (defaulted `false`) so the G1c
-///     broken-channel flag projected by the persister survives
-///     restarts. Additive-with-default ⇒ lightweight migration.
-///   - `PersistentDashpayPayment` was added (cascade-owned by
-///     `PersistentIdentity` via the new `dashpayPayments`
-///     collection). Mirrors the per-identity `dashpay_payments` map
-///     read through `managed_identity_get_dashpay_payments`; rows are
-///     refreshed by `PlatformWalletManager.refreshDashPayPayments`
-///     (the persister doesn't project payment history). Additive
-///     model + additive relationship ⇒ lightweight migration.
-///   - `PersistentDashpayIgnoredSender` was added (cascade-owned by
-///     `PersistentIdentity` via the new `dashpayIgnoredSenders`
-///     collection). Persists per-sender ignores (local-only mute, =
-///     block, reversible) the persister projects in the `ignored`
-///     changeset array so the Rust `ignored_senders` set can be restored
-///     at load — without it an ignored sender resurfaces on relaunch.
-///     Keyed per-sender (no `accountReference`), so an ignored sender's
-///     rotated requests are suppressed too. Additive model + additive
-///     relationship ⇒ lightweight migration. (Replaces the earlier
-///     per-`(sender, accountReference)` `PersistentDashpayRejectedRequest`
-///     — the model decision collapsed reject into ignore.)
-///   - `PersistentDashpayContactProfile` was added (cascade-owned by
-///     `PersistentIdentity` via the new `contactProfiles` collection).
-///     Mirrors one entry of the per-identity `contact_profiles` map
-///     (cached contacts' public profiles, keyed by the contact's
-///     identity id) projected by the persister as
-///     `IdentityEntryFFI.contact_profiles` rows, and read back at load to
-///     rebuild the Rust cache so contacts don't refetch on every
-///     relaunch. Distinct from `PersistentDashpayProfile` (the owner's
-///     own profile). Additive model + additive relationship ⇒
-///     lightweight migration.
-///   - `PersistentAccount` gained `#Unique<…>([\.wallet, \.accountType,
-///     \.accountIndex, \.userIdentityId, \.friendIdentityId])` plus
-///     `@Attribute(.unique)` on `accountExtendedPubKeyBytes`. The
-///     xpub field also flipped from `Data` to `Data?` so multiple
-///     unhydrated rows (xpub not yet known) don't collide on the
-///     UNIQUE constraint — SQL allows multiple `NULL`s. Together
-///     these enforce "one row per account identity, one xpub per
-///     account" at the database layer; pre-refactor the persister's
-///     `applyAccountChangeset` was string-keyed on the legacy
-///     `Debug`-formatted `account_type_name` and could grow
-///     duplicate rows for the same logical account.
-///   - `PersistentTokenBalance.balance` remains the original `Int64` SwiftData
-///     property and SQLite column. Protocol `u64` values use its raw bits via a
-///     computed accessor, so full-domain support does not alter this V1 schema.
-///   - `PersistentDPNSName` gained the DPNS username-marketplace
-///     columns `documentIdBase58`, `priceCredits`, `saleStatusRaw`,
-///     `counterpartyIdBase58`, the three optional document timestamps,
-///     and `marketplaceUpdatedAt`, written by
-///     the new `on_persist_dpns_name_states_fn` persister callback
-///     (`DpnsNameStateFFI`). All optional or defaulted, and the
-///     `(networkRaw, normalizedParentDomainName, normalizedLabel)`
-///     uniqueness is unchanged ⇒ lightweight migration. Existing rows
-///     migrate with a nil `documentIdBase58`, which is the documented
-///     "no marketplace state tracked" signal — the next marketplace
-///     sync pass fills them in.
-/// Each of those is a destructive change to a unique-attribute
-/// column or to relationship topology, so any pre-existing dev
-/// store will fail to open and get rebuilt from scratch on next
-/// sync. Bumping the version isn't useful without a real
-/// `MigrationStage` (and there's nothing worth preserving in dev
-/// databases at this point), so we let the container recreate.
+/// Migration tests establish compatibility from this accepted baseline into
+/// the current live schema. They do not reconstruct or verify the database
+/// written by the original App Store binary. Other historical development
+/// layouts are accepted only by the local legacy bridge when every existing
+/// value and relationship survives migration to fixed V3. Other layouts fail;
+/// the container never erases or recreates a user's database.
 public enum DashSchemaV1: VersionedSchema {
     public static var versionIdentifier: Schema.Version {
         Schema.Version(1, 0, 0)
@@ -267,36 +326,55 @@ public enum DashSchemaV1: VersionedSchema {
     }
 }
 
-/// Version 2 adds wallet-independent tracked masternodes. The new model has
-/// no relationship or required-data dependency on V1 rows, so a lightweight
-/// migration preserves every existing row and creates its table.
+/// Historical V2 reconstructed from commit 52e8d4ec68. Its complete frozen
+/// graph matches the database observed on the released application. Other
+/// development layouts that reused the V2 number are not historical V2.
 public enum DashSchemaV2: VersionedSchema {
-    public static var versionIdentifier: Schema.Version {
-        Schema.Version(2, 0, 0)
-    }
-
+    public static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
     public static var models: [any PersistentModel.Type] {
-        DashModelContainer.v2ModelTypes
+        [
+            DashSchemaV2.PersistentIdentity.self,
+            DashSchemaV2.PersistentDPNSName.self,
+            DashSchemaV2.PersistentDashpayProfile.self,
+            DashSchemaV2.PersistentDashpayContactProfile.self,
+            DashSchemaV2.PersistentDashpayContactRequest.self,
+            DashSchemaV2.PersistentDashpayPayment.self,
+            DashSchemaV2.PersistentDashpayIgnoredSender.self,
+            DashSchemaV2.PersistentDocument.self,
+            DashSchemaV2.PersistentDataContract.self,
+            DashSchemaV2.PersistentPublicKey.self,
+            DashSchemaV2.PersistentTokenBalance.self,
+            DashSchemaV2.PersistentKeyword.self,
+            DashSchemaV2.PersistentToken.self,
+            DashSchemaV2.PersistentDocumentType.self,
+            DashSchemaV2.PersistentIndex.self,
+            DashSchemaV2.PersistentProperty.self,
+            DashSchemaV2.PersistentTokenHistoryEvent.self,
+            DashSchemaV2.PersistentPlatformAddress.self,
+            DashSchemaV2.PersistentPlatformAddressesSyncState.self,
+            DashSchemaV2.PersistentWallet.self,
+            DashSchemaV2.PersistentAccount.self,
+            DashSchemaV2.PersistentCoreAddress.self,
+            DashSchemaV2.PersistentTransaction.self,
+            DashSchemaV2.PersistentTxo.self,
+            DashSchemaV2.PersistentPendingInput.self,
+            DashSchemaV2.PersistentWalletManagerMetadata.self,
+            DashSchemaV2.PersistentShieldedNote.self,
+            DashSchemaV2.PersistentShieldedOutgoingNote.self,
+            DashSchemaV2.PersistentShieldedSyncState.self,
+            DashSchemaV2.PersistentShieldedActivity.self,
+            DashSchemaV2.PersistentShieldedViewingKey.self,
+            DashSchemaV2.PersistentAssetLock.self,
+            DashSchemaV2.PersistentInvitation.self,
+            DashSchemaV2.PersistentMasternode.self,
+            DashSchemaV2.PersistentTrackedMasternode.self
+        ]
     }
 }
 
-/// Version 3 adds `recipientIsExternal` to `PersistentAssetLock` — an
-/// optional column on an existing entity, so a lightweight migration
-/// preserves every existing row and backfills `NULL`.
-///
-/// This is the first version to be registered alongside a genuinely frozen
-/// copy of the model it changes (`DashSchemaV1.PersistentAssetLock`). Without
-/// that copy, adding the property would have mutated V1's and V2's checksums
-/// in place and a store written by the V2 binary would have matched no
-/// registered schema, failing to open with Cocoa error 134504 rather than
-/// migrating. Follow the same pattern for the next property added to any
-/// model: freeze the old shape, add a version, add a stage.
+/// Current working schema. A later shape change must preserve this graph as
+/// the fixed legacy-bridge target before introducing another live version.
 public enum DashSchemaV3: VersionedSchema {
-    public static var versionIdentifier: Schema.Version {
-        Schema.Version(3, 0, 0)
-    }
-
-    public static var models: [any PersistentModel.Type] {
-        DashModelContainer.modelTypes
-    }
+    public static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+    public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }
 }

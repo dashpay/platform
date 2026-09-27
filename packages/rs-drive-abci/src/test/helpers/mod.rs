@@ -1,3 +1,6 @@
+/// Contract group fixtures
+#[cfg(test)]
+pub mod contract_groups;
 /// Test helpers
 #[cfg(test)]
 pub mod fast_forward_to_block;
@@ -5,6 +8,8 @@ pub mod fee_pools;
 pub mod setup;
 #[cfg(test)]
 pub mod state_mutation_guard;
+/// Withdrawal fixtures
+pub mod withdrawals;
 // TODO: Move tests to appropriate place
 
 #[cfg(test)]

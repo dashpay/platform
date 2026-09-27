@@ -55,6 +55,7 @@ http-serde = { version = "2.1", optional = true }
 rand = { version = "0.8.5", features = [
   "small_rng",
   "getrandom",
+  "alloc",
 ], default-features = false }
 thiserror = "2.0.17"
 tracing = "0.1.41"

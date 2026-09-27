@@ -116,6 +116,7 @@ impl<C> Platform<C> {
                     start_epoch_index_included,
                     end_epoch_index as u16,
                     end_epoch_index_included,
+                    platform_version.drive_abci.query.max_returned_elements,
                     None,
                     platform_version,
                 )

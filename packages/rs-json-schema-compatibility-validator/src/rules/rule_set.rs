@@ -1196,6 +1196,58 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                         })),
                     )
                         .into(),
+                    // `anyOf` inside `refersTo` is the declaration's data, not the
+                    // JSON Schema keyword: dropping a target is refused like any change
+                    (
+                        json!({ "refersTo": { "anyOf": [{ "type": "identity" }, { "type": "permanentDocument", "documentType": "note" }] } }),
+                        json!({ "refersTo": { "anyOf": [{ "type": "identity" }] } }),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/refersTo/anyOf/1".to_string(),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
+        (
+            // How a byte array property's ciphertext was produced: documents written
+            // under one recipe could not be read under another, so nothing about it
+            // may change.
+            "encryptedFor",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: false,
+                allow_replacement_callback: FALSE_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "encryptedFor": { "recipient": "recipientId", "recipientKey": "recipientKeyId", "senderKey": "senderKeyId", "scheme": "ecdh-secp256k1-aes256-cbc" } }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/encryptedFor".to_string(),
+                            value: json!({ "recipient": "recipientId", "recipientKey": "recipientKeyId", "senderKey": "senderKeyId", "scheme": "ecdh-secp256k1-aes256-cbc" }),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "encryptedFor": { "recipient": "recipientId", "recipientKey": "recipientKeyId", "senderKey": "senderKeyId", "scheme": "ecdh-secp256k1-aes256-cbc" } }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/encryptedFor".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "encryptedFor": { "recipient": "recipientId", "recipientKey": "recipientKeyId", "senderKey": "senderKeyId", "scheme": "ecdh-secp256k1-aes256-cbc" } }),
+                        json!({ "encryptedFor": { "recipient": "$ownerId", "recipientKey": "recipientKeyId", "senderKey": "senderKeyId", "scheme": "ecdh-secp256k1-aes256-cbc" } }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/encryptedFor/recipient".to_string(),
+                            value: json!("$ownerId"),
+                        })),
+                    )
+                        .into(),
                 ],
             },
         ),
@@ -1411,6 +1463,85 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                         Some(JsonSchemaChange::Replace(ReplaceOperation {
                             path: "/requiredSince".to_string(),
                             value: json!(3),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
+        // `distinctFrom` (what an identifier property's value must differ
+        // from: `$ownerId` or another property of the same document type) is
+        // frozen like `refersTo`: adding, removing or changing it changes
+        // which documents the type accepts.
+        (
+            "distinctFrom",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: false,
+                allow_replacement_callback: FALSE_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "distinctFrom": "$ownerId" }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/distinctFrom".to_string(),
+                            value: json!("$ownerId"),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "distinctFrom": "$ownerId" }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/distinctFrom".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "distinctFrom": "$ownerId" }),
+                        json!({ "distinctFrom": "delegateId" }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/distinctFrom".to_string(),
+                            value: json!("delegateId"),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
+        // `maxBytes` (the most UTF-8 bytes a string may take) moves like
+        // `maxLength`: raising or dropping the bound keeps every stored document
+        // valid, adding or lowering it would not.
+        (
+            "maxBytes",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: true,
+                allow_replacement_callback: U64_BIGGER_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "maxBytes": 1 }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/maxBytes".to_string(),
+                            value: json!(1),
+                        })),
+                    )
+                        .into(),
+                    (json!({ "maxBytes": 1 }), json!({}), None).into(),
+                    (json!({ "maxBytes": 1 }), json!({ "maxBytes": 2 }), None).into(),
+                    (
+                        json!({ "maxBytes": 2 }),
+                        json!({ "maxBytes": 1 }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/maxBytes".to_string(),
+                            value: json!(1),
                         })),
                     )
                         .into(),

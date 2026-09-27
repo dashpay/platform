@@ -56,6 +56,7 @@ impl Sdk {
                 value: Value::Identifier(identity_id.to_buffer()),
             }],
             time_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![], // Remove ordering by $createdAt as it might not be indexed
@@ -144,6 +145,7 @@ impl Sdk {
                 },
             ],
             time_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![OrderClause {

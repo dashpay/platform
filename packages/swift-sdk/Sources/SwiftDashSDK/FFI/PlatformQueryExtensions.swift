@@ -354,6 +354,71 @@ extension SDK {
         return try processJSONResult(result)
     }
 
+    /// What is left of the budgets of the given keys of an identity
+    /// (protocol version 14).
+    ///
+    /// An authentication key registered with a total budget spends it as its
+    /// transitions run, and Platform tracks what remains next to the key;
+    /// raising the budget through
+    /// ``ManagedPlatformWallet/updateIdentityKeyLimits(identityId:keyId:addBudget:expiresAt:signer:)``
+    /// raises what remains by the same amount.
+    ///
+    /// - Parameters:
+    ///   - identityId: base58-encoded identity id.
+    ///   - keyIds: the key ids to look up. At least one, none repeated.
+    /// - Returns: one entry per key id the node answered for. The value is
+    ///   what is left of that key's budget in CREDITS, or `nil` for a key
+    ///   that carries no budget, or that the identity does not have.
+    public func fetchKeysRemainingBudgets(
+        identityId: String,
+        keyIds: [UInt32]
+    ) async throws -> [UInt32: UInt64?] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+        guard !keyIds.isEmpty else {
+            throw SDKError.invalidParameter("At least one key id is required")
+        }
+
+        // The FFI answers with a JSON object keyed by key id, whose values
+        // are decimal STRINGS (credits are `u64`, which JSON numbers cannot
+        // carry losslessly) or null.
+        let json = try keyIds.withUnsafeBufferPointer { buffer in
+            try processJSONResult(
+                dash_sdk_identity_fetch_keys_remaining_budgets(
+                    handle,
+                    identityId,
+                    buffer.baseAddress,
+                    UInt(buffer.count)
+                )
+            )
+        }
+
+        var budgets: [UInt32: UInt64?] = [:]
+        budgets.reserveCapacity(json.count)
+        for (rawKeyId, value) in json {
+            guard let keyId = UInt32(rawKeyId) else {
+                throw SDKError.serializationError(
+                    "Unparseable key id in remaining-budgets response: \(rawKeyId)"
+                )
+            }
+            if value is NSNull {
+                // `updateValue`, not the subscript: assigning `nil` through
+                // the subscript of a dictionary whose value type is itself
+                // optional REMOVES the entry instead of storing "no budget".
+                budgets.updateValue(nil, forKey: keyId)
+                continue
+            }
+            guard let text = value as? String, let credits = UInt64(text) else {
+                throw SDKError.serializationError(
+                    "Unparseable remaining budget for key \(keyId): \(value)"
+                )
+            }
+            budgets.updateValue(credits, forKey: keyId)
+        }
+        return budgets
+    }
+
     /// Get identity by public key hash
     public func identityGetByPublicKeyHash(publicKeyHash: String) async throws -> [String: Any] {
         guard let handle = handle else {
@@ -467,6 +532,23 @@ extension SDK {
         }
 
         return contracts
+    }
+
+    /// One page of every data contract on Platform, in ascending contract id order.
+    /// Pass the last `id` of a page as `startAfter` to get the next page; a page shorter than `limit` is the last one.
+    public func getDataContractsByRange(limit: UInt32? = nil, startAfter: String? = nil, startAt: String? = nil, idsOnly: Bool = false) async throws -> [[String: Any]] {
+        guard let handle = handle else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        let result = dash_sdk_data_contracts_fetch_by_range(
+            handle,
+            UInt32(limit ?? 100),
+            startAfter,
+            startAt,
+            idsOnly
+        )
+        return try processJSONArrayResult(result)
     }
 
     // MARK: - Document Queries
@@ -2055,5 +2137,99 @@ extension SDK {
                 type: entry["type"] as? String ?? ""
             )
         }
+    }
+}
+
+// MARK: - Off-main data contract queries
+
+/// Contract reads that must not run on the caller's actor.
+///
+/// Deliberately outside the `@MainActor` extension above. Every query there
+/// is `async` but none of them suspends: the body calls its FFI entry point
+/// straight through, and that entry point parks the calling thread inside
+/// `runtime.block_on` until DAPI answers. Awaiting one from the main actor
+/// therefore holds the main actor for the whole round trip — and wrapping it
+/// in `Task.detached` does not help, because calling a `@MainActor` method
+/// hops back onto the main actor for the duration of the call. Isolation
+/// follows the declaration, not the thread the caller started on.
+extension SDK {
+    /// Serializes off-main contract reads.
+    ///
+    /// One serial queue rather than a concurrent pool: each read parks its
+    /// thread in `block_on`, so unbounded fan-out would cost one blocked
+    /// thread per caller.
+    private static let dataContractQueue = DispatchQueue(
+        label: "org.dash.swift-dash-sdk.data-contract-query")
+
+    /// `dataContractGet(id:)` without the main-actor hop.
+    ///
+    /// Returns parsed, copied values: the native result is released before
+    /// this returns, on every path, so nothing handed back points into
+    /// memory the FFI owns.
+    public nonisolated func dataContractGetOffMain(id: String) async throws -> [String: Any] {
+        guard handle != nil else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        let jsonString: String = try await withCheckedThrowingContinuation { continuation in
+            // `self` crosses into the queue, not the raw handle: `OpaquePointer`
+            // is not `Sendable`, while `SDK` is declared `@unchecked Sendable`.
+            // Reading `handle` here also re-checks it at execution time rather
+            // than trusting the check made before the hop.
+            Self.dataContractQueue.async { [self] in
+                do {
+                    guard let handle = handle else {
+                        throw SDKError.invalidState("SDK not initialized")
+                    }
+                    continuation.resume(
+                        returning: try Self.fetchDataContractJSON(handle: handle, id: id))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+
+        guard let jsonData = jsonString.data(using: .utf8),
+              let jsonObject = try? JSONSerialization.jsonObject(
+                  with: jsonData, options: []) as? [String: Any]
+        else {
+            throw SDKError.serializationError("Failed to parse contract JSON")
+        }
+
+        return jsonObject
+    }
+
+    /// The blocking half, run on `dataContractQueue`.
+    ///
+    /// `dash_sdk_data_contract_fetch_result_free` releases every field the
+    /// result owns — contract handle, JSON string, serialized bytes AND the
+    /// error — so one `defer` covers all exits and nothing else may free the
+    /// error separately. Returning a Swift `String` (a copy) keeps the
+    /// release inside this function.
+    private nonisolated static func fetchDataContractJSON(
+        handle: OpaquePointer,
+        id: String
+    ) throws -> String {
+        var result = id.withCString { idCStr in
+            dash_sdk_data_contract_fetch_with_serialization(handle, idCStr, true, false)
+        }
+        defer { dash_sdk_data_contract_fetch_result_free(&result) }
+
+        if let error = result.error {
+            // Typed, like the other query paths in this file, so a transport
+            // failure surfaces as `.networkError` / `.timeout` and callers keep
+            // their retry classification instead of seeing `.internalError`.
+            // Built here, while the result is still alive; the `defer` above
+            // releases it — and the error with it, so unlike the call sites
+            // that own a bare `DashSDKResult`, this one must NOT also call
+            // `dash_sdk_error_free`.
+            throw SDKError.fromDashSDKError(error.pointee)
+        }
+
+        guard let json = result.json_string else {
+            throw SDKError.internalError("No JSON data returned from contract fetch")
+        }
+
+        return String(cString: json)
     }
 }

@@ -230,6 +230,7 @@ mod tests {
             ranked_averageable,
             terminal: None,
             preallocated: false,
+            flat: false,
         }
     }
 

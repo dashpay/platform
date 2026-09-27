@@ -619,14 +619,14 @@ mod tests {
                     _,
                     _,
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::SumItem(refund_amount, None),
                         },
                         ..
                     }),
                     ..,
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::SumItem(other_refund_amount, None),
                         },
                         ..
@@ -715,18 +715,20 @@ mod tests {
                     _,
                     _,
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::SumItem(refund_amount, None),
                         },
                     ..
                     }),
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
-                    })
-                ] if *refund_amount as Credits == removed_credits - negative_amount && debt_bytes == &0u64.to_be_bytes()
+                    }),
+                    // Owed to the processing fee pool by whoever applies the operations
+                    LowLevelDriveOperation::RepaidIdentityDebt(repaid_debt)
+                ] if *refund_amount as Credits == removed_credits - negative_amount && debt_bytes == &0u64.to_be_bytes() && *repaid_debt == negative_amount
             ));
 
             assert_eq!(fee_result_outcome, fee_result);
@@ -790,12 +792,14 @@ mod tests {
                     _,
                     _,
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..
-                    })
-                ] if debt_bytes == &2000u64.to_be_bytes()
+                    }),
+                    // All of the refund repaid debt, owed to the processing fee pool
+                    LowLevelDriveOperation::RepaidIdentityDebt(repaid_debt)
+                ] if debt_bytes == &2000u64.to_be_bytes() && *repaid_debt == removed_credits
             ));
 
             assert_eq!(fee_result_outcome, fee_result);
@@ -845,7 +849,7 @@ mod tests {
             assert!(matches!(
                 drive_operations[..],
                 [_, LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                    op: GroveOp::Replace {
+                    op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                         element: Element::SumItem(balance, None),
                     },
                     ..
@@ -904,13 +908,13 @@ mod tests {
                 [
                     _,
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::SumItem(balance, None),
                         },
                         ..
                     }),
                     LowLevelDriveOperation::GroveOperation(grovedb::batch::QualifiedGroveDbOp {
-                        op: GroveOp::Replace {
+                        op: GroveOp::ReplaceDontCheckForBackwardsReferences {
                             element: Element::Item(debt_bytes, None),
                         },
                         ..

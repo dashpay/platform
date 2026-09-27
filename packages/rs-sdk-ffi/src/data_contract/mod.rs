@@ -59,6 +59,6 @@ pub unsafe extern "C" fn dash_sdk_data_contract_destroy(handle: *mut DataContrac
 pub use queries::{
     dash_sdk_data_contract_fetch, dash_sdk_data_contract_fetch_history,
     dash_sdk_data_contract_fetch_json, dash_sdk_data_contract_fetch_result_free,
-    dash_sdk_data_contract_fetch_with_serialization, dash_sdk_data_contracts_fetch_many,
-    DashSDKDataContractFetchResult,
+    dash_sdk_data_contract_fetch_with_serialization, dash_sdk_data_contracts_fetch_by_range,
+    dash_sdk_data_contracts_fetch_many, DashSDKDataContractFetchResult,
 };

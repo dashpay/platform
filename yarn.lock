@@ -1483,6 +1483,20 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dashevo/app-connect-contract@workspace:packages/app-connect-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/app-connect-contract@workspace:packages/app-connect-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^9.18.0"
+    mocha: "npm:^11.1.0"
+    sinon: "npm:^18.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/bench-suite@workspace:packages/bench-suite":
   version: 0.0.0-use.local
   resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
@@ -1844,6 +1858,20 @@ __metadata:
 "@dashevo/masternode-reward-shares-contract@workspace:*, @dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^9.18.0"
+    mocha: "npm:^11.1.0"
+    sinon: "npm:^18.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
+"@dashevo/moderation-charters-contract@workspace:packages/moderation-charters-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/moderation-charters-contract@workspace:packages/moderation-charters-contract"
   dependencies:
     "@dashevo/wasm-dpp": "workspace:*"
     chai: "npm:^4.3.10"

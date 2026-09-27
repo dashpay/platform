@@ -72,6 +72,38 @@ async fn unimplemented_node_is_banned_and_request_retried_on_another() {
 }
 
 #[tokio::test]
+async fn should_retry_on_standby_without_banning_the_failed_node() {
+    let addresses: AddressList = "http://127.0.0.1:10001,http://127.0.0.1:10002"
+        .parse()
+        .unwrap();
+    let addresses = addresses.with_active_set_size(1);
+    let failed = addresses.get_live_address().unwrap();
+    let failed_uri = failed.uri().clone();
+    let request = ScriptedRequest::new(move |uri| {
+        if uri == failed_uri {
+            Err(TransportError::Grpc(Status::unimplemented("old node")))
+        } else {
+            Ok(FakeResponse)
+        }
+    });
+    let client = DapiClient::new(addresses, RequestSettings::default());
+    let response = client
+        .execute(
+            request,
+            RequestSettings {
+                ban_failed_address: Some(false),
+                retries: Some(1),
+                ..RequestSettings::default()
+            },
+        )
+        .await
+        .expect("one retry must reach the available standby");
+    assert_eq!(response.retries, 1);
+    assert_ne!(response.address, failed);
+    assert!(!client.address_list().is_banned(&failed));
+}
+
+#[tokio::test]
 async fn unimplemented_on_all_nodes_still_surfaces_error() {
     // No node implements the method: every attempt answers UNIMPLEMENTED.
     // `hit_uris` counts total attempts (all of which are errors here).

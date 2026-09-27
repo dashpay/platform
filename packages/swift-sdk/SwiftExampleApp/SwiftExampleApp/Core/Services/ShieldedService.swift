@@ -252,6 +252,15 @@ class ShieldedService: ObservableObject {
 
         let dbPath = Self.dbPath(for: network)
         let sortedAccounts = Array(Set(accounts)).sorted()
+        SDKLogger.event(
+            "shielded_bind_started",
+            category: .shielded,
+            fields: [
+                "account_count": .integer(Int64(sortedAccounts.count)),
+                "network": .publicText(network.networkName),
+                "wallet_reference": .reference(walletId),
+            ]
+        )
         do {
             // The per-network SQLite tree handle now lives on the
             // manager (one shared `NetworkShieldedCoordinator`),
@@ -292,13 +301,28 @@ class ShieldedService: ObservableObject {
             let primary = sortedAccounts.contains(0) ? 0 : (sortedAccounts.first ?? 0)
             orchardDisplayAddress = addressesByAccount[primary]
 
-            SDKLogger.log(
-                "Shielded bound: walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… network=\(network.networkName) accounts=\(sortedAccounts) tree=\(dbPath)",
-                minimumLevel: .medium
+            SDKLogger.event(
+                "shielded_bind_completed",
+                category: .shielded,
+                fields: [
+                    "account_count": .integer(Int64(sortedAccounts.count)),
+                    "network": .publicText(network.networkName),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
         } catch {
             lastError = "Shielded bind failed: \(error.localizedDescription)"
-            SDKLogger.log(lastError ?? "", minimumLevel: .medium)
+            SDKLogger.event(
+                "shielded_bind_failed",
+                category: .shielded,
+                severity: .error,
+                fields: [
+                    "network": .publicText(network.networkName),
+                    "wallet_reference": .reference(walletId),
+                ],
+                error: error,
+                redacting: [dbPath]
+            )
         }
 
         syncStateCancellable = walletManager.$shieldedSyncIsSyncing
@@ -315,9 +339,14 @@ class ShieldedService: ObservableObject {
                 // for a pass that completes before this publisher flips.
                 if newValue && !wasSyncing {
                     self.beginSyncTimingIfNeeded()
-                    SDKLogger.log(
-                        "Shielded sync started",
-                        minimumLevel: .medium
+                    var fields: [String: SDKLogValue] = [:]
+                    if let walletId = self.boundWalletId {
+                        fields["wallet_reference"] = .reference(walletId)
+                    }
+                    SDKLogger.event(
+                        "shielded_sync_started",
+                        category: .shielded,
+                        fields: fields
                     )
                 }
                 // Detect true → false edge. Tear down the ticker and
@@ -418,15 +447,27 @@ class ShieldedService: ObservableObject {
                 resolver: resolver,
                 accounts: sortedAccounts
             )
-            SDKLogger.log(
-                "Shielded engine-bound: walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… network=\(network.networkName) accounts=\(sortedAccounts)",
-                minimumLevel: .medium
+            SDKLogger.event(
+                "shielded_engine_bind_completed",
+                category: .shielded,
+                fields: [
+                    "account_count": .integer(Int64(sortedAccounts.count)),
+                    "network": .publicText(network.networkName),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
             return true
         } catch {
-            SDKLogger.log(
-                "Shielded engine-bind failed for walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())…: \(error.localizedDescription)",
-                minimumLevel: .medium
+            SDKLogger.event(
+                "shielded_engine_bind_failed",
+                category: .shielded,
+                severity: .error,
+                fields: [
+                    "network": .publicText(network.networkName),
+                    "wallet_reference": .reference(walletId),
+                ],
+                error: error,
+                redacting: [dbPath]
             )
             return false
         }
@@ -452,9 +493,14 @@ class ShieldedService: ObservableObject {
             let resolver,
             let network
         else {
-            SDKLogger.log(
-                "ShieldedService.switchTo called before initial bind — ignoring",
-                minimumLevel: .medium
+            SDKLogger.event(
+                "shielded_switch_skipped",
+                category: .shielded,
+                severity: .warning,
+                fields: [
+                    "reason": .publicText("not_initialized"),
+                    "wallet_reference": .reference(walletId),
+                ]
             )
             return
         }
@@ -478,6 +524,18 @@ class ShieldedService: ObservableObject {
     func manualSync() async {
         guard !isSyncing else { return }
         guard let walletManager else { return }
+        var startFields: [String: SDKLogValue] = [
+            "bound": .boolean(isBound),
+            "wallet_count": .integer(Int64(walletManager.wallets.count)),
+        ]
+        if let walletId = boundWalletId {
+            startFields["wallet_reference"] = .reference(walletId)
+        }
+        SDKLogger.event(
+            "shielded_manual_sync_started",
+            category: .shielded,
+            fields: startFields
+        )
 
         // If we're unbound (typically because the user pressed
         // Clear earlier) but still have the bind credentials,
@@ -540,7 +598,15 @@ class ShieldedService: ObservableObject {
         // bail rather than chain a sync that would skip every wallet —
         // preserves the pre-existing "don't chain a sync that will fail the
         // same way" intent, per-wallet-ized.
-        guard anyWalletRegistered else { return }
+        guard anyWalletRegistered else {
+            SDKLogger.event(
+                "shielded_manual_sync_skipped",
+                category: .shielded,
+                severity: .warning,
+                fields: ["reason": .publicText("no_registered_wallet")]
+            )
+            return
+        }
 
         isSyncing = true
         lastError = nil
@@ -557,7 +623,17 @@ class ShieldedService: ObservableObject {
             try await walletManager.syncShieldedNow()
         } catch {
             lastError = "Shielded sync error: \(error.localizedDescription)"
-            SDKLogger.log(lastError ?? "", minimumLevel: .medium)
+            var fields: [String: SDKLogValue] = [:]
+            if let walletId = boundWalletId {
+                fields["wallet_reference"] = .reference(walletId)
+            }
+            SDKLogger.event(
+                "shielded_manual_sync_failed",
+                category: .shielded,
+                severity: .error,
+                fields: fields,
+                error: error
+            )
         }
 
         // Restart the manager-wide shielded sync loop AFTER the
@@ -576,8 +652,11 @@ class ShieldedService: ObservableObject {
                 try walletManager.startShieldedSync()
             }
         } catch {
-            SDKLogger.error(
-                "ShieldedService.manualSync: failed to (re)start shielded sync loop: \(error.localizedDescription)"
+            SDKLogger.event(
+                "shielded_sync_loop_restart_failed",
+                category: .shielded,
+                severity: .error,
+                error: error
             )
         }
     }
@@ -601,6 +680,15 @@ class ShieldedService: ObservableObject {
     /// caller's responsibility (see
     /// [`PlatformWalletManager.stopShieldedSync`]).
     func reset() {
+        var fields: [String: SDKLogValue] = ["had_binding": .boolean(isBound)]
+        if let walletId = boundWalletId {
+            fields["wallet_reference"] = .reference(walletId)
+        }
+        SDKLogger.event(
+            "shielded_service_reset",
+            category: .shielded,
+            fields: fields
+        )
         syncStateCancellable?.cancel()
         syncEventCancellable?.cancel()
         progressCancellable?.cancel()
@@ -673,6 +761,11 @@ class ShieldedService: ObservableObject {
         // per-network SQLite delete; that step is gone — see
         // doc above for why.)
         let managerForStop = walletManager
+        SDKLogger.event(
+            "shielded_reset_started",
+            category: .shielded,
+            fields: ["wallet_count": .integer(Int64(walletManager?.wallets.count ?? 0))]
+        )
 
         // 1) Reset the Rust-side shielded state BEFORE touching
         //    state on disk. The Swift `ShieldedService` is
@@ -728,7 +821,12 @@ class ShieldedService: ObservableObject {
         prepareForShieldedRebind()
         guard let managerForStop else {
             lastError = "Failed to reset shielded state: no wallet manager is bound."
-            SDKLogger.error(lastError ?? "")
+            SDKLogger.event(
+                "shielded_reset_failed",
+                category: .shielded,
+                severity: .error,
+                fields: ["reason": .publicText("manager_unavailable")]
+            )
             return
         }
 
@@ -753,16 +851,28 @@ class ShieldedService: ObservableObject {
                 }
             )
         } catch {
+            let phase: String
+            let underlyingError: Error
             switch error {
-            case .rustReset(let underlyingError):
+            case .rustReset(let error):
+                phase = "rust_state"
+                underlyingError = error
                 lastError =
-                    "Failed to reset shielded state: \(underlyingError.localizedDescription)"
-            case .hostPersistence(let underlyingError):
+                    "Failed to reset shielded state: \(error.localizedDescription)"
+            case .hostPersistence(let error):
+                phase = "host_persistence"
+                underlyingError = error
                 lastError =
                     "Failed to wipe persisted shielded state: "
-                    + underlyingError.localizedDescription
+                    + error.localizedDescription
             }
-            SDKLogger.error(lastError ?? "")
+            SDKLogger.event(
+                "shielded_reset_failed",
+                category: .shielded,
+                severity: .error,
+                fields: ["phase": .publicText(phase)],
+                error: underlyingError
+            )
             return
         }
 
@@ -778,6 +888,10 @@ class ShieldedService: ObservableObject {
         lastSyncTime = nil
         lastError = nil
         orchardDisplayAddress = nil
+        SDKLogger.event(
+            "shielded_reset_completed",
+            category: .shielded
+        )
         addressesByAccount = [:]
         syncCountSinceLaunch = 0
         totalScanned = 0
@@ -946,31 +1060,39 @@ class ShieldedService: ObservableObject {
                     } else {
                         longestSyncDuration = elapsed
                     }
-                    let rateString: String
+                    var fields: [String: SDKLogValue] = [
+                        "duration_ms": .integer(Int64(elapsed * 1_000)),
+                        "new_notes": .unsignedInteger(UInt64(result.newNotes)),
+                        "pass": .integer(Int64(syncCountSinceLaunch)),
+                        "scanned": .unsignedInteger(result.totalScanned),
+                        "spent_notes": .unsignedInteger(UInt64(result.newlySpent)),
+                    ]
                     if elapsed > 0.05 && result.totalScanned > 0 {
                         let rate = Double(result.totalScanned) / elapsed
-                        rateString = String(format: " rate=%.0f/s", rate)
-                    } else {
-                        rateString = ""
+                        fields["rate_per_second"] = .double(rate.rounded())
                     }
-                    SDKLogger.log(
-                        String(
-                            format: "Shielded sync done  pass=%d  elapsed=%.2fs%@  scanned=%llu  new=%u  spent=%u  balance=%llu",
-                            syncCountSinceLaunch,
-                            elapsed,
-                            rateString,
-                            result.totalScanned,
-                            result.newNotes,
-                            result.newlySpent,
-                            result.balance
-                        ),
-                        minimumLevel: .medium
+                    if let walletId = boundWalletId {
+                        fields["wallet_reference"] = .reference(walletId)
+                    }
+                    SDKLogger.event(
+                        "shielded_sync_completed",
+                        category: .shielded,
+                        fields: fields
                     )
                 } else {
                     lastSyncDuration = nil
-                    SDKLogger.log(
-                        "Shielded sync done (no paired start) pass=\(syncCountSinceLaunch) scanned=\(result.totalScanned) balance=\(result.balance)",
-                        minimumLevel: .medium
+                    var fields: [String: SDKLogValue] = [
+                        "paired_start": .boolean(false),
+                        "pass": .integer(Int64(syncCountSinceLaunch)),
+                        "scanned": .unsignedInteger(result.totalScanned),
+                    ]
+                    if let walletId = boundWalletId {
+                        fields["wallet_reference"] = .reference(walletId)
+                    }
+                    SDKLogger.event(
+                        "shielded_sync_completed",
+                        category: .shielded,
+                        fields: fields
                     )
                 }
                 // Close the timing bracket AFTER reading
@@ -991,11 +1113,28 @@ class ShieldedService: ObservableObject {
             // stamp survives to the next pass.
             isBound = false
             endSyncTiming()
+            SDKLogger.event(
+                "shielded_sync_skipped",
+                category: .shielded,
+                severity: .warning,
+                fields: ["reason": .publicText("wallet_not_bound")]
+            )
         } else {
             // Failure terminal: surface the error and close the timing
             // bracket so the stale start stamp isn't reused next pass.
             lastError = result.errorMessage ?? "Shielded sync failed"
             endSyncTiming()
+            let error = NSError(
+                domain: "SwiftExampleApp.ShieldedService",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: lastError ?? "Shielded sync failed"]
+            )
+            SDKLogger.event(
+                "shielded_sync_failed",
+                category: .shielded,
+                severity: .error,
+                error: error
+            )
         }
     }
 

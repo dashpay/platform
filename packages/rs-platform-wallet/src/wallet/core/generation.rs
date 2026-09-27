@@ -31,7 +31,7 @@ use super::balance::WalletBalance;
 /// through different locks: teardown would take one gate, an in-flight payment
 /// would hold the other, and the exclusion would silently vanish with nothing to
 /// fail. Keeping them in one `Arc` makes that divergence unrepresentable —
-/// same generation is the same gate, by construction (`dashpay/platform#4185`).
+/// same generation is the same gate, by construction.
 ///
 /// [`Deref`] to [`WalletBalance`] keeps every existing lock-free balance read
 /// (`generation.confirmed()`, `info.balance.locked()`, …) working unchanged.
@@ -102,35 +102,31 @@ pub struct WalletGeneration {
     /// accepted response and an ambiguous `MaybeSent` return with the input still
     /// selectable here while the transaction is in flight. Dropping the fence at
     /// dispatch return would therefore reopen, on the DAPI path, exactly the
-    /// sweep + re-select race the pin was added to close
-    /// (`dashpay/platform#4309`).
+    /// sweep + re-select race the pin exists to close.
     ///
     /// # The pending-spend phase ends on EVIDENCE, and on nothing else
     ///
     /// **The invariant: no quantity that merely ELAPSES may retire this
-    /// phase.** Not chain height, and not wall-clock time either. Four earlier
-    /// revisions violated it — three bounded the phase at `height + N` blocks
-    /// and argued only about *which* height to anchor on (the pre-send check's,
-    /// a post-await sample, a post-await sample installed under one manager
-    /// guard); the fourth replaced that with a one-hour monotonic deadline. The
-    /// height forms were unsound because `last_processed_height` is not a clock
-    /// during catch-up: the wallet can advance it by thousands of blocks in
-    /// seconds, and every one of those blocks was mined BEFORE the transaction
-    /// was submitted, so an ordinary historical sync consumed the whole
-    /// interval (`dashpay/platform#4309`, review round 5).
+    /// phase.** Not chain height, and not wall-clock time either. A bound of
+    /// `height + N` blocks is unsound whichever height it anchors on (the
+    /// pre-send check's, a post-await sample, a post-await sample installed
+    /// under one manager guard), because `last_processed_height` is not a
+    /// clock during catch-up: the wallet can advance it by thousands of blocks
+    /// in seconds, and every one of those blocks was mined BEFORE the
+    /// transaction was submitted, so an ordinary historical sync consumes the
+    /// whole interval.
     ///
-    /// The monotonic deadline fixed the wrong half of that. Making the clock
-    /// unfast-forwardable does not make elapsed time evidence, and the fence
-    /// needs evidence: a signed transaction does not become invalid by getting
-    /// older, and no amount of waiting proves no peer retained it. A malicious
-    /// or isolated DAPI endpoint can accept the transaction while withholding
-    /// it from this wallet and from the network, and a mobile wallet can sit
-    /// backgrounded far longer than any deadline worth setting. Once the
-    /// deadline lapses and catch-up has also swept key-wallet's reservation,
-    /// the next build prunes the fence and signs a CONFLICTING transaction —
-    /// and the retained original can still be broadcast afterwards, so either
-    /// user intent can win the double-spend race (`dashpay/platform#4309`,
-    /// review round 7).
+    /// A monotonic wall-clock deadline fixes the wrong half of that. Making
+    /// the clock unfast-forwardable does not make elapsed time evidence, and
+    /// the fence needs evidence: a signed transaction does not become invalid
+    /// by getting older, and no amount of waiting proves no peer retained it.
+    /// A malicious or isolated DAPI endpoint can accept the transaction while
+    /// withholding it from this wallet and from the network, and a mobile
+    /// wallet can sit backgrounded far longer than any deadline worth setting.
+    /// Once such a deadline lapses and catch-up has also swept key-wallet's
+    /// reservation, the next build prunes the fence and signs a CONFLICTING
+    /// transaction — and the retained original can still be broadcast
+    /// afterwards, so either user intent can win the double-spend race.
     ///
     /// So there is no deadline at all. The pending-spend phase is released by
     /// exactly one thing — the wallet observing the outpoint spent, which is
@@ -194,8 +190,7 @@ pub struct WalletGeneration {
     /// [`PlatformWalletManager`](crate::PlatformWalletManager) keys by
     /// `wallet_id` and hands to every generation registered under that id, so
     /// removing a wallet and re-creating it under the same id inherits the
-    /// pending spends rather than starting clean
-    /// (`dashpay/platform#4309`, review round 8).
+    /// pending spends rather than starting clean.
     ///
     /// The balance and the lifecycle gate above genuinely describe *this*
     /// instance, and must not cross a recreation. A fence does not: it
@@ -241,8 +236,7 @@ impl std::fmt::Debug for SettleBoundaryHook {
 /// Owning the map here rather than inside `WalletGeneration` is what lets a
 /// pending spend outlive the instance that dispatched it: a remove-and-recreate
 /// under the same id mints a fresh generation but hands it this same `Arc`, so
-/// the still-valid signed transaction's inputs stay fenced
-/// (`dashpay/platform#4309`, review round 8). See the
+/// the still-valid signed transaction's inputs stay fenced. See the
 /// `WalletGeneration::in_broadcast` field docs for the full argument.
 ///
 /// # Not yet durable
@@ -283,8 +277,8 @@ struct InBroadcastFence {
     ///
     /// A plain flag, deliberately: not a deadline, not a height, not anything
     /// that can come due. Only [`WalletGeneration::observe_spent`] clears it.
-    /// See the `WalletGeneration::in_broadcast` field docs for why every bound
-    /// tried here — three chain-derived, one monotonic — was unsound.
+    /// See the `WalletGeneration::in_broadcast` field docs for why no bound —
+    /// chain-derived or monotonic — is sound here.
     pending: bool,
     /// The wallet has OBSERVED this outpoint spent
     /// ([`WalletGeneration::observe_spent`]). Retires the pending-spend phase
@@ -299,11 +293,10 @@ struct InBroadcastFence {
 impl InBroadcastFence {
     /// Whether this fence still blocks re-selection.
     ///
-    /// Takes NO clock of any kind — no height, and (since review round 7) no
+    /// Takes NO clock of any kind — no height, and no
     /// [`Instant`](std::time::Instant) either. A fence is held while a dispatch
     /// is in flight or its transaction may be on the network, and is released
-    /// only by evidence ([`WalletGeneration::observe_spent`]). Nothing elapses
-    /// (`dashpay/platform#4309`).
+    /// only by evidence ([`WalletGeneration::observe_spent`]). Nothing elapses.
     fn blocks(&self) -> bool {
         self.dispatching > 0 || self.pending
     }
@@ -314,10 +307,9 @@ impl InBroadcastFence {
     /// phase must not be undone by a slower concurrent dispatch of the same
     /// transaction settling afterwards.
     ///
-    /// Idempotent, and there is nothing left to order between two concurrent
-    /// dispatches of the same transaction. This used to install a deadline and
-    /// take care never to SHORTEN an existing one so both dispatches stayed
-    /// covered; with no deadline, one flag covers both by construction.
+    /// Idempotent, and there is nothing to order between two concurrent
+    /// dispatches of the same transaction: with no deadline that a later
+    /// settle could SHORTEN, one flag covers both by construction.
     fn open_pending(&mut self) {
         if self.observed_spent {
             return;
@@ -346,7 +338,7 @@ impl InBroadcastFence {
 /// is dropped — see [`WalletGeneration::pin_in_broadcast`].
 ///
 /// The INITIAL value is the least-informed one: a pin that learns nothing
-/// before it drops must fence (`dashpay/platform#4309`).
+/// before it drops must fence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum PendingSpendSettle {
     /// The transaction may be on the network — the broadcaster returned
@@ -355,12 +347,12 @@ enum PendingSpendSettle {
     /// Both open the pending-spend phase, which then waits for an observed
     /// spend.
     ///
-    /// The two cases need no distinction any more. When the phase carried a
-    /// height-derived bound they did: a cancelled dispatch had no post-await
-    /// sample to anchor on, so it had to fence unanchored and borrow a later
-    /// selection's clock. With no bound to anchor there is nothing to sample,
-    /// and a `Drop` that can reach neither a lock nor an await settles
-    /// identically to a normal return.
+    /// The two cases need no distinction. A height-derived bound would need
+    /// one — a cancelled dispatch has no post-await sample to anchor on, so it
+    /// would have to fence unanchored and borrow a later selection's clock —
+    /// but with no bound to anchor there is nothing to sample, and a `Drop`
+    /// that can reach neither a lock nor an await settles identically to a
+    /// normal return.
     #[default]
     Pending,
     /// A definitive pre-send rejection — the one outcome that proves the
@@ -393,7 +385,7 @@ impl WalletGeneration {
     /// The balance and the lifecycle gate are per generation — they describe
     /// *this* instance. The fence map is not: it describes signed transactions
     /// that may be live on the network, and those outlive the instance that
-    /// dispatched them (`dashpay/platform#4309`, review round 8). See the
+    /// dispatched them. See the
     /// [`in_broadcast`](Self#structfield.in_broadcast) field docs.
     pub(crate) fn with_fences(fences: Arc<InBroadcastFences>) -> Self {
         Self {
@@ -440,8 +432,7 @@ impl WalletGeneration {
     /// Exclusive against every payment operation on this generation. Removal
     /// holds it across BOTH the manager removal and the deferred-state sweep, so
     /// the two are one linearization point rather than two steps with a window
-    /// between them that a retained handle could broadcast through
-    /// (`dashpay/platform#4185`).
+    /// between them that a retained handle could broadcast through.
     ///
     /// Acquiring it waits for payment operations that have already entered their
     /// liveness-check/publish section. It does **not** wait for an operation
@@ -492,13 +483,13 @@ impl WalletGeneration {
     /// that follows it. Chain height cannot bound this fence at all: catch-up
     /// advances it over blocks mined before the transaction was ever submitted,
     /// so any `height + N` bound can be consumed by an ordinary historical sync
-    /// without a single piece of evidence about the dispatch
-    /// (`dashpay/platform#4309`). The pending-spend phase ends when the wallet
-    /// OBSERVES the outpoint spent ([`observe_spent`](Self::observe_spent)),
-    /// and there is no fallback bound of any other kind either — a wall clock
-    /// the chain cannot move is still not evidence about this transaction
-    /// (review round 7). Accepting no clock at either end makes the
-    /// mis-anchoring unrepresentable rather than merely corrected.
+    /// without a single piece of evidence about the dispatch. The
+    /// pending-spend phase ends when the wallet OBSERVES the outpoint spent
+    /// ([`observe_spent`](Self::observe_spent)), and there is no fallback
+    /// bound of any other kind either — a wall clock the chain cannot move is
+    /// still not evidence about this transaction. Accepting no clock at either
+    /// end makes the mis-anchoring unrepresentable rather than merely
+    /// corrected.
     ///
     /// Callers pin on the generation currently REGISTERED in the manager
     /// (`PlatformWalletInfo::generation`), the same object the build-side
@@ -521,8 +512,7 @@ impl WalletGeneration {
             outpoints,
             // Fenced by default: a pin that learns nothing before it drops must
             // still hold the inputs. Only a definitive pre-send rejection
-            // narrows this. See the `InBroadcastPin` type docs
-            // (`dashpay/platform#4309`).
+            // narrows this. See the `InBroadcastPin` type docs.
             settle: PendingSpendSettle::Pending,
         }
     }
@@ -542,14 +532,14 @@ impl WalletGeneration {
     ///
     /// # No height parameter, deliberately
     ///
-    /// This used to take the caller's `last_processed_height` and reap every
-    /// fence the chain had advanced past. That is the defect: during catch-up
-    /// the wallet advances that height over blocks mined BEFORE the dispatch,
-    /// so an ordinary historical sync completing between a dispatch and this
-    /// call could retire a fence protecting a transaction that had just gone to
-    /// the network (`dashpay/platform#4309`, review round 5). The fence now
-    /// answers to observed spends ALONE — no chain clock, and no wall clock
-    /// either (review round 7) — so this call retires nothing by consulting it.
+    /// Taking the caller's `last_processed_height` and reaping every fence the
+    /// chain had advanced past would be a defect: during catch-up the wallet
+    /// advances that height over blocks mined BEFORE the dispatch, so an
+    /// ordinary historical sync completing between a dispatch and this call
+    /// could retire a fence protecting a transaction that had just gone to the
+    /// network. The fence answers to observed spends ALONE — no chain clock,
+    /// and no wall clock either — so this call retires nothing by consulting
+    /// it.
     ///
     /// Cleared entries are reaped here rather than by a timer: this is the only
     /// place the fence is consulted, so pruning on read keeps the map free of
@@ -629,11 +619,10 @@ impl WalletGeneration {
     /// under a single `in_broadcast` lock acquisition. There is no clock to
     /// read and no guard to release in between, so no observer can catch this
     /// outpoint in the torn state — `dispatching` already lifted, pending-spend
-    /// not yet open — that would make it briefly selectable. Earlier revisions
-    /// sampled a `last_processed_height` from the wallet-manager lock and had
-    /// to hold that guard across the install to get the same property
-    /// (`dashpay/platform#4309`, review round 4); setting a flag needs no guard
-    /// at all.
+    /// not yet open — that would make it briefly selectable. Sampling a
+    /// `last_processed_height` from the wallet-manager lock would require
+    /// holding that guard across the install to get the same property;
+    /// setting a flag needs no guard at all.
     ///
     /// [`Self::settle_boundary_hook`] fires at exactly that midpoint under
     /// `cfg(test)` — after the first outpoint's dispatching hold is lifted and
@@ -641,8 +630,7 @@ impl WalletGeneration {
     /// merely after the lock is acquired. A hook that fired on lock
     /// acquisition would be satisfied by the first half of a split
     /// implementation too; fired here, only a critical section that spans
-    /// both halves keeps the boundary unobservable
-    /// (`dashpay/platform#4309`, review round 6).
+    /// both halves keeps the boundary unobservable.
     fn unpin_in_broadcast(&self, outpoints: &[OutPoint], settle: PendingSpendSettle) {
         let mut pinned = self.in_broadcast_lock();
         for outpoint in outpoints {
@@ -692,16 +680,17 @@ impl WalletGeneration {
     /// pending-spend phase has no deadline to bring due, so this call mutates
     /// nothing at all and only answers "is this outpoint pending?".
     ///
-    /// Kept — and kept callable — because it is the harness the round-7
-    /// regressions are written against, and it means the same thing in both
-    /// designs: *let every timeout this fence might have expire, then look*.
-    /// Against the deadline-bearing implementation the same call retired the
-    /// fence and the next [`in_broadcast_conflict`](Self::in_broadcast_conflict)
-    /// handed the input back for re-selection; against this one the fence
-    /// stands until an observed spend. Those two outcomes are exactly what
+    /// Kept — and kept callable — because it is the harness the elapsed-time
+    /// regressions are written against, and it means the same thing whether
+    /// or not a fence carries a deadline: *let every timeout this fence might
+    /// have expire, then look*. Against a deadline-bearing implementation the
+    /// same call retires the fence and the next
+    /// [`in_broadcast_conflict`](Self::in_broadcast_conflict) hands the input
+    /// back for re-selection; against this one the fence stands until an
+    /// observed spend. Those two outcomes are exactly what
     /// `the_pending_fence_outlives_any_elapsed_deadline` and
     /// `an_elapsed_deadline_cannot_retire_the_fence_a_spend_still_needs`
-    /// discriminate (`dashpay/platform#4309`).
+    /// discriminate.
     #[cfg(test)]
     pub(crate) fn test_elapse_time_based_release(&self, outpoint: &OutPoint) -> bool {
         self.in_broadcast_lock()
@@ -715,14 +704,13 @@ impl WalletGeneration {
     /// phase is opened — the torn state itself.
     ///
     /// The test-only synchronization hook that makes the handoff regression
-    /// DETERMINISTIC (`dashpay/platform#4309`, review round 5 suggestion). The
-    /// previous regression parked a writer and hoped the scheduler granted it
-    /// the lock inside a window a handful of instructions wide, so it stayed
-    /// green against the pre-fix code. With this hook the observer is run at
-    /// the midpoint by construction, and what it can see there is the whole
+    /// DETERMINISTIC. A regression that parks a writer and hopes the scheduler
+    /// grants it the lock inside a window a handful of instructions wide stays
+    /// green against a split transition. With this hook the observer is run
+    /// at the midpoint by construction, and what it can see there is the whole
     /// assertion.
     ///
-    /// The firing point matters (round 6): fired on lock ACQUISITION, the
+    /// The firing point matters: fired on lock ACQUISITION, the
     /// observation would complete before any fence was touched, so an
     /// implementation that split the decrement and the pending install into
     /// separate critical sections — the regression under test — would satisfy
@@ -748,8 +736,7 @@ impl WalletGeneration {
     /// observer that simply waits for the lock always sees the finished state
     /// and can never tell whether it was granted mid-transition or after it.
     /// Probing with `try_lock` turns "held" into an observable outcome, which is
-    /// exactly the invariant the deterministic handoff regression asserts
-    /// (`dashpay/platform#4309`, review round 5).
+    /// exactly the invariant the deterministic handoff regression asserts.
     #[cfg(test)]
     pub(crate) fn try_probe_in_broadcast(&self, outpoint: &OutPoint) -> InBroadcastProbe {
         match self.in_broadcast.fences.try_lock() {
@@ -811,32 +798,31 @@ pub(crate) enum InBroadcastProbe {
 /// rejection, the one outcome that PROVES the transaction is not on the wire —
 /// frees them outright.
 ///
-/// The default is deliberately the conservative one (`dashpay/platform#4309`).
-/// This guard's drop runs on paths that carry no information about whether the
-/// transaction was sent: the dispatching future cancelled mid-await, an unwind,
-/// or a suspension inside the broadcaster before submission. Treating those
-/// like a rejection — the previous behaviour — frees inputs that may already be
-/// spent on the network, so an immediate reselection double-spends them. Absence
+/// The default is deliberately the conservative one. This guard's drop runs
+/// on paths that carry no information about whether the transaction was sent:
+/// the dispatching future cancelled mid-await, an unwind, or a suspension
+/// inside the broadcaster before submission. Treating those like a rejection
+/// frees inputs that may already be spent on the network, so an immediate
+/// reselection double-spends them. Absence
 /// of evidence that a send happened is not evidence that it did not, so the
 /// fence must survive every exit except the one that proves otherwise.
 ///
 /// # The pending-spend phase waits for evidence, not for a bound to run out
 ///
-/// Fencing by default is only half of it. Three earlier revisions paired that
-/// default with a `last_processed_height + N` bound and argued about where to
-/// sample the height; all three could be consumed by an ordinary historical
-/// catch-up, because those elapsed blocks were mined before the transaction was
-/// submitted and say nothing about it (`dashpay/platform#4309`, review round 5).
-/// A fourth swapped the height for a one-hour monotonic deadline, which fails
-/// the same way for the same reason: a signed transaction does not expire, so
-/// an hour of a clock no one can fast-forward is still not evidence that its
-/// inputs are safe to spend again (review round 7).
+/// Fencing by default is only half of it. Pairing that default with a
+/// `last_processed_height + N` bound is unsound wherever the height is sampled:
+/// an ordinary historical catch-up consumes the bound, because those elapsed
+/// blocks were mined before the transaction was submitted and say nothing
+/// about it. A one-hour monotonic deadline fails the same way for the same
+/// reason: a signed transaction does not expire, so an hour of a clock no one
+/// can fast-forward is still not evidence that its inputs are safe to spend
+/// again.
 ///
 /// The pending-spend phase ends when the wallet OBSERVES the outpoint spent
 /// ([`WalletGeneration::observe_spent`]), and nothing else ends it. That is
 /// readable without a lock, a guard or an await, so EVERY exit — normal return,
 /// cancellation, unwind — settles the same way. The cancellation path needs no
-/// special case at all any more.
+/// special case at all.
 pub(crate) struct InBroadcastPin {
     generation: Arc<WalletGeneration>,
     outpoints: Vec<OutPoint>,
@@ -853,16 +839,13 @@ impl InBroadcastPin {
     ///
     /// # Why this takes no height, and no guard
     ///
-    /// It used to take a `last_processed_height` sampled after the broadcaster
-    /// returned, from a wallet-manager guard the caller had to keep held across
-    /// the call so no writer could advance the clock between the sample and the
-    /// install. A later revision swapped that height for a monotonic
-    /// `Instant::now` deadline read inside the `in_broadcast` critical section.
-    ///
-    /// Both are gone, and so is the bound they computed. What this installs is
-    /// a plain flag: there is no clock to sample, so no guard to hold and no
-    /// window to protect. The phase it opens ends on an observed spend
-    /// (`dashpay/platform#4309`).
+    /// A `last_processed_height` sampled after the broadcaster returned would
+    /// need a wallet-manager guard held across the call so no writer could
+    /// advance the clock between the sample and the install; a monotonic
+    /// `Instant::now` deadline read inside the `in_broadcast` critical section
+    /// would still be a bound that merely elapses. What this installs is a
+    /// plain flag: there is no clock to sample, so no guard to hold and no
+    /// window to protect. The phase it opens ends on an observed spend.
     ///
     /// # This is equivalent to just dropping the pin
     ///
@@ -904,9 +887,9 @@ impl InBroadcastPin {
     /// same two shapes `settle_released` names), synchronously, BEFORE the
     /// first `.await` of any cleanup that must still run under the raised
     /// fence. The pin stays live, so its dispatching hold keeps the outpoints
-    /// fenced through that cleanup — the round-8 ordering is untouched — but
-    /// every exit after this call, the cleanup future being dropped mid-await
-    /// included, now settles the fence as released.
+    /// fenced through that cleanup, but every exit after this call, the
+    /// cleanup future being dropped mid-await included, settles the fence as
+    /// released.
     ///
     /// Without it, a rejection arm that awaited its reservation cleanup
     /// before settling would, on cancellation inside that await, drop the pin
@@ -914,7 +897,7 @@ impl InBroadcastPin {
     /// the outcome is unknown; here the outcome is proven — nothing reached
     /// the network — so the pending-spend fence it opened could never be
     /// cleared by an observed spend and held the inputs for the manager's
-    /// lifetime (`dashpay/platform#4309`).
+    /// lifetime.
     ///
     /// Once recorded, the verdict is FINAL for this pin: rejection is
     /// established by the broadcaster's definitive answer (or by the
@@ -1010,9 +993,9 @@ mod tests {
         );
     }
 
-    /// `dashpay/platform#4309`: dropping a pin WITHOUT a definitive rejection
-    /// keeps the fence. This is the cancellation / unwind / suspension path,
-    /// none of which proves the transaction failed to reach the network.
+    /// Dropping a pin WITHOUT a definitive rejection keeps the fence. This is
+    /// the cancellation / unwind / suspension path, none of which proves the
+    /// transaction failed to reach the network.
     #[test]
     fn dropping_an_unreleased_pin_keeps_the_fence() {
         let generation = Arc::new(WalletGeneration::new());
@@ -1028,11 +1011,10 @@ mod tests {
         );
     }
 
-    /// `dashpay/platform#4309`: once a definitive pre-send failure is
-    /// ESTABLISHED, recording it on the pin makes every later exit settle
-    /// released — the cancellation-safe half of `settle_released`. A
-    /// rejection arm awaits its reservation cleanup under the still-raised
-    /// fence (round-8 ordering); if that future is dropped inside the await,
+    /// Once a definitive pre-send failure is ESTABLISHED, recording it on the
+    /// pin makes every later exit settle released — the cancellation-safe half
+    /// of `settle_released`. A rejection arm awaits its reservation cleanup
+    /// under the still-raised fence; if that future is dropped inside the await,
     /// the pin must not fall back to its pending default and fence a
     /// transaction proven never sent — nothing could ever observe that spend,
     /// so nothing could ever clear the fence.
@@ -1066,16 +1048,15 @@ mod tests {
         );
     }
 
-    /// THE HEADLINE PROPERTY (`dashpay/platform#4309`, review round 5).
+    /// THE HEADLINE PROPERTY.
     ///
     /// A pending-spend fence is not consulted against chain height at all, so
-    /// no amount of catch-up can retire it. Previous revisions bounded the
-    /// fence at `height + IN_BROADCAST_FENCE_BLOCKS` and every one of them lost
-    /// the fence to a historical sync that advanced the clock past the bound
-    /// over blocks mined BEFORE the dispatch.
+    /// no amount of catch-up can retire it. A fence bounded at `height + N`
+    /// loses to a historical sync that advances the clock past the bound over
+    /// blocks mined BEFORE the dispatch.
     ///
-    /// `in_broadcast_conflict` no longer takes a height, so this test states
-    /// the property the only way it can still be stated: the fence survives
+    /// `in_broadcast_conflict` takes no height, so this test states the
+    /// property the only way it can be stated: the fence survives
     /// unboundedly many consultations and any amount of elapsed chain, and only
     /// an observation clears it.
     #[test]
@@ -1193,20 +1174,20 @@ mod tests {
         );
     }
 
-    /// `dashpay/platform#4309`, REVIEW ROUND 7 — THE UNIT-LEVEL REGRESSION.
+    /// THE UNIT-LEVEL ELAPSED-TIME REGRESSION.
     ///
-    /// The pending-spend fence used to carry a one-hour monotonic deadline, and
-    /// `in_broadcast_conflict` retired the fence on that deadline ALONE. Elapsed
-    /// time is not evidence: the signed transaction is still valid, and nothing
-    /// about an hour passing proves no peer retained it. A withholding DAPI
-    /// endpoint or an hour-backgrounded app was therefore enough to hand the
-    /// input back to the next build, which would sign a conflicting transaction
-    /// over inputs the original might still spend.
+    /// A pending-spend fence carrying a one-hour monotonic deadline, with
+    /// `in_broadcast_conflict` retiring the fence on that deadline ALONE, is
+    /// unsound. Elapsed time is not evidence: the signed transaction is still
+    /// valid, and nothing about an hour passing proves no peer retained it. A
+    /// withholding DAPI endpoint or an hour-backgrounded app is then enough to
+    /// hand the input back to the next build, which signs a conflicting
+    /// transaction over inputs the original might still spend.
     ///
     /// `test_elapse_time_based_release` means "let every timeout this fence
-    /// might carry come due, then tell me whether it is pending". Against the
-    /// deadline-bearing implementation it retired the fence and the assertion
-    /// below failed; against this one there is no deadline to bring due, so the
+    /// might carry come due, then tell me whether it is pending". Against a
+    /// deadline-bearing implementation it retires the fence and the assertion
+    /// below fails; against this one there is no deadline to bring due, so the
     /// fence stands and only the observed spend at the end releases it.
     #[test]
     fn the_pending_fence_outlives_any_elapsed_deadline() {
@@ -1281,9 +1262,8 @@ mod tests {
     }
 
     /// Two dispatches of the same transaction settling in sequence: the second
-    /// settle must never UNDO the fence the first installed. This used to be a
-    /// statement about deadlines never being shortened; with no deadline the
-    /// property is simply that the phase stays open.
+    /// settle must never UNDO the fence the first installed. With no deadline
+    /// to shorten, the property is simply that the phase stays open.
     #[test]
     fn a_second_settle_does_not_undo_the_first_fence() {
         let generation = Arc::new(WalletGeneration::new());
@@ -1309,13 +1289,12 @@ mod tests {
     }
 
     /// Fences are per WALLET, and a generation that replaces another under the
-    /// same id INHERITS them (`dashpay/platform#4309`, review round 8).
+    /// same id INHERITS them.
     ///
-    /// This test used to assert the opposite — that a re-created wallet got a
-    /// fresh map — and that was the bug: the map went with the old generation
-    /// while the transaction it protected stayed valid and relayable, so the
-    /// replacement could sign a conflicting spend of the same outpoint. The
-    /// end-to-end round trip through the manager is
+    /// A re-created wallet that got a fresh map would be the bug: the map would
+    /// go with the old generation while the transaction it protected stayed
+    /// valid and relayable, so the replacement could sign a conflicting spend
+    /// of the same outpoint. The end-to-end round trip through the manager is
     /// `a_recreated_wallet_inherits_the_pending_fences_of_the_generation_it_replaces`;
     /// this pins the mechanism.
     #[test]
@@ -1410,24 +1389,23 @@ mod tests {
         );
     }
 
-    /// `dashpay/platform#4309`, REVIEW ROUND 5 SUGGESTION: THE
-    /// DISPATCHING→PENDING HANDOFF REGRESSION, MADE DETERMINISTIC.
+    /// THE DISPATCHING→PENDING HANDOFF REGRESSION, MADE DETERMINISTIC.
     ///
     /// The transition lifts the dispatching hold and opens the pending-spend
     /// phase. If those two ever land in separate critical sections, an observer
     /// in between sees the outpoint held by NOTHING and a build can select an
     /// input whose transaction may be on the wire.
     ///
-    /// The previous regression parked a manager writer and hoped the scheduler
-    /// granted it the lock inside a window a handful of instructions wide. It
-    /// did not reliably do so — the reviewer showed it stays green against the
-    /// pre-fix code — so it proved nothing.
+    /// A regression that parks a manager writer and hopes the scheduler grants
+    /// it the lock inside a window a handful of instructions wide does not
+    /// reliably get it — it stays green against a split transition — so it
+    /// proves nothing.
     ///
     /// This one is deterministic. [`WalletGeneration::on_next_settle_boundary`]
     /// runs the observer AT the midpoint by construction — after the
     /// dispatching hold is lifted, before the pending phase opens, so the
     /// probe lands inside the torn state itself rather than before any fence
-    /// was touched (round 6) — and the settling thread BLOCKS until the
+    /// was touched — and the settling thread BLOCKS until the
     /// observer has published what it saw, so there is no race to lose. The
     /// observer probes with `try_lock`
     /// ([`WalletGeneration::try_probe_in_broadcast`]) rather than blocking,

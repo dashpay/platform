@@ -13,8 +13,8 @@
 //! that sweep is NOT what makes the ambiguous case safe. The inputs of a
 //! transaction that may be on the network are held by the generation's
 //! pending-spend fence, which the TTL does not touch and which no elapsed
-//! quantity retires — only an observed spend does
-//! (`dashpay/platform#4309`). Reservation cleanup here and fence settlement in
+//! quantity retires — only an observed spend does.
+//! Reservation cleanup here and fence settlement in
 //! the caller are two separate obligations; see
 //! [`release_reservation_after_rejected_broadcast`] for the order they must run
 //! in.
@@ -62,16 +62,10 @@ pub(crate) const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 
 // THERE IS DELIBERATELY NO TIMEOUT CONSTANT FOR THE BROADCAST INPUT FENCE.
 //
-// An `IN_BROADCAST_FENCE_ORPHAN_TIMEOUT` used to live here: one hour on a
-// monotonic `Instant`, after which the pending-spend phase of
-// `WalletGeneration::pin_in_broadcast` released an outpoint the wallet had
-// never observed spent. It was the fifth bound this fence was given and the
-// fifth to be unsound (`dashpay/platform#4309` — three height-anchored forms in
-// rounds 2-4, the monotonic one in rounds 5-6, all removed in round 7).
-//
-// The monotonic clock did fix what the height-anchored bounds got wrong —
-// catch-up cannot fast-forward it. It did not fix the actual defect, which is
-// that ELAPSED TIME IS NOT EVIDENCE. A signed transaction does not become
+// Neither a height-anchored bound nor a monotonic-clock deadline is sound
+// here. A height bound can be fast-forwarded by catch-up. A monotonic clock
+// cannot, but it shares the real defect: ELAPSED TIME IS NOT EVIDENCE. A
+// signed transaction does not become
 // invalid by getting older, and waiting does not prove no peer retained it: a
 // withholding DAPI endpoint can accept the transaction while keeping it off the
 // network, and a backgrounded mobile wallet can outlast any deadline worth
@@ -121,11 +115,10 @@ pub(crate) const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 /// `SignedPaymentError::WalletRemoved` before sampling the height, its
 /// `reconcile_removed_entry` release is itself generation-bound and no-ops on a
 /// missing wallet, and the finalized-transaction handle path runs after the
-/// FFI layer's generation-identity check. The earlier claim that "the
-/// wallet-mismatch / account-lookup paths already reject those cases" was wrong
-/// for the registry broadcast path — `is_same_generation` compares handles (a
-/// removed generation matches itself) and that path performs no account lookup
-/// at all (`dashpay/platform#4185`).
+/// FFI layer's generation-identity check. The wallet-mismatch and
+/// account-lookup paths are not enough on their own for the registry broadcast
+/// path: `is_same_generation` compares handles (a removed generation matches
+/// itself) and that path performs no account lookup at all.
 pub(crate) fn reservation_expired(registered_height: u32, current_height: Option<u32>) -> bool {
     match current_height {
         Some(current) => current.saturating_sub(registered_height) >= RESERVATION_MAX_AGE_BLOCKS,
@@ -206,12 +199,12 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
 /// * Cleanup that removes **protection** runs **after**:
 ///   [`InBroadcastPin::settle_released`](crate::wallet::core::InBroadcastPin::settle_released)
 ///   comes down only once this call has returned. Releasing the fence first
-///   left a window in which the outpoint was neither fenced nor — once
-///   catch-up had swept it — reserved; a build queued on the manager write
+///   would open a window in which the outpoint is neither fenced nor — once
+///   catch-up has swept it — reserved; a build queued on the manager write
 ///   lock could reserve and sign it there, and the token-less form of this
 ///   call would then delete that newer reservation, freeing the input for a
-///   second signer (`dashpay/platform#4309`, review round 8). With the fence
-///   held across the call, such a build meets it and rolls back instead.
+///   second signer. With the fence held across the call, such a build meets
+///   it and rolls back instead.
 ///
 /// The fence coming down after this call must not mean the pin still carries
 /// its pending-on-drop DEFAULT through it: this call awaits, and awaiting is
@@ -221,7 +214,7 @@ pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster +
 /// [`InBroadcastPin::settle_released_on_drop`](crate::wallet::core::InBroadcastPin::settle_released_on_drop)
 /// — synchronously before awaiting this call, so a cancellation inside it
 /// settles the fence as released rather than opening a pending-spend fence no
-/// observed spend could ever clear (`dashpay/platform#4309`).
+/// observed spend could ever clear.
 ///
 /// Both ordering halves are exercised end to end by
 /// `payments::tests::the_contact_send_fence_outlives_its_rejected_broadcast_reservation_cleanup`,

@@ -1,0 +1,30 @@
+{
+  "$formatVersion": "1",
+  "id": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "note": {
+      "type": "object",
+      "ownerRefersTo": {
+        "type": "permanentDocument",
+        "documentType": "ghost",
+        "lookup": {
+          "index": "byMember",
+          "keys": {
+            "memberId": "."
+          }
+        }
+      },
+      "properties": {
+        "content": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 100
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

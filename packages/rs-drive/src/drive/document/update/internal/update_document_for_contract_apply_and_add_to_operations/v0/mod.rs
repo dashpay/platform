@@ -21,6 +21,13 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // With no caller transaction, TTL preparation (direct drainage
+        // writes) and the apply below would each commit on their own; span
+        // them with one owned transaction so the write is all-or-nothing.
+        let owned_transaction = (estimated_costs_only_with_layer_info.is_none()
+            && transaction.is_none())
+        .then(|| self.grove.start_transaction());
+        let transaction = owned_transaction.as_ref().or(transaction);
         let batch_operations = self.update_document_for_contract_operations(
             document_and_contract_info,
             block_info,
@@ -35,6 +42,10 @@ impl Drive {
             batch_operations,
             drive_operations,
             &platform_version.drive,
-        )
+        )?;
+        if let Some(owned_transaction) = owned_transaction {
+            self.commit_transaction(owned_transaction, &platform_version.drive)?;
+        }
+        Ok(())
     }
 }

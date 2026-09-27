@@ -339,6 +339,7 @@ mod tests {
             ranked_averageable: false,
             terminal: None,
             preallocated: false,
+            flat: false,
         }
     }
 
@@ -822,6 +823,7 @@ mod tests {
             range_seconds: 21_600,
             step_seconds: 7_200,
             phase_seconds: 0,
+            ttl_seconds: None,
         };
         let key = DriveKeyInfo::KeySize(KeyInfo::MaxKeySize {
             unique_id: vec![7u8; 4],
@@ -860,6 +862,7 @@ mod tests {
             range_seconds: 100 * 3_600,
             step_seconds: 3_600,
             phase_seconds: 0,
+            ttl_seconds: None,
         };
         assert_eq!(oversized.overlap_factor(), 100);
         let keys = time_range_index_keys(Some(&oversized), key, 24);

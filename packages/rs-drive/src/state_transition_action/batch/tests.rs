@@ -7,7 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use crate::state_transition_action::batch::GasPayer;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
@@ -130,6 +132,8 @@ fn test_document_base_v0() -> DocumentBaseTransitionActionV0 {
         data_contract: test_dpns_contract_info(),
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
+        contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+        declared_action_fee: None,
     }
 }
 
@@ -396,6 +400,9 @@ fn make_replace_v0() -> DocumentReplaceTransitionActionV0 {
         transferred_at_core_block_height: Some(300),
         data: BTreeMap::from([("field".to_string(), Value::U64(42))]),
         changed_data_fields: BTreeSet::from(["field".to_string()]),
+        added_data_fields: BTreeSet::new(),
+        removed_identifier_fields: BTreeMap::new(),
+        stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
     }
 }
@@ -2543,6 +2550,7 @@ fn make_batch_v0() -> BatchTransitionActionV0 {
         owner_id: Identifier::from([0x11; 32]),
         transitions: vec![],
         user_fee_increase: 10,
+        ..Default::default()
     }
 }
 
@@ -2930,6 +2938,8 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         data_contract: stamp_test_contract_info(protocol_version),
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
+        contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+        declared_action_fee: None,
     });
     DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
         base,
@@ -2949,6 +2959,8 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         data_contract: stamp_test_contract_info(protocol_version),
         token_cost: None,
         gas_fees_paid_by: GasFeesPaidBy::default(),
+        contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+        declared_action_fee: None,
     });
     DocumentReplaceTransitionAction::V0(DocumentReplaceTransitionActionV0 {
         base,
@@ -2964,6 +2976,9 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         transferred_at_core_block_height: Some(300),
         data: BTreeMap::from([("field".to_string(), Value::U64(42))]),
         changed_data_fields: BTreeSet::from(["field".to_string()]),
+        added_data_fields: BTreeSet::new(),
+        removed_identifier_fields: BTreeMap::new(),
+        stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
     })
 }
@@ -3038,4 +3053,370 @@ fn should_stamp_fetched_contract_version_on_replace_conversion() {
         Document::try_from_owned_replace_transition_action(action, owner_id, platform_version)
             .expect("owned replace conversion");
     assert_eq!(owned.contract_version(), Some(STAMP_TEST_CONTRACT_VERSION));
+}
+
+/// A create drops a transient value (the DPNS `domain`'s `preorderSalt`)
+/// before its document is stored. From protocol version 14 a replace drops it
+/// too; protocol version 13 stored whatever the replace carried.
+#[test]
+fn should_drop_transient_values_on_replace_conversion_from_protocol_version_14() {
+    let owner_id = Identifier::from([0xDD; 32]);
+    let data = BTreeMap::from([
+        ("label".to_string(), Value::Text("alice".to_string())),
+        ("preorderSalt".to_string(), Value::Bytes32([7; 32])),
+    ]);
+    let platform_version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+
+    for (platform_version, replace_keeps_salt) in [
+        (PlatformVersion::latest(), false),
+        (platform_version_13, true),
+    ] {
+        let mut replace = stamp_test_replace_action(platform_version.protocol_version);
+        let DocumentReplaceTransitionAction::V0(replace_v0) = &mut replace;
+        replace_v0.data = data.clone();
+        let mut create = stamp_test_create_action(platform_version.protocol_version);
+        let DocumentCreateTransitionAction::V0(create_v0) = &mut create;
+        create_v0.data = data.clone();
+
+        let replaced = [
+            Document::try_from_replace_transition_action(&replace, owner_id, platform_version)
+                .expect("borrowed replace conversion"),
+            Document::try_from_owned_replace_transition_action(replace, owner_id, platform_version)
+                .expect("owned replace conversion"),
+        ];
+        let created = [
+            Document::try_from_create_transition_action(&create, owner_id, platform_version)
+                .expect("borrowed create conversion"),
+            Document::try_from_owned_create_transition_action(create, owner_id, platform_version)
+                .expect("owned create conversion"),
+        ];
+        for (document, keeps_salt) in replaced
+            .iter()
+            .map(|document| (document, replace_keeps_salt))
+            .chain(created.iter().map(|document| (document, false)))
+        {
+            assert_eq!(
+                document.properties().contains_key("preorderSalt"),
+                keeps_salt,
+                "protocol version {}",
+                platform_version.protocol_version
+            );
+            assert_eq!(
+                document.properties().get("label"),
+                Some(&Value::Text("alice".to_string()))
+            );
+        }
+    }
+}
+
+// ============================================================
+// 24. Gas payer resolution (protocol version 14)
+// ============================================================
+
+/// A creation on `contract` asking `requested` for its gas, on a document type offering
+/// `offered`. The fixture's owner differs per call, so tests share one contract.
+fn create_asking(
+    contract: &Arc<DataContractFetchInfo>,
+    requested: GasFeesPaidBy,
+    offered: GasFeesPaidBy,
+) -> BatchedTransitionAction {
+    let mut base = test_document_base_v0();
+    base.data_contract = contract.clone();
+    base.gas_fees_paid_by = requested;
+    base.contract_gas_fees_paid_by = offered;
+    BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
+        DocumentCreateTransitionAction::V0(DocumentCreateTransitionActionV0 {
+            base: DocumentBaseTransitionAction::V0(base),
+            ..make_create_v0()
+        }),
+    ))
+}
+
+fn batch_of(transitions: Vec<BatchedTransitionAction>) -> BatchTransitionAction {
+    BatchTransitionAction::V0(BatchTransitionActionV0 {
+        transitions,
+        ..make_batch_v0()
+    })
+}
+
+#[test]
+fn should_resolve_an_empty_batch_and_an_unsponsored_one_to_the_document_owner() {
+    let contract = test_dpns_contract_info();
+    assert_eq!(
+        batch_of(vec![]).resolve_gas_payer(),
+        Ok(GasPayer::DocumentOwner)
+    );
+    // An offer the transition does not take up
+    assert_eq!(
+        batch_of(vec![create_asking(
+            &contract,
+            GasFeesPaidBy::DocumentOwner,
+            GasFeesPaidBy::ContractOwner
+        )])
+        .resolve_gas_payer(),
+        Ok(GasPayer::DocumentOwner)
+    );
+    // A preference the document type does not offer
+    assert_eq!(
+        batch_of(vec![create_asking(
+            &contract,
+            GasFeesPaidBy::PreferContractOwner,
+            GasFeesPaidBy::DocumentOwner
+        )])
+        .resolve_gas_payer(),
+        Ok(GasPayer::DocumentOwner)
+    );
+}
+
+#[test]
+fn should_name_the_contract_owner_with_the_strictness_the_batch_asked_for() {
+    let contract = test_dpns_contract_info();
+    let contract_owner = contract.contract.owner_id();
+    assert_eq!(
+        batch_of(vec![create_asking(
+            &contract,
+            GasFeesPaidBy::PreferContractOwner,
+            GasFeesPaidBy::ContractOwner
+        )])
+        .resolve_gas_payer(),
+        Ok(GasPayer::ContractOwner {
+            identity_id: contract_owner,
+            strict: false
+        })
+    );
+    assert_eq!(
+        batch_of(vec![create_asking(
+            &contract,
+            GasFeesPaidBy::ContractOwner,
+            GasFeesPaidBy::ContractOwner
+        )])
+        .resolve_gas_payer(),
+        Ok(GasPayer::ContractOwner {
+            identity_id: contract_owner,
+            strict: true
+        })
+    );
+    // One insisting transition makes the whole batch insist
+    assert_eq!(
+        batch_of(vec![
+            create_asking(
+                &contract,
+                GasFeesPaidBy::PreferContractOwner,
+                GasFeesPaidBy::ContractOwner
+            ),
+            create_asking(
+                &contract,
+                GasFeesPaidBy::ContractOwner,
+                GasFeesPaidBy::ContractOwner
+            ),
+        ])
+        .resolve_gas_payer(),
+        Ok(GasPayer::ContractOwner {
+            identity_id: contract_owner,
+            strict: true
+        })
+    );
+}
+
+#[test]
+fn should_refuse_an_insistence_the_document_type_does_not_offer() {
+    let contract = test_dpns_contract_info();
+    for offered in [
+        GasFeesPaidBy::DocumentOwner,
+        GasFeesPaidBy::PreferContractOwner,
+    ] {
+        let error = batch_of(vec![create_asking(
+            &contract,
+            GasFeesPaidBy::ContractOwner,
+            offered,
+        )])
+        .resolve_gas_payer()
+        .expect_err("expected the insistence to be refused");
+        assert_eq!(error.code(), 40129);
+    }
+}
+
+#[test]
+fn should_refuse_a_batch_that_names_two_payers() {
+    let contract = test_dpns_contract_info();
+    let error = batch_of(vec![
+        create_asking(
+            &contract,
+            GasFeesPaidBy::PreferContractOwner,
+            GasFeesPaidBy::ContractOwner,
+        ),
+        create_asking(
+            &contract,
+            GasFeesPaidBy::DocumentOwner,
+            GasFeesPaidBy::ContractOwner,
+        ),
+    ])
+    .resolve_gas_payer()
+    .expect_err("expected the mixed batch to be refused");
+    assert_eq!(error.code(), 40130);
+}
+
+#[test]
+fn should_not_let_a_failed_transition_name_a_payer() {
+    // The transformer replaced one member by a nonce bump: the batch still resolves to the
+    // sponsor the other member named (the execution event then drops that sponsor), rather
+    // than hiding the member's own error behind an inconsistency.
+    let contract = test_dpns_contract_info();
+    let contract_owner = contract.contract.owner_id();
+    assert_eq!(
+        batch_of(vec![
+            create_asking(
+                &contract,
+                GasFeesPaidBy::ContractOwner,
+                GasFeesPaidBy::ContractOwner
+            ),
+            BatchedTransitionAction::BumpIdentityDataContractNonce(make_bump_action()),
+        ])
+        .resolve_gas_payer(),
+        Ok(GasPayer::ContractOwner {
+            identity_id: contract_owner,
+            strict: true
+        })
+    );
+    assert_eq!(
+        batch_of(vec![
+            BatchedTransitionAction::BumpIdentityDataContractNonce(make_bump_action())
+        ])
+        .resolve_gas_payer(),
+        Ok(GasPayer::DocumentOwner)
+    );
+}
+
+mod action_fees {
+    use crate::state_transition_action::batch::{
+        action_fee_operations, action_fees_total, ResolvedDocumentActionFee,
+    };
+    use crate::util::batch::drive_op_batch::{ContractFeePotOperationType, IdentityOperationType};
+    use crate::util::batch::DriveOperation;
+    use dpp::balances::credits::MAX_CREDITS;
+    use dpp::data_contract::document_type::action_fees::{ContractFeePot, DocumentActionFee};
+    use dpp::platform_value::Identifier;
+
+    fn id(seed: u8) -> Identifier {
+        Identifier::from([seed; 32])
+    }
+
+    fn fee(
+        contract: u8,
+        contract_owner: u8,
+        owner: u64,
+        moderators: u64,
+    ) -> ResolvedDocumentActionFee {
+        ResolvedDocumentActionFee {
+            contract_id: id(contract),
+            contract_owner_id: id(contract_owner),
+            fee: DocumentActionFee { owner, moderators },
+        }
+    }
+
+    /// What was removed from the payer, and what was added to each pot of each contract
+    type Summary = (
+        Option<(Identifier, u64)>,
+        Vec<(Identifier, ContractFeePot, u64)>,
+    );
+
+    /// The operations as `(removed from the payer, [(contract, pot, amount)])`
+    fn summarize(operations: Vec<DriveOperation<'static>>) -> Summary {
+        let mut removed = None;
+        let mut added = vec![];
+        for operation in operations {
+            match operation {
+                DriveOperation::IdentityOperation(
+                    IdentityOperationType::RemoveFromIdentityBalance {
+                        identity_id,
+                        balance_to_remove,
+                    },
+                ) => {
+                    assert!(removed.is_none(), "expected a single removal");
+                    removed = Some((Identifier::from(identity_id), balance_to_remove));
+                }
+                DriveOperation::ContractFeePotOperation(
+                    ContractFeePotOperationType::AddToPot {
+                        contract_id,
+                        pot,
+                        amount,
+                    },
+                ) => added.push((contract_id, pot, amount)),
+                other => panic!("unexpected operation {other:?}"),
+            }
+        }
+        (removed, added)
+    }
+
+    #[test]
+    fn should_charge_both_parts_to_a_payer_who_is_not_the_contract_owner() {
+        let fees = [fee(1, 9, 10, 100)];
+        assert_eq!(action_fees_total(&id(5), &fees).expect("total"), 110);
+        let (removed, added) = summarize(action_fee_operations(id(5), &fees).expect("operations"));
+        assert_eq!(removed, Some((id(5), 110)));
+        assert_eq!(
+            added,
+            vec![
+                (id(1), ContractFeePot::Owner, 10),
+                (id(1), ContractFeePot::Moderators, 100)
+            ]
+        );
+    }
+
+    #[test]
+    fn should_drop_the_owner_part_when_the_contract_owner_pays() {
+        let fees = [fee(1, 9, 10, 100)];
+        assert_eq!(action_fees_total(&id(9), &fees).expect("total"), 100);
+        let (removed, added) = summarize(action_fee_operations(id(9), &fees).expect("operations"));
+        assert_eq!(removed, Some((id(9), 100)));
+        assert_eq!(added, vec![(id(1), ContractFeePot::Moderators, 100)]);
+    }
+
+    #[test]
+    fn should_charge_nothing_when_nothing_is_owed() {
+        assert!(action_fee_operations(id(5), &[])
+            .expect("operations")
+            .is_empty());
+        // The contract owner pays a fee that only has an owner part: nothing moves.
+        let fees = [fee(1, 9, 10, 0)];
+        assert_eq!(action_fees_total(&id(9), &fees).expect("total"), 0);
+        assert!(action_fee_operations(id(9), &fees)
+            .expect("operations")
+            .is_empty());
+    }
+
+    #[test]
+    fn should_add_to_each_pot_once_however_many_transitions_pay_into_it() {
+        // A pot's new total is computed from the committed one, so two additions to the same
+        // pot in one batch would lose the first.
+        let fees = [fee(1, 9, 10, 100), fee(1, 9, 1, 2), fee(2, 9, 0, 7)];
+        let (removed, added) = summarize(action_fee_operations(id(5), &fees).expect("operations"));
+        assert_eq!(removed, Some((id(5), 120)));
+        assert_eq!(
+            added,
+            vec![
+                (id(1), ContractFeePot::Owner, 11),
+                (id(1), ContractFeePot::Moderators, 102),
+                (id(2), ContractFeePot::Moderators, 7)
+            ]
+        );
+        let paid_into_pots: u64 = added.iter().map(|(_, _, amount)| amount).sum();
+        assert_eq!(
+            paid_into_pots, 120,
+            "what leaves the payer is what reaches the pots"
+        );
+    }
+
+    #[test]
+    fn should_hold_fees_that_add_up_past_the_maximum_credits_at_the_maximum() {
+        // Nobody can pay it, so fee validation refuses the batch for an insufficient balance:
+        // a consensus error, where an overflow would have been an internal one.
+        let fees = [fee(1, 9, u64::MAX / 2, 0), fee(1, 9, u64::MAX / 2, 5)];
+        assert_eq!(
+            action_fees_total(&id(5), &fees).expect("total"),
+            MAX_CREDITS
+        );
+        let (removed, _) = summarize(action_fee_operations(id(5), &fees).expect("operations"));
+        assert_eq!(removed, Some((id(5), MAX_CREDITS)));
+    }
 }

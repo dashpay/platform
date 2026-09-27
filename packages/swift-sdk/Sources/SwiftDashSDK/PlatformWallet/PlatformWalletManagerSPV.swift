@@ -175,6 +175,14 @@ extension PlatformWalletManager {
     /// Returns a snapshot with all sub-progresses set to `nil` if the
     /// SPV client is not yet running.
     public func syncProgress() throws -> PlatformSpvSyncProgress {
+        try ensureConfigured()
+        return try Self.readSyncProgress(handle)
+    }
+
+    /// The blocking native read behind [`syncProgress()`]; also what the
+    /// progress poller runs on its own queue. Parks the caller (the Rust
+    /// side `block_on`s the SPV client lock).
+    nonisolated static func readSyncProgress(_ handle: Handle) throws -> PlatformSpvSyncProgress {
         var ffi = FFISpvSyncProgress(
             overall_state: 0, overall_percentage: 0,
             has_headers: false, headers_state: 0, headers_current: 0,
@@ -200,6 +208,12 @@ extension PlatformWalletManager {
     /// manager: this is a one-shot FFI query, the published property
     /// is the cached value the 1 Hz progress poll feeds.
     public func connectedSpvPeers() throws -> [PlatformSpvPeerInfo] {
+        try ensureConfigured()
+        return try Self.readConnectedSpvPeers(handle)
+    }
+
+    /// The blocking native read behind [`connectedSpvPeers()`].
+    nonisolated static func readConnectedSpvPeers(_ handle: Handle) throws -> [PlatformSpvPeerInfo] {
         var entries: UnsafePointer<FFISpvPeerInfo>? = nil
         var count: UInt = 0
         try platform_wallet_manager_spv_connected_peers(handle, &entries, &count).check()
@@ -218,6 +232,12 @@ extension PlatformWalletManager {
 
     /// Whether the SPV client is currently running.
     public func isSpvRunning() throws -> Bool {
+        try ensureConfigured()
+        return try Self.readIsSpvRunning(handle)
+    }
+
+    /// The native read behind [`isSpvRunning()`] (a `try_read`, never parks).
+    nonisolated static func readIsSpvRunning(_ handle: Handle) throws -> Bool {
         var running: Bool = false
         try platform_wallet_manager_spv_is_running(handle, &running).check()
         return running
@@ -236,6 +256,12 @@ extension PlatformWalletManager {
     /// stamp across multiple polls means the chain has stalled
     /// even though the local SPV client is healthy.
     public func currentSpvTipBlockTime() throws -> Date? {
+        try ensureConfigured()
+        return try Self.readSpvTipBlockTime(handle)
+    }
+
+    /// The blocking native read behind [`currentSpvTipBlockTime()`].
+    nonisolated static func readSpvTipBlockTime(_ handle: Handle) throws -> Date? {
         var unixSeconds: UInt64 = 0
         try platform_wallet_manager_spv_tip_unix_seconds(handle, &unixSeconds).check()
         guard unixSeconds > 0 else { return nil }

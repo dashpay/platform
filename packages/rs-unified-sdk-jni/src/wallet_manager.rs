@@ -42,7 +42,7 @@
 
 use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
 use crate::persistence::{build_extension, build_vtable, KotlinPersistenceCtx};
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception, PWFFI_CODE_OFFSET};
+use crate::support::{guard, take_pwffi_error, throw_pwffi_result, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::{
     jboolean, jbyteArray, jdoubleArray, jint, jlong, jlongArray, jobject, jstring, JNI_FALSE,
@@ -155,7 +155,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         let persistence_ctx =
             Box::into_raw(Box::new(KotlinPersistenceCtx::new(persistence_global)));
         let persistence: PersistenceCallbacks = build_vtable(persistence_ctx as *mut c_void);
-        let persistence_extension = build_extension();
+        let persistence_extension = build_extension(env, &persistence_bridge);
         let persistence_capabilities = PersistenceCapabilitiesFFI {
             version: declared_capabilities_version,
             reserved: 0,
@@ -733,8 +733,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             throw_sdk_exception(env, 1, "builder handle is 0");
             return;
         }
-        if amount <= 0 {
-            throw_sdk_exception(env, 1, "amount must be positive");
+        // Negative only. A ZERO output is legitimate for a drain
+        // (SelectionStrategy::All): the engine overwrites the destination
+        // output with (total inputs - fee), so the caller supplies no amount.
+        // Rejecting it here made "send my whole balance" inexpressible and
+        // forced callers to invent a placeholder the engine then discarded.
+        // The positive-amount rule still holds for every other build — it is
+        // enforced one layer up in `ManagedPlatformWallet.buildSignedPayment`,
+        // which knows whether the caller is draining; this boundary does not,
+        // so it must not duplicate a check it cannot qualify. A negative
+        // jlong would bit-cast to a huge u64, so that stays refused here.
+        if amount < 0 {
+            throw_sdk_exception(env, 1, "amount must not be negative");
             return;
         }
         let Some(address_c) = read_cstring_required(env, &address, "address") else {
@@ -1423,16 +1433,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 // nack/abandonment. Backed by the process-global registry in `platform_wallet_ffi`
 // (`core_wallet_signed_payment_*`). See `SignedPaymentRegistry`.
 
-/// `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign, and
-/// register a builder for deferred (BIP70/BIP270) submission in ONE native
-/// operation. Selection and reservation commit as a single unit under the
+/// `core_wallet_signed_payment_finalize_with_deliverable` — atomically fund,
+/// reserve, sign, and register a builder for deferred (BIP70/BIP270) submission
+/// in ONE native operation. Selection and reservation commit as a single unit under the
 /// wallet-manager lock, so concurrent deferred builds (or a deferred build
 /// racing an immediate send) can no longer double-select an input. CONSUMES
 /// [builder]. `accountType`/`accountIndex` are the funding account (0 BIP44,
 /// 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a `MnemonicResolverHandle`.
 ///
 /// Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
-/// `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+/// `u64 token, u64 feeDuffs, u64 deliverableDuffs, u32 txidLen, txid utf8,
+/// u32 txBytesLen, txBytes`. `deliverableDuffs` is the value of the sole
+/// non-OP_RETURN output of the REGISTERED transaction (0 when the payment has
+/// no single destination) — computed Rust-side so the host never re-derives it
+/// from its own copy of the bytes.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletFinalizeSignedPayment(
@@ -1485,8 +1499,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         let mut out_txid: *mut c_char = ptr::null_mut();
         let mut out_bytes_ptr: *const u8 = ptr::null();
         let mut out_bytes_len: usize = 0;
+        let mut deliverable: u64 = 0;
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_signed_payment_finalize(
+            platform_wallet_ffi::core_wallet_signed_payment_finalize_with_deliverable(
                 builder as *mut platform_wallet_ffi::FFITransactionBuilder,
                 wallet_handle as Handle,
                 account_type,
@@ -1498,6 +1513,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
                 out_tx,
                 &mut out_bytes_ptr as *mut *const u8,
                 &mut out_bytes_len as *mut usize,
+                &mut deliverable as *mut u64,
             )
         };
         if take_pwffi_error(env, result) {
@@ -1531,9 +1547,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 
         // Assemble the big-endian BLOB (matches the register decoder).
         let txid_bytes = txid.into_bytes();
-        let mut blob = Vec::with_capacity(8 + 8 + 4 + txid_bytes.len() + 4 + tx_bytes.len());
+        let mut blob = Vec::with_capacity(8 + 8 + 8 + 4 + txid_bytes.len() + 4 + tx_bytes.len());
         blob.extend_from_slice(&token.to_be_bytes());
         blob.extend_from_slice(&fee.to_be_bytes());
+        blob.extend_from_slice(&deliverable.to_be_bytes());
         blob.extend_from_slice(&(txid_bytes.len() as u32).to_be_bytes());
         blob.extend_from_slice(&txid_bytes);
         blob.extend_from_slice(&(tx_bytes.len() as u32).to_be_bytes());
@@ -3872,13 +3889,114 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 /// Success-coded message first (so they can't hand the result to
 /// `take_pwffi_error`, which treats Success as "no error, nothing to free").
 fn throw_pwffi(env: &mut JNIEnv, result: &mut PlatformWalletFFIResult) {
-    let message = if result.message.is_null() {
-        format!("platform-wallet error (code {})", result.code as i32)
-    } else {
-        unsafe { CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned()
-    };
-    throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
+    throw_pwffi_result(env, result);
     unsafe { platform_wallet_ffi_result_free(result) };
+}
+
+/// Ordered wallet bring-up: identity → contacts → contact-account drain, run
+/// as one bounded call so the host can start Core SPV knowing the DIP-15
+/// contact addresses exist and will be in the first filter set — the JNI
+/// bridge over `platform_wallet_manager_start_wallet_subsystems`. The
+/// ordering, retry policy and budget all live Rust-side
+/// (`platform_wallet::manager::startup`); iOS binds the same call as
+/// `PlatformWalletManagerStartup.swift`.
+///
+/// `mnemonicResolverHandle` is nullable (0): required for a Keychain-backed
+/// external-signable wallet; 0 means the wallet holds resident keys. Without
+/// it the drain is skipped and the pending count reported.
+/// `identitySignerHandle` is nullable (0): 0 skips the DIP-15 auto-accept
+/// pass. `budgetSecs` 0 selects the crate default (20s) — the call always
+/// terminates, because it gates Core SPV. `gapLimit` 0 selects the default.
+///
+/// Returns the outcome as a fixed 57-byte big-endian blob (decoded by
+/// `WalletStartupOutcome.decode` in Kotlin — the layouts must match):
+///
+/// | offset | size | field |
+/// |---|---|---|
+/// | 0  | 1  | status (`WalletStartupStatusFFI` discriminant) |
+/// | 1  | 1  | hasIdentityId (0/1) |
+/// | 2  | 32 | identityId (valid only when hasIdentityId=1) |
+/// | 34 | 4  | discoveryAttempts (u32) |
+/// | 38 | 1  | dashpaySyncRan (0/1) |
+/// | 39 | 1  | seedBindingUnverified (0/1) |
+/// | 40 | 1  | identityScanIncomplete (0/1) |
+/// | 41 | 4  | contactAccountsDrained (u32) |
+/// | 45 | 4  | contactAccountsPending (u32) |
+/// | 49 | 8  | elapsedMs (u64) |
+///
+/// Throws only for a malformed request (bad handle, unknown wallet, bad
+/// argument) — an unreachable Platform, a failed sync pass or an unfinished
+/// drain all come back through the blob's status, because the host must be
+/// able to start Core SPV regardless.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_startWalletSubsystems(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    mnemonic_resolver_handle: jlong,
+    identity_signer_handle: jlong,
+    budget_secs: jlong,
+    gap_limit: jint,
+) -> jbyteArray {
+    guard(&mut env, std::ptr::null_mut(), |env| {
+        let Some(wallet_id) = read_id32(env, &wallet_id) else {
+            return std::ptr::null_mut();
+        };
+        if budget_secs < 0 {
+            throw_sdk_exception(env, 1, "budgetSecs must be non-negative");
+            return std::ptr::null_mut();
+        }
+        if gap_limit < 0 {
+            throw_sdk_exception(env, 1, "gapLimit must be non-negative");
+            return std::ptr::null_mut();
+        }
+
+        let mut outcome = platform_wallet_ffi::wallet_startup::WalletStartupOutcomeFFI {
+            status: 0,
+            has_identity_id: false,
+            identity_id: [0u8; 32],
+            discovery_attempts: 0,
+            dashpay_sync_ran: false,
+            seed_binding_unverified: false,
+            identity_scan_incomplete: false,
+            contact_accounts_drained: 0,
+            contact_accounts_pending: 0,
+            elapsed_ms: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::wallet_startup::platform_wallet_manager_start_wallet_subsystems(
+                manager_handle as Handle,
+                wallet_id.as_ptr(),
+                mnemonic_resolver_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                identity_signer_handle as *mut rs_sdk_ffi::SignerHandle,
+                budget_secs as u64,
+                gap_limit as u32,
+                &mut outcome,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return std::ptr::null_mut();
+        }
+
+        let mut blob = [0u8; 57];
+        blob[0] = outcome.status;
+        blob[1] = outcome.has_identity_id as u8;
+        blob[2..34].copy_from_slice(&outcome.identity_id);
+        blob[34..38].copy_from_slice(&outcome.discovery_attempts.to_be_bytes());
+        blob[38] = outcome.dashpay_sync_ran as u8;
+        blob[39] = outcome.seed_binding_unverified as u8;
+        blob[40] = outcome.identity_scan_incomplete as u8;
+        blob[41..45].copy_from_slice(&outcome.contact_accounts_drained.to_be_bytes());
+        blob[45..49].copy_from_slice(&outcome.contact_accounts_pending.to_be_bytes());
+        blob[49..57].copy_from_slice(&outcome.elapsed_ms.to_be_bytes());
+        match env.byte_array_from_slice(&blob) {
+            Ok(array) => array.into_raw(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 99, "startup outcome blob allocation failed");
+                std::ptr::null_mut()
+            }
+        }
+    })
 }

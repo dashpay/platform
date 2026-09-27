@@ -49,9 +49,11 @@ use crate::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
 use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
 use crate::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::{Display, From};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 #[cfg(feature = "value-conversion")]
 use platform_value::Error;
@@ -69,11 +71,13 @@ pub mod v0;
     Copy,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PartialEq,
     Display,
     From,
+    DecodeUntrusted,
 )]
 #[cfg_attr(
     feature = "serde-conversion",

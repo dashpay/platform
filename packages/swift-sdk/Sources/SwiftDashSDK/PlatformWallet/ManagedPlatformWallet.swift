@@ -27,6 +27,28 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         _ = platform_wallet_destroy(handle)
     }
 
+    /// Read a managed identity's credit balance from Platform and persist it.
+    /// This read-only operation requires no signer or wallet unlock.
+    public func refreshIdentityBalance(identityId: Identifier) async throws -> UInt64 {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
+        }
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try withExtendedLifetime(self) {
+                var balance: UInt64 = 0
+                let result = identityId.withUnsafeBytes { bytes in
+                    platform_wallet_refresh_identity_balance(
+                        handle,
+                        bytes.bindMemory(to: UInt8.self).baseAddress!,
+                        &balance
+                    )
+                }
+                try result.check()
+                return balance
+            }
+        }.value
+    }
+
     // MARK: - Balance (lock-free)
 
     /// Wallet balance breakdown. These are atomic reads — no lock contention.
@@ -179,6 +201,15 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// `nil` is valid for every purpose, including Encryption /
         /// Decryption keys.
         public let contractBounds: ContractBounds?
+        /// Optional usage limit (protocol version 14): the credits this
+        /// key may take from the identity over its whole lifetime. Only
+        /// AUTHENTICATION keys below MASTER may carry one. `nil` leaves
+        /// the key unbudgeted.
+        public let totalBudget: UInt64?
+        /// Optional usage limit (protocol version 14): the block time in
+        /// milliseconds from which this key can no longer sign. `nil`
+        /// leaves the key without an expiry.
+        public let expiresAt: UInt64?
 
         public init(
             keyId: UInt32,
@@ -187,7 +218,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             securityLevel: SecurityLevel,
             pubkeyBytes: Data,
             readOnly: Bool = false,
-            contractBounds: ContractBounds? = nil
+            contractBounds: ContractBounds? = nil,
+            totalBudget: UInt64? = nil,
+            expiresAt: UInt64? = nil
         ) {
             self.keyId = keyId
             self.keyType = keyType
@@ -196,11 +229,13 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             self.pubkeyBytes = pubkeyBytes
             self.readOnly = readOnly
             self.contractBounds = contractBounds
+            self.totalBudget = totalBudget
+            self.expiresAt = expiresAt
         }
     }
 
     /// Swift mirror of `dpp::identity::identity_public_key::contract_bounds::ContractBounds`.
-    /// Pinned to two variants (no `MultipleContractsOfSameOwner`)
+    /// Pinned to three variants (no `MultipleContractsOfSameOwner`)
     /// to match the Rust enum's currently-supported shape.
     public enum ContractBounds: Sendable, Equatable {
         /// Key may be used within a specific contract (any
@@ -210,6 +245,10 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// specific document type. Maps to `kind == 2` on the
         /// FFI side.
         case singleContractDocumentType(id: Data, documentTypeName: String)
+        /// AUTHENTICATION key bound to a contract group. `id` is the
+        /// 32-byte contract GROUP id, and there is never a document
+        /// type. Maps to `kind == 3` on the FFI side.
+        case contractGroup(id: Data)
     }
 
     /// Inspectable fields of a parsed raw `IdentityUpdateTransition`.
@@ -229,6 +268,51 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
             self.addPublicKeys = addPublicKeys
             self.disablePublicKeyIds = disablePublicKeyIds
         }
+    }
+
+    /// Inspectable fields of a token direct purchase parsed out of a
+    /// raw `BatchTransition`. Carries everything `tokenPurchase(...)`
+    /// needs to rebuild the purchase after user approval, plus what
+    /// the user must see before approving.
+    public struct ParsedTokenPurchaseTransition: Sendable {
+        /// The identity whose credits pay for the purchase.
+        public let ownerId: Identifier
+        /// The data contract defining the token.
+        public let dataContractId: Identifier
+        /// The token being bought.
+        public let tokenId: Identifier
+        /// Position of the token within the contract.
+        public let tokenContractPosition: UInt16
+        /// How many tokens the dApp asks to buy.
+        public let tokenCount: UInt64
+        /// Credits the owner would agree to pay in total.
+        public let totalAgreedPrice: UInt64
+
+        public init(
+            ownerId: Identifier,
+            dataContractId: Identifier,
+            tokenId: Identifier,
+            tokenContractPosition: UInt16,
+            tokenCount: UInt64,
+            totalAgreedPrice: UInt64
+        ) {
+            self.ownerId = ownerId
+            self.dataContractId = dataContractId
+            self.tokenId = tokenId
+            self.tokenContractPosition = tokenContractPosition
+            self.tokenCount = tokenCount
+            self.totalAgreedPrice = totalAgreedPrice
+        }
+    }
+
+    /// One parsed `dash-st:` state transition, discriminated by case
+    /// so callers branch on the payload instead of on thrown errors.
+    public enum ParsedStateTransition: Sendable {
+        /// DashConnect key registration (`IdentityUpdateTransition`).
+        case identityUpdate(ParsedIdentityUpdateTransition)
+        /// dApp token purchase (a `BatchTransition` carrying exactly
+        /// one `TokenDirectPurchase`).
+        case tokenPurchase(ParsedTokenPurchaseTransition)
     }
 
     /// Result of a successful identity registration.
@@ -603,12 +687,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     /// `body` under one combined pinning frame.
     ///
     /// Contract-bounds pinning extends the same pattern: when the
-    /// row carries `.singleContract` or `.singleContractDocumentType`
-    /// we open a nested `withUnsafeBytes` (for the 32-byte contract
-    /// id) and a `withCString` (for the document type, if any) so
-    /// the pointers we hand the FFI stay valid for the entire
-    /// `body` invocation. Rows without bounds drop straight through
-    /// to the next level of recursion.
+    /// row carries any bound we open a nested `withUnsafeBytes` (for
+    /// the 32-byte contract or group id) and a `withCString` (for the
+    /// document type, if any) so the pointers we hand the FFI stay
+    /// valid for the entire `body` invocation. Rows without bounds
+    /// drop straight through to the next level of recursion.
     private static func pinNext<R>(
         _ index: Int,
         _ rows: inout [IdentityPubkeyFFI],
@@ -636,7 +719,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                         read_only: pk.readOnly,
                         contract_bounds_kind: kind,
                         contract_bounds_id: idPtr,
-                        contract_bounds_document_type: docTypePtr
+                        contract_bounds_document_type: docTypePtr,
+                        has_total_budget: pk.totalBudget != nil,
+                        total_budget: pk.totalBudget ?? 0,
+                        has_expires_at: pk.expiresAt != nil,
+                        expires_at: pk.expiresAt ?? 0
                     )
                 )
                 return pinNext(index + 1, &rows, pubkeys, buffers, body)
@@ -681,6 +768,15 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
                 return documentTypeName.withCString { docTypePtr in
                     body(2, idPtr, docTypePtr)
                 }
+            }
+        case .contractGroup(let id):
+            precondition(
+                id.count == 32,
+                "ContractBounds.contractGroup id must be exactly 32 bytes (got \(id.count))"
+            )
+            return id.withUnsafeBytes { raw -> R in
+                let idPtr = raw.bindMemory(to: UInt8.self).baseAddress
+                return body(3, idPtr, nil)
             }
         }
     }
@@ -3211,6 +3307,61 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Raise the usage limits of one of an identity's keys (protocol
+    /// version 14), signing the resulting `IdentityKeyLimitsUpdate` with
+    /// the identity's MASTER key (or a CRITICAL authentication key that
+    /// carries no limits and no contract bounds) via the supplied
+    /// `KeychainSigner`.
+    ///
+    /// Limits only ever go up. `addBudget` is added to the key's total
+    /// budget AND to what is left of it, in credits; `expiresAt` moves the
+    /// key's expiry to that block time in milliseconds and must be later
+    /// than the one the key carries. At least one of the two must be given.
+    /// A limit the key does not already have, a zero top-up and an expiry
+    /// that is not later are refused before anything is signed, because
+    /// Platform would refuse them and charge for it.
+    ///
+    /// No identity revision is claimed or bumped. The cached key and its
+    /// `PersistentPublicKey` row follow through the persist-identity-keys
+    /// callback, the same way an added key does.
+    public func updateIdentityKeyLimits(
+        identityId: Identifier,
+        keyId: UInt32,
+        addBudget: UInt64? = nil,
+        expiresAt: UInt64? = nil,
+        signer: KeychainSigner
+    ) async throws {
+        guard addBudget != nil || expiresAt != nil else {
+            throw PlatformWalletError.walletOperation(
+                "updateIdentityKeyLimits needs a budget to add or a new expiry"
+            )
+        }
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let budgetToAdd = addBudget
+        let newExpiresAt = expiresAt
+        try await Task.detached(priority: .userInitiated) {
+            _ = signer
+            let result = idBytes.withUnsafeBufferPointer {
+                idBp -> PlatformWalletFFIResult in
+                platform_wallet_update_identity_key_limits_with_signer(
+                    handle,
+                    idBp.baseAddress!,
+                    keyId,
+                    budgetToAdd != nil,
+                    budgetToAdd ?? 0,
+                    newExpiresAt != nil,
+                    newExpiresAt ?? 0,
+                    signerHandle
+                )
+            }
+            try result.check()
+        }.value
+    }
+
     /// Parse a raw `IdentityUpdateTransition` from DPP bytes without
     /// signing or broadcasting it. Accepts both standard tagged bytes
     /// and Yappr's tagless `dash-st:` framing.
@@ -3245,12 +3396,83 @@ extension ManagedPlatformWallet {
         try result.check()
         defer { platform_wallet_parse_identity_update_transition_free(&out) }
 
-        var identityTuple = out.identity_id
+        return try Self.makeParsedIdentityUpdateTransition(from: out)
+    }
+
+    /// Parse a raw DPP state transition handed to the wallet by a dApp
+    /// (DashConnect `dash-st:` link / QR) without signing or
+    /// broadcasting it, reporting which supported kind it found.
+    /// Accepts both standard tagged bytes and Yappr's tagless framing.
+    ///
+    /// Supported kinds: an `IdentityUpdateTransition` (DashConnect key
+    /// registration) and a `BatchTransition` carrying exactly one
+    /// `TokenDirectPurchase` (a dApp token purchase). Anything else —
+    /// including multi-transition or mixed batches, which a user
+    /// cannot meaningfully approve as one prompt — throws with a
+    /// message naming what was found.
+    ///
+    /// The wallet never signs bytes a web page handed it. After the
+    /// user approves the parsed intent, rebuild and sign the
+    /// operation through the normal path: `tokenPurchase(...)` for
+    /// `.tokenPurchase`, `updateIdentity(...)` for `.identityUpdate`.
+    public func parseStateTransition(_ bytes: Data) throws -> ParsedStateTransition {
+        guard !bytes.isEmpty else {
+            throw PlatformWalletError.deserialization(
+                "State transition bytes are empty"
+            )
+        }
+
+        // Imported C structs zero-initialize, which is exactly the
+        // FFI's documented default (`kind == 0`, no owned buffers).
+        var out = ParsedStateTransitionFFI()
+
+        let result = bytes.withUnsafeBytes { rawBuffer -> PlatformWalletFFIResult in
+            let byteBuffer = rawBuffer.bindMemory(to: UInt8.self)
+            return platform_wallet_parse_state_transition(
+                byteBuffer.baseAddress,
+                UInt(byteBuffer.count),
+                &out
+            )
+        }
+        try result.check()
+        defer { platform_wallet_parse_state_transition_free(&out) }
+
+        switch out.kind {
+        case 1: // PARSED_STATE_TRANSITION_KIND_IDENTITY_UPDATE
+            return .identityUpdate(
+                try Self.makeParsedIdentityUpdateTransition(from: out.identity_update)
+            )
+        case 2: // PARSED_STATE_TRANSITION_KIND_TOKEN_DIRECT_PURCHASE
+            let purchase = out.token_direct_purchase
+            var ownerTuple = purchase.owner_id
+            var contractTuple = purchase.data_contract_id
+            var tokenTuple = purchase.token_id
+            return .tokenPurchase(
+                ParsedTokenPurchaseTransition(
+                    ownerId: Swift.withUnsafeBytes(of: &ownerTuple) { Data($0) },
+                    dataContractId: Swift.withUnsafeBytes(of: &contractTuple) { Data($0) },
+                    tokenId: Swift.withUnsafeBytes(of: &tokenTuple) { Data($0) },
+                    tokenContractPosition: purchase.token_contract_position,
+                    tokenCount: purchase.token_count,
+                    totalAgreedPrice: purchase.total_agreed_price
+                )
+            )
+        default:
+            throw PlatformWalletError.deserialization(
+                "Unknown parsed state-transition kind \(out.kind)"
+            )
+        }
+    }
+
+    private static func makeParsedIdentityUpdateTransition(
+        from ffi: ParsedIdentityUpdateFFI
+    ) throws -> ParsedIdentityUpdateTransition {
+        var identityTuple = ffi.identity_id
         let identityId = Swift.withUnsafeBytes(of: &identityTuple) { Data($0) }
 
         let addPublicKeys: [IdentityPubkey]
-        if let pointer = out.add_public_keys, out.add_public_keys_count > 0 {
-            let buffer = UnsafeBufferPointer(start: pointer, count: Int(out.add_public_keys_count))
+        if let pointer = ffi.add_public_keys, ffi.add_public_keys_count > 0 {
+            let buffer = UnsafeBufferPointer(start: pointer, count: Int(ffi.add_public_keys_count))
             addPublicKeys = try buffer.enumerated().map { index, entry in
                 try Self.makeParsedIdentityPubkey(from: entry, index: index)
             }
@@ -3259,11 +3481,11 @@ extension ManagedPlatformWallet {
         }
 
         let disablePublicKeyIds: [UInt32]
-        if let pointer = out.disable_public_key_ids, out.disable_public_key_ids_count > 0 {
+        if let pointer = ffi.disable_public_key_ids, ffi.disable_public_key_ids_count > 0 {
             disablePublicKeyIds = Array(
                 UnsafeBufferPointer(
                     start: pointer,
-                    count: Int(out.disable_public_key_ids_count)
+                    count: Int(ffi.disable_public_key_ids_count)
                 )
             )
         } else {
@@ -3313,7 +3535,10 @@ extension ManagedPlatformWallet {
         )
     }
 
-    private static func parsedContractBounds(
+    // `internal` (not `private`) so the kind-tag decode can be covered
+    // directly: every production caller reaches it through a live FFI
+    // parse, which a unit test has no handle for.
+    static func parsedContractBounds(
         from entry: ParsedIdentityUpdatePublicKeyFFI,
         index: Int
     ) throws -> ContractBounds? {
@@ -3336,6 +3561,11 @@ extension ManagedPlatformWallet {
             return .singleContractDocumentType(
                 id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) },
                 documentTypeName: documentTypeName
+            )
+        case 3:
+            var idTuple = entry.contract_bounds_id
+            return .contractGroup(
+                id: Swift.withUnsafeBytes(of: &idTuple) { Data($0) }
             )
         default:
             throw PlatformWalletError.deserialization(

@@ -314,7 +314,7 @@ fn classify_preflight_error(err: &PlatformWalletError) -> PreflightOutcome {
 pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
     handle: Handle,
     account_index: u32,
-    _core_fee_per_byte: u32,
+    core_fee_per_byte: u32,
     out: *mut WithdrawalPreflightFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out);
@@ -329,7 +329,11 @@ pub unsafe extern "C" fn platform_address_wallet_preflight_withdrawal(
     // EXC_BAD_ACCESS, the same reason the withdraw path uses the worker.
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| wallet.clone());
     let wallet = unwrap_option_or_return!(option);
-    let result = block_on_worker(async move { wallet.preflight_withdrawal(account_index).await });
+    let result = block_on_worker(async move {
+        wallet
+            .preflight_withdrawal(account_index, core_fee_per_byte)
+            .await
+    });
 
     match result {
         Ok(plan) => {

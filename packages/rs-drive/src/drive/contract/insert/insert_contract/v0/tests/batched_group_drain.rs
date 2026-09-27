@@ -373,6 +373,7 @@ fn verified_page(
             &[],
             axis.ranked,
             axis.aggregate_field(),
+            &[],
         )
         .expect("the fixture declares this axis"),
         axis: axis.ranked,

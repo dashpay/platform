@@ -36,6 +36,20 @@ where
     let block_state_info = &block_execution_context.block_state_info();
 
     if !block_state_info.matches_current_block(height as u64, round as u32, block_hash.clone())? {
+        // Tenderdash signs again a block it locked in an earlier round without processing it in
+        // this round. A block's withdrawal transactions do not depend on the round, so sign the
+        // ones we built when we accepted it.
+        if let Some(vote_extensions) = app
+            .unsigned_withdrawal_txs_by_round()
+            .read()
+            .expect("poisoned only after a panic, which stops the node")
+            .get(height as u64, round as u32, &block_hash)
+        {
+            return Ok(proto::ResponseExtendVote {
+                vote_extensions: vote_extensions.to_vec(),
+            });
+        }
+
         return Err(AbciError::RequestForWrongBlockReceived(format!(
             "received extend votes request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
             height, round, hex::encode(block_hash),
@@ -66,6 +80,7 @@ mod tests {
     use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::test::helpers::withdrawals::unsigned_withdrawal_transactions;
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 
@@ -222,5 +237,54 @@ mod tests {
 
         // No withdrawal transactions, so no vote extensions
         assert!(response.vote_extensions.is_empty());
+    }
+
+    /// Tenderdash signs a block it locked in an earlier round again in a later round, without
+    /// processing it there: the withdrawals kept for that block are signed.
+    #[test]
+    fn should_sign_a_block_accepted_in_an_earlier_round_with_its_kept_withdrawals() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+
+        let context =
+            make_test_block_execution_context(10, 0, Some([0xAA; 32]), &platform.platform);
+        app.block_execution_context
+            .write()
+            .unwrap()
+            .replace(context);
+
+        let kept_extensions: Vec<proto::ExtendVoteExtension> =
+            (&unsigned_withdrawal_transactions(1000)).into();
+        app.unsigned_withdrawal_txs_by_round
+            .write()
+            .unwrap()
+            .insert(10, 0, [0xAA; 32], kept_extensions.clone());
+
+        let response = extend_vote::<_, MockCoreRPCLike>(
+            &app,
+            proto::RequestExtendVote {
+                hash: vec![0xAA; 32],
+                height: 10,
+                round: 1,
+            },
+        )
+        .expect("extend_vote should sign the kept withdrawals");
+        assert_eq!(response.vote_extensions, kept_extensions);
+
+        let result = extend_vote::<_, MockCoreRPCLike>(
+            &app,
+            proto::RequestExtendVote {
+                hash: vec![0xBB; 32],
+                height: 10,
+                round: 1,
+            },
+        );
+        assert!(
+            result.is_err(),
+            "a block this node has not accepted must not be signed"
+        );
     }
 }

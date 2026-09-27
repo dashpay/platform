@@ -33,13 +33,14 @@
 //! Fail-closed: any arity or property-name mismatch between the trio and
 //! the index the query resolved is an error, never a partial document.
 
+use crate::drive::document::{decode_index_only_entry_payload, INDEX_ONLY_ROW_COMMITMENT_SIZE};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::{index_admissible_for_skip_if_absent, DriveDocumentQuery};
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{DocumentTypeRef, Index};
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef, Index};
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
@@ -63,6 +64,13 @@ pub(crate) struct IndexOnlyTerminalRoute<'a> {
     /// `(position, clause)` of a range / `in` clause on a prefix
     /// property. When present the terminal clause is always an equality.
     pub prefix_pivot: Option<(usize, &'a crate::query::WhereClause)>,
+    /// COMPOSITE terminals only: the equality clauses on the terminal's
+    /// leading components, in component order (`terminal_clause` is `None`
+    /// on a composite terminal).
+    pub terminal_equalities: Vec<&'a crate::query::WhereClause>,
+    /// COMPOSITE terminals only: the one range / `in` clause on the first
+    /// component after the equality-bound ones, if any.
+    pub terminal_tail: Option<&'a crate::query::WhereClause>,
 }
 
 impl DriveDocumentQuery<'_> {
@@ -195,32 +203,122 @@ impl DriveDocumentQuery<'_> {
             return Ok(None);
         }
 
-        let terminal =
-            index
-                .terminal
-                .as_deref()
-                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "a terminal-using match implies an indexOnly index",
-                )))?;
-        let terminal_clause = self
-            .internal_clauses
-            .equal_clauses
-            .get(terminal)
-            .or(match &self.internal_clauses.range_clause {
-                Some(range_clause) if range_clause.field == terminal => Some(range_clause),
-                _ => None,
-            })
-            .or_else(|| {
-                self.internal_clauses
-                    .in_clauses
-                    .iter()
-                    .find(|in_clause| in_clause.field == terminal)
-            });
+        let components = index.terminal_components();
+        if components.is_empty() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a terminal-using match implies an indexOnly index",
+            )));
+        }
+        let is_component = |field: &str| components.iter().any(|component| component == field);
 
         let shape_error = |message: &str| {
             Error::Query(crate::error::query::QuerySyntaxError::Unsupported(
                 message.to_string(),
             ))
+        };
+
+        // A single-component terminal carries at most one clause, on that
+        // component. A composite terminal binds its components in order:
+        // equality clauses on the leading components, then at most one
+        // range or `in` clause on the next one, nothing on the rest — the
+        // shape that lowers onto one contiguous range of member keys.
+        let (terminal_clause, terminal_equalities, terminal_tail) = match index.single_terminal() {
+            Some(terminal) => {
+                let terminal_clause = self
+                    .internal_clauses
+                    .equal_clauses
+                    .get(terminal)
+                    .or(match &self.internal_clauses.range_clause {
+                        Some(range_clause) if range_clause.field == terminal => Some(range_clause),
+                        _ => None,
+                    })
+                    .or_else(|| {
+                        self.internal_clauses
+                            .in_clauses
+                            .iter()
+                            .find(|in_clause| in_clause.field == terminal)
+                    });
+                (terminal_clause, Vec::new(), None)
+            }
+            None => {
+                let mut equalities: Vec<&crate::query::WhereClause> = Vec::new();
+                for component in components {
+                    match self.internal_clauses.equal_clauses.get(component.as_str()) {
+                        Some(clause) => equalities.push(clause),
+                        None => break,
+                    }
+                }
+                let bound = equalities.len();
+                if components.iter().skip(bound).any(|component| {
+                    self.internal_clauses
+                        .equal_clauses
+                        .contains_key(component.as_str())
+                }) {
+                    return Err(shape_error(
+                        "equality clauses on a composite indexOnly terminal must bind its \
+                         components contiguously from the first one: a component cannot be \
+                         bound while an earlier one is not",
+                    ));
+                }
+                // All terminal components share one lexicographically ordered
+                // member key. After ignoring equality-bound fields, ORDER BY
+                // must follow the remaining components without gaps, in one
+                // direction; reversing the key reverses every component.
+                let mut direction = None;
+                for (position, order) in self
+                    .order_by
+                    .values()
+                    .filter(|order| {
+                        is_component(&order.field)
+                            && !self
+                                .internal_clauses
+                                .equal_clauses
+                                .contains_key(&order.field)
+                    })
+                    .enumerate()
+                {
+                    if components.get(bound + position) != Some(&order.field) {
+                        return Err(shape_error(
+                            "orderBy on a composite indexOnly terminal must follow its \
+                             unbound components contiguously from the first one",
+                        ));
+                    }
+                    if direction.is_some_and(|ascending| ascending != order.ascending) {
+                        return Err(shape_error(
+                            "orderBy on unbound composite indexOnly terminal components \
+                             must use the same direction",
+                        ));
+                    }
+                    direction = Some(order.ascending);
+                }
+                let tail_candidates: Vec<&crate::query::WhereClause> = self
+                    .internal_clauses
+                    .range_clause
+                    .iter()
+                    .chain(self.internal_clauses.in_clauses.iter())
+                    .filter(|clause| is_component(&clause.field))
+                    .collect();
+                let tail = match tail_candidates.as_slice() {
+                    [] => None,
+                    [clause] => {
+                        if components.get(bound).map(String::as_str) != Some(clause.field.as_str())
+                        {
+                            return Err(shape_error(
+                                "a range or `in` clause on a composite indexOnly terminal must \
+                                 sit on the first component after the equality-bound ones",
+                            ));
+                        }
+                        Some(*clause)
+                    }
+                    _ => {
+                        return Err(shape_error(
+                            "a composite indexOnly terminal supports at most one range or `in` \
+                             clause, on the first component after the equality-bound ones",
+                        ))
+                    }
+                };
+                (None, equalities, tail)
+            }
         };
 
         // The one non-equality, non-terminal clause — the prefix pivot
@@ -239,7 +337,7 @@ impl DriveDocumentQuery<'_> {
             .iter()
             .chain(self.internal_clauses.in_clauses.iter())
         {
-            if clause.field == terminal {
+            if is_component(&clause.field) {
                 continue;
             }
             let Some(position) = position_of(&clause.field) else {
@@ -275,9 +373,11 @@ impl DriveDocumentQuery<'_> {
                          orderBy limited to the index",
                     ));
                 }
-                if let Some(terminal_clause) = terminal_clause {
-                    if terminal_clause.operator.is_range() && !self.order_by.contains_key(terminal)
-                    {
+                let ranged: Option<&crate::query::WhereClause> = terminal_clause
+                    .filter(|clause| clause.operator.is_range())
+                    .or(terminal_tail.filter(|clause| clause.operator.is_range()));
+                if let Some(ranged) = ranged {
+                    if !self.order_by.contains_key(ranged.field.as_str()) {
                         return Err(Error::Query(
                             crate::error::query::QuerySyntaxError::MissingOrderByForRange(
                                 "a range or `in` clause on an indexOnly terminal property \
@@ -291,8 +391,10 @@ impl DriveDocumentQuery<'_> {
                 // Mixed shape: everything above the pivot equality-bound,
                 // everything below it unconstrained, terminal clause an
                 // equality, pivot ordered by.
-                let terminal_is_equality =
-                    self.internal_clauses.equal_clauses.contains_key(terminal);
+                let terminal_is_equality = match index.single_terminal() {
+                    Some(terminal) => self.internal_clauses.equal_clauses.contains_key(terminal),
+                    None => terminal_equalities.len() == components.len(),
+                };
                 if !terminal_is_equality {
                     return Err(shape_error(
                         "a range or `in` clause on an indexOnly prefix property requires \
@@ -334,6 +436,8 @@ impl DriveDocumentQuery<'_> {
             index,
             terminal_clause,
             prefix_pivot,
+            terminal_equalities,
+            terminal_tail,
         }))
     }
 
@@ -359,6 +463,8 @@ impl DriveDocumentQuery<'_> {
             index,
             terminal_clause,
             prefix_pivot,
+            terminal_equalities,
+            terminal_tail,
         } = route;
 
         let direction_for = |field: &str, fallback: bool| {
@@ -367,8 +473,8 @@ impl DriveDocumentQuery<'_> {
                 .map(|order_clause| order_clause.ascending)
                 .unwrap_or(fallback)
         };
-        let terminal_query = match terminal_clause {
-            Some(terminal_clause) => {
+        let terminal_query = match (index.single_terminal(), terminal_clause) {
+            (Some(_), Some(terminal_clause)) => {
                 let left_to_right = if terminal_clause.operator.is_range() {
                     direction_for(terminal_clause.field.as_str(), true)
                 } else {
@@ -383,16 +489,19 @@ impl DriveDocumentQuery<'_> {
             }
             // First keyset page: no cursor clause yet — every member key
             // in the terminal's orderBy direction.
-            None => {
-                let terminal = index.terminal.as_deref().ok_or(Error::Drive(
-                    DriveError::CorruptedCodeExecution(
-                        "terminal-route selection guarantees an indexOnly index",
-                    ),
-                ))?;
+            (Some(terminal), None) => {
                 let mut query = grovedb::Query::new_with_direction(direction_for(terminal, true));
                 query.insert_all();
                 query
             }
+            // Composite terminal: the bound components form a key prefix,
+            // the tail clause (or its absence) a range under it.
+            (None, _) => self.composite_member_key_query(
+                index,
+                terminal_equalities,
+                *terminal_tail,
+                platform_version,
+            )?,
         };
 
         let mut path = document_type_path;
@@ -468,7 +577,13 @@ impl DriveDocumentQuery<'_> {
             )?);
         }
         match prefix_pivot {
-            None => path.push(vec![0]),
+            None => {
+                // A flat index keeps its entries under its own level.
+                if let Some(flat_key) = index.flat_level_key() {
+                    path.push(flat_key.into_bytes());
+                }
+                path.push(vec![0]);
+            }
             Some((pivot_position, _)) => {
                 path.push(index.properties[*pivot_position].name.as_bytes().to_vec())
             }
@@ -478,6 +593,186 @@ impl DriveDocumentQuery<'_> {
             path,
             grovedb::SizedQuery::new(final_query, self.limit, self.offset),
         ))
+    }
+
+    /// The member-key query of a composite terminal: the equality-bound
+    /// leading components serialize to a key prefix, and the tail clause
+    /// (a range or `in` on the next component), or its absence, becomes a
+    /// contiguous key range under that prefix. Every component but the
+    /// last is fixed width (the parser enforces it), so a bound on a
+    /// non-last component covers every key that continues past it: the
+    /// upper bound of "all keys under P" is P padded with 0xFF to the
+    /// 255-byte key cap, which every key with prefix P sorts at or below.
+    /// A bound on the LAST component addresses the key itself.
+    fn composite_member_key_query(
+        &self,
+        index: &Index,
+        terminal_equalities: &[&crate::query::WhereClause],
+        terminal_tail: Option<&crate::query::WhereClause>,
+        platform_version: &PlatformVersion,
+    ) -> Result<grovedb::Query, Error> {
+        use crate::query::WhereOperator;
+        use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+
+        const MAX_KEY_LENGTH: usize = u8::MAX as usize;
+        let components = index.terminal_components();
+        let bound = terminal_equalities.len();
+        let mut prefix: Vec<u8> = Vec::new();
+        for clause in terminal_equalities {
+            prefix.extend(self.document_type.serialize_value_for_key(
+                &clause.field,
+                &clause.value,
+                platform_version,
+            )?);
+        }
+        let direction_field = terminal_tail
+            .map(|clause| clause.field.as_str())
+            .or_else(|| components.get(bound).map(String::as_str));
+        let left_to_right = direction_field
+            .and_then(|field| self.order_by.get(field))
+            .map(|order_clause| order_clause.ascending)
+            .unwrap_or(true);
+        let mut query = grovedb::Query::new_with_direction(left_to_right);
+
+        if bound == components.len() {
+            query.insert_key(prefix);
+            return Ok(query);
+        }
+
+        let pad_max = |mut key: Vec<u8>| {
+            key.resize(key.len().max(MAX_KEY_LENGTH), 0xFF);
+            key
+        };
+        let Some(tail_component) = components.get(bound) else {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a composite terminal with unbound components has a next component",
+            )));
+        };
+        let tail_is_last = bound + 1 == components.len();
+        let encode = |value: &Value| -> Result<Vec<u8>, Error> {
+            let mut key = prefix.clone();
+            key.extend(self.document_type.serialize_value_for_key(
+                tail_component,
+                value,
+                platform_version,
+            )?);
+            Ok(key)
+        };
+        // Inclusive upper bound of every key whose tail component equals
+        // `value`: the key itself on the last component, else the padded
+        // continuation.
+        let upper_inclusive = |value: &Value| -> Result<Vec<u8>, Error> {
+            let key = encode(value)?;
+            Ok(if tail_is_last { key } else { pad_max(key) })
+        };
+        // Exclusive lower bound of every key whose tail component exceeds
+        // `value`, for the range-after variants.
+        let lower_exclusive = upper_inclusive;
+
+        let Some(tail) = terminal_tail else {
+            if prefix.is_empty() {
+                query.insert_all();
+            } else {
+                query.insert_range_inclusive(prefix.clone()..=pad_max(prefix));
+            }
+            return Ok(query);
+        };
+        let between_bounds = |value: &Value| -> Result<(Value, Value), Error> {
+            match value {
+                Value::Array(values) if values.len() == 2 => {
+                    Ok((values[0].clone(), values[1].clone()))
+                }
+                _ => Err(Error::Query(
+                    crate::error::query::QuerySyntaxError::InvalidBetweenClause(
+                        "when using between operator you must provide a tuple array of values",
+                    ),
+                )),
+            }
+        };
+        match tail.operator {
+            WhereOperator::Equal => {
+                // Unreachable through selection (equalities are consumed
+                // above); lowered as the key prefix anyway.
+                let key = encode(&tail.value)?;
+                query.insert_range_inclusive(key.clone()..=pad_max(key));
+            }
+            WhereOperator::GreaterThan => {
+                query.insert_range_after_to_inclusive(
+                    lower_exclusive(&tail.value)?..=pad_max(prefix.clone()),
+                );
+            }
+            WhereOperator::GreaterThanOrEquals => {
+                query.insert_range_inclusive(encode(&tail.value)?..=pad_max(prefix.clone()));
+            }
+            WhereOperator::LessThan => {
+                if prefix.is_empty() {
+                    query.insert_range_to(..encode(&tail.value)?);
+                } else {
+                    query.insert_range(prefix.clone()..encode(&tail.value)?);
+                }
+            }
+            WhereOperator::LessThanOrEquals => {
+                if prefix.is_empty() {
+                    query.insert_range_to_inclusive(..=upper_inclusive(&tail.value)?);
+                } else {
+                    query.insert_range_inclusive(prefix.clone()..=upper_inclusive(&tail.value)?);
+                }
+            }
+            WhereOperator::Between => {
+                let (low, high) = between_bounds(&tail.value)?;
+                query.insert_range_inclusive(encode(&low)?..=upper_inclusive(&high)?);
+            }
+            WhereOperator::BetweenExcludeBounds => {
+                let (low, high) = between_bounds(&tail.value)?;
+                query.insert_range_after_to(lower_exclusive(&low)?..encode(&high)?);
+            }
+            WhereOperator::BetweenExcludeLeft => {
+                let (low, high) = between_bounds(&tail.value)?;
+                query.insert_range_after_to_inclusive(
+                    lower_exclusive(&low)?..=upper_inclusive(&high)?,
+                );
+            }
+            WhereOperator::BetweenExcludeRight => {
+                let (low, high) = between_bounds(&tail.value)?;
+                query.insert_range(encode(&low)?..encode(&high)?);
+            }
+            WhereOperator::In => {
+                let in_values = tail.in_values().into_data_with_error()??;
+                for value in in_values.iter() {
+                    let key = encode(value)?;
+                    if tail_is_last {
+                        query.insert_key(key);
+                    } else {
+                        query.insert_range_inclusive(key.clone()..=pad_max(key));
+                    }
+                }
+            }
+            WhereOperator::StartsWith => {
+                return Err(Error::Query(
+                    crate::error::query::QuerySyntaxError::Unsupported(
+                        "startsWith is not supported on a composite indexOnly terminal \
+                         component"
+                            .to_string(),
+                    ),
+                ));
+            }
+        }
+        Ok(query)
+    }
+
+    /// Whether a query with no clauses at all is a scan of a FLAT index
+    /// rather than a by-id query: an indexOnly type with a flat index has
+    /// somewhere for "everything" to land (its flat level, served by the
+    /// generic match in `index_only_route`), while a type without one has
+    /// no primary-key tree to walk.
+    pub(crate) fn index_only_flat_scan_applies(&self) -> bool {
+        self.internal_clauses.is_empty()
+            && self.start_at.is_none()
+            && self
+                .document_type
+                .indexes()
+                .values()
+                .any(|index| index.is_flat())
     }
 
     /// The index an indexOnly query resolves to — the generic matcher
@@ -545,6 +840,24 @@ impl DriveDocumentQuery<'_> {
                 // the prover and the no-proof executor fail before
                 // building a path query the synthesis side would refuse.
                 Self::refuse_bucketed_index_only_synthesis(index)?;
+                // A generic match on a FLAT index binds nothing (the
+                // index has no properties to bind), so it is a scan of
+                // every member under the flat level.
+                if let Some(flat_key) = index.flat_level_key() {
+                    let mut path = document_type_path.to_vec();
+                    path.push(flat_key.into_bytes());
+                    path.push(vec![0]);
+                    // An orderBy naming a component makes the matcher
+                    // report the terminal as used, which sends the query
+                    // down the terminal route instead; the generic match
+                    // only ever sees the unordered scan.
+                    let mut query = grovedb::Query::new_with_direction(true);
+                    query.insert_all();
+                    return Ok(Some(grovedb::PathQuery::new(
+                        path,
+                        grovedb::SizedQuery::new(query, self.limit, self.offset),
+                    )));
+                }
                 Ok(None)
             }
             crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
@@ -588,14 +901,15 @@ impl DriveDocumentQuery<'_> {
         let index = self.index_only_query_index(platform_version)?;
         let documents = proved_key_values
             .into_iter()
-            .filter_map(|(path, key, element)| element.map(|_| (path, key)))
-            .map(|(path, key)| {
+            .filter_map(|(path, key, element)| element.map(|element| (path, key, element)))
+            .map(|(path, key, element)| {
                 synthesize_index_only_document(
                     self.contract.id(),
                     self.document_type,
                     index,
                     &path,
                     &key,
+                    Some(&element),
                 )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
@@ -663,13 +977,14 @@ impl DriveDocumentQuery<'_> {
         let documents = elements
             .to_path_key_elements()
             .into_iter()
-            .map(|(path, key, _element)| {
+            .map(|(path, key, element)| {
                 synthesize_index_only_document(
                     self.contract.id(),
                     self.document_type,
                     index,
                     &path,
                     &key,
+                    Some(&element),
                 )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
@@ -692,9 +1007,9 @@ pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<
         .indexes()
         .values()
         .find(|index| {
-            let carries_owner = index.terminal.as_deref() == Some(OWNER_ID)
+            let carries_owner = index.terminal_contains(OWNER_ID)
                 || index.properties.iter().any(|p| p.name == OWNER_ID);
-            let carries_created_at = index.terminal.as_deref() == Some(CREATED_AT)
+            let carries_created_at = index.terminal_contains(CREATED_AT)
                 || index.properties.iter().any(|p| p.name == CREATED_AT);
             carries_owner && !carries_created_at && !index.skip_if_absent
         })
@@ -766,16 +1081,23 @@ pub fn index_only_entry_path_and_key_from_values(
         path.push(property.name.as_bytes().to_vec());
         path.push(encoded_value_for(&property.name)?);
     }
+    // A flat index keeps its entries under its own level, between the
+    // doctype and the `0` bucket.
+    if let Some(flat_key) = index.flat_level_key() {
+        path.push(flat_key.as_bytes().to_vec());
+    }
     path.push(vec![0]);
 
-    let terminal =
-        index
-            .terminal
-            .as_deref()
-            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                "index_only_entry_path_and_key_from_values requires an indexOnly index",
-            )))?;
-    let member_key = encoded_value_for(terminal)?;
+    if index.terminal.is_none() {
+        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+            "index_only_entry_path_and_key_from_values requires an indexOnly index",
+        )));
+    }
+    // The member key: the terminal components' encoded values, concatenated.
+    let mut member_key = Vec::new();
+    for component in index.terminal_components() {
+        member_key.extend(encoded_value_for(component)?);
+    }
 
     Ok((path, member_key))
 }
@@ -809,21 +1131,30 @@ pub fn index_only_transition_entry_path_query(
 ///
 /// `path` is the grove path of the entry's parent (ending with the `0`
 /// storage marker); `member_key` is the entry's key (the terminal
-/// property's encoded value).
+/// components' encoded values, concatenated); `element` is the proved
+/// entry item, required on a type with an `entryPayload` (the payload is
+/// decoded off it) and ignored otherwise.
 pub fn synthesize_index_only_document(
     contract_id: Identifier,
     document_type: DocumentTypeRef,
     index: &Index,
     path: &[Vec<u8>],
     member_key: &[u8],
+    element: Option<&grovedb::Element>,
 ) -> Result<Document, Error> {
     use dpp::document::property_names::{CREATED_AT, OWNER_ID};
 
     let corrupted =
         |message: &'static str| Error::Drive(DriveError::CorruptedCodeExecution(message));
 
-    // The path must end [<prop1>, <val1>, …, <propK>, <valK>, [0]].
-    let expected_suffix_len = index.properties.len() * 2 + 1;
+    // The path must end [<prop1>, <val1>, …, <propK>, <valK>, [0]] — or,
+    // for a flat index, [<flat level>, [0]].
+    let flat_key = index.flat_level_key();
+    let expected_suffix_len = if flat_key.is_some() {
+        2
+    } else {
+        index.properties.len() * 2 + 1
+    };
     if path.len() < expected_suffix_len {
         return Err(corrupted(
             "indexOnly synthesis: proved path is shorter than the resolved index's shape",
@@ -834,6 +1165,14 @@ pub fn synthesize_index_only_document(
         return Err(corrupted(
             "indexOnly synthesis: proved path does not end at the 0 storage marker",
         ));
+    }
+    if let Some(flat_key) = &flat_key {
+        if suffix[0].as_slice() != flat_key.as_bytes() {
+            return Err(corrupted(
+                "indexOnly synthesis: proved path does not sit under the resolved flat \
+                 index's level — refusing to mislabel a value",
+            ));
+        }
     }
 
     let mut properties: BTreeMap<String, Value> = BTreeMap::new();
@@ -849,14 +1188,9 @@ pub fn synthesize_index_only_document(
                 );
             }
             CREATED_AT => {
-                created_at = Some(
-                    dpp::data_contract::document_type::DocumentPropertyType::decode_date_timestamp(
-                        encoded,
-                    )
-                    .ok_or(corrupted(
-                        "indexOnly synthesis: $createdAt key bytes are not a timestamp",
-                    ))?,
-                );
+                created_at = Some(DocumentPropertyType::decode_date_timestamp(encoded).ok_or(
+                    corrupted("indexOnly synthesis: $createdAt key bytes are not a timestamp"),
+                )?);
             }
             name => {
                 let property = document_type
@@ -865,10 +1199,20 @@ pub fn synthesize_index_only_document(
                     .ok_or(corrupted(
                         "indexOnly synthesis: index names a property the document type lacks",
                     ))?;
-                let value = property
-                    .property_type
-                    .decode_value_for_tree_keys(encoded)
-                    .map_err(|e| Error::Protocol(Box::new(e)))?;
+                // Every indexed property of an indexOnly type is required,
+                // so an empty key never encodes an absent value: for a byte
+                // array it is the empty array itself, which the tree-key
+                // decoder would otherwise read back as the null sentinel.
+                let value = if encoded.is_empty()
+                    && matches!(property.property_type, DocumentPropertyType::ByteArray(_))
+                {
+                    Value::Bytes(Vec::new())
+                } else {
+                    property
+                        .property_type
+                        .decode_value_for_tree_keys(encoded)
+                        .map_err(|e| Error::Protocol(Box::new(e)))?
+                };
                 // A flattened name like `profile.targetId` must come back
                 // as a nested `profile` map, not as a dotted top-level key
                 // — field access, schema serialization and index encoding
@@ -892,11 +1236,78 @@ pub fn synthesize_index_only_document(
         assign(&index_property.name, &suffix[position * 2 + 1])?;
     }
 
-    let terminal = index.terminal.as_deref().ok_or(corrupted(
-        "indexOnly synthesis requires an indexOnly index (terminal is always Some \
-         after parse normalization)",
-    ))?;
-    assign(terminal, member_key)?;
+    // The member key splits back into the terminal's components: every
+    // component but the last is fixed width (the parser enforces it), and
+    // the last takes the remainder.
+    let components = index.terminal_components();
+    if components.is_empty() {
+        return Err(corrupted(
+            "indexOnly synthesis requires an indexOnly index (terminal is always Some \
+             after parse normalization)",
+        ));
+    }
+    let mut terminal_parts: Vec<(&str, &[u8])> = Vec::with_capacity(components.len());
+    let mut cursor = 0usize;
+    for (position, component) in components.iter().enumerate() {
+        let is_last = position + 1 == components.len();
+        let bytes: &[u8] =
+            if is_last {
+                member_key.get(cursor..).ok_or(corrupted(
+                    "indexOnly synthesis: member key is shorter than its leading components",
+                ))?
+            } else {
+                let width =
+                    if component == OWNER_ID {
+                        32usize
+                    } else {
+                        let property =
+                    document_type
+                        .flattened_properties()
+                        .get(component)
+                        .ok_or(corrupted(
+                        "indexOnly synthesis: terminal names a property the document type lacks",
+                    ))?;
+                        usize::from(property.property_type.fixed_tree_key_width().ok_or(corrupted(
+                    "indexOnly synthesis: a leading terminal component must be fixed width",
+                ))?)
+                    };
+                let slice = member_key.get(cursor..cursor + width).ok_or(corrupted(
+                    "indexOnly synthesis: member key is shorter than its leading components",
+                ))?;
+                cursor += width;
+                slice
+            };
+        assign(component, bytes)?;
+        terminal_parts.push((component.as_str(), bytes));
+    }
+
+    // The entry payload — the type's value slot — rides in the item after
+    // the row commitment.
+    if !document_type.entry_payload().is_empty() {
+        let Some(element) = element else {
+            return Err(corrupted(
+                "indexOnly synthesis: a type with an entryPayload needs the proved element",
+            ));
+        };
+        let item = match element {
+            grovedb::Element::Item(bytes, _) | grovedb::Element::ItemWithSumItem(bytes, _, _) => {
+                bytes
+            }
+            _ => {
+                return Err(corrupted(
+                    "indexOnly synthesis: the proved entry is not an item element",
+                ))
+            }
+        };
+        let payload = item
+            .get(INDEX_ONLY_ROW_COMMITMENT_SIZE as usize..)
+            .ok_or(corrupted(
+                "indexOnly synthesis: the proved entry item is shorter than the row commitment",
+            ))?;
+        for (name, value) in decode_index_only_entry_payload(document_type, payload)? {
+            properties.insert(name, value);
+        }
+    }
 
     let owner_id = owner_id.ok_or(Error::Query(
         crate::error::query::QuerySyntaxError::Unsupported(
@@ -929,9 +1340,11 @@ pub fn synthesize_index_only_document(
             frame(&mut id_preimage, &suffix[position * 2 + 1]);
         }
     }
-    if terminal != OWNER_ID {
-        frame(&mut id_preimage, terminal.as_bytes());
-        frame(&mut id_preimage, member_key);
+    for (component, bytes) in terminal_parts {
+        if component != OWNER_ID {
+            frame(&mut id_preimage, component.as_bytes());
+            frame(&mut id_preimage, bytes);
+        }
     }
     let id = Identifier::new(hash_double(id_preimage));
 

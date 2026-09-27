@@ -129,7 +129,7 @@ mod tests {
                 &data_contract,
                 owner_id,
                 platform_value!({
-                    "amount": 1000u64,
+                    "amount": 1_190_000u64,
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
@@ -157,7 +157,7 @@ mod tests {
                 &data_contract,
                 owner_id,
                 platform_value!({
-                    "amount": 1000u64,
+                    "amount": 1_190_000u64,
                     "coreFeePerByte": 1u32,
                     "pooling": Pooling::Never as u8,
                     "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
@@ -196,7 +196,7 @@ mod tests {
                     (
                         50,
                         vec![
-                            1, 0, 9, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
+                            1, 0, 9, 0, 0, 1, 232, 3, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
                             8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0, 0, 0, 0,
                             1, 50, 0, 0, 0, 0, 0, 0, 0, 190, 0, 0, 0
                         ],
@@ -204,7 +204,7 @@ mod tests {
                     (
                         51,
                         vec![
-                            1, 0, 9, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
+                            1, 0, 9, 0, 0, 1, 232, 3, 0, 0, 0, 0, 0, 0, 23, 0, 1, 2, 3, 4, 5, 6, 7,
                             8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 0, 0, 0, 0,
                             1, 51, 0, 0, 0, 0, 0, 0, 0, 190, 0, 0, 0
                         ],
@@ -212,7 +212,7 @@ mod tests {
                 ]
             );
 
-            assert_eq!(credits, 2000);
+            assert_eq!(credits, 2_380_000);
         }
     }
 }
