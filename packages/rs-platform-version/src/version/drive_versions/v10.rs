@@ -42,9 +42,9 @@ use grovedb_version::version::v4::GROVE_V4;
 /// * **Price before commit** — `batch_operations.apply_drive_operations`
 ///   1 -> 2, `DRIVE_GROUP_METHOD_VERSIONS_V2` (`insert.add_group_action`
 ///   0 -> 1), `DRIVE_CONTRACT_METHOD_VERSIONS_V5` (`update_contract` 2 -> 3,
-///   `apply_contract_with_serialization` 0 -> 1, the four moderation
+///   `apply_contract_with_serialization` 0 -> 1, the five moderation
 ///   writers that can free flagged bytes 0 -> 1) and
-///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (the six fee-returning document
+///   `DRIVE_DOCUMENT_METHOD_VERSIONS_V5` (the eight fee-returning document
 ///   wrappers 0 -> 1). Every fee-returning entry point that owns its
 ///   transaction when the caller passes none now prices the batch before
 ///   committing, so the missing-history error above never leaves a write
@@ -80,7 +80,7 @@ pub const DRIVE_VERSION_V10: DriveVersion = DriveVersion {
             remove_from_system_credits_operations: 0,
             calculate_total_credits_balance: 2, // ShieldedBalances root tree adds a fifth term to the equation
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: the six fee-returning document wrappers price before committing an owned transaction
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V5, // changed in v10: the eight fee-returning document wrappers price before committing an owned transaction
         vote: DRIVE_VOTE_METHOD_VERSIONS_V3, // changed in v9: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain
         contract: DRIVE_CONTRACT_METHOD_VERSIONS_V5, // changed in v10: update_contract v3, apply_contract_with_serialization v1 and the moderation writers price before committing an owned transaction
         fees: DriveFeesMethodVersions { calculate_fee: 1 }, // changed in v10: fee history required and consulted for every storage refund
