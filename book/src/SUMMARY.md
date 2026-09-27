@@ -57,6 +57,7 @@
 - [Contract Groups](data-model/contract-groups.md)
 - [Contract Moderation](data-model/contract-moderation.md)
 - [Documents](data-model/documents.md)
+- [Document Time To Live](data-model/document-ttl.md)
 - [Contested Documents](data-model/contested-documents.md)
 - [Identities](data-model/identities.md)
 - [Key Budgets and Expiry](data-model/key-limits.md)

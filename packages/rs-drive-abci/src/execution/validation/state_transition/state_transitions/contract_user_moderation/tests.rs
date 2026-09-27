@@ -101,6 +101,7 @@ const CONTRACT_DOCUMENT_REMOVAL_NOT_FOUND: u32 = 41119;
 const DOCUMENT_RESTORE_WINDOW_ELAPSED: u32 = 41120;
 const DOCUMENT_RESTORE_HASH_MISMATCH: u32 = 41121;
 const CONTRACT_DOCUMENT_ALREADY_RESTORED: u32 = 41122;
+const DOCUMENT_EXPIRED: u32 = 40140;
 const DECODING_DOCUMENT: u32 = 10223;
 const DUPLICATE_UNIQUE_INDEX: u32 = 40105;
 const INVALID_DOCUMENT_TYPE: u32 = 10406;
@@ -3669,6 +3670,94 @@ async fn should_refuse_a_document_restore_that_breaks_a_rule() {
         &setup.process(&twice, &transaction),
         CONTRACT_DOCUMENT_ALREADY_RESTORED,
     );
+}
+
+#[tokio::test]
+async fn should_refuse_to_restore_a_post_whose_time_to_live_has_passed() {
+    // Posts that live an hour: a moderator's deletion can be undone within the week, but not
+    // once the post's hour is up, since the cleanup after the block would delete it again.
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "ttl": 3600,
+                    "required": ["text", "$createdAt"],
+                })),
+            )
+        },
+    )
+    .await;
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    setup.commit(transaction);
+    let stored = setup
+        .stored_document(POST, post.id(), None)
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+
+    // The deletion took the post's expirations tree entry with it.
+    let expires_at = BLOCK_TIME_MS + 3_600_000;
+    let expiring = |transaction: &Transaction| {
+        setup
+            .platform
+            .drive
+            .fetch_expired_documents(
+                expires_at,
+                128,
+                Some(transaction),
+                &mut vec![],
+                PlatformVersion::latest(),
+            )
+            .expect("expected to read the expirations")
+            .into_iter()
+            .map(|expired| expired.document_id)
+            .collect::<Vec<_>>()
+    };
+
+    // At the post's expiry, well inside the restore window: refused, paid, nothing restored.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert!(expiring(&transaction).is_empty());
+    let too_late = setup
+        .moderate(&setup.owner, restore_action(POST, bytes.clone()))
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&too_late, expires_at, &transaction),
+        DOCUMENT_EXPIRED,
+    );
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        None
+    );
+    assert_eq!(
+        setup
+            .post_removal(post.id(), Some(&transaction))
+            .map(|removal| removal.restoration),
+        Some(None)
+    );
+
+    // A millisecond before, the post still had time to live: it comes back.
+    let in_time = setup
+        .moderate(&setup.owner, restore_action(POST, bytes))
+        .await;
+    assert_success(&setup.process_at(&in_time, expires_at - 1, &transaction));
+    assert_eq!(
+        setup.stored_document(POST, post.id(), Some(&transaction)),
+        Some(stored)
+    );
+    // Back with its entry, keyed by its original expiry: the cleanup still deletes it then.
+    assert_eq!(expiring(&transaction), vec![post.id()]);
 }
 
 #[tokio::test]

@@ -1230,7 +1230,29 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `get_finalized_epoch_infos` now takes its limit from the caller; every other
 ///     caller passes the query bound it read before.
 ///
-/// 49. **A contest accepts at most 10,000 contenders, and its end reaches every
+/// 49. **Documents with a time to live**: the doctype-level `ttl` keyword (meta-schema v3,
+///     document type parser generation 3) makes the platform delete each document of the
+///     type `ttl` seconds after its `$createdAt`, at most
+///     `max_document_expirations_per_block` (128, `SYSTEM_LIMITS_V4`) weighing at most
+///     `max_document_expiration_weight_per_block` (1,024 in documents plus their index levels)
+///     per block after the block's state transitions (`expire_documents` 0 in
+///     `DRIVE_ABCI_METHOD_VERSIONS_V10`). The keyword requires `$createdAt`, is refused
+///     with `documentsKeepHistory`, `indexOnly` and a contested index, is at least
+///     `min_document_ttl_seconds` (one hour) and at most `max_document_ttl_seconds` (one
+///     year) at registration, and is fixed on update (`validate_update` 1). References treat such a type as deletable. Its
+///     documents are stored without storage flags, indexed in the documents expirations
+///     tree under `Misc` (created by `create_initial_state_structure` 4 and
+///     `transition_to_version_14`), and pay the `document_ttl` group of `FEE_VERSION3`: a
+///     price per byte for the time they live (tiers up to seven days, then per 9.125 days),
+///     into the processing fees for a `ttl` under two epochs and the storage pool otherwise,
+///     plus their deletion prepaid as processing (per index level and per document byte; a
+///     change that grows a document prepays its added bytes). From its expiry on, a
+///     document can no longer be replaced, transferred, bought, repriced or restored by a
+///     moderator (`DocumentExpiredError`, 40140), judged from its own `$createdAt`; its
+///     owner may still delete it where `canBeDeleted` allows. See
+///     `book/src/data-model/document-ttl.md`.
+///
+/// 50. **A contest accepts at most 10,000 contenders, and its end reaches every
 ///     one**: document create state validation 2 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
 ///     refuses, paid, a document that would add a contender to a contest holding
 ///     `max_contenders_per_contest` (`SYSTEM_LIMITS_V4`, 10,000) already
