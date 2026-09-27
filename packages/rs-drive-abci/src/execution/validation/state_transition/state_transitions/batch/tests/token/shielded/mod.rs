@@ -1251,6 +1251,94 @@ mod token_shielded_pool_tests {
         assert_tokens_conserved(&platform);
     }
 
+    /// The sibling below pins the per-token namespace for a nullifier a *spend* reveals. The dummy
+    /// nullifiers an outputs-only bundle reveals travel the same two token-scoped functions today —
+    /// `token_shielded_pool_update_operations` writing, `has_token_pool_nullifier` reading, both
+    /// taking the token first — so the property holds for them by construction. Construction is
+    /// what one can say before a refactor, not after: give the outputs-only path a writer of its
+    /// own and the sibling stays green while dummies lose the namespace, which shows up either as
+    /// one token's pool refusing an honest operation in another, or as a cross-pool repeat nothing
+    /// rejects.
+    #[tokio::test]
+    async fn test_a_dummy_nullifier_recorded_in_one_token_pool_is_unrecorded_in_another() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9103);
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract_a, token_a) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        // A contract id derives from its owner, so a second owner is what makes the second pool a
+        // different pool rather than the same one again.
+        let (other_owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.1));
+        let (_contract_b, token_b) = create_token_contract_with_owner_identity(
+            &mut platform,
+            other_owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        assert_ne!(token_a, token_b, "the two tokens must own separate pools");
+
+        let bundle = build_shield_bundle(
+            SHIELD_AMOUNT,
+            29,
+            TokenTransitionActionType::Shield,
+            token_a,
+            identity.id(),
+        );
+        let dummy_nullifiers: Vec<[u8; 32]> =
+            bundle.actions.iter().map(|action| action.nullifier).collect();
+        assert!(
+            !dummy_nullifiers.is_empty(),
+            "an outputs-only bundle reveals a dummy nullifier per action"
+        );
+
+        let shield = BatchTransition::new_token_shield_transition(
+            token_a,
+            identity.id(),
+            contract_a.id(),
+            0,
+            SHIELD_AMOUNT,
+            bundle,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+
+        let result = process(&platform, &shield);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        for nullifier in &dummy_nullifiers {
+            assert!(
+                nullifier_is_spent(&platform, token_a, nullifier),
+                "a shield records its dummy nullifiers in its own token's pool"
+            );
+            assert!(
+                !nullifier_is_spent(&platform, token_b, nullifier),
+                "recording a dummy nullifier in one token's pool must not mark it in another"
+            );
+        }
+    }
+
     /// Spent nullifiers are namespaced by token id too: spending a note in one token's pool must
     /// not mark that nullifier spent in another's, or the first token to use a nullifier would
     /// make every other pool's note with the same nullifier unspendable.
