@@ -24,7 +24,7 @@ pub fn create_channel(
     uri: Uri,
     settings: Option<&AppliedRequestSettings>,
 ) -> Result<Channel, TransportError> {
-    let host = uri.host().expect("Failed to get host from URI").to_string();
+    let host = unbracketed(uri.host().expect("Failed to get host from URI")).to_string();
 
     let mut builder = Channel::builder(uri);
 
@@ -32,7 +32,10 @@ pub fn create_channel(
     // Try to add native roots only on platforms where they're available (not iOS)
     let mut tls_config = ClientTlsConfig::new()
         .with_webpki_roots()
-        .assume_http2(true);
+        .assume_http2(true)
+        // Without an explicit name tonic takes `Uri::host`, which keeps the
+        // brackets of an IPv6 literal and is not a valid TLS server name.
+        .domain_name(host);
 
     // Try to add native roots - this may fail on iOS/Android, which is fine since we have webpki roots
     #[cfg(not(any(
@@ -52,7 +55,7 @@ pub fn create_channel(
 
         if let Some(pem) = settings.ca_certificate.as_ref() {
             let cert = Certificate::from_pem(pem);
-            tls_config = tls_config.ca_certificate(cert).domain_name(host);
+            tls_config = tls_config.ca_certificate(cert);
         };
     }
 
@@ -65,9 +68,45 @@ pub fn create_channel(
         .keep_alive_timeout(HTTP2_KEEP_ALIVE_TIMEOUT)
         .keep_alive_while_idle(false);
 
-    builder = builder
-        .tls_config(tls_config)
-        .expect("Failed to set TLS config");
+    builder = builder.tls_config(tls_config).map_err(|e| {
+        TransportError::Grpc(dapi_grpc::tonic::Status::invalid_argument(format!(
+            "invalid TLS configuration: {e}"
+        )))
+    })?;
 
     Ok(builder.connect_lazy())
+}
+
+/// The host of a URI without the brackets an IPv6 literal carries in it
+/// (`[2001:db8::1]` becomes `2001:db8::1`); any other host is unchanged.
+pub(crate) fn unbracketed(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::RequestSettings;
+
+    #[test]
+    fn should_strip_only_ipv6_brackets() {
+        assert_eq!(unbracketed("[2001:db8::1]"), "2001:db8::1");
+        assert_eq!(unbracketed("127.0.0.1"), "127.0.0.1");
+        assert_eq!(unbracketed("evo.example"), "evo.example");
+    }
+
+    /// `create_channel` used to panic for every IPv6 endpoint: the bracketed
+    /// host is not a valid TLS server name.
+    #[tokio::test]
+    async fn should_create_a_channel_for_an_ipv6_endpoint() {
+        let uri: Uri = "https://[2001:db8::1]:443".parse().expect("uri");
+        create_channel(uri.clone(), None).expect("default roots");
+
+        let settings = RequestSettings::default()
+            .finalize()
+            .with_ca_certificate(Some(Certificate::from_pem("fake-pem-data")));
+        create_channel(uri, Some(&settings)).expect("explicit CA");
+    }
 }
