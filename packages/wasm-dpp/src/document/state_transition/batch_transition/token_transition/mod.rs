@@ -1,40 +1,26 @@
 pub mod burn;
-pub mod burn_from_pool;
 mod claim;
-pub mod claim_to_pool;
 pub mod config;
 pub mod destroy;
 pub mod direct_purchase;
-pub mod direct_purchase_to_pool;
 pub mod emergency_action;
 pub mod freeze;
 pub mod mint;
-pub mod mint_to_pool;
 pub mod set_price_for_direct_purchase;
-pub mod shield;
-pub mod shielded_transfer;
 pub mod transfer;
 pub mod unfreeze;
-pub mod unshield;
 
 use crate::batch_transition::token_transition::burn::TokenBurnTransitionWasm;
-use crate::batch_transition::token_transition::burn_from_pool::TokenBurnFromPoolTransitionWasm;
 use crate::batch_transition::token_transition::claim::TokenClaimTransitionWasm;
-use crate::batch_transition::token_transition::claim_to_pool::TokenClaimToPoolTransitionWasm;
 use crate::batch_transition::token_transition::config::TokenConfigUpdateTransitionWasm;
 use crate::batch_transition::token_transition::destroy::TokenDestroyFrozenFundsTransitionWasm;
 use crate::batch_transition::token_transition::direct_purchase::TokenDirectPurchaseTransitionWasm;
-use crate::batch_transition::token_transition::direct_purchase_to_pool::TokenDirectPurchaseToPoolTransitionWasm;
 use crate::batch_transition::token_transition::emergency_action::TokenEmergencyActionTransitionWasm;
 use crate::batch_transition::token_transition::freeze::TokenFreezeTransitionWasm;
 use crate::batch_transition::token_transition::mint::TokenMintTransitionWasm;
-use crate::batch_transition::token_transition::mint_to_pool::TokenMintToPoolTransitionWasm;
 use crate::batch_transition::token_transition::set_price_for_direct_purchase::TokenSetPriceForDirectPurchaseTransitionWasm;
-use crate::batch_transition::token_transition::shield::TokenShieldTransitionWasm;
-use crate::batch_transition::token_transition::shielded_transfer::TokenShieldedTransferTransitionWasm;
 use crate::batch_transition::token_transition::transfer::TokenTransferTransitionWasm;
 use crate::batch_transition::token_transition::unfreeze::TokenUnfreezeTransitionWasm;
-use crate::batch_transition::token_transition::unshield::TokenUnshieldTransitionWasm;
 use crate::identifier::IdentifierWrapper;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::token_transition::{
@@ -148,57 +134,48 @@ impl TokenTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toTransition)]
-    pub fn to_transition(&self) -> JsValue {
+    pub fn to_transition(&self) -> Result<JsValue, JsValue> {
         match &self.0 {
-            TokenTransition::Burn(burn) => TokenBurnTransitionWasm::from(burn.clone()).into(),
-            TokenTransition::Mint(mint) => TokenMintTransitionWasm::from(mint.clone()).into(),
+            TokenTransition::Burn(burn) => Ok(TokenBurnTransitionWasm::from(burn.clone()).into()),
+            TokenTransition::Mint(mint) => Ok(TokenMintTransitionWasm::from(mint.clone()).into()),
             TokenTransition::Transfer(transfer) => {
-                TokenTransferTransitionWasm::from(transfer.clone()).into()
+                Ok(TokenTransferTransitionWasm::from(transfer.clone()).into())
             }
             TokenTransition::Freeze(freeze) => {
-                TokenFreezeTransitionWasm::from(freeze.clone()).into()
+                Ok(TokenFreezeTransitionWasm::from(freeze.clone()).into())
             }
             TokenTransition::Unfreeze(unfreeze) => {
-                TokenUnfreezeTransitionWasm::from(unfreeze.clone()).into()
+                Ok(TokenUnfreezeTransitionWasm::from(unfreeze.clone()).into())
             }
-            TokenTransition::DestroyFrozenFunds(destroy_frozen_funds) => {
-                TokenDestroyFrozenFundsTransitionWasm::from(destroy_frozen_funds.clone()).into()
-            }
+            TokenTransition::DestroyFrozenFunds(destroy_frozen_funds) => Ok(
+                TokenDestroyFrozenFundsTransitionWasm::from(destroy_frozen_funds.clone()).into(),
+            ),
             TokenTransition::EmergencyAction(emergency_action) => {
-                TokenEmergencyActionTransitionWasm::from(emergency_action.clone()).into()
+                Ok(TokenEmergencyActionTransitionWasm::from(emergency_action.clone()).into())
             }
             TokenTransition::ConfigUpdate(config_update) => {
-                TokenConfigUpdateTransitionWasm::from(config_update.clone()).into()
+                Ok(TokenConfigUpdateTransitionWasm::from(config_update.clone()).into())
             }
-            TokenTransition::Claim(claim) => TokenClaimTransitionWasm::from(claim.clone()).into(),
+            TokenTransition::Claim(claim) => {
+                Ok(TokenClaimTransitionWasm::from(claim.clone()).into())
+            }
             TokenTransition::DirectPurchase(direct_purchase) => {
-                TokenDirectPurchaseTransitionWasm::from(direct_purchase.clone()).into()
+                Ok(TokenDirectPurchaseTransitionWasm::from(direct_purchase.clone()).into())
             }
             TokenTransition::SetPriceForDirectPurchase(set_price) => {
-                TokenSetPriceForDirectPurchaseTransitionWasm::from(set_price.clone()).into()
+                Ok(TokenSetPriceForDirectPurchaseTransitionWasm::from(set_price.clone()).into())
             }
-            TokenTransition::Shield(shield) => {
-                TokenShieldTransitionWasm::from(shield.clone()).into()
-            }
-            TokenTransition::Unshield(unshield) => {
-                TokenUnshieldTransitionWasm::from(unshield.clone()).into()
-            }
-            TokenTransition::ShieldedTransfer(shielded_transfer) => {
-                TokenShieldedTransferTransitionWasm::from(shielded_transfer.clone()).into()
-            }
-            TokenTransition::MintToPool(mint_to_pool) => {
-                TokenMintToPoolTransitionWasm::from(mint_to_pool.clone()).into()
-            }
-            TokenTransition::BurnFromPool(burn_from_pool) => {
-                TokenBurnFromPoolTransitionWasm::from(burn_from_pool.clone()).into()
-            }
-            TokenTransition::ClaimToPool(claim_to_pool) => {
-                TokenClaimToPoolTransitionWasm::from(claim_to_pool.clone()).into()
-            }
-            TokenTransition::DirectPurchaseToPool(direct_purchase_to_pool) => {
-                TokenDirectPurchaseToPoolTransitionWasm::from(direct_purchase_to_pool.clone())
-                    .into()
-            }
+            // The shielded-pool token transition kinds have no wrapper class here, so there is
+            // nothing to hand back; wasm-dpp2 is the binding that exposes them.
+            TokenTransition::Shield(_)
+            | TokenTransition::Unshield(_)
+            | TokenTransition::ShieldedTransfer(_)
+            | TokenTransition::MintToPool(_)
+            | TokenTransition::BurnFromPool(_)
+            | TokenTransition::ClaimToPool(_)
+            | TokenTransition::DirectPurchaseToPool(_) => Err(JsValue::from_str(
+                "shielded and pool-backed token transitions are not supported in wasm-dpp TokenTransition; use wasm-dpp2",
+            )),
         }
     }
 }
