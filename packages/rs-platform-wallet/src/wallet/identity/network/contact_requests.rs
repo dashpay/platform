@@ -1908,33 +1908,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         out
     }
 
-    /// Build the two DashPay accounts for one established contact,
-    /// applying the transient/permanent failure policy.
+    /// Queue the two DashPay account builds for one established contact.
     ///
-    /// Order:
-    /// 1. Register the `DashpayReceivingFunds` account — derivable from our
-    ///    own seed, no decryption needed. This is what makes *incoming*
-    ///    contact payments visible to SPV; restore-from-seed leaves it
-    ///    unbuilt, so the sweep rebuilds it for every established contact.
-    /// 2. Fetch the counterparty identity and **validate** the request's
-    ///    key indices via [`validate_contact_request`] BEFORE any ECDH —
-    ///    an attacker-crafted index pointing at an AUTHENTICATION key would
-    ///    otherwise derive a wrong shared secret and poison the account.
-    /// 3. Register the `DashpayExternalAccount` (decrypt + ECDH).
+    /// The recurring sweep runs without a signer, so it cannot derive the
+    /// receiving (friendship) xpub or the ECDH secret itself. It enqueues
+    /// both ops for the signer-backed drain
+    /// ([`Self::drain_pending_contact_crypto_verified`]), which registers the
+    /// `DashpayReceivingFunds` account, fetches the counterparty, validates
+    /// the request's key indices before any ECDH, and registers the
+    /// `DashpayExternalAccount`. Transient failures stay queued for the next
+    /// drain; permanent ones mark the contact `payment_channel_broken`.
     ///
-    /// Failure policy:
-    /// - **Transient** (identity fetch / network): logged, left for the
-    ///   next sweep to retry. The broken flag stays clear.
-    /// - **Permanent** (validation failure, decrypt/decode failure): the
-    ///   contact is marked `payment_channel_broken` so subsequent sweeps
-    ///   skip it until a superseding request arrives.
+    /// Identities that are not ours to build (no `identity_index`) are
+    /// skipped and logged. Enqueueing is idempotent per (owner, contact,
+    /// kind), so calling this every sweep is a no-op until the drain clears
+    /// the entries.
     ///
-    /// Watch-only / seedless wallets (no `identity_index`) are skipped and
-    /// logged — the watch-only ECDH path (host-side signing hook) lands
-    /// later.
-    ///
-    /// Called **after** the sync write guard is dropped: the register
-    /// functions re-acquire the non-reentrant wallet-manager lock.
+    /// Called **after** the sync write guard is dropped: this re-acquires
+    /// the non-reentrant wallet-manager lock.
     async fn build_contact_accounts(
         &self,
         identity_id: &Identifier,
