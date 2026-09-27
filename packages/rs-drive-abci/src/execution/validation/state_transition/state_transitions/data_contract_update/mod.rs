@@ -270,9 +270,13 @@ mod tests {
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+        use crate::error::Error;
         use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
         use crate::execution::validation::state_transition::ValidationMode;
+        use dpp::platform_value::Value;
+        use dpp::validation::ConsensusValidationResult;
         use dpp::version::TryFromPlatformVersioned;
+        use drive::state_transition_action::StateTransitionAction;
         use platform_version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
 
         #[test]
@@ -432,6 +436,126 @@ mod tests {
                 )] if e.document_type_name() == "niceDocument"
                     && e.operation() == "add"
                     && e.property_path() == "/transient"
+            );
+        }
+
+        /// Validates the state of an update giving the fixture's `niceDocument`
+        /// every `(key, value)` of `keywords` on top of its stored schema.
+        fn validate_state_of_nice_document_update(
+            keywords: Value,
+        ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+            let platform_version = PlatformVersion::latest();
+            let TestData {
+                mut data_contract,
+                platform,
+            } = setup_test();
+            apply_contract(&platform, &data_contract, Default::default());
+
+            let mut updated_document = data_contract
+                .document_type_for_name("niceDocument")
+                .expect("the fixture's niceDocument")
+                .schema()
+                .clone();
+            for (key, value) in keywords
+                .into_btree_string_map()
+                .expect("the keywords are a map")
+            {
+                updated_document
+                    .set_value(&key, value)
+                    .expect("the keyword sets");
+            }
+
+            data_contract.increment_version();
+            data_contract
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("to be able to set document schema");
+
+            let state_transition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce: 1,
+                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
+                    data_contract,
+                    platform_version,
+                )
+                .expect("to be able to convert data contract to serialization format"),
+                user_fee_increase: 0,
+                signature: BinaryData::new(vec![0; 65]),
+                signature_public_key_id: 0,
+            };
+
+            let state = platform.state.load();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected a platform version");
+
+            DataContractUpdateTransition::V0(state_transition).validate_state(
+                None,
+                &platform_ref,
+                ValidationMode::Validator,
+                &BlockInfo::default(),
+                &mut execution_context,
+                None,
+            )
+        }
+
+        /// Token costs are fixed when a document type is published. The schema
+        /// compatibility check had no rule for `tokenCost` and failed with an
+        /// internal error, dropping the transition unpaid; the parsed costs are
+        /// now compared first and the update is refused with a consensus error.
+        #[test]
+        pub fn should_refuse_an_update_adding_a_token_cost_as_a_document_type_update_error() {
+            let result = validate_state_of_nice_document_update(platform_value!({
+                "tokenCost": {
+                    "create": {
+                        "contractId": Identifier::new([7; 32]).to_buffer(),
+                        "tokenPosition": 0_u64,
+                        "amount": 1_u64,
+                    }
+                }
+            }))
+            .expect("a token cost change is a consensus error, not an internal one");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.document_type_name() == "niceDocument"
+                        && e.additional_message().contains(
+                            "can not add the token cost of its create action"
+                        )
+            );
+        }
+
+        /// Writing out a default leaves the parsed document type as it was but
+        /// changes its schema. The schema compatibility check had no rule for
+        /// the keyword and failed with an internal error; the keyword is frozen
+        /// now, and the update is refused as an incompatible schema change.
+        #[test]
+        pub fn should_refuse_an_update_writing_out_a_default_as_an_incompatible_schema() {
+            let result = validate_state_of_nice_document_update(platform_value!({
+                "keepsTransferHistory": false,
+            }))
+            .expect("writing out a default is a consensus error, not an internal one");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::IncompatibleDocumentTypeSchemaError(e)
+                )] if e.document_type_name() == "niceDocument"
+                    && e.operation() == "add"
+                    && e.property_path() == "/keepsTransferHistory"
             );
         }
 

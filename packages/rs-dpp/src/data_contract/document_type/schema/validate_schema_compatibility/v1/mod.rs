@@ -38,8 +38,17 @@
 //! does the top-level `propertyConstraints` object (protocol version 14):
 //! every stored document was judged against the rules it names, so none may be
 //! added, removed or changed.
+//!
+//! Every other keyword the document meta-schema admits and the shared rule set
+//! has no rule for gets the same frozen rule ([`FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE`]).
+//! Generation 0 fails on a diff under any of them as an unsupported keyword.
 
-use crate::data_contract::document_type::property_names::{PROPERTY_CONSTRAINTS, TRANSIENT};
+use crate::data_contract::document_type::property_names::{
+    ACTION_FEES, CAN_BE_DELETED_BY_MODERATORS, CAN_BE_DELETED_BY_MODERATORS_FOR,
+    DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY,
+    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, PROPERTY_CONSTRAINTS,
+    RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, TRANSIENT, TTL,
+};
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
 use crate::data_contract::JsonValue;
@@ -85,6 +94,7 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
     // The top-level `propertyConstraints` gets it too: a rule added later
     // would judge replaces of documents stored without it, and a rule changed
     // or removed would leave stored documents judged by one no longer there.
+    // So does every keyword in `FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE`.
     let refers_to_rule = KEYWORD_COMPATIBILITY_RULES.get("refersTo");
     let frozen_doctype_rules = [
         "ownerRefersTo",
@@ -93,6 +103,7 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
         PROPERTY_CONSTRAINTS,
     ]
     .into_iter()
+    .chain(FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE)
     .filter_map(|keyword| refers_to_rule.map(|rule| (keyword, rule.clone())));
 
     Options {
@@ -103,6 +114,45 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
         ),
     }
 });
+
+/// The keywords the document meta-schema admits that have no rule in the
+/// shared rule set, which generation 0 also reads, and are not stripped by
+/// [`prepared_for_diff`]. Without a rule, a diff under one fails as an
+/// unsupported keyword: an internal error, where a contract update should get
+/// a consensus error. Each is frozen, so adding, removing or changing it is an
+/// incompatible change.
+///
+/// Where the document type parse reads the keyword, `validate_update` v1
+/// compares the parsed values first and refuses a real change with
+/// `DocumentTypeUpdateError`. What reaches this rule is then an edit the parse
+/// reads the same, such as writing out a default or switching to the
+/// `documentsAverageable` shorthand, refused like the same edit to
+/// `documentsMutable` or `canBeDeleted`. `minProperties`, `maxProperties` and
+/// `contains` have no parsed value; the first two are also admitted on object
+/// properties and `contains` only on properties, where the rule applies too.
+/// `$schema` needs no rule: the parse refuses a document type schema that
+/// carries it and adds it only to the copy it validates.
+const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 19] = [
+    "tokenCost",
+    TTL,
+    ACTION_FEES,
+    INDEX_ONLY,
+    ENTRY_PAYLOAD,
+    KEEPS_TRANSFER_HISTORY,
+    KEEPS_PURCHASE_HISTORY,
+    KEEPS_PRICING_HISTORY,
+    DOCUMENTS_COUNTABLE,
+    RANGE_COUNTABLE,
+    DOCUMENTS_SUMMABLE,
+    RANGE_SUMMABLE,
+    DOCUMENTS_AVERAGEABLE,
+    RANGE_AVERAGEABLE,
+    CAN_BE_DELETED_BY_MODERATORS,
+    CAN_BE_DELETED_BY_MODERATORS_FOR,
+    "minProperties",
+    "maxProperties",
+    "contains",
+];
 
 /// The document type's own top-level keys whose changes are validated by
 /// dedicated checks in `validate_update` v1 instead of the JSON diff:
@@ -185,9 +235,11 @@ pub(super) fn validate_schema_compatibility_v1(
 #[cfg(test)]
 mod tests {
     use super::super::validate_schema_compatibility;
+    use super::{OPTIONS, TOP_LEVEL_VALIDATED_KEYS};
     use crate::data_contract::errors::{DataContractError, JsonSchemaError};
     use crate::ProtocolError;
     use assert_matches::assert_matches;
+    use json_schema_compatibility_validator::KEYWORD_COMPATIBILITY_RULES;
     use platform_version::version::PlatformVersion;
     use serde_json::json;
 
@@ -537,6 +589,214 @@ mod tests {
             validate_schema_compatibility(&unchanged, &unchanged, platform_version)
                 .expect("an unchanged schema is judged")
                 .is_valid()
+        );
+    }
+
+    fn document_type_schema() -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "a": {"type": "integer", "position": 0},
+                "list": {"type": "array", "items": {"type": "integer"}, "position": 1},
+                "object": {
+                    "type": "object",
+                    "properties": {"b": {"type": "integer", "position": 0}},
+                    "additionalProperties": false,
+                    "position": 2
+                },
+            },
+            "additionalProperties": false,
+        })
+    }
+
+    /// Where a keyword sits, a value, another value, and the path of the first
+    /// incompatible change reported between the two.
+    type FrozenKeywordCase = (
+        &'static str,
+        serde_json::Value,
+        serde_json::Value,
+        &'static str,
+    );
+
+    /// Every keyword the differ freezes with no shared rule, at the top of the
+    /// document type or in a property's schema.
+    fn frozen_keyword_cases() -> Vec<FrozenKeywordCase> {
+        let mut cases: Vec<FrozenKeywordCase> = vec![
+            (
+                "/tokenCost",
+                json!({"create": {"tokenPosition": 0, "amount": 1}}),
+                json!({"create": {"tokenPosition": 0, "amount": 1, "effect": 0}}),
+                "/tokenCost/create/effect",
+            ),
+            (
+                "/actionFees",
+                json!({"create": {"owner": 10}}),
+                json!({"create": {"owner": 10, "moderators": 0}}),
+                "/actionFees/create/moderators",
+            ),
+            (
+                "/entryPayload",
+                json!(["a", "b"]),
+                json!(["b", "a"]),
+                "/entryPayload/0",
+            ),
+            (
+                "/properties/list/contains",
+                json!({"minimum": 1}),
+                json!({"minimum": 0}),
+                "/properties/list/contains/minimum",
+            ),
+        ];
+        // Scalars, whose change is reported at the keyword itself
+        let scalars = [
+            ("/ttl", json!(86400), json!(3600)),
+            ("/indexOnly", json!(true), json!(false)),
+            ("/keepsTransferHistory", json!(true), json!(false)),
+            ("/keepsPurchaseHistory", json!(true), json!(false)),
+            ("/keepsPricingHistory", json!(true), json!(false)),
+            ("/documentsCountable", json!(true), json!(false)),
+            ("/rangeCountable", json!(true), json!(false)),
+            ("/documentsSummable", json!("a"), json!("b")),
+            ("/rangeSummable", json!(true), json!(false)),
+            ("/documentsAverageable", json!("a"), json!("b")),
+            ("/rangeAverageable", json!(true), json!(false)),
+            ("/canBeDeletedByModerators", json!(true), json!(false)),
+            ("/canBeDeletedByModeratorsFor", json!(3600), json!(7200)),
+            ("/minProperties", json!(1), json!(0)),
+            ("/maxProperties", json!(2), json!(3)),
+            ("/properties/object/minProperties", json!(1), json!(0)),
+            ("/properties/object/maxProperties", json!(1), json!(2)),
+        ];
+        cases.extend(
+            scalars
+                .into_iter()
+                .map(|(pointer, value, other_value)| (pointer, value, other_value, pointer)),
+        );
+        cases
+    }
+
+    fn with_pointer(pointer: &str, value: Option<serde_json::Value>) -> serde_json::Value {
+        let mut schema = document_type_schema();
+        let (parent, key) = pointer.rsplit_once('/').expect("a pointer has a parent");
+        let parent = schema
+            .pointer_mut(parent)
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("the parent is an object");
+        if let Some(value) = value {
+            parent.insert(key.to_string(), value);
+        }
+        schema
+    }
+
+    /// Meta-schema v3 admits these keywords, which the shared rule set has no
+    /// rule for: each is frozen, so adding, removing or changing one, even to
+    /// a value the parse reads the same, is an incompatible change and not an
+    /// unsupported keyword. Where the parse reads a value, `validate_update`
+    /// refuses a real change before this check runs.
+    #[test]
+    fn should_report_every_change_to_a_keyword_without_a_shared_rule_as_incompatible() {
+        let platform_version = PlatformVersion::latest();
+        for (pointer, value, other_value, changed_path) in frozen_keyword_cases() {
+            // Adding, removing, then changing the value: the first incompatible
+            // change reported is at the keyword, then inside its value
+            for (original, new, first_change_path) in [
+                (None, Some(value.clone()), pointer),
+                (Some(value.clone()), None, pointer),
+                (Some(value.clone()), Some(other_value), changed_path),
+            ] {
+                let result = validate_schema_compatibility(
+                    &with_pointer(pointer, original.clone()),
+                    &with_pointer(pointer, new.clone()),
+                    platform_version,
+                )
+                .unwrap_or_else(|error| {
+                    panic!("{pointer}: {original:?} -> {new:?} must be judged, got {error:?}")
+                });
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [change, ..] if change.path == first_change_path,
+                    "{pointer}: {original:?} -> {new:?}"
+                );
+            }
+
+            let unchanged = with_pointer(pointer, Some(value));
+            assert!(
+                validate_schema_compatibility(&unchanged, &unchanged, platform_version)
+                    .expect("an unchanged schema is judged")
+                    .is_valid(),
+                "{pointer}"
+            );
+        }
+    }
+
+    /// Every keyword meta-schema v3 admits at the top of a document type, in a
+    /// property's schema or in a typed array's element schema is judged by the
+    /// differ or stripped before it, so no update can fail on one as an
+    /// unsupported keyword. A keyword added to the meta-schema without a rule
+    /// fails here.
+    #[test]
+    fn should_have_a_rule_for_every_keyword_meta_schema_v3_admits() {
+        let meta_schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../../schema/meta_schemas/document/v3/document-meta.json"
+        ))
+        .expect("the v3 document meta-schema is JSON");
+        let keywords = |schema: &serde_json::Value| -> Vec<String> {
+            schema["properties"]
+                .as_object()
+                .expect("the schema declares its keywords")
+                .keys()
+                .cloned()
+                .collect()
+        };
+        let has_rule = |keyword: &str| {
+            OPTIONS.override_rules.contains_key(keyword)
+                || KEYWORD_COMPATIBILITY_RULES.contains_key(keyword)
+        };
+
+        for keyword in keywords(&meta_schema) {
+            // The parse refuses a schema carrying `$schema`, so no diff reaches it
+            if keyword == "$schema" || TOP_LEVEL_VALIDATED_KEYS.contains(&keyword.as_str()) {
+                continue;
+            }
+            assert!(
+                has_rule(&keyword),
+                "top-level keyword {keyword} has no rule"
+            );
+        }
+        for definition in ["documentSchema", "documentArrayItem"] {
+            for keyword in keywords(&meta_schema["$defs"][definition]) {
+                assert!(
+                    has_rule(&keyword),
+                    "{definition} keyword {keyword} has no rule"
+                );
+            }
+        }
+    }
+
+    // Replay-safety pin: protocol version 13 dispatches to v0, where a diff
+    // under a keyword without a shared rule still hits the unsupported-keyword
+    // hard error.
+    #[test]
+    fn should_hard_error_on_a_token_cost_diff_at_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 must exist");
+        let error = validate_schema_compatibility(
+            &with_pointer(
+                "/tokenCost",
+                Some(json!({"create": {"tokenPosition": 0, "amount": 1}})),
+            ),
+            &with_pointer(
+                "/tokenCost",
+                Some(json!({"create": {"tokenPosition": 0, "amount": 2}})),
+            ),
+            platform_version,
+        )
+        .expect_err("a tokenCost diff must hard-error under v0");
+
+        assert_matches!(
+            error,
+            ProtocolError::DataContractError(DataContractError::JsonSchema(
+                JsonSchemaError::SchemaCompatibilityValidationError(message)
+            )) if message == "schema keyword 'tokenCost' at path '/tokenCost/create/amount' is not supported"
         );
     }
 }
