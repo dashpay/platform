@@ -8,5 +8,6 @@ pub const VOTE_RESOLUTION_FUND_FEES_VERSION1: VoteResolutionFundFees = VoteResol
     // every other contest pays.
     moderation_vote_resolution_fund_required_amount: 20000000000, // 0.2 Dash
     // Before protocol version 14 every contender paid the same fund, however many had joined
+    contested_document_contenders_before_fund_doubling: 0,
     contested_document_contenders_per_fund_doubling: 0,
 };

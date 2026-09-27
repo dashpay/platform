@@ -3653,11 +3653,11 @@ mod creation_tests {
             .contested_document_vote_resolution_fund_required_amount
     }
 
-    /// The fund a contender pays doubles for every 100 contenders the contest holds: once it
-    /// holds 100, a contender stating the contested document fund is refused, paid, and one
-    /// stating twice it joins and pays all of it into the contest's fund
+    /// The fund a contender pays doubles once the contest holds 250 contenders: from then, a
+    /// contender stating the contested document fund is refused, paid, and one stating twice it
+    /// joins and pays all of it into the contest's fund
     #[tokio::test]
-    async fn should_double_the_fund_a_contender_pays_for_every_100_contenders_a_contest_holds() {
+    async fn should_double_the_fund_a_contender_pays_once_a_contest_holds_250_contenders() {
         let platform_version = PlatformVersion::latest();
         let fund = contested_document_fund(platform_version);
         let mut platform = TestPlatformBuilder::new()
@@ -3679,7 +3679,7 @@ mod creation_tests {
             &platform,
             &dpns_contract,
             "quantum",
-            100,
+            250,
             platform_version,
         );
         let contest_fund =
@@ -3739,7 +3739,7 @@ mod creation_tests {
 
     /// PROTOCOL_VERSION_13: every contender pays the same fund, however many the contest holds
     #[tokio::test]
-    async fn should_double_the_fund_a_contender_pays_for_every_100_contenders_a_contest_holds_protocol_version_13(
+    async fn should_double_the_fund_a_contender_pays_once_a_contest_holds_250_contenders_protocol_version_13(
     ) {
         let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let fund = contested_document_fund(platform_version);
@@ -3762,7 +3762,7 @@ mod creation_tests {
             &platform,
             &dpns_contract,
             "quantum",
-            100,
+            250,
             platform_version,
         );
         let contest_fund =
@@ -3851,13 +3851,13 @@ mod creation_tests {
             max_contenders - 1,
             platform_version,
         );
-        // The 1,000th contender pays 512 times the fund
+        // The 1,000th contender pays 32,768 times the fund
         let (_, result) = add_contender_to_dpns_name_contest_paying(
             &mut platform,
             &platform_state,
             4,
             "quantum",
-            Some(512 * contested_document_fund(platform_version)),
+            Some(32_768 * contested_document_fund(platform_version)),
             platform_version,
         )
         .await;

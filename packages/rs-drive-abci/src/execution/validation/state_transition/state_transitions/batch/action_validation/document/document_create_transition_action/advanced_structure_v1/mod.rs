@@ -63,7 +63,7 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                 ) => {
                     // A moderation election is prefunded with the moderation fund, every other
                     // contest with the contested document fund. -->> Changed in V1 <<-- A
-                    // contender pays at least that: joining a contest holding 100 contenders or
+                    // contender pays at least that: joining a contest holding 250 contenders or
                     // more costs a multiple of it, which state validation checks once it has
                     // counted them, and everything paid goes to the contest's fund.
                     let expected_amount = expected.required_vote_resolution_fund(platform_version);
@@ -316,7 +316,7 @@ mod tests {
     }
 
     /// A contender pays the contested document fund: exactly it before protocol version 14, at
-    /// least it from 14, where joining a contest of 100 contenders or more costs a multiple of it
+    /// least it from 14, where joining a contest of 250 contenders or more costs a multiple of it
     #[test]
     fn should_require_the_contested_dpns_fee_for_each_protocol_version() {
         for (protocol_version, expected_amount) in [(13, 20_000_000_000), (14, 10_000_000_000)] {

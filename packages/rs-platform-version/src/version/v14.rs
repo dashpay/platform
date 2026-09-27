@@ -1268,14 +1268,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     before this version. `check_for_ended_vote_polls` 1 compares every tied
 ///     contender; version 0 compared at most 100.
 ///
-/// 51. **The fund a contender pays doubles for every 100 contenders a contest
-///     holds**: document create state validation 2 refuses, paid, a contender
-///     whose prefunded voting balance is less than the contest's fund doubled
-///     for every `contested_document_contenders_per_fund_doubling`
-///     (`FEE_VERSION3`, 100) contenders the contest holds
-///     (`DocumentContestNotPaidForError`): 0.1 DASH for the first 100 DPNS
-///     contenders, 0.2 for the next 100, up to 51.2 for the 901st to the
-///     1,000th, so filling a contest costs 10,230 DASH where it cost 100.
+/// 51. **The fund a contender pays doubles for every 50 contenders a contest
+///     holds past 250**: document create state validation 2 refuses, paid, a
+///     contender whose prefunded voting balance is less than the contest's fund
+///     doubled once the contest holds
+///     `contested_document_contenders_before_fund_doubling` (`FEE_VERSION3`,
+///     250) contenders and again for every
+///     `contested_document_contenders_per_fund_doubling` (50) more
+///     (`DocumentContestNotPaidForError`): 0.1 DASH for the first 250 DPNS
+///     contenders, 0.2 for the next 50, up to 3,276.8 for the 951st to the
+///     1,000th, so filling a contest costs 327,695 DASH where it cost 100.
 ///     Document create structure validation 1 accepts a prefunded voting
 ///     balance of at least the contest's fund; version 0 wants exactly it.
 ///     Everything a contender pays goes to the contest's fund.
@@ -1348,7 +1350,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles for every 100 contenders the contest holds
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -1373,7 +1375,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles for every 100 contenders the contest holds; registration surcharge for once-per-identity token distributions
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
     system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
@@ -1410,7 +1412,11 @@ mod tests {
                 "protocol {protocol_version}"
             );
             assert_eq!(
-                fund_fees.contested_document_contenders_per_fund_doubling, 0,
+                (
+                    fund_fees.contested_document_contenders_before_fund_doubling,
+                    fund_fees.contested_document_contenders_per_fund_doubling
+                ),
+                (0, 0),
                 "protocol {protocol_version}: every contender paid the same fund"
             );
         }
@@ -1427,10 +1433,14 @@ mod tests {
         expected_fees
             .vote_resolution_fund_fees
             .moderation_vote_resolution_fund_required_amount = 50_000_000_000;
-        // The fund a contender pays doubles for every 100 contenders the contest holds
+        // The fund a contender pays doubles once the contest holds 250 contenders, and again for
+        // every 50 more
         expected_fees
             .vote_resolution_fund_fees
-            .contested_document_contenders_per_fund_doubling = 100;
+            .contested_document_contenders_before_fund_doubling = 250;
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_contenders_per_fund_doubling = 50;
         // The once-per-identity token distribution exists from protocol version 14 on, and a
         // token that uses it pays the surcharge of the other distribution kinds.
         assert_eq!(

@@ -62,8 +62,9 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
 
         // A contest accepts at most `max_contenders_per_contest` contenders, so the end of the
         // poll can tally and clean up every one in a block, and the fund a contender pays to
-        // join doubles for every `contested_document_contenders_per_fund_doubling` contenders it
-        // holds, so filling it costs far more than the fund times the contenders. v1 has let the
+        // join doubles once it holds `contested_document_contenders_before_fund_doubling`
+        // contenders and again for every `contested_document_contenders_per_fund_doubling` more,
+        // so filling it costs far more than the fund times the contenders. v1 has let the
         // document join the contest when it exists; a new contest has no contenders to count,
         // and structure validation has checked its fund.
         if let Some((contested_document_resource_vote_poll, paid_amount)) =

@@ -38,9 +38,9 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // tallies and cleans up every contender of a poll within the 1,000 a contest
 // accepts, and up to 10,000 of one that grew past it before this version.
 // Document create state validation 2 also refuses a contender whose prefunded voting
-// balance is less than the fund doubled for every
-// `contested_document_contenders_per_fund_doubling` (100) contenders the contest holds
-// (DocumentContestNotPaidForError), and structure validation 1 accepts a prefunded voting
+// balance is less than the fund doubled once the contest holds
+// `contested_document_contenders_before_fund_doubling` (250) contenders and again for every
+// `contested_document_contenders_per_fund_doubling` (50) more (DocumentContestNotPaidForError), and structure validation 1 accepts a prefunded voting
 // balance of at least the contest's fund where 0 wanted exactly it.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =

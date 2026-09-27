@@ -137,11 +137,12 @@ pub fn required_vote_resolution_fund(
 
 /// The prefunded voting balance a contender pays to join a contest on the contested index of
 /// `document_type_name` in the contract `contract_id` while the contest holds `contenders`
-/// contenders: the contest's fund ([`required_vote_resolution_fund`]), doubled for every
-/// `contested_document_contenders_per_fund_doubling` contenders the contest holds. From
-/// protocol version 14 that is every 100, so the first 100 contenders pay the fund, the next 100
-/// twice it, and the 901st to the 1,000th, the last a contest accepts, 512 times it. Before 14
-/// every contender pays the fund.
+/// contenders: the contest's fund ([`required_vote_resolution_fund`]), doubled once the contest
+/// holds `contested_document_contenders_before_fund_doubling` contenders and again for every
+/// `contested_document_contenders_per_fund_doubling` more. From protocol version 14 that is 250
+/// and 50: the first 250 contenders pay the fund, the 251st to the 300th twice it, and the 951st
+/// to the 1,000th, the last a contest accepts, 32,768 times it (3,276.8 Dash for a DPNS name).
+/// Before 14 every contender pays the fund.
 ///
 /// This is the least a contender may pay; everything it pays goes to the contest's fund.
 pub fn required_vote_resolution_fund_to_join(
@@ -151,14 +152,17 @@ pub fn required_vote_resolution_fund_to_join(
     platform_version: &PlatformVersion,
 ) -> Credits {
     let fund = required_vote_resolution_fund(contract_id, document_type_name, platform_version);
-    let contenders_per_doubling = platform_version
-        .fee_version
-        .vote_resolution_fund_fees
-        .contested_document_contenders_per_fund_doubling;
+    let fund_fees = &platform_version.fee_version.vote_resolution_fund_fees;
+    let contenders_per_doubling = fund_fees.contested_document_contenders_per_fund_doubling;
     if contenders_per_doubling == 0 {
         return fund;
     }
-    let doublings = u32::from(contenders / contenders_per_doubling);
+    let Some(contenders_past_flat_fund) =
+        contenders.checked_sub(fund_fees.contested_document_contenders_before_fund_doubling)
+    else {
+        return fund;
+    };
+    let doublings = 1 + u32::from(contenders_past_flat_fund / contenders_per_doubling);
     2u64.checked_pow(doublings)
         .map_or(Credits::MAX, |multiplier| fund.saturating_mul(multiplier))
 }
@@ -181,21 +185,23 @@ mod fund_to_join_tests {
         )
     }
 
-    /// From protocol version 14 the fund a contender pays doubles for every 100 contenders the
-    /// contest holds, so filling a contest to its 1,000 contenders costs 10,230 Dash
+    /// From protocol version 14 the fund a contender pays doubles once the contest holds 250
+    /// contenders and again for every 50 more, so filling a contest to its 1,000 contenders
+    /// costs 327,695 Dash
     #[test]
-    fn should_double_the_fund_for_every_100_contenders_a_contest_holds() {
+    fn should_double_the_fund_for_every_50_contenders_a_contest_holds_past_250() {
         let platform_version = PlatformVersion::latest();
 
         for (contenders, fund) in [
             (0, DASH / 10),
-            (99, DASH / 10),
-            (100, DASH / 5),
-            (199, DASH / 5),
-            (200, 2 * DASH / 5),
-            (899, 256 * DASH / 10),
-            (900, 512 * DASH / 10),
-            (999, 512 * DASH / 10),
+            (249, DASH / 10),
+            (250, DASH / 5),
+            (299, DASH / 5),
+            (300, 2 * DASH / 5),
+            (699, 512 * DASH / 10),
+            (700, 1_024 * DASH / 10),
+            (950, 32_768 * DASH / 10),
+            (999, 32_768 * DASH / 10),
         ] {
             assert_eq!(
                 dpns_fund_to_join(contenders, platform_version),
@@ -207,7 +213,7 @@ mod fund_to_join_tests {
         let fill = (0..1_000u16)
             .map(|contenders| dpns_fund_to_join(contenders, platform_version))
             .sum::<Credits>();
-        assert_eq!(fill, 10_230 * DASH);
+        assert_eq!(fill, 327_695 * DASH);
 
         // A moderation election doubles its own fund
         assert_eq!(
@@ -217,7 +223,7 @@ mod fund_to_join_tests {
                 999,
                 platform_version,
             ),
-            256 * DASH
+            16_384 * DASH
         );
 
         // Past what 64 bits hold the fund saturates instead of overflowing
@@ -226,10 +232,11 @@ mod fund_to_join_tests {
 
     /// PROTOCOL_VERSION_13: every contender pays the same fund
     #[test]
-    fn should_double_the_fund_for_every_100_contenders_a_contest_holds_protocol_version_13() {
+    fn should_double_the_fund_for_every_50_contenders_a_contest_holds_past_250_protocol_version_13()
+    {
         let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
 
-        for contenders in [0, 100, 999, u16::MAX] {
+        for contenders in [0, 250, 300, 999, u16::MAX] {
             assert_eq!(
                 dpns_fund_to_join(contenders, platform_version),
                 DASH / 5,

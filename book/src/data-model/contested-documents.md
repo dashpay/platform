@@ -25,19 +25,22 @@ whole. Before 14 a contest accepted any number of contenders and its end tallied
 contest that grew past 10,000 contenders before 14 is tallied and cleaned up for its first 10,000
 only.
 
-From protocol version 14, the fund a contender pays doubles for every 100 contenders the contest
-holds (`contested_document_contenders_per_fund_doubling`), so filling a contest to its cap costs
-far more than the fund times its contenders:
+From protocol version 14, the fund a contender pays doubles once the contest holds 250 contenders
+(`contested_document_contenders_before_fund_doubling`) and again for every 50 more
+(`contested_document_contenders_per_fund_doubling`), so a contest stops growing long before its
+cap:
 
 | Contenders the contest holds | DPNS fund to join | Moderation election fund to join |
 | --- | --- | --- |
-| 0 to 99 | 0.1 Dash | 0.5 Dash |
-| 100 to 199 | 0.2 Dash | 1 Dash |
-| 200 to 299 | 0.4 Dash | 2 Dash |
-| ... | doubles every 100 | doubles every 100 |
-| 900 to 999 | 51.2 Dash | 256 Dash |
+| 0 to 249 | 0.1 Dash | 0.5 Dash |
+| 250 to 299 | 0.2 Dash | 1 Dash |
+| 300 to 349 | 0.4 Dash | 2 Dash |
+| ... | doubles every 50 | doubles every 50 |
+| 700 to 749 | 102.4 Dash | 512 Dash |
+| ... | doubles every 50 | doubles every 50 |
+| 950 to 999 | 3,276.8 Dash | 16,384 Dash |
 
-Filling a DPNS contest to 1,000 contenders costs 10,230 Dash (100 at a flat 0.1 Dash). A contender
+Filling a DPNS contest to 1,000 contenders costs 327,695 Dash (100 at a flat 0.1 Dash). A contender
 states its fund in its prefunded voting balance, and one stating less than the fund of the contest
 it joins is refused, paid, with `DocumentContestNotPaidForError`, which carries the fund it has to
 pay. A contender may state more; everything it states goes to the contest's fund. Before 14 every
