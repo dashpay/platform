@@ -6430,6 +6430,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-socks",
+ "tonic 0.14.6",
  "tonic-web-wasm-client",
  "tower 0.5.3",
  "tower-service",
