@@ -56,6 +56,10 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
+            check_validation_result_with_data!(
+                pool.validate_pool_exists(&self.drive, platform_version)?
+            );
+
             let (results, _) = self.drive.grove_get_raw_path_query(
                 &path_query,
                 None,

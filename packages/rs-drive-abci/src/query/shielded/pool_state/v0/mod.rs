@@ -51,6 +51,10 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
+            check_validation_result_with_data!(
+                pool.validate_pool_exists(&self.drive, platform_version)?
+            );
+
             let pool_path = pool.pool_path_vec();
 
             let total_balance = self
