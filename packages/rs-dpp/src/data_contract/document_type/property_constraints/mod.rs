@@ -27,10 +27,11 @@
 //! }
 //! ```
 //!
-//! An operand is an integer value, the dotted path of an integer property, or
-//! an object with one key: an arithmetic operator over its operands, or
-//! `ifAbsent`, a property with the value it takes when the document leaves it
-//! out. A property named on its own takes 0 when absent. How the arithmetic
+//! An operand is an integer value, the dotted path of an integer or boolean
+//! property (a boolean reads as 1 for true and 0 for false), or an object with
+//! one key: an arithmetic operator over its operands, or `ifAbsent`, a
+//! property with the value it takes when the document leaves it out. A
+//! property named on its own takes 0 when absent. How the arithmetic
 //! treats overflow, division and powers is set out on
 //! [`ConstraintExpression::evaluate`], and how conditions combine on
 //! [`PropertyConstraint::holds`].
@@ -143,9 +144,9 @@ impl ConstraintComparison {
 pub enum ConstraintExpression {
     /// An integer value.
     Value(i128),
-    /// The value of the integer property at the dotted `path`, or `if_absent`
-    /// when the document leaves it out: 0 for a path on its own, the declared
-    /// value for an `ifAbsent` operand.
+    /// The value of the integer or boolean property at the dotted `path` (1
+    /// for true, 0 for false), or `if_absent` when the document leaves it out:
+    /// 0 for a path on its own, the declared value for an `ifAbsent` operand.
     Property { path: String, if_absent: i128 },
     /// `add`: the sum of two or more operands.
     Add(Vec<ConstraintExpression>),
@@ -168,8 +169,9 @@ impl ConstraintExpression {
     /// Exact arithmetic over `i128`. Operands are evaluated left to right and
     /// the first fault is returned; every intermediate result must fit:
     ///
-    /// * a property the document leaves out takes its `if_absent` value; one it
-    ///   holds must be an integer ([`PropertyConstraintViolation::NotAnInteger`]
+    /// * a property the document leaves out takes its `if_absent` value; a
+    ///   boolean it holds reads as 1 for true and 0 for false; any other value
+    ///   must be an integer ([`PropertyConstraintViolation::NotAnInteger`]
     ///   otherwise: the schema validation running first admits a float with no
     ///   fractional part as an integer, which the document could not be stored
     ///   with anyway) that fits an `i128`
@@ -295,7 +297,7 @@ impl ConstraintExpression {
 /// How a rule reads a property, which decides the properties it may name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyRead {
-    /// By its value, as an operand: an integer property.
+    /// By its value, as an operand: an integer or boolean property.
     Value,
     /// Only whether the document holds it, in a `present` or `absent`: a
     /// property of any type, an object included.
@@ -951,8 +953,8 @@ fn is_present(data: &Value, path: &str) -> bool {
     )
 }
 
-/// The value of the property at `path` in `data`, or `if_absent` when the
-/// document leaves it out. An intermediate that is not an object reads as
+/// The value of the property at `path` in `data`, 1 or 0 for a boolean, or
+/// `if_absent` when the document leaves it out. An intermediate that is not an object reads as
 /// absent: the schema validation that runs first refuses such a document.
 fn property_value(
     data: &Value,
@@ -961,6 +963,7 @@ fn property_value(
 ) -> Result<i128, PropertyConstraintViolation> {
     match data.get_optional_value_at_path(path) {
         Ok(Some(Value::Null)) | Ok(None) | Err(_) => Ok(if_absent),
+        Ok(Some(Value::Bool(flag))) => Ok(i128::from(*flag)),
         Ok(Some(value)) if value.is_integer() => value
             .to_integer::<i128>()
             .map_err(|_| PropertyConstraintViolation::Overflow),

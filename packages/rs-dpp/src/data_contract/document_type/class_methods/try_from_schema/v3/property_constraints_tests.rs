@@ -24,8 +24,9 @@ use platform_value::string_encoding::Encoding;
 use serde_json::json;
 
 /// An `order` type: four required integers, an optional nested `meta` object
-/// with an integer `total`, and a string, a number, a typed array and an
-/// integer `code` to be refused as operands or listed as transient.
+/// with an integer `total`, a string, a number, a typed array and an integer
+/// `code` to be refused as operands or listed as transient, and a boolean
+/// `rush`.
 fn order_schema(rules: Option<serde_json::Value>, transient: Option<&str>) -> serde_json::Value {
     let mut schema = json!({
         "type": "object",
@@ -52,7 +53,8 @@ fn order_schema(rules: Option<serde_json::Value>, transient: Option<&str>) -> se
                 "items": { "type": "integer", "minimum": 0, "maximum": 10 },
                 "maxItems": 4,
                 "position": 8
-            }
+            },
+            "rush": { "type": "boolean", "position": 9 }
         },
         "required": ["price", "fee", "quantity", "deposit"],
         "additionalProperties": false
@@ -184,7 +186,7 @@ fn should_parse_combined_conditions_and_check_every_property_they_read() {
     for full_validation in [true, false] {
         expect_structure_error(
             parse_order(nested_string.clone(), full_validation),
-            "rule \"rule\" reads \"note\", which has type string, not integer",
+            "rule \"rule\" reads \"note\", which has type string, not integer or boolean",
         );
     }
 }
@@ -208,8 +210,30 @@ fn should_parse_an_in_and_hold_its_operand_to_integer_properties() {
                 json!({ "rule": { "in": ["note", [1, 2]] } }),
                 full_validation,
             ),
-            "rule \"rule\" reads \"note\", which has type string, not integer",
+            "rule \"rule\" reads \"note\", which has type string, not integer or boolean",
         );
+    }
+}
+
+/// An operand may read a boolean property, as 1 for true and 0 for false, on
+/// both paths, in a comparison and in an `in`.
+#[test]
+fn should_let_an_operand_read_a_boolean_property() {
+    let rules = json!({
+        "rushCostsMore": {
+            "greaterThanOrEqual": ["fee", { "multiply": ["rush", 50] }]
+        },
+        "rushIsFlag": { "in": [{ "ifAbsent": ["rush", 0] }, [0, 1]] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["rushCostsMore"].property_paths(),
+            ["fee", "rush"]
+        );
+        assert_eq!(constraints["rushIsFlag"].property_paths(), ["rush"]);
     }
 }
 
@@ -296,31 +320,37 @@ fn should_test_the_presence_of_any_property_the_type_declares() {
 #[test]
 fn should_refuse_a_rule_reading_anything_but_an_integer_property() {
     for (operand, needle) in [
-        ("note", "reads \"note\", which has type string, not integer"),
-        ("ratio", "reads \"ratio\", which has type f64, not integer"),
+        (
+            "note",
+            "reads \"note\", which has type string, not integer or boolean",
+        ),
+        (
+            "ratio",
+            "reads \"ratio\", which has type f64, not integer or boolean",
+        ),
         (
             "counts",
-            "reads \"counts\", which has type array, not integer",
+            "reads \"counts\", which has type array, not integer or boolean",
         ),
         (
             "meta.tag",
-            "reads \"meta.tag\", which has type string, not integer",
+            "reads \"meta.tag\", which has type string, not integer or boolean",
         ),
         (
             "meta",
-            "reads \"meta\", which is not an integer property of the document type",
+            "reads \"meta\", which is not an integer or boolean property of the document type",
         ),
         (
             "missing",
-            "reads \"missing\", which is not an integer property",
+            "reads \"missing\", which is not an integer or boolean property",
         ),
         (
             "meta.missing",
-            "reads \"meta.missing\", which is not an integer property",
+            "reads \"meta.missing\", which is not an integer or boolean property",
         ),
         (
             "$ownerId",
-            "reads \"$ownerId\", which is not an integer property",
+            "reads \"$ownerId\", which is not an integer or boolean property",
         ),
     ] {
         for full_validation in [true, false] {
@@ -648,11 +678,13 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
 #[test]
 fn should_refuse_property_constraints_before_protocol_version_14_and_ignore_them_when_reading() {
     let mut schema = order_schema(Some(json!({ "depositCoversOrder": deposit_rule() })), None);
-    // Typed arrays arrived with protocol version 14 as well
+    // Typed arrays arrived with protocol version 14 as well; the property after
+    // them takes their position, so the positions stay contiguous
     schema["properties"]
         .as_object_mut()
         .expect("the properties")
         .remove("counts");
+    schema["properties"]["rush"]["position"] = json!(8);
     let schema = schema_value(schema);
     let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
 

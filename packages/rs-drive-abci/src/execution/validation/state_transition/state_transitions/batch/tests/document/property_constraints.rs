@@ -44,6 +44,7 @@ mod property_constraints_tests {
     /// * `feeWaivedOrAtLeastTen`: `fee == 0 || fee >= 10`
     /// * `perUnitDeposit`: `deposit / quantity >= 1`, which divides by zero for no quantity
     /// * `tieredFee`: `fee` is one of 0, 10, 25 or 50
+    /// * `waivedFeeIsZero`: `waiveFee * fee == 0`, the boolean reading as 1 or 0
     fn offer_schema() -> Value {
         platform_value!({
             "type": "object",
@@ -54,7 +55,8 @@ mod property_constraints_tests {
                 "quantity": { "type": "integer", "minimum": 0, "maximum": 100, "position": 2 },
                 "deposit": { "type": "integer", "minimum": 0, "position": 3 },
                 "discount": { "type": "integer", "minimum": 0, "maximum": 1000000, "position": 4 },
-                "boost": { "type": "integer", "minimum": 0, "maximum": 100, "position": 5 }
+                "boost": { "type": "integer", "minimum": 0, "maximum": 100, "position": 5 },
+                "waiveFee": { "type": "boolean", "position": 6 }
             },
             "required": ["price", "fee", "quantity", "deposit"],
             "propertyConstraints": {
@@ -86,7 +88,8 @@ mod property_constraints_tests {
                 "perUnitDeposit": {
                     "greaterThanOrEqual": [{ "divide": ["deposit", "quantity"] }, 1]
                 },
-                "tieredFee": { "in": ["fee", [0, 10, 25, 50]] }
+                "tieredFee": { "in": ["fee", [0, 10, 25, 50]] },
+                "waivedFeeIsZero": { "equal": [{ "multiply": ["waiveFee", "fee"] }, 0] }
             },
             "additionalProperties": false
         })
@@ -547,6 +550,42 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// A boolean reads as 1 for true and 0 for false: a waived fee must be 0, and
+    /// an offer that does not waive it, or leaves the flag out, may charge one.
+    #[tokio::test]
+    async fn should_read_a_boolean_property_as_one_or_zero() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| document.set("waiveFee", Value::Bool(true)))
+            .await;
+        expect_violated(
+            result,
+            "waivedFeeIsZero",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        // A waived fee of 0 needs a discount (`feeWaivedOnlyWithDiscount`)
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("waiveFee", Value::Bool(true));
+                    document.set("fee", Value::U64(0));
+                    document.set("discount", Value::U64(10));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture
+                .create(|document| document.set("waiveFee", Value::Bool(false)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
     }
 
     #[tokio::test]
