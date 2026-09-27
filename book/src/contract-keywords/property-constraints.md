@@ -96,6 +96,10 @@ An integer expression is one of:
 | `divide` | `{ "divide": [a, b] }` | The Euclidean quotient of `a` by `b` |
 | `modulo` | `{ "modulo": [a, b] }` | The Euclidean remainder of `a` by `b`, never negative |
 | `power` | `{ "power": [a, b] }` | `a` to the power `b` |
+| `length`, `byteLength` | `{ "length": "title" }` | The characters (as `maxLength` counts them) or UTF-8 bytes (as `maxBytes` counts them) of a string property, 0 when the document leaves it out |
+| `count` | `{ "count": "tags" }` | The items of an array property, or the bytes of a byte array property, 0 when the document leaves it out |
+
+Where `maxLength`, `maxBytes` and `maxItems` bound one property by a fixed number, a size can be compared with another property or bounded only under a condition: `{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }` holds a list to its own limit. A size never breaks a rule by itself: a property left out or null has size 0, and so would a value of another type, which the schema validation refuses first.
 
 Two more forms appear only in string and identifier comparisons, never inside arithmetic:
 
@@ -162,7 +166,7 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):
 
-- every path an integer expression reads names an integer or boolean property; every path compared with a string names a string property; every path compared with an identifier names an identifier property; every path `present` or `absent` tests names a property of any type, an object included;
+- every path an integer expression reads names an integer or boolean property; every path `length` or `byteLength` measures names a string property, and every path `count` counts an array or byte array property; every path compared with a string names a string property; every path compared with an identifier names an identifier property; every path `present` or `absent` tests names a property of any type, an object included;
 - no rule reads a property that is `transient` or inside a transient object, since a stored document could never be held to it;
 - every comparison and `in` reads at least one property: a comparison of constants would hold for every document or for none;
 - strings and identifiers are compared only with `equal`, `notEqual` and `in`; a string is never compared with an identifier; a property is never compared with itself;
@@ -188,7 +192,7 @@ A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes a
 | `present`, `absent` | 1 |
 | `anyOf`, `allOf` | 1, plus their conditions |
 | `not` | 1, plus its condition |
-| An integer, a path or an `ifAbsent` | 1 |
+| An integer, a path, an `ifAbsent` or a size (`length`, `byteLength`, `count`) | 1 |
 | `add`, `multiply`, `subtract`, `divide`, `modulo`, `power` | 1, plus their operands |
 
 `depositCoversOrder` above is 7 nodes (the comparison, `multiply`, `add` and four paths), and `closedNeedsClosedAt` is 5. An `in` fits up to 30 values in 32 nodes.

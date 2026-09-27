@@ -1048,8 +1048,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
 ///     `greaterThanOrEqual`) of two integer expressions built from integer
 ///     literals, paths of integer or boolean properties (a boolean reading as
-///     1 for true and 0 for false) and `add`, `subtract`, `multiply`,
-///     `divide`, `modulo` and `power`; `in`, whether an integer expression
+///     1 for true and 0 for false), `add`, `subtract`, `multiply`,
+///     `divide`, `modulo` and `power`, and sizes: `length` and `byteLength`,
+///     the characters and UTF-8 bytes of a string property, and `count`, the
+///     items of an array or byte array property, each 0 for a property the
+///     document leaves out; `in`, whether an integer expression
 ///     takes one of two or more distinct integer values; `equal` or `notEqual`
 ///     of a string property and a `{ "const": string }` or of two bare paths
 ///     naming string properties, or `in` of a string property and two or more
@@ -1073,7 +1076,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     fails), a fault in one that is checked refuses the document whatever the
 ///     others say, and `not` never turns a fault into a pass, so an earlier
 ///     condition guards a later one. The parser checks that every path an
-///     operand reads names an integer or boolean property, every path compared
+///     operand reads names an integer or boolean property, every path a
+///     `length` or `byteLength` measures a string property, every path a
+///     `count` counts an array or byte array property, every path compared
 ///     with identifiers an identifier property, every path compared with
 ///     strings a string property (whose `enum`, if it declares one, lists every
 ///     constant it is compared with), and every path `present` or `absent`
