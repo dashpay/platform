@@ -1,3 +1,4 @@
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -46,13 +47,26 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
             ));
         }
 
-        // Validate user defined properties
-
+        // Validate user defined properties. The rules read the writer, the times and
+        // heights the replace keeps (creation, last transfer) and the ones it sets (the
+        // update), as the stored document will hold them.
+        let system = DocumentSystemValues {
+            owner_id: Some(owner_id),
+            created_at: self.created_at(),
+            updated_at: self.updated_at(),
+            transferred_at: self.transferred_at(),
+            created_at_block_height: self.created_at_block_height(),
+            updated_at_block_height: self.updated_at_block_height(),
+            transferred_at_block_height: self.transferred_at_block_height(),
+            created_at_core_block_height: self.created_at_core_block_height(),
+            updated_at_core_block_height: self.updated_at_core_block_height(),
+            transferred_at_core_block_height: self.transferred_at_core_block_height(),
+        };
         let result = data_contract
             .validate_document_properties(
                 document_type_name,
                 self.data().into(),
-                Some(owner_id),
+                &system,
                 platform_version,
             )
             .map_err(Error::Protocol)?;

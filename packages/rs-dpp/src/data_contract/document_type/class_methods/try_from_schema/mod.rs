@@ -1883,7 +1883,9 @@ pub(super) fn validate_encrypted_for_declarations(
 /// flattened map names it); by its `length` or `byteLength`, a string
 /// property; by its `count`, an array or byte array property; by its presence,
 /// a property of any type, an object included; any way one that is neither
-/// transient nor inside a transient object. A
+/// transient nor inside a transient object. A system time or height a rule
+/// reads (`$createdAt`, ...) must be one the type records, listed in
+/// `required`, and an indexOnly type reads none, nor `$ownerId`. A
 /// transient value is never stored, so a stored document could not be held to
 /// a rule reading one. The declaration's shape ([`parse_property_constraints`]) and these reads are
 /// checked on every parse; under full validation, the limits too: at most
@@ -2142,6 +2144,23 @@ fn apply_property_constraints_v0(
                 "rule \"{name}\" compares $ownerId, which a delete of an indexOnly document \
                  does not carry"
             )));
+        }
+        for system_property in constraint.system_reads() {
+            let system_name = system_property.name();
+            // Nor its times and heights
+            if document_type.index_only {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" reads {system_name}, which a delete of an indexOnly \
+                     document does not carry"
+                )));
+            }
+            // A stored document holds only the times and heights its type requires
+            if !document_type.required_fields.contains(system_name) {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" reads {system_name}, which the document type does not \
+                     record: list it in required"
+                )));
+            }
         }
         // A constant or a default a string property's `enum` does not list is a
         // typo: the property could never hold it

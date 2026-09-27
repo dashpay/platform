@@ -1,3 +1,4 @@
+use dpp::data_contract::document_type::property_constraints::{DocumentSystemValues, SystemChange};
 use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -78,13 +79,15 @@ impl DocumentPurchaseTransitionActionStructureValidationV0 for DocumentPurchaseT
 
         // Added in place at protocol version 14, inert for every earlier version this
         // generation serves: `validate_property_constraints` is `None` there, so the call
-        // returns an empty result. From 14, the new owner is judged against the rules of
-        // `propertyConstraints` that read `$ownerId`: the stored properties met every rule
-        // when they were written, and the owner is all this action changes.
+        // returns an empty result. From 14, the document as it changes hands (its new owner,
+        // and the transfer's time and heights) is judged against the rules of
+        // `propertyConstraints` that read them: the stored properties met every rule when
+        // they were written, and these are all this action changes that a rule reads.
         document_type
-            .validate_property_constraints_for_new_owner(
+            .validate_property_constraints_for_system_change(
                 self.document().properties(),
-                self.document().owner_id(),
+                &DocumentSystemValues::of_document(self.document()),
+                SystemChange::Transfer,
                 platform_version,
             )
             .map_err(Error::Protocol)

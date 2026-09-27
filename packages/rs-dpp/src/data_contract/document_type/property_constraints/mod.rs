@@ -48,6 +48,11 @@
 //! property compared with strings a default. An identifier property compares
 //! the same ways, its constants written base58, without defaults, and so does
 //! `$ownerId`, the document's owner, which a transfer or a purchase changes.
+//! The block time and heights of the document's creation, last update and last
+//! transfer are integer operands too (`"$createdAt"`, `"$updatedAtBlockHeight"`,
+//! [`SystemProperty`]), on a document type that records them, so a price update
+//! and a transfer or a purchase, which change some of them, are judged against
+//! the rules reading those.
 //! How the arithmetic treats overflow, division and powers is set out on
 //! [`ConstraintExpression::evaluate`], and how conditions combine on
 //! [`PropertyConstraint::holds`].
@@ -63,10 +68,17 @@
 #[cfg(test)]
 mod tests;
 
+use crate::block::block_info::BlockInfo;
 use crate::consensus::basic::document::PropertyConstraintViolation;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
-use crate::document::property_names::OWNER_ID;
+use crate::document::property_names::{
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, OWNER_ID, TRANSFERRED_AT,
+    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
+};
+use crate::document::{Document, DocumentV0Getters};
+use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use std::collections::{BTreeMap, BTreeSet};
@@ -163,6 +175,188 @@ impl ConstraintComparison {
     }
 }
 
+/// A system property of a document a rule may read as an integer operand, by
+/// its name (`"$createdAt"`): the block time, in milliseconds, the Platform
+/// block height or the Core chain block height of the document's creation, of
+/// its last update (a create, a replace or a price update) or of its last
+/// transfer (a create, a transfer or a purchase). A rule may read one only on a
+/// document type that records it, by listing it in `required`, so every stored
+/// document of the type holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SystemProperty {
+    /// `$createdAt`
+    CreatedAt,
+    /// `$updatedAt`
+    UpdatedAt,
+    /// `$transferredAt`
+    TransferredAt,
+    /// `$createdAtBlockHeight`
+    CreatedAtBlockHeight,
+    /// `$updatedAtBlockHeight`
+    UpdatedAtBlockHeight,
+    /// `$transferredAtBlockHeight`
+    TransferredAtBlockHeight,
+    /// `$createdAtCoreBlockHeight`
+    CreatedAtCoreBlockHeight,
+    /// `$updatedAtCoreBlockHeight`
+    UpdatedAtCoreBlockHeight,
+    /// `$transferredAtCoreBlockHeight`
+    TransferredAtCoreBlockHeight,
+}
+
+impl SystemProperty {
+    /// Every system property a rule may read.
+    pub const ALL: [SystemProperty; 9] = [
+        SystemProperty::CreatedAt,
+        SystemProperty::UpdatedAt,
+        SystemProperty::TransferredAt,
+        SystemProperty::CreatedAtBlockHeight,
+        SystemProperty::UpdatedAtBlockHeight,
+        SystemProperty::TransferredAtBlockHeight,
+        SystemProperty::CreatedAtCoreBlockHeight,
+        SystemProperty::UpdatedAtCoreBlockHeight,
+        SystemProperty::TransferredAtCoreBlockHeight,
+    ];
+
+    /// Its name, as a rule and `required` write it.
+    pub fn name(self) -> &'static str {
+        match self {
+            SystemProperty::CreatedAt => CREATED_AT,
+            SystemProperty::UpdatedAt => UPDATED_AT,
+            SystemProperty::TransferredAt => TRANSFERRED_AT,
+            SystemProperty::CreatedAtBlockHeight => CREATED_AT_BLOCK_HEIGHT,
+            SystemProperty::UpdatedAtBlockHeight => UPDATED_AT_BLOCK_HEIGHT,
+            SystemProperty::TransferredAtBlockHeight => TRANSFERRED_AT_BLOCK_HEIGHT,
+            SystemProperty::CreatedAtCoreBlockHeight => CREATED_AT_CORE_BLOCK_HEIGHT,
+            SystemProperty::UpdatedAtCoreBlockHeight => UPDATED_AT_CORE_BLOCK_HEIGHT,
+            SystemProperty::TransferredAtCoreBlockHeight => TRANSFERRED_AT_CORE_BLOCK_HEIGHT,
+        }
+    }
+
+    /// The system property a rule names `name`, if any.
+    pub fn from_name(name: &str) -> Option<SystemProperty> {
+        SystemProperty::ALL
+            .into_iter()
+            .find(|property| property.name() == name)
+    }
+
+    /// Whether `change` sets it.
+    pub fn changed_by(self, change: SystemChange) -> bool {
+        match change {
+            SystemChange::Transfer => matches!(
+                self,
+                SystemProperty::TransferredAt
+                    | SystemProperty::TransferredAtBlockHeight
+                    | SystemProperty::TransferredAtCoreBlockHeight
+            ),
+            SystemChange::PriceUpdate => matches!(
+                self,
+                SystemProperty::UpdatedAt
+                    | SystemProperty::UpdatedAtBlockHeight
+                    | SystemProperty::UpdatedAtCoreBlockHeight
+            ),
+        }
+    }
+}
+
+/// A write that changes a stored document's system values and none of its
+/// properties, so only the rules reading what it changes can break.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemChange {
+    /// A transfer or a purchase: a new owner, and the time and heights of the
+    /// last transfer.
+    Transfer,
+    /// A price update: the time and heights of the last update.
+    PriceUpdate,
+}
+
+/// The system values of the document version a rule is judged against: its
+/// owner, which `$ownerId` reads, and the times and heights [`SystemProperty`]
+/// names. Consensus passes every one the document type records; a client
+/// passes those it knows. `$ownerId` equals no identifier when the owner is
+/// unknown, and [`PropertyConstraint::violation`] does not judge a rule reading
+/// a time or a height it is not given.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DocumentSystemValues {
+    pub owner_id: Option<Identifier>,
+    pub created_at: Option<TimestampMillis>,
+    pub updated_at: Option<TimestampMillis>,
+    pub transferred_at: Option<TimestampMillis>,
+    pub created_at_block_height: Option<BlockHeight>,
+    pub updated_at_block_height: Option<BlockHeight>,
+    pub transferred_at_block_height: Option<BlockHeight>,
+    pub created_at_core_block_height: Option<CoreBlockHeight>,
+    pub updated_at_core_block_height: Option<CoreBlockHeight>,
+    pub transferred_at_core_block_height: Option<CoreBlockHeight>,
+}
+
+impl DocumentSystemValues {
+    /// The owner alone, no time or height.
+    pub fn owned_by(owner_id: Identifier) -> Self {
+        DocumentSystemValues {
+            owner_id: Some(owner_id),
+            ..Default::default()
+        }
+    }
+
+    /// A document created by `owner_id` in the block `block_info` describes:
+    /// its creation, last update and last transfer all at that block, as a
+    /// create records every one its type requires.
+    pub fn created_in_block(owner_id: Identifier, block_info: &BlockInfo) -> Self {
+        DocumentSystemValues {
+            owner_id: Some(owner_id),
+            created_at: Some(block_info.time_ms),
+            updated_at: Some(block_info.time_ms),
+            transferred_at: Some(block_info.time_ms),
+            created_at_block_height: Some(block_info.height),
+            updated_at_block_height: Some(block_info.height),
+            transferred_at_block_height: Some(block_info.height),
+            created_at_core_block_height: Some(block_info.core_height),
+            updated_at_core_block_height: Some(block_info.core_height),
+            transferred_at_core_block_height: Some(block_info.core_height),
+        }
+    }
+
+    /// The values `document` holds.
+    pub fn of_document(document: &Document) -> Self {
+        DocumentSystemValues {
+            owner_id: Some(document.owner_id()),
+            created_at: document.created_at(),
+            updated_at: document.updated_at(),
+            transferred_at: document.transferred_at(),
+            created_at_block_height: document.created_at_block_height(),
+            updated_at_block_height: document.updated_at_block_height(),
+            transferred_at_block_height: document.transferred_at_block_height(),
+            created_at_core_block_height: document.created_at_core_block_height(),
+            updated_at_core_block_height: document.updated_at_core_block_height(),
+            transferred_at_core_block_height: document.transferred_at_core_block_height(),
+        }
+    }
+
+    /// The value of `property`, `None` when not given.
+    pub fn value(&self, property: SystemProperty) -> Option<i128> {
+        match property {
+            SystemProperty::CreatedAt => self.created_at.map(i128::from),
+            SystemProperty::UpdatedAt => self.updated_at.map(i128::from),
+            SystemProperty::TransferredAt => self.transferred_at.map(i128::from),
+            SystemProperty::CreatedAtBlockHeight => self.created_at_block_height.map(i128::from),
+            SystemProperty::UpdatedAtBlockHeight => self.updated_at_block_height.map(i128::from),
+            SystemProperty::TransferredAtBlockHeight => {
+                self.transferred_at_block_height.map(i128::from)
+            }
+            SystemProperty::CreatedAtCoreBlockHeight => {
+                self.created_at_core_block_height.map(i128::from)
+            }
+            SystemProperty::UpdatedAtCoreBlockHeight => {
+                self.updated_at_core_block_height.map(i128::from)
+            }
+            SystemProperty::TransferredAtCoreBlockHeight => {
+                self.transferred_at_core_block_height.map(i128::from)
+            }
+        }
+    }
+}
+
 /// What a size operand measures of the property it names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SizeMeasure {
@@ -209,6 +403,9 @@ pub enum ConstraintExpression {
     /// dotted `path`, as `measure` counts it, or 0 when the document leaves it
     /// out.
     Size { measure: SizeMeasure, path: String },
+    /// A system property, `"$createdAt"` say: its value in the
+    /// [`DocumentSystemValues`] the rule is judged with.
+    System(SystemProperty),
     /// `add`: the sum of two or more operands.
     Add(Vec<ConstraintExpression>),
     /// `multiply`: the product of two or more operands.
@@ -240,6 +437,9 @@ impl ConstraintExpression {
     /// * a size is never a fault: a property the document leaves out, or sets
     ///   to null, has size 0, and so does a value of another type than the
     ///   one measured, which the schema validation reported first refuses;
+    /// * a system property takes its value in `system`, 0 when not given
+    ///   ([`PropertyConstraint::violation`] does not judge a rule reading one it
+    ///   is not given);
     /// * `add` and `multiply` fold their operands from the left, so an overflow
     ///   on the way is a fault even when a later operand would bring the result
     ///   back in range;
@@ -251,9 +451,14 @@ impl ConstraintExpression {
     /// * `power` refuses a negative exponent
     ///   ([`PropertyConstraintViolation::NegativeExponent`]), which has no
     ///   integer result, and takes `0` to the power `0` as `1`.
-    pub fn evaluate(&self, data: &Value) -> Result<i128, PropertyConstraintViolation> {
+    pub fn evaluate(
+        &self,
+        data: &Value,
+        system: &DocumentSystemValues,
+    ) -> Result<i128, PropertyConstraintViolation> {
         match self {
             ConstraintExpression::Value(value) => Ok(*value),
+            ConstraintExpression::System(property) => Ok(system.value(*property).unwrap_or(0)),
             ConstraintExpression::Property { path, if_absent } => {
                 property_value(data, path, *if_absent)
             }
@@ -264,24 +469,25 @@ impl ConstraintExpression {
             }
             ConstraintExpression::Add(operands) => {
                 operands.iter().try_fold(0i128, |sum, operand| {
-                    sum.checked_add(operand.evaluate(data)?)
+                    sum.checked_add(operand.evaluate(data, system)?)
                         .ok_or(PropertyConstraintViolation::Overflow)
                 })
             }
             ConstraintExpression::Multiply(operands) => {
                 operands.iter().try_fold(1i128, |product, operand| {
                     product
-                        .checked_mul(operand.evaluate(data)?)
+                        .checked_mul(operand.evaluate(data, system)?)
                         .ok_or(PropertyConstraintViolation::Overflow)
                 })
             }
             ConstraintExpression::Subtract(left, right) => {
-                let (left, right) = (left.evaluate(data)?, right.evaluate(data)?);
+                let (left, right) = (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 left.checked_sub(right)
                     .ok_or(PropertyConstraintViolation::Overflow)
             }
             ConstraintExpression::Divide(left, right) => {
-                let (dividend, divisor) = (left.evaluate(data)?, right.evaluate(data)?);
+                let (dividend, divisor) =
+                    (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 if divisor == 0 {
                     return Err(PropertyConstraintViolation::DivisionByZero);
                 }
@@ -291,7 +497,8 @@ impl ConstraintExpression {
                     .ok_or(PropertyConstraintViolation::Overflow)
             }
             ConstraintExpression::Modulo(left, right) => {
-                let (dividend, divisor) = (left.evaluate(data)?, right.evaluate(data)?);
+                let (dividend, divisor) =
+                    (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 match divisor {
                     0 => Err(PropertyConstraintViolation::DivisionByZero),
                     // Every integer is a multiple of -1. `checked_rem_euclid` refuses
@@ -304,7 +511,8 @@ impl ConstraintExpression {
                 }
             }
             ConstraintExpression::Power(left, right) => {
-                let (base, exponent) = (left.evaluate(data)?, right.evaluate(data)?);
+                let (base, exponent) =
+                    (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 power(base, exponent)
             }
         }
@@ -315,7 +523,8 @@ impl ConstraintExpression {
         1 + match self {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
-            | ConstraintExpression::Size { .. } => 0,
+            | ConstraintExpression::Size { .. }
+            | ConstraintExpression::System(_) => 0,
             ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
                 operands.iter().map(ConstraintExpression::node_count).sum()
             }
@@ -330,7 +539,9 @@ impl ConstraintExpression {
     fn reads_property(&self) -> bool {
         match self {
             ConstraintExpression::Value(_) => false,
-            ConstraintExpression::Property { .. } | ConstraintExpression::Size { .. } => true,
+            ConstraintExpression::Property { .. }
+            | ConstraintExpression::Size { .. }
+            | ConstraintExpression::System(_) => true,
             ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
                 operands.iter().any(ConstraintExpression::reads_property)
             }
@@ -347,7 +558,7 @@ impl ConstraintExpression {
     /// size, to `reads`, in the order it reads them.
     fn collect_property_reads<'a>(&'a self, reads: &mut Vec<(&'a str, PropertyRead)>) {
         match self {
-            ConstraintExpression::Value(_) => {}
+            ConstraintExpression::Value(_) | ConstraintExpression::System(_) => {}
             ConstraintExpression::Property { path, .. } => reads.push((path, PropertyRead::Value)),
             ConstraintExpression::Size { measure, path } => reads.push((path, measure.read())),
             ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
@@ -361,6 +572,29 @@ impl ConstraintExpression {
             | ConstraintExpression::Power(left, right) => {
                 left.collect_property_reads(reads);
                 right.collect_property_reads(reads);
+            }
+        }
+    }
+
+    /// Appends the system properties the expression reads to `reads`, in the
+    /// order it reads them.
+    fn collect_system_reads(&self, reads: &mut Vec<SystemProperty>) {
+        match self {
+            ConstraintExpression::System(property) => reads.push(*property),
+            ConstraintExpression::Value(_)
+            | ConstraintExpression::Property { .. }
+            | ConstraintExpression::Size { .. } => {}
+            ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
+                for operand in operands {
+                    operand.collect_system_reads(reads);
+                }
+            }
+            ConstraintExpression::Subtract(left, right)
+            | ConstraintExpression::Divide(left, right)
+            | ConstraintExpression::Modulo(left, right)
+            | ConstraintExpression::Power(left, right) => {
+                left.collect_system_reads(reads);
+                right.collect_system_reads(reads);
             }
         }
     }
@@ -507,10 +741,10 @@ pub enum PropertyConstraint {
 }
 
 impl PropertyConstraint {
-    /// Whether a document whose properties are `data`, owned by `owner_id`,
-    /// meets the condition. `owner_id` is what `$ownerId` reads; `None` for a
-    /// document whose owner the caller does not know, which `$ownerId` then
-    /// equals no identifier for.
+    /// Whether a document whose properties are `data` and whose system values
+    /// are `system` meets the condition. `$ownerId` reads `system.owner_id`,
+    /// equalling no identifier when it is `None`, and a system property reads
+    /// its value there, 0 when not given.
     ///
     /// Evaluated left to right, and no further than the outcome needs: a
     /// comparison evaluates its left side, then its right one; `anyOf` checks
@@ -526,19 +760,20 @@ impl PropertyConstraint {
     pub fn holds(
         &self,
         data: &Value,
-        owner_id: Option<Identifier>,
+        system: &DocumentSystemValues,
     ) -> Result<bool, PropertyConstraintViolation> {
+        let owner_id = system.owner_id;
         match self {
             PropertyConstraint::Compare {
                 comparison,
                 left,
                 right,
             } => {
-                let (left, right) = (left.evaluate(data)?, right.evaluate(data)?);
+                let (left, right) = (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 Ok(comparison.holds(left, right))
             }
             PropertyConstraint::In { operand, values } => {
-                Ok(values.contains(&operand.evaluate(data)?))
+                Ok(values.contains(&operand.evaluate(data, system)?))
             }
             PropertyConstraint::TextCompare {
                 comparison,
@@ -592,7 +827,7 @@ impl PropertyConstraint {
             PropertyConstraint::Absent(path) => Ok(!is_present(data, path)),
             PropertyConstraint::AnyOf(conditions) => {
                 for condition in conditions {
-                    if condition.holds(data, owner_id)? {
+                    if condition.holds(data, system)? {
                         return Ok(true);
                     }
                 }
@@ -600,26 +835,36 @@ impl PropertyConstraint {
             }
             PropertyConstraint::AllOf(conditions) => {
                 for condition in conditions {
-                    if !condition.holds(data, owner_id)? {
+                    if !condition.holds(data, system)? {
                         return Ok(false);
                     }
                 }
                 Ok(true)
             }
-            PropertyConstraint::Not(condition) => Ok(!condition.holds(data, owner_id)?),
+            PropertyConstraint::Not(condition) => Ok(!condition.holds(data, system)?),
         }
     }
 
-    /// Why a document whose properties are `data`, owned by `owner_id`, breaks
-    /// the rule, `None` when it meets it: the first fault met on the way
-    /// ([`Self::holds`]), or [`PropertyConstraintViolation::NotMet`] when the
-    /// rule evaluates to false.
+    /// Why a document whose properties are `data` and whose system values are
+    /// `system` breaks the rule, `None` when it meets it: the first fault met
+    /// on the way ([`Self::holds`]), or [`PropertyConstraintViolation::NotMet`]
+    /// when the rule evaluates to false. A rule reading a system property
+    /// `system` does not give is not judged: consensus gives every one the
+    /// document type records, the only ones a rule may read, so only a client
+    /// that does not know one skips the rule.
     pub fn violation(
         &self,
         data: &Value,
-        owner_id: Option<Identifier>,
+        system: &DocumentSystemValues,
     ) -> Option<PropertyConstraintViolation> {
-        match self.holds(data, owner_id) {
+        if self
+            .system_reads()
+            .into_iter()
+            .any(|property| system.value(property).is_none())
+        {
+            return None;
+        }
+        match self.holds(data, system) {
             Ok(true) => None,
             Ok(false) => Some(PropertyConstraintViolation::NotMet),
             Err(violation) => Some(violation),
@@ -630,8 +875,8 @@ impl PropertyConstraint {
     /// `SystemLimits::max_property_constraint_nodes`: every comparison and
     /// logical operator, every `in` and each value it lists, every string
     /// constant, every `present` or `absent` with the property it names, every
-    /// arithmetic operator and every operand (an integer value, or a property
-    /// with or without `ifAbsent`).
+    /// arithmetic operator and every operand (an integer value, a property with
+    /// or without `ifAbsent`, a size or a system property).
     pub fn node_count(&self) -> usize {
         1 + match self {
             PropertyConstraint::Compare { left, right, .. } => {
@@ -691,6 +936,52 @@ impl PropertyConstraint {
             | PropertyConstraint::TextIn { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => false,
+        }
+    }
+
+    /// The system properties the rule reads (`"$createdAt"`, ...), in
+    /// declared order, one read twice listed twice. `$ownerId` is
+    /// [`Self::reads_owner`]'s.
+    pub fn system_reads(&self) -> Vec<SystemProperty> {
+        let mut reads = Vec::new();
+        self.collect_system_reads(&mut reads);
+        reads
+    }
+
+    /// Whether `change` can break the rule: it reads the owner, or the time
+    /// and heights of the last transfer, for a transfer or a purchase; the
+    /// time and heights of the last update for a price update. Such a write
+    /// changes those and no property, so a rule reading neither held when the
+    /// document was written and still does.
+    pub fn reads_change(&self, change: SystemChange) -> bool {
+        (change == SystemChange::Transfer && self.reads_owner())
+            || self
+                .system_reads()
+                .into_iter()
+                .any(|property| property.changed_by(change))
+    }
+
+    fn collect_system_reads(&self, reads: &mut Vec<SystemProperty>) {
+        match self {
+            PropertyConstraint::Compare { left, right, .. } => {
+                left.collect_system_reads(reads);
+                right.collect_system_reads(reads);
+            }
+            PropertyConstraint::In { operand, .. } => operand.collect_system_reads(reads),
+            PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
+                for condition in conditions {
+                    condition.collect_system_reads(reads);
+                }
+            }
+            PropertyConstraint::Not(condition) => condition.collect_system_reads(reads),
+            PropertyConstraint::TextCompare { .. }
+            | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::IdentifierCompare { .. }
+            | PropertyConstraint::IdentifierCompareProperties { .. }
+            | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Present(_)
+            | PropertyConstraint::Absent(_) => {}
         }
     }
 
@@ -1513,6 +1804,9 @@ fn parse_expression(
         ));
     }
     if let Some(path) = value.as_text() {
+        if let Some(property) = SystemProperty::from_name(path) {
+            return Ok(ConstraintExpression::System(property));
+        }
         return Ok(ConstraintExpression::Property {
             path: path.to_string(),
             if_absent: 0,
@@ -1541,6 +1835,12 @@ fn parse_expression(
             let Some(path) = path.as_text() else {
                 return Err(format!("at {at} must name a property path first"));
             };
+            if SystemProperty::from_name(path).is_some() {
+                return Err(format!(
+                    "at {at} gives {path} a default, but a system property a rule reads is \
+                     always set: name it on its own"
+                ));
+            }
             if if_absent.as_text().is_some() {
                 return Err(format!(
                     "at {at} gives a string default, which only a comparison of strings \

@@ -3,6 +3,9 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use crate::data_contract::document_type::property_constraints::{
+    DocumentSystemValues, SystemChange,
+};
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -850,13 +853,13 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     fn validate_property_constraints_v0(
         &self,
         data: &Value,
-        owner_id: Option<Identifier>,
+        system: &DocumentSystemValues,
     ) -> SimpleConsensusValidationResult
     where
         Self: DocumentTypeV2Getters,
     {
         for (name, constraint) in self.property_constraints() {
-            if let Some(violation) = constraint.violation(data, owner_id) {
+            if let Some(violation) = constraint.violation(data, system) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
                         self.name().clone(),
@@ -870,29 +873,30 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         SimpleConsensusValidationResult::default()
     }
 
-    /// `validate_property_constraints_for_new_owner` version 0: every rule of the document
-    /// type's `propertyConstraints` that reads `$ownerId` is evaluated against `data` with
-    /// `new_owner_id` as the owner, in name order, and the first one broken is reported.
-    /// The data is copied into a map value only when such a rule exists.
-    fn validate_property_constraints_for_new_owner_v0(
+    /// `validate_property_constraints_for_system_change` version 0: every rule of the
+    /// document type's `propertyConstraints` that `change` can break is evaluated against
+    /// `data` with `system`, in name order, and the first one broken is reported. The data
+    /// is copied into a map value only when such a rule exists.
+    fn validate_property_constraints_for_system_change_v0(
         &self,
         data: &BTreeMap<String, Value>,
-        new_owner_id: Identifier,
+        system: &DocumentSystemValues,
+        change: SystemChange,
     ) -> SimpleConsensusValidationResult
     where
         Self: DocumentTypeV2Getters,
     {
-        let mut owner_rules = self
+        let mut changed_rules = self
             .property_constraints()
             .iter()
-            .filter(|(_, constraint)| constraint.reads_owner())
+            .filter(|(_, constraint)| constraint.reads_change(change))
             .peekable();
-        if owner_rules.peek().is_none() {
+        if changed_rules.peek().is_none() {
             return SimpleConsensusValidationResult::default();
         }
         let data = Value::from(data.clone());
-        for (name, constraint) in owner_rules {
-            if let Some(violation) = constraint.violation(&data, Some(new_owner_id)) {
+        for (name, constraint) in changed_rules {
+            if let Some(violation) = constraint.violation(&data, system) {
                 return SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
                         self.name().clone(),

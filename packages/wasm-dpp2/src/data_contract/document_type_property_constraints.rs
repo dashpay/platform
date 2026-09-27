@@ -18,7 +18,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use dpp::consensus::basic::document::PropertyConstraintViolation;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::property_constraints::PropertyRead;
+use dpp::data_contract::document_type::property_constraints::{DocumentSystemValues, PropertyRead};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
 use js_sys::{Array, BigInt, Object, Reflect};
@@ -34,7 +34,9 @@ const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
  *   (rules report such a literal as a `bigint`, exactly);
  * - a string: the dotted path of an integer or boolean property, whose value
  *   it takes (a boolean reads as 1 for true and 0 for false), 0 when the
- *   document leaves the property out;
+ *   document leaves the property out; or a system time or height the
+ *   document type records by listing it in `required`
+ *   (`PropertyConstraintSystemProperty`);
  * - `ifAbsent`: a property path and the integer it takes when left out;
  * - `add` and `multiply` over two or more operands, `subtract`, `divide`,
  *   `modulo` and `power` over exactly two. Arithmetic is exact over 128-bit
@@ -116,6 +118,24 @@ export type PropertyConstraintReadKind =
   | 'count';
 
 /**
+ * A system time or height a rule reads: the block time in milliseconds
+ * (`At`), the Platform block height (`AtBlockHeight`) or the Core block height
+ * (`AtCoreBlockHeight`) of the document's creation, its last update (a create,
+ * a replace or a price update) and its last transfer (a create, a transfer or
+ * a purchase).
+ */
+export type PropertyConstraintSystemProperty =
+  | '$createdAt'
+  | '$updatedAt'
+  | '$transferredAt'
+  | '$createdAtBlockHeight'
+  | '$updatedAtBlockHeight'
+  | '$transferredAtBlockHeight'
+  | '$createdAtCoreBlockHeight'
+  | '$updatedAtCoreBlockHeight'
+  | '$transferredAtCoreBlockHeight';
+
+/**
  * A single `propertyConstraints` rule of a document type.
  */
 export type DocumentPropertyConstraint = {
@@ -127,6 +147,12 @@ export type DocumentPropertyConstraint = {
   reads: Array<{ path: string; kind: PropertyConstraintReadKind }>;
   /** Whether the rule reads `$ownerId`: then a transfer or a purchase is judged against it too. */
   readsOwner: boolean;
+  /**
+   * The system times and heights the rule reads, in declared order. A price
+   * update is judged against a rule reading the update's, and a transfer or a
+   * purchase against one reading the transfer's.
+   */
+  readsSystem: PropertyConstraintSystemProperty[];
 };
 
 /**
@@ -312,15 +338,41 @@ pub(crate) fn property_constraints_for_document_type(
             &JsValue::from_bool(constraint.reads_owner()),
             name,
         )?;
+        let reads_system = Array::new();
+        for property in constraint.system_reads() {
+            reads_system.push(&JsValue::from_str(property.name()));
+        }
+        set_field(&object, "readsSystem", &reads_system, name)?;
         rules.push(&object);
     }
 
     Ok(rules)
 }
 
+/// The system values a create or a replace of `document` will have, as far as
+/// a client can tell before its block: the owner, and the stored times and
+/// heights the write keeps, with the device clock standing in for the block
+/// time it records (its update, and its creation and transfer when the
+/// document has none yet). The block heights it records are unknown until the
+/// block, so a rule reading one is not judged.
+fn system_values_for_write(document: &Document) -> DocumentSystemValues {
+    // Milliseconds since the epoch, a whole number well inside a `u64`
+    let now = js_sys::Date::now() as u64;
+    let stored = DocumentSystemValues::of_document(document);
+    DocumentSystemValues {
+        created_at: stored.created_at.or(Some(now)),
+        updated_at: Some(now),
+        transferred_at: stored.transferred_at.or(Some(now)),
+        updated_at_block_height: None,
+        updated_at_core_block_height: None,
+        ..stored
+    }
+}
+
 /// The first rule of `document_type`'s `propertyConstraints` that `document`
 /// breaks, in name order, as consensus judges a create or replace: its
-/// properties, and its owner for `$ownerId`. `undefined` when it meets them
+/// properties, its owner for `$ownerId`, and its system times and heights as
+/// [`system_values_for_write`] estimates them. `undefined` when it meets them
 /// all.
 pub(crate) fn check_property_constraints(
     document_type: DocumentTypeRef<'_>,
@@ -331,8 +383,9 @@ pub(crate) fn check_property_constraints(
         return Ok(JsValue::UNDEFINED);
     }
     let data = Value::from(document.properties().clone());
+    let system = system_values_for_write(document);
     for (name, constraint) in constraints {
-        if let Some(violation) = constraint.violation(&data, Some(document.owner_id())) {
+        if let Some(violation) = constraint.violation(&data, &system) {
             let object = Object::new();
             set_field(&object, "rule", &JsValue::from_str(name), name)?;
             set_field(
