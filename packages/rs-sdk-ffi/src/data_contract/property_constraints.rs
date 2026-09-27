@@ -751,12 +751,14 @@ mod tests {
 
     /// Parsers before protocol version 14 ignore the keyword, so an SDK at such
     /// a version reports no rule and no violation: exactly what consensus
-    /// enforced there.
+    /// enforced there. The bytes are those a network at 14 returns; the
+    /// contract cannot be created at 13, whose meta-schema refuses the keyword
+    /// when JSON schema validation is compiled in.
     #[test]
     fn should_report_no_rules_below_protocol_version_14() {
         let platform_version = PlatformVersion::get(13).expect("protocol version 13");
         let sdk = sdk_handle(platform_version);
-        let contract = serialized_contract(platform_version);
+        let contract = serialized_contract(PlatformVersion::latest());
 
         let rules = rules_of(sdk, &contract, "offer");
         let violation = check(
