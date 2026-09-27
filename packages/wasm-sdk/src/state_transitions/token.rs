@@ -2027,33 +2027,6 @@ fn deserialize_token_set_price_options(
     )
 }
 
-/// Validate a constructed `priceTiers` map.
-///
-/// Rejects:
-/// - empty maps (caller must specify at least one tier)
-/// - a `0` minimum bulk-buy amount (use the flat `price` field for that)
-///
-/// A `0` credits value is permitted — it mirrors the lower/consensus
-/// `SetPrices` schedule, which allows zero-credit tiers for free
-/// direct purchases at that bulk amount.
-///
-/// Pure function so it can be unit-tested without a JS runtime.
-fn validate_price_tiers(tiers: &BTreeMap<TokenAmount, Credits>) -> Result<(), WasmSdkError> {
-    if tiers.is_empty() {
-        return Err(WasmSdkError::invalid_argument(
-            "'priceTiers' must contain at least one entry",
-        ));
-    }
-    for amount in tiers.keys() {
-        if *amount == 0 {
-            return Err(WasmSdkError::invalid_argument(
-                "'priceTiers' minimum bulk-buy amount must be > 0; use 'price' for a flat single-token price",
-            ));
-        }
-    }
-    Ok(())
-}
-
 /// Build a `priceTiers` map from already-parsed `(originalKey, amount, credits)` entries.
 ///
 /// Detects keys that parse to the same `TokenAmount` (e.g. `"1"` and `"01"`) and rejects
@@ -2076,7 +2049,8 @@ fn build_price_tiers(
         original_keys.insert(amount, key_str);
         tiers.insert(amount, credits);
     }
-    validate_price_tiers(&tiers)?;
+    // Whether the schedule is valid (at least one tier) is decided once, by rs-dpp's
+    // structure validation of the transition, not here.
     Ok(tiers)
 }
 
@@ -2106,8 +2080,10 @@ fn validate_pricing_mode_selection(
 /// Extract the optional `priceTiers` field from the raw JS options object.
 ///
 /// Returns `Ok(None)` when the field is absent, null, or undefined.
-/// Returns `Err` when the field is present but malformed (wrong type,
-/// empty, non-numeric keys, non-bigint/integer values, zero amount key, etc.).
+/// Returns `Err` when the field is present but cannot be converted: not an
+/// object, non-numeric keys, non-bigint/integer values, or two keys that parse to
+/// the same token amount. An empty map and a zero amount key pass through;
+/// whether the schedule is valid is left to rs-dpp's structure validation.
 fn extract_price_tiers(
     options: &JsValue,
 ) -> Result<Option<BTreeMap<TokenAmount, Credits>>, WasmSdkError> {
@@ -2751,52 +2727,21 @@ impl WasmSdk {
 mod tests {
     use super::*;
 
-    /// A single non-zero tier passes validation.
+    /// An empty tier map is passed through as an empty schedule: rs-dpp's structure
+    /// validation refuses it, not the SDK.
     #[test]
-    fn validate_price_tiers_accepts_single_tier() {
-        let tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::from([(1u64, 1_000u64)]);
-        validate_price_tiers(&tiers).expect("single non-zero tier should validate");
+    fn should_pass_an_empty_tier_map_through() {
+        let tiers = build_price_tiers(Vec::new()).expect("an empty map should build");
+        assert!(tiers.is_empty());
     }
 
-    /// Multiple non-zero tiers pass validation.
+    /// A tier at token amount `0` is passed through unchanged: rs-dpp accepts it (a purchase
+    /// of any amount falls in it), so the SDK does not refuse it either.
     #[test]
-    fn validate_price_tiers_accepts_multiple_tiers() {
-        let tiers: BTreeMap<TokenAmount, Credits> =
-            BTreeMap::from([(1u64, 1_000u64), (100u64, 900u64), (1000u64, 800u64)]);
-        validate_price_tiers(&tiers).expect("multi-tier schedule should validate");
-    }
-
-    /// An empty tier map is rejected — the caller must specify at least one tier.
-    #[test]
-    fn validate_price_tiers_rejects_empty() {
-        let tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::new();
-        let err = validate_price_tiers(&tiers).expect_err("empty tiers should be rejected");
-        assert!(
-            err.message().contains("at least one entry"),
-            "unexpected error message: {}",
-            err.message()
-        );
-    }
-
-    /// A `0` minimum bulk-buy amount is rejected — direct callers should use `price`.
-    #[test]
-    fn validate_price_tiers_rejects_zero_amount_key() {
-        let tiers: BTreeMap<TokenAmount, Credits> = BTreeMap::from([(0u64, 1_000u64)]);
-        let err = validate_price_tiers(&tiers).expect_err("zero amount key should be rejected");
-        assert!(
-            err.message().contains("amount must be > 0"),
-            "unexpected error message: {}",
-            err.message()
-        );
-    }
-
-    /// A `0` per-token price is accepted — mirrors lower/consensus `SetPrices`,
-    /// which permits zero-credit tiers for free direct purchases.
-    #[test]
-    fn validate_price_tiers_accepts_zero_credits() {
-        let tiers: BTreeMap<TokenAmount, Credits> =
-            BTreeMap::from([(1u64, 1_000u64), (100u64, 0u64)]);
-        validate_price_tiers(&tiers).expect("zero credits tier should validate");
+    fn should_keep_a_zero_amount_tier() {
+        let entries = vec![("0".to_string(), 0u64, 1_000u64)];
+        let tiers = build_price_tiers(entries).expect("a zero amount tier should build");
+        assert_eq!(tiers, BTreeMap::from([(0u64, 1_000u64)]));
     }
 
     /// Distinct token amount keys build a tier map preserving all entries.
