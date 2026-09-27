@@ -77,7 +77,7 @@ def export_environment(manifest, output):
 
 
 def select(manifest, kind, output, wait_seconds):
-    fallback = ["self-hosted", "rust-ci" if kind == "rust" else "kotlin-ci"]
+    fallback = ["self-hosted", {"rust": "rust-ci", "kotlin": "kotlin-ci", "npm": "npm-pr"}[kind]]
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     requested = event.get("pull_request")
     labels, changed = fallback, False
@@ -130,7 +130,7 @@ def main():
     parser.add_argument("--manifest", default=MANIFEST)
     parser.add_argument("--env", default=os.environ.get("GITHUB_ENV"))
     parser.add_argument("--output", default=os.environ.get("GITHUB_OUTPUT"))
-    parser.add_argument("--kind", choices=["rust", "kotlin"])
+    parser.add_argument("--kind", choices=["rust", "kotlin", "npm"])
     parser.add_argument("--wait-seconds", type=int, default=7200)
     args = parser.parse_args()
     manifest = read_manifest(args.manifest)

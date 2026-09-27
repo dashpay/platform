@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recipe_revision": "baf8849b900555d66714e0e1fcffdff669b9e404",
+  "recipe_revision": "e49e8bc9977f5f961a76ba1d1f7673c72173679f",
   "requirements": {
     "schema": 2,
     "contract_version": "1",
@@ -201,6 +201,28 @@
       "cmdline_tools": "19.0",
       "system_image": "system-images;android-35;default;x86_64",
       "abi": "x86_64"
+    },
+    "client_codegen": {
+      "schema": 1,
+      "versions": {
+        "protobuf": "3.18.1",
+        "grpc": "1.46.3",
+        "grpc_java": "1.42.1"
+      },
+      "sources": [
+        {
+          "url": "https://github.com/protocolbuffers/protobuf/releases/download/v3.18.1/protobuf-cpp-3.18.1.tar.gz",
+          "sha256": "6ee35eda3f79e49608d2ace8d866313fdec539d8bb14c6c54e8d2a16fa4e6780"
+        },
+        {
+          "url": "https://github.com/grpc/grpc/archive/refs/tags/v1.46.3.tar.gz",
+          "sha256": "d6cbf22cb5007af71b61c6be316a79397469c58c82a942552a62e708bce60964"
+        },
+        {
+          "url": "https://github.com/grpc/grpc-java/archive/refs/tags/v1.42.1.tar.gz",
+          "sha256": "33775a1ad05974bbba6ff97801cd9b326485b21fab91b08a4e1bc53e500e6326"
+        }
+      ]
     }
   }
 }
