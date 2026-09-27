@@ -30,6 +30,7 @@ use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
+use drive::util::grove_operations::DirectQueryType;
 use std::sync::Arc;
 
 /// A resolved pooled token: its contract and its configuration.
@@ -220,6 +221,7 @@ pub(crate) fn validate_token_pool_holds(
     let mut drive_operations = vec![];
     let pool_balance = drive.read_token_shielded_pool_total_balance(
         &token_id.to_buffer(),
+        DirectQueryType::StatefulDirectQuery,
         transaction,
         &mut drive_operations,
         platform_version,

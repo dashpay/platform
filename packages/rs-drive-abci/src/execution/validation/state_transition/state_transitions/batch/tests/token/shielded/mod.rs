@@ -1,4 +1,5 @@
 use super::*;
+use drive::util::grove_operations::DirectQueryType;
 
 mod minimum_pool_notes;
 
@@ -230,6 +231,7 @@ mod token_shielded_pool_tests {
             .drive
             .read_token_shielded_pool_total_balance(
                 &token_id.to_buffer(),
+                DirectQueryType::StatefulDirectQuery,
                 None,
                 &mut vec![],
                 PlatformVersion::latest(),

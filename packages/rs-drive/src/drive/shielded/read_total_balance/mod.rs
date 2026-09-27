@@ -5,6 +5,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::grove_operations::DirectQueryType;
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
@@ -47,9 +48,15 @@ impl Drive {
     /// Reads a TOKEN shielded pool's total balance (the amount of the token currently
     /// shielded). Returns 0 if the pool has no balance item yet. Same versioning as
     /// [`Drive::read_shielded_pool_total_balance`].
+    ///
+    /// `direct_query_type` decides whether the read consults state or only prices itself: a
+    /// caller building the operations of a batch it is estimating asks for a stateless query, so
+    /// the read it will perform when the batch is applied is metered without reading anything,
+    /// and takes the balance to price from elsewhere because a stateless query returns 0.
     pub fn read_token_shielded_pool_total_balance(
         &self,
         token_id: &[u8; 32],
+        direct_query_type: DirectQueryType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -59,6 +66,7 @@ impl Drive {
                 let pool_path = token_shielded_pool_path(token_id);
                 self.read_pool_total_balance_v0(
                     &pool_path,
+                    direct_query_type,
                     transaction,
                     drive_operations,
                     platform_version,
