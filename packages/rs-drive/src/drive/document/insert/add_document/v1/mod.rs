@@ -12,9 +12,11 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Generation 1 differs from generation 0 in one thing: when the caller supplies no
+    /// Generation 1 differs from generation 0 in two things. When the caller supplies no
     /// transaction and the operations are applied, the write and its pricing share one
     /// owned transaction that is committed only after `Drive::calculate_fee` succeeded.
+    /// And the contract fetch is priced with the write: generation 0 recorded the fetch in
+    /// one operations vector and priced another, so its fee never included the read.
     /// Generation 0 applied the batch (committing it on its own without a caller
     /// transaction) and priced it afterwards, so from protocol version 15, where pricing an
     /// owner-attributed storage removal without the fee history is an error, a call passing
@@ -65,7 +67,8 @@ impl Drive {
             contract,
             document_type,
         };
-        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        // The contract fetch above recorded its cost in `drive_operations`; generation 0
+        // replaced the vector here and never priced that read.
         self.add_document_for_contract_apply_and_add_to_operations(
             document_and_contract_info,
             override_document,
