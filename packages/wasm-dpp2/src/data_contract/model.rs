@@ -1,3 +1,4 @@
+use crate::data_contract::DocumentWasm;
 use crate::data_contract::document_type_distinct_from::{
     DocumentPropertyDistinctFromArrayJs, DocumentPropertyDistinctFromMapJs,
     distinct_from_for_document_type,
@@ -9,6 +10,11 @@ use crate::data_contract::document_type_encryption::{
 use crate::data_contract::document_type_immutability::{
     DocumentTypeImmutablePropertiesJs, DocumentTypeImmutablePropertiesMapJs,
     immutable_properties_for_document_type,
+};
+use crate::data_contract::document_type_property_constraints::{
+    DocumentPropertyConstraintArrayJs, DocumentPropertyConstraintMapJs,
+    DocumentPropertyConstraintViolationJs, check_property_constraints,
+    property_constraints_for_document_type,
 };
 use crate::data_contract::document_type_reference::{
     DocumentPropertyReferenceArrayJs, DocumentPropertyReferenceMapJs, references_for_document_type,
@@ -44,6 +50,7 @@ use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::{
     DataContract, GroupContractPosition, TokenConfiguration, TokenContractPosition,
 };
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::platform_value::{Value, ValueMap};
@@ -812,6 +819,92 @@ impl DataContractWasm {
         }
 
         Ok(JsValue::from(map).into())
+    }
+
+    /// All `propertyConstraints` rules of one document type, in name order,
+    /// the order consensus checks them in: each rule's name, the rule as the
+    /// schema declares it, every property it reads and how, and whether it
+    /// reads `$ownerId` (then a transfer or a purchase is judged against it
+    /// too).
+    ///
+    /// Returns an empty array when the document type declares none. Throws
+    /// when the contract has no document type by that name, so "no such
+    /// type" and "no rules" stay distinguishable.
+    ///
+    /// The keyword is only parsed from protocol version 14 onward. A
+    /// contract deserialized against an earlier platform version reports
+    /// none, which is exactly what consensus enforced at that version, while
+    /// `toJSON()` still shows the raw keyword either way.
+    #[wasm_bindgen(js_name = "documentTypePropertyConstraints")]
+    pub fn document_type_property_constraints(
+        &self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) -> WasmDppResult<DocumentPropertyConstraintArrayJs> {
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name.as_str())
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        let rules = property_constraints_for_document_type(document_type)?;
+        Ok(JsValue::from(rules).into())
+    }
+
+    /// Every document type that declares `propertyConstraints`, keyed by
+    /// document type name.
+    ///
+    /// Document types with no rules are omitted, so an empty `Map` means
+    /// "this contract declares no propertyConstraints at all".
+    #[wasm_bindgen(getter = "documentPropertyConstraints")]
+    pub fn document_property_constraints(&self) -> WasmDppResult<DocumentPropertyConstraintMapJs> {
+        let map = js_sys::Map::new();
+
+        for (name, document_type) in self.0.document_types() {
+            let rules = property_constraints_for_document_type(document_type.as_ref())?;
+            if rules.length() > 0 {
+                map.set(&JsValue::from_str(name), &rules.into());
+            }
+        }
+
+        Ok(JsValue::from(map).into())
+    }
+
+    /// The first `propertyConstraints` rule `document` breaks, in name order,
+    /// evaluated with the same code consensus runs on a create or replace: its
+    /// properties, and its owner for `$ownerId`. `undefined` when it meets
+    /// every rule of its document type.
+    ///
+    /// A pre-check, so an app can refuse a document before paying for a
+    /// transition consensus would refuse with
+    /// `DocumentPropertyConstraintViolatedError` (code 10422). It judges the
+    /// rules alone, not the document's JSON schema. Throws when the document
+    /// belongs to another contract or names a document type this one lacks.
+    #[wasm_bindgen(js_name = "checkDocumentPropertyConstraints")]
+    pub fn check_document_property_constraints(
+        &self,
+        document: &DocumentWasm,
+    ) -> WasmDppResult<DocumentPropertyConstraintViolationJs> {
+        let document_contract_id: Identifier = document.data_contract_id.into();
+        if document_contract_id != self.0.id() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "the document belongs to contract {}, not this one",
+                document_contract_id.to_string(Encoding::Base58)
+            )));
+        }
+        let document_type_name = &document.document_type_name;
+        let document_type = self
+            .0
+            .document_type_optional_for_name(document_type_name)
+            .ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "document type '{document_type_name}' not found in contract"
+                ))
+            })?;
+
+        Ok(check_property_constraints(document_type, &document.document)?.into())
     }
 
     /// All `encryptedFor` declarations of one document type, in schema

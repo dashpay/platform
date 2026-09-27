@@ -441,6 +441,22 @@ try {
 }
 ```
 
+To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema, and reads the document's owner for `$ownerId`:
+
+```ts
+contract.documentTypePropertyConstraints('offer');
+// [{ name: 'discountBelowPrice', rule: { lessThan: ['discount', 'price'] },
+//    reads: [{ path: 'discount', kind: 'value' }, { path: 'price', kind: 'value' }],
+//    readsOwner: false }, ...]
+
+const broken = contract.checkDocumentPropertyConstraints(document);
+if (broken) {
+  // { rule: 'discountBelowPrice', violation: 'NotMet', message: 'it does not hold' }
+}
+```
+
+Rules come back in name order, the order consensus checks them in; `contract.documentPropertyConstraints` maps every document type that declares rules to its list. The `PropertyConstraintCondition`, `PropertyConstraintExpression` and `PropertyConstraintEqualityOperand` types spell out the rule grammar, and `violation` is one of `NotMet`, `Overflow`, `DivisionByZero`, `NegativeExponent` or `NotAnInteger`, the reason consensus would report.
+
 ## Chained queries (provable semi-join)
 
 A `refersTo: permanentDocument` declaration also lights up the read side: a **chained query** answers `SELECT * FROM post WHERE $id IN (SELECT postId FROM like WHERE $ownerId = me)` in one verified round trip. The node returns the inner indexOnly page and the referenced documents under ONE merged proof — a single quorum-signed state root by construction — and the SDK re-derives the outer query itself and checks it against the *proven* inner values — the node cannot substitute, omit, or inject joined documents. For a `permanentDocument` join property a missing referenced document fails verification outright, since such a reference cannot dangle. For a `deletableDocument` join property a referenced document that was deleted since is proven absent: it has no entry in `outerDocuments` (so match the two halves by id, not by position) and its id is listed in `missingOuterIds`, in first-appearance order. The node still cannot pass an existing document off as deleted.
