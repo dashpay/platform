@@ -697,7 +697,8 @@ mod creation_tests {
                     // the nonce derived id is billed 4 SHA-256 blocks instead of 2
                     processing_fee: 536140,
                     fee_refunds: FeeRefunds::default(),
-                    removed_bytes_from_system: 0
+                    removed_bytes_from_system: 0,
+                    lifetime_storage_fees: Default::default(),
                 },
                 address_balance_changes: std::collections::BTreeMap::new()
             }

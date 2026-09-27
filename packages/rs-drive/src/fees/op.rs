@@ -30,7 +30,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::refunds::FeeRefunds;
-use dpp::fee::fee_result::FeeResult;
+use dpp::fee::fee_result::{FeeResult, LifetimeStorageFees};
 use dpp::fee::Credits;
 use platform_version::version::fee::FeeVersion;
 
@@ -254,16 +254,15 @@ pub enum EphemeralPricing {
     TimeRangeTtl,
     /// The writes of a document whose type declares a `ttl`: every added
     /// byte costs `credit_per_byte`, resolved from the fee schedule's
-    /// `document_ttl` group for the document's remaining lifetime, into the
-    /// storage fee distribution pool when `storage_pool`, else into the
-    /// current epoch's processing fees.
+    /// `document_ttl` group for the document's remaining lifetime, as a
+    /// storage fee paid out over the `lifetime_epochs` epochs the document
+    /// has left to live (see `FeeResult::lifetime_storage_fees`).
     DocumentTtl {
         /// Credits per added byte
         credit_per_byte: Credits,
-        /// Whether the amount enters the storage fee pool (a document type
-        /// whose `ttl` spans at least the schedule's
-        /// `processing_route_below_epochs`) rather than the processing fees
-        storage_pool: bool,
+        /// The epochs the document has left to live, at least 1 and at
+        /// most one era
+        lifetime_epochs: u16,
     },
 }
 
@@ -327,35 +326,27 @@ impl LowLevelDriveOperation {
                 }),
                 CalculatedEphemeralCostOperation(cost, EphemeralPricing::DocumentTtl {
                     credit_per_byte,
-                    storage_pool,
+                    lifetime_epochs,
                 }) => {
                     // The writes of a document whose type declares a `ttl`:
                     // each added byte costs the price of the document's
-                    // remaining lifetime, into the storage pool or the
-                    // processing fees as its type's `ttl` decides.
-                    // Processing is billed as for any batch. Added in
-                    // place in this shipped generation: only a document
-                    // type parsed from the `ttl` keyword, which no
-                    // protocol version before 14 reads, is tagged
-                    // `DocumentTtl`, so no earlier version reaches this arm.
-                    let bytes_fee = (cost.storage_cost.added_bytes as u64)
+                    // remaining lifetime, as a storage fee the pools pay
+                    // out over the epochs it has left to live. Processing
+                    // is billed as for any batch. Added in place in this
+                    // shipped generation: only a document type parsed from
+                    // the `ttl` keyword, which no protocol version before
+                    // 14 reads, is tagged `DocumentTtl`, so no earlier
+                    // version reaches this arm.
+                    let storage_fee = (cost.storage_cost.added_bytes as u64)
                         .checked_mul(credit_per_byte)
                         .ok_or(Error::Fee(FeeError::Overflow(
                             "overflow pricing the bytes of a document with a time to live",
                         )))?;
-                    let ephemeral_cost = cost.ephemeral_cost(fee_version)?;
-                    let (storage_fee, processing_fee) = if storage_pool {
-                        (bytes_fee, ephemeral_cost)
+                    let processing_fee = cost.ephemeral_cost(fee_version)?;
+                    let lifetime_storage_fees = if storage_fee > 0 {
+                        LifetimeStorageFees::from([(lifetime_epochs, storage_fee)])
                     } else {
-                        (
-                            0,
-                            ephemeral_cost.checked_add(bytes_fee).ok_or(Error::Fee(
-                                FeeError::Overflow(
-                                    "overflow adding the bytes fee of a document with a time \
-                                     to live",
-                                ),
-                            ))?,
-                        )
+                        LifetimeStorageFees::new()
                     };
                     // The elements of such a document carry no storage flags,
                     // so removals are basic. A sectioned (refundable) removal
@@ -369,6 +360,7 @@ impl LowLevelDriveOperation {
                         processing_fee,
                         fee_refunds: FeeRefunds::default(),
                         removed_bytes_from_system,
+                        lifetime_storage_fees,
                     })
                 }
                 CalculatedEphemeralCostOperation(cost, EphemeralPricing::TimeRangeTtl) => {
@@ -409,6 +401,7 @@ impl LowLevelDriveOperation {
                         processing_fee,
                         fee_refunds: FeeRefunds::default(),
                         removed_bytes_from_system,
+                        lifetime_storage_fees: Default::default(),
                     })
                 }
                 _ => {
@@ -458,6 +451,7 @@ impl LowLevelDriveOperation {
                         processing_fee,
                         fee_refunds,
                         removed_bytes_from_system,
+                        lifetime_storage_fees: Default::default(),
                     })
                 }
             })

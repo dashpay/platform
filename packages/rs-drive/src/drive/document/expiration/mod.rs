@@ -24,7 +24,7 @@
 mod add_document_expiration_operations;
 mod add_estimation_costs_for_document_expiration;
 mod fetch_expired_documents;
-mod insert_documents_expirations_tree;
+mod insert_document_ttl_trees;
 /// Paths of the documents expirations tree
 pub mod paths;
 /// Prices of the bytes and the deletion of documents with a time to live

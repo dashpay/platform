@@ -179,7 +179,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
         // count/sum composition rationale.
         primary_key_tree_type: 1,
         expiration: DriveDocumentExpirationMethodVersions {
-            insert_documents_expirations_tree: 0,
+            insert_document_ttl_trees: 0,
             add_document_expiration_operations: 0,
             remove_document_expiration_operations: 0,
             fetch_expired_documents: 0,

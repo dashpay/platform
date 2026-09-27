@@ -13,19 +13,16 @@ use platform_version::version::fee::FeeVersion;
 
 /// How the bytes a document writes are priced when it has `remaining_lifetime_ms` left to
 /// live: the first tier covering that lifetime, or past the last tier the schedule's price
-/// per pricing period times the periods it spans, rounded up. A document of a type whose
-/// `ttl_seconds` is shorter than the schedule's `processing_route_below_epochs` epochs of
-/// `epoch_time_length_s` pays into the processing fees, one of a longer `ttl` into the
-/// storage fee pool.
+/// per pricing period times the periods it spans, rounded up; paid out over the epochs of
+/// `epoch_time_length_s` the lifetime spans, rounded up and at most `epochs_per_era`.
 ///
 /// The price never decreases with the lifetime, which keeps an estimate made at an earlier
 /// block time (a longer remaining lifetime) an upper bound of the price at execution. The
-/// route depends on the declared `ttl` alone, so the estimate and the execution take the
-/// same one: the fee increase a writer offers multiplies processing only.
+/// epochs only decide which epochs the pools pay the amount to.
 pub fn document_ttl_pricing(
     remaining_lifetime_ms: u64,
-    ttl_seconds: u32,
     epoch_time_length_s: u64,
+    epochs_per_era: u16,
     fee_version: &FeeVersion,
 ) -> Result<EphemeralPricing, Error> {
     let schedule = &fee_version.document_ttl;
@@ -51,14 +48,18 @@ pub fn document_ttl_pricing(
                 )))?
         }
     };
-    let storage_pool_from_seconds = u64::from(schedule.processing_route_below_epochs)
-        .checked_mul(epoch_time_length_s)
-        .ok_or(Error::Fee(FeeError::Overflow(
-            "overflow computing the storage pool route of a document with a time to live",
+    let epoch_ms = epoch_time_length_s
+        .checked_mul(1000)
+        .filter(|epoch_ms| *epoch_ms > 0)
+        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+            "the epoch length must be a positive number of milliseconds",
         )))?;
+    let lifetime_epochs = u16::try_from(remaining_lifetime_ms.div_ceil(epoch_ms))
+        .unwrap_or(u16::MAX)
+        .clamp(1, epochs_per_era.max(1));
     Ok(EphemeralPricing::DocumentTtl {
         credit_per_byte,
-        storage_pool: u64::from(ttl_seconds) >= storage_pool_from_seconds,
+        lifetime_epochs,
     })
 }
 
@@ -158,44 +159,43 @@ mod tests {
     const TESTNET_EPOCH_S: u64 = 3_600;
     const HOUR_MS: u64 = 3_600_000;
     const DAY_MS: u64 = 86_400_000;
-    const WEEK_S: u32 = 604_800;
 
-    fn price_on(lifetime_ms: u64, ttl_seconds: u32, epoch_s: u64) -> (Credits, bool) {
+    const EPOCHS_PER_ERA: u16 = 40;
+
+    fn price_on(lifetime_ms: u64, epoch_s: u64) -> (Credits, u16) {
         match document_ttl_pricing(
             lifetime_ms,
-            ttl_seconds,
             epoch_s,
+            EPOCHS_PER_ERA,
             &PlatformVersion::latest().fee_version,
         )
         .expect("prices")
         {
             EphemeralPricing::DocumentTtl {
                 credit_per_byte,
-                storage_pool,
-            } => (credit_per_byte, storage_pool),
+                lifetime_epochs,
+            } => (credit_per_byte, lifetime_epochs),
             other => panic!("expected a document ttl price, got {other:?}"),
         }
     }
 
-    /// The price of a document created now: its whole time to live is left.
-    fn price(lifetime_ms: u64) -> (Credits, bool) {
-        let ttl_seconds = u32::try_from(lifetime_ms.div_ceil(1000)).expect("fits");
-        price_on(lifetime_ms, ttl_seconds, MAINNET_EPOCH_S)
+    fn price(lifetime_ms: u64) -> (Credits, u16) {
+        price_on(lifetime_ms, MAINNET_EPOCH_S)
     }
 
     #[test]
     fn should_price_each_short_lifetime_by_its_tier() {
         let tiers = PlatformVersion::latest().fee_version.document_ttl.tiers;
-        assert_eq!(price(1), (tiers[0].credit_per_byte, false));
-        assert_eq!(price(HOUR_MS), (tiers[0].credit_per_byte, false));
-        assert_eq!(price(HOUR_MS + 1), (tiers[1].credit_per_byte, false));
-        assert_eq!(price(DAY_MS), (tiers[1].credit_per_byte, false));
-        assert_eq!(price(DAY_MS + 1), (tiers[2].credit_per_byte, false));
-        assert_eq!(price(2 * DAY_MS), (tiers[2].credit_per_byte, false));
-        assert_eq!(price(2 * DAY_MS + 1), (tiers[3].credit_per_byte, false));
-        assert_eq!(price(4 * DAY_MS), (tiers[3].credit_per_byte, false));
-        assert_eq!(price(4 * DAY_MS + 1), (tiers[4].credit_per_byte, false));
-        assert_eq!(price(7 * DAY_MS), (tiers[4].credit_per_byte, false));
+        assert_eq!(price(1).0, tiers[0].credit_per_byte);
+        assert_eq!(price(HOUR_MS).0, tiers[0].credit_per_byte);
+        assert_eq!(price(HOUR_MS + 1).0, tiers[1].credit_per_byte);
+        assert_eq!(price(DAY_MS).0, tiers[1].credit_per_byte);
+        assert_eq!(price(DAY_MS + 1).0, tiers[2].credit_per_byte);
+        assert_eq!(price(2 * DAY_MS).0, tiers[2].credit_per_byte);
+        assert_eq!(price(2 * DAY_MS + 1).0, tiers[3].credit_per_byte);
+        assert_eq!(price(4 * DAY_MS).0, tiers[3].credit_per_byte);
+        assert_eq!(price(4 * DAY_MS + 1).0, tiers[4].credit_per_byte);
+        assert_eq!(price(7 * DAY_MS).0, tiers[4].credit_per_byte);
     }
 
     #[test]
@@ -204,23 +204,25 @@ mod tests {
         let per_period = schedule.credit_per_byte_per_period;
         let period_ms = u64::from(schedule.pricing_period_seconds) * 1000;
         // Past seven days but inside the first period: one period.
-        assert_eq!(price(7 * DAY_MS + 1), (per_period, false));
-        assert_eq!(price(period_ms), (per_period, false));
-        assert_eq!(price(period_ms + 1), (2 * per_period, false));
-        assert_eq!(price(365 * DAY_MS), (40 * per_period, true));
+        assert_eq!(price(7 * DAY_MS + 1).0, per_period);
+        assert_eq!(price(period_ms).0, per_period);
+        assert_eq!(price(period_ms + 1).0, 2 * per_period);
+        assert_eq!(price(365 * DAY_MS).0, 40 * per_period);
     }
 
     #[test]
-    fn should_route_by_the_declared_time_to_live_in_epochs() {
-        let epoch_s = u32::try_from(MAINNET_EPOCH_S).expect("fits");
-        // A type of two epochs or more pays into the storage fee pool, whatever is left.
-        assert!(price_on(1, 2 * epoch_s, MAINNET_EPOCH_S).1);
-        assert!(price_on(u64::from(2 * epoch_s) * 1000, 2 * epoch_s, MAINNET_EPOCH_S).1);
-        // A shorter type pays into the processing fees.
-        assert!(!price_on(1, 2 * epoch_s - 1, MAINNET_EPOCH_S).1);
-        // The network's epochs decide the route: two hours spans two testnet epochs.
-        assert!(price_on(HOUR_MS, 7_200, TESTNET_EPOCH_S).1);
-        assert!(!price_on(HOUR_MS, 7_200, MAINNET_EPOCH_S).1);
+    fn should_pay_out_over_the_epochs_the_lifetime_spans() {
+        let epoch_ms = MAINNET_EPOCH_S * 1000;
+        // Less than an epoch still pays one epoch.
+        assert_eq!(price(1).1, 1);
+        assert_eq!(price(epoch_ms).1, 1);
+        assert_eq!(price(epoch_ms + 1).1, 2);
+        // A year of 365 days is exactly 40 epochs of 9.125 days.
+        assert_eq!(price(365 * DAY_MS).1, 40);
+        // Never past one era, whatever the network's epochs: testnet's hour-long epochs pay
+        // a two-hour lifetime over two epochs and a year over one era.
+        assert_eq!(price_on(2 * HOUR_MS, TESTNET_EPOCH_S).1, 2);
+        assert_eq!(price_on(365 * DAY_MS, TESTNET_EPOCH_S).1, EPOCHS_PER_ERA);
     }
 
     #[test]
@@ -228,10 +230,9 @@ mod tests {
         // The price per byte comes from the schedule's own period: a network of one-hour
         // epochs prices a year like mainnet does.
         for lifetime_ms in [HOUR_MS, 3 * DAY_MS, 8 * DAY_MS, 30 * DAY_MS, 365 * DAY_MS] {
-            let ttl_seconds = u32::try_from(lifetime_ms / 1000).expect("fits");
             assert_eq!(
-                price_on(lifetime_ms, ttl_seconds, TESTNET_EPOCH_S).0,
-                price_on(lifetime_ms, ttl_seconds, MAINNET_EPOCH_S).0,
+                price_on(lifetime_ms, TESTNET_EPOCH_S).0,
+                price_on(lifetime_ms, MAINNET_EPOCH_S).0,
                 "{lifetime_ms} ms"
             );
         }
@@ -241,7 +242,7 @@ mod tests {
     fn should_never_price_a_longer_lifetime_below_a_shorter_one() {
         let mut previous = 0;
         for lifetime_ms in (0..=400 * DAY_MS).step_by((HOUR_MS / 2) as usize) {
-            let (credit_per_byte, _) = price_on(lifetime_ms, WEEK_S, MAINNET_EPOCH_S);
+            let (credit_per_byte, _) = price(lifetime_ms);
             assert!(
                 credit_per_byte >= previous,
                 "{lifetime_ms} ms costs {credit_per_byte}, less than {previous}"
