@@ -204,6 +204,15 @@ where
 
                         // Remembered before the transition is consumed: the pools an applied
                         // batch touched get their anchor recorded at block end.
+                        //
+                        // Every protocol version selects this generation, so this has to be inert
+                        // at the ones that predate token pools, and it is twice over: the kinds
+                        // `token_shielded_pools_touched` reports are exactly the ones
+                        // `validate_is_allowed` refuses unpaid there before execution, so the set
+                        // stays empty, and the set's only consumer,
+                        // `record_token_shielded_pool_anchors`, is `None` in those versions'
+                        // tables and returns without touching state. The set lives on the
+                        // in-memory processing result, which is neither serialized nor hashed.
                         let token_shielded_pools_touched =
                             token_shielded_pools_touched(&state_transition);
 
@@ -403,6 +412,10 @@ fn error_to_internal_error_execution_result(
 /// The token shielded pools a state transition writes to: the token ids of every token pool
 /// transition in a batch, of every document whose token cost is paid from a pool, and of the
 /// identity-less token pool transitions.
+///
+/// Every kind matched here is one that `StateTransitionIsAllowedValidationV0::validate_is_allowed`
+/// refuses, unpaid and before execution, below the protocol version that introduces token pools,
+/// so this returns an empty list at every earlier version.
 fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 32]> {
     match state_transition {
         StateTransition::Batch(batch) => batch

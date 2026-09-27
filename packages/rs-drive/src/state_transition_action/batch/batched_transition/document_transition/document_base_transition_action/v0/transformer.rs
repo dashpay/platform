@@ -116,6 +116,12 @@ impl DocumentBaseTransitionActionV0 {
             }
             // A shielded payment pays exactly what its bundle proves: the document type's cost,
             // or the document is rejected before the proof is verified.
+            //
+            // This body runs for every document transition at every protocol version, so the two
+            // branches keyed on a shielded payment have to be unreachable on the released ones,
+            // and they are: only a `TokenPaymentInfo::V1` carries a shielded payment, and a batch
+            // whose document base carries one is refused unpaid at the batch's `is_allowed` gate,
+            // the first check a state transition meets, before this transformer runs.
             if let Some(payment) = token_payment_info.shielded_payment() {
                 if payment.amount != document_action_token_cost.token_amount {
                     return Ok(ConsensusValidationResult::new_with_error(

@@ -13,6 +13,12 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<(Vec<u8>, bool)>), Error> {
+        // Every protocol version selects this generation, so splitting the body out behind a
+        // path parameter has to leave the credit pool alone, and it does: this entry point passes
+        // the same path the body used to build inline, so an existing credit pool proof is checked
+        // by the same PathQuery and yields the same root hash and the same result. A token pool
+        // path reaches the shared body only from a caller that cannot exist below the version
+        // that admits token pools.
         Self::verify_pool_nullifiers_v0(
             proof,
             shielded_credit_pool_nullifiers_path_vec(),

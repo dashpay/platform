@@ -753,10 +753,11 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 Ok(batched_action)
             }
-            // Every token shielded pool arm below is unreachable in this generation. The
-            // protocol versions that select it, 1 through 11, refuse each pool transition kind at
-            // the batch's `is_allowed` gate, and the version that admits those kinds does not
-            // select this generation at all. The arms exist so the match stays exhaustive.
+            // Every token shielded pool arm below is refused before it is reached on protocol
+            // versions 1 through 13: the batch's `is_allowed` gate rejects each pool transition
+            // kind unpaid until the version that admits them. From that version on these arms
+            // are the live path, because `try_into_action_v0` is the shared transformer body of
+            // `transform_into_action` 0, 1 and 2 -- they are not exhaustiveness filler.
             TokenTransition::Shield(token_shield) => {
                 let (batched_action, fee_result) = TokenShieldTransitionAction::try_from_borrowed_token_shield_transition_with_contract_lookup(drive, owner_id, token_shield, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
@@ -877,6 +878,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         // Halo 2 verification and per-action work GroveDB cannot meter: charged here, before
         // anything can fail, so CheckTx admission and block execution price it identically and
         // a rejected document still pays for the proof it made the validators check.
+        //
+        // Inert on protocol versions 1 through 13, which select this shared transformer body
+        // through `transform_into_action` 0 and 1: only a `TokenPaymentInfo::V1` carries a
+        // shielded payment at all, and a batch holding a document whose payment info carries one
+        // is refused unpaid at the batch's `is_allowed` gate, which runs before the transformer,
+        // so this charge is never reached and no fee moves there.
         if let Some(payment) = transition
             .base()
             .token_payment_info_ref()

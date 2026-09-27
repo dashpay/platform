@@ -300,11 +300,13 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         transaction,
                         platform_version,
                     )?,
-                    // Every token shielded pool arm below is unreachable on the protocol
-                    // versions that select this generation. The pool transition kinds are refused
-                    // at the batch's `is_allowed` gate until the version that admits them, and a
-                    // document cost paid out of a pool travels in `TokenPaymentInfo::V1`, whose
-                    // `active_version_range` opens at that same version.
+                    // Every protocol version selects this generation, so the token shielded pool
+                    // arms below have to be unreachable on the released ones, 1 through 13, and
+                    // they are: a batch carrying any of these pool transition kinds is refused,
+                    // unpaid, at the batch's `is_allowed` gate below the version that admits
+                    // token pools, and that gate is the first check a state transition meets,
+                    // well before this stage runs. From that version on the arms are the live
+                    // path.
                     TokenTransitionAction::ShieldAction(shield_action) => shield_action
                         .validate_state(
                             platform,
@@ -390,6 +392,13 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
 
             // A document whose token cost is paid out of the token's shielded pool: the pool
             // side and the bundle are validated once the document action itself is valid.
+            //
+            // Unreachable on protocol versions 1 through 13, which select this generation along
+            // with every later one: only a `TokenPaymentInfo::V1` carries a shielded payment, and
+            // the same `is_allowed` gate refuses a batch holding a document whose payment info
+            // carries one. Note that nothing narrows the batch's `active_version_range` for it --
+            // that narrows on the document base's own feature version -- so the `is_allowed`
+            // gate is the whole of the argument here.
             if transition_validation_result.is_valid() {
                 if let BatchedTransitionAction::DocumentAction(document_action) = &transition {
                     if let Some(payment) = document_action.base().shielded_token_payment() {

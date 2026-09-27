@@ -86,6 +86,10 @@ pub struct DocumentBaseTransitionActionV0 {
     pub declared_action_fee: Option<Box<DeclaredDocumentActionFee>>,
     /// The spend bundle paying `token_cost` out of the token's shielded pool instead of the
     /// owner's token balance (`TokenPaymentInfo::V1`). Only set when there is a token cost.
+    /// This action is built fresh in memory for each block and is never encoded, hashed or
+    /// written to GroveDB, so adding a field changes no stored or signed bytes. It is `None` for
+    /// every document a protocol version below the one admitting token pools accepts, and the
+    /// token cost path falls through to the balance-paid operations when it is.
     pub shielded_token_payment: Option<Box<DocumentShieldedTokenPayment>>,
 }
 
