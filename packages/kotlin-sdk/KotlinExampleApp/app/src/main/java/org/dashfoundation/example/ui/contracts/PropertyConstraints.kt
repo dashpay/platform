@@ -131,6 +131,24 @@ internal const val NATIVE_LIBRARY_PREDATES_RULES =
 internal fun propertyConstraintReadsText(rule: DocumentPropertyConstraint): String =
     rule.reads.distinct().joinToString(", ") { "${it.path} (${it.kind.name})" }
 
+/**
+ * The system times and heights [rule] reads, repeats dropped, as the line
+ * shown under it: `Reads $createdAt, $updatedAt`. `null` for a rule reading
+ * none.
+ */
+internal fun propertyConstraintSystemReadsText(rule: DocumentPropertyConstraint): String? =
+    rule.readsSystem.distinct().takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "Reads ")
+
+/**
+ * The note under a rule reading a system time or height
+ * ([propertyConstraintSystemReadsText] not `null`): which writes besides a
+ * create or a replace consensus judges against such a rule. Only a reminder
+ * of the protocol's behaviour, the same for every such rule: Rust decides.
+ */
+internal const val PROPERTY_CONSTRAINT_SYSTEM_READS_NOTE =
+    "A price update is judged against the rules reading \$updatedAt or its block heights, " +
+        "and a transfer or purchase against those reading \$transferredAt or its block heights."
+
 /** Title of the alert a broken rule raises instead of a broadcast. */
 internal const val PROPERTY_CONSTRAINT_BROKEN_TITLE = "Not sent: a property constraint is broken"
 

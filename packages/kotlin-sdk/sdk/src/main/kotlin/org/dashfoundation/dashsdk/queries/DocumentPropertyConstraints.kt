@@ -15,7 +15,9 @@ import org.dashfoundation.dashsdk.errors.DashSdkError
  * named condition every created or replaced document's properties must meet.
  * Consensus checks every rule, in name order, and refuses a document breaking
  * one with `DocumentPropertyConstraintViolatedError` (code 10422); a refused
- * state transition is still paid for.
+ * state transition is still paid for. A transfer, a purchase or a price update
+ * is judged against the rules reading what it changes ([readsOwner],
+ * [readsSystem]).
  *
  * Rust parses the rules and reports them
  * (`dash_sdk_data_contract_get_property_constraints`, through
@@ -35,8 +37,8 @@ data class DocumentPropertyConstraint(
     val ruleJson: String,
     /**
      * Every property the rule reads, in declared order, a property read twice
-     * listed twice. `$ownerId` is no property and is not listed: see
-     * [readsOwner].
+     * listed twice. `$ownerId` and the system times and heights are no
+     * properties and are not listed: see [readsOwner] and [readsSystem].
      */
     val reads: List<PropertyConstraintRead>,
     /**
@@ -45,6 +47,25 @@ data class DocumentPropertyConstraint(
      * too.
      */
     val readsOwner: Boolean,
+    /**
+     * The system times and heights the rule reads, by name, in declared order,
+     * one read twice listed twice: `$createdAt`, `$updatedAt` and
+     * `$transferredAt` (a block time in milliseconds), each also with
+     * `BlockHeight` or `CoreBlockHeight` appended (the Platform or the Core
+     * block height). The names are wasm-dpp2's
+     * `PropertyConstraintSystemProperty`. A rule reads only the ones its
+     * document type records, by listing them in `required`.
+     *
+     * Consensus judges a price update against the rules reading the update's
+     * (`$updatedAt...`), and a transfer or a purchase against those reading
+     * the transfer's (`$transferredAt...`) or the owner ([readsOwner]). This
+     * list only names what a rule reads; Rust decides which writes a rule
+     * answers to.
+     *
+     * Empty for a rule reading none, and for every rule when the native
+     * library predates the field.
+     */
+    val readsSystem: List<String> = emptyList(),
 ) {
     /** [ruleJson] indented for display, or [ruleJson] itself should it not parse back. */
     val prettyRuleJson: String
@@ -57,7 +78,9 @@ data class DocumentPropertyConstraint(
     companion object {
         /**
          * Decode the JSON array `dash_sdk_data_contract_get_property_constraints`
-         * returns, keeping its order (name order).
+         * returns, keeping its order (name order). A rule without
+         * `readsSystem`, from a native library built before it, reads as
+         * reading no system value.
          *
          * @throws DashSdkError.SerializationError for text that is not such an array.
          */
@@ -72,7 +95,10 @@ data class DocumentPropertyConstraint(
                 val declaration = rule?.get("rule")
                 val reads = rule?.get("reads") as? JsonArray
                 val readsOwner = rule?.get("readsOwner")?.jsonBooleanOrNull()
-                if (name == null || declaration == null || reads == null || readsOwner == null) {
+                val readsSystem = rule?.let(::readsSystemOf)
+                if (name == null || declaration == null || reads == null || readsOwner == null ||
+                    readsSystem == null
+                ) {
                     throw DashSdkError.SerializationError("Malformed propertyConstraints rule: $entry")
                 }
                 DocumentPropertyConstraint(
@@ -80,8 +106,19 @@ data class DocumentPropertyConstraint(
                     ruleJson = PropertyConstraintJson.compact(declaration),
                     reads = reads.map(PropertyConstraintRead::fromJson),
                     readsOwner = readsOwner,
+                    readsSystem = readsSystem,
                 )
             }
+        }
+
+        /**
+         * The names [rule]'s `readsSystem` lists: empty when the key is
+         * missing, `null` when it is anything but an array of strings.
+         */
+        private fun readsSystemOf(rule: JsonObject): List<String>? {
+            val value = rule["readsSystem"] ?: return emptyList()
+            val names = value as? JsonArray ?: return null
+            return names.map { it.jsonStringOrNull() ?: return null }
         }
     }
 }
@@ -117,7 +154,28 @@ data class PropertyConstraintRead(
             override val name: String get() = "identifier"
         }
 
-        /** A kind this build does not know, by its name. */
+        /**
+         * By its size, in a `length` operand (its characters) or a
+         * `byteLength` operand (its UTF-8 bytes): a string property.
+         */
+        data object Length : Kind {
+            override val name: String get() = "length"
+        }
+
+        /**
+         * By its size, in a `count` operand: an array property's items, or a
+         * byte array property's bytes.
+         */
+        data object Count : Kind {
+            override val name: String get() = "count"
+        }
+
+        /** By its elements, which a `contains` looks among: a typed array property. */
+        data object Elements : Kind {
+            override val name: String get() = "elements"
+        }
+
+        /** A kind this build does not know, by its name: one a later native library reports. */
         data class Other(override val name: String) : Kind
 
         companion object {
@@ -127,6 +185,9 @@ data class PropertyConstraintRead(
                 Presence.name -> Presence
                 Text.name -> Text
                 Identifier.name -> Identifier
+                Length.name -> Length
+                Count.name -> Count
+                Elements.name -> Elements
                 else -> Other(name)
             }
         }
@@ -150,10 +211,11 @@ data class PropertyConstraintRead(
  * report it in `DocumentPropertyConstraintViolatedError` (code 10422).
  *
  * Rust judges the document (`dash_sdk_data_contract_check_property_constraints`,
- * through [Contracts.checkPropertyConstraints]) with the check consensus runs;
- * this type only carries the verdict. The fields mirror wasm-dpp2's
- * `DocumentPropertyConstraintViolation` and the Swift SDK's
- * `PropertyConstraintViolation`.
+ * through [Contracts.checkPropertyConstraints]) with the check consensus runs,
+ * the device clock standing in for the times the create records and a rule
+ * reading a block height left unjudged; this type only carries the verdict.
+ * The fields mirror wasm-dpp2's `DocumentPropertyConstraintViolation` and the
+ * Swift SDK's `PropertyConstraintViolation`.
  */
 data class PropertyConstraintViolation(
     /** The broken rule's name. */
