@@ -819,6 +819,7 @@ mod tests {
             Arc::new(crate::test_support::NoopTestPersister)
                 as Arc<dyn crate::changeset::PlatformWalletPersistence>,
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
         ))
     }
 

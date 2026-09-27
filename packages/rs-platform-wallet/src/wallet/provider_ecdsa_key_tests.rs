@@ -45,6 +45,7 @@ async fn platform_wallet() -> PlatformWallet {
         Arc::new(tokio::sync::Notify::new()),
         Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
         Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
     )
 }
 

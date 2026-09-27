@@ -2128,6 +2128,35 @@ class PlatformWalletPersistenceHandler(
 
     // ── Contacts ──────────────────────────────────────────────────────
 
+    /** Marker-less form: same row, no outbound-account marker (stored as NULL). */
+    override fun onPersistContactUpsert(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        isOutgoing: Boolean,
+        senderKeyIndex: Int,
+        recipientKeyIndex: Int,
+        accountReference: Int,
+        encryptedPublicKey: ByteArray,
+        encryptedAccountLabel: ByteArray?,
+        autoAcceptProof: ByteArray?,
+        coreHeightCreatedAt: Int,
+        createdAt: Long,
+        paymentChannelBroken: Boolean,
+        alias: String?,
+        note: String?,
+        isHidden: Boolean,
+        contactAccountLabel: String?,
+        acceptedAccounts: IntArray,
+    ): Int = onPersistContactUpsert(
+        walletId, ownerId, contactId, isOutgoing, senderKeyIndex, recipientKeyIndex,
+        accountReference, encryptedPublicKey, encryptedAccountLabel, autoAcceptProof,
+        coreHeightCreatedAt, createdAt, paymentChannelBroken, alias, note, isHidden,
+        contactAccountLabel, acceptedAccounts,
+        hasExternalAccountReference = false,
+        externalAccountReference = 0,
+    )
+
     override fun onPersistContactUpsert(
         walletId: ByteArray,
         ownerId: ByteArray,

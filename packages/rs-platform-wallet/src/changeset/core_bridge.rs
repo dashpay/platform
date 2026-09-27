@@ -1113,6 +1113,8 @@ async fn build_core_changeset(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
 ) -> CoreChangeSet {
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
     match event {
         WalletEvent::TransactionDetected {
             wallet_id,
@@ -1339,10 +1341,38 @@ async fn build_core_changeset(
                 ..CoreChangeSet::default()
             }
         }
-        WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
-            synced_height: Some(*height),
-            ..CoreChangeSet::default()
-        },
+        WalletEvent::SyncHeightAdvanced { wallet_id, height } => {
+            // A watermark queued before a rewind must not land after it.
+            // `reconcile_dashpay_rescan` lowers the in-memory cursor and
+            // stores the lowered value with its coverage record on its own
+            // round; an advance the engine emitted just before that rewind
+            // (still in this channel) would otherwise be persisted after
+            // it and put the durable cursor back above the range the rescan
+            // has yet to re-match — with coverage on disk vouching for it.
+            // The in-memory cursor is the wallet's truth at drain time: an
+            // event above it is stale, so its watermark is dropped and the
+            // rescan's own advances carry the cursor from the floor up.
+            let current = {
+                let wm = wallet_manager.read().await;
+                wm.get_wallet_info(wallet_id)
+                    .map(|info| info.core_wallet.synced_height())
+            };
+            match current {
+                Some(current) if *height > current => {
+                    tracing::debug!(
+                        wallet_id = %hex::encode(wallet_id),
+                        event_height = *height,
+                        current,
+                        "wallet-event adapter: dropping a sync-height advance queued before a rewind"
+                    );
+                    CoreChangeSet::default()
+                }
+                _ => CoreChangeSet {
+                    synced_height: Some(*height),
+                    ..CoreChangeSet::default()
+                },
+            }
+        }
         WalletEvent::ChainLockProcessed { chain_lock, .. } => {
             // The wallet has already promoted the matching records from
             // `InBlock` to `InChainLockedBlock` by the time this event
@@ -4475,6 +4505,72 @@ mod tests {
     /// persisted `syncedHeight`, and therefore the one the guard strips.
     fn sync_height_event(wallet_id: WalletId, height: u32) -> WalletEvent {
         WalletEvent::SyncHeightAdvanced { wallet_id, height }
+    }
+
+    /// A watermark the engine queued BEFORE `reconcile_dashpay_rescan`
+    /// lowered the wallet's cursor must not be persisted after it: the
+    /// rescan round stores the lowered cursor with its coverage record, and
+    /// a stale advance landing afterwards would put the durable cursor back
+    /// above the range the rescan has yet to re-match, with coverage on
+    /// disk vouching for it (dashpay/platform#4302 review). The in-memory
+    /// cursor at drain time decides: an event above it is dropped, one at or
+    /// below it flows.
+    #[tokio::test]
+    async fn a_sync_height_advance_queued_before_a_rewind_is_dropped() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+        use key_wallet::test_utils::TestWalletContext;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let ctx = TestWalletContext::new_random();
+        let mut info = PlatformWalletInfo {
+            observed_input_conflicts: Default::default(),
+            core_wallet: ctx.managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+        };
+        info.core_wallet.update_synced_height(1_000);
+        let manager = test_manager();
+        let wallet_id = manager
+            .write()
+            .await
+            .insert_wallet(ctx.wallet, info)
+            .expect("insert wallet");
+
+        // In step with the engine: the advance the engine just applied.
+        let cs = super::build_core_changeset(&manager, &sync_height_event(wallet_id, 1_000)).await;
+        assert_eq!(cs.synced_height, Some(1_000));
+
+        // The rescan reconcile rewinds the wallet to 100 while that advance
+        // is still queued: it must not land.
+        manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .core_wallet
+            .update_synced_height(100);
+        let stale =
+            super::build_core_changeset(&manager, &sync_height_event(wallet_id, 1_000)).await;
+        assert_eq!(
+            stale.synced_height, None,
+            "an advance above the rewound cursor was queued before the rewind"
+        );
+        assert!(
+            crate::changeset::Merge::is_empty(&stale),
+            "nothing else rides a bare watermark"
+        );
+
+        // The rescan's own advances carry the cursor from the floor up.
+        let fresh = super::build_core_changeset(&manager, &sync_height_event(wallet_id, 100)).await;
+        assert_eq!(fresh.synced_height, Some(100));
+
+        // An unknown wallet has no cursor to compare against: unchanged.
+        let unknown = super::build_core_changeset(&manager, &sync_height_event([9u8; 32], 7)).await;
+        assert_eq!(unknown.synced_height, Some(7));
     }
 
     /// A record-bearing (non-watermark) event: carries

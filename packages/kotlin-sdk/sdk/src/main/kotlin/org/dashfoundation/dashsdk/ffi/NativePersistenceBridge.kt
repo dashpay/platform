@@ -591,8 +591,10 @@ abstract class NativePersistenceBridge {
     // ── Contacts ──────────────────────────────────────────────────────
 
     /**
-     * One `ContactRequestFFI` upsert. Descriptor
-     * `([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[IZI)I`.
+     * One `ContactRequestFFI` upsert, marker-less form (the signature this
+     * API had before the outbound-account marker). Native calls the
+     * overload below; this one stays so existing implementations keep
+     * compiling and keep receiving rows through the delegating default.
      *
      * The tail block ([paymentChannelBroken] / [alias] / [note] /
      * [isHidden] / [contactAccountLabel] / [acceptedAccounts]) is
@@ -629,9 +631,46 @@ abstract class NativePersistenceBridge {
         isHidden: Boolean,
         contactAccountLabel: String?,
         acceptedAccounts: IntArray,
-        hasExternalAccountReference: Boolean = false,
-        externalAccountReference: Int = 0,
     ): Int = 0
+
+    /**
+     * The overload native calls (descriptor
+     * `([B[B[BZIII[B[B[BIJZLjava/lang/String;Ljava/lang/String;ZLjava/lang/String;[IZI)I`):
+     * the row above plus `EstablishedContact::external_account_reference` as
+     * `(hasExternalAccountReference, externalAccountReference)`. The default
+     * body delegates to the marker-less overload, so an implementation that
+     * overrides only that one keeps persisting every other field and merely
+     * loses the marker (native then rebuilds the outbound account once per
+     * launch, the pre-marker behaviour). Override this one to store it.
+     */
+    @Suppress("LongParameterList")
+    open fun onPersistContactUpsert(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        isOutgoing: Boolean,
+        senderKeyIndex: Int,
+        recipientKeyIndex: Int,
+        accountReference: Int,
+        encryptedPublicKey: ByteArray,
+        encryptedAccountLabel: ByteArray?,
+        autoAcceptProof: ByteArray?,
+        coreHeightCreatedAt: Int,
+        createdAt: Long,
+        paymentChannelBroken: Boolean,
+        alias: String?,
+        note: String?,
+        isHidden: Boolean,
+        contactAccountLabel: String?,
+        acceptedAccounts: IntArray,
+        hasExternalAccountReference: Boolean,
+        externalAccountReference: Int,
+    ): Int = onPersistContactUpsert(
+        walletId, ownerId, contactId, isOutgoing, senderKeyIndex, recipientKeyIndex,
+        accountReference, encryptedPublicKey, encryptedAccountLabel, autoAcceptProof,
+        coreHeightCreatedAt, createdAt, paymentChannelBroken, alias, note, isHidden,
+        contactAccountLabel, acceptedAccounts,
+    )
 
     /** One sent-side `ContactRequestRemovalFFI`. Descriptor `([B[B[B)I`. */
     open fun onPersistContactRemovalSent(

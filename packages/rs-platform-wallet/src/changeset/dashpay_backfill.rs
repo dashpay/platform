@@ -97,6 +97,14 @@ pub struct DashPayBackfillRecord {
     /// Receival contacts the backfill covers, sorted by `(owner, contact)`,
     /// at most one entry per pair.
     pub covered: Vec<DashPayBackfillCoveredContact>,
+    /// In-memory only, never persisted or crossed over the FFI: a cursor a
+    /// previous record round still owes the host because that round's
+    /// store failed. The next successful record round carries it as the
+    /// round's `synced_height`, so coverage never reaches disk over a
+    /// durable cursor that is still at a height the in-memory rewind left
+    /// behind. `None` when nothing is owed.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub unpersisted_cursor: Option<u32>,
 }
 
 impl DashPayBackfillRecord {
@@ -269,6 +277,7 @@ impl DashPayBackfillRecord {
             floor,
             rewound_from,
             covered,
+            unpersisted_cursor: None,
         })
     }
 }

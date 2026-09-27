@@ -2162,7 +2162,9 @@ pub struct PlatformWalletChangeSet {
     /// [`ClientWalletStartState::dashpay_backfill`](crate::changeset::ClientWalletStartState::dashpay_backfill)
     /// so a fresh process does not rewind for a contact the previous one
     /// already rewound for (dashpay/platform#4302). Every write carries the
-    /// whole record, so merge is last-write-wins. See [`DashPayBackfillRecord`].
+    /// whole record, so merge is last-write-wins — and when the round also
+    /// carries a `core.synced_height`, that cursor is a rewind and overrides
+    /// the core merge's monotonic max. See [`DashPayBackfillRecord`].
     ///
     /// Durability caveat, the same one `identity_scan_state` carries: a host
     /// that has not adopted the slot keeps today's behaviour — the backfill
@@ -2279,7 +2281,22 @@ impl Merge for PlatformWalletChangeSet {
     fn merge(&mut self, other: Self) {
         // `CoreChangeSet` implements `Merge`; delegate via the
         // `Option<T>: Merge` blanket impl from this crate's merge module.
+        //
+        // One exception to its monotonic-max watermark: a round that
+        // carries a backfill record with a cursor is a REWIND, and the
+        // coverage in that record is only true over that cursor. A backend
+        // that accumulates rounds before flushing must therefore let the
+        // rewind win over an earlier advance in the same accumulation, or
+        // it flushes coverage beside the height the rewind retracted.
+        let rewind = other
+            .dashpay_backfill
+            .is_some()
+            .then(|| other.core.as_ref().and_then(|core| core.synced_height))
+            .flatten();
         self.core.merge(other.core);
+        if let (Some(rewound_to), Some(core)) = (rewind, self.core.as_mut()) {
+            core.synced_height = Some(rewound_to);
+        }
         self.identities.merge(other.identities);
         self.identity_keys.merge(other.identity_keys);
         self.contacts.merge(other.contacts);
@@ -3354,6 +3371,65 @@ mod tests {
             ..CoreChangeSet::default()
         });
         assert_eq!(cs.addresses_marked_used.len(), 3);
+    }
+
+    /// A round carrying a backfill record with a cursor is a rewind: when a
+    /// backend accumulates it behind an earlier advance, the rewind's cursor
+    /// must win over the core merge's monotonic max, or the accumulated
+    /// flush stores coverage beside the height the rewind retracted
+    /// (dashpay/platform#4302 review).
+    #[test]
+    fn a_rewind_round_with_a_backfill_record_overrides_the_core_merge_max() {
+        use crate::changeset::DashPayBackfillRecord;
+
+        let mut acc = PlatformWalletChangeSet {
+            core: Some(CoreChangeSet {
+                synced_height: Some(1_000),
+                ..CoreChangeSet::default()
+            }),
+            ..PlatformWalletChangeSet::default()
+        };
+        let mut record = DashPayBackfillRecord::default();
+        record.record_pass(
+            1_000,
+            Some(100),
+            [(
+                Identifier::from([1u8; 32]),
+                Identifier::from([2u8; 32]),
+                100,
+            )],
+        );
+        acc.merge(PlatformWalletChangeSet {
+            core: Some(CoreChangeSet {
+                synced_height: Some(100),
+                ..CoreChangeSet::default()
+            }),
+            dashpay_backfill: Some(record.clone()),
+            ..PlatformWalletChangeSet::default()
+        });
+        assert_eq!(
+            acc.core.as_ref().and_then(|core| core.synced_height),
+            Some(100),
+            "the rewind's cursor wins over the earlier advance"
+        );
+        assert_eq!(acc.dashpay_backfill, Some(record));
+
+        // A record round without a cursor changes nothing about the merge.
+        let mut acc = PlatformWalletChangeSet {
+            core: Some(CoreChangeSet {
+                synced_height: Some(1_000),
+                ..CoreChangeSet::default()
+            }),
+            ..PlatformWalletChangeSet::default()
+        };
+        acc.merge(PlatformWalletChangeSet {
+            dashpay_backfill: Some(DashPayBackfillRecord::default()),
+            ..PlatformWalletChangeSet::default()
+        });
+        assert_eq!(
+            acc.core.as_ref().and_then(|core| core.synced_height),
+            Some(1_000)
+        );
     }
 
     /// Highest-used watermarks merge monotonic-max per account per

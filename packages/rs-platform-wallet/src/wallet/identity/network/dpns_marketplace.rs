@@ -3775,6 +3775,7 @@ mod tests {
             wallet_id,
             asset_locks,
             persister,
+            sync_fault: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             broadcaster,
             sdk_writer: Arc::new(super::super::sdk_writer::SdkWriter::new(sdk)),
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),

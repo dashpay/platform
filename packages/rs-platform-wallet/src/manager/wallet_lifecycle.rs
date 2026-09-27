@@ -568,6 +568,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&self.lock_notify),
             persister_dyn,
             broadcaster,
+            Arc::clone(&self.sync_fault),
         );
 
         // Restore the platform-address provider from the slice read above —

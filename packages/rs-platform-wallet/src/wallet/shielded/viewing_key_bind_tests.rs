@@ -188,6 +188,7 @@ where
         Arc::new(tokio::sync::Notify::new()),
         persister as Arc<dyn PlatformWalletPersistence>,
         Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
     )
 }
 

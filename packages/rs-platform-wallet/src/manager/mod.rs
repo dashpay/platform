@@ -1188,6 +1188,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(NoopPersister) as Arc<dyn PlatformWalletPersistence>,
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
         ));
         mgr.wallets.rcu(|wallets| {
             let mut next = std::collections::BTreeMap::clone(wallets);

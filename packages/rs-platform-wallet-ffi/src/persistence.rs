@@ -5334,6 +5334,7 @@ fn decode_dashpay_backfill(
         floor: entry.dashpay_backfill_floor,
         rewound_from: entry.dashpay_backfill_rewound_from,
         covered,
+        unpersisted_cursor: None,
     }
 }
 
