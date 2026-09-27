@@ -314,8 +314,7 @@ fn should_hold_string_comparisons_to_string_properties_and_their_enums() {
         ),
         (
             json!({ "rule": { "lessThan": ["state", { "const": "open" }] } }),
-            "rule \"rule\" at lessThan compares a string constant, which only equal and notEqual \
-             do",
+            "rule \"rule\" at lessThan compares strings, which only equal and notEqual do",
         ),
     ] {
         for full_validation in [true, false] {
@@ -369,8 +368,7 @@ fn should_compare_two_string_properties() {
                 json!({ "rule": { "lessThan": ["note", "state"] } }),
                 full_validation,
             ),
-            "rule \"rule\" at lessThan compares two string properties, which only equal and \
-             notEqual do",
+            "rule \"rule\" at lessThan compares strings, which only equal and notEqual do",
         );
         expect_structure_error(
             parse_order(
@@ -394,6 +392,59 @@ fn should_compare_two_string_properties() {
             ),
             "rule \"rule\" compares \"note\", which is transient or inside a transient object",
         );
+    }
+}
+
+/// An `ifAbsent` with a string default reads a string property on both paths,
+/// in `equal`, `notEqual` and `in`; the default, like a constant, must be one
+/// of the property's `enum` values, and the property a string.
+#[test]
+fn should_give_a_string_property_a_default() {
+    let rules = json!({
+        "stateDefaultsOpen": {
+            "equal": [{ "ifAbsent": ["state", "open"] }, { "const": "open" }]
+        },
+        "noteListed": { "in": [{ "ifAbsent": ["note", "x"] }, ["x", "y"]] },
+        "tagIsNotNote": { "notEqual": [{ "ifAbsent": ["meta.tag", "t"] }, "note"] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["stateDefaultsOpen"].text_defaults(),
+            [("state", "open")]
+        );
+        assert_eq!(
+            constraints["tagIsNotNote"].property_reads(),
+            [
+                ("meta.tag", PropertyRead::Text),
+                ("note", PropertyRead::Text)
+            ]
+        );
+        assert_eq!(constraints["noteListed"].property_paths(), ["note"]);
+    }
+
+    for (rules, needle) in [
+        (
+            json!({
+                "rule": { "equal": [{ "ifAbsent": ["state", "opne"] }, { "const": "open" }] }
+            }),
+            "rule \"rule\" gives \"state\" the default \"opne\", which is not one of its enum \
+             values",
+        ),
+        (
+            json!({ "rule": { "equal": [{ "ifAbsent": ["price", "x"] }, { "const": "x" }] } }),
+            "rule \"rule\" compares \"price\" with a string, but it has type",
+        ),
+        (
+            json!({ "rule": { "equal": ["price", { "ifAbsent": ["note", "x"] }] } }),
+            "rule \"rule\" compares \"price\" with a string, but it has type",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(parse_order(rules.clone(), full_validation), needle);
+        }
     }
 }
 
@@ -760,7 +811,7 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
         json!({ "rule": { "equal": [{ "ifAbsent": ["price"] }, 1] } }),
         json!({ "rule": { "equal": [{ "ifAbsent": ["price", 1, 2] }, 1] } }),
         json!({ "rule": { "equal": [{ "ifAbsent": [1, "price"] }, 1] } }),
-        json!({ "rule": { "equal": [{ "ifAbsent": ["price", "fee"] }, 1] } }),
+        json!({ "rule": { "equal": [{ "ifAbsent": ["price", true] }, 1] } }),
         json!({ "bad-name": { "equal": ["price", 1] } }),
         json!(["price"]),
         json!({ "rule": { "or": [{ "equal": ["price", 1] }, { "equal": ["fee", 1] }] } }),

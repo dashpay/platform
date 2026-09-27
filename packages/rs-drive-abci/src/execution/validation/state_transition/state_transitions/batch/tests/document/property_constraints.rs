@@ -42,6 +42,8 @@ mod property_constraints_tests {
     /// * `depositCoversOrder`: `(price + fee) * quantity <= deposit`
     /// * `discountBelowPrice`: `discount < price`, an absent discount counting as 0
     /// * `discountGivenAboveZero`: `discount` is absent or above 0
+    /// * `discountOnlyWhileOpen`: a discount only on an open offer, a status left out
+    ///   counting as open
     /// * `feeWaivedOnlyWithDiscount`: `!(fee == 0 && discount == 0)`
     /// * `feeWaivedOrAtLeastTen`: `fee == 0 || fee >= 10`
     /// * `perUnitDeposit`: `deposit / quantity >= 1`, which divides by zero for no quantity
@@ -112,6 +114,12 @@ mod property_constraints_tests {
                 "discountBelowPrice": { "lessThan": ["discount", "price"] },
                 "discountGivenAboveZero": {
                     "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
+                },
+                "discountOnlyWhileOpen": {
+                    "anyOf": [
+                        { "absent": "discount" },
+                        { "equal": [{ "ifAbsent": ["status", "open"] }, { "const": "open" }] }
+                    ]
                 },
                 "feeWaivedOnlyWithDiscount": {
                     "not": { "allOf": [{ "equal": ["fee", 0] }, { "equal": ["discount", 0] }] }
@@ -708,6 +716,45 @@ mod property_constraints_tests {
         assert_matches!(
             fixture
                 .create(|document| document.set("settleIn", currency("EUR")))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A string default stands in for a status the offer leaves out: a discount
+    /// is allowed with no status, as on an open offer, but not on a closed one.
+    #[tokio::test]
+    async fn should_read_a_string_default_for_a_property_left_out() {
+        let mut fixture = OfferFixture::new();
+        let status = |value: &str| Value::Text(value.to_string());
+
+        let result = fixture
+            .create(|document| {
+                document.set("discount", Value::U64(10));
+                document.set("status", status("closed"));
+                document.set("closedAt", Value::U64(1000));
+            })
+            .await;
+        expect_violated(
+            result,
+            "discountOnlyWhileOpen",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| document.set("discount", Value::U64(10)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("discount", Value::U64(10));
+                    document.set("status", status("open"));
+                })
                 .await,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
