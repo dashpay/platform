@@ -106,16 +106,19 @@ fn names(entries: &[&str]) -> BTreeSet<String> {
     entries.iter().map(|entry| entry.to_string()).collect()
 }
 
-/// The lints surface as `InvalidContractStructure` either directly or, with
-/// the `validation` feature on, wrapped as the basic `ContractError`.
+/// The lints surface as `InvalidContractStructure`, wrapped as the basic
+/// `ContractError` whenever the `validation` feature is on: a bare
+/// `ProtocolError::DataContractError` would refuse the transition unpaid.
 pub(super) fn expect_structure_error<T: std::fmt::Debug>(
     result: Result<T, ProtocolError>,
     needle: &str,
 ) {
     let message = match result {
+        #[cfg(not(feature = "validation"))]
         Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
             message,
         ))) => message,
+        #[cfg(feature = "validation")]
         Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
             ConsensusError::BasicError(BasicError::ContractError(
                 DataContractError::InvalidContractStructure(message),
