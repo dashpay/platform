@@ -16,7 +16,7 @@ amount from that balance. Contenders may join for the **join window** (one week 
 the first document; the contest runs for the **poll duration** (two weeks on mainnet). The first
 document's owner may not be joined by the same identity twice.
 
-From protocol version 14, a contest accepts at most 10,000 contenders
+From protocol version 14, a contest accepts at most 1,000 contenders
 (`max_contenders_per_contest`): a document that would add one more is refused, paid, with
 `DocumentContestMaximumContendersReachedError` (40141). The bound is what lets one block end a
 contest: its end tallies every contender and removes every loser's entries

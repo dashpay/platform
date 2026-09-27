@@ -1327,7 +1327,7 @@ mod tests {
             discriminant_of(StateError::DocumentContestMaximumContendersReachedError(
                 DocumentContestMaximumContendersReachedError::new(
                     ContestedDocumentResourceVotePoll::default(),
-                    10_000,
+                    1_000,
                 )
             )),
             152

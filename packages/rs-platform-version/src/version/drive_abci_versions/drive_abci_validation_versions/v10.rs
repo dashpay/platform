@@ -35,7 +35,8 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // contender to a contest holding `max_contenders_per_contest` already
 // (DocumentContestMaximumContendersReachedError, 40141), and
 // `maximum_contenders_to_consider` rises from 100 to 10,000 so the end of a poll
-// tallies and cleans up every contender.
+// tallies and cleans up every contender, those of a poll that grew past the
+// 1,000 a contest accepts before this version included.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -407,9 +408,11 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
         },
         event_constants: DriveAbciValidationConstants {
             maximum_vote_polls_to_process: 2,
-            // Raised for protocol 14 to the most contenders a contest accepts
-            // (`max_contenders_per_contest`), so the tally and the cleanup at the end of a poll
-            // reach every contender; 10,000 x 2 + 3 results still fit the u16 query limit
+            // Raised for protocol 14 above the most contenders a contest accepts
+            // (`max_contenders_per_contest`, 1,000), so the tally and the cleanup at the end of a
+            // poll reach every contender, those of a poll that grew past it before 14 included.
+            // The tally reads only the contenders there are; 10,000 x 2 + 3 results still fit
+            // the u16 query limit
             maximum_contenders_to_consider: 10_000,
             minimum_pool_notes_for_outgoing: 250,
             shielded_anchor_retention_blocks: 1000,

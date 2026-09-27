@@ -51,7 +51,7 @@ fn voter(n: u64) -> [u8; 32] {
 
 /// A DPNS name contest on `label` with `contenders` contenders (see [`contender_id`]), written
 /// straight to Drive at block time 0. Every document is created at time 1, but the last
-/// contender's at time 0. The first `voted` contenders get one masternode vote each. Returns the
+/// contender's at time 0. `voted` masternodes vote, one each, for the contenders in turn. Returns the
 /// poll and its end time.
 fn start_contest(
     platform: &TempPlatform<MockCoreRPCLike>,
@@ -124,21 +124,21 @@ fn start_contest(
                 platform_version,
             )
             .expect("expected to add the contender");
-        if n < voted {
-            platform
-                .drive
-                .register_contested_resource_identity_vote(
-                    voter(n),
-                    1,
-                    vote_poll.clone(),
-                    ResourceVoteChoice::TowardsIdentity(owner_id),
-                    None,
-                    &block_info,
-                    None,
-                    platform_version,
-                )
-                .expect("expected to register the vote");
-        }
+    }
+    for n in 0..voted {
+        platform
+            .drive
+            .register_contested_resource_identity_vote(
+                voter(n),
+                1,
+                vote_poll.clone(),
+                ResourceVoteChoice::TowardsIdentity(contender_id(n % contenders)),
+                None,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to register the vote");
     }
     let end_dates = vote_poll_end_dates(&platform.drive, platform_version);
     let [end_time]: [TimestampMillis; 1] = end_dates
@@ -332,10 +332,11 @@ fn should_clean_up_the_tallied_contenders_protocol_version_13() {
 /// Measures the end of a poll holding the most contenders a contest accepts. Run in release
 /// on drive-abci's 8 MiB runtime stack:
 ///
-/// `VOTED` masternodes vote, one for each of the first contenders (2,000 by default).
+/// `CONTENDERS` defaults to `max_contenders_per_contest`; `VOTED` masternodes (2,000 by default)
+/// vote, one each, for the contenders in turn.
 ///
 /// ```text
-/// CONTENDERS=10000 VOTED=0 cargo test --release -p drive-abci --lib \
+/// CONTENDERS=1000 VOTED=3000 cargo test --release -p drive-abci --lib \
 ///   should_end_a_poll_of_the_most_contenders_a_contest_accepts -- --ignored --nocapture
 /// ```
 #[test]
@@ -360,7 +361,7 @@ fn end_a_full_poll() {
     let voted: u64 = std::env::var("VOTED")
         .ok()
         .map(|voted| voted.parse().expect("expected a number of votes"))
-        .unwrap_or(contenders.min(2_000));
+        .unwrap_or(2_000);
     let platform = TestPlatformBuilder::new()
         .with_latest_protocol_version()
         .build_with_mock_rpc()
@@ -390,7 +391,11 @@ fn end_a_full_poll() {
         started.elapsed(),
         join_fee.processing_fee
     );
-    assert_eq!(counted as u64, contenders);
+    // A join counts at most the limit
+    assert_eq!(
+        counted as u64,
+        contenders.min(platform_version.system_limits.max_contenders_per_contest as u64)
+    );
 
     let platform_state = platform.state.load();
     let block_info = ending_block(end_time);

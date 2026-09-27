@@ -1252,19 +1252,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     owner may still delete it where `canBeDeleted` allows. See
 ///     `book/src/data-model/document-ttl.md`.
 ///
-/// 50. **A contest accepts at most 10,000 contenders, and its end reaches every
+/// 50. **A contest accepts at most 1,000 contenders, and its end reaches every
 ///     one**: document create state validation 2 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
 ///     refuses, paid, a document that would add a contender to a contest holding
-///     `max_contenders_per_contest` (`SYSTEM_LIMITS_V4`, 10,000) already
+///     `max_contenders_per_contest` (`SYSTEM_LIMITS_V4`, 1,000) already
 ///     (`DocumentContestMaximumContendersReachedError`, 40141).
 ///     `add_contested_indices_for_contract_operations` 1
 ///     (`DRIVE_DOCUMENT_METHOD_VERSIONS_V4`) writes the last index value of a
 ///     poll started from this version as a count tree, so the join reads the
 ///     count in one element fetch; a poll started before keeps its plain tree
-///     and has its contenders counted by a keys query of at most 10,000.
+///     and has its contenders counted by a keys query of at most 1,000.
 ///     `maximum_contenders_to_consider` rises from 100 to 10,000, so the tally
-///     of an ended poll, and the cleanup built from it, cover every contender a
-///     contest can hold. `check_for_ended_vote_polls` 1 compares every tied
+///     of an ended poll, and the cleanup built from it, cover every contender,
+///     those of a poll that grew past 1,000 before this version included. `check_for_ended_vote_polls` 1 compares every tied
 ///     contender; version 0 compared at most 100.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
@@ -1361,7 +1361,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (10,000)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

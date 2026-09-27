@@ -3624,8 +3624,8 @@ mod creation_tests {
             .expect("expected to write the bare contenders");
     }
 
-    /// A contest accepts at most `max_contenders_per_contest` contenders (10,000): the one that
-    /// would be the 10,001st is refused, paid
+    /// A contest accepts at most `max_contenders_per_contest` contenders (1,000): the one that
+    /// would be the 1,001st is refused, paid
     #[tokio::test]
     async fn should_refuse_a_contender_past_the_most_a_contest_accepts() {
         let platform_version = PlatformVersion::latest();
@@ -3667,7 +3667,7 @@ mod creation_tests {
             &platform_state,
             9,
             "quantum",
-            Some("The vote poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } already has 10000 contenders, the most a contest accepts"),
+            Some("The vote poll ContestedDocumentResourceVotePoll { contract_id: GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec, document_type_name: domain, index_name: parentNameAndLabel, index_values: [string dash, string quantum] } already has 1000 contenders, the most a contest accepts"),
             platform_version,
         )
         .await;
