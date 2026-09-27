@@ -15,14 +15,13 @@
 //! so an app can find a broken rule before paying for a refused transition.
 
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::serialization::conversions::platform_value_to_json;
 use dpp::consensus::basic::document::PropertyConstraintViolation;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::property_constraints::PropertyRead;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
-use js_sys::{Array, Object, Reflect};
+use js_sys::{Array, BigInt, Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -31,7 +30,8 @@ const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
 /**
  * An integer expression of a `propertyConstraints` rule.
  *
- * - a number: an integer value;
+ * - a number: an integer value, a `bigint` past `Number.MAX_SAFE_INTEGER`
+ *   (rules report such a literal as a `bigint`, exactly);
  * - a string: the dotted path of an integer or boolean property, whose value
  *   it takes (a boolean reads as 1 for true and 0 for false), 0 when the
  *   document leaves the property out;
@@ -42,8 +42,9 @@ const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
  */
 export type PropertyConstraintExpression =
   | number
+  | bigint
   | string
-  | { ifAbsent: [path: string, value: number] }
+  | { ifAbsent: [path: string, value: number | bigint] }
   | { add: PropertyConstraintExpression[] }
   | { multiply: PropertyConstraintExpression[] }
   | { subtract: [PropertyConstraintExpression, PropertyConstraintExpression] }
@@ -86,7 +87,7 @@ export type PropertyConstraintCondition =
   | { lessThanOrEqual: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { greaterThan: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { greaterThanOrEqual: [PropertyConstraintExpression, PropertyConstraintExpression] }
-  | { in: [PropertyConstraintExpression, number[]] | [string | { ifAbsent: [path: string, value: string] }, string[]] }
+  | { in: [PropertyConstraintExpression, Array<number | bigint>] | [string | { ifAbsent: [path: string, value: string] }, string[]] }
   | { present: string }
   | { absent: string }
   | { anyOf: PropertyConstraintCondition[] }
@@ -183,12 +184,75 @@ fn violation_name(violation: PropertyConstraintViolation) -> &'static str {
     }
 }
 
+/// `Number.MAX_SAFE_INTEGER`, the largest integer a JS `number` holds exactly.
+const MAX_SAFE_INTEGER: i128 = (1 << 53) - 1;
+
+/// An integer literal of a rule: a `number` while it is exact in JavaScript,
+/// a `bigint` past that.
+fn integer_to_js(integer: i128) -> JsValue {
+    if (-MAX_SAFE_INTEGER..=MAX_SAFE_INTEGER).contains(&integer) {
+        JsValue::from_f64(integer as f64)
+    } else {
+        BigInt::from(integer).into()
+    }
+}
+
+/// A declared rule as JS, the JSON it was declared as. Not through
+/// `serde_json`: a rule may compare with any 64-bit literal, and the JSON
+/// conversion throws on one past `Number.MAX_SAFE_INTEGER`, which would hide
+/// every rule of the type.
+fn rule_to_js(value: &Value, rule: &str) -> WasmDppResult<JsValue> {
+    Ok(match value {
+        Value::Text(text) => JsValue::from_str(text),
+        Value::Bool(flag) => JsValue::from_bool(*flag),
+        Value::Null => JsValue::NULL,
+        Value::Float(number) => JsValue::from_f64(*number),
+        Value::U8(integer) => integer_to_js((*integer).into()),
+        Value::U16(integer) => integer_to_js((*integer).into()),
+        Value::U32(integer) => integer_to_js((*integer).into()),
+        Value::U64(integer) => integer_to_js((*integer).into()),
+        Value::I8(integer) => integer_to_js((*integer).into()),
+        Value::I16(integer) => integer_to_js((*integer).into()),
+        Value::I32(integer) => integer_to_js((*integer).into()),
+        Value::I64(integer) => integer_to_js((*integer).into()),
+        Value::I128(integer) => integer_to_js(*integer),
+        Value::U128(integer) => match i128::try_from(*integer) {
+            Ok(integer) => integer_to_js(integer),
+            Err(_) => BigInt::from(*integer).into(),
+        },
+        Value::Array(items) => {
+            let array = Array::new();
+            for item in items {
+                array.push(&rule_to_js(item, rule)?);
+            }
+            array.into()
+        }
+        Value::Map(entries) => {
+            let object = Object::new();
+            for (key, entry) in entries {
+                let key = key.as_text().ok_or_else(|| {
+                    WasmDppError::generic(format!(
+                        "the propertyConstraints rule '{rule}' has a key that is not a string"
+                    ))
+                })?;
+                set_field(&object, key, &rule_to_js(entry, rule)?, rule)?;
+            }
+            object.into()
+        }
+        other => {
+            return Err(WasmDppError::generic(format!(
+                "the propertyConstraints rule '{rule}' holds {other}, which is not JSON"
+            )));
+        }
+    })
+}
+
 /// Collect every `propertyConstraints` rule of one document type, in name
 /// order, the order consensus checks them in.
 ///
 /// The parsed rules give the name, the reads and whether the owner is read;
-/// the rule itself is the schema's declaration, which is what an app wrote
-/// and what `toJSON()` shows.
+/// the rule itself is the schema's declaration, which is what an app wrote,
+/// with integer literals past `Number.MAX_SAFE_INTEGER` as `bigint`.
 pub(crate) fn property_constraints_for_document_type(
     document_type: DocumentTypeRef<'_>,
 ) -> WasmDppResult<Array> {
@@ -211,7 +275,7 @@ pub(crate) fn property_constraints_for_document_type(
                      schema"
                 ))
             })?;
-        set_field(&object, "rule", &platform_value_to_json(declared)?, name)?;
+        set_field(&object, "rule", &rule_to_js(declared, name)?, name)?;
 
         let reads = Array::new();
         for (path, read) in constraint.property_reads() {

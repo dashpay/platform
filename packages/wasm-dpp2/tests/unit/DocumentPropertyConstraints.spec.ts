@@ -167,6 +167,42 @@ describe('DataContract: propertyConstraints (v14)', () => {
       expect(byType.get('offer')).to.have.length(5);
     });
 
+    it('should report integer literals past Number.MAX_SAFE_INTEGER exactly, as bigint', () => {
+      const big = 9007199254740993n; // 2 ** 53 + 1, which a number rounds
+      const rules = {
+        balanceBelowCap: { lessThan: [{ ifAbsent: ['balance', -big] }, big] },
+        knownTier: { in: ['tier', [1, big]] },
+      };
+      const contract = buildContract({
+        ledger: {
+          type: 'object',
+          properties: {
+            balance: { type: 'integer', position: 0 },
+            tier: { type: 'integer', position: 1 },
+          },
+          additionalProperties: false,
+          propertyConstraints: rules,
+        },
+      });
+      const expected = [
+        {
+          name: 'balanceBelowCap',
+          rule: rules.balanceBelowCap,
+          reads: [{ path: 'balance', kind: 'value' }],
+          readsOwner: false,
+        },
+        {
+          name: 'knownTier',
+          rule: rules.knownTier,
+          reads: [{ path: 'tier', kind: 'value' }],
+          readsOwner: false,
+        },
+      ];
+
+      expect(contract.documentTypePropertyConstraints('ledger')).to.deep.equal(expected);
+      expect(contract.documentPropertyConstraints.get('ledger')).to.deep.equal(expected);
+    });
+
     /**
      * Parsers before protocol version 14 ignore the keyword, so a contract
      * read at such a version reports no rules: exactly what consensus
