@@ -77,7 +77,7 @@ def export_environment(manifest, output):
 
 
 def select(manifest, kind, output, wait_seconds):
-    fallback = ["self-hosted", {"rust": "rust-ci", "kotlin": "kotlin-ci", "npm": "npm-build"}[kind]]
+    fallback = ["self-hosted", {"rust": "rust-ci", "kotlin": "kotlin-ci", "npm": "npm-pr"}[kind]]
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     requested = event.get("pull_request")
     labels, changed = fallback, False

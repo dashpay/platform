@@ -61,7 +61,7 @@ class SelectorTests(unittest.TestCase):
     def test_npm_candidates_and_ordinary_pool_have_distinct_labels(self):
         labels = json.loads(self.select(kind="npm")["labels"])
         self.assertEqual(labels[-1], f"platform-image-pr-4702-{HEAD}-{DIGEST[7:]}-npm")
-        self.assertEqual(json.loads(self.select({}, kind="npm")["labels"]), ["self-hosted", "npm-build"])
+        self.assertEqual(json.loads(self.select({}, kind="npm")["labels"]), ["self-hosted", "npm-pr"])
 
     def test_new_head_or_closed_pr_rejects_stale_run(self):
         event = {"pull_request": copy.deepcopy(self.pr)}

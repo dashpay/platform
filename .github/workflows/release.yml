@@ -25,64 +25,12 @@ permissions:
 
 jobs:
   build-npm:
-    name: Build NPM packages
-    # Reuse the persistent Linux runner's Cargo registry and a release-only
-    # target cache. The publish job stays on a GitHub-hosted runner because npm
-    # trusted publishing does not support self-hosted runners.
-    runs-on: [self-hosted, Linux, X64, npm-build]
-    timeout-minutes: 120
     if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
-    # In particular, do not mint an OIDC token for the persistent build host.
     permissions:
       contents: read
-    steps:
-      - uses: softwareforgood/check-artifact-v4-existence@v0
-        id: check-artifact
-        with:
-          name: js-build-${{ github.sha }}
-
-      # PR jobs run in this same workspace on this persistent runner. Git
-      # state they leave behind (.git/hooks, .git/config, .git/info/attributes)
-      # would run inside actions/checkout's own `git checkout`, before any
-      # later cleanup could remove it. Start from an empty directory and a
-      # fresh clone; the release build cache lives outside the workspace.
-      - name: Empty the workspace left by earlier jobs
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-        run: |
-          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-
-      - name: Check out repo
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Build and pack NPM packages
-        uses: ./.github/actions/npm-release-build
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Get modified files
-        id: diff
-        run: |
-          {
-            echo "files<<EOF"
-            git ls-files --others --exclude-standard
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Upload the archive of built files
-        uses: actions/upload-artifact@v4
-        with:
-          name: js-build-${{ github.sha }}
-          path: |
-            ${{ steps.diff.outputs.files }}
-            npm-packages/*.tgz
-          # Keep the handoff alive long enough to re-run only a failed publish.
-          retention-days: 7
-          if-no-files-found: error
-          include-hidden-files: true
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+    # Runner-group policy allows this protected reusable workflow only, never
+    # a copy supplied by a pull request. The checkout remains the caller SHA.
+    uses: dashpay/platform/.github/workflows/release-npm-build.yml@v4.2-dev
 
   release-npm:
     name: Publish NPM packages

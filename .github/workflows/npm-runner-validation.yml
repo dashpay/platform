@@ -3,16 +3,28 @@ on:
   pull_request:
     paths:
       - '.github/runner-requirements.json'
+      - '.github/scripts/runner-image.py'
+      - '.github/scripts/tests/**'
       - '.github/actions/npm-release-build/**'
       - '.github/actions/rust/**'
       - '.github/actions/nodejs/**'
       - '.github/workflows/npm-runner-validation.yml'
       - '.github/workflows/release.yml'
+      - '.github/workflows/release-npm-build.yml'
       - 'packages/dapi-grpc/**'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  runner-contract-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test runner selection and release caller restrictions
+        run: python3 -m unittest discover -s .github/scripts/tests -v
   select-runner:
     if: >-
       github.event_name != 'pull_request'

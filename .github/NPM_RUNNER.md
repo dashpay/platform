@@ -1,6 +1,7 @@
 # NPM release runners
 
-NPM release compilation uses `[self-hosted, Linux, X64, npm-build]`. Publishing
+NPM release compilation uses `[self-hosted, Linux, X64, npm-build]` in the
+restricted `platform-npm-releases` runner group. Publishing
 continues on GitHub-hosted Ubuntu with OIDC; the builder receives no publishing
 credentials. The `npm-release-build` action is shared by releases and image
 validation so both compile and pack with the same setup.
@@ -21,7 +22,7 @@ runner needs no Docker CLI/socket or KVM device.
 ## Provisioning and promotion
 
 Use the reviewed `dashpay/dash-selfhosted-image` recipe and a tested immutable
-image digest, not a moving tag. Register new capacity with `npm-build` only after
+image digest, not a moving tag. Register dedicated release capacity with `npm-build` only after
 the NPM validation workflow succeeds on that image. Drain old registrations before
 replacement; retain their image/configuration for rollback. Old release tags
 still contain their original workflows and do not automatically gain this fix.
@@ -52,3 +53,33 @@ freshly generated files. It uploads tarballs but never publishes them.
 checks committed generated output, tests failure recovery and validates packing.
 
 Local setup and generator test commands are in `packages/dapi-grpc/README.md`.
+
+## Separate PR and release state
+
+The `platform-npm-releases` organization runner group must select only the
+`dashpay/platform` repository and restrict execution to:
+
+```text
+dashpay/platform/.github/workflows/release-npm-build.yml@refs/heads/v4.2-dev
+```
+
+Protect that branch with the normal maintainer review policy. `release.yml`
+invokes that protected reusable workflow; the reusable workflow rejects PR
+callers and arbitrary branch dispatches before checkout. A PR cannot select the
+release group by changing its own workflow to request the `npm-build` label.
+The group-level selected-workflow restriction is a required operator setting,
+not something a repository workflow can grant itself.
+
+Use separate runner containers/VMs and separate registration, workspace, HOME,
+Cargo registry and target-cache storage for PR and release pools. Do not mount
+the same cache volumes into both pools. Release caches can persist between
+releases; no PR may write them. Ordinary PR validation uses `npm-pr`; image
+candidates continue to use fresh one-job registrations and volumes. Do not add
+`npm-pr`, `rust-ci` or `kotlin-ci` to the release registration.
+
+For another maintained branch, create its reviewed protected reusable-workflow
+ref and corresponding group policy explicitly. Do not wildcard the workflow
+restriction or allow PR refs. Validate the policy by attempting a PR job that
+requests the release group: it must be rejected, while a permitted release dry
+run succeeds. The workflow guard is defense in depth; enabling the release
+pool without its group restriction does not establish this boundary.

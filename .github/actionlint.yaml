@@ -10,3 +10,4 @@ self-hosted-runner:
     - rust-ci
     - kotlin-ci
     - npm-build
+    - npm-pr
