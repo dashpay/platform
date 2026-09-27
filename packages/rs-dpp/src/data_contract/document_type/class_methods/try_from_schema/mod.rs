@@ -1952,7 +1952,7 @@ fn apply_property_constraints_v0(
         .map(|property| &property.property_type)
     {
         Some(DocumentPropertyType::String(_)) => Some(EqualityKind::Text),
-        Some(DocumentPropertyType::Identifier) => Some(EqualityKind::Identifier),
+        Some(property_type) if property_type.is_identifier() => Some(EqualityKind::Identifier),
         _ => None,
     };
     let constraints =
@@ -1998,7 +1998,7 @@ fn apply_property_constraints_v0(
                         )));
                     }
                     // An identifier is compared with identifiers, never read as a number
-                    Some(DocumentPropertyType::Identifier) => {
+                    Some(property_type) if property_type.is_identifier() => {
                         return Err(structure_error(format!(
                             "rule \"{name}\" reads \"{path}\", which has type identifier, not \
                              integer or boolean: an identifier property is compared, by equal or \
@@ -2110,7 +2110,7 @@ fn apply_property_constraints_v0(
                     .get(path)
                     .map(|property| &property.property_type)
                 {
-                    Some(DocumentPropertyType::Identifier) => {}
+                    Some(property_type) if property_type.is_identifier() => {}
                     Some(other) => {
                         return Err(structure_error(format!(
                             "rule \"{name}\" compares \"{path}\" with an identifier, but it has \

@@ -127,6 +127,10 @@ pub(crate) fn ranked_property_name_tree_type(
 /// Callers pass the `has_index_with_type()` of the level *named after the
 /// property* — `None` for pure prefix levels, which resolve to
 /// `(NormalTree, [])`.
+///
+/// Shipped generations depend on this function through
+/// [`property_name_tree_type_and_ranked_axes_for_level`]: see the note there
+/// before changing what it returns.
 pub(crate) fn property_name_tree_type_and_ranked_axes(
     index_level_info: Option<&IndexLevelTypeInfo>,
 ) -> Result<(TreeType, Vec<IndexAxis>), Error> {
@@ -163,6 +167,14 @@ pub(crate) fn property_name_tree_type_and_ranked_axes(
 /// rs-dpp's structural validation guarantees no index terminates at a
 /// grouping or propagating level; both fail closed here on a stamped
 /// terminator rather than pick one of two contradictory layouts.
+///
+/// Shipped generations depend on this function: the `insert_contract` v0 and
+/// `update_contract` v0 operations call it to choose the tree type of every
+/// top-level index level they create, and every later generation of both
+/// composes those operations, so every protocol version reaches it. Changing what it returns
+/// for an index level protocol versions 1-13 can declare changes the trees
+/// and fees of those versions; make such a change a new versioned method
+/// instead of editing this function.
 pub(crate) fn property_name_tree_type_and_ranked_axes_for_level(
     level: &IndexLevel,
 ) -> Result<(TreeType, Vec<IndexAxis>), Error> {

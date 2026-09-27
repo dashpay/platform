@@ -44,6 +44,10 @@
 //!
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
 use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
@@ -100,10 +104,10 @@ pub enum TokenPaymentInfo {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenPaymentInfo {}
+impl JsonConvertible for TokenPaymentInfo {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenPaymentInfo {}
+impl ValueConvertible for TokenPaymentInfo {}
 
 impl TokenPaymentInfoMethodsV0 for TokenPaymentInfo {}
 

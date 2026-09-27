@@ -2,6 +2,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::fee::Credits;
+use crate::serialization::untrusted::decode_txid;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::Txid;
 use platform_serialization_derive::{
@@ -87,7 +88,7 @@ impl<C> DecodeUntrusted<C> for IdentityAssetLockTransactionOutPointNotEnoughBala
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         Ok(Self {
-            transaction_id: crate::serialization::untrusted::decode_txid(decoder)?,
+            transaction_id: decode_txid(decoder)?,
             output_index: DecodeUntrusted::decode_untrusted(decoder)?,
             initial_asset_lock_credits: DecodeUntrusted::decode_untrusted(decoder)?,
             credits_left: DecodeUntrusted::decode_untrusted(decoder)?,

@@ -16,7 +16,7 @@ use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
-use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
+use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
@@ -181,7 +181,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   moderation election (an `electedCharter` contest) runs on its target
 ///   contract's join and vote windows, which the document create join check
 ///   and the contested insert read.
-/// * `DRIVE_ABCI_QUERY_VERSIONS_V3` bumps
+/// * `DRIVE_ABCI_QUERY_VERSIONS_V2` bumps
 ///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 2,
 ///   opening two routes on the v1 document-query handler: the ranked path
 ///   (a grouped aggregate whose single `order_by` names the selected
@@ -1060,19 +1060,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     constant and no other string unless an `ifAbsent` gives it a string
 ///     default (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum`
 ///     must list too); `equal`, `notEqual` or `in` of an identifier property
-///     or of `$ownerId`, the document's owner, likewise, with base58
-///     identifier constants or another identifier operand and no default, an
-///     identifier the document leaves out equalling none; `present` or
-///     `absent` naming a property of any type, whether the document holds it
-///     (the one way to tell a property left out from one set to 0); `anyOf` or
-///     `allOf` over two or more conditions; or `not` over one. In an operand, a
-///     property the document leaves out counts as 0, or as the value of an
-///     `ifAbsent` operand naming it. Arithmetic is exact `i128`: `divide` and
-///     `modulo` are Euclidean (the remainder is never negative), and an
-///     overflow, a zero divisor, a negative exponent or a value that is not an
-///     integer refuses the document rather than wrapping. Conditions are
-///     checked in declared order and no further than the outcome needs
-///     (`anyOf` stops at the first that holds, `allOf` at the first that
+///     (one declaring `refersTo` included) or of `$ownerId`, the document's
+///     owner, likewise, with base58 identifier constants or another identifier
+///     operand and no default, an identifier the document leaves out equalling
+///     none; `present` or `absent` naming a property of any type, whether the
+///     document holds it (the one way to tell a property left out from one set
+///     to 0); `anyOf` or `allOf` over two or more conditions; or `not` over
+///     one. In an operand, a property the document leaves out counts as 0, or
+///     as the value of an `ifAbsent` operand naming it. Arithmetic is exact
+///     `i128`: `divide` and `modulo` are Euclidean (the remainder is never
+///     negative), and an overflow, a zero divisor, a negative exponent or a
+///     value that is not an integer refuses the document rather than wrapping.
+///     Conditions are checked in declared order and no further than the outcome
+///     needs (`anyOf` stops at the first that holds, `allOf` at the first that
 ///     fails), a fault in one that is checked refuses the document whatever the
 ///     others say, and `not` never turns a fault into a pass, so an earlier
 ///     condition guards a later one. The parser checks that every path an
@@ -1394,7 +1394,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
-        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
+        query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
@@ -1529,8 +1529,6 @@ mod tests {
         );
     }
 
-    /// The ranked index keywords are gated by the meta-schema version, so v14
-    /// must select meta-schema v3 while v13 stays on v2.
     /// Contested indexes without a Lock choice (item 23): the three method
     /// versions that read the resolution are selected by v14 only, so a v13
     /// replay keeps the shipped rules (a full poll for every contest, ties to
@@ -1591,6 +1589,8 @@ mod tests {
         );
     }
 
+    /// The ranked index keywords are gated by the meta-schema version, so v14
+    /// must select meta-schema v3 while v13 stays on v2.
     #[test]
     fn ranked_index_keywords_are_gated_by_meta_schema_v3() {
         assert_eq!(
@@ -1655,46 +1655,6 @@ mod tests {
                 .class_method_versions
                 .try_from_schema,
             3
-        );
-    }
-
-    /// v14 introduces the slots but activates none of them yet. If a later
-    /// change flips one of these, it must do so deliberately — and update this
-    /// test — rather than by inheriting a default.
-    #[test]
-    fn ranked_feature_slots_exist_but_are_dormant() {
-        assert_eq!(
-            PLATFORM_V14.drive.methods.document.query.detect_ranked_mode,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14.drive.methods.document.query.detect_having_mode,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14
-                .drive
-                .methods
-                .verify
-                .document_ranked
-                .verify_ranked_top_k_proof,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14
-                .drive
-                .methods
-                .verify
-                .document_ranked
-                .verify_having_range_proof,
-            0
-        );
-        let grove = &PLATFORM_V14.drive.grove_methods.batch;
-        assert_eq!(grove.batch_insert_empty_provable_count_indexed_tree, 0);
-        assert_eq!(grove.batch_insert_empty_provable_sum_indexed_tree, 0);
-        assert_eq!(
-            grove.batch_insert_empty_provable_count_provable_sum_indexed_tree,
-            0
         );
     }
 

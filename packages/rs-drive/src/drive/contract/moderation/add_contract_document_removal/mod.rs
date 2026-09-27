@@ -18,6 +18,25 @@ impl Drive {
     /// `replaces_existing` the replacement of the one the document has: a restore marks the
     /// record restored, and the deletion of a restored document writes a fresh record in its
     /// place. `moderator_id` pays for the record, or for the bytes a replacement adds.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract the document belonged to.
+    /// * `document_type_name`: The document's type.
+    /// * `document_id`: The deleted document's id, which keys the record.
+    /// * `removal`: The record: owner, moderator, time, document hash, restoration and reason.
+    /// * `replaces_existing`: Whether the document already has a record this one replaces.
+    /// * `moderator_id`: The moderator that pays for the record, named in its storage flags.
+    /// * `block_info`: The block being executed; its epoch goes in the storage flags.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map, when only estimating costs.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<LowLevelDriveOperation>)` with the insert (or, outside estimation, the
+    ///   replace) of the record.
+    /// * `Err(Error)` when the method version is unknown or building an operation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn add_contract_document_removal_operations(
         &self,

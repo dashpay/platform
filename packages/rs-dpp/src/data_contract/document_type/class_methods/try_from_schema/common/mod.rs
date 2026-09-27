@@ -22,7 +22,7 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::{Index, IndexGrammarAdmissions};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
@@ -873,7 +873,7 @@ fn parse_indices(
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
                             .as_slice(),
-                        crate::data_contract::document_type::index::IndexGrammarAdmissions {
+                        IndexGrammarAdmissions {
                             ranked: ctx.generation.admit_ranked,
                             time_range: ctx.generation.admit_time_range,
                             terminal: ctx.generation.admit_index_terminal,
@@ -1196,6 +1196,11 @@ fn parse_indices(
     // storage level), so two indexes sharing a grid on one field share one
     // level's subtrees — and a level cannot have two lifecycles. Identical
     // grids must declare identical TTLs (including both declaring none).
+    //
+    // Document type generations 1-2 (protocol versions 9-13) run this loop too, but only the
+    // generation 3 index grammar admits `timeRange`, so every index they parse has
+    // `time_range: None` and the loop changes nothing for them. Generation 0 (protocol
+    // versions 1-8) parses its indices inline and never reaches this loop.
     for (name_a, index_a) in indices.iter() {
         let Some(transform_a) = &index_a.time_range else {
             continue;
@@ -1440,7 +1445,7 @@ fn parse_token_costs(
     ctx: &CoreParseContext<'_>,
     schema: &Value,
 ) -> Result<TokenCosts, ProtocolError> {
-    let token_costs_value = schema.get_optional_value("tokenCost")?;
+    let token_costs_value = schema.get_optional_value(property_names::TOKEN_COST)?;
 
     let extract_cost = |key: &str| -> Result<Option<DocumentActionTokenCost>, ProtocolError> {
         token_costs_value
@@ -1461,7 +1466,12 @@ fn parse_token_costs(
                         .transpose()?
                         .unwrap_or(DocumentActionTokenEffect::TransferTokenToContractOwner);
                     // Whether a transition may skip the token payment and have its signer pay
-                    // the gas in credits instead (the v3 meta-schema admits the flag)
+                    // the gas in credits instead. Only the v3 meta-schema admits the flag.
+                    // Document type generations 1-2 (protocol versions 9-13) also run this
+                    // parser, but their meta-schemas (v0-v2) set `additionalProperties: false`
+                    // on `documentActionTokenCost`, so no contract they accept carries the key
+                    // and this reads `false` for them, as before the flag existed. Generation 0
+                    // (protocol versions 1-8) never reaches this parser.
                     let optional = action_cost
                         .get_optional_bool("optional")?
                         .unwrap_or_default();

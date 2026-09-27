@@ -25,7 +25,7 @@ use crate::consensus::basic::data_contract::{
 };
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::document_type::accessors::{
-    DocumentTypeV0Getters, DocumentTypeV2Getters,
+    DocumentTypeV0Getters, DocumentTypeV1Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use crate::validation::SimpleConsensusValidationResult;
@@ -122,6 +122,13 @@ impl DocumentTypeRef<'_> {
 
         // Validate that the action fees are unchanged
         let result = self.validate_action_fees_unchanged(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        // Validate that the token costs are unchanged
+        let result = self.validate_token_costs_unchanged(new_document_type);
 
         if !result.is_valid() {
             return Ok(result);
@@ -266,6 +273,74 @@ impl DocumentTypeRef<'_> {
         )
     }
 
+    /// The token costs of a document type are fixed when it is published, as
+    /// its action fees are: whoever holds a document of the type got it
+    /// knowing what replacing, deleting, transferring or selling it costs in
+    /// tokens, which token, and who pays the gas. An update may not add,
+    /// change or remove the cost of any action. A document type added by the
+    /// update is not judged here and may declare its own. No earlier protocol
+    /// version let an update change them either: the schema compatibility
+    /// differ failed on any `tokenCost` diff.
+    fn validate_token_costs_unchanged(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        let costs = [
+            (
+                "create",
+                self.document_creation_token_cost(),
+                new_document_type.document_creation_token_cost(),
+            ),
+            (
+                "replace",
+                self.document_replacement_token_cost(),
+                new_document_type.document_replacement_token_cost(),
+            ),
+            (
+                "delete",
+                self.document_deletion_token_cost(),
+                new_document_type.document_deletion_token_cost(),
+            ),
+            (
+                "transfer",
+                self.document_transfer_token_cost(),
+                new_document_type.document_transfer_token_cost(),
+            ),
+            (
+                "update_price",
+                self.document_update_price_token_cost(),
+                new_document_type.document_update_price_token_cost(),
+            ),
+            (
+                "purchase",
+                self.document_purchase_token_cost(),
+                new_document_type.document_purchase_token_cost(),
+            ),
+        ];
+        for (action, old_cost, new_cost) in costs {
+            if old_cost == new_cost {
+                continue;
+            }
+            let change = match (old_cost, new_cost) {
+                (None, Some(_)) => "add",
+                (Some(_), None) => "remove",
+                _ => "change",
+            };
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not {change} the token cost of its {action} action: \
+                         token costs are fixed when the document type is published"
+                    ),
+                )
+                .into(),
+            );
+        }
+        SimpleConsensusValidationResult::new()
+    }
+
     /// Whether moderators may delete documents of a type is fixed when the
     /// type is created: whoever wrote a document knows from the type's first
     /// version who may take it down, and a type that is the target of a
@@ -325,8 +400,9 @@ impl DocumentTypeRef<'_> {
     /// paid for that lifetime: adding a `ttl` would leave the stored documents without an
     /// entry the cleanup could find, removing it would leave entries deleting documents
     /// the type says live forever, and changing it would move expiries nobody paid for.
-    /// The schema compatibility differ has no rule for the key, so this check has to run
-    /// before it. A document type added by an update declares `ttl` freely.
+    /// It runs before the schema compatibility differ, which only freezes the key's text,
+    /// so a real change gets this error. A document type added by an update declares `ttl`
+    /// freely.
     fn validate_documents_ttl_unchanged(
         &self,
         new_document_type: DocumentTypeRef,
@@ -559,6 +635,9 @@ mod tests {
     use crate::consensus::basic::BasicError;
     use crate::consensus::state::state_error::StateError;
     use crate::consensus::ConsensusError;
+    use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::DocumentType;
     use assert_matches::assert_matches;
@@ -645,10 +724,6 @@ mod tests {
     // promise of never changing.
     #[test]
     fn should_return_invalid_result_when_can_be_deleted_by_moderators_is_changed() {
-        use crate::data_contract::config::moderation::{
-            ContractModerationConfig, ContractModerators,
-        };
-
         let platform_version = PlatformVersion::latest();
         let data_contract_id = Identifier::random();
 
@@ -696,7 +771,7 @@ mod tests {
             let new_document_type = make_document_type(schema(new_flag));
 
             // The whole generation 1 pipeline: the rule answers before the schema
-            // compatibility differ, which has no rule for the keyword.
+            // compatibility differ, which only freezes the keyword's text.
             let result = old_document_type
                 .as_ref()
                 .validate_update(new_document_type.as_ref(), 2, platform_version)
@@ -717,10 +792,6 @@ mod tests {
 
     #[test]
     fn should_return_invalid_result_when_the_moderators_window_is_changed() {
-        use crate::data_contract::config::moderation::{
-            ContractModerationConfig, ContractModerators,
-        };
-
         let platform_version = PlatformVersion::latest();
         let data_contract_id = Identifier::random();
         let config = DataContractConfig::default_for_version(platform_version)
@@ -834,7 +905,7 @@ mod tests {
 
         // Stored documents carry the expiry they were written and paid with: adding,
         // removing, lengthening and shortening the time to live are all refused, before the
-        // schema compatibility differ, which has no rule for the key.
+        // schema compatibility differ, which only freezes the key's text.
         for (old_ttl, new_ttl, from, to) in [
             (Some(86400), Some(172800), "86400 seconds", "172800 seconds"),
             (Some(86400), Some(3600), "86400 seconds", "3600 seconds"),
@@ -929,25 +1000,37 @@ mod tests {
         );
     }
 
-    /// A document type with one string property and, when given, `actionFees`.
-    fn doc_type_with_action_fees(
-        action_fees: Option<Value>,
-        platform_version: &PlatformVersion,
-    ) -> DocumentType {
+    /// A document type with a string `a` and a required integer `n`, whose
+    /// schema also carries every `(key, value)` of `extra`. Its contract has a
+    /// token at position 0 and declares moderation, so any document type
+    /// keyword may be set.
+    fn doc_type_with_keywords(extra: Value, platform_version: &PlatformVersion) -> DocumentType {
         let mut schema = platform_value!({
             "type": "object",
             "properties": {
                 "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                "n": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000_u64},
             },
+            "required": ["n"],
             "additionalProperties": false,
         });
-        if let Some(action_fees) = action_fees {
+        for (key, value) in extra.into_btree_string_map().expect("extra is a map") {
             schema
-                .insert("actionFees".to_string(), action_fees)
-                .expect("expected to set the action fees");
+                .insert(key, value)
+                .expect("expected to set the keyword");
         }
         let config = DataContractConfig::default_for_version(platform_version)
-            .expect("should create a default config");
+            .expect("should create a default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }));
+        let token_configurations = BTreeMap::from([(
+            0,
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+        )]);
         DocumentType::try_from_schema(
             Identifier::new([1; 32]),
             1,
@@ -955,7 +1038,7 @@ mod tests {
             "test",
             schema,
             None,
-            &BTreeMap::new(),
+            &token_configurations,
             &config,
             true,
             &mut Vec::new(),
@@ -969,19 +1052,16 @@ mod tests {
     #[test]
     fn should_reject_adding_changing_or_removing_action_fees() {
         let platform_version = PlatformVersion::latest();
-        let free = doc_type_with_action_fees(None, platform_version);
-        let priced = doc_type_with_action_fees(
-            Some(platform_value!({"create": {"owner": 10_u64}})),
-            platform_version,
-        );
-        let repriced = doc_type_with_action_fees(
-            Some(platform_value!({"create": {"owner": 11_u64}})),
-            platform_version,
-        );
-        let fixed = doc_type_with_action_fees(
-            Some(platform_value!({"pricing": "fixed", "create": {"owner": 10_u64}})),
-            platform_version,
-        );
+        let fees = |action_fees: Value| {
+            doc_type_with_keywords(
+                platform_value!({ "actionFees": action_fees }),
+                platform_version,
+            )
+        };
+        let free = doc_type_with_keywords(platform_value!({}), platform_version);
+        let priced = fees(platform_value!({"create": {"owner": 10_u64}}));
+        let repriced = fees(platform_value!({"create": {"owner": 11_u64}}));
+        let fixed = fees(platform_value!({"pricing": "fixed", "create": {"owner": 10_u64}}));
 
         for (old, new, change) in [
             (&free, &priced, "add"),
@@ -1004,8 +1084,8 @@ mod tests {
     #[test]
     fn should_accept_unchanged_action_fees() {
         let platform_version = PlatformVersion::latest();
-        let priced = doc_type_with_action_fees(
-            Some(platform_value!({"create": {"owner": 10_u64, "moderators": 3_u64}})),
+        let priced = doc_type_with_keywords(
+            platform_value!({"actionFees": {"create": {"owner": 10_u64, "moderators": 3_u64}}}),
             platform_version,
         );
         let result = priced
@@ -1013,6 +1093,207 @@ mod tests {
             .validate_update(priced.as_ref(), 2, platform_version)
             .expect("expected the update to be judged");
         assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    // Token costs are fixed when the document type is published, as its action fees are,
+    // and a change is refused with a consensus error before the schema compatibility
+    // differ runs.
+    #[test]
+    fn should_return_invalid_result_when_token_costs_are_changed() {
+        let platform_version = PlatformVersion::latest();
+        // Transferable and tradeable, so that every action may carry a cost
+        let costing = |token_cost: Vec<(&str, Value)>| {
+            let token_cost = Value::Map(
+                token_cost
+                    .into_iter()
+                    .map(|(action, cost)| (Value::Text(action.to_string()), cost))
+                    .collect(),
+            );
+            doc_type_with_keywords(
+                platform_value!({"transferable": 1_u64, "tradeMode": 1_u64, "tokenCost": token_cost}),
+                platform_version,
+            )
+        };
+        let cost = |amount: u64| platform_value!({"tokenPosition": 0_u64, "amount": amount});
+        let assert_refused = |old: &DocumentType, new: &DocumentType, expected: &str| {
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("expected the update to be judged");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message().contains(expected),
+                "{expected}: {:?}",
+                result.errors
+            );
+        };
+
+        let free = costing(vec![]);
+        for action in [
+            "create",
+            "replace",
+            "delete",
+            "transfer",
+            "update_price",
+            "purchase",
+        ] {
+            let priced = costing(vec![(action, cost(1))]);
+            let repriced = costing(vec![(action, cost(2))]);
+            assert_refused(
+                &free,
+                &priced,
+                &format!("can not add the token cost of its {action} action"),
+            );
+            assert_refused(
+                &priced,
+                &free,
+                &format!("can not remove the token cost of its {action} action"),
+            );
+            assert_refused(
+                &priced,
+                &repriced,
+                &format!("can not change the token cost of its {action} action"),
+            );
+
+            let result = priced
+                .as_ref()
+                .validate_update(priced.as_ref(), 2, platform_version)
+                .expect("expected the update to be judged");
+            assert!(result.is_valid(), "{action}: {:?}", result.errors);
+        }
+
+        // Every part of a cost is fixed with it, not only the amount
+        let create_1 = costing(vec![("create", cost(1))]);
+        for changed in [
+            platform_value!({"tokenPosition": 0_u64, "amount": 1_u64, "effect": 1_u64}),
+            platform_value!({"tokenPosition": 0_u64, "amount": 1_u64, "gasFeesPaidBy": 1_u64}),
+            platform_value!({"tokenPosition": 0_u64, "amount": 1_u64, "optional": true}),
+        ] {
+            assert_refused(
+                &create_1,
+                &costing(vec![("create", changed)]),
+                "can not change the token cost of its create action",
+            );
+        }
+    }
+
+    // An edit that leaves every parsed value as it was, such as writing out a default or
+    // switching to the averageable shorthand, still changes the schema text. None of these
+    // keywords has a rule in the shared rule set; the differ freezes each, so the edit is an
+    // incompatible schema change, as the same edit to `documentsMutable` is.
+    #[test]
+    fn should_refuse_a_schema_edit_that_leaves_the_parsed_document_type_unchanged() {
+        let platform_version = PlatformVersion::latest();
+        let cost = platform_value!({"tokenPosition": 0_u64, "amount": 1_u64});
+        let cost_written_out = platform_value!({
+            "tokenPosition": 0_u64,
+            "amount": 1_u64,
+            "effect": 0_u64,
+            "gasFeesPaidBy": 0_u64,
+            "optional": false,
+        });
+
+        for (old_keywords, new_keywords, expected_path) in [
+            (
+                platform_value!({"tokenCost": {"create": cost.clone()}}),
+                platform_value!({"tokenCost": {"create": cost_written_out}}),
+                "/tokenCost/create/effect",
+            ),
+            (
+                platform_value!({"actionFees": {"create": {"owner": 10_u64}}}),
+                platform_value!({"actionFees": {"create": {"owner": 10_u64, "moderators": 0_u64}}}),
+                "/actionFees/create/moderators",
+            ),
+            (
+                platform_value!({}),
+                platform_value!({"keepsTransferHistory": false}),
+                "/keepsTransferHistory",
+            ),
+            (
+                platform_value!({}),
+                platform_value!({"keepsPurchaseHistory": false}),
+                "/keepsPurchaseHistory",
+            ),
+            (
+                platform_value!({}),
+                platform_value!({"keepsPricingHistory": false}),
+                "/keepsPricingHistory",
+            ),
+            (
+                platform_value!({}),
+                platform_value!({"documentsCountable": false}),
+                "/documentsCountable",
+            ),
+            (
+                platform_value!({}),
+                platform_value!({"rangeCountable": false}),
+                "/rangeCountable",
+            ),
+            (
+                platform_value!({}),
+                platform_value!({"indexOnly": false}),
+                "/indexOnly",
+            ),
+            (
+                platform_value!({}),
+                platform_value!({"canBeDeletedByModerators": false}),
+                "/canBeDeletedByModerators",
+            ),
+            (
+                platform_value!({"documentsCountable": true, "documentsSummable": "n"}),
+                platform_value!({"documentsAverageable": "n"}),
+                "/documentsAverageable",
+            ),
+            (
+                platform_value!({
+                    "documentsAverageable": "n",
+                    "rangeCountable": true,
+                    "rangeSummable": true,
+                }),
+                platform_value!({"documentsAverageable": "n", "rangeAverageable": true}),
+                "/rangeAverageable",
+            ),
+            (
+                platform_value!({}),
+                platform_value!({"minProperties": 0_u64}),
+                "/minProperties",
+            ),
+            (
+                platform_value!({"maxProperties": 2_u64}),
+                platform_value!({"maxProperties": 3_u64}),
+                "/maxProperties",
+            ),
+        ] {
+            let old = doc_type_with_keywords(old_keywords.clone(), platform_version);
+            let new = doc_type_with_keywords(new_keywords.clone(), platform_version);
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .unwrap_or_else(|error| {
+                    panic!("{old_keywords:?} -> {new_keywords:?} must be judged, got {error:?}")
+                });
+            assert!(
+                !result.errors.is_empty()
+                    && result.errors.iter().all(|error| matches!(
+                        error,
+                        ConsensusError::BasicError(
+                            BasicError::IncompatibleDocumentTypeSchemaError(_)
+                        )
+                    )),
+                "{old_keywords:?} -> {new_keywords:?}: {:?}",
+                result.errors
+            );
+            assert!(
+                result.errors.iter().any(|error| matches!(
+                    error,
+                    ConsensusError::BasicError(BasicError::IncompatibleDocumentTypeSchemaError(e))
+                        if e.property_path() == expected_path
+                )),
+                "{old_keywords:?} -> {new_keywords:?}: {:?}",
+                result.errors
+            );
+        }
     }
 
     /// Like `doc_type_with_immutable`, with an `immutableAllowSetting` list

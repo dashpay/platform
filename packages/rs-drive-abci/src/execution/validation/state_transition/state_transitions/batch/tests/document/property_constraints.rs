@@ -14,6 +14,7 @@ use super::*;
 mod property_constraints_tests {
     use super::*;
     use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
+    use crate::execution::validation::state_transition::tests::setup_identity_without_adding_it;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::consensus::basic::document::PropertyConstraintViolation;
@@ -1105,6 +1106,141 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers()[0].owner_id(), recipient.id());
+    }
+
+    /// A `sellerId` that declares `refersTo` an identity is compared with
+    /// `$ownerId` as any identifier property is: the contract registers, a
+    /// create naming another existing identity as seller is refused, one naming
+    /// the owner is accepted, and a transfer is refused.
+    #[tokio::test]
+    async fn should_compare_an_identifier_property_that_declares_refers_to() {
+        let mut schema = owned_offer_schema();
+        schema["properties"]["sellerId"]["refersTo"] = platform_value!({ "type": "identity" });
+        let mut fixture = OfferFixture::with_schema(schema);
+        let owner = fixture.identity.id();
+        let (other, _, _) = fixture.other_identity(964);
+
+        let result = fixture
+            .create(|document| document.set("sellerId", Value::Identifier(other.id().to_buffer())))
+            .await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| document.set("sellerId", Value::Identifier(owner.to_buffer())))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture.transfer(other.id()).await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+        let stored = fixture.stored_offers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].owner_id(), owner);
+    }
+
+    /// Identifier properties that declare `refersTo` an identity are compared
+    /// with a const, with the identifiers an `in` lists and with each other on
+    /// a create, as plain ones are. Every identity the rules name exists, so
+    /// only a rule refuses a create and the accepted one meets its references.
+    #[tokio::test]
+    async fn should_judge_const_in_and_pair_rules_over_refers_to_identifiers() {
+        let seeds = [965, 966, 967, 968];
+        let [payer, token_a, token_b, banned] =
+            seeds.map(|seed| setup_identity_without_adding_it(seed, 0).0.id());
+        let base58 = |id: Identifier| Value::Text(id.to_string(Encoding::Base58));
+        let referring = |position: u32| {
+            platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "refersTo": { "type": "identity" },
+                "position": position
+            })
+        };
+        let schema = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "payerId": referring(4),
+                "refundTo": referring(5),
+                "paymentToken": referring(6)
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "paidInAcceptedToken": {
+                    "anyOf": [
+                        { "absent": "paymentToken" },
+                        { "in": ["paymentToken", [base58(token_a), base58(token_b)]] }
+                    ]
+                },
+                "payerNotBanned": {
+                    "anyOf": [
+                        { "absent": "payerId" },
+                        { "notEqual": ["payerId", { "const": base58(banned) }] }
+                    ]
+                },
+                "refundGoesToPayer": {
+                    "anyOf": [{ "absent": "refundTo" }, { "equal": ["refundTo", "payerId"] }]
+                }
+            },
+            "additionalProperties": false
+        });
+        let mut fixture = OfferFixture::with_schema(schema);
+        for seed in seeds {
+            fixture.other_identity(seed);
+        }
+        let identifier = |id: Identifier| Value::Identifier(id.to_buffer());
+
+        let result = fixture
+            .create(|document| document.set("paymentToken", identifier(banned)))
+            .await;
+        expect_violated(
+            result,
+            "paidInAcceptedToken",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| document.set("payerId", identifier(banned)))
+            .await;
+        expect_violated(
+            result,
+            "payerNotBanned",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| {
+                document.set("payerId", identifier(payer));
+                document.set("refundTo", identifier(token_a));
+            })
+            .await;
+        expect_violated(
+            result,
+            "refundGoesToPayer",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("paymentToken", identifier(token_b));
+                    document.set("payerId", identifier(payer));
+                    document.set("refundTo", identifier(payer));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
     }
 
     #[tokio::test]
