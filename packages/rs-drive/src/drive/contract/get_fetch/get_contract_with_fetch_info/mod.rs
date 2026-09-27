@@ -775,6 +775,12 @@ mod tests {
                 )
                 .expect("expected to apply the update");
             assert!(drive.cache.data_contracts.is_modified_in_block(contract_id));
+            // The entry the refresh seeded, with the cost recorded before the writes below.
+            let seeded = drive
+                .cache
+                .data_contracts
+                .get(contract_id, true)
+                .expect("the refresh must seed the block cache");
 
             // Documents written under the contract after the refresh.
             let note_type = updated
@@ -832,6 +838,13 @@ mod tests {
                 .expect("expected the read to succeed");
             let hit = hit.expect("expected the contract");
             assert_eq!(hit.contract.version(), 2);
+            // The read must be served by the entry the refresh seeded, not by a cold fetch that
+            // would make this test compare two cold reads.
+            assert!(
+                Arc::ptr_eq(&seeded, &hit),
+                "protocol version {}: the billed read must be the refresh-seeded cache hit",
+                platform_version.protocol_version
+            );
 
             // A cold read of the same contract through the same transaction.
             let cold = drive
