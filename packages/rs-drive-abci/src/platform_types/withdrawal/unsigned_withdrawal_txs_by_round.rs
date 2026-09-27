@@ -73,15 +73,6 @@ impl UnsignedWithdrawalTxsByRound {
             .or_else(|| self.rounds.values().find(is_block))
             .map(|proposal| proposal.vote_extensions.as_slice())
     }
-
-    /// Whether a block this node accepted at `height` asks for no withdrawal signatures
-    pub fn has_block_without_withdrawals(&self, height: u64) -> bool {
-        self.height == height
-            && self
-                .rounds
-                .values()
-                .any(|proposal| proposal.vote_extensions.is_empty())
-    }
 }
 
 #[cfg(test)]
@@ -170,19 +161,5 @@ mod tests {
         assert!(by_round.get(10, 0, &ROUND_0_BLOCK).is_none());
         assert!(by_round.get(11, 0, &ROUND_0_BLOCK).is_none());
         assert!(by_round.get(11, 1, &ROUND_1_BLOCK).is_some());
-        assert!(!by_round.has_block_without_withdrawals(10));
-    }
-
-    #[test]
-    fn should_tell_whether_a_block_of_the_height_has_no_withdrawals() {
-        let mut by_round = UnsignedWithdrawalTxsByRound::default();
-        assert!(!by_round.has_block_without_withdrawals(10));
-
-        by_round.insert(10, 0, ROUND_0_BLOCK, extensions(1000));
-        assert!(!by_round.has_block_without_withdrawals(10));
-
-        by_round.insert(10, 1, ROUND_1_BLOCK, vec![]);
-        assert!(by_round.has_block_without_withdrawals(10));
-        assert!(!by_round.has_block_without_withdrawals(11));
     }
 }

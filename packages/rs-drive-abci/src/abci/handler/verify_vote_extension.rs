@@ -1,6 +1,5 @@
 use crate::abci::app::{BlockExecutionApplication, PlatformApplication};
 use crate::error::Error;
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
@@ -44,24 +43,6 @@ where
         // let extensions other than the block's reach the recovery threshold, and the commit
         // they form would then fail in `finalize_block`.
         //
-        // An empty vote is the one exception we can check. Every round of a height dequeues from
-        // the same committed queue, so while no protocol upgrade can switch the platform version
-        // at an epoch boundary, a block without withdrawals at this height means every block at
-        // it has none. Dropping extensions leaves an empty vote empty, and extensions swapped in
-        // from elsewhere are not empty.
-        if vote_extensions.is_empty() && withdrawals_by_round.has_block_without_withdrawals(height)
-        {
-            let platform_state = app.platform().state.load();
-
-            if platform_state.next_epoch_protocol_version()
-                == platform_state.current_protocol_version_in_consensus()
-            {
-                return Ok(proto::ResponseVerifyVoteExtension {
-                    status: VerifyStatus::Accept.into(),
-                });
-            }
-        }
-
         // A rejected vote is sent again only while we stay in its round and a peer holds +2/3
         // precommits for one block. Otherwise this node catches up once the others commit.
         tracing::debug!(
@@ -109,7 +90,6 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use crate::test::helpers::withdrawals::unsigned_withdrawal_transactions;
-    use std::sync::Arc;
     use tenderdash_abci::proto::abci::ExtendVoteExtension;
 
     const HEIGHT: u64 = 10;
@@ -352,42 +332,11 @@ mod tests {
         );
     }
 
-    /// A block this node accepted at the height has no withdrawals, so no block at it has any: an
-    /// empty vote for another block is accepted, and a vote carrying extensions is not.
+    /// An empty vote for a block this node has not accepted is rejected too, even when the block
+    /// it accepted at the height has no withdrawals.
     #[test]
-    fn should_accept_an_empty_vote_for_another_block_at_a_height_without_withdrawals() {
+    fn should_reject_an_empty_vote_for_a_block_this_node_has_not_accepted() {
         let platform = platform();
-        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
-        app.unsigned_withdrawal_txs_by_round
-            .write()
-            .unwrap()
-            .insert(HEIGHT, 0, ROUND_0_BLOCK, vec![]);
-
-        assert_eq!(
-            verify(&app, HEIGHT, 1, ROUND_1_BLOCK, vec![]),
-            VerifyStatus::Accept as i32
-        );
-        assert_eq!(
-            verify(&app, HEIGHT, 1, ROUND_1_BLOCK, round_1_extensions()),
-            VerifyStatus::Reject as i32
-        );
-        assert_eq!(
-            verify(&app, HEIGHT + 1, 0, ROUND_1_BLOCK, vec![]),
-            VerifyStatus::Reject as i32
-        );
-    }
-
-    /// With a protocol upgrade pending, a round whose block time crosses the epoch boundary runs
-    /// another platform version, which may dequeue differently: an empty vote for a block this
-    /// node has not accepted is rejected.
-    #[test]
-    fn should_reject_an_empty_vote_for_another_block_while_a_protocol_upgrade_is_pending() {
-        let platform = platform();
-        let mut platform_state = platform.state.load().as_ref().clone();
-        *platform_state.next_epoch_protocol_version_mut() =
-            platform_state.current_protocol_version_in_consensus() + 1;
-        platform.state.store(Arc::new(platform_state));
-
         let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
         app.unsigned_withdrawal_txs_by_round
             .write()
