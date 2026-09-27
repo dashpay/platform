@@ -491,8 +491,8 @@ class IdentityRegistration internal constructor(
      * [signerHandle]. Returns the full domain name (e.g. `"alice.dash"`).
      *
      * @param maxContestFund the most, in credits, the identity pays into
-     *   the contest a contested name joins; `null` states the current fund
-     *   to join, read just before signing. A name that joins no contest
+     *   the contest a contested name joins, and the identity must hold it;
+     *   `null` states the current fund to join, read just before signing. A name that joins no contest
      *   ignores it. Mirrors Swift `ManagedPlatformWallet.registerDpnsName`.
      */
     suspend fun registerDpnsName(

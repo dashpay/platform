@@ -145,9 +145,9 @@ pub fn required_vote_resolution_fund(
 /// to the 1,000th, the last a contest accepts, 32,768 times it (3,276.8 Dash for a DPNS name).
 /// Before 14 every contender pays the fund.
 ///
-/// From 14 a contender states the most it will pay: it is charged this, what it stated beyond
-/// it stays with the contender, and one stating less is refused. Before 14 a contender states
-/// exactly the fund, and pays what it states.
+/// From 14 a contender states the most it will pay and is charged the fund this returns: what
+/// it stated beyond that stays with the contender, and one stating less is refused. Before 14 a
+/// contender states exactly the fund, and pays what it states.
 pub fn required_vote_resolution_fund_to_join(
     contract_id: &Identifier,
     document_type_name: &str,

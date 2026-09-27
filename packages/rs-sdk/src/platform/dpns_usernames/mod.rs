@@ -73,8 +73,8 @@ pub struct RegisterDpnsNameInput<S: Signer<IdentityPublicKey>> {
     pub preorder_callback: Option<PreorderCallback>,
     /// The most the registration is willing to pay into the contest a contested name joins.
     /// From protocol version 14 the fund to join doubles once a contest holds 250 contenders
-    /// and again for every 50 more, and a registration is charged it; `None` states the fund
-    /// to join read just before the domain is submitted.
+    /// and again for every 50 more, and a registration is charged it. The identity must hold
+    /// what it states. `None` states the fund to join read just before the domain is submitted.
     pub contest_fund: Option<Credits>,
 }
 

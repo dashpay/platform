@@ -439,9 +439,9 @@ extension SDK {
     /// Create a new document
     ///
     /// `maxContestFund` is the most, in credits, the owner pays into the
-    /// contest a contested document joins; `nil` states the current fund
-    /// to join, read just before signing. A document that joins no
-    /// contest ignores it.
+    /// contest a contested document joins, and the owner must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// document that joins no contest ignores it.
     public func documentCreate(
         contractId: String,
         documentType: String,

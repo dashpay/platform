@@ -63,9 +63,11 @@ pub struct StateTransitionCreationOptions {
     pub action_fee_agreement: Option<DocumentActionFeeAgreement>,
     /// The most a contested document create is willing to pay into the contest it joins. From
     /// protocol version 14 it pays the fund to join, which doubles as the contest grows past
-    /// 250 contenders, and is refused, paid, when that is more than this. `None` states the
-    /// contest's fund, what joining a contest holding fewer than 250 contenders costs. A create
-    /// that joins no contest ignores it.
+    /// 250 contenders, and is refused when that is more than this: it pays the transition's
+    /// fees, but nothing into the contest. The identity must hold what it states, because the
+    /// balance check made before the contest is counted is against it. `None` keeps the fund
+    /// the create is built with, the contest's fund, what joining a contest holding fewer than
+    /// 250 contenders costs. A create that joins no contest ignores it.
     pub contest_fund: Option<Credits>,
 }
 

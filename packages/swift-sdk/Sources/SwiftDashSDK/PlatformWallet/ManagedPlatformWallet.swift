@@ -1711,9 +1711,9 @@ extension ManagedPlatformWallet {
     /// key was picked.
     ///
     /// `maxContestFund` is the most, in credits, the identity pays into
-    /// the contest a contested name joins; `nil` states the current fund
-    /// to join, read just before signing. A name that joins no contest
-    /// ignores it.
+    /// the contest a contested name joins, and the identity must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// name that joins no contest ignores it.
     ///
     /// Returns the full domain name (e.g. `"alice.dash"`).
     @discardableResult
@@ -3799,9 +3799,9 @@ extension ManagedPlatformWallet {
     /// document type with no required properties.
     ///
     /// `maxContestFund` is the most, in credits, the owner pays into the
-    /// contest a contested document joins; `nil` states the current fund
-    /// to join, read just before signing. A document that joins no
-    /// contest ignores it.
+    /// contest a contested document joins, and the owner must hold it;
+    /// `nil` states the current fund to join, read just before signing. A
+    /// document that joins no contest ignores it.
     ///
     /// Lifetime contract: the `signer` instance MUST stay alive for the
     /// duration of the synchronous FFI call inside this async wrapper

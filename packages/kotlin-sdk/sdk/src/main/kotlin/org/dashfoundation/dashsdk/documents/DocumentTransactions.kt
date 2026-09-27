@@ -114,8 +114,8 @@ class DocumentTransactions internal constructor(
      *   fields as hex, identifier fields as base58); `"{}"` for a document
      *   type with no required properties.
      * @param maxContestFund the most, in credits, [ownerId] pays into the
-     *   contest a contested document joins; `null` states the current fund
-     *   to join, read just before signing. A document that joins no contest
+     *   contest a contested document joins, and [ownerId] must hold it;
+     *   `null` states the current fund to join, read just before signing. A document that joins no contest
      *   ignores it.
      * @return the confirmed document's canonical JSON (now owned by
      *   [ownerId]; its 32-byte id is the `$id` field).

@@ -130,8 +130,9 @@ export interface DocumentCreateOptions {
    * document type has a contested index. From protocol version 14 it is charged
    * the fund to join the contest, which doubles once the contest holds 250
    * contenders and again for every 50 more, and is refused, paid, when that is
-   * more than this. Leave it out to state the fund to join read just before the
-   * document is submitted. A document that joins no contest ignores it.
+   * more than this. The identity must hold what it states. Leave it out to state
+   * the fund to join read just before the document is submitted. A document that
+   * joins no contest ignores it.
    */
   contestFund?: bigint;
 

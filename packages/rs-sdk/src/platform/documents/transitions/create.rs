@@ -153,7 +153,9 @@ impl DocumentCreateTransitionBuilder {
     /// contest, which doubles once the contest holds 250 contenders and again for every 50
     /// more, and refused, paid, when that is more than this. Without it the create states the
     /// fund to join read when it is signed, so it is refused if others join first and push the
-    /// fund up. Before protocol version 14 a contender states exactly the contest's fund.
+    /// fund up. The identity must hold what it states, since Platform checks its balance
+    /// against it before counting the contest. Before protocol version 14 a contender states
+    /// exactly the contest's fund.
     ///
     /// Call it after `with_state_transition_creation_options`, which replaces the options this
     /// is kept in.
