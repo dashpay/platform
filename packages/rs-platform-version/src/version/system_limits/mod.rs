@@ -55,7 +55,7 @@ pub struct SystemLimits {
     pub max_property_constraints: u16,
     /// Maximum number of nodes in one `propertyConstraints` rule: every comparison, every
     /// `in` and each value it lists, every `present` or `absent` and every `anyOf`, `allOf` or
-    /// `not`, every arithmetic operator and every operand, an integer value, a string `const`
+    /// `not`, every arithmetic operator and every operand, an integer value, a `const`
     /// or a property. An `ifAbsent` operand is one node, the default it gives included.
     /// Refused under full validation only, like `max_property_constraints`. Read by document
     /// type parser generation 3 (protocol version 14) and never reached before.

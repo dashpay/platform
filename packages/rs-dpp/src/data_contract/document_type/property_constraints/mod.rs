@@ -2,10 +2,10 @@
 //! version 14): named rules every document of the type must meet, each a
 //! condition on the document's properties: a comparison of two integer
 //! expressions, a test of whether an integer expression takes one of listed
-//! values (`in`), a comparison of a string property with string constants
-//! (`equal`, `notEqual`, `in`) or with another string property (`equal`,
-//! `notEqual`), a test of whether the document holds a property (`present`,
-//! `absent`), or `anyOf`, `allOf` or `not` over conditions.
+//! values (`in`), a comparison of a string or an identifier property with
+//! constants (`equal`, `notEqual`, `in`) or with another property of its kind
+//! (`equal`, `notEqual`), a test of whether the document holds a property
+//! (`present`, `absent`), or `anyOf`, `allOf` or `not` over conditions.
 //!
 //! ```json
 //! "propertyConstraints": {
@@ -41,7 +41,9 @@
 //! `notEqual` compare one with a string property, or two bare paths naming
 //! string properties with each other, and an `in` whose values are strings
 //! lists them bare; `{ "ifAbsent": ["status", "open"] }` gives a string
-//! property compared with strings a default. How the arithmetic
+//! property compared with strings a default. An identifier property compares
+//! the same ways, its constants written base58, without defaults. How the
+//! arithmetic
 //! treats overflow, division and powers is set out on
 //! [`ConstraintExpression::evaluate`], and how conditions combine on
 //! [`PropertyConstraint::holds`].
@@ -60,7 +62,8 @@ mod tests;
 use crate::consensus::basic::document::PropertyConstraintViolation;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
-use platform_value::{Value, ValueMapHelper};
+use platform_value::string_encoding::Encoding;
+use platform_value::{Identifier, Value, ValueMapHelper};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
@@ -316,6 +319,22 @@ pub enum PropertyRead {
     Presence,
     /// By its value, compared with string constants: a string property.
     Text,
+    /// By its value, compared with identifier constants: an identifier
+    /// property.
+    Identifier,
+}
+
+/// What a comparison of equality compares when it is not integers: strings or
+/// identifiers. [`parse_property_constraints`] asks it of every bare path on
+/// either side of an `equal` or `notEqual`, and of an `in`'s operand, since
+/// the declaration alone does not tell a string property, an identifier
+/// property or an integer one apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EqualityKind {
+    /// A string property.
+    Text,
+    /// An identifier property.
+    Identifier,
 }
 
 /// A string property a string comparison reads: its dotted path, and the
@@ -387,6 +406,30 @@ pub enum PropertyConstraint {
         property: TextProperty,
         values: BTreeSet<String>,
     },
+    /// `equal` or `notEqual` between the identifier property at the dotted path
+    /// and an identifier constant, written base58,
+    /// `{ "equal": ["paymentToken", { "const": "<base58>" }] }`, either way
+    /// round. `comparison` is `Equal` or `NotEqual`. An identifier property the
+    /// document leaves out equals no identifier.
+    IdentifierCompare {
+        comparison: ConstraintComparison,
+        path: String,
+        value: Identifier,
+    },
+    /// `equal` or `notEqual` between two identifier properties: two bare paths
+    /// that both name identifier properties. One the document leaves out equals
+    /// no identifier, not even another one it leaves out.
+    IdentifierCompareProperties {
+        comparison: ConstraintComparison,
+        left: String,
+        right: String,
+    },
+    /// `in` over identifiers: the identifier property at the dotted path holds
+    /// one of two or more distinct identifiers, listed base58.
+    IdentifierIn {
+        path: String,
+        values: BTreeSet<Identifier>,
+    },
     /// `present`: the document holds the property at the dotted path. One it
     /// leaves out, or sets to null, is absent, as it is for an operand. Unlike
     /// an operand, it tells a property left out from one set to 0, and it may
@@ -451,6 +494,28 @@ impl PropertyConstraint {
             PropertyConstraint::TextIn { property, values } => Ok(property
                 .value(data)
                 .is_some_and(|text| values.contains(text))),
+            PropertyConstraint::IdentifierCompare {
+                comparison,
+                path,
+                value,
+            } => {
+                let equal = identifier_value(data, path) == Some(*value);
+                Ok(equal == (*comparison == ConstraintComparison::Equal))
+            }
+            PropertyConstraint::IdentifierCompareProperties {
+                comparison,
+                left,
+                right,
+            } => {
+                let equal = matches!(
+                    (identifier_value(data, left), identifier_value(data, right)),
+                    (Some(left), Some(right)) if left == right
+                );
+                Ok(equal == (*comparison == ConstraintComparison::Equal))
+            }
+            PropertyConstraint::IdentifierIn { path, values } => {
+                Ok(identifier_value(data, path).is_some_and(|value| values.contains(&value)))
+            }
             PropertyConstraint::Present(path) => Ok(is_present(data, path)),
             PropertyConstraint::Absent(path) => Ok(!is_present(data, path)),
             PropertyConstraint::AnyOf(conditions) => {
@@ -498,8 +563,11 @@ impl PropertyConstraint {
             PropertyConstraint::In { operand, values } => operand.node_count() + values.len(),
             // The property and the constant, as a comparison of a path with a value
             PropertyConstraint::TextCompare { .. }
-            | PropertyConstraint::TextCompareProperties { .. } => 2,
+            | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::IdentifierCompare { .. }
+            | PropertyConstraint::IdentifierCompareProperties { .. } => 2,
             PropertyConstraint::TextIn { values, .. } => 1 + values.len(),
+            PropertyConstraint::IdentifierIn { values, .. } => 1 + values.len(),
             PropertyConstraint::Present(_) | PropertyConstraint::Absent(_) => 0,
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
                 conditions.iter().map(PropertyConstraint::node_count).sum()
@@ -571,6 +639,9 @@ impl PropertyConstraint {
             PropertyConstraint::Not(condition) => condition.collect_text_properties(properties),
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
+            | PropertyConstraint::IdentifierCompare { .. }
+            | PropertyConstraint::IdentifierCompareProperties { .. }
+            | PropertyConstraint::IdentifierIn { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => {}
         }
@@ -595,6 +666,9 @@ impl PropertyConstraint {
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
             | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::IdentifierCompare { .. }
+            | PropertyConstraint::IdentifierCompareProperties { .. }
+            | PropertyConstraint::IdentifierIn { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => {}
         }
@@ -622,6 +696,9 @@ impl PropertyConstraint {
             | PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::IdentifierCompare { .. }
+            | PropertyConstraint::IdentifierCompareProperties { .. }
+            | PropertyConstraint::IdentifierIn { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => return None,
             PropertyConstraint::AnyOf(conditions) => (ANY_OF, conditions),
@@ -668,6 +745,14 @@ impl PropertyConstraint {
                 reads.push((&left.path, PropertyRead::Text));
                 reads.push((&right.path, PropertyRead::Text));
             }
+            PropertyConstraint::IdentifierCompare { path, .. }
+            | PropertyConstraint::IdentifierIn { path, .. } => {
+                reads.push((path, PropertyRead::Identifier))
+            }
+            PropertyConstraint::IdentifierCompareProperties { left, right, .. } => {
+                reads.push((left, PropertyRead::Identifier));
+                reads.push((right, PropertyRead::Identifier));
+            }
             PropertyConstraint::Present(path) | PropertyConstraint::Absent(path) => {
                 reads.push((path, PropertyRead::Presence))
             }
@@ -683,36 +768,40 @@ impl PropertyConstraint {
 
 /// Reads the `propertyConstraints` keyword of a document type's `schema`:
 /// every rule by its name, in name order, the order a document is checked
-/// against them. Empty when the schema declares none. `is_string_property`
-/// tells which dotted paths name string properties of the document type: a
-/// comparison of two bare paths naming string properties compares strings,
-/// any other comparison of two expressions integers.
+/// against them. Empty when the schema declares none. `property_kind` tells
+/// which dotted paths name string or identifier properties of the document
+/// type: an `equal` or `notEqual` with a `const`, or of two bare paths naming
+/// such properties, compares strings or identifiers as they decide, as does
+/// an `in` listing strings; any other comparison of two expressions compares
+/// integers.
 ///
 /// The rules of the declaration's shape are checked here, on every parse: an
 /// object of one or more rules, each named with 1 to 64 letters, digits or
 /// underscores and holding one condition. A condition is an object with one
 /// key: a comparison of exactly two operands, `in` with an operand and a list
 /// of two or more distinct integer values, `equal` or `notEqual` of a property
-/// path and a `{ "const": string }` or of two string properties, `in` with a
-/// property path and two or more distinct strings, `present` or `absent` with
-/// a property path, `anyOf` or `allOf` with two or more conditions, none of
-/// them directly the same operator (it says what one flat list says), or
-/// `not` with one condition that is not directly another `not`. An operand is
-/// an integer value, a property path, or an object with one key: `ifAbsent`
-/// with a path and an integer value, `add` or `multiply` with two or more
-/// operands, or `subtract`, `divide`, `modulo` or `power` with exactly two. An
-/// integer value may be spelled as a float with no fractional part, as the
-/// meta-schema's `integer` type admits one. A literal 0 divisor, a literal
-/// negative exponent, a comparison or `in` that reads no property, which would
-/// hold for every document or for none, an ordering comparison of strings,
-/// and a condition or operand deeper than
-/// [`MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH`] are refused. What the paths name is
-/// checked against the parsed document type, and the limits and that no list
-/// repeats a condition under full validation, by parser generation 3.
+/// and a `{ "const": ... }` (a string, or a base58 identifier for an
+/// identifier property) or of two string or two identifier properties, `in`
+/// with a property and two or more distinct strings or base58 identifiers,
+/// `present` or `absent` with a property path, `anyOf` or `allOf` with two or
+/// more conditions, none of them directly the same operator (it says what one
+/// flat list says), or `not` with one condition that is not directly another
+/// `not`. An operand is an integer value, a property path, or an object with
+/// one key: `ifAbsent` with a path and an integer value, `add` or `multiply`
+/// with two or more operands, or `subtract`, `divide`, `modulo` or `power`
+/// with exactly two; a string property may take an `ifAbsent` with a string
+/// default instead. An integer value may be spelled as a float with no
+/// fractional part, as the meta-schema's `integer` type admits one. A literal
+/// 0 divisor, a literal negative exponent, a comparison or `in` that reads no
+/// property, which would hold for every document or for none, an ordering
+/// comparison of strings or identifiers, and a condition or operand deeper
+/// than [`MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH`] are refused. What the paths
+/// name is checked against the parsed document type, and the limits and that
+/// no list repeats a condition under full validation, by parser generation 3.
 pub fn parse_property_constraints(
     schema: &Value,
     document_type_name: &str,
-    is_string_property: &dyn Fn(&str) -> bool,
+    property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
 ) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     let structure_error = |message: String| {
         DataContractError::InvalidContractStructure(format!(
@@ -749,7 +838,7 @@ pub fn parse_property_constraints(
         };
         // Where a condition or an operand sits in the rule (`anyOf[1].lessThan[0]`),
         // grown and trimmed in place as the parse descends and only read into an error
-        let constraint = parse_condition(rule, &mut String::new(), 0, is_string_property)
+        let constraint = parse_condition(rule, &mut String::new(), 0, property_kind)
             .map_err(|message| structure_error(format!("rule \"{name}\" {message}")))?;
         if constraints.insert(name.to_string(), constraint).is_some() {
             return Err(structure_error(format!("declares rule \"{name}\" twice")));
@@ -820,7 +909,7 @@ fn parse_condition(
     value: &Value,
     at: &mut String,
     depth: usize,
-    is_string_property: &dyn Fn(&str) -> bool,
+    property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
 ) -> Result<PropertyConstraint, String> {
     if depth > MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH {
         return Err(format!(
@@ -837,20 +926,12 @@ fn parse_condition(
     };
     let parent = enter(at, key);
     let condition = match key {
-        ANY_OF => PropertyConstraint::AnyOf(condition_list(
-            body,
-            key,
-            at,
-            depth + 1,
-            is_string_property,
-        )?),
-        ALL_OF => PropertyConstraint::AllOf(condition_list(
-            body,
-            key,
-            at,
-            depth + 1,
-            is_string_property,
-        )?),
+        ANY_OF => {
+            PropertyConstraint::AnyOf(condition_list(body, key, at, depth + 1, property_kind)?)
+        }
+        ALL_OF => {
+            PropertyConstraint::AllOf(condition_list(body, key, at, depth + 1, property_kind)?)
+        }
         NOT => {
             if single_entry(body).is_some_and(|(inner, _)| inner == NOT) {
                 return Err(format!(
@@ -862,7 +943,7 @@ fn parse_condition(
                 body,
                 at,
                 depth + 1,
-                is_string_property,
+                property_kind,
             )?))
         }
         IN => {
@@ -878,7 +959,19 @@ fn parse_condition(
                 .as_array()
                 .and_then(|values| values.first())
                 .is_some_and(|first| first.as_text().is_some());
-            if over_strings {
+            // Strings listed for an identifier property are its identifiers, base58
+            let identifier_path = operand.as_text().filter(|path| {
+                over_strings && property_kind(path) == Some(EqualityKind::Identifier)
+            });
+            if let Some(path) = identifier_path {
+                at.push_str("[1]");
+                let values = in_identifier_values(values, at)?;
+                at.truncate(base);
+                PropertyConstraint::IdentifierIn {
+                    path: path.to_string(),
+                    values,
+                }
+            } else if over_strings {
                 let Ok(TextSide::Property(property)) = text_side(operand, &format!("{at}[0]"))
                 else {
                     return Err(format!(
@@ -932,15 +1025,28 @@ fn parse_condition(
             };
             if let Some([left, right]) = body.as_array().map(Vec::as_slice) {
                 // A const or an ifAbsent with a string default on either side, or
-                // two bare paths naming string properties, compare strings
-                let bare_string = |value: &Value| value.as_text().is_some_and(is_string_property);
+                // two bare paths naming string or identifier properties, compare
+                // strings or identifiers, as the properties named decide
+                let bare_kind = |value: &Value| value.as_text().and_then(property_kind);
                 if is_const(left)
                     || is_const(right)
                     || is_text_if_absent(left)
                     || is_text_if_absent(right)
-                    || (bare_string(left) && bare_string(right))
+                    || (bare_kind(left).is_some() && bare_kind(right).is_some())
                 {
-                    let compare = text_comparison(comparison, left, right, at)?;
+                    let compare = match (bare_kind(left), bare_kind(right)) {
+                        (Some(left_kind), Some(right_kind)) if left_kind != right_kind => {
+                            return Err(format!(
+                                "at {at} compares a string property with an identifier \
+                                 property"
+                            ));
+                        }
+                        (Some(EqualityKind::Identifier), _)
+                        | (_, Some(EqualityKind::Identifier)) => {
+                            identifier_comparison(comparison, left, right, at)?
+                        }
+                        _ => text_comparison(comparison, left, right, at)?,
+                    };
                     at.truncate(parent);
                     return compare.ok_or_else(|| {
                         format!(
@@ -979,7 +1085,7 @@ fn condition_list(
     key: &str,
     at: &mut String,
     depth: usize,
-    is_string_property: &dyn Fn(&str) -> bool,
+    property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
 ) -> Result<Vec<PropertyConstraint>, String> {
     let Some(values) = conditions.as_array().filter(|values| values.len() >= 2) else {
         return Err(format!("at {at} must list two or more conditions"));
@@ -995,7 +1101,7 @@ fn condition_list(
                  says: list its conditions in the outer {key}"
             ));
         }
-        parsed.push(parse_condition(value, at, depth, is_string_property)?);
+        parsed.push(parse_condition(value, at, depth, property_kind)?);
         at.truncate(base);
     }
     Ok(parsed)
@@ -1058,6 +1164,111 @@ fn in_text_values(values: &Value, at: &mut String) -> Result<BTreeSet<String>, S
 /// Whether `value` is a string constant operand, `{ "const": ... }`.
 fn is_const(value: &Value) -> bool {
     single_entry(value).is_some_and(|(key, _)| key == CONST)
+}
+
+/// The values an `in` over identifiers lists at `at` (`in[1]`): two or more
+/// base58 identifiers, no two alike.
+fn in_identifier_values(values: &Value, at: &mut String) -> Result<BTreeSet<Identifier>, String> {
+    let Some(values) = values.as_array().filter(|values| values.len() >= 2) else {
+        return Err(format!("at {at} must list two or more identifiers"));
+    };
+    let base = at.len();
+    // Each value with the index it first appears at, for the errors
+    let mut seen = BTreeMap::new();
+    for (index, value) in values.iter().enumerate() {
+        // Writing to a `String` cannot fail
+        let _ = write!(at, "[{index}]");
+        let identifier = identifier_constant(value, at)?;
+        if let Some(earlier) = seen.insert(identifier, index) {
+            return Err(format!(
+                "at {at} repeats the value at {}[{earlier}]",
+                &at[..base]
+            ));
+        }
+        at.truncate(base);
+    }
+    Ok(seen.into_keys().collect())
+}
+
+/// The identifier a base58 string at `at` spells.
+fn identifier_constant(value: &Value, at: &str) -> Result<Identifier, String> {
+    let Some(text) = value.as_text() else {
+        return Err(format!("at {at} must be an identifier, written base58"));
+    };
+    Identifier::from_string(text, Encoding::Base58).map_err(|_| {
+        format!("at {at} holds \"{text}\", which is not a base58 identifier of 32 bytes")
+    })
+}
+
+/// One side of a comparison of identifiers.
+enum IdentifierSide {
+    /// A `{ "const": base58 }`.
+    Constant(Identifier),
+    /// The dotted path of an identifier property.
+    Property(String),
+}
+
+/// The side at `at` (`equal[1]`) of a comparison of identifiers: a `const`
+/// identifier, written base58, or a bare path. What a path names is checked
+/// against the parsed document type.
+fn identifier_side(value: &Value, at: &str) -> Result<IdentifierSide, String> {
+    if is_const(value) {
+        let constant = single_entry(value).map_or(value, |(_, constant)| constant);
+        return identifier_constant(constant, &format!("{at}.{CONST}"))
+            .map(IdentifierSide::Constant);
+    }
+    if let Some(path) = value.as_text() {
+        return Ok(IdentifierSide::Property(path.to_string()));
+    }
+    if is_text_if_absent(value) {
+        return Err(format!(
+            "at {at} gives an identifier property a default, which identifiers do not take"
+        ));
+    }
+    Err(format!(
+        "at {at} must be the path of an identifier property or a const: identifiers are \
+         compared with identifiers"
+    ))
+}
+
+/// The comparison at `at` (`equal`) of `left` and `right`, a comparison of
+/// identifiers, one side at least naming an identifier property: only `equal`
+/// and `notEqual` compare them, and each side is a `const` identifier or an
+/// identifier property ([`identifier_side`]).
+fn identifier_comparison(
+    comparison: ConstraintComparison,
+    left: &Value,
+    right: &Value,
+    at: &str,
+) -> Result<Option<PropertyConstraint>, String> {
+    if !matches!(
+        comparison,
+        ConstraintComparison::Equal | ConstraintComparison::NotEqual
+    ) {
+        return Err(format!(
+            "at {at} compares identifiers, which only equal and notEqual do"
+        ));
+    }
+    let left = identifier_side(left, &format!("{at}[0]"))?;
+    let right = identifier_side(right, &format!("{at}[1]"))?;
+    Ok(match (left, right) {
+        (IdentifierSide::Constant(_), IdentifierSide::Constant(_)) => None,
+        (IdentifierSide::Property(path), IdentifierSide::Constant(value))
+        | (IdentifierSide::Constant(value), IdentifierSide::Property(path)) => {
+            Some(PropertyConstraint::IdentifierCompare {
+                comparison,
+                path,
+                value,
+            })
+        }
+        (IdentifierSide::Property(left), IdentifierSide::Property(right)) => {
+            Some(PropertyConstraint::IdentifierCompareProperties {
+                comparison,
+                left,
+                right,
+            })
+        }
+    })
 }
 
 /// Whether `value` is `{ "ifAbsent": [path, string] }`: a string property with
@@ -1330,6 +1541,17 @@ fn integer_value(value: &Value, at: &str) -> Result<i128, String> {
             value.non_qualified_string_representation()
         )
     })
+}
+
+/// The identifier `data` holds at `path`, in any of the forms a document's
+/// identifier takes; `None` when the document leaves the property out or holds
+/// something that is no identifier there, which the schema validation running
+/// first refuses for an identifier property.
+fn identifier_value(data: &Value, path: &str) -> Option<Identifier> {
+    match data.get_optional_value_at_path(path) {
+        Ok(Some(value)) => value.to_identifier().ok(),
+        _ => None,
+    }
 }
 
 /// Whether `data` holds the property at `path`: absent exactly where
