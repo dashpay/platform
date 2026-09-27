@@ -243,6 +243,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 },
                 // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
                 // only has to fund its principal (purchases, contest collateral) itself.
+                // Otherwise, a batch carrying shielded pool bundles has to hold the compute
+                // fee they will be charged on top of the flat per-sub-transition minimum,
+                // which is orders of magnitude smaller than one bundle verification.
                 identity_minimum_balance_pre_check: 1,
                 document_create_transition_structure_validation: 1, // changed: v1 also cross-checks the prefunded voting balance against the contested index, leaves its amount to state validation, and refuses a `distinctFrom` identifier property equal to the value it must differ from
                 // Reject deletes on legacy keep-history types as paid consensus errors.
