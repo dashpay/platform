@@ -76,7 +76,7 @@ mod tests {
     use dpp::platform_value::{Identifier, Value};
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::fee::FeeVersion;
-    use dpp::version::PlatformVersion;
+    use dpp::version::{PlatformVersion, LATEST_VERSION};
 
     static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
         Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
@@ -1683,6 +1683,88 @@ mod tests {
                     frozen_platform_version,
                 )
                 .expect("protocol version 14 prices the shipped shortcut without a history");
+        }
+    }
+
+    /// `add_document` looks the contract up by id and records that read's cost before
+    /// building the document operations. Generation 0 replaced its operations vector after
+    /// the lookup and priced the write alone; generation 1 prices the lookup with it, so its
+    /// fee exceeds the contract-reference wrapper's by the fetch cost at the latest version
+    /// and equals it at protocol version 14.
+    #[test]
+    fn should_price_the_contract_fetch_when_adding_a_document_by_contract_id() {
+        for (protocol_version, prices_the_fetch) in [(14, false), (LATEST_VERSION, true)] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected a platform version");
+            let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+            let contract = setup_contract(
+                &drive,
+                "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+                None,
+                None,
+                None::<fn(&mut DataContract)>,
+                None,
+                Some(platform_version),
+            );
+            let document_type = contract
+                .document_type_for_name("profile")
+                .expect("expected to get document type");
+            let owner_id = random::<[u8; 32]>();
+            let profile = json_document_to_document(
+                "tests/supporting_files/contract/dashpay/profile0.json",
+                Some(owner_id.into()),
+                document_type,
+                platform_version,
+            )
+            .expect("expected to get document");
+            let owned = || OwnedDocumentInfo {
+                document_info: DocumentRefInfo((&profile, StorageFlags::optional_default_as_cow())),
+                owner_id: Some(owner_id),
+            };
+
+            // Both estimates price the same write; only the by-id wrapper reads the contract.
+            let by_reference = drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: owned(),
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    false,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to estimate the insert by contract reference");
+            let by_id = drive
+                .add_document(
+                    owned(),
+                    contract.id(),
+                    "profile",
+                    false,
+                    &BlockInfo::default(),
+                    false,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to estimate the insert by contract id");
+
+            assert_eq!(by_id.storage_fee, by_reference.storage_fee);
+            if prices_the_fetch {
+                assert!(
+                    by_id.processing_fee > by_reference.processing_fee,
+                    "protocol version {protocol_version} must price the contract read: {} versus {}",
+                    by_id.processing_fee,
+                    by_reference.processing_fee
+                );
+            } else {
+                assert_eq!(
+                    by_id.processing_fee, by_reference.processing_fee,
+                    "protocol version {protocol_version} keeps pricing the write alone"
+                );
+            }
         }
     }
 }
