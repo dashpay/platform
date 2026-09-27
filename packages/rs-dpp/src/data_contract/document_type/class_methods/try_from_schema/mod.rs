@@ -1950,6 +1950,7 @@ fn apply_property_constraints_v0(
             let reads = match read {
                 PropertyRead::Value => "reads",
                 PropertyRead::Presence => "tests the presence of",
+                PropertyRead::Text => "compares",
             };
             match read {
                 PropertyRead::Value => match document_type
@@ -1967,6 +1968,14 @@ fn apply_property_constraints_v0(
                                     | DocumentPropertyType::I128
                                     | DocumentPropertyType::Boolean
                             ) => {}
+                    // A string is compared with constants, never read as a number
+                    Some(DocumentPropertyType::String(_)) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" reads \"{path}\", which has type string, not integer \
+                             or boolean: a string property is compared with a {{ \"const\": ... }} \
+                             by equal or notEqual, or with the strings an in lists"
+                        )));
+                    }
                     Some(other) => {
                         return Err(structure_error(format!(
                             "rule \"{name}\" reads \"{path}\", which has type {}, not integer or \
@@ -1992,12 +2001,52 @@ fn apply_property_constraints_v0(
                         )));
                     }
                 }
+                PropertyRead::Text => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    Some(DocumentPropertyType::String(_)) => {}
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" compares \"{path}\" with a string, but it has type \
+                             {}, not string",
+                            other.name()
+                        )));
+                    }
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" compares \"{path}\" with a string, but it is not a \
+                             string property of the document type (a nested one is named by its \
+                             dotted path)"
+                        )));
+                    }
+                },
             }
             if is_transient(DocumentTypeRef::V2(document_type), path) {
                 return Err(structure_error(format!(
                     "rule \"{name}\" {reads} \"{path}\", which is transient or inside a \
                      transient object: a transient value is never stored, so a stored document \
                      could not be held to the rule"
+                )));
+            }
+        }
+        // A constant a string property's `enum` does not list is a typo: the
+        // property could never hold it
+        for (path, constant) in constraint.text_constants() {
+            let Some(property_schema) = schema_at_path(&document_type.schema, path)? else {
+                continue;
+            };
+            let Some(Value::Array(members)) = property_schema.get(property_names::ENUM) else {
+                continue;
+            };
+            if !members
+                .iter()
+                .any(|member| member.as_text() == Some(constant))
+            {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" compares \"{path}\" with \"{constant}\", which is not one of \
+                     its enum values"
                 )));
             }
         }
@@ -2032,11 +2081,12 @@ fn apply_property_constraints_v0(
     Ok(())
 }
 
-/// Whether the property at the dotted `path` of `schema` is declared as an
-/// integer with `minimum` at least 0 and `maximum` at most `u32::MAX`, read
-/// from the schema rather than from the parsed type so that the answer does
-/// not depend on the contract's `sizedIntegerTypes`. `$ref`s are followed.
-fn is_key_id_schema(schema: &Value, path: &str) -> Result<bool, DataContractError> {
+/// The schema of the property at the dotted `path` of `schema`, a document
+/// type's, `None` when the path names none. `$ref`s are followed.
+fn schema_at_path<'a>(
+    schema: &'a Value,
+    path: &str,
+) -> Result<Option<BTreeMap<String, &'a Value>>, DataContractError> {
     fn resolve<'a>(
         root_schema: &'a Value,
         value: &'a Value,
@@ -2052,13 +2102,24 @@ fn is_key_id_schema(schema: &Value, path: &str) -> Result<bool, DataContractErro
     let mut current = resolve(schema, schema)?;
     for segment in path.split('.') {
         let Some(properties) = current.get(property_names::PROPERTIES) else {
-            return Ok(false);
+            return Ok(None);
         };
         let Some(next) = properties.to_btree_ref_string_map()?.get(segment).copied() else {
-            return Ok(false);
+            return Ok(None);
         };
         current = resolve(schema, next)?;
     }
+    Ok(Some(current))
+}
+
+/// Whether the property at the dotted `path` of `schema` is declared as an
+/// integer with `minimum` at least 0 and `maximum` at most `u32::MAX`, read
+/// from the schema rather than from the parsed type so that the answer does
+/// not depend on the contract's `sizedIntegerTypes`. `$ref`s are followed.
+fn is_key_id_schema(schema: &Value, path: &str) -> Result<bool, DataContractError> {
+    let Some(current) = schema_at_path(schema, path)? else {
+        return Ok(false);
+    };
     let is_integer = current.get_optional_str(property_names::TYPE)? == Some("integer");
     let minimum = current.get_optional_integer::<i64>(property_names::MINIMUM)?;
     let maximum = current.get_optional_integer::<i64>(property_names::MAXIMUM)?;

@@ -13,6 +13,7 @@ use crate::consensus::basic::basic_error::BasicError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use crate::data_contract::document_type::property_constraints::PropertyRead;
 use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
 use crate::data_contract::DataContract;
 use crate::serialization::{
@@ -25,8 +26,8 @@ use serde_json::json;
 
 /// An `order` type: four required integers, an optional nested `meta` object
 /// with an integer `total`, a string, a number, a typed array and an integer
-/// `code` to be refused as operands or listed as transient, and a boolean
-/// `rush`.
+/// `code` to be refused as operands or listed as transient, a boolean `rush`
+/// and a string `state` with an `enum`.
 fn order_schema(rules: Option<serde_json::Value>, transient: Option<&str>) -> serde_json::Value {
     let mut schema = json!({
         "type": "object",
@@ -54,7 +55,13 @@ fn order_schema(rules: Option<serde_json::Value>, transient: Option<&str>) -> se
                 "maxItems": 4,
                 "position": 8
             },
-            "rush": { "type": "boolean", "position": 9 }
+            "rush": { "type": "boolean", "position": 9 },
+            "state": {
+                "type": "string",
+                "enum": ["open", "closed"],
+                "maxLength": 10,
+                "position": 10
+            }
         },
         "required": ["price", "fee", "quantity", "deposit"],
         "additionalProperties": false
@@ -234,6 +241,100 @@ fn should_let_an_operand_read_a_boolean_property() {
             ["fee", "rush"]
         );
         assert_eq!(constraints["rushIsFlag"].property_paths(), ["rush"]);
+    }
+}
+
+/// A string property is compared with `const` strings by `equal` and
+/// `notEqual`, or with the strings an `in` lists, on both paths; a nested one by
+/// its dotted path, one without an `enum` with any string.
+#[test]
+fn should_compare_a_string_property_with_constants() {
+    let rules = json!({
+        "closedHasTotal": {
+            "anyOf": [
+                { "notEqual": ["state", { "const": "closed" }] },
+                { "present": "meta.total" }
+            ]
+        },
+        "knownNote": { "in": ["note", ["a", "b"]] },
+        "tagged": { "equal": [{ "const": "x" }, "meta.tag"] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["closedHasTotal"].property_reads(),
+            [
+                ("state", PropertyRead::Text),
+                ("meta.total", PropertyRead::Presence)
+            ]
+        );
+        assert_eq!(constraints["knownNote"].property_paths(), ["note"]);
+        assert_eq!(constraints["tagged"].property_paths(), ["meta.tag"]);
+    }
+}
+
+/// A constant compared with a property that declares an `enum` must be one of
+/// its values, or the property could never hold it; the property must be a
+/// string, and not a transient one. On both paths.
+#[test]
+fn should_hold_string_comparisons_to_string_properties_and_their_enums() {
+    for (rules, needle) in [
+        (
+            json!({ "rule": { "equal": ["state", { "const": "closd" }] } }),
+            "rule \"rule\" compares \"state\" with \"closd\", which is not one of its enum values",
+        ),
+        (
+            json!({ "rule": { "in": ["state", ["open", "shut"]] } }),
+            "rule \"rule\" compares \"state\" with \"shut\", which is not one of its enum values",
+        ),
+        (
+            json!({ "rule": { "equal": ["price", { "const": "x" }] } }),
+            "rule \"rule\" compares \"price\" with a string, but it has type",
+        ),
+        (
+            json!({ "rule": { "in": ["rush", ["yes", "no"]] } }),
+            "rule \"rule\" compares \"rush\" with a string, but it has type boolean, not string",
+        ),
+        (
+            json!({ "rule": { "notEqual": ["missing", { "const": "x" }] } }),
+            "rule \"rule\" compares \"missing\" with a string, but it is not a string property",
+        ),
+        (
+            json!({ "rule": { "equal": ["meta", { "const": "x" }] } }),
+            "rule \"rule\" compares \"meta\" with a string, but it is not a string property",
+        ),
+        // A string read as a number points at the string forms
+        (
+            json!({ "rule": { "equal": ["state", "price"] } }),
+            "rule \"rule\" reads \"state\", which has type string, not integer or boolean: a \
+             string property is compared with a { \"const\": ... }",
+        ),
+        (
+            json!({ "rule": { "lessThan": ["state", { "const": "open" }] } }),
+            "rule \"rule\" at lessThan compares a string constant, which only equal and notEqual \
+             do",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(parse_order(rules.clone(), full_validation), needle);
+        }
+    }
+
+    let schema = order_schema(
+        Some(json!({ "rule": { "equal": ["note", { "const": "x" }] } })),
+        Some("note"),
+    );
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                schema_value(schema.clone()),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "rule \"rule\" compares \"note\", which is transient or inside a transient object",
+        );
     }
 }
 
@@ -637,6 +738,10 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
         json!({ "rule": { "in": ["price", [1, "fee"]] } }),
         json!({ "rule": { "in": ["price", [1, 2], 3] } }),
         json!({ "rule": { "in": ["price", 1] } }),
+        json!({ "rule": { "equal": ["state", { "const": 5 }] } }),
+        json!({ "rule": { "in": ["state", ["open", 2]] } }),
+        json!({ "rule": { "in": ["state", ["open"]] } }),
+        json!({ "rule": { "in": ["state", ["open", "open"]] } }),
     ] {
         let registered = parse_order(rules.clone(), true);
         assert!(
@@ -685,6 +790,7 @@ fn should_refuse_property_constraints_before_protocol_version_14_and_ignore_them
         .expect("the properties")
         .remove("counts");
     schema["properties"]["rush"]["position"] = json!(8);
+    schema["properties"]["state"]["position"] = json!(9);
     let schema = schema_value(schema);
     let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
 
