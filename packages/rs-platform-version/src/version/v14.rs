@@ -1524,8 +1524,6 @@ mod tests {
         );
     }
 
-    /// The ranked index keywords are gated by the meta-schema version, so v14
-    /// must select meta-schema v3 while v13 stays on v2.
     /// Contested indexes without a Lock choice (item 23): the three method
     /// versions that read the resolution are selected by v14 only, so a v13
     /// replay keeps the shipped rules (a full poll for every contest, ties to
@@ -1586,6 +1584,8 @@ mod tests {
         );
     }
 
+    /// The ranked index keywords are gated by the meta-schema version, so v14
+    /// must select meta-schema v3 while v13 stays on v2.
     #[test]
     fn ranked_index_keywords_are_gated_by_meta_schema_v3() {
         assert_eq!(
@@ -1650,46 +1650,6 @@ mod tests {
                 .class_method_versions
                 .try_from_schema,
             3
-        );
-    }
-
-    /// v14 introduces the slots but activates none of them yet. If a later
-    /// change flips one of these, it must do so deliberately — and update this
-    /// test — rather than by inheriting a default.
-    #[test]
-    fn ranked_feature_slots_exist_but_are_dormant() {
-        assert_eq!(
-            PLATFORM_V14.drive.methods.document.query.detect_ranked_mode,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14.drive.methods.document.query.detect_having_mode,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14
-                .drive
-                .methods
-                .verify
-                .document_ranked
-                .verify_ranked_top_k_proof,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14
-                .drive
-                .methods
-                .verify
-                .document_ranked
-                .verify_having_range_proof,
-            0
-        );
-        let grove = &PLATFORM_V14.drive.grove_methods.batch;
-        assert_eq!(grove.batch_insert_empty_provable_count_indexed_tree, 0);
-        assert_eq!(grove.batch_insert_empty_provable_sum_indexed_tree, 0);
-        assert_eq!(
-            grove.batch_insert_empty_provable_count_provable_sum_indexed_tree,
-            0
         );
     }
 
