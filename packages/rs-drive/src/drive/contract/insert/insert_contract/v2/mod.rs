@@ -1,9 +1,13 @@
 use crate::drive::Drive;
+use crate::error::contract::DataContractError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::TokenDistributionRulesV1Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::DataContract;
@@ -88,7 +92,9 @@ impl Drive {
         Ok(())
     }
 
-    /// The generation 1 operations, then the moderation list trees the config declares.
+    /// The generation 1 operations, then the once-per-identity claims subtree of every token
+    /// that has a once-per-identity distribution, then the moderation list trees the config
+    /// declares.
     fn insert_contract_operations_v2(
         &self,
         contract_element: Element,
@@ -112,6 +118,32 @@ impl Drive {
             transaction,
             platform_version,
         )?;
+
+        // The claims subtree of every token whose rules carry a once-per-identity
+        // distribution. Only protocol version 14 admits those rules, so generation 1, which
+        // protocol versions 9-13 select, does not create it.
+        for (token_pos, token_config) in contract.tokens() {
+            if token_config
+                .distribution_rules()
+                .once_per_identity_distribution()
+                .is_none()
+            {
+                continue;
+            }
+            let token_id = contract.token_id(*token_pos).ok_or(Error::DataContract(
+                DataContractError::CorruptedDataContract(format!(
+                    "data contract has a token at position {}, but can not find it",
+                    token_pos
+                )),
+            ))?;
+            self.add_once_per_identity_distribution(
+                token_id.to_buffer(),
+                estimated_costs_only_with_layer_info,
+                &mut batch_operations,
+                transaction,
+                platform_version,
+            )?;
+        }
 
         if let Some(moderation) = contract.config().moderation() {
             self.insert_contract_moderation_trees_operations(
