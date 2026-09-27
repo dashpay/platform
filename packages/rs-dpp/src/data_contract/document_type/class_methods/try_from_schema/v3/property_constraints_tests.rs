@@ -26,8 +26,9 @@ use serde_json::json;
 
 /// An `order` type: four required integers, an optional nested `meta` object
 /// with an integer `total`, a string, a number, a typed array and an integer
-/// `code` to be refused as operands or listed as transient, a boolean `rush`
-/// and a string `state` with an `enum`.
+/// `code` to be refused as operands or listed as transient, a boolean `rush`,
+/// a string `state` with an `enum` and two identifiers, `buyerId` and
+/// `sellerId`.
 fn order_schema(rules: Option<serde_json::Value>, transient: Option<&str>) -> serde_json::Value {
     let mut schema = json!({
         "type": "object",
@@ -61,6 +62,22 @@ fn order_schema(rules: Option<serde_json::Value>, transient: Option<&str>) -> se
                 "enum": ["open", "closed"],
                 "maxLength": 10,
                 "position": 10
+            },
+            "buyerId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 11
+            },
+            "sellerId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 12
             }
         },
         "required": ["price", "fee", "quantity", "deposit"],
@@ -445,6 +462,74 @@ fn should_give_a_string_property_a_default() {
         for full_validation in [true, false] {
             expect_structure_error(parse_order(rules.clone(), full_validation), needle);
         }
+    }
+}
+
+/// Identifier properties compare with base58 `const`s, with each other and
+/// with the identifiers an `in` lists, on both paths, by `equal` and
+/// `notEqual` only; an identifier read as a number, or compared with a string
+/// property, is refused.
+#[test]
+fn should_compare_identifier_properties() {
+    let token = Identifier::new([7; 32]).to_string(Encoding::Base58);
+    let other = Identifier::new([8; 32]).to_string(Encoding::Base58);
+    let rules = json!({
+        "boughtWithToken": { "equal": ["buyerId", { "const": token.clone() }] },
+        "buyerIsNotSeller": { "notEqual": ["buyerId", "sellerId"] },
+        "knownSeller": { "in": ["sellerId", [token.clone(), other.clone()]] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["buyerIsNotSeller"].property_reads(),
+            [
+                ("buyerId", PropertyRead::Identifier),
+                ("sellerId", PropertyRead::Identifier)
+            ]
+        );
+        assert_eq!(constraints["boughtWithToken"].property_paths(), ["buyerId"]);
+        assert_eq!(constraints["knownSeller"].property_paths(), ["sellerId"]);
+    }
+
+    for (rules, needle) in [
+        (
+            json!({ "rule": { "lessThan": ["buyerId", "sellerId"] } }),
+            "rule \"rule\" at lessThan compares identifiers, which only equal and notEqual do",
+        ),
+        (
+            json!({ "rule": { "equal": ["note", "buyerId"] } }),
+            "rule \"rule\" at equal compares a string property with an identifier property",
+        ),
+        (
+            json!({ "rule": { "equal": ["buyerId", "price"] } }),
+            "rule \"rule\" reads \"buyerId\", which has type identifier, not integer or boolean: \
+             an identifier property is compared",
+        ),
+        (
+            json!({ "rule": { "equal": ["buyerId", { "const": "closed" }] } }),
+            "rule \"rule\" at equal[1].const holds \"closed\", which is not a base58 identifier",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(parse_order(rules.clone(), full_validation), needle);
+        }
+    }
+
+    let schema = order_schema(
+        Some(json!({ "rule": { "notEqual": ["buyerId", "sellerId"] } })),
+        Some("buyerId"),
+    );
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                schema_value(schema.clone()),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "rule \"rule\" compares \"buyerId\", which is transient or inside a transient object",
+        );
     }
 }
 
@@ -901,6 +986,8 @@ fn should_refuse_property_constraints_before_protocol_version_14_and_ignore_them
         .remove("counts");
     schema["properties"]["rush"]["position"] = json!(8);
     schema["properties"]["state"]["position"] = json!(9);
+    schema["properties"]["buyerId"]["position"] = json!(10);
+    schema["properties"]["sellerId"]["position"] = json!(11);
     let schema = schema_value(schema);
     let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
 

@@ -2,18 +2,27 @@ use super::*;
 use platform_value::platform_value;
 use platform_version::version::PLATFORM_VERSIONS;
 
-/// The paths the unit tests treat as string properties; every other path is an
-/// integer one.
+/// The paths the unit tests treat as string properties.
 const STRING_PROPERTIES: [&str; 4] = ["status", "from", "to", "meta.state"];
 
-fn is_string_property(path: &str) -> bool {
-    STRING_PROPERTIES.contains(&path)
+/// The paths the unit tests treat as identifier properties; every path neither lists
+/// is an integer one.
+const IDENTIFIER_PROPERTIES: [&str; 3] = ["buyerId", "sellerId", "meta.ownerRef"];
+
+fn property_kind(path: &str) -> Option<EqualityKind> {
+    if STRING_PROPERTIES.contains(&path) {
+        Some(EqualityKind::Text)
+    } else if IDENTIFIER_PROPERTIES.contains(&path) {
+        Some(EqualityKind::Identifier)
+    } else {
+        None
+    }
 }
 
 /// The rules of a schema whose `propertyConstraints` is `declaration`.
 fn parse(declaration: Value) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     let schema = platform_value!({ "type": "object", "propertyConstraints": declaration });
-    parse_property_constraints(&schema, "order", &is_string_property)
+    parse_property_constraints(&schema, "order", &property_kind)
 }
 
 /// The one rule of a declaration naming it `rule`.
@@ -174,19 +183,15 @@ fn should_parse_every_operator_comparison_and_the_if_absent_operand() {
 #[test]
 fn should_read_nothing_from_a_schema_without_the_keyword() {
     let schema = platform_value!({ "type": "object" });
+    assert!(parse_property_constraints(&schema, "order", &property_kind)
+        .expect("parses")
+        .is_empty());
+    // A schema that is not an object is the core parser's to refuse
     assert!(
-        parse_property_constraints(&schema, "order", &is_string_property)
+        parse_property_constraints(&Value::Text("x".to_string()), "order", &property_kind)
             .expect("parses")
             .is_empty()
     );
-    // A schema that is not an object is the core parser's to refuse
-    assert!(parse_property_constraints(
-        &Value::Text("x".to_string()),
-        "order",
-        &is_string_property
-    )
-    .expect("parses")
-    .is_empty());
 }
 
 #[test]
@@ -1177,6 +1182,169 @@ fn should_read_a_string_default_for_a_property_left_out() {
         ]
     }));
     assert_eq!(rule.repeated_condition(), None);
+}
+
+// ── identifiers ─────────────────────────────────────────────────────────
+
+/// The identifier made of 32 copies of `byte`, and its base58 spelling.
+fn identifier(byte: u8) -> (Identifier, String) {
+    let identifier = Identifier::new([byte; 32]);
+    let base58 = identifier.to_string(Encoding::Base58);
+    (identifier, base58)
+}
+
+/// A `const` or a listed value compared with an identifier property is a base58
+/// identifier; two bare paths naming identifier properties compare identifiers.
+#[test]
+fn should_parse_identifier_comparisons() {
+    let (a, a58) = identifier(1);
+    let (b, b58) = identifier(2);
+    assert_eq!(
+        parse_rule_value(platform_value!({ "equal": ["buyerId", { "const": a58.clone() }] })),
+        PropertyConstraint::IdentifierCompare {
+            comparison: ConstraintComparison::Equal,
+            path: "buyerId".to_string(),
+            value: a,
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({
+            "notEqual": [{ "const": b58.clone() }, "meta.ownerRef"]
+        })),
+        PropertyConstraint::IdentifierCompare {
+            comparison: ConstraintComparison::NotEqual,
+            path: "meta.ownerRef".to_string(),
+            value: b,
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "notEqual": ["buyerId", "sellerId"] })),
+        PropertyConstraint::IdentifierCompareProperties {
+            comparison: ConstraintComparison::NotEqual,
+            left: "buyerId".to_string(),
+            right: "sellerId".to_string(),
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "in": ["sellerId", [b58.clone(), a58.clone()]] })),
+        PropertyConstraint::IdentifierIn {
+            path: "sellerId".to_string(),
+            values: BTreeSet::from([a, b]),
+        }
+    );
+    // An identifier property beside an integer stays an integer comparison, which the
+    // document type check refuses for the identifier
+    assert!(matches!(
+        parse_rule_value(platform_value!({ "equal": ["buyerId", 5] })),
+        PropertyConstraint::Compare { .. }
+    ));
+
+    for (condition, needle) in [
+        (
+            platform_value!({ "lessThan": ["buyerId", "sellerId"] }),
+            "rule \"rule\" at lessThan compares identifiers, which only equal and notEqual do",
+        ),
+        (
+            platform_value!({ "notEqual": ["buyerId", "status"] }),
+            "rule \"rule\" at notEqual compares a string property with an identifier property",
+        ),
+        (
+            platform_value!({ "equal": ["buyerId", { "const": "not base58!" }] }),
+            "rule \"rule\" at equal[1].const holds \"not base58!\", which is not a base58 \
+             identifier of 32 bytes",
+        ),
+        (
+            platform_value!({ "equal": ["buyerId", { "const": "2" }] }),
+            "rule \"rule\" at equal[1].const holds \"2\", which is not a base58 identifier of 32 \
+             bytes",
+        ),
+        (
+            platform_value!({ "equal": ["buyerId", { "const": 5 }] }),
+            "rule \"rule\" at equal[1].const must be an identifier, written base58",
+        ),
+        (
+            platform_value!({ "equal": [{ "ifAbsent": ["buyerId", "x"] }, "sellerId"] }),
+            "rule \"rule\" at equal[0] gives an identifier property a default, which identifiers \
+             do not take",
+        ),
+        (
+            platform_value!({ "in": ["buyerId", [a58.clone()]] }),
+            "rule \"rule\" at in[1] must list two or more identifiers",
+        ),
+        (
+            platform_value!({ "in": ["buyerId", [a58.clone(), "bad"]] }),
+            "rule \"rule\" at in[1][1] holds \"bad\", which is not a base58 identifier",
+        ),
+        (
+            platform_value!({ "in": ["buyerId", [a58.clone(), 2]] }),
+            "rule \"rule\" at in[1][1] must be an identifier, written base58",
+        ),
+        (
+            platform_value!({ "in": ["buyerId", [a58.clone(), b58.clone(), a58.clone()]] }),
+            "rule \"rule\" at in[1][2] repeats the value at in[1][0]",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": condition }), needle);
+    }
+}
+
+/// An identifier property equals a constant or another one when both hold the same 32
+/// bytes, in whichever form the document gives them; one it leaves out equals nothing.
+#[test]
+fn should_compare_identifier_properties() {
+    let (a, a58) = identifier(1);
+    let (b, b58) = identifier(2);
+    let is_a =
+        parse_rule_value(platform_value!({ "equal": ["buyerId", { "const": a58.clone() }] }));
+    let listed = parse_rule_value(platform_value!({ "in": ["buyerId", [a58, b58]] }));
+    for (buyer, equals_a, is_listed) in [
+        (Some(Value::Identifier(a.to_buffer())), true, true),
+        (Some(Value::Bytes32(a.to_buffer())), true, true),
+        (Some(Value::Bytes(a.to_vec())), true, true),
+        (Some(Value::Identifier(b.to_buffer())), false, true),
+        (Some(Value::Identifier([3; 32])), false, false),
+        (Some(Value::Null), false, false),
+        (Some(Value::U64(1)), false, false),
+        (None, false, false),
+    ] {
+        let values = match &buyer {
+            Some(value) => data(&[("buyerId", value.clone())]),
+            None => data(&[]),
+        };
+        assert_eq!(is_a.holds(&values), Ok(equals_a), "equal, {buyer:?}");
+        assert_eq!(listed.holds(&values), Ok(is_listed), "in, {buyer:?}");
+    }
+
+    let distinct = parse_rule_value(platform_value!({ "notEqual": ["buyerId", "sellerId"] }));
+    let pair = |buyer: Option<Identifier>, seller: Option<Identifier>| {
+        let mut entries = Vec::new();
+        if let Some(buyer) = buyer {
+            entries.push(("buyerId", Value::Identifier(buyer.to_buffer())));
+        }
+        if let Some(seller) = seller {
+            entries.push(("sellerId", Value::Bytes32(seller.to_buffer())));
+        }
+        data(&entries)
+    };
+    assert_eq!(distinct.holds(&pair(Some(a), Some(b))), Ok(true));
+    assert_eq!(distinct.holds(&pair(Some(a), Some(a))), Ok(false));
+    assert_eq!(distinct.holds(&pair(Some(a), None)), Ok(true));
+    // Two identifiers left out are not equal
+    assert_eq!(distinct.holds(&pair(None, None)), Ok(true));
+
+    // A comparison of a path with a constant is three nodes, an in two plus one per value
+    assert_eq!(is_a.node_count(), 3);
+    assert_eq!(distinct.node_count(), 3);
+    assert_eq!(listed.node_count(), 4);
+    assert_eq!(
+        distinct.property_reads(),
+        [
+            ("buyerId", PropertyRead::Identifier),
+            ("sellerId", PropertyRead::Identifier)
+        ]
+    );
+    // Identifier constants are not string constants: no enum check reads them
+    assert!(is_a.text_constants().is_empty());
 }
 
 // ── present and absent ──────────────────────────────────────────────────

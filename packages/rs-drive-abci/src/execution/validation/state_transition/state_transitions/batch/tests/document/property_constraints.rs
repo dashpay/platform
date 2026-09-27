@@ -1,12 +1,13 @@
 //! End-to-end coverage for the `propertyConstraints` doctype keyword (protocol
 //! version 14): a document type names rules its documents' properties must
-//! meet, each a comparison of two integer expressions, of a string property
-//! with string constants or of two string properties, an `in` list of values,
-//! a `present` or `absent` test, or an `anyOf`, `allOf` or `not` of such
-//! conditions. A create or replace that breaks one is consensus-rejected with
-//! `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the
-//! rule and why, and leaves the stored document untouched. A property the
-//! document leaves out counts as 0 in an operand, or as its `ifAbsent` value.
+//! meet, each a comparison of two integer expressions, of a string or an
+//! identifier property with constants or with another property of its kind,
+//! an `in` list of values, a `present` or `absent` test, or an `anyOf`,
+//! `allOf` or `not` of such conditions. A create or replace that breaks one is
+//! consensus-rejected with `DocumentPropertyConstraintViolatedError` (basic
+//! code 10422), naming the rule and why, and leaves the stored document
+//! untouched. A property the document leaves out counts as 0 in an operand,
+//! or as its `ifAbsent` value.
 
 use super::*;
 
@@ -23,6 +24,7 @@ mod property_constraints_tests {
     use dpp::document::DocumentV0Setters;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::platform_value;
+    use dpp::platform_value::string_encoding::Encoding;
     use dpp::prelude::{DataContract, Identifier, IdentityNonce};
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -32,6 +34,9 @@ mod property_constraints_tests {
     use drive::util::storage_flags::StorageFlags;
     use simple_signer::signer::SimpleSigner;
     use std::collections::{BTreeMap, BTreeSet};
+
+    /// The bytes repeated into the token ids `paidInAcceptedToken` lists, base58.
+    const ACCEPTED_TOKENS: [u8; 2] = [7, 8];
 
     /// A mutable `offer` type whose rules, checked in name order, are:
     ///
@@ -46,11 +51,15 @@ mod property_constraints_tests {
     ///   counting as open
     /// * `feeWaivedOnlyWithDiscount`: `!(fee == 0 && discount == 0)`
     /// * `feeWaivedOrAtLeastTen`: `fee == 0 || fee >= 10`
+    /// * `paidInAcceptedToken`: a `paymentToken`, when given, is one of [`ACCEPTED_TOKENS`]
     /// * `perUnitDeposit`: `deposit / quantity >= 1`, which divides by zero for no quantity
+    /// * `refundGoesToPayer`: a `refundTo`, when given, is the `payerId`
     /// * `settlesInAnotherCurrency`: a `settleIn` currency, when given, is not `currency`
     /// * `tieredFee`: `fee` is one of 0, 10, 25 or 50
     /// * `waivedFeeIsZero`: `waiveFee * fee == 0`, the boolean reading as 1 or 0
     fn offer_schema() -> Value {
+        let accepted_tokens = ACCEPTED_TOKENS
+            .map(|byte| Value::Text(Identifier::new([byte; 32]).to_string(Encoding::Base58)));
         platform_value!({
             "type": "object",
             "documentsMutable": true,
@@ -80,6 +89,30 @@ mod property_constraints_tests {
                     "enum": ["USD", "EUR", "DASH"],
                     "maxLength": 4,
                     "position": 10
+                },
+                "payerId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 11
+                },
+                "refundTo": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 12
+                },
+                "paymentToken": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 13
                 }
             },
             "required": ["price", "fee", "quantity", "deposit"],
@@ -127,8 +160,17 @@ mod property_constraints_tests {
                 "feeWaivedOrAtLeastTen": {
                     "anyOf": [{ "equal": ["fee", 0] }, { "greaterThanOrEqual": ["fee", 10] }]
                 },
+                "paidInAcceptedToken": {
+                    "anyOf": [
+                        { "absent": "paymentToken" },
+                        { "in": ["paymentToken", accepted_tokens] }
+                    ]
+                },
                 "perUnitDeposit": {
                     "greaterThanOrEqual": [{ "divide": ["deposit", "quantity"] }, 1]
+                },
+                "refundGoesToPayer": {
+                    "anyOf": [{ "absent": "refundTo" }, { "equal": ["refundTo", "payerId"] }]
                 },
                 "settlesInAnotherCurrency": {
                     "anyOf": [{ "absent": "settleIn" }, { "notEqual": ["settleIn", "currency"] }]
@@ -759,6 +801,49 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// Identifier properties compare with the base58 identifiers an `in` lists
+    /// and with each other: a payment token must be an accepted one, and a
+    /// refund must go to the payer.
+    #[tokio::test]
+    async fn should_compare_identifier_properties() {
+        let mut fixture = OfferFixture::new();
+        let identifier = |byte: u8| Value::Identifier([byte; 32]);
+
+        let result = fixture
+            .create(|document| document.set("paymentToken", identifier(9)))
+            .await;
+        expect_violated(
+            result,
+            "paidInAcceptedToken",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| {
+                document.set("payerId", identifier(1));
+                document.set("refundTo", identifier(2));
+            })
+            .await;
+        expect_violated(
+            result,
+            "refundGoesToPayer",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("paymentToken", identifier(ACCEPTED_TOKENS[1]));
+                    document.set("payerId", identifier(1));
+                    document.set("refundTo", identifier(1));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
     }
 
     #[tokio::test]

@@ -1056,12 +1056,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     distinct strings, a string the document leaves out equalling no
 ///     constant and no other string unless an `ifAbsent` gives it a string
 ///     default (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum`
-///     must list too); `present` or `absent` naming a property of
-///     any type, whether the document holds it (the one way to tell a property
-///     left out from one set to 0); `anyOf` or `allOf` over two or more
-///     conditions; or `not` over one. In an operand, a property the document
-///     leaves out counts as 0, or as the value of an `ifAbsent` operand naming
-///     it. Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
+///     must list too); `equal`, `notEqual` or `in` of an identifier property
+///     likewise, with base58 identifier constants or another identifier
+///     property and no default, an identifier the document leaves out
+///     equalling none; `present` or `absent` naming a property of any type,
+///     whether the document holds it (the one way to tell a property left out
+///     from one set to 0); `anyOf` or `allOf` over two or more conditions; or
+///     `not` over one. In an operand, a property the document leaves out
+///     counts as 0, or as the value of an `ifAbsent` operand naming it.
+///     Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
 ///     remainder is never negative), and an overflow, a zero divisor, a
 ///     negative exponent or a value that is not an integer refuses the
 ///     document rather than wrapping. Conditions are checked in declared order
@@ -1070,14 +1073,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     refuses the document whatever the others say, and `not` never turns a
 ///     fault into a pass, so an earlier condition guards a later one. The
 ///     parser checks that every path an operand reads names an integer or
-///     boolean property, every path compared with strings a string property
-///     (whose `enum`, if it declares one, lists every constant it is compared
-///     with), and every path `present` or `absent` tests a property of any
-///     type, none transient nor inside a transient object; that every
-///     comparison and `in` reads a property; that strings are only compared
-///     for equality; that no `in` lists a value twice; that an `anyOf` or
-///     `allOf` holds none directly of its own kind and a `not` no `not`; and
-///     that no condition or operand nests deeper than
+///     boolean property, every path compared with identifiers an identifier
+///     property, every path compared with strings a string property (whose
+///     `enum`, if it declares one, lists every constant it is compared with),
+///     and every path `present` or `absent` tests a property of any type, none
+///     transient nor inside a transient object; that every comparison and `in`
+///     reads a property; that strings and identifiers are only compared for
+///     equality, and never with each other; that no `in` lists a value twice;
+///     that an `anyOf` or `allOf` holds none directly of its own kind and a
+///     `not` no `not`; and that no condition or operand nests deeper than
 ///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse. Under full
 ///     validation it holds the limits `SystemLimits::max_property_constraints`
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every

@@ -2,7 +2,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraints, PropertyRead,
+    parse_property_constraints, EqualityKind, PropertyRead,
 };
 use crate::data_contract::document_type::reference_lookup::{
     MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
@@ -1939,19 +1939,16 @@ fn apply_property_constraints_v0(
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
     let flattened_properties = &document_type.flattened_properties;
-    let is_string_property = |path: &str| {
-        matches!(
-            flattened_properties
-                .get(path)
-                .map(|property| &property.property_type),
-            Some(DocumentPropertyType::String(_))
-        )
+    let property_kind = |path: &str| match flattened_properties
+        .get(path)
+        .map(|property| &property.property_type)
+    {
+        Some(DocumentPropertyType::String(_)) => Some(EqualityKind::Text),
+        Some(DocumentPropertyType::Identifier) => Some(EqualityKind::Identifier),
+        _ => None,
     };
-    let constraints = parse_property_constraints(
-        &document_type.schema,
-        document_type_name,
-        &is_string_property,
-    )?;
+    let constraints =
+        parse_property_constraints(&document_type.schema, document_type_name, &property_kind)?;
     let structure_error = |message: String| {
         DataContractError::InvalidContractStructure(format!(
             "document type \"{document_type_name}\" propertyConstraints {message}"
@@ -1963,7 +1960,7 @@ fn apply_property_constraints_v0(
             let reads = match read {
                 PropertyRead::Value => "reads",
                 PropertyRead::Presence => "tests the presence of",
-                PropertyRead::Text => "compares",
+                PropertyRead::Text | PropertyRead::Identifier => "compares",
             };
             match read {
                 PropertyRead::Value => match document_type
@@ -1988,6 +1985,15 @@ fn apply_property_constraints_v0(
                              or boolean: a string property is compared, by equal or notEqual, \
                              with a {{ \"const\": ... }} or another string property, or with the \
                              strings an in lists"
+                        )));
+                    }
+                    // An identifier is compared with identifiers, never read as a number
+                    Some(DocumentPropertyType::Identifier) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" reads \"{path}\", which has type identifier, not \
+                             integer or boolean: an identifier property is compared, by equal or \
+                             notEqual, with a {{ \"const\": base58 }} or another identifier \
+                             property, or with the identifiers an in lists"
                         )));
                     }
                     Some(other) => {
@@ -2033,6 +2039,27 @@ fn apply_property_constraints_v0(
                             "rule \"{name}\" compares \"{path}\" with a string, but it is not a \
                              string property of the document type (a nested one is named by its \
                              dotted path)"
+                        )));
+                    }
+                },
+                PropertyRead::Identifier => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    Some(DocumentPropertyType::Identifier) => {}
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" compares \"{path}\" with an identifier, but it has \
+                             type {}, not identifier",
+                            other.name()
+                        )));
+                    }
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" compares \"{path}\" with an identifier, but it is \
+                             not an identifier property of the document type (a nested one is \
+                             named by its dotted path)"
                         )));
                     }
                 },
