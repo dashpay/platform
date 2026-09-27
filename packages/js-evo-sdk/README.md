@@ -399,7 +399,7 @@ try {
 
 ## Property constraints (`propertyConstraints`)
 
-From protocol version 14 a document type can declare rules its documents' integer properties must meet, each a comparison of two integer expressions built from property paths and integer values:
+From protocol version 14 a document type can declare rules its documents' integer properties must meet, each a comparison of two integer expressions built from property paths and integer values, or `anyOf`, `allOf` or `not` over such conditions:
 
 ```json
 "propertyConstraints": {
@@ -411,11 +411,14 @@ From protocol version 14 a document type can declare rules its documents' intege
   },
   "minimumOrder": {
     "greaterThanOrEqual": [{ "multiply": ["price", { "ifAbsent": ["quantity", 1] }] }, 100]
+  },
+  "feeWaivedOrAtLeastTen": {
+    "anyOf": [{ "equal": ["fee", 0] }, { "greaterThanOrEqual": ["fee", 10] }]
   }
 }
 ```
 
-The comparisons are `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` and `greaterThanOrEqual`, and the operators `add` and `multiply` (two or more operands) and `subtract`, `divide`, `modulo` and `power` (exactly two). A property the document leaves out counts as 0, or as the value of an `ifAbsent` operand naming it. The arithmetic is exact over 128-bit integers, and `divide` and `modulo` are Euclidean, so a remainder is never negative. The rules are fixed when the document type is created.
+The comparisons are `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` and `greaterThanOrEqual`, and the operators `add` and `multiply` (two or more operands) and `subtract`, `divide`, `modulo` and `power` (exactly two). `anyOf` holds if at least one of two or more conditions holds, `allOf` if every one does, and `not` if its one condition does not; conditions are checked in order and `anyOf` stops at the first that holds, so `{ "anyOf": [{ "equal": ["b", 0] }, { "equal": [{ "divide": ["a", "b"] }, 2] }] }` never divides by zero. A property the document leaves out counts as 0, or as the value of an `ifAbsent` operand naming it. The arithmetic is exact over 128-bit integers, and `divide` and `modulo` are Euclidean, so a remainder is never negative. The rules are fixed when the document type is created.
 
 Consensus checks every rule on each create and replace, and rejects a document that breaks one, or whose rule overflows, divides by zero or raises to a negative power. The code reaches JS as `error.code`, and the message names the rule:
 

@@ -168,8 +168,9 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) creator_reference: Option<DocumentPropertyReferenceTarget>,
     /// The rules every created or replaced document must meet, by name, in the
     /// order they are checked (`propertyConstraints` keyword, protocol version
-    /// 14): each a comparison of two integer expressions over the document's
-    /// integer properties. Empty on document types that declare none. The
+    /// 14): each a condition on the document's integer properties, a comparison
+    /// of two integer expressions or an `anyOf`, `allOf` or `not` of conditions.
+    /// Empty on document types that declare none. The
     /// parser (`apply_property_constraints`) holds every property a rule reads
     /// to be an integer that is neither transient nor inside a transient object.
     pub(in crate::data_contract) property_constraints: BTreeMap<String, PropertyConstraint>,
