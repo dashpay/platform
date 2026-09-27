@@ -62,9 +62,12 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                     Some((provided, paid_amount)),
                 ) => {
                     // A moderation election is prefunded with the moderation fund, every other
-                    // contest with the contested document fund
+                    // contest with the contested document fund. -->> Changed in V1 <<-- A
+                    // contender pays at least that: joining a contest holding 250 contenders or
+                    // more costs a multiple of it, which state validation checks once it has
+                    // counted them, and everything paid goes to the contest's fund.
                     let expected_amount = expected.required_vote_resolution_fund(platform_version);
-                    if expected_amount != *paid_amount {
+                    if *paid_amount < expected_amount {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             DocumentContestNotPaidForError::new(
                                 self.base().id(),
@@ -312,8 +315,10 @@ mod tests {
             .collect()
     }
 
+    /// A contender pays the contested document fund: exactly it before protocol version 14, at
+    /// least it from 14, where joining a contest of 250 contenders or more costs a multiple of it
     #[test]
-    fn should_require_the_exact_contested_dpns_fee_for_each_protocol_version() {
+    fn should_require_the_contested_dpns_fee_for_each_protocol_version() {
         for (protocol_version, expected_amount) in [(13, 20_000_000_000), (14, 10_000_000_000)] {
             let platform_version = PlatformVersion::get(protocol_version).expect("known version");
             for paid_amount in [
@@ -337,7 +342,12 @@ mod tests {
 
                 let errors = validate(&action, platform_version);
                 let contest_errors = contest_errors(&errors);
-                if paid_amount == expected_amount {
+                let accepted = if protocol_version < 14 {
+                    paid_amount == expected_amount
+                } else {
+                    paid_amount >= expected_amount
+                };
+                if accepted {
                     assert!(
                         contest_errors.is_empty(),
                         "protocol {protocol_version}: {errors:?}"
@@ -535,8 +545,8 @@ mod tests {
         })
     }
 
-    /// An application in a moderation election prefunds the moderation fund, 0.5 Dash; the
-    /// contested document fund every other contest takes is refused.
+    /// An application in a moderation election prefunds at least the moderation fund, 0.5 Dash;
+    /// the contested document fund every other contest takes is refused.
     #[test]
     fn should_require_the_moderation_fund_of_a_charter_application() {
         let platform_version = PlatformVersion::latest();
@@ -556,7 +566,7 @@ mod tests {
             let action = charter_application_action(paid_amount, platform_version);
             let errors = validate(&action, platform_version);
             let contest_errors = contest_errors(&errors);
-            if paid_amount == Some(moderation_fund) {
+            if paid_amount >= Some(moderation_fund) {
                 assert!(contest_errors.is_empty(), "{errors:?}");
             } else {
                 let [StateError::DocumentContestNotPaidForError(error)] = contest_errors.as_slice()

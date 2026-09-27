@@ -37,6 +37,11 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // `maximum_contenders_to_consider` rises from 100 to 10,000 so the end of a poll
 // tallies and cleans up every contender of a poll within the 1,000 a contest
 // accepts, and up to 10,000 of one that grew past it before this version.
+// Document create state validation 2 also refuses a contender whose prefunded voting
+// balance is less than the fund doubled once the contest holds
+// `contested_document_contenders_before_fund_doubling` (250) contenders and again for every
+// `contested_document_contenders_per_fund_doubling` (50) more (DocumentContestNotPaidForError), and structure validation 1 accepts a prefunded voting
+// balance of at least the contest's fund where 0 wanted exactly it.
 // v9 remains unchanged for PROTOCOL_VERSION_13 chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
@@ -238,7 +243,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
                 // PROTOCOL_VERSION_14: a batch that asks the contract owner to pay its gas
                 // only has to fund its principal (purchases, contest collateral) itself.
                 identity_minimum_balance_pre_check: 1,
-                document_create_transition_structure_validation: 1, // changed: v1 also cross-checks the prefunded voting balance against the contested index and refuses a `distinctFrom` identifier property equal to the value it must differ from
+                document_create_transition_structure_validation: 1, // changed: v1 also cross-checks the prefunded voting balance against the contested index, accepts one of at least the contest's fund, and refuses a `distinctFrom` identifier property equal to the value it must differ from
                 // Reject deletes on legacy keep-history types as paid consensus errors.
                 // Protocols through 13 retain the original internal-error outcome.
                 document_delete_transition_structure_validation: 1,
