@@ -636,6 +636,8 @@ mod tests {
         TokenDistributionRecipient, TokenDistributionResolvedRecipient,
     };
     use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
+    use dpp::block::epoch::EpochIndex;
     use dpp::identifier::Identifier;
     use dpp::prelude::TimestampMillis;
     use std::collections::BTreeMap;
