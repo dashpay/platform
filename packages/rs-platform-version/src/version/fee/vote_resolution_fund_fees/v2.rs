@@ -8,5 +8,8 @@ pub const VOTE_RESOLUTION_FUND_FEES_VERSION2: VoteResolutionFundFees = VoteResol
     contested_document_single_vote_cost: 2_000_000, // 0.00002 DASH
     // An application in a moderation election prefunds 25,000 masternode votes
     moderation_vote_resolution_fund_required_amount: 50_000_000_000, // 0.5 DASH
+    // The fund a contender pays doubles for every 100 contenders the contest holds: the first
+    // 100 pay it, the next 100 twice it, up to 512 times it for the 901st to the 1,000th
+    contested_document_contenders_per_fund_doubling: 100,
     ..VOTE_RESOLUTION_FUND_FEES_VERSION1
 };

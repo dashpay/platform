@@ -32,7 +32,7 @@ mod creation_tests {
     use drive::util::test_helpers::setup_contract;
     use crate::test::helpers::setup::TempPlatform;
     use crate::rpc::core::MockCoreRPCLike;
-    use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, create_dpns_identity_name_contest, create_dpns_name_contest_give_key_info, dpns_name_vote_poll, perform_votes_multi};
+    use crate::execution::validation::state_transition::state_transitions::tests::{add_contender_to_dpns_name_contest, add_contender_to_dpns_name_contest_paying, create_dpns_identity_name_contest, create_dpns_name_contest_give_key_info, dpns_name_vote_poll, perform_votes_multi};
     use drive::drive::votes::paths::VotePollPaths;
     use drive::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::resolve::ContestedDocumentResourceVotePollResolver;
     use drive::fees::op::LowLevelDriveOperation;
@@ -3624,6 +3624,205 @@ mod creation_tests {
             .expect("expected to write the bare contenders");
     }
 
+    /// The fund a contest's prefunded specialized balance holds
+    fn dpns_name_contest_fund(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        dpns_contract: &DataContract,
+        name: &str,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        let specialized_balance_id = dpns_name_vote_poll(dpns_contract, name)
+            .specialized_balance_id()
+            .expect("expected the specialized balance id");
+        platform
+            .drive
+            .fetch_prefunded_specialized_balance(
+                specialized_balance_id.to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contest's fund")
+            .expect("expected the contest to have a fund")
+    }
+
+    /// The contested document fund at `platform_version`
+    fn contested_document_fund(platform_version: &PlatformVersion) -> Credits {
+        platform_version
+            .fee_version
+            .vote_resolution_fund_fees
+            .contested_document_vote_resolution_fund_required_amount
+    }
+
+    /// The fund a contender pays doubles for every 100 contenders the contest holds: once it
+    /// holds 100, a contender stating the contested document fund is refused, paid, and one
+    /// stating twice it joins and pays all of it into the contest's fund
+    #[tokio::test]
+    async fn should_double_the_fund_a_contender_pays_for_every_100_contenders_a_contest_holds() {
+        let platform_version = PlatformVersion::latest();
+        let fund = contested_document_fund(platform_version);
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_contract,
+            "quantum",
+            100,
+            platform_version,
+        );
+        let contest_fund =
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version);
+
+        let (_, result) = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        let PaidConsensusError {
+            error: ConsensusError::StateError(StateError::DocumentContestNotPaidForError(error)),
+            ..
+        } = result
+        else {
+            panic!("expected the contest not to be paid for, got {result:?}");
+        };
+        assert_eq!(error.expected_amount(), 2 * fund);
+        assert_eq!(error.paid_amount(), fund);
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund
+        );
+
+        let (contender, result) = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            9,
+            "quantum",
+            Some(2 * fund),
+            platform_version,
+        )
+        .await;
+        let SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the contender to join, got {result:?}");
+        };
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + 2 * fund
+        );
+        let balance = platform
+            .drive
+            .fetch_identity_balance(contender.id().to_buffer(), None, platform_version)
+            .expect("expected to fetch the contender's balance")
+            .expect("expected the contender to have a balance");
+        // The contender paid the fund, the fees of its document and those of its preorder
+        let paid = contender.balance() - balance;
+        assert!(
+            paid > 2 * fund + fee_result.total_base_fee() && paid < 2 * fund + fund / 100,
+            "paid {paid}"
+        );
+    }
+
+    /// PROTOCOL_VERSION_13: every contender pays the same fund, however many the contest holds
+    #[tokio::test]
+    async fn should_double_the_fund_a_contender_pays_for_every_100_contenders_a_contest_holds_protocol_version_13(
+    ) {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        let fund = contested_document_fund(platform_version);
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+
+        fill_contest_with_bare_contenders(
+            &platform,
+            &dpns_contract,
+            "quantum",
+            100,
+            platform_version,
+        );
+        let contest_fund =
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version);
+
+        let (_, result) = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund),
+            platform_version,
+        )
+        .await;
+        assert_matches!(result, SuccessfulExecution { .. });
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + fund
+        );
+    }
+
+    /// A contender may state more than the fund it has to pay; all of it goes to the contest's
+    /// fund
+    #[tokio::test]
+    async fn should_put_everything_a_contender_pays_into_the_contest_fund() {
+        let platform_version = PlatformVersion::latest();
+        let fund = contested_document_fund(platform_version);
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let (_, _, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            7,
+            "quantum",
+            platform_version,
+        )
+        .await;
+        let contest_fund =
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version);
+
+        let (_, result) = add_contender_to_dpns_name_contest_paying(
+            &mut platform,
+            &platform_state,
+            4,
+            "quantum",
+            Some(fund + fund / 2),
+            platform_version,
+        )
+        .await;
+        assert_matches!(result, SuccessfulExecution { .. });
+        assert_eq!(
+            dpns_name_contest_fund(&platform, &dpns_contract, "quantum", platform_version),
+            contest_fund + fund + fund / 2
+        );
+    }
+
     /// A contest accepts at most `max_contenders_per_contest` contenders (1,000): the one that
     /// would be the 1,001st is refused, paid
     #[tokio::test]
@@ -3652,15 +3851,17 @@ mod creation_tests {
             max_contenders - 1,
             platform_version,
         );
-        add_contender_to_dpns_name_contest(
+        // The 1,000th contender pays 512 times the fund
+        let (_, result) = add_contender_to_dpns_name_contest_paying(
             &mut platform,
             &platform_state,
             4,
             "quantum",
-            None,
+            Some(512 * contested_document_fund(platform_version)),
             platform_version,
         )
         .await;
+        assert_matches!(result, SuccessfulExecution { .. });
 
         add_contender_to_dpns_name_contest(
             &mut platform,
