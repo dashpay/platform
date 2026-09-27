@@ -16,7 +16,7 @@ use crate::data_contract::DataContract;
 use crate::document::{Document, DocumentV0Getters};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use std::ops::Deref;
 
@@ -28,10 +28,16 @@ pub trait DataContractDocumentValidationMethodsV0 {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 
+    /// Validates a document's properties, `value`, against its document type: the
+    /// schema, the string byte caps and the `propertyConstraints` rules. `owner_id` is
+    /// the document's owner, what a rule's `$ownerId` reads; `None` when the caller does
+    /// not know it, which `$ownerId` then equals no identifier for. Consensus passes the
+    /// writer on create and replace.
     fn validate_document_properties(
         &self,
         name: &str,
         value: Value,
+        owner_id: Option<Identifier>,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
@@ -42,6 +48,7 @@ impl DataContract {
         &self,
         name: &str,
         value: Value,
+        owner_id: Option<Identifier>,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let Some(document_type) = self.document_type_optional_for_name(name) else {
@@ -110,7 +117,7 @@ impl DataContract {
         // schema error keeps precedence and every value a rule reads is known to be an
         // integer.
         let property_constraints_result =
-            document_type.validate_property_constraints(&value, platform_version)?;
+            document_type.validate_property_constraints(&value, owner_id, platform_version)?;
 
         let json_value = match value.try_into_validating_json() {
             Ok(json_value) => json_value,
@@ -159,7 +166,12 @@ impl DataContract {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // Validate user defined properties
-        self.validate_document_properties_v0(name, document.properties().into(), platform_version)
+        self.validate_document_properties_v0(
+            name,
+            document.properties().into(),
+            Some(document.owner_id()),
+            platform_version,
+        )
     }
 }
 
@@ -207,7 +219,7 @@ mod tests {
         );
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, platform_version)
+            .validate_document_properties("noTimeDocument", value, None, platform_version)
             .expect("validation should return a consensus result");
 
         let Some(ConsensusError::BasicError(BasicError::ValueError(ValueError { .. }))) =
@@ -240,7 +252,7 @@ mod tests {
         );
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, platform_version)
+            .validate_document_properties("noTimeDocument", value, None, platform_version)
             .expect("validation should return a consensus result");
 
         assert!(matches!(
@@ -261,7 +273,7 @@ mod tests {
         )]);
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, platform_version)
+            .validate_document_properties("noTimeDocument", value, None, platform_version)
             .expect("validation should return a consensus result");
 
         assert!(

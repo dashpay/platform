@@ -106,7 +106,12 @@ impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTrans
         // Validate user defined properties
 
         data_contract
-            .validate_document_properties(document_type_name, self.data().into(), platform_version)
+            .validate_document_properties(
+                document_type_name,
+                self.data().into(),
+                Some(owner_id),
+                platform_version,
+            )
             .map_err(Error::Protocol)
     }
 }

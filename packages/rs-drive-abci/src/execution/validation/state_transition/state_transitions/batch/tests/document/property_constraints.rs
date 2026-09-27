@@ -22,6 +22,7 @@ mod property_constraints_tests {
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
     use dpp::document::DocumentV0Setters;
+    use dpp::fee::Credits;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::platform_value::platform_value;
     use dpp::platform_value::string_encoding::Encoding;
@@ -182,6 +183,40 @@ mod property_constraints_tests {
         })
     }
 
+    /// A mutable, transferable and purchasable `offer` type with the integers
+    /// [`set_valid_offer`] fills and one rule, `sellerIsOwner`: a `sellerId`,
+    /// when given, is the offer's owner, `$ownerId`, so a transfer or a purchase
+    /// of an offer naming its seller is refused.
+    fn owned_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "transferable": 1,
+            "tradeMode": 1,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "sellerId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 4
+                }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "sellerIsOwner": {
+                    "anyOf": [{ "absent": "sellerId" }, { "equal": ["sellerId", "$ownerId"] }]
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
     /// An offer that meets every rule: (100 + 10) * 2 = 220.
     fn set_valid_offer(document: &mut Document) {
         document.set("price", Value::U64(100));
@@ -209,6 +244,11 @@ mod property_constraints_tests {
 
     impl OfferFixture {
         fn new() -> Self {
+            Self::with_schema(offer_schema())
+        }
+
+        /// The fixture with its `offer` type declared by `schema`.
+        fn with_schema(schema: Value) -> Self {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -223,13 +263,7 @@ mod property_constraints_tests {
             )
             .data_contract_owned();
             contract
-                .set_document_schema(
-                    "offer",
-                    offer_schema(),
-                    true,
-                    &mut Vec::new(),
-                    platform_version,
-                )
+                .set_document_schema("offer", schema, true, &mut Vec::new(), platform_version)
                 .expect("expected to add the offer document type");
             platform
                 .drive
@@ -385,6 +419,139 @@ mod property_constraints_tests {
                 self.document = Some(replacement);
             }
             result
+        }
+
+        /// Transfers the stored offer to `recipient`. On success the fixture's
+        /// document becomes the transferred version.
+        async fn transfer(&mut self, recipient: Identifier) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let mut transferred = self
+                .document
+                .clone()
+                .expect("a document must have been created first");
+            transferred
+                .increment_revision()
+                .expect("expected the revision to increment");
+
+            let transition = {
+                let offer_type = self
+                    .contract
+                    .document_type_for_name("offer")
+                    .expect("expected the offer document type");
+                BatchTransition::new_document_transfer_transition_from_document(
+                    transferred.clone(),
+                    offer_type,
+                    recipient,
+                    &self.key,
+                    self.next_nonce,
+                    0,
+                    None,
+                    &self.signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expected the transfer transition")
+            };
+            self.next_nonce += 1;
+
+            let result = self.process(&transition);
+            if matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            ) {
+                transferred.set_owner_id(recipient);
+                self.document = Some(transferred);
+            }
+            result
+        }
+
+        /// Puts the stored offer up for sale at `price`.
+        async fn set_price(&mut self, price: Credits) {
+            let platform_version = PlatformVersion::latest();
+            let mut priced = self
+                .document
+                .clone()
+                .expect("a document must have been created first");
+            priced
+                .increment_revision()
+                .expect("expected the revision to increment");
+
+            let transition = {
+                let offer_type = self
+                    .contract
+                    .document_type_for_name("offer")
+                    .expect("expected the offer document type");
+                BatchTransition::new_document_update_price_transition_from_document(
+                    priced.clone(),
+                    offer_type,
+                    price,
+                    &self.key,
+                    self.next_nonce,
+                    0,
+                    None,
+                    &self.signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expected the update price transition")
+            };
+            self.next_nonce += 1;
+
+            assert_matches!(
+                self.process(&transition),
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "setting the price must succeed"
+            );
+            self.document = Some(priced);
+        }
+
+        /// A second funded identity on the fixture's platform.
+        fn other_identity(&mut self, seed: u64) -> (Identity, SimpleSigner, IdentityPublicKey) {
+            setup_identity(&mut self.platform, seed, dash_to_credits!(0.5))
+        }
+
+        /// `buyer` purchases the stored offer at `price` (its first transition,
+        /// so nonce 1).
+        async fn purchase_by(
+            &mut self,
+            buyer: &(Identity, SimpleSigner, IdentityPublicKey),
+            price: Credits,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let (buyer_identity, buyer_signer, buyer_key) = buyer;
+            let mut bought = self
+                .document
+                .clone()
+                .expect("a document must have been created first");
+            bought
+                .increment_revision()
+                .expect("expected the revision to increment");
+
+            let transition = {
+                let offer_type = self
+                    .contract
+                    .document_type_for_name("offer")
+                    .expect("expected the offer document type");
+                BatchTransition::new_document_purchase_transition_from_document(
+                    bought,
+                    offer_type,
+                    buyer_identity.id(),
+                    price,
+                    buyer_key,
+                    1,
+                    0,
+                    None,
+                    buyer_signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expected the purchase transition")
+            };
+
+            self.process(&transition)
         }
 
         fn stored_offers(&self) -> Vec<Document> {
@@ -844,6 +1011,62 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// A rule reading `$ownerId` holds the offer's seller to its owner: on a
+    /// create, and on a transfer or a purchase, which change the owner.
+    #[tokio::test]
+    async fn should_compare_the_owner_on_create_transfer_and_purchase() {
+        let mut fixture = OfferFixture::with_schema(owned_offer_schema());
+        let owner = fixture.identity.id();
+
+        let result = fixture
+            .create(|document| document.set("sellerId", Value::Identifier([4; 32])))
+            .await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+
+        assert_matches!(
+            fixture
+                .create(|document| document.set("sellerId", Value::Identifier(owner.to_buffer())))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        // Transferred, the offer would name a seller that no longer owns it
+        let (recipient, _, _) = fixture.other_identity(961);
+        let result = fixture.transfer(recipient.id()).await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+
+        // Bought, likewise
+        fixture.set_price(1000).await;
+        let buyer = fixture.other_identity(962);
+        let result = fixture.purchase_by(&buyer, 1000).await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+
+        let stored = fixture.stored_offers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].owner_id(),
+            owner,
+            "the refused actions leave the owner"
+        );
+    }
+
+    /// An offer naming no seller moves freely: the rule reading `$ownerId` holds
+    /// whoever owns it.
+    #[tokio::test]
+    async fn should_transfer_an_offer_the_owner_rules_allow() {
+        let mut fixture = OfferFixture::with_schema(owned_offer_schema());
+        assert_matches!(
+            fixture.create(|_| {}).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let (recipient, _, _) = fixture.other_identity(963);
+        assert_matches!(
+            fixture.transfer(recipient.id()).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers()[0].owner_id(), recipient.id());
     }
 
     #[tokio::test]

@@ -3566,7 +3566,7 @@ mod shielded_profile_schema_tests {
                 let properties =
                     platform_value!({ "shieldedAddress": Value::Bytes(vec![0; length]) });
                 let result = contract
-                    .validate_document_properties("profile", properties, pv)
+                    .validate_document_properties("profile", properties, None, pv)
                     .unwrap();
                 assert_eq!(
                     result.is_valid(),
@@ -3578,6 +3578,7 @@ mod shielded_profile_schema_tests {
                 .validate_document_properties(
                     "profile",
                     platform_value!({"shieldedAddress": "not bytes"}),
+                    None,
                     pv,
                 )
                 .unwrap();
@@ -3586,6 +3587,7 @@ mod shielded_profile_schema_tests {
                 .validate_document_properties(
                     "profile",
                     platform_value!({"displayName": "Alice"}),
+                    None,
                     pv,
                 )
                 .unwrap();

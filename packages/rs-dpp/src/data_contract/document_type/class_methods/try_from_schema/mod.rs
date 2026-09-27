@@ -2072,6 +2072,14 @@ fn apply_property_constraints_v0(
                 )));
             }
         }
+        // An indexOnly type's delete carries its row's values but not its owner, so
+        // a rule reading the owner could not be judged there
+        if document_type.index_only && constraint.reads_owner() {
+            return Err(structure_error(format!(
+                "rule \"{name}\" compares $ownerId, which a delete of an indexOnly document \
+                 does not carry"
+            )));
+        }
         // A constant or a default a string property's `enum` does not list is a
         // typo: the property could never hold it
         for (path, constant) in constraint.text_constants() {

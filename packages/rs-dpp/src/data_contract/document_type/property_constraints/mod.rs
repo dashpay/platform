@@ -42,9 +42,9 @@
 //! string properties with each other, and an `in` whose values are strings
 //! lists them bare; `{ "ifAbsent": ["status", "open"] }` gives a string
 //! property compared with strings a default. An identifier property compares
-//! the same ways, its constants written base58, without defaults. How the
-//! arithmetic
-//! treats overflow, division and powers is set out on
+//! the same ways, its constants written base58, without defaults, and so does
+//! `$ownerId`, the document's owner, which a transfer or a purchase changes.
+//! How the arithmetic treats overflow, division and powers is set out on
 //! [`ConstraintExpression::evaluate`], and how conditions combine on
 //! [`PropertyConstraint::holds`].
 //!
@@ -62,6 +62,7 @@ mod tests;
 use crate::consensus::basic::document::PropertyConstraintViolation;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
+use crate::document::property_names::OWNER_ID;
 use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use std::collections::{BTreeMap, BTreeSet};
@@ -446,7 +447,10 @@ pub enum PropertyConstraint {
 }
 
 impl PropertyConstraint {
-    /// Whether a document whose properties are `data` meets the condition.
+    /// Whether a document whose properties are `data`, owned by `owner_id`,
+    /// meets the condition. `owner_id` is what `$ownerId` reads; `None` for a
+    /// document whose owner the caller does not know, which `$ownerId` then
+    /// equals no identifier for.
     ///
     /// Evaluated left to right, and no further than the outcome needs: a
     /// comparison evaluates its left side, then its right one; `anyOf` checks
@@ -459,7 +463,11 @@ impl PropertyConstraint {
     /// one: `anyOf: [{ equal: ["b", 0] }, { equal: [{ divide: ["a", "b"] }, 2] }]`
     /// holds for a `b` of 0 without dividing by it, while the same two
     /// conditions the other way round divide by zero.
-    pub fn holds(&self, data: &Value) -> Result<bool, PropertyConstraintViolation> {
+    pub fn holds(
+        &self,
+        data: &Value,
+        owner_id: Option<Identifier>,
+    ) -> Result<bool, PropertyConstraintViolation> {
         match self {
             PropertyConstraint::Compare {
                 comparison,
@@ -499,7 +507,7 @@ impl PropertyConstraint {
                 path,
                 value,
             } => {
-                let equal = identifier_value(data, path) == Some(*value);
+                let equal = identifier_value(data, owner_id, path) == Some(*value);
                 Ok(equal == (*comparison == ConstraintComparison::Equal))
             }
             PropertyConstraint::IdentifierCompareProperties {
@@ -508,19 +516,23 @@ impl PropertyConstraint {
                 right,
             } => {
                 let equal = matches!(
-                    (identifier_value(data, left), identifier_value(data, right)),
+                    (
+                        identifier_value(data, owner_id, left),
+                        identifier_value(data, owner_id, right)
+                    ),
                     (Some(left), Some(right)) if left == right
                 );
                 Ok(equal == (*comparison == ConstraintComparison::Equal))
             }
             PropertyConstraint::IdentifierIn { path, values } => {
-                Ok(identifier_value(data, path).is_some_and(|value| values.contains(&value)))
+                Ok(identifier_value(data, owner_id, path)
+                    .is_some_and(|value| values.contains(&value)))
             }
             PropertyConstraint::Present(path) => Ok(is_present(data, path)),
             PropertyConstraint::Absent(path) => Ok(!is_present(data, path)),
             PropertyConstraint::AnyOf(conditions) => {
                 for condition in conditions {
-                    if condition.holds(data)? {
+                    if condition.holds(data, owner_id)? {
                         return Ok(true);
                     }
                 }
@@ -528,21 +540,26 @@ impl PropertyConstraint {
             }
             PropertyConstraint::AllOf(conditions) => {
                 for condition in conditions {
-                    if !condition.holds(data)? {
+                    if !condition.holds(data, owner_id)? {
                         return Ok(false);
                     }
                 }
                 Ok(true)
             }
-            PropertyConstraint::Not(condition) => Ok(!condition.holds(data)?),
+            PropertyConstraint::Not(condition) => Ok(!condition.holds(data, owner_id)?),
         }
     }
 
-    /// Why a document whose properties are `data` breaks the rule, `None` when
-    /// it meets it: the first fault met on the way ([`Self::holds`]), or
-    /// [`PropertyConstraintViolation::NotMet`] when the rule evaluates to false.
-    pub fn violation(&self, data: &Value) -> Option<PropertyConstraintViolation> {
-        match self.holds(data) {
+    /// Why a document whose properties are `data`, owned by `owner_id`, breaks
+    /// the rule, `None` when it meets it: the first fault met on the way
+    /// ([`Self::holds`]), or [`PropertyConstraintViolation::NotMet`] when the
+    /// rule evaluates to false.
+    pub fn violation(
+        &self,
+        data: &Value,
+        owner_id: Option<Identifier>,
+    ) -> Option<PropertyConstraintViolation> {
+        match self.holds(data, owner_id) {
             Ok(true) => None,
             Ok(false) => Some(PropertyConstraintViolation::NotMet),
             Err(violation) => Some(violation),
@@ -591,6 +608,30 @@ impl PropertyConstraint {
         let mut reads = Vec::new();
         self.collect_property_reads(&mut reads);
         reads
+    }
+
+    /// Whether the rule compares the document's owner, `$ownerId`: then a
+    /// transfer or a purchase, which changes the owner and nothing else, is
+    /// judged against it too.
+    pub fn reads_owner(&self) -> bool {
+        match self {
+            PropertyConstraint::IdentifierCompare { path, .. }
+            | PropertyConstraint::IdentifierIn { path, .. } => path == OWNER_ID,
+            PropertyConstraint::IdentifierCompareProperties { left, right, .. } => {
+                left == OWNER_ID || right == OWNER_ID
+            }
+            PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
+                conditions.iter().any(PropertyConstraint::reads_owner)
+            }
+            PropertyConstraint::Not(condition) => condition.reads_owner(),
+            PropertyConstraint::Compare { .. }
+            | PropertyConstraint::In { .. }
+            | PropertyConstraint::TextCompare { .. }
+            | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::Present(_)
+            | PropertyConstraint::Absent(_) => false,
+        }
     }
 
     /// Every string constant the rule compares a property with, as the
@@ -745,13 +786,19 @@ impl PropertyConstraint {
                 reads.push((&left.path, PropertyRead::Text));
                 reads.push((&right.path, PropertyRead::Text));
             }
+            // `$ownerId` is the document's owner, no property of it
             PropertyConstraint::IdentifierCompare { path, .. }
             | PropertyConstraint::IdentifierIn { path, .. } => {
-                reads.push((path, PropertyRead::Identifier))
+                if path != OWNER_ID {
+                    reads.push((path, PropertyRead::Identifier))
+                }
             }
             PropertyConstraint::IdentifierCompareProperties { left, right, .. } => {
-                reads.push((left, PropertyRead::Identifier));
-                reads.push((right, PropertyRead::Identifier));
+                for path in [left, right] {
+                    if path != OWNER_ID {
+                        reads.push((path, PropertyRead::Identifier));
+                    }
+                }
             }
             PropertyConstraint::Present(path) | PropertyConstraint::Absent(path) => {
                 reads.push((path, PropertyRead::Presence))
@@ -925,6 +972,14 @@ fn parse_condition(
         ));
     };
     let parent = enter(at, key);
+    // `$ownerId`, the document's owner, compares as an identifier property
+    let kind_of = |path: &str| {
+        if path == OWNER_ID {
+            Some(EqualityKind::Identifier)
+        } else {
+            property_kind(path)
+        }
+    };
     let condition = match key {
         ANY_OF => {
             PropertyConstraint::AnyOf(condition_list(body, key, at, depth + 1, property_kind)?)
@@ -960,9 +1015,9 @@ fn parse_condition(
                 .and_then(|values| values.first())
                 .is_some_and(|first| first.as_text().is_some());
             // Strings listed for an identifier property are its identifiers, base58
-            let identifier_path = operand.as_text().filter(|path| {
-                over_strings && property_kind(path) == Some(EqualityKind::Identifier)
-            });
+            let identifier_path = operand
+                .as_text()
+                .filter(|path| over_strings && kind_of(path) == Some(EqualityKind::Identifier));
             if let Some(path) = identifier_path {
                 at.push_str("[1]");
                 let values = in_identifier_values(values, at)?;
@@ -1027,7 +1082,7 @@ fn parse_condition(
                 // A const or an ifAbsent with a string default on either side, or
                 // two bare paths naming string or identifier properties, compare
                 // strings or identifiers, as the properties named decide
-                let bare_kind = |value: &Value| value.as_text().and_then(property_kind);
+                let bare_kind = |value: &Value| value.as_text().and_then(kind_of);
                 if is_const(left)
                     || is_const(right)
                     || is_text_if_absent(left)
@@ -1261,6 +1316,12 @@ fn identifier_comparison(
                 value,
             })
         }
+        (IdentifierSide::Property(left), IdentifierSide::Property(right)) if left == right => {
+            return Err(format!(
+                "at {at} compares \"{left}\" with itself, so it would hold for every document or \
+                 for none"
+            ));
+        }
         (IdentifierSide::Property(left), IdentifierSide::Property(right)) => {
             Some(PropertyConstraint::IdentifierCompareProperties {
                 comparison,
@@ -1360,6 +1421,13 @@ fn text_comparison(
                 property,
                 value,
             })
+        }
+        (TextSide::Property(left), TextSide::Property(right)) if left == right => {
+            return Err(format!(
+                "at {at} compares \"{}\" with itself, so it would hold for every document or for \
+                 none",
+                left.path
+            ));
         }
         (TextSide::Property(left), TextSide::Property(right)) => {
             Some(PropertyConstraint::TextCompareProperties {
@@ -1544,10 +1612,14 @@ fn integer_value(value: &Value, at: &str) -> Result<i128, String> {
 }
 
 /// The identifier `data` holds at `path`, in any of the forms a document's
-/// identifier takes; `None` when the document leaves the property out or holds
-/// something that is no identifier there, which the schema validation running
-/// first refuses for an identifier property.
-fn identifier_value(data: &Value, path: &str) -> Option<Identifier> {
+/// identifier takes, or `owner_id` for `$ownerId`; `None` when the document
+/// leaves the property out or holds something that is no identifier there,
+/// which the schema validation running first refuses for an identifier
+/// property.
+fn identifier_value(data: &Value, owner_id: Option<Identifier>, path: &str) -> Option<Identifier> {
+    if path == OWNER_ID {
+        return owner_id;
+    }
     match data.get_optional_value_at_path(path) {
         Ok(Some(value)) => value.to_identifier().ok(),
         _ => None,
