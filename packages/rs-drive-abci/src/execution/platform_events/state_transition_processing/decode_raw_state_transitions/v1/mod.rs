@@ -27,7 +27,10 @@ where
     /// anything appended decoded, validated and executed as the original. Here left over bytes
     /// are an `InvalidEncoding` carrying a `SerializedObjectParsingError`, which is unpaid. A
     /// transition whose version is not active at `platform_version` is an `InvalidEncoding`
-    /// carrying a `StateTransitionNotActiveError`, not a decode failure.
+    /// carrying a `StateTransitionNotActiveError`, not a decode failure. The range can be missed
+    /// from either side, and the boundary reported is the one that was missed: its start for a
+    /// version not active yet, its end for one already superseded, since naming the start there
+    /// would point at a version the chain is past.
     ///
     /// ## Arguments
     ///

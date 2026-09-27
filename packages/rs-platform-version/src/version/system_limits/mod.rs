@@ -107,8 +107,9 @@ pub struct SystemLimits {
     ///   against a pool at all — so the same authorized bytes can sit in two shields of one
     ///   batch: state validation runs per transition against the transaction before any
     ///   operation applies, so the second cannot see the first's pending insert, and the
-    ///   within-bundle check is scoped to one action set. The two inserts are then byte-identical in path, key and value, which a node
-    ///   running the shipped batching default folds in silence while a node verifying batch
+    ///   within-bundle check is scoped to one action set. The two inserts are then byte-identical
+    ///   in path, key and value, which a node running the shipped batching default folds in
+    ///   silence while a node verifying batch
     ///   consistency refuses — the two disagree on one block and neither shows why. Raising the
     ///   cap means batch-scoped nullifier deduplication and a delta-based pool balance write,
     ///   not just making the ignored cases above pass.
