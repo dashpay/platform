@@ -3,6 +3,8 @@
 use std::time::Duration;
 
 use super::create_channel;
+#[cfg(not(target_arch = "wasm32"))]
+use super::proxy::is_proxy_failure;
 use super::{CanRetry, TransportClient, TransportError, TransportRequest};
 use super::{CoreGrpcClient, PlatformGrpcClient};
 use crate::connection_pool::{ConnectionPool, PoolPrefix};
@@ -13,6 +15,10 @@ use dapi_grpc::tonic::{IntoRequest, Streaming};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 
 impl TransportClient for PlatformGrpcClient {
+    /// Ignores any proxy the [DapiClient](crate::DapiClient) has: without
+    /// settings the channel connects directly. Use
+    /// [with_uri_and_settings](TransportClient::with_uri_and_settings) with
+    /// the client's settings to connect through its proxy.
     fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
         Ok(pool
             .get_or_create(PoolPrefix::Platform, &uri, None, || {
@@ -61,6 +67,10 @@ impl TransportClient for PlatformGrpcClient {
 }
 
 impl TransportClient for CoreGrpcClient {
+    /// Ignores any proxy the [DapiClient](crate::DapiClient) has: without
+    /// settings the channel connects directly. Use
+    /// [with_uri_and_settings](TransportClient::with_uri_and_settings) with
+    /// the client's settings to connect through its proxy.
     fn with_uri(uri: Uri, pool: &ConnectionPool) -> Result<Self, TransportError> {
         Ok(pool
             .get_or_create(PoolPrefix::Core, &uri, None, || {
@@ -110,6 +120,13 @@ impl TransportClient for CoreGrpcClient {
 
 impl CanRetry for dapi_grpc::tonic::Status {
     fn can_retry(&self) -> bool {
+        // A failing SOCKS5 proxy fails every node alike: retrying elsewhere
+        // cannot help, and the node must not be banned for it.
+        #[cfg(not(target_arch = "wasm32"))]
+        if is_proxy_failure(self) {
+            return false;
+        }
+
         let code = self.code();
 
         use dapi_grpc::tonic::Code::*;

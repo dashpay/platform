@@ -1,3 +1,4 @@
+use super::proxy::{Socks5Connector, PROXY_CONNECT_TIMEOUT};
 use super::TransportError;
 use crate::{request_settings::AppliedRequestSettings, Uri};
 use dapi_grpc::core::v0::core_client::CoreClient;
@@ -20,6 +21,9 @@ const HTTP2_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
 const HTTP2_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Create channel (connection) for gRPC transport.
+///
+/// With a proxy in `settings`, every connection of the channel is tunnelled
+/// through it.
 pub fn create_channel(
     uri: Uri,
     settings: Option<&AppliedRequestSettings>,
@@ -48,9 +52,18 @@ pub fn create_channel(
         tls_config = tls_config.with_native_roots();
     }
 
+    let proxy = settings.and_then(|settings| settings.proxy.clone());
+    let connect_timeout = settings.and_then(AppliedRequestSettings::effective_connect_timeout);
     if let Some(settings) = settings {
-        if let Some(timeout) = settings.connect_timeout {
-            builder = builder.connect_timeout(timeout);
+        match (connect_timeout, &proxy) {
+            // Through a proxy the connector enforces the budget itself, so
+            // it can tell a stuck proxy from a slow destination; TLS, which
+            // runs after it, gets the same budget of its own (a connection
+            // can so take up to twice the budget; the executor's attempt
+            // deadline still bounds the whole attempt).
+            (Some(timeout), Some(_)) => tls_config = tls_config.timeout(timeout),
+            (Some(timeout), None) => builder = builder.connect_timeout(timeout),
+            (None, _) => {}
         }
 
         if let Some(pem) = settings.ca_certificate.as_ref() {
@@ -74,7 +87,13 @@ pub fn create_channel(
         )))
     })?;
 
-    Ok(builder.connect_lazy())
+    Ok(match proxy {
+        None => builder.connect_lazy(),
+        Some(proxy) => builder.connect_with_connector_lazy(Socks5Connector {
+            proxy,
+            connect_timeout: connect_timeout.unwrap_or(PROXY_CONNECT_TIMEOUT),
+        }),
+    })
 }
 
 /// The host of a URI without the brackets an IPv6 literal carries in it
@@ -88,6 +107,7 @@ pub(crate) fn unbracketed(host: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::{ProxyEndpoint, Socks5Auth, Socks5Proxy};
     use crate::RequestSettings;
 
     #[test]
@@ -107,6 +127,12 @@ mod tests {
         let settings = RequestSettings::default()
             .finalize()
             .with_ca_certificate(Some(Certificate::from_pem("fake-pem-data")));
-        create_channel(uri, Some(&settings)).expect("explicit CA");
+        create_channel(uri.clone(), Some(&settings)).expect("explicit CA");
+
+        let settings = settings.with_proxy(Some(Socks5Proxy {
+            endpoint: ProxyEndpoint::Tcp("127.0.0.1:9050".parse().expect("address")),
+            auth: Socks5Auth::None,
+        }));
+        create_channel(uri, Some(&settings)).expect("through a proxy");
     }
 }
