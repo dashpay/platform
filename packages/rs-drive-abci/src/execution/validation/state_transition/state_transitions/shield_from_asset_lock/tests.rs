@@ -848,8 +848,6 @@ mod tests {
         /// A version 0 shield of `bundle` from a fresh asset lock drawn from `seed`. Version 0 is
         /// what protocol version 13 admits, and it binds nothing.
         fn signed_shield_v0(seed: u64, bundle: &OutputsOnlyBundle) -> StateTransition {
-            use dpp::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
-
             let mut rng = StdRng::seed_from_u64(seed);
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
             let surplus_output = Some(dpp::address_funds::PlatformAddress::P2pkh([0x33; 20]));

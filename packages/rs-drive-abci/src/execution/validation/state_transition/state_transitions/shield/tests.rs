@@ -1514,8 +1514,8 @@ mod tests {
         /// check is reached here directly, as block processing reaches it after the proof.
         fn transform_shield_revealing(
             platform: &TempPlatform<MockCoreRPCLike>,
-            platform_version: &PlatformVersion,
             nullifiers: &[[u8; 32]],
+            platform_version: &PlatformVersion,
         ) -> ConsensusValidationResult<StateTransitionAction> {
             let address = create_platform_address(1);
             let requested = dash_to_credits!(0.1);
@@ -1624,7 +1624,7 @@ mod tests {
 
             let repeated = create_dummy_serialized_action().nullifier;
             let result =
-                transform_shield_revealing(&platform, platform_version, &[repeated, repeated]);
+                transform_shield_revealing(&platform, &[repeated, repeated], platform_version);
 
             assert!(!result.has_data(), "no action for a refused shield");
             assert_matches!(
@@ -1690,7 +1690,7 @@ mod tests {
 
             let repeated = create_dummy_serialized_action().nullifier;
             let result =
-                transform_shield_revealing(&platform, platform_version, &[repeated, repeated]);
+                transform_shield_revealing(&platform, &[repeated, repeated], platform_version);
             assert!(
                 result.is_valid_with_data(),
                 "protocol version 13 does not check a nullifier repeated inside the bundle"
