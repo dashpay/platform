@@ -366,68 +366,10 @@ mod tests {
         /// transition unpaid; it now reports an incompatible schema change.
         #[test]
         pub fn should_refuse_an_update_changing_the_transient_list_as_an_incompatible_schema() {
-            let platform_version = PlatformVersion::latest();
-            let TestData {
-                mut data_contract,
-                platform,
-            } = setup_test();
-            apply_contract(&platform, &data_contract, Default::default());
-
-            let mut updated_document = data_contract
-                .document_type_for_name("niceDocument")
-                .expect("the fixture's niceDocument")
-                .schema()
-                .clone();
-            updated_document
-                .set_value("transient", platform_value!(["name"]))
-                .expect("the transient list sets");
-
-            data_contract.increment_version();
-            data_contract
-                .set_document_schema(
-                    "niceDocument",
-                    updated_document,
-                    true,
-                    &mut vec![],
-                    platform_version,
-                )
-                .expect("to be able to set document schema");
-
-            let state_transition = DataContractUpdateTransitionV0 {
-                identity_contract_nonce: 1,
-                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
-                    data_contract,
-                    platform_version,
-                )
-                .expect("to be able to convert data contract to serialization format"),
-                user_fee_increase: 0,
-                signature: BinaryData::new(vec![0; 65]),
-                signature_public_key_id: 0,
-            };
-
-            let state = platform.state.load();
-
-            let platform_ref = PlatformRef {
-                drive: &platform.drive,
-                state: &state,
-                config: &platform.config,
-                core_rpc: &platform.core_rpc,
-            };
-
-            let mut execution_context =
-                StateTransitionExecutionContext::default_for_platform_version(platform_version)
-                    .expect("expected a platform version");
-
-            let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(
-                    None,
-                    &platform_ref,
-                    ValidationMode::Validator,
-                    &BlockInfo::default(),
-                    &mut execution_context,
-                    None,
-                )
-                .expect("a transient change is a consensus error, not an internal one");
+            let result = validate_state_of_nice_document_update(platform_value!({
+                "transient": ["name"],
+            }))
+            .expect("a transient change is a consensus error, not an internal one");
 
             assert_matches!(
                 result.errors.as_slice(),
@@ -1231,6 +1173,177 @@ mod tests {
                 contract_version_in(&scenario.platform, scenario.contract_id, Some(&transaction)),
                 2
             );
+        }
+    }
+
+    /// A contract update refused by the document type comparison or the schema
+    /// comparison is a paid consensus error: the transition stays in the block,
+    /// its identity contract nonce is bumped and its fee is charged. Protocol
+    /// version 14 used to fail these updates with an internal error, which
+    /// left the transition out of the block.
+    mod refused_keyword_updates {
+        use super::*;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+        use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
+        use dpp::platform_value::{platform_value, Value};
+
+        /// Processes an update, signed with identity contract nonce 1, giving
+        /// the fixture's `niceDocument` every `(key, value)` of `keywords` on
+        /// top of its stored schema. Returns the execution result, then the
+        /// identity's contract nonce and the credits it was charged once the
+        /// block is committed.
+        async fn process_nice_document_update(
+            keywords: Value,
+        ) -> (StateTransitionExecutionResult, Option<u64>, Credits) {
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let initial_balance = dash_to_credits!(1.0);
+            let (identity, signer, key) = setup_identity(&mut platform, 958, initial_balance);
+            let identity_id = identity.id();
+
+            let platform_state = platform.state.load();
+            let platform_version = platform_state
+                .current_platform_version()
+                .expect("expected to get current platform version");
+
+            let mut data_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            data_contract.set_owner_id(identity_id);
+            apply_contract(&platform, &data_contract, BlockInfo::default());
+
+            let mut updated_document = data_contract
+                .document_type_for_name("niceDocument")
+                .expect("the fixture's niceDocument")
+                .schema()
+                .clone();
+            for (key, value) in keywords
+                .into_btree_string_map()
+                .expect("the keywords are a map")
+            {
+                updated_document
+                    .set_value(&key, value)
+                    .expect("the keyword sets");
+            }
+            let mut updated_data_contract = data_contract.clone();
+            updated_data_contract.set_version(2);
+            updated_data_contract
+                .set_document_schema(
+                    "niceDocument",
+                    updated_document,
+                    true,
+                    &mut vec![],
+                    platform_version,
+                )
+                .expect("to be able to set document schema");
+
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                updated_data_contract,
+                &identity.into_partial_identity_info(),
+                key.id(),
+                1,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create data contract update transition");
+            let serialized_transition = transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let mut execution_results = processing_result.into_execution_results();
+            assert_eq!(execution_results.len(), 1, "{execution_results:?}");
+
+            let nonce = platform
+                .drive
+                .fetch_identity_contract_nonce(
+                    identity_id.to_buffer(),
+                    data_contract.id().to_buffer(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the identity contract nonce")
+                .map(|nonce| nonce & IDENTITY_NONCE_VALUE_FILTER);
+            let balance = platform
+                .drive
+                .fetch_identity_balance(identity_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch the balance")
+                .expect("the identity has a balance");
+
+            (
+                execution_results.remove(0),
+                nonce,
+                initial_balance - balance,
+            )
+        }
+
+        #[tokio::test]
+        async fn should_charge_a_refused_token_cost_change_as_a_paid_consensus_error() {
+            let (result, nonce, charged) = process_nice_document_update(platform_value!({
+                "tokenCost": {
+                    "create": {
+                        "contractId": Identifier::new([7; 32]).to_buffer(),
+                        "tokenPosition": 0_u64,
+                        "amount": 1_u64,
+                    }
+                }
+            }))
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::DocumentTypeUpdateError(e)),
+                    ..
+                } if e.additional_message().contains("can not add the token cost of its create action")
+            );
+            assert_eq!(nonce, Some(1));
+            assert!(charged > 0, "the fee is charged");
+        }
+
+        #[tokio::test]
+        async fn should_charge_a_refused_schema_edit_as_a_paid_consensus_error() {
+            let (result, nonce, charged) = process_nice_document_update(platform_value!({
+                "keepsTransferHistory": false,
+            }))
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    ),
+                    ..
+                } if e.operation() == "add" && e.property_path() == "/keepsTransferHistory"
+            );
+            assert_eq!(nonce, Some(1));
+            assert!(charged > 0, "the fee is charged");
         }
     }
 

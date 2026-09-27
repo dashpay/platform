@@ -1000,92 +1000,6 @@ mod tests {
         );
     }
 
-    /// A document type with one string property and, when given, `actionFees`.
-    fn doc_type_with_action_fees(
-        action_fees: Option<Value>,
-        platform_version: &PlatformVersion,
-    ) -> DocumentType {
-        let mut schema = platform_value!({
-            "type": "object",
-            "properties": {
-                "a": {"type": "string", "position": 0, "maxLength": 60_u32},
-            },
-            "additionalProperties": false,
-        });
-        if let Some(action_fees) = action_fees {
-            schema
-                .insert("actionFees".to_string(), action_fees)
-                .expect("expected to set the action fees");
-        }
-        let config = DataContractConfig::default_for_version(platform_version)
-            .expect("should create a default config");
-        DocumentType::try_from_schema(
-            Identifier::new([1; 32]),
-            1,
-            config.version(),
-            "test",
-            schema,
-            None,
-            &BTreeMap::new(),
-            &config,
-            true,
-            &mut Vec::new(),
-            platform_version,
-        )
-        .expect("failed to create document type")
-    }
-
-    // The fees of a published document type do not change yet, although a transition names
-    // the fee it agrees to pay.
-    #[test]
-    fn should_reject_adding_changing_or_removing_action_fees() {
-        let platform_version = PlatformVersion::latest();
-        let free = doc_type_with_action_fees(None, platform_version);
-        let priced = doc_type_with_action_fees(
-            Some(platform_value!({"create": {"owner": 10_u64}})),
-            platform_version,
-        );
-        let repriced = doc_type_with_action_fees(
-            Some(platform_value!({"create": {"owner": 11_u64}})),
-            platform_version,
-        );
-        let fixed = doc_type_with_action_fees(
-            Some(platform_value!({"pricing": "fixed", "create": {"owner": 10_u64}})),
-            platform_version,
-        );
-
-        for (old, new, change) in [
-            (&free, &priced, "add"),
-            (&priced, &free, "remove"),
-            (&priced, &repriced, "change"),
-            (&priced, &fixed, "change"),
-        ] {
-            let result = old
-                .as_ref()
-                .validate_update(new.as_ref(), 2, platform_version)
-                .expect("expected the update to be judged");
-            assert_matches!(
-                result.errors.as_slice(),
-                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
-                    if e.additional_message().contains(&format!("can not {change} its action fees"))
-            );
-        }
-    }
-
-    #[test]
-    fn should_accept_unchanged_action_fees() {
-        let platform_version = PlatformVersion::latest();
-        let priced = doc_type_with_action_fees(
-            Some(platform_value!({"create": {"owner": 10_u64, "moderators": 3_u64}})),
-            platform_version,
-        );
-        let result = priced
-            .as_ref()
-            .validate_update(priced.as_ref(), 2, platform_version)
-            .expect("expected the update to be judged");
-        assert!(result.is_valid(), "{:?}", result.errors);
-    }
-
     /// A document type with a string `a` and a required integer `n`, whose
     /// schema also carries every `(key, value)` of `extra`. Its contract has a
     /// token at position 0 and declares moderation, so any document type
@@ -1133,68 +1047,75 @@ mod tests {
         .expect("failed to create document type")
     }
 
+    // The fees of a published document type do not change yet, although a transition names
+    // the fee it agrees to pay.
+    #[test]
+    fn should_reject_adding_changing_or_removing_action_fees() {
+        let platform_version = PlatformVersion::latest();
+        let fees = |action_fees: Value| {
+            doc_type_with_keywords(
+                platform_value!({ "actionFees": action_fees }),
+                platform_version,
+            )
+        };
+        let free = doc_type_with_keywords(platform_value!({}), platform_version);
+        let priced = fees(platform_value!({"create": {"owner": 10_u64}}));
+        let repriced = fees(platform_value!({"create": {"owner": 11_u64}}));
+        let fixed = fees(platform_value!({"pricing": "fixed", "create": {"owner": 10_u64}}));
+
+        for (old, new, change) in [
+            (&free, &priced, "add"),
+            (&priced, &free, "remove"),
+            (&priced, &repriced, "change"),
+            (&priced, &fixed, "change"),
+        ] {
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), 2, platform_version)
+                .expect("expected the update to be judged");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message().contains(&format!("can not {change} its action fees"))
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_unchanged_action_fees() {
+        let platform_version = PlatformVersion::latest();
+        let priced = doc_type_with_keywords(
+            platform_value!({"actionFees": {"create": {"owner": 10_u64, "moderators": 3_u64}}}),
+            platform_version,
+        );
+        let result = priced
+            .as_ref()
+            .validate_update(priced.as_ref(), 2, platform_version)
+            .expect("expected the update to be judged");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
     // Token costs are fixed when the document type is published, as its action fees are,
     // and a change is refused with a consensus error before the schema compatibility
     // differ runs.
     #[test]
     fn should_return_invalid_result_when_token_costs_are_changed() {
         let platform_version = PlatformVersion::latest();
-        let costing = |token_cost: Value| {
+        // Transferable and tradeable, so that every action may carry a cost
+        let costing = |token_cost: Vec<(&str, Value)>| {
+            let token_cost = Value::Map(
+                token_cost
+                    .into_iter()
+                    .map(|(action, cost)| (Value::Text(action.to_string()), cost))
+                    .collect(),
+            );
             doc_type_with_keywords(
-                platform_value!({ "tokenCost": token_cost }),
+                platform_value!({"transferable": 1_u64, "tradeMode": 1_u64, "tokenCost": token_cost}),
                 platform_version,
             )
         };
-        let free = doc_type_with_keywords(platform_value!({}), platform_version);
-        let create_1 =
-            costing(platform_value!({"create": {"tokenPosition": 0_u64, "amount": 1_u64}}));
-
-        for (old, new, expected) in [
-            (
-                &free,
-                &create_1,
-                "can not add the token cost of its create action",
-            ),
-            (
-                &create_1,
-                &free,
-                "can not remove the token cost of its create action",
-            ),
-            (
-                &create_1,
-                &costing(platform_value!({"create": {"tokenPosition": 0_u64, "amount": 2_u64}})),
-                "can not change the token cost of its create action",
-            ),
-            (
-                &create_1,
-                &costing(platform_value!({
-                    "create": {"tokenPosition": 0_u64, "amount": 1_u64, "effect": 1_u64}
-                })),
-                "can not change the token cost of its create action",
-            ),
-            (
-                &create_1,
-                &costing(platform_value!({
-                    "create": {"tokenPosition": 0_u64, "amount": 1_u64, "gasFeesPaidBy": 1_u64}
-                })),
-                "can not change the token cost of its create action",
-            ),
-            (
-                &create_1,
-                &costing(platform_value!({
-                    "create": {"tokenPosition": 0_u64, "amount": 1_u64, "optional": true}
-                })),
-                "can not change the token cost of its create action",
-            ),
-            (
-                &create_1,
-                &costing(platform_value!({
-                    "create": {"tokenPosition": 0_u64, "amount": 1_u64},
-                    "delete": {"tokenPosition": 0_u64, "amount": 1_u64},
-                })),
-                "can not add the token cost of its delete action",
-            ),
-        ] {
+        let cost = |amount: u64| platform_value!({"tokenPosition": 0_u64, "amount": amount});
+        let assert_refused = |old: &DocumentType, new: &DocumentType, expected: &str| {
             let result = old
                 .as_ref()
                 .validate_update(new.as_ref(), 2, platform_version)
@@ -1206,13 +1127,55 @@ mod tests {
                 "{expected}: {:?}",
                 result.errors
             );
+        };
+
+        let free = costing(vec![]);
+        for action in [
+            "create",
+            "replace",
+            "delete",
+            "transfer",
+            "update_price",
+            "purchase",
+        ] {
+            let priced = costing(vec![(action, cost(1))]);
+            let repriced = costing(vec![(action, cost(2))]);
+            assert_refused(
+                &free,
+                &priced,
+                &format!("can not add the token cost of its {action} action"),
+            );
+            assert_refused(
+                &priced,
+                &free,
+                &format!("can not remove the token cost of its {action} action"),
+            );
+            assert_refused(
+                &priced,
+                &repriced,
+                &format!("can not change the token cost of its {action} action"),
+            );
+
+            let result = priced
+                .as_ref()
+                .validate_update(priced.as_ref(), 2, platform_version)
+                .expect("expected the update to be judged");
+            assert!(result.is_valid(), "{action}: {:?}", result.errors);
         }
 
-        let result = create_1
-            .as_ref()
-            .validate_update(create_1.as_ref(), 2, platform_version)
-            .expect("expected the update to be judged");
-        assert!(result.is_valid(), "{:?}", result.errors);
+        // Every part of a cost is fixed with it, not only the amount
+        let create_1 = costing(vec![("create", cost(1))]);
+        for changed in [
+            platform_value!({"tokenPosition": 0_u64, "amount": 1_u64, "effect": 1_u64}),
+            platform_value!({"tokenPosition": 0_u64, "amount": 1_u64, "gasFeesPaidBy": 1_u64}),
+            platform_value!({"tokenPosition": 0_u64, "amount": 1_u64, "optional": true}),
+        ] {
+            assert_refused(
+                &create_1,
+                &costing(vec![("create", changed)]),
+                "can not change the token cost of its create action",
+            );
+        }
     }
 
     // An edit that leaves every parsed value as it was, such as writing out a default or

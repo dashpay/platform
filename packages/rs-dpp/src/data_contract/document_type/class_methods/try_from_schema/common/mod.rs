@@ -1445,7 +1445,7 @@ fn parse_token_costs(
     ctx: &CoreParseContext<'_>,
     schema: &Value,
 ) -> Result<TokenCosts, ProtocolError> {
-    let token_costs_value = schema.get_optional_value("tokenCost")?;
+    let token_costs_value = schema.get_optional_value(property_names::TOKEN_COST)?;
 
     let extract_cost = |key: &str| -> Result<Option<DocumentActionTokenCost>, ProtocolError> {
         token_costs_value
