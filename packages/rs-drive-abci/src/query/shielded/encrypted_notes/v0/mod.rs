@@ -172,6 +172,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drive::drive::shielded::paths::shielded_credit_pool_path;
     use crate::query::tests::setup_platform;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
@@ -526,6 +527,7 @@ mod tests {
                         start_index,
                         count,
                         prove: false,
+                        token_id: None,
                     },
                     &state,
                     version,
