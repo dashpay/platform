@@ -686,11 +686,13 @@ mod tests {
     /// that follows the document contest block (the one an insertion there
     /// would shift first), and of the variants appended since, down to the
     /// last one, which the test's final assertion pins.
-    fn discriminant_of(error: StateError) -> u8 {
+    fn discriminant_of(error: StateError) -> u32 {
         let bytes = bincode::encode_to_vec(error, bincode::config::standard())
             .expect("expected to encode the state error");
-        // Discriminants below 251 are a single byte under bincode's varint.
-        bytes[0]
+        let (discriminant, _): (u32, usize) =
+            bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .expect("expected to decode the discriminant");
+        discriminant
     }
 
     /// A reference error for an id reference encodes exactly as it did before
