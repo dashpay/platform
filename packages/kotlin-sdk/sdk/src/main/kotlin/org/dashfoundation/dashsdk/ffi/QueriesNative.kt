@@ -72,6 +72,38 @@ internal object QueriesNative {
         serializedContracts: Array<ByteArray>,
     )
 
+    /**
+     * The `propertyConstraints` rules (protocol version 14) of [documentType]
+     * as a JSON array in name order, each
+     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner"}`.
+     * [serializedContract] is the contract's platform serialization (what
+     * [dataContractFetchWithSerialization] returns), read by Rust at the SDK's
+     * protocol version; no network call. Throws on error (unknown document
+     * type, bytes that are not a contract, empty input).
+     */
+    external fun dataContractGetPropertyConstraints(
+        sdk: Long,
+        serializedContract: ByteArray,
+        documentType: String,
+    ): String?
+
+    /**
+     * The first `propertyConstraints` rule a document to create would break,
+     * as `{"rule", "violation", "message"}`, or the JSON text `null` when it
+     * meets every rule. [propertiesJson] is what the create would send and
+     * [ownerId] the 32-byte owner `$ownerId` reads; [serializedContract] as
+     * for [dataContractGetPropertyConstraints]. No network call. Throws on
+     * error (as above, plus an owner id that is not 32 bytes or properties
+     * that are not a JSON object).
+     */
+    external fun dataContractCheckPropertyConstraints(
+        sdk: Long,
+        serializedContract: ByteArray,
+        documentType: String,
+        propertiesJson: String,
+        ownerId: ByteArray,
+    ): String?
+
     /** JSON array of documents. whereJson/orderByJson may be null. */
     external fun documentSearch(
         sdk: Long,
