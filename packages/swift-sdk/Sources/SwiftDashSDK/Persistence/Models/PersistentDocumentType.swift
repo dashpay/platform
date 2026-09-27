@@ -152,6 +152,60 @@ extension PersistentDocumentType {
         DocumentTypedArray.named(name, inDocumentTypeSchema: schema)
     }
 
+    /// Whether the persisted schema carries the `propertyConstraints` keyword
+    /// (protocol version 14). Says nothing about the rules themselves: those
+    /// are read by `propertyConstraints(using:)`, which parses them in Rust.
+    public var declaresPropertyConstraints: Bool {
+        schema?["propertyConstraints"] != nil
+    }
+
+    /// The type's `propertyConstraints` rules, in name order: what
+    /// `SDK.documentPropertyConstraints(serializedContract:documentType:)`
+    /// reads from the parent contract's stored platform serialization
+    /// (`PersistentDataContract.binarySerialization`) at `sdk`'s protocol
+    /// version. Nothing is stored for them: like `immutability`, they are
+    /// derived on demand, so the model's entity hash does not move.
+    ///
+    /// - Throws: `SDKError.invalidState` when the parent contract has no
+    ///   stored serialization, or what the SDK call throws.
+    public func propertyConstraints(using sdk: SDK) throws -> [DocumentPropertyConstraint] {
+        try sdk.documentPropertyConstraints(
+            serializedContract: storedContractSerialization(),
+            documentType: name
+        )
+    }
+
+    /// The first `propertyConstraints` rule a document of this type, created
+    /// with `propertiesJSON` and owned by `ownerId`, would break, or `nil`
+    /// when it meets them all: what
+    /// `SDK.checkDocumentPropertyConstraints(serializedContract:documentType:propertiesJSON:ownerId:)`
+    /// reports for the parent contract's stored platform serialization.
+    ///
+    /// - Throws: `SDKError.invalidState` when the parent contract has no
+    ///   stored serialization, or what the SDK call throws.
+    public func propertyConstraintViolation(
+        propertiesJSON: String,
+        ownerId: Identifier,
+        using sdk: SDK
+    ) throws -> PropertyConstraintViolation? {
+        try sdk.checkDocumentPropertyConstraints(
+            serializedContract: storedContractSerialization(),
+            documentType: name,
+            propertiesJSON: propertiesJSON,
+            ownerId: ownerId
+        )
+    }
+
+    /// The parent contract's stored platform serialization.
+    private func storedContractSerialization() throws -> Data {
+        guard let serialization = dataContract?.binarySerialization, !serialization.isEmpty else {
+            throw SDKError.invalidState(
+                "The data contract \(contractIdBase58) has no stored serialization; download it again"
+            )
+        }
+        return serialization
+    }
+
     public var documentCount: Int {
         documents?.count ?? 0
     }
