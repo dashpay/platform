@@ -84,8 +84,9 @@ pub(crate) fn structure() -> StructureNode {
                 "collected_epoch_and_lifetime_epochs",
                 KeyMatcher::Len(4),
                 KeyEncoding::Composite,
-                "The epoch the fees were collected in, u16 big endian, then how many epochs \
-                 their storage lives, at most one era, u16 big endian",
+                "The epoch the fees were collected in, u16 big endian without the epoch trees' \
+                 offset of 256, then how many epochs their storage lives, at most one era, u16 \
+                 big endian",
             )
             .kind(ElementKind::SumItem)
             .value("credits")
@@ -112,7 +113,8 @@ pub(crate) fn structure() -> StructureNode {
                 "epoch_index",
                 KeyMatcher::Len(2),
                 KeyEncoding::U16Be,
-                "The epoch the refund comes out of, offset by 256",
+                "The epoch the refunded storage was paid in, u16 big endian, without the \
+                 epoch trees' offset of 256",
             )
             .kind(ElementKind::SumItem)
             .value("credits, negative")
@@ -125,11 +127,10 @@ pub(crate) fn structure() -> StructureNode {
     .child(
         StructureNode::dynamic(
             "epoch",
-            "epoch_index",
+            "epoch_index_plus_256",
             KeyMatcher::Len(2),
             KeyEncoding::U16Be,
-            "The epoch index offset by 256, so epoch keys \
-             sort after the one byte keys",
+            "The epoch index plus 256 (`EPOCH_KEY_OFFSET`), u16 big endian",
         )
         .kind(ElementKind::SumTree)
         .source(EPOCH_KEYS)

@@ -1942,7 +1942,7 @@
                     "len": 4
                   },
                   "encoding": "composite",
-                  "description": "The epoch the fees were collected in, u16 big endian, then how many epochs their storage lives, at most one era, u16 big endian"
+                  "description": "The epoch the fees were collected in, u16 big endian without the epoch trees' offset of 256, then how many epochs their storage lives, at most one era, u16 big endian"
                 },
                 "kinds": [
                   "SumItem"
@@ -1983,7 +1983,7 @@
                     "len": 2
                   },
                   "encoding": "u16_be",
-                  "description": "The epoch the refund comes out of, offset by 256"
+                  "description": "The epoch the refunded storage was paid in, u16 big endian, without the epoch trees' offset of 256"
                 },
                 "kinds": [
                   "SumItem"
@@ -2039,13 +2039,13 @@
             "id": "pools.epoch",
             "key": {
               "type": "dynamic",
-              "name": "epoch_index",
+              "name": "epoch_index_plus_256",
               "matcher": {
                 "type": "len",
                 "len": 2
               },
               "encoding": "u16_be",
-              "description": "The epoch index offset by 256, so epoch keys sort after the one byte keys"
+              "description": "The epoch index plus 256 (`EPOCH_KEY_OFFSET`), u16 big endian"
             },
             "kinds": [
               "SumTree"
