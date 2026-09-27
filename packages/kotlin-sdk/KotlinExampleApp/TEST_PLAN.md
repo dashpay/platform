@@ -333,7 +333,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..17`
-- **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded evidence 2026-07-23 in `docs/dashpay/KOTLIN_INVITATIONS_SPEC.md` §7)
+- **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded run 2026-07-23)
 - **System / Diagnostics** — `SYS-01..08`
 
 ### Tag index

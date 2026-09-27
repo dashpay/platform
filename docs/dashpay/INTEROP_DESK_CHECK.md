@@ -4,8 +4,8 @@
 > transient `research/` directory was trimmed — older citations of
 > "`research/06`" refer to this file. Kept in the shipped docs because it is
 > the evidence base for the consensus-facing wire-format decisions
-> (69-byte compact xpub, key-purpose envelope, ASK28 byte order) cited by
-> `SPEC.md` and `DIP_CONFORMANCE_GAPS.md`.
+> (69-byte compact xpub, key-purpose envelope, ASK28 byte order) the wallet
+> implements.
 
 Research date: 2026-06-10 (Milestone 1, task 5 — verify-only).
 Question: do THIS stack's DashPay wire formats match the reference clients (iOS DashSync,

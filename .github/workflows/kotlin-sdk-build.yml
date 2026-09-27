@@ -18,7 +18,6 @@ on:
       - 'packages/*-contract/**'
       - 'packages/simple-signer/**'
       - 'docs/sdk/sdk-parity-manifest.json'
-      - 'docs/sdk/KOTLIN_SWIFT_SHARED_PARITY_SPEC.md'
       - 'packages/kotlin-sdk/PARITY_SUMMARY.md'
       - 'scripts/check_sdk_parity_manifest.py'
       - 'scripts/tests/**'
