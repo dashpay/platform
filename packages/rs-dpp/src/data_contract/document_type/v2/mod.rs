@@ -168,11 +168,19 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) creator_reference: Option<DocumentPropertyReferenceTarget>,
     /// The rules every created or replaced document must meet, by name, in the
     /// order they are checked (`propertyConstraints` keyword, protocol version
-    /// 14): each a comparison of two integer expressions over the document's
-    /// integer properties. Empty on document types that declare none. The
+    /// 14): each a condition on the document's integer properties, a comparison
+    /// of two integer expressions or an `anyOf`, `allOf` or `not` of conditions.
+    /// Empty on document types that declare none. The
     /// parser (`apply_property_constraints`) holds every property a rule reads
     /// to be an integer that is neither transient nor inside a transient object.
     pub(in crate::data_contract) property_constraints: BTreeMap<String, PropertyConstraint>,
+    /// How many seconds after its creation (`$createdAt`) the platform deletes each
+    /// document of the type (`ttl` keyword, protocol version 14), `None` when the
+    /// documents live until someone deletes them. The parser (`apply_documents_ttl`)
+    /// requires `$createdAt` and refuses it on a type that keeps history, is indexOnly or
+    /// has a contested index; the references that may point at such a type treat it as
+    /// deletable.
+    pub(in crate::data_contract) documents_ttl_seconds: Option<u32>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -264,6 +272,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             owner_reference: None,
             creator_reference: None,
             property_constraints: BTreeMap::new(),
+            documents_ttl_seconds: None,
         }
     }
 }
@@ -315,6 +324,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             owner_reference: None,
             creator_reference: None,
             property_constraints: BTreeMap::new(),
+            documents_ttl_seconds: None,
         }
     }
 }

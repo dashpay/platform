@@ -110,6 +110,11 @@ impl Drive {
         // (`Platform::transition_to_version_14`) calls the same helper, so a chain born at
         // version 14 and one upgraded to it build a byte-identical `[Tokens]` subtree.
         self.insert_token_shielded_pools_root_tree(transaction, platform_version)?;
+        // Documents expirations tree (protocol version 14): under `Misc`, it indexes every
+        // document of a type declaring a `ttl` by the time it expires. After the batch apply,
+        // which creates `Misc`, and through the same helper as the upgrade path
+        // (`Platform::transition_to_version_14`), in the same position: last.
+        self.insert_documents_expirations_tree(transaction, platform_version)?;
 
         Ok(())
     }

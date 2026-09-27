@@ -2905,7 +2905,7 @@
                               "EpochOwned",
                               "None"
                             ],
-                            "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes carry no flags.",
+                            "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
                             "value": "serialized document",
                             "since": 1,
                             "presence": "always",
@@ -2984,7 +2984,7 @@
                           "EpochOwned",
                           "None"
                         ],
-                        "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
+                        "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data, or created by a document of a type declaring a `ttl`, carry no flags.",
                         "since": 1,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/document/index_level_tree_types.rs",
@@ -3015,7 +3015,7 @@
                               "EpochOwned",
                               "None"
                             ],
-                            "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
+                            "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data, or created by a document of a type declaring a `ttl`, carry no flags.",
                             "since": 1,
                             "presence": "always",
                             "source": "packages/rs-drive/src/drive/document/index_level_tree_types.rs",
@@ -3046,7 +3046,7 @@
                                   "EpochOwned",
                                   "None"
                                 ],
-                                "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
+                                "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data, or created by a document of a type declaring a `ttl`, carry no flags.",
                                 "reference": "contracts.contract.documents.document_type.primary_key.document",
                                 "since": 1,
                                 "presence": "lazy",
@@ -3076,7 +3076,7 @@
                                       "EpochOwned",
                                       "None"
                                     ],
-                                    "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes carry no flags.",
+                                    "flags_note": "The owner is the owner of the document, who is refunded when it is deleted. Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.",
                                     "value": "for index only document types, a 32 byte row commitment",
                                     "reference": "contracts.contract.documents.document_type.primary_key.document",
                                     "since": 1,
@@ -3113,7 +3113,7 @@
                                   "EpochOwned",
                                   "None"
                                 ],
-                                "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data carry no flags.",
+                                "flags_note": "The owner is the owner of the document that created this level of the index. Levels created with the contract carry the contract owner, and levels of system data, or created by a document of a type declaring a `ttl`, carry no flags.",
                                 "since": 1,
                                 "presence": "always",
                                 "source": "packages/rs-drive/src/drive/document/index_level_tree_types.rs",
@@ -4093,7 +4093,7 @@
         "since": 1,
         "presence": "always",
         "source": "packages/rs-drive/src/drive/mod.rs",
-        "description": "Chain wide values: total credits, total token supplies, the genesis core height.",
+        "description": "Chain wide values: total credits, total token supplies, the genesis core height, and the documents waiting to expire.",
         "children": [
           {
             "id": "misc.genesis_core_height",
@@ -4132,6 +4132,70 @@
             "source": "packages/rs-drive/src/drive/balances/mod.rs",
             "description": "Every credit in Platform. Must equal the sum of all balance and pool trees.",
             "children": []
+          },
+          {
+            "id": "misc.documents_expirations",
+            "key": {
+              "type": "fixed",
+              "hex": "45",
+              "label": "DocumentsExpirations",
+              "constant": "DOCUMENTS_EXPIRATIONS_KEY",
+              "ascii": true
+            },
+            "kinds": [
+              "Tree"
+            ],
+            "since": 14,
+            "presence": "always",
+            "source": "packages/rs-drive/src/drive/document/expiration/paths.rs",
+            "book": "data-model/document-ttl.md",
+            "description": "Every document whose type declares a `ttl`, by the time it expires. After each block's state transitions the platform deletes the expired ones, oldest first, a versioned number per block.",
+            "children": [
+              {
+                "id": "misc.documents_expirations.expiry_time",
+                "key": {
+                  "type": "dynamic",
+                  "name": "expires_at",
+                  "matcher": {
+                    "type": "len",
+                    "len": 8
+                  },
+                  "encoding": "u64_be",
+                  "description": "When the documents under it expire, in ms"
+                },
+                "kinds": [
+                  "Tree"
+                ],
+                "since": 14,
+                "presence": "lazy",
+                "source": "packages/rs-drive/src/drive/document/expiration/paths.rs",
+                "description": "The documents expiring at one time: created in one block by types of one time to live. Removed with its last entry.",
+                "children": [
+                  {
+                    "id": "misc.documents_expirations.expiry_time.document",
+                    "key": {
+                      "type": "dynamic",
+                      "name": "document_id",
+                      "matcher": {
+                        "type": "len",
+                        "len": 32
+                      },
+                      "encoding": "identifier32",
+                      "description": "The document id"
+                    },
+                    "kinds": [
+                      "Item"
+                    ],
+                    "value": "contract id (32 bytes), then the document type name",
+                    "since": 14,
+                    "presence": "always",
+                    "source": "packages/rs-drive/src/drive/document/expiration/paths.rs",
+                    "description": "Where the expiring document is. Removed with the document, whoever deletes it. No flags: the document's creation paid for the time it lives.",
+                    "children": []
+                  }
+                ]
+              }
+            ]
           },
           {
             "id": "misc.total_token_supplies",
@@ -4402,8 +4466,10 @@
                                   "description": "The value of the next index property; empty for null"
                                 },
                                 "kinds": [
-                                  "Tree"
+                                  "Tree",
+                                  "CountTree"
                                 ],
+                                "kinds_note": "A count tree for the last value of the index when the poll started at protocol version 14 or later, counting its contenders plus its stored info, abstain and lock entries, so a join reads how many contenders the poll has in one fetch. A tree otherwise.",
                                 "flags": [
                                   "EpochOwned",
                                   "None"
@@ -4675,8 +4741,10 @@
                                       "description": "The value of the next index property; empty for null"
                                     },
                                     "kinds": [
-                                      "Tree"
+                                      "Tree",
+                                      "CountTree"
                                     ],
+                                    "kinds_note": "A count tree for the last value of the index when the poll started at protocol version 14 or later, counting its contenders plus its stored info, abstain and lock entries, so a join reads how many contenders the poll has in one fetch. A tree otherwise.",
                                     "flags": [
                                       "EpochOwned",
                                       "None"
@@ -5519,9 +5587,12 @@
     "misc": {
       "origin": "genesis@14",
       "tree": {
-        "hex": "54",
+        "hex": "45",
         "left": {
           "hex": "44"
+        },
+        "right": {
+          "hex": "54"
         }
       }
     },

@@ -68,10 +68,22 @@ use crate::version::system_limits::SystemLimits;
 ///   (`max_property_constraint_nodes`), both backfilled into the earlier tables, whose
 ///   parsers never read them. The rules read no state, so these two bound the arithmetic
 ///   one document write causes.
+/// * Document expiry (protocol version 14): a document type may declare a `ttl` of at least
+///   one hour (`min_document_ttl_seconds`) and at most one year (`max_document_ttl_seconds`),
+///   and the platform deletes at most 128 expired documents per block
+///   (`max_document_expirations_per_block`), weighing at most 1,024 in documents plus their
+///   index levels (`max_document_expiration_weight_per_block`), all joined this table in
+///   place while protocol version 14 was unreleased. `None` or 0 in the earlier tables,
+///   whose parsers never read the keyword and whose blocks never run the cleanup.
 /// * Moderation charters (protocol version 14): an elected moderation declaration lets a
 ///   seated team's leader add at most 15 members (`max_contract_moderation_added_moderators`),
 ///   which joined this table in place while protocol version 14 was unreleased. A charter's
 ///   description cap is the charter schema's own `maxBytes`, not a limit here.
+/// * Contested documents (protocol version 14): a contest accepts at most 1,000 contenders
+///   (`max_contenders_per_contest`, backfilled into the earlier tables, whose validation never
+///   reads it). The end of a poll within the cap tallies and cleans up every contender in one
+///   block; the end of one that grew past 10,000 before version 14, its first 10,000
+///   (`maximum_contenders_to_consider`).
 /// * Token pool notes threshold (protocol version 14): a token configuration's
 ///   `minimumPoolNotesForOutgoing` is at most 250 (`max_token_pool_notes_for_outgoing`), the
 ///   credit pool's own threshold, backfilled into the earlier tables, which admit no token
@@ -116,6 +128,7 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
     contract_document_restore_window_ms: 604_800_000,        // 7 days
     max_contract_moderation_added_moderators: 15,
+    max_contenders_per_contest: 1_000,
     max_token_redemption_cycles: 128,
     max_evonode_reward_claim_epochs: 100,
     // NOTE: the Halo 2 proof grows with the action count (~2,273 B/action on
@@ -130,5 +143,9 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_time_range_overlap_factor: Some(24),
     max_time_range_ttl_seconds: Some(604_800), // one week
     min_time_range_ttl_drop_operations_per_write: Some(32),
+    min_document_ttl_seconds: Some(3_600), // document ttl (new in v14): one hour
+    max_document_ttl_seconds: Some(31_536_000), // document ttl (new in v14): one year of 365 days
+    max_document_expirations_per_block: 128, // document ttl (new in v14): expired documents deleted per block
+    max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     minimum_grovedb_proof_envelope_version: 1, // clients reject legacy V0 GroveDB proof envelopes from v14
 };

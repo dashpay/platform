@@ -144,7 +144,7 @@ ContractUserModerationAction::DeleteDocument {
 
 It names no identity (`identity_id()` is `None`): whose document it is is only known once the document is read. The transform checks, in order and each refusal paid: the document type exists (10406), it carries the keyword (`DocumentTypeNotDeletableByModeratorsError`, 41115), the signer is the owner or a moderator (41101), the document exists (`DocumentNotFoundError`), its owner is neither the contract owner nor a moderator (41102, the rule that protects them from a ban protects what they wrote), and block time is within the type's window after the document's last modification (`$updatedAt`, else `$createdAt`), when the type sets one (41116). The document is read the way a document's own deletion reads it, billed the same. The action carries the contract, the document's owner and the block time, so Drive reads nothing again. Nothing the document type prices is charged: neither its deletion token cost nor its `actionFees` deletion fee, both of which are what a document's own owner pays for deleting it.
 
-Drive then runs `DocumentOperationType::DeleteDocumentByModerator`, the ordinary deletion (so every index and aggregate of the type stays right) without its `canBeDeleted` guard, which is the owner's rule and not the moderators', and writes a **removal record**:
+Drive then runs `DocumentOperationType::ForceDeleteDocument`, the ordinary deletion (so every index and aggregate of the type stays right) without its `canBeDeleted` guard, which is the owner's rule and not the moderators', and writes a **removal record**:
 
 ```rust
 pub struct ContractDocumentRemoval {

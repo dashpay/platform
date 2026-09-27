@@ -175,6 +175,10 @@ pub(in crate::execution) mod tests {
     use dpp::platform_value::{Bytes32, Value};
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+    use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionMutRef;
+    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
     use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
     use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
@@ -1830,10 +1834,50 @@ pub(in crate::execution) mod tests {
         expect_err: Option<&str>,
         platform_version: &PlatformVersion,
     ) -> Identity {
+        let (identity, result) = add_contender_to_dpns_name_contest_paying(
+            platform,
+            platform_state,
+            seed,
+            name,
+            None,
+            platform_version,
+        )
+        .await;
+
+        if let Some(expected_err) = expect_err {
+            let StateTransitionExecutionResult::PaidConsensusError {
+                error: consensus_error,
+                ..
+            } = result
+            else {
+                panic!("expected a paid consensus error, got {result:?}");
+            };
+            assert_eq!(consensus_error.to_string(), expected_err);
+        } else {
+            assert_matches!(result, SuccessfulExecution { .. });
+        }
+        identity
+    }
+
+    /// Adds a contender to the DPNS name contest on `name` like
+    /// [`add_contender_to_dpns_name_contest`], stating `prefunded_voting_balance` as its fund, and
+    /// holding that much beside 0.5 Dash for fees, instead of the fund the transition is built
+    /// with. Returns the contender and how its document create executed.
+    pub(in crate::execution) async fn add_contender_to_dpns_name_contest_paying(
+        platform: &mut TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        seed: u64,
+        name: &str,
+        prefunded_voting_balance: Option<Credits>,
+        platform_version: &PlatformVersion,
+    ) -> (Identity, StateTransitionExecutionResult) {
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let (identity_1, signer_1, key_1) =
-            setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity_1, signer_1, key_1) = setup_identity(
+            platform,
+            rng.gen(),
+            dash_to_credits!(0.5) + prefunded_voting_balance.unwrap_or_default(),
+        );
 
         let dpns = platform
             .drive
@@ -1924,7 +1968,7 @@ pub(in crate::execution) mod tests {
                 .serialize_to_bytes()
                 .expect("expected documents batch serialized state transition");
 
-        let documents_batch_create_transition_1 =
+        let mut documents_batch_create_transition_1 =
             BatchTransition::new_document_creation_transition_from_document(
                 document_1,
                 domain,
@@ -1939,6 +1983,26 @@ pub(in crate::execution) mod tests {
             )
             .await
             .expect("expect to create documents batch transition");
+
+        if let Some(prefunded_voting_balance) = prefunded_voting_balance {
+            let StateTransition::Batch(batch) = &mut documents_batch_create_transition_1 else {
+                panic!("expected a batch transition");
+            };
+            let Some(BatchedTransitionMutRef::Document(DocumentTransition::Create(create))) =
+                batch.first_transition_mut()
+            else {
+                panic!("expected a document create");
+            };
+            create
+                .prefunded_voting_balances_mut()
+                .as_mut()
+                .expect("expected a contested document")
+                .1 = prefunded_voting_balance;
+            documents_batch_create_transition_1
+                .sign_external(&key_1, &signer_1, Some(|_, _| Ok(SecurityLevel::HIGH)))
+                .await
+                .expect("expected to sign");
+        }
 
         let documents_batch_create_serialized_transition_1 = documents_batch_create_transition_1
             .serialize_to_bytes()
@@ -2000,21 +2064,10 @@ pub(in crate::execution) mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        if let Some(expected_err) = expect_err {
-            let result = processing_result.into_execution_results().remove(0);
-
-            let StateTransitionExecutionResult::PaidConsensusError {
-                error: consensus_error,
-                ..
-            } = result
-            else {
-                panic!("expected a paid consensus error");
-            };
-            assert_eq!(consensus_error.to_string(), expected_err);
-        } else {
-            assert_eq!(processing_result.valid_count(), 1);
-        }
-        identity_1
+        (
+            identity_1,
+            processing_result.into_execution_results().remove(0),
+        )
     }
 
     pub(in crate::execution) fn verify_dpns_name_contest(

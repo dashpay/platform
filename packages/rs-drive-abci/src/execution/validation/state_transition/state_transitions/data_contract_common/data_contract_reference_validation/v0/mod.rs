@@ -449,10 +449,10 @@ fn validate_reference_target_declaration_v0(
     // allows it, so the declaration always states which guarantee
     // the reference carries. Deletable means by anyone: a document type moderators
     // can delete from is deletable whatever its `canBeDeleted` says about a document's
-    // own owner, since a reference to it could dangle. Neither flag can change on an
-    // update, so the answer holds for good.
-    let target_is_deletable = referenced_document_type.documents_can_be_deleted()
-        || referenced_document_type.documents_can_be_deleted_by_moderators();
+    // own owner, since a reference to it could dangle, and so is one whose documents the
+    // platform deletes when their `ttl` passes. None of the three can change on an update,
+    // so the answer holds for good.
+    let target_is_deletable = referenced_document_type.documents_can_disappear();
     if permanent && target_is_deletable {
         return Ok(SimpleConsensusValidationResult::new_with_error(
             ReferencedDocumentTypeDeletableError::new(

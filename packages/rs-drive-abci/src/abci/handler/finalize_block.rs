@@ -242,6 +242,7 @@ mod tests {
     use crate::platform_types::platform::Platform;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+    use crate::platform_types::withdrawal::unsigned_withdrawal_txs_by_round::UnsignedWithdrawalTxsByRound;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
@@ -265,6 +266,7 @@ mod tests {
         commit_error: RwLock<Option<Error>>,
         transaction: RwLock<Option<Transaction<'a>>>,
         block_execution_context: RwLock<Option<BlockExecutionContext>>,
+        unsigned_withdrawal_txs_by_round: RwLock<UnsignedWithdrawalTxsByRound>,
     }
 
     impl PlatformApplication<MockCoreRPCLike> for FailingCommitApplication<'_> {
@@ -276,6 +278,10 @@ mod tests {
     impl BlockExecutionApplication for FailingCommitApplication<'_> {
         fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
             &self.block_execution_context
+        }
+
+        fn unsigned_withdrawal_txs_by_round(&self) -> &RwLock<UnsignedWithdrawalTxsByRound> {
+            &self.unsigned_withdrawal_txs_by_round
         }
     }
 
@@ -421,6 +427,7 @@ mod tests {
             commit_error: RwLock::new(Some(commit_error)),
             transaction: Default::default(),
             block_execution_context: Default::default(),
+            unsigned_withdrawal_txs_by_round: Default::default(),
         };
 
         app.start_transaction();

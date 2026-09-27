@@ -1076,21 +1076,30 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///
 /// 39. **Property constraints**: the doctype-level `propertyConstraints`
 ///     keyword (meta-schema v3, `parse_property_constraints` 0) names rules a
-///     document's integer properties must meet, each a comparison (`equal`,
-///     `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
+///     document's integer properties must meet, each a condition: a comparison
+///     (`equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
 ///     `greaterThanOrEqual`) of two integer expressions built from integer
 ///     literals, property paths and `add`, `subtract`, `multiply`, `divide`,
-///     `modulo` and `power`. A property the document leaves out counts as 0,
-///     or as the value of an `ifAbsent` operand naming it. Arithmetic is exact
+///     `modulo` and `power`, or `anyOf` or `allOf` over two or more conditions,
+///     or `not` over one. A property the document leaves out counts as 0, or
+///     as the value of an `ifAbsent` operand naming it. Arithmetic is exact
 ///     `i128`: `divide` and `modulo` are Euclidean (the remainder is never
 ///     negative), and an overflow, a zero divisor, a negative exponent or a
 ///     value that is not an integer refuses the document rather than wrapping.
-///     The parser checks that every path names an integer property that is
-///     neither transient nor inside a transient object, and that no operand
-///     nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every
-///     parse, and under full validation the limits
-///     `SystemLimits::max_property_constraints` (16 rules) and
-///     `max_property_constraint_nodes` (32 per rule).
+///     Conditions are checked in declared order and no further than the
+///     outcome needs (`anyOf` stops at the first that holds, `allOf` at the
+///     first that fails), a fault in one that is checked refuses the document
+///     whatever the others say, and `not` never turns a fault into a pass, so
+///     an earlier condition guards a later one. The parser checks that every
+///     path names an integer property that is neither transient nor inside a
+///     transient object, that every comparison reads a property, that an
+///     `anyOf` or `allOf` holds none directly of its own kind, that a `not`
+///     holds no `not` directly, and that no condition or operand nests deeper
+///     than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse, and
+///     under full validation the limits `SystemLimits::max_property_constraints`
+///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
+///     comparison and logical operator counting as one) and that no `anyOf` or
+///     `allOf` lists the same condition twice.
 ///     `DataContract::validate_document_properties` 0 (extended in place, inert
 ///     before this version) calls `validate_property_constraints`
 ///     (`validate_property_constraints` 0) after the schema validation, so
@@ -1264,6 +1273,58 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `get_finalized_epoch_infos` now takes its limit from the caller; every other
 ///     caller passes the query bound it read before.
 ///
+/// 49. **Documents with a time to live**: the doctype-level `ttl` keyword (meta-schema v3,
+///     document type parser generation 3) makes the platform delete each document of the
+///     type `ttl` seconds after its `$createdAt`, at most
+///     `max_document_expirations_per_block` (128, `SYSTEM_LIMITS_V4`) weighing at most
+///     `max_document_expiration_weight_per_block` (1,024 in documents plus their index levels)
+///     per block after the block's state transitions (`expire_documents` 0 in
+///     `DRIVE_ABCI_METHOD_VERSIONS_V10`). The keyword requires `$createdAt`, is refused
+///     with `documentsKeepHistory`, `indexOnly` and a contested index, is at least
+///     `min_document_ttl_seconds` (one hour) and at most `max_document_ttl_seconds` (one
+///     year) at registration, and is fixed on update (`validate_update` 1). References treat such a type as deletable. Its
+///     documents are stored without storage flags, indexed in the documents expirations
+///     tree under `Misc` (created by `create_initial_state_structure` 4 and
+///     `transition_to_version_14`), and pay the `document_ttl` group of `FEE_VERSION3`: a
+///     price per byte for the time they live (tiers up to seven days, then per 9.125 days),
+///     into the processing fees for a `ttl` under two epochs and the storage pool otherwise,
+///     plus their deletion prepaid as processing (per index level and per document byte; a
+///     change that grows a document prepays its added bytes). From its expiry on, a
+///     document can no longer be replaced, transferred, bought, repriced or restored by a
+///     moderator (`DocumentExpiredError`, 40140), judged from its own `$createdAt`; its
+///     owner may still delete it where `canBeDeleted` allows. See
+///     `book/src/data-model/document-ttl.md`.
+///
+/// 50. **A contest accepts at most 1,000 contenders, and its end reaches every
+///     one**: document create state validation 2 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
+///     refuses, paid, a document that would add a contender to a contest holding
+///     `max_contenders_per_contest` (`SYSTEM_LIMITS_V4`, 1,000) already
+///     (`DocumentContestMaximumContendersReachedError`, 40141).
+///     `add_contested_indices_for_contract_operations` 1
+///     (`DRIVE_DOCUMENT_METHOD_VERSIONS_V4`) writes the last index value of a
+///     poll started from this version as a count tree, so the join reads the
+///     count in one element fetch; a poll started before keeps its plain tree
+///     and has its contenders counted by a keys query of at most 1,000.
+///     `maximum_contenders_to_consider` rises from 100 to 10,000, so the tally
+///     of an ended poll, and the cleanup built from it, cover every contender
+///     of a poll within the cap, and up to 10,000 of one that grew past it
+///     before this version. `check_for_ended_vote_polls` 1 compares every tied
+///     contender; version 0 compared at most 100.
+///
+/// 51. **The fund a contender pays doubles for every 50 contenders a contest
+///     holds past 250**: document create state validation 2 refuses, paid, a
+///     contender whose prefunded voting balance is less than the contest's fund
+///     doubled once the contest holds
+///     `contested_document_contenders_before_fund_doubling` (`FEE_VERSION3`,
+///     250) contenders and again for every
+///     `contested_document_contenders_per_fund_doubling` (50) more
+///     (`DocumentContestNotPaidForError`): 0.1 DASH for the first 250 DPNS
+///     contenders, 0.2 for the next 50, up to 3,276.8 for the 951st to the
+///     1,000th, so filling a contest costs 327,695 DASH where it cost 100.
+///     Document create structure validation 1 accepts a prefunded voting
+///     balance of at least the contest's fund; version 0 wants exactly it.
+///     Everything a contender pays goes to the contest's fund.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -1345,11 +1406,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read)
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched; decode_raw_state_transitions, execute_event, validate_fees_of_event and add_distribute_storage_fee_to_epochs_operations each move to 1 — the table's own per-slot comments carry the full list
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 1 admits a document token cost paid from a token pool; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 1 admits a document token cost paid from a token pool; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -1374,8 +1435,8 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
@@ -1410,6 +1471,14 @@ mod tests {
                 fund_fees.contested_document_vote_resolution_fund_required_amount,
                 "protocol {protocol_version}"
             );
+            assert_eq!(
+                (
+                    fund_fees.contested_document_contenders_before_fund_doubling,
+                    fund_fees.contested_document_contenders_per_fund_doubling
+                ),
+                (0, 0),
+                "protocol {protocol_version}: every contender paid the same fund"
+            );
         }
 
         let mut expected_fees = PLATFORM_V13.fee_version.clone();
@@ -1424,6 +1493,14 @@ mod tests {
         expected_fees
             .vote_resolution_fund_fees
             .moderation_vote_resolution_fund_required_amount = 50_000_000_000;
+        // The fund a contender pays doubles once the contest holds 250 contenders, and again for
+        // every 50 more
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_contenders_before_fund_doubling = 250;
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_contenders_per_fund_doubling = 50;
         // The once-per-identity token distribution exists from protocol version 14 on, and a
         // token that uses it pays the surcharge of the other distribution kinds.
         assert_eq!(

@@ -78,6 +78,7 @@ use dpp::consensus::state::data_contract::document_type_update_error::DocumentTy
 use dpp::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use dpp::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
 use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
@@ -153,6 +154,7 @@ use dpp::consensus::state::document::document_immutable_property_changed_error::
 use dpp::consensus::state::identity::gas_sponsor_insufficient_balance_error::GasSponsorInsufficientBalanceError;
 use dpp::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
 use dpp::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
+use dpp::consensus::state::document::document_expired_error::DocumentExpiredError;
 use dpp::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
 use dpp::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use dpp::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
@@ -724,6 +726,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::DocumentActionFeeModeratorsShareMismatchError(e) => {
             generic_consensus_error!(DocumentActionFeeModeratorsShareMismatchError, e).into()
+        }
+        StateError::DocumentExpiredError(e) => {
+            generic_consensus_error!(DocumentExpiredError, e).into()
+        }
+        StateError::DocumentContestMaximumContendersReachedError(e) => {
+            generic_consensus_error!(DocumentContestMaximumContendersReachedError, e).into()
         }
     }
 }

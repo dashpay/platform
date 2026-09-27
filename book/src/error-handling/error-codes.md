@@ -107,7 +107,7 @@ The fee category currently has a single code. The 30000 range is reserved for fu
 | Range | Category | Examples |
 |-------|----------|----------|
 | 40000-40009 | Data Contract | `DataContractAlreadyPresentError` (40000), `DataContractIsReadonlyError` (40001), `DataContractNotFoundError` (40008) |
-| 40100-40139 | Documents | `DocumentAlreadyPresentError` (40100), `DocumentNotFoundError` (40101), `DuplicateUniqueIndexError` (40105), `DocumentActionFeeAgreementNotSetError` (40132), `DocumentActionFeeAgreementMismatchError` (40133), `DocumentActionFeeMultiplierNotToleratedError` (40134), `DocumentActionFeeModeratorsShareMismatchError` (40139) |
+| 40100-40140 | Documents | `DocumentAlreadyPresentError` (40100), `DocumentNotFoundError` (40101), `DuplicateUniqueIndexError` (40105), `DocumentActionFeeAgreementNotSetError` (40132), `DocumentActionFeeAgreementMismatchError` (40133), `DocumentActionFeeMultiplierNotToleratedError` (40134), `DocumentActionFeeModeratorsShareMismatchError` (40139), `DocumentExpiredError` (40140) |
 | 40200-40217 | Identity | `IdentityAlreadyExistsError` (40200), `InvalidIdentityRevisionError` (40203), `IdentityInsufficientBalanceError` (40210) |
 | 40300-40307 | Voting | `MasternodeNotFoundError` (40300), `MasternodeVoteAlreadyPresentError` (40304), `VoteChoiceNotAllowedForVotePollError` (40307) |
 | 40400-40401 | Prefunded Balances | `PrefundedSpecializedBalanceInsufficientError` (40400) |

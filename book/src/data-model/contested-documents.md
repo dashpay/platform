@@ -16,6 +16,36 @@ amount from that balance. Contenders may join for the **join window** (one week 
 the first document; the contest runs for the **poll duration** (two weeks on mainnet). The first
 document's owner may not be joined by the same identity twice.
 
+From protocol version 14, a contest accepts at most 1,000 contenders
+(`max_contenders_per_contest`): a document that would add one more is refused, paid, with
+`DocumentContestMaximumContendersReachedError` (40141). The bound is what lets one block end a
+contest: its end tallies up to `maximum_contenders_to_consider` contenders (10,000 from version 14)
+and removes the entries of those it tallied, so a contest within the cap is tallied and cleaned up
+whole. Before 14 a contest accepted any number of contenders and its end tallied at most 100; a
+contest that grew past 10,000 contenders before 14 is tallied and cleaned up for its first 10,000
+only.
+
+From protocol version 14, the fund a contender pays doubles once the contest holds 250 contenders
+(`contested_document_contenders_before_fund_doubling`) and again for every 50 more
+(`contested_document_contenders_per_fund_doubling`), so a contest stops growing long before its
+cap:
+
+| Contenders the contest holds | DPNS fund to join | Moderation election fund to join |
+| --- | --- | --- |
+| 0 to 249 | 0.1 Dash | 0.5 Dash |
+| 250 to 299 | 0.2 Dash | 1 Dash |
+| 300 to 349 | 0.4 Dash | 2 Dash |
+| ... | doubles every 50 | doubles every 50 |
+| 700 to 749 | 102.4 Dash | 512 Dash |
+| ... | doubles every 50 | doubles every 50 |
+| 950 to 999 | 3,276.8 Dash | 16,384 Dash |
+
+Filling a DPNS contest to 1,000 contenders costs 327,695 Dash (100 at a flat 0.1 Dash). A contender
+states its fund in its prefunded voting balance, and one stating less than the fund of the contest
+it joins is refused, paid, with `DocumentContestNotPaidForError`, which carries the fund it has to
+pay. A contender may state more; everything it states goes to the contest's fund. Before 14 every
+contender stated exactly the fund, however many had joined.
+
 The index's `contested.resolution` says how the contest is decided.
 
 From protocol version 14, an identifier property among the index values is written as an
@@ -68,14 +98,18 @@ other contest, DPNS included, keeps the generic windows and fund.
 ## Ties
 
 From protocol version 14, a tie among the top contenders goes to the **earliest** contender:
-creation time, then block height, then core block height, then document id. This holds for both
-resolutions; contests ending before version 14 awarded the latest contender.
+creation time, then block height, then core block height, then document id, among every tied
+contender. This holds for both resolutions; contests ending before version 14 awarded the latest
+contender.
 
 ## Storage
 
 A contest's state lives under `votes / contested_resource / active_polls`, laid out like the
 contested index it decides: the contenders' documents, one votes sum tree per contender, and the
-abstain and lock tallies. The masternodes' vote references live under
+abstain and lock tallies. From protocol version 14 the tree below a contest's last index value,
+which holds its contenders, stored result and tallies, is a count tree, so a join reads how many
+contenders there are in one fetch; a contest started before 14 keeps its plain tree, and a join
+counts its contenders by reading their keys. The masternodes' vote references live under
 `votes / contested_resource / identity_votes`, and the end dates under `votes / end_date_queries`,
 one tree per end date holding an entry for each contest ending then.
 Once the contest ends, the winning document is awarded, the losers are removed, and the stored

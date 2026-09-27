@@ -11,6 +11,9 @@ use crate::{
     Uri,
 };
 
+/// Default capacity of the [ConnectionPool].
+pub(crate) const DEFAULT_POOL_CAPACITY: usize = 50;
+
 /// ConnectionPool represents pool of connections to DAPI nodes.
 ///
 /// It can be cloned and shared between threads.
@@ -38,7 +41,7 @@ impl ConnectionPool {
 
 impl Default for ConnectionPool {
     fn default() -> Self {
-        Self::new(50)
+        Self::new(DEFAULT_POOL_CAPACITY)
     }
 }
 

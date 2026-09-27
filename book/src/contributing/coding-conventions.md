@@ -370,8 +370,9 @@ error for a user mistake; the block loop treats the two classes differently.
   the crate root; do not extend it for convenience.
 - **State access is snapshot-based.** `Platform.state` is an `ArcSwap`;
   read with `load()` and pass `PlatformRef` or `PlatformStateRef` down. The
-  only locks are the ABCI application's `transaction` and
-  `block_execution_context`. In async code, a guard's scope, not a `drop()`
+  only locks are the ABCI application's `transaction`,
+  `block_execution_context` and `unsigned_withdrawal_txs_by_round`, taken in
+  that order. In async code, a guard's scope, not a `drop()`
   call, is what clears `clippy::await_holding_lock`; wrap the guard in a block
   that ends before the first `.await`.
 
