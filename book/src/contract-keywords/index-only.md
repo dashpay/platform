@@ -93,7 +93,7 @@ Rules at registration:
 | **Value** | array of 1 to 16 distinct property names, each 1 to 64 characters |
 | **Default** | absent |
 | **Since** | protocol version 14 |
-| **On update** | Fixed (40212) |
+| **On update** | Fixed (40212). The list is read as a set, so reordering it is no change. |
 
 The properties stored in each entry's value, after the row commitment, instead of in a key. They are for data the application reads but never queries by, such as a public key or a ciphertext: they need not be indexed, and they come back with every query result.
 

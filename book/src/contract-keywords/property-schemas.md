@@ -201,7 +201,7 @@ Stored documents and index entries hold each integer at its width, so a contract
 | **Where** | Properties of type `array`. `minItems` and `maxItems` also on byte array elements of a typed array. |
 | **Value** | `minItems`, `maxItems`: an integer, 0 or more. `uniqueItems`: a boolean. `contains`: a schema. |
 | **Since** | protocol version 1 |
-| **On update** | `maxItems` may be raised or removed and `minItems` lowered or removed (10246), within the byte array rule above (40212); a typed array keeps its `maxItems`. `uniqueItems` may be removed or set to `false`, not added (10246). `contains` is fixed. |
+| **On update** | `maxItems` may be raised or removed and `minItems` lowered or removed (10246), within the byte array rule above (40212); a typed array keeps its `maxItems`. `uniqueItems` may be removed or set to `false`, not added (10246). `contains` is fixed (10246). |
 | **Errors** | `JsonSchemaError` (10101) |
 
 - `minItems` and `maxItems` count bytes on a byte array and elements on a typed array. A typed array must declare `maxItems`, at most 1024.
@@ -216,7 +216,7 @@ Stored documents and index entries hold each integer at its width, so a contract
 | **Where** | Properties of type `object` |
 | **Value** | The same as at the top of a document type: see [Document Shape](document-shape.md) |
 | **Since** | protocol version 1 |
-| **On update** | Members may be added, never removed; `required` and `additionalProperties` are fixed; `dependentRequired` may lose entries, not gain them (10246). `minProperties` and `maxProperties` are fixed. |
+| **On update** | Members may be added, never removed; `required` and `additionalProperties` are fixed; `dependentRequired` may lose entries, not gain them (10246). `minProperties` and `maxProperties` are fixed (10246). |
 | **Errors** | `JsonSchemaError` (10101) |
 
 ```json

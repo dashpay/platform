@@ -8,7 +8,7 @@
 | **Value** | An object keyed by action: `create`, `replace`, `delete`, `transfer`, `update_price`, `purchase`. Each value is a cost object with the keys below. Actions left out cost no tokens |
 | **Default** | Absent: no action costs tokens |
 | **Since** | protocol version 9. `gasFeesPaidBy` is accepted from 9 and acted on from 14; `optional` is 14 |
-| **On update** | Fixed |
+| **On update** | Fixed: a cost may not be added, changed or removed on an existing document type (`DocumentTypeUpdateError`, 40212) |
 | **Errors** | On a document transition: `RequiredTokenPaymentInfoNotSetError` (40115), `IdentityHasNotAgreedToPayRequiredTokenAmountError` (40116), `IdentityTryingToPayWithWrongTokenError` (40117), `IdentityTokenAccountFrozenError` (40702), `IdentityDoesNotHaveEnoughTokenBalanceError` (40700), `GasFeesPaidByNotAllowedError` (40129), `InconsistentGasFeesPaidByInBatchError` (40130), `GasSponsorInsufficientBalanceError` (40222). At registration: `InvalidTokenPositionError` (10451), `RedundantDocumentPaidForByTokenWithContractId` (10275), `TokenPaymentByBurningOnlyAllowedOnInternalTokenError` (10261), `DataContractNotFoundError` (40008), `InvalidTokenPositionStateError` (40009) |
 
 The keys of each cost object:

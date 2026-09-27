@@ -44,7 +44,7 @@ Each chapter opens with a short table for each keyword:
 - **On update** is what a contract update may do with the keyword on a document type that already exists. *Fixed* means adding, removing and changing it are all refused. A document type the update adds may use any keyword, as a new contract may.
 - **Errors** are consensus errors, written `ErrorName` (code). See [Error Codes](error-handling/error-codes.md) for the code ranges.
 
-A contract update that breaks an update rule is refused with one of two errors, depending on which check catches it. `DocumentTypeUpdateError` (40212) comes from the comparison of the parsed document types, which judges flags such as `documentsMutable` by their meaning. `IncompatibleDocumentTypeSchemaError` (10246) comes from the comparison of the two JSON schemas, which judges property keywords such as `refersTo` or `maxLength` by their text. Top-level `required` and `indices` have errors of their own (10276 and 10217).
+A contract update that breaks an update rule is refused with one of two errors, depending on which check catches it. `DocumentTypeUpdateError` (40212) comes from the comparison of the parsed document types, which judges flags such as `documentsMutable` by their meaning. `IncompatibleDocumentTypeSchemaError` (10246) comes from the comparison of the two JSON schemas, which judges property keywords such as `refersTo` or `maxLength` by their text. Top-level `required` and `indices` have errors of their own (10276 and 10217). Because the schema comparison reads text, an edit that changes how a keyword is written but not what it means, such as writing out a default or switching to the `documentsAverageable` shorthand, is refused with 10246.
 
 ## Protocol versions
 

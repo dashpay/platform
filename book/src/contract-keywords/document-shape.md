@@ -107,7 +107,7 @@ Each of these is refused with `DataContractInvalidRequiredFieldsUpdateError` (10
 | **Where** | The top of a document type; also on properties of type `object` |
 | **Value** | An integer, 0 or more |
 | **Since** | protocol version 1 (declared in the meta-schema from 12) |
-| **On update** | Fixed |
+| **On update** | Fixed (`IncompatibleDocumentTypeSchemaError`, 10246) |
 | **Errors** | `JsonSchemaError` (10101) |
 
 These are the JSON Schema keywords: a document must hold at least `minProperties` and at most `maxProperties` of its own properties. System properties are not counted. The DashPay `profile` above uses `minProperties: 1` so that an empty profile cannot be written.
