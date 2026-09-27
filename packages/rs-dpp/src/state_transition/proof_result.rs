@@ -106,6 +106,11 @@ pub enum StateTransitionProofResult {
     VerifiedShieldedNullifiers(Vec<(Vec<u8>, bool)>),
     /// The proven total balance of a token's shielded pool (token id, balance). Returned by the
     /// pool transitions that only create notes (mint, claim and purchase into the pool).
+    // Kept out of the `TryInto` derive: this shares a field-type list with a variant that
+    // predates it, and `derive_more` writes one `TryFrom` per distinct list. Including it
+    // would make that conversion accept either variant, so a caller using the tuple type to
+    // tell them apart would silently stop doing so. Match on the variant instead.
+    #[try_into(ignore)]
     VerifiedTokenShieldedPoolBalance(
         Identifier,
         #[cfg_attr(
@@ -176,6 +181,11 @@ pub enum StateTransitionProofResult {
     /// the pool only once the last required signature arrives, so while the action is active the
     /// balance is the one the pool already held, and is absent for a pool that has never held a
     /// note. A closed action has minted, so its balance is present.
+    // Kept out of the `TryInto` derive: this shares a field-type list with a variant that
+    // predates it, and `derive_more` writes one `TryFrom` per distinct list. Including it
+    // would make that conversion accept either variant, so a caller using the tuple type to
+    // tell them apart would silently stop doing so. Match on the variant instead.
+    #[try_into(ignore)]
     VerifiedTokenGroupActionWithShieldedPoolBalance(
         GroupSumPower,
         GroupActionStatus,
@@ -556,29 +566,29 @@ mod json_convertible_tests {
         let recovered = StateTransitionProofResult::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
-    /// `TryInto` cannot tell a pool balance from a token balance, and is not meant to.
+    /// A pool balance must not convert through a pre-existing variant's `TryInto` impl.
     ///
-    /// `derive_more::TryInto` writes one impl per distinct field-type list, so variants that share
-    /// one share an impl and a successful conversion says nothing about which variant was held.
-    /// `TokenAmount` and `Credits` are both `u64`, so the pool balance shares its list with
-    /// `VerifiedTokenBalance`. This is the enum's existing shape, not something the pool variants
-    /// introduce: `VerifiedMasternodeVote` and `VerifiedNextDistribution` are both `(Vote)` and
-    /// have always shared an impl the same way. Match on the variant to discriminate; this test
-    /// exists so that a change to the derive, or to either field type, shows up here rather than
-    /// silently in a caller.
+    /// `derive_more::TryInto` writes one `TryFrom` per distinct field-type list and ORs every
+    /// matching variant into it. `TokenAmount` and `Credits` are both `u64`, so a pool balance's
+    /// list is identical to `VerifiedTokenBalance`'s, and including it would turn a conversion
+    /// that used to identify one variant into one that accepts either. The pool variants are
+    /// therefore excluded from the derive, and this pins that: the pre-existing conversion still
+    /// works and still means what it meant, and the pool variant is refused.
     #[test]
-    fn should_convert_a_pool_balance_through_the_token_balance_impl_it_shares() {
+    fn should_refuse_to_convert_a_pool_balance_through_a_pre_existing_variants_impl() {
         let id = Identifier::from([7u8; 32]);
-        let pool = StateTransitionProofResult::VerifiedTokenShieldedPoolBalance(id, 42);
-        let converted: (Identifier, u64) = pool
-            .try_into()
-            .expect("the shared impl accepts a pool balance");
-        assert_eq!(converted, (id, 42));
 
         let balance = StateTransitionProofResult::VerifiedTokenBalance(id, 42);
         let converted: (Identifier, u64) = balance
             .try_into()
-            .expect("and accepts a token balance identically");
+            .expect("the pre-existing conversion still identifies a token balance");
         assert_eq!(converted, (id, 42));
+
+        let pool = StateTransitionProofResult::VerifiedTokenShieldedPoolBalance(id, 42);
+        let refused: Result<(Identifier, u64), _> = pool.try_into();
+        assert!(
+            refused.is_err(),
+            "a pool balance must not pass for a token balance"
+        );
     }
 }
