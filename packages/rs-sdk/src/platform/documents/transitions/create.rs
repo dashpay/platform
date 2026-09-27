@@ -1,3 +1,4 @@
+use crate::platform::documents::contest_fund::with_contest_fund_to_join;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
@@ -5,6 +6,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
@@ -146,6 +148,32 @@ impl DocumentCreateTransitionBuilder {
         self
     }
 
+    /// Names the most this create is willing to pay into the contest it joins, when its
+    /// document is contested. From protocol version 14 it is charged the fund to join the
+    /// contest, which doubles once the contest holds 250 contenders and again for every 50
+    /// more, and refused, paid, when that is more than this. Without it the create states the
+    /// fund to join read when it is signed, so it is refused if others join first and push the
+    /// fund up. The identity must hold what it states, since Platform checks its balance
+    /// against it before counting the contest. Before protocol version 14 a contender states
+    /// exactly the contest's fund.
+    ///
+    /// Call it after `with_state_transition_creation_options`, which replaces the options this
+    /// is kept in.
+    ///
+    /// # Arguments
+    ///
+    /// * `contest_fund` - The most the create pays into its contest
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - The updated builder
+    pub fn with_contest_fund(mut self, contest_fund: Credits) -> Self {
+        self.state_transition_creation_options
+            .get_or_insert_with(Default::default)
+            .contest_fund = Some(contest_fund);
+        self
+    }
+
     /// Signs the document create transition
     ///
     /// # Arguments
@@ -171,6 +199,20 @@ impl DocumentCreateTransitionBuilder {
             creation_options.validate_base_carries_action_fee_agreement(platform_version)?;
         }
 
+        let document_type = self
+            .data_contract
+            .document_type_for_name(&self.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?;
+
+        // A contested create states the most it pays to join its contest
+        let state_transition_creation_options = with_contest_fund_to_join(
+            sdk,
+            document_type,
+            &self.document,
+            self.state_transition_creation_options,
+        )
+        .await?;
+
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(
                 self.document.owner_id(),
@@ -179,11 +221,6 @@ impl DocumentCreateTransitionBuilder {
                 self.settings,
             )
             .await?;
-
-        let document_type = self
-            .data_contract
-            .document_type_for_name(&self.document_type_name)
-            .map_err(|e| Error::Protocol(e.into()))?;
 
         let state_transition = BatchTransition::new_document_creation_transition_from_document(
             self.document.clone(),
@@ -195,7 +232,7 @@ impl DocumentCreateTransitionBuilder {
             self.token_payment_info.clone(),
             signer,
             platform_version,
-            self.state_transition_creation_options,
+            state_transition_creation_options,
         )
         .await?;
 

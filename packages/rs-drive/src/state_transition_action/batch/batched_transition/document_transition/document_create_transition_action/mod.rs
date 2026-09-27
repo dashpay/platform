@@ -81,6 +81,16 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         }
     }
 
+    fn set_prefunded_voting_fund(&mut self, fund: Credits) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => {
+                if let Some((_, credits)) = v0.prefunded_voting_balance.as_mut() {
+                    *credits = fund;
+                }
+            }
+        }
+    }
+
     fn should_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => &v0.should_store_contest_info,

@@ -922,8 +922,8 @@ impl Drive {
                     ttl_seconds,
                     block_info.time_ms,
                 )?,
-                ttl_seconds,
                 self.config.epoch_time_length_s,
+                self.config.epochs_per_era,
                 &platform_version.fee_version,
             )?;
             batch_operations = batch_operations

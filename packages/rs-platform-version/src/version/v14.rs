@@ -1076,30 +1076,46 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///
 /// 39. **Property constraints**: the doctype-level `propertyConstraints`
 ///     keyword (meta-schema v3, `parse_property_constraints` 0) names rules a
-///     document's integer properties must meet, each a condition: a comparison
+///     document's properties must meet, each a condition: a comparison
 ///     (`equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
 ///     `greaterThanOrEqual`) of two integer expressions built from integer
-///     literals, property paths and `add`, `subtract`, `multiply`, `divide`,
-///     `modulo` and `power`, or `anyOf` or `allOf` over two or more conditions,
-///     or `not` over one. A property the document leaves out counts as 0, or
-///     as the value of an `ifAbsent` operand naming it. Arithmetic is exact
-///     `i128`: `divide` and `modulo` are Euclidean (the remainder is never
-///     negative), and an overflow, a zero divisor, a negative exponent or a
-///     value that is not an integer refuses the document rather than wrapping.
-///     Conditions are checked in declared order and no further than the
-///     outcome needs (`anyOf` stops at the first that holds, `allOf` at the
-///     first that fails), a fault in one that is checked refuses the document
-///     whatever the others say, and `not` never turns a fault into a pass, so
-///     an earlier condition guards a later one. The parser checks that every
-///     path names an integer property that is neither transient nor inside a
-///     transient object, that every comparison reads a property, that an
-///     `anyOf` or `allOf` holds none directly of its own kind, that a `not`
-///     holds no `not` directly, and that no condition or operand nests deeper
-///     than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse, and
-///     under full validation the limits `SystemLimits::max_property_constraints`
+///     literals, paths of integer or boolean properties (a boolean reading as
+///     1 for true and 0 for false) and `add`, `subtract`, `multiply`,
+///     `divide`, `modulo` and `power`; `in`, whether an integer expression
+///     takes one of two or more distinct integer values; `equal` or `notEqual`
+///     of a string property and a `{ "const": string }` or of two bare paths
+///     naming string properties, or `in` of a string property and two or more
+///     distinct strings, a string the document leaves out equalling no
+///     constant and no other string unless an `ifAbsent` gives it a string
+///     default (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum`
+///     must list too); `present` or `absent` naming a property of
+///     any type, whether the document holds it (the one way to tell a property
+///     left out from one set to 0); `anyOf` or `allOf` over two or more
+///     conditions; or `not` over one. In an operand, a property the document
+///     leaves out counts as 0, or as the value of an `ifAbsent` operand naming
+///     it. Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
+///     remainder is never negative), and an overflow, a zero divisor, a
+///     negative exponent or a value that is not an integer refuses the
+///     document rather than wrapping. Conditions are checked in declared order
+///     and no further than the outcome needs (`anyOf` stops at the first that
+///     holds, `allOf` at the first that fails), a fault in one that is checked
+///     refuses the document whatever the others say, and `not` never turns a
+///     fault into a pass, so an earlier condition guards a later one. The
+///     parser checks that every path an operand reads names an integer or
+///     boolean property, every path compared with strings a string property
+///     (whose `enum`, if it declares one, lists every constant it is compared
+///     with), and every path `present` or `absent` tests a property of any
+///     type, none transient nor inside a transient object; that every
+///     comparison and `in` reads a property; that strings are only compared
+///     for equality; that no `in` lists a value twice; that an `anyOf` or
+///     `allOf` holds none directly of its own kind and a `not` no `not`; and
+///     that no condition or operand nests deeper than
+///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse. Under full
+///     validation it holds the limits `SystemLimits::max_property_constraints`
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
-///     comparison and logical operator counting as one) and that no `anyOf` or
-///     `allOf` lists the same condition twice.
+///     comparison, `in`, listed value, `const`, presence test and logical
+///     operator counting as one), and that no `anyOf` or `allOf` lists the
+///     same condition twice.
 ///     `DataContract::validate_document_properties` 0 (extended in place, inert
 ///     before this version) calls `validate_property_constraints`
 ///     (`validate_property_constraints` 0) after the schema validation, so
@@ -1287,7 +1303,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     tree under `Misc` (created by `create_initial_state_structure` 4 and
 ///     `transition_to_version_14`), and pay the `document_ttl` group of `FEE_VERSION3`: a
 ///     price per byte for the time they live (tiers up to seven days, then per 9.125 days),
-///     into the processing fees for a `ttl` under two epochs and the storage pool otherwise,
+///     paid out to the epochs they live in (at most one era) through the lifetime storage fee
+///     pools under `Pools` (`add_distribute_block_fees_into_pools_operations` 1),
 ///     plus their deletion prepaid as processing (per index level and per document byte; a
 ///     change that grows a document prepays its added bytes). From its expiry on, a
 ///     document can no longer be replaced, transferred, bought, repriced or restored by a
@@ -1312,18 +1329,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contender; version 0 compared at most 100.
 ///
 /// 51. **The fund a contender pays doubles for every 50 contenders a contest
-///     holds past 250**: document create state validation 2 refuses, paid, a
-///     contender whose prefunded voting balance is less than the contest's fund
-///     doubled once the contest holds
-///     `contested_document_contenders_before_fund_doubling` (`FEE_VERSION3`,
-///     250) contenders and again for every
-///     `contested_document_contenders_per_fund_doubling` (50) more
-///     (`DocumentContestNotPaidForError`): 0.1 DASH for the first 250 DPNS
-///     contenders, 0.2 for the next 50, up to 3,276.8 for the 951st to the
-///     1,000th, so filling a contest costs 327,695 DASH where it cost 100.
-///     Document create structure validation 1 accepts a prefunded voting
-///     balance of at least the contest's fund; version 0 wants exactly it.
-///     Everything a contender pays goes to the contest's fund.
+///     holds past 250**: the fund to join a contest is its fund doubled once
+///     the contest holds `contested_document_contenders_before_fund_doubling`
+///     (`FEE_VERSION3`, 250) contenders and again for every
+///     `contested_document_contenders_per_fund_doubling` (50) more: 0.1 DASH
+///     for the first 250 DPNS contenders, 0.2 for the next 50, up to 3,276.8
+///     for the 951st to the 1,000th, so filling a contest costs 327,695 DASH
+///     where it cost 100. A contender's prefunded voting balance is the most it
+///     pays: document create state validation 2 refuses, paid, one stating less
+///     than the fund to join (`DocumentContestNotPaidForError`, carrying that
+///     fund), the first contender of a new contest included, and charges one
+///     stating more only the fund to join, the rest staying with it. Document
+///     create structure validation 1 leaves the amount to state validation;
+///     version 0 wants exactly the contest's fund.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

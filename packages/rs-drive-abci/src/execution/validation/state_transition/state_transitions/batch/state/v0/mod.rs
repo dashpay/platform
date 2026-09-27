@@ -128,8 +128,11 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         let mut seated_charter_reads = SeatedCharterReads::default();
 
         // Next we need to validate the structure of all actions (this means with the data contract)
-        for transition in state_transition_action.transitions_take() {
-            let mut transition_validation_result = match &transition {
+        for mut transition in state_transition_action.transitions_take() {
+            // Borrowed mutably so a contested create's validation can settle the fund it pays
+            // (document create state validation 2, protocol version 14); earlier versions of
+            // every validation below read the action only
+            let mut transition_validation_result = match &mut transition {
                 BatchedTransitionAction::DocumentAction(document_action) => match document_action {
                     DocumentTransitionAction::CreateAction(create_action) => create_action
                         .validate_state(

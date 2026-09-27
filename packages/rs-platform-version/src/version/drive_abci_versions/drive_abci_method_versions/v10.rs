@@ -81,7 +81,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         verify_recent_signature_locally: 0,
     },
     fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions {
-        add_distribute_block_fees_into_pools_operations: 0,
+        add_distribute_block_fees_into_pools_operations: 1, // changed in v14: document ttl storage fees go to the lifetime storage fee pools
         add_distribute_storage_fee_to_epochs_operations: 1, // changed in v14: claws each pending refund back from the epochs it was priced for
     },
     fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions {

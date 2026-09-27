@@ -1,11 +1,12 @@
 //! End-to-end coverage for the `propertyConstraints` doctype keyword (protocol
-//! version 14): a document type names rules its documents' integer properties
-//! must meet, each a comparison of two integer expressions or an `anyOf`,
-//! `allOf` or `not` of such conditions. A create or replace
-//! that breaks one is consensus-rejected with
-//! `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the rule
-//! and why, and leaves the stored document untouched. A property the document
-//! leaves out counts as 0, or as its `ifAbsent` value.
+//! version 14): a document type names rules its documents' properties must
+//! meet, each a comparison of two integer expressions, of a string property
+//! with string constants or of two string properties, an `in` list of values,
+//! a `present` or `absent` test, or an `anyOf`, `allOf` or `not` of such
+//! conditions. A create or replace that breaks one is consensus-rejected with
+//! `DocumentPropertyConstraintViolatedError` (basic code 10422), naming the
+//! rule and why, and leaves the stored document untouched. A property the
+//! document leaves out counts as 0 in an operand, or as its `ifAbsent` value.
 
 use super::*;
 
@@ -36,11 +37,19 @@ mod property_constraints_tests {
     ///
     /// * `boostCapped`: `price * ifAbsent(boost, 1) <= 100000`
     /// * `boostPower`: `ifAbsent(boost, 1) ^ 20 >= 1`, which overflows for a large boost
+    /// * `closedAtOnlyWhenClosed`: `closedAt` only on a closed or cancelled offer
+    /// * `closedNeedsClosedAt`: a closed offer carries `closedAt`
     /// * `depositCoversOrder`: `(price + fee) * quantity <= deposit`
     /// * `discountBelowPrice`: `discount < price`, an absent discount counting as 0
+    /// * `discountGivenAboveZero`: `discount` is absent or above 0
+    /// * `discountOnlyWhileOpen`: a discount only on an open offer, a status left out
+    ///   counting as open
     /// * `feeWaivedOnlyWithDiscount`: `!(fee == 0 && discount == 0)`
     /// * `feeWaivedOrAtLeastTen`: `fee == 0 || fee >= 10`
     /// * `perUnitDeposit`: `deposit / quantity >= 1`, which divides by zero for no quantity
+    /// * `settlesInAnotherCurrency`: a `settleIn` currency, when given, is not `currency`
+    /// * `tieredFee`: `fee` is one of 0, 10, 25 or 50
+    /// * `waivedFeeIsZero`: `waiveFee * fee == 0`, the boolean reading as 1 or 0
     fn offer_schema() -> Value {
         platform_value!({
             "type": "object",
@@ -51,7 +60,27 @@ mod property_constraints_tests {
                 "quantity": { "type": "integer", "minimum": 0, "maximum": 100, "position": 2 },
                 "deposit": { "type": "integer", "minimum": 0, "position": 3 },
                 "discount": { "type": "integer", "minimum": 0, "maximum": 1000000, "position": 4 },
-                "boost": { "type": "integer", "minimum": 0, "maximum": 100, "position": 5 }
+                "boost": { "type": "integer", "minimum": 0, "maximum": 100, "position": 5 },
+                "waiveFee": { "type": "boolean", "position": 6 },
+                "status": {
+                    "type": "string",
+                    "enum": ["open", "closed", "cancelled"],
+                    "maxLength": 9,
+                    "position": 7
+                },
+                "closedAt": { "type": "integer", "minimum": 0, "position": 8 },
+                "currency": {
+                    "type": "string",
+                    "enum": ["USD", "EUR", "DASH"],
+                    "maxLength": 4,
+                    "position": 9
+                },
+                "settleIn": {
+                    "type": "string",
+                    "enum": ["USD", "EUR", "DASH"],
+                    "maxLength": 4,
+                    "position": 10
+                }
             },
             "required": ["price", "fee", "quantity", "deposit"],
             "propertyConstraints": {
@@ -64,6 +93,18 @@ mod property_constraints_tests {
                 "boostPower": {
                     "greaterThanOrEqual": [{ "power": [{ "ifAbsent": ["boost", 1] }, 20] }, 1]
                 },
+                "closedAtOnlyWhenClosed": {
+                    "anyOf": [
+                        { "in": ["status", ["closed", "cancelled"]] },
+                        { "absent": "closedAt" }
+                    ]
+                },
+                "closedNeedsClosedAt": {
+                    "anyOf": [
+                        { "notEqual": ["status", { "const": "closed" }] },
+                        { "present": "closedAt" }
+                    ]
+                },
                 "depositCoversOrder": {
                     "lessThanOrEqual": [
                         { "multiply": [{ "add": ["price", "fee"] }, "quantity"] },
@@ -71,6 +112,15 @@ mod property_constraints_tests {
                     ]
                 },
                 "discountBelowPrice": { "lessThan": ["discount", "price"] },
+                "discountGivenAboveZero": {
+                    "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
+                },
+                "discountOnlyWhileOpen": {
+                    "anyOf": [
+                        { "absent": "discount" },
+                        { "equal": [{ "ifAbsent": ["status", "open"] }, { "const": "open" }] }
+                    ]
+                },
                 "feeWaivedOnlyWithDiscount": {
                     "not": { "allOf": [{ "equal": ["fee", 0] }, { "equal": ["discount", 0] }] }
                 },
@@ -79,7 +129,12 @@ mod property_constraints_tests {
                 },
                 "perUnitDeposit": {
                     "greaterThanOrEqual": [{ "divide": ["deposit", "quantity"] }, 1]
-                }
+                },
+                "settlesInAnotherCurrency": {
+                    "anyOf": [{ "absent": "settleIn" }, { "notEqual": ["settleIn", "currency"] }]
+                },
+                "tieredFee": { "in": ["fee", [0, 10, 25, 50]] },
+                "waivedFeeIsZero": { "equal": [{ "multiply": ["waiveFee", "fee"] }, 0] }
             },
             "additionalProperties": false
         })
@@ -484,6 +539,226 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// A discount may be left out, but one the offer gives must be above 0: only
+    /// a presence test tells the two apart, since an operand reads a discount left
+    /// out as 0.
+    #[tokio::test]
+    async fn should_tell_a_property_left_out_from_one_set_to_zero() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| document.set("discount", Value::U64(0)))
+            .await;
+        expect_violated(
+            result,
+            "discountGivenAboveZero",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture.create(|_| {}).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture
+                .create(|document| document.set("discount", Value::U64(10)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A fee of 20 is not one of the tiers; 25 is. (100 + 25) * 2 = 250 <= 300.
+    #[tokio::test]
+    async fn should_judge_an_in_against_its_listed_values() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| {
+                document.set("fee", Value::U64(20));
+                document.set("deposit", Value::U64(300));
+            })
+            .await;
+        expect_violated(result, "tieredFee", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("fee", Value::U64(25));
+                    document.set("deposit", Value::U64(300));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// A boolean reads as 1 for true and 0 for false: a waived fee must be 0, and
+    /// an offer that does not waive it, or leaves the flag out, may charge one.
+    #[tokio::test]
+    async fn should_read_a_boolean_property_as_one_or_zero() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| document.set("waiveFee", Value::Bool(true)))
+            .await;
+        expect_violated(
+            result,
+            "waivedFeeIsZero",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        // A waived fee of 0 needs a discount (`feeWaivedOnlyWithDiscount`)
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("waiveFee", Value::Bool(true));
+                    document.set("fee", Value::U64(0));
+                    document.set("discount", Value::U64(10));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture
+                .create(|document| document.set("waiveFee", Value::Bool(false)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A string property is compared with constants: a closed offer needs
+    /// `closedAt`, and only a closed or cancelled one may carry it.
+    #[tokio::test]
+    async fn should_compare_a_string_property_with_constants() {
+        let mut fixture = OfferFixture::new();
+        let status = |value: &str| Value::Text(value.to_string());
+
+        let result = fixture
+            .create(|document| document.set("status", status("closed")))
+            .await;
+        expect_violated(
+            result,
+            "closedNeedsClosedAt",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| {
+                document.set("status", status("open"));
+                document.set("closedAt", Value::U64(1000));
+            })
+            .await;
+        expect_violated(
+            result,
+            "closedAtOnlyWhenClosed",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        for (value, closed_at) in [
+            ("closed", Some(1000)),
+            ("cancelled", Some(1000)),
+            ("open", None),
+        ] {
+            assert_matches!(
+                fixture
+                    .create(|document| {
+                        document.set("status", status(value));
+                        if let Some(closed_at) = closed_at {
+                            document.set("closedAt", Value::U64(closed_at));
+                        }
+                    })
+                    .await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "{value}"
+            );
+        }
+        assert_eq!(fixture.stored_offers().len(), 3);
+    }
+
+    /// Two string properties compare their strings: an offer may not settle in
+    /// the currency it is priced in. A currency it leaves out equals none.
+    #[tokio::test]
+    async fn should_compare_two_string_properties() {
+        let mut fixture = OfferFixture::new();
+        let currency = |value: &str| Value::Text(value.to_string());
+
+        let result = fixture
+            .create(|document| {
+                document.set("currency", currency("USD"));
+                document.set("settleIn", currency("USD"));
+            })
+            .await;
+        expect_violated(
+            result,
+            "settlesInAnotherCurrency",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("currency", currency("USD"));
+                    document.set("settleIn", currency("DASH"));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // No price currency: the settlement currency differs from it
+        assert_matches!(
+            fixture
+                .create(|document| document.set("settleIn", currency("EUR")))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A string default stands in for a status the offer leaves out: a discount
+    /// is allowed with no status, as on an open offer, but not on a closed one.
+    #[tokio::test]
+    async fn should_read_a_string_default_for_a_property_left_out() {
+        let mut fixture = OfferFixture::new();
+        let status = |value: &str| Value::Text(value.to_string());
+
+        let result = fixture
+            .create(|document| {
+                document.set("discount", Value::U64(10));
+                document.set("status", status("closed"));
+                document.set("closedAt", Value::U64(1000));
+            })
+            .await;
+        expect_violated(
+            result,
+            "discountOnlyWhileOpen",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| document.set("discount", Value::U64(10)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("discount", Value::U64(10));
+                    document.set("status", status("open"));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
     }
 
     #[tokio::test]

@@ -2,10 +2,18 @@ use super::*;
 use platform_value::platform_value;
 use platform_version::version::PLATFORM_VERSIONS;
 
+/// The paths the unit tests treat as string properties; every other path is an
+/// integer one.
+const STRING_PROPERTIES: [&str; 4] = ["status", "from", "to", "meta.state"];
+
+fn is_string_property(path: &str) -> bool {
+    STRING_PROPERTIES.contains(&path)
+}
+
 /// The rules of a schema whose `propertyConstraints` is `declaration`.
 fn parse(declaration: Value) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     let schema = platform_value!({ "type": "object", "propertyConstraints": declaration });
-    parse_property_constraints(&schema, "order")
+    parse_property_constraints(&schema, "order", &is_string_property)
 }
 
 /// The one rule of a declaration naming it `rule`.
@@ -166,15 +174,19 @@ fn should_parse_every_operator_comparison_and_the_if_absent_operand() {
 #[test]
 fn should_read_nothing_from_a_schema_without_the_keyword() {
     let schema = platform_value!({ "type": "object" });
-    assert!(parse_property_constraints(&schema, "order")
-        .expect("parses")
-        .is_empty());
-    // A schema that is not an object is the core parser's to refuse
     assert!(
-        parse_property_constraints(&Value::Text("x".to_string()), "order")
+        parse_property_constraints(&schema, "order", &is_string_property)
             .expect("parses")
             .is_empty()
     );
+    // A schema that is not an object is the core parser's to refuse
+    assert!(parse_property_constraints(
+        &Value::Text("x".to_string()),
+        "order",
+        &is_string_property
+    )
+    .expect("parses")
+    .is_empty());
 }
 
 #[test]
@@ -252,8 +264,16 @@ fn should_refuse_a_malformed_declaration() {
             "at equal[0].ifAbsent must name a property path first",
         ),
         (
-            platform_value!({ "rule": { "equal": [{ "ifAbsent": ["price", "fee"] }, 1] } }),
+            platform_value!({ "rule": { "equal": [{ "ifAbsent": ["price", true] }, 1] } }),
             "at equal[0].ifAbsent must give an integer value second",
+        ),
+        // A string default reads a string property, which arithmetic never takes
+        (
+            platform_value!({
+                "rule": { "equal": [{ "add": [{ "ifAbsent": ["price", "fee"] }, 1] }, 1] }
+            }),
+            "at equal[0].add[0].ifAbsent gives a string default, which only a comparison of \
+             strings takes, never an integer expression",
         ),
         (
             platform_value!({ "rule": { "equal": [{ "add": [1, 2] }, 3] } }),
@@ -595,6 +615,22 @@ fn should_find_a_condition_an_any_of_or_all_of_repeats() {
             }),
             Some(("anyOf[0].allOf[1]", "anyOf[0].allOf[0]")),
         ),
+        (
+            platform_value!({ "anyOf": [{ "present": "fee" }, one.clone(), { "present": "fee" }] }),
+            Some(("anyOf[2]", "anyOf[0]")),
+        ),
+        // An in lists a set: the same values in another order are the same condition
+        (
+            platform_value!({
+                "anyOf": [{ "in": ["fee", [1, 2]] }, one.clone(), { "in": ["fee", [2, 1]] }]
+            }),
+            Some(("anyOf[2]", "anyOf[0]")),
+        ),
+        // Testing the presence of a property and its absence are different conditions
+        (
+            platform_value!({ "anyOf": [{ "present": "fee" }, { "absent": "fee" }] }),
+            None,
+        ),
     ] {
         let rule = parse_rule_value(condition.clone());
         assert_eq!(
@@ -603,6 +639,609 @@ fn should_find_a_condition_an_any_of_or_all_of_repeats() {
             "{condition:?}"
         );
     }
+}
+
+// ── in ──────────────────────────────────────────────────────────────────
+
+#[test]
+fn should_parse_in() {
+    assert_eq!(
+        parse_rule_value(platform_value!({ "in": ["kind", [7, 1, 3.0]] })),
+        PropertyConstraint::In {
+            operand: property("kind"),
+            values: BTreeSet::from([1, 3, 7]),
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "in": [{ "modulo": ["quantity", 10] }, [0, 5]] })),
+        PropertyConstraint::In {
+            operand: ConstraintExpression::Modulo(
+                Box::new(property("quantity")),
+                Box::new(ConstraintExpression::Value(10))
+            ),
+            values: BTreeSet::from([0, 5]),
+        }
+    );
+
+    for (condition, needle) in [
+        (
+            platform_value!({ "in": ["kind"] }),
+            "rule \"rule\" at in must list an integer expression and the values it may take",
+        ),
+        (
+            platform_value!({ "in": "kind" }),
+            "rule \"rule\" at in must list an integer expression and the values it may take",
+        ),
+        (
+            platform_value!({ "in": ["kind", [1, 2], [3]] }),
+            "rule \"rule\" at in must list an integer expression and the values it may take",
+        ),
+        (
+            platform_value!({ "in": ["kind", [1]] }),
+            "rule \"rule\" at in[1] must list two or more integer values",
+        ),
+        (
+            platform_value!({ "in": ["kind", 1] }),
+            "rule \"rule\" at in[1] must list two or more integer values",
+        ),
+        // A listed value is a literal, never a path or an expression
+        (
+            platform_value!({ "in": ["kind", [1, "fee"]] }),
+            "rule \"rule\" at in[1][1] must be an integer value",
+        ),
+        (
+            platform_value!({ "in": ["kind", [1, { "add": [1, 1] }]] }),
+            "rule \"rule\" at in[1][1] must be an integer value",
+        ),
+        (
+            platform_value!({ "in": ["kind", [1, 2.5]] }),
+            "rule \"rule\" at in[1][1] holds 2.5, which is not an integer",
+        ),
+        // Alike once parsed: JSON does not tell `1` from `1.0`
+        (
+            platform_value!({ "in": ["kind", [1, 2, 1.0]] }),
+            "rule \"rule\" at in[1][2] repeats the value at in[1][0]",
+        ),
+        (
+            platform_value!({ "in": [5, [1, 5]] }),
+            "rule \"rule\" reads no property",
+        ),
+        (
+            platform_value!({
+                "anyOf": [{ "equal": ["fee", 1] }, { "in": [{ "add": [1, 2] }, [1, 3]] }]
+            }),
+            "rule \"rule\" at anyOf[1] reads no property",
+        ),
+        (
+            platform_value!({ "in": [{ "divide": ["kind", 0] }, [1, 2]] }),
+            "rule \"rule\" at in[0].divide divides by 0",
+        ),
+        (
+            platform_value!({ "not": { "in": [{ "sum": ["kind", 1] }, [1, 2]] } }),
+            "rule \"rule\" at not.in[0] names \"sum\", which is not one of add",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": condition }), needle);
+    }
+}
+
+/// An `in` holds when its operand takes a listed value, a fault in the operand breaks the
+/// rule, and it is one node plus one per value.
+#[test]
+fn should_hold_an_in_when_its_operand_takes_a_listed_value() {
+    let rule = parse_rule_value(platform_value!({ "in": ["kind", [1, 3, 7]] }));
+    for (kind, holds) in [(1, true), (3, true), (7, true), (2, false), (8, false)] {
+        assert_eq!(
+            rule.holds(&data(&[("kind", Value::U64(kind))])),
+            Ok(holds),
+            "kind {kind}"
+        );
+    }
+    // An absent operand reads as 0
+    assert_eq!(rule.holds(&data(&[])), Ok(false));
+    let with_zero = parse_rule_value(platform_value!({ "in": ["kind", [0, 1]] }));
+    assert_eq!(with_zero.holds(&data(&[])), Ok(true));
+
+    let divided = parse_rule_value(platform_value!({ "in": [{ "divide": [10, "kind"] }, [2, 5]] }));
+    assert_eq!(divided.violation(&data(&[("kind", Value::U64(5))])), None);
+    assert_eq!(
+        divided.violation(&data(&[("kind", Value::U64(3))])),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    assert_eq!(
+        divided.violation(&data(&[("kind", Value::U64(0))])),
+        Some(PropertyConstraintViolation::DivisionByZero)
+    );
+
+    // in, kind, and one per value
+    assert_eq!(rule.node_count(), 5);
+    assert_eq!(rule.property_reads(), [("kind", PropertyRead::Value)]);
+}
+
+// ── strings ─────────────────────────────────────────────────────────────
+
+/// A string property read without a default.
+fn text(path: &str) -> TextProperty {
+    TextProperty {
+        path: path.to_string(),
+        if_absent: None,
+    }
+}
+
+/// A string property read with a string default, `{ "ifAbsent": [path, default] }`.
+fn text_or(path: &str, default: &str) -> TextProperty {
+    TextProperty {
+        path: path.to_string(),
+        if_absent: Some(default.to_string()),
+    }
+}
+
+fn text_compare(comparison: ConstraintComparison, path: &str, value: &str) -> PropertyConstraint {
+    PropertyConstraint::TextCompare {
+        comparison,
+        property: text(path),
+        value: value.to_string(),
+    }
+}
+
+/// A string constant is a `const` object, since a string on its own is a path; a
+/// comparison with one is the same whichever side it sits on.
+#[test]
+fn should_parse_string_comparisons() {
+    assert_eq!(
+        parse_rule_value(platform_value!({ "equal": ["status", { "const": "closed" }] })),
+        text_compare(ConstraintComparison::Equal, "status", "closed")
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "notEqual": [{ "const": "closed" }, "meta.state"] })),
+        text_compare(ConstraintComparison::NotEqual, "meta.state", "closed")
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "in": ["status", ["pending", "open"]] })),
+        PropertyConstraint::TextIn {
+            property: text("status"),
+            values: BTreeSet::from(["open".to_string(), "pending".to_string()]),
+        }
+    );
+
+    for (condition, needle) in [
+        (
+            platform_value!({ "lessThan": ["status", { "const": "b" }] }),
+            "rule \"rule\" at lessThan compares strings, which only equal and notEqual do",
+        ),
+        (
+            platform_value!({ "equal": ["status", { "const": 5 }] }),
+            "rule \"rule\" at equal[1].const must be a string: an integer is written as itself",
+        ),
+        (
+            platform_value!({ "equal": [{ "const": "a" }, { "const": "b" }] }),
+            "rule \"rule\" reads no property",
+        ),
+        (
+            platform_value!({
+                "anyOf": [
+                    { "equal": ["fee", 1] },
+                    { "notEqual": [{ "const": "a" }, { "const": "a" }] }
+                ]
+            }),
+            "rule \"rule\" at anyOf[1] reads no property",
+        ),
+        // The other side is a property, never an expression or a value
+        (
+            platform_value!({ "equal": [{ "ifAbsent": ["status", 0] }, { "const": "a" }] }),
+            "rule \"rule\" at equal[0] must be the path of a string property, an ifAbsent giving \
+             one a string default, or a const",
+        ),
+        (
+            platform_value!({ "equal": [5, { "const": "a" }] }),
+            "rule \"rule\" at equal[0] must be the path of a string property",
+        ),
+        // A constant is no integer operand
+        (
+            platform_value!({ "equal": [{ "add": ["price", { "const": "a" }] }, 1] }),
+            "rule \"rule\" at equal[0].add[1] is a string constant, which only equal and notEqual \
+             compare",
+        ),
+        (
+            platform_value!({ "in": [{ "const": "a" }, [1, 2]] }),
+            "rule \"rule\" at in[0] is a string constant",
+        ),
+        (
+            platform_value!({ "in": [{ "add": ["status", 1] }, ["open", "closed"]] }),
+            "rule \"rule\" at in[0] must be the path of a string property or an ifAbsent giving \
+             one a string default: an in over strings reads a string property",
+        ),
+        (
+            platform_value!({ "in": ["status", ["open"]] }),
+            "rule \"rule\" at in[1] must list two or more string values",
+        ),
+        (
+            platform_value!({ "in": ["status", ["open", 2]] }),
+            "rule \"rule\" at in[1][1] must be a string, as the first value is",
+        ),
+        (
+            platform_value!({ "in": ["status", ["open", "closed", "open"]] }),
+            "rule \"rule\" at in[1][2] repeats the value at in[1][0]",
+        ),
+        (
+            platform_value!({ "in": ["fee", [1, "two"]] }),
+            "rule \"rule\" at in[1][1] must be an integer value",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": condition }), needle);
+    }
+}
+
+/// A string property equals a constant when it holds that string; one the document
+/// leaves out, sets to null or holds as something else equals none, so `notEqual`
+/// holds for it and `in` does not.
+#[test]
+fn should_compare_a_string_property_with_constants() {
+    let equal = parse_rule_value(platform_value!({ "equal": ["status", { "const": "closed" }] }));
+    let not_equal =
+        parse_rule_value(platform_value!({ "notEqual": ["status", { "const": "closed" }] }));
+    let in_list = parse_rule_value(platform_value!({ "in": ["status", ["open", "closed"]] }));
+    for (status, is_closed, is_listed) in [
+        (Some(Value::Text("closed".to_string())), true, true),
+        (Some(Value::Text("open".to_string())), false, true),
+        (Some(Value::Text("Closed".to_string())), false, false),
+        (Some(Value::Text(String::new())), false, false),
+        (Some(Value::Null), false, false),
+        (Some(Value::U64(1)), false, false),
+        (None, false, false),
+    ] {
+        let values = match &status {
+            Some(value) => data(&[("status", value.clone())]),
+            None => data(&[]),
+        };
+        assert_eq!(equal.holds(&values), Ok(is_closed), "equal, {status:?}");
+        assert_eq!(
+            not_equal.holds(&values),
+            Ok(!is_closed),
+            "notEqual, {status:?}"
+        );
+        assert_eq!(in_list.holds(&values), Ok(is_listed), "in, {status:?}");
+    }
+
+    // A closed order must carry closedAt
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [{ "notEqual": ["status", { "const": "closed" }] }, { "present": "closedAt" }]
+    }));
+    let closed = Value::Text("closed".to_string());
+    assert_eq!(rule.violation(&data(&[])), None);
+    assert_eq!(
+        rule.violation(&data(&[
+            ("status", closed.clone()),
+            ("closedAt", Value::U64(9))
+        ])),
+        None
+    );
+    assert_eq!(
+        rule.violation(&data(&[("status", closed)])),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+}
+
+/// A string comparison is three nodes, as a comparison of a path with a value; an in over
+/// strings two plus one per value. Both read their property as text, and list their
+/// constants for the enum check.
+#[test]
+fn should_count_and_list_what_a_string_comparison_reads() {
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "equal": ["status", { "const": "closed" }] },
+            { "in": ["kind", ["b", "a", "c"]] }
+        ]
+    }));
+    // anyOf, equal, status, closed, in, kind, a, b, c
+    assert_eq!(rule.node_count(), 9);
+    assert_eq!(
+        rule.property_reads(),
+        [("status", PropertyRead::Text), ("kind", PropertyRead::Text)]
+    );
+    assert_eq!(
+        rule.text_constants(),
+        [
+            ("status", "closed"),
+            ("kind", "a"),
+            ("kind", "b"),
+            ("kind", "c")
+        ]
+    );
+    // Written either way round, the same condition
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "equal": ["status", { "const": "closed" }] },
+            { "equal": ["fee", 1] },
+            { "equal": [{ "const": "closed" }, "status"] }
+        ]
+    }));
+    assert_eq!(
+        rule.repeated_condition(),
+        Some(("anyOf[2]".to_string(), "anyOf[0]".to_string()))
+    );
+}
+
+/// Two bare paths that both name string properties compare the strings; anything else
+/// between two expressions stays an integer comparison.
+#[test]
+fn should_parse_a_comparison_of_two_string_properties() {
+    assert_eq!(
+        parse_rule_value(platform_value!({ "equal": ["from", "to"] })),
+        PropertyConstraint::TextCompareProperties {
+            comparison: ConstraintComparison::Equal,
+            left: text("from"),
+            right: text("to"),
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "notEqual": ["status", "meta.state"] })),
+        PropertyConstraint::TextCompareProperties {
+            comparison: ConstraintComparison::NotEqual,
+            left: text("status"),
+            right: text("meta.state"),
+        }
+    );
+    // A string and an integer property, or a path inside an expression, stay integer
+    // comparisons, which the document type check refuses for the string
+    assert!(matches!(
+        parse_rule_value(platform_value!({ "equal": ["from", "price"] })),
+        PropertyConstraint::Compare { .. }
+    ));
+    assert!(matches!(
+        parse_rule_value(platform_value!({ "equal": [{ "ifAbsent": ["from", 0] }, "to"] })),
+        PropertyConstraint::Compare { .. }
+    ));
+
+    expect_refusal(
+        platform_value!({
+            "rule": { "anyOf": [{ "equal": ["fee", 1] }, { "lessThan": ["from", "to"] }] }
+        }),
+        "rule \"rule\" at anyOf[1].lessThan compares strings, which only equal and notEqual do",
+    );
+}
+
+/// Two string properties are equal when the document holds the same string in both; one
+/// it leaves out equals no string, not even another one it leaves out.
+#[test]
+fn should_compare_two_string_properties() {
+    let equal = parse_rule_value(platform_value!({ "equal": ["from", "to"] }));
+    let not_equal = parse_rule_value(platform_value!({ "notEqual": ["from", "to"] }));
+    let text = |value: &str| Value::Text(value.to_string());
+    for (from, to, same) in [
+        (Some(text("USD")), Some(text("USD")), true),
+        (Some(text("USD")), Some(text("EUR")), false),
+        (Some(text("USD")), Some(text("usd")), false),
+        (Some(text("")), Some(text("")), true),
+        (Some(text("USD")), None, false),
+        (None, None, false),
+        (Some(Value::Null), Some(Value::Null), false),
+        (Some(Value::U64(1)), Some(Value::U64(1)), false),
+    ] {
+        let mut entries = Vec::new();
+        if let Some(from) = &from {
+            entries.push(("from", from.clone()));
+        }
+        if let Some(to) = &to {
+            entries.push(("to", to.clone()));
+        }
+        let values = data(&entries);
+        assert_eq!(equal.holds(&values), Ok(same), "equal, {from:?} {to:?}");
+        assert_eq!(
+            not_equal.holds(&values),
+            Ok(!same),
+            "notEqual, {from:?} {to:?}"
+        );
+    }
+
+    // equal, from, to
+    assert_eq!(equal.node_count(), 3);
+    assert_eq!(
+        equal.property_reads(),
+        [("from", PropertyRead::Text), ("to", PropertyRead::Text)]
+    );
+    assert!(equal.text_constants().is_empty());
+}
+
+/// `{ "ifAbsent": [path, string] }` is a string property with a default: it makes a
+/// comparison one of strings wherever it sits, in `equal`, `notEqual` and `in`.
+#[test]
+fn should_parse_a_string_default() {
+    assert_eq!(
+        parse_rule_value(platform_value!({
+            "equal": [{ "ifAbsent": ["status", "open"] }, { "const": "open" }]
+        })),
+        PropertyConstraint::TextCompare {
+            comparison: ConstraintComparison::Equal,
+            property: text_or("status", "open"),
+            value: "open".to_string(),
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({
+            "notEqual": [{ "ifAbsent": ["from", "USD"] }, "to"]
+        })),
+        PropertyConstraint::TextCompareProperties {
+            comparison: ConstraintComparison::NotEqual,
+            left: text_or("from", "USD"),
+            right: text("to"),
+        }
+    );
+    // A default makes the comparison one of strings even beside a path the unit tests
+    // treat as an integer; the document type check refuses that path
+    assert_eq!(
+        parse_rule_value(platform_value!({ "equal": ["price", { "ifAbsent": ["to", "x"] }] })),
+        PropertyConstraint::TextCompareProperties {
+            comparison: ConstraintComparison::Equal,
+            left: text("price"),
+            right: text_or("to", "x"),
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({
+            "in": [{ "ifAbsent": ["status", "open"] }, ["open", "closed"]]
+        })),
+        PropertyConstraint::TextIn {
+            property: text_or("status", "open"),
+            values: BTreeSet::from(["closed".to_string(), "open".to_string()]),
+        }
+    );
+
+    for (condition, needle) in [
+        (
+            platform_value!({ "lessThan": [{ "ifAbsent": ["status", "a"] }, "to"] }),
+            "rule \"rule\" at lessThan compares strings, which only equal and notEqual do",
+        ),
+        (
+            platform_value!({ "equal": [{ "ifAbsent": [1, "a"] }, { "const": "a" }] }),
+            "rule \"rule\" at equal[0].ifAbsent must name a property path first",
+        ),
+        (
+            platform_value!({ "equal": [{ "ifAbsent": ["status", "a"] }, 5] }),
+            "rule \"rule\" at equal[1] must be the path of a string property",
+        ),
+        (
+            platform_value!({ "in": [{ "ifAbsent": ["status", 1] }, ["a", "b"]] }),
+            "rule \"rule\" at in[0] must be the path of a string property or an ifAbsent giving \
+             one a string default",
+        ),
+        (
+            platform_value!({ "in": [{ "ifAbsent": ["kind", "a"] }, [1, 2]] }),
+            "rule \"rule\" at in[0].ifAbsent gives a string default, which only a comparison of \
+             strings takes",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": condition }), needle);
+    }
+}
+
+/// A string default stands in for a property the document leaves out or sets to null,
+/// never for one it holds; two properties left out with the same default are equal.
+#[test]
+fn should_read_a_string_default_for_a_property_left_out() {
+    let open = parse_rule_value(platform_value!({
+        "equal": [{ "ifAbsent": ["status", "open"] }, { "const": "open" }]
+    }));
+    let listed = parse_rule_value(platform_value!({
+        "in": [{ "ifAbsent": ["status", "open"] }, ["open", "pending"]]
+    }));
+    let text_value = |value: &str| Value::Text(value.to_string());
+    for (status, is_open) in [
+        (None, true),
+        (Some(Value::Null), true),
+        (Some(text_value("open")), true),
+        (Some(text_value("closed")), false),
+        // Held, so no default, and not a string, so no match
+        (Some(Value::U64(1)), false),
+    ] {
+        let values = match &status {
+            Some(value) => data(&[("status", value.clone())]),
+            None => data(&[]),
+        };
+        assert_eq!(open.holds(&values), Ok(is_open), "equal, {status:?}");
+        assert_eq!(listed.holds(&values), Ok(is_open), "in, {status:?}");
+    }
+
+    let same_default = parse_rule_value(platform_value!({
+        "equal": [{ "ifAbsent": ["from", "USD"] }, { "ifAbsent": ["to", "USD"] }]
+    }));
+    assert_eq!(same_default.holds(&data(&[])), Ok(true));
+    assert_eq!(
+        same_default.holds(&data(&[("to", text_value("USD"))])),
+        Ok(true)
+    );
+    assert_eq!(
+        same_default.holds(&data(&[("to", text_value("EUR"))])),
+        Ok(false)
+    );
+    // Without defaults, two properties left out are not equal
+    let bare = parse_rule_value(platform_value!({ "equal": ["from", "to"] }));
+    assert_eq!(bare.holds(&data(&[])), Ok(false));
+
+    // A default is part of the node it sits in, and listed for the enum check apart
+    // from the constants compared
+    assert_eq!(open.node_count(), 3);
+    assert_eq!(open.text_constants(), [("status", "open")]);
+    assert_eq!(open.text_defaults(), [("status", "open")]);
+    assert_eq!(
+        same_default.text_defaults(),
+        [("from", "USD"), ("to", "USD")]
+    );
+    assert!(bare.text_defaults().is_empty());
+
+    // A default makes a different condition from the bare path
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "equal": ["status", { "const": "open" }] },
+            { "equal": [{ "ifAbsent": ["status", "open"] }, { "const": "open" }] }
+        ]
+    }));
+    assert_eq!(rule.repeated_condition(), None);
+}
+
+// ── present and absent ──────────────────────────────────────────────────
+
+#[test]
+fn should_parse_present_and_absent() {
+    assert_eq!(
+        parse_rule_value(platform_value!({ "present": "meta.total" })),
+        PropertyConstraint::Present("meta.total".to_string())
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({
+            "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
+        })),
+        PropertyConstraint::AnyOf(vec![
+            PropertyConstraint::Absent("discount".to_string()),
+            compare(
+                ConstraintComparison::GreaterThan,
+                property("discount"),
+                ConstraintExpression::Value(0)
+            ),
+        ])
+    );
+
+    for (condition, needle) in [
+        (
+            platform_value!({ "present": 1 }),
+            "rule \"rule\" at present must name a property path",
+        ),
+        (
+            platform_value!({ "absent": ["discount"] }),
+            "rule \"rule\" at absent must name a property path",
+        ),
+        (
+            platform_value!({ "not": { "present": { "add": ["price", 1] } } }),
+            "rule \"rule\" at not.present must name a property path",
+        ),
+        (
+            platform_value!({ "exists": "discount" }),
+            "rule \"rule\" names \"exists\", which is not a comparison (equal, notEqual, \
+             lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual), in, present, absent, \
+             anyOf, allOf or not",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": condition }), needle);
+    }
+}
+
+/// A presence test is one node, and reads its property by presence, where an operand
+/// reads one by value.
+#[test]
+fn should_count_a_presence_test_as_one_node_reading_by_presence() {
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
+    }));
+    // anyOf, absent discount, greaterThan, discount, 0
+    assert_eq!(rule.node_count(), 5);
+    assert_eq!(
+        rule.property_reads(),
+        [
+            ("discount", PropertyRead::Presence),
+            ("discount", PropertyRead::Value)
+        ]
+    );
+    assert_eq!(rule.property_paths(), ["discount", "discount"]);
 }
 
 // ── evaluation ──────────────────────────────────────────────────────────
@@ -967,4 +1606,85 @@ fn should_count_the_nodes_and_list_the_paths_of_combined_conditions() {
     // anyOf, equal, a, 0, not, equal, ifAbsent b, a
     assert_eq!(rule.node_count(), 8);
     assert_eq!(rule.property_paths(), ["a", "b", "a"]);
+}
+
+/// A property the document leaves out, or sets to null, is absent, as it is for an
+/// operand; one it sets to anything else, 0 and objects included, is present.
+#[test]
+fn should_tell_a_property_left_out_from_one_set_to_zero() {
+    let values = data(&[
+        ("zero", Value::U64(0)),
+        ("empty", Value::Null),
+        ("note", Value::Text("hi".to_string())),
+        ("meta", platform_value!({ "count": 9 })),
+        ("flat", Value::U8(1)),
+    ]);
+    for (path, present) in [
+        ("zero", true),
+        ("note", true),
+        ("meta", true),
+        ("meta.count", true),
+        ("missing", false),
+        ("empty", false),
+        ("meta.missing", false),
+        // An intermediate that is not an object reads as absent
+        ("flat.count", false),
+    ] {
+        let present_rule = parse_rule_value(platform_value!({ "present": path }));
+        let absent_rule = parse_rule_value(platform_value!({ "absent": path }));
+        assert_eq!(present_rule.holds(&values), Ok(present), "present {path}");
+        assert_eq!(absent_rule.holds(&values), Ok(!present), "absent {path}");
+    }
+
+    // Optional, but above zero when given: an operand alone reads a discount left out
+    // as 0, so it cannot say this
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
+    }));
+    assert_eq!(rule.violation(&data(&[])), None);
+    assert_eq!(rule.violation(&data(&[("discount", Value::U64(5))])), None);
+    assert_eq!(
+        rule.violation(&data(&[("discount", Value::U64(0))])),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+}
+
+/// A boolean reads as 1 for true and 0 for false, and one the document leaves out as 0
+/// or its `ifAbsent` value, as any operand does.
+#[test]
+fn should_read_a_boolean_as_one_or_zero() {
+    let values = data(&[
+        ("yes", Value::Bool(true)),
+        ("no", Value::Bool(false)),
+        ("fee", Value::U64(10)),
+    ]);
+    for (expression, expected) in [
+        (platform_value!("yes"), 1),
+        (platform_value!("no"), 0),
+        (platform_value!("missing"), 0),
+        (platform_value!({ "ifAbsent": ["missing", 1] }), 1),
+        (platform_value!({ "ifAbsent": ["no", 1] }), 0),
+        (platform_value!({ "add": ["yes", "yes", "no"] }), 2),
+        (platform_value!({ "multiply": ["yes", "fee"] }), 10),
+        (platform_value!({ "multiply": ["no", "fee"] }), 0),
+    ] {
+        assert_eq!(
+            evaluate(expression.clone(), &values),
+            Ok(expected),
+            "{expression:?}"
+        );
+    }
+
+    // A waived fee is 0: `waived * fee == 0`
+    let rule = parse_rule_value(platform_value!({
+        "equal": [{ "multiply": ["waived", "fee"] }, 0]
+    }));
+    let order =
+        |waived: bool, fee: u64| data(&[("waived", Value::Bool(waived)), ("fee", Value::U64(fee))]);
+    assert_eq!(rule.violation(&order(true, 0)), None);
+    assert_eq!(rule.violation(&order(false, 10)), None);
+    assert_eq!(
+        rule.violation(&order(true, 10)),
+        Some(PropertyConstraintViolation::NotMet)
+    );
 }

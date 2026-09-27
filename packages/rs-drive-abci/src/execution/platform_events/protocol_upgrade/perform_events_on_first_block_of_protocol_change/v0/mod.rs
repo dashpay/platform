@@ -848,11 +848,13 @@ impl<C> Platform<C> {
         // `perform_events_on_first_block_of_protocol_change_v0`.
         self.drive
             .insert_token_shielded_pools_root_tree(Some(transaction), platform_version)?;
-        // The documents expirations tree under `Misc`, which indexes every document of a type
-        // declaring a `ttl` (a keyword protocol version 14 introduces) by when it expires.
-        // Fresh chains call the same helper last in `create_initial_state_structure` v4.
+        // The document time to live trees: the documents expirations tree under `Misc`, which
+        // indexes every document of a type declaring a `ttl` (a keyword protocol version 14
+        // introduces) by when it expires, and the lifetime storage fee pools sum tree under
+        // `Pools`, which holds their storage fees until an epoch change spreads them. Fresh
+        // chains call the same helper last in `create_initial_state_structure` v4.
         self.drive
-            .insert_documents_expirations_tree(Some(transaction), platform_version)?;
+            .insert_document_ttl_trees(Some(transaction), platform_version)?;
 
         Ok(())
     }
@@ -866,6 +868,8 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use dpp::version::PlatformVersion;
+    use drive::drive::credit_pools::epochs::epochs_root_tree_key_constants::KEY_LIFETIME_STORAGE_FEE_POOLS;
+    use drive::drive::credit_pools::pools_path;
     use drive::drive::document::expiration::paths::DOCUMENTS_EXPIRATIONS_KEY;
     use drive::drive::shielded::paths::{
         shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
@@ -2153,7 +2157,7 @@ mod tests {
     }
 
     #[test]
-    fn should_create_the_documents_expirations_tree_on_transition_to_version_14() {
+    fn should_create_the_document_ttl_trees_on_transition_to_version_14() {
         let platform_version = PlatformVersion::latest();
         let born_at_14 = TestPlatformBuilder::new()
             .with_initial_protocol_version(14)
@@ -2165,42 +2169,59 @@ mod tests {
             .set_genesis_state();
 
         let transaction = upgraded.drive.grove.start_transaction();
-        let tree_exists = |transaction: &Transaction| {
-            upgraded
-                .drive
-                .grove_has_raw(
-                    (&misc_path()).into(),
-                    DOCUMENTS_EXPIRATIONS_KEY,
-                    DirectQueryType::StatefulDirectQuery,
-                    Some(transaction),
-                    &mut vec![],
-                    &platform_version.drive,
-                )
-                .expect("expected to query the expirations tree")
+        let trees_exist = |transaction: &Transaction| {
+            let has = |path: &[&[u8]], key: &[u8]| {
+                upgraded
+                    .drive
+                    .grove_has_raw(
+                        path.into(),
+                        key,
+                        DirectQueryType::StatefulDirectQuery,
+                        Some(transaction),
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .expect("expected to query the tree")
+            };
+            (
+                has(&misc_path(), DOCUMENTS_EXPIRATIONS_KEY),
+                has(&pools_path(), KEY_LIFETIME_STORAGE_FEE_POOLS),
+            )
         };
-        assert!(
-            !tree_exists(&transaction),
-            "protocol version 13 has no documents expirations tree"
+        assert_eq!(
+            trees_exist(&transaction),
+            (false, false),
+            "protocol version 13 has neither the documents expirations tree nor the lifetime \
+             storage fee pools"
         );
 
         upgraded
             .transition_to_version_14(&BlockInfo::default(), &transaction, platform_version)
             .expect("expected version 14 transition to succeed");
-        assert!(
-            tree_exists(&transaction),
-            "the documents expirations tree must exist after the transition"
+        assert_eq!(
+            trees_exist(&transaction),
+            (true, true),
+            "both trees must exist after the transition"
         );
 
-        let diffs = collect_subtree_diffs(
+        let mut diffs = collect_subtree_diffs(
             &born_at_14,
             &upgraded,
             &transaction,
             vec![vec![RootTree::Misc as u8]],
         );
+        diffs.extend(collect_subtree_diffs(
+            &born_at_14,
+            &upgraded,
+            &transaction,
+            vec![
+                vec![RootTree::Pools as u8],
+                KEY_LIFETIME_STORAGE_FEE_POOLS.to_vec(),
+            ],
+        ));
         assert!(
             diffs.is_empty(),
-            "the Misc subtree differs between a chain born at version 14 and one upgraded to \
-             it:\n{}",
+            "the trees differ between a chain born at version 14 and one upgraded to it:\n{}",
             diffs.join("\n"),
         );
     }

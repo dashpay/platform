@@ -272,6 +272,7 @@ mod walker {
 mod fixtures {
     use super::*;
     use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
     use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
     use crate::drive::Drive;
     use crate::fees::op::LowLevelDriveOperation;
@@ -1603,8 +1604,8 @@ mod fixtures {
         conformance_of(&drive, "token_shielded_pool", run);
     }
     /// Documents of a type declaring a `ttl`: stored without storage flags, each with an entry
-    /// in the documents expirations tree under the time it expires. Two of them expire
-    /// together, created in the same block.
+    /// in the documents expirations tree under the time it expires, and a lifetime storage fee
+    /// pool. Two of them expire together, created in the same block.
     fn expiring_documents(run: &mut FixtureRun) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
@@ -1682,6 +1683,16 @@ mod fixtures {
                 )
                 .expect("expected to add the document");
         }
+        // Their storage fees, waiting in the pool of the epochs they live for the next epoch
+        // change.
+        let mut batch = GroveDbOpBatch::new();
+        batch.push(
+            update_lifetime_storage_fee_pool_operation(0, 2, 1_000)
+                .expect("expected the lifetime pool operation"),
+        );
+        drive
+            .grove_apply_batch(batch, false, None, &platform_version.drive)
+            .expect("expected to fill a lifetime pool");
         conformance_of(&drive, "expiring_documents", run);
     }
 

@@ -279,6 +279,18 @@ mod document_ttl_tests {
             text: &str,
             time_ms: u64,
         ) -> (Document, StateTransitionExecutionResult) {
+            let (document, transition) = self.create_transition(document_type_name, text).await;
+            let result = self.process(&transition, time_ms);
+            (document, result)
+        }
+
+        /// The transition creating a `document_type_name` document with `text`, and the
+        /// document it creates.
+        async fn create_transition(
+            &mut self,
+            document_type_name: &str,
+            text: &str,
+        ) -> (Document, StateTransition) {
             let platform_version = PlatformVersion::latest();
             let document_type = self
                 .contract
@@ -316,8 +328,7 @@ mod document_ttl_tests {
             .await
             .expect("expected the create transition");
             self.next_nonce += 1;
-            let result = self.process(&transition, time_ms);
-            (document, result)
+            (document, transition)
         }
 
         async fn delete(
@@ -425,6 +436,18 @@ mod document_ttl_tests {
                 .expect("expected to read the document")
         }
 
+        fn buyer_balance(&self) -> u64 {
+            self.platform
+                .drive
+                .fetch_identity_balance(
+                    self.buyer.id().to_buffer(),
+                    None,
+                    PlatformVersion::latest(),
+                )
+                .expect("expected to read the balance")
+                .expect("expected a balance")
+        }
+
         fn balance(&self) -> u64 {
             self.platform
                 .drive
@@ -487,9 +510,11 @@ mod document_ttl_tests {
         let note_fee = fee_of(&note_result);
         let memo_fee = fee_of(&memo_result);
 
+        // An hour of storage is a storage fee paid out over the one epoch it lives in.
+        assert!(note_fee.storage_fee > 0);
         assert_eq!(
-            note_fee.storage_fee, 0,
-            "an hour of storage pays into the processing fees, not the storage pool"
+            note_fee.lifetime_storage_fees,
+            std::collections::BTreeMap::from([(1, note_fee.storage_fee)])
         );
         assert!(memo_fee.storage_fee > 0);
         let note_bytes = note
@@ -506,8 +531,8 @@ mod document_ttl_tests {
             &PlatformVersion::latest().fee_version,
         )
         .expect("expected the cleanup fee");
-        // The note's own processing, its bytes' hour of storage included, stays near the
-        // memo's; on top of it the note prepays its deletion. Drive's expiration tests pin
+        // The note's own processing stays near the memo's; on top of it the note prepays its
+        // deletion. Drive's expiration tests pin
         // the prepaid amount exactly.
         let prepaid = note_fee
             .processing_fee
@@ -592,6 +617,83 @@ mod document_ttl_tests {
             stored.is_none(),
             "the block's cleanup deletes the expired note"
         );
+    }
+
+    #[tokio::test]
+    async fn should_collect_a_proposed_blocks_ttl_storage_fees_in_the_lifetime_pools() {
+        // A note created in a block: its storage fee goes to the pool of the one epoch an hour
+        // lives in, not to the perpetual storage fee distribution pool.
+        let mut fixture = NotesFixture::with_genesis_state();
+        let (_, transition) = fixture.create_transition("note", "hello").await;
+        let raw_state_transitions = vec![transition
+            .serialize_to_bytes()
+            .expect("expected the transition to serialize")];
+
+        // The fixture's identities were funded outside a block: count their credits in the
+        // platform's total, so the block's credit check holds with the lifetime pools in it.
+        fixture
+            .platform
+            .drive
+            .add_to_system_credits(
+                fixture.balance() + fixture.buyer_balance(),
+                None,
+                PlatformVersion::latest(),
+            )
+            .expect("expected to count the fixture's credits");
+        // The last committed block opened epoch 0, whose fee pools the next block adds to.
+        fixture.platform.drive.set_genesis_time(START_MS);
+        fast_forward_to_block(&fixture.platform, START_MS, 10, 0, 0, true);
+        let platform_state = fixture.platform.state.load();
+        let transaction = fixture.platform.drive.grove.start_transaction();
+        let protocol_version = PlatformVersion::latest().protocol_version as u64;
+        let proposal = BlockProposal {
+            consensus_versions: Consensus {
+                block: 1,
+                app: protocol_version,
+            },
+            block_hash: None,
+            height: 11,
+            round: 0,
+            block_time_ms: START_MS + 1_000,
+            core_chain_locked_height: 0,
+            core_chain_lock_update: None,
+            proposed_app_version: protocol_version,
+            proposer_pro_tx_hash: [0u8; 32],
+            validator_set_quorum_hash: [0u8; 32],
+            raw_state_transitions: &raw_state_transitions,
+        };
+        // What the proposal does after its fees are processed (its validator set update
+        // against this test's empty quorum hash) is not under test.
+        let _ = fixture.platform.run_block_proposal(
+            proposal,
+            false,
+            &platform_state,
+            &transaction,
+            None,
+        );
+        // Credits stay balanced with the lifetime pools counted in `Pools`.
+        let total_credits = fixture
+            .platform
+            .drive
+            .calculate_total_credits_balance(Some(&transaction), &PlatformVersion::latest().drive)
+            .expect("expected to total the credits");
+        assert!(
+            total_credits.ok().expect("expected to compare the credits"),
+            "{total_credits:?}"
+        );
+
+        let pools = fixture
+            .platform
+            .drive
+            .fetch_lifetime_storage_fee_pools(Some(&transaction), PlatformVersion::latest())
+            .expect("expected to read the lifetime pools");
+        let epoch_0_pools = pools.get(&0).cloned().unwrap_or_default();
+        assert_eq!(
+            (pools.len(), epoch_0_pools.len()),
+            (1, 1),
+            "one pool of epoch 0, for one epoch: {pools:?}"
+        );
+        assert!(epoch_0_pools.get(&1).copied().unwrap_or_default() > 0);
     }
 
     #[tokio::test]
