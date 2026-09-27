@@ -215,6 +215,11 @@ pub struct CollectionSpec {
     /// index on one needs it listed here. User fields are required through
     /// [`FieldSpec::required`].
     pub requires: Vec<PropertyPath>,
+    /// Index-only entry payload: top-level properties stored in every entry's
+    /// value instead of in an index key. Only meaningful when the collection
+    /// is index-only; carried sorted in the manifest. Native size, type and
+    /// layout constraints stay native.
+    pub entry_payload: Vec<PropertyName>,
     /// Token prices per action.
     pub token_costs: Vec<TokenCostSpec>,
     /// Document store.
@@ -256,6 +261,7 @@ impl CollectionSpec {
             range_average: false,
             index_only: false,
             requires: Vec::new(),
+            entry_payload: Vec::new(),
             token_costs: Vec::new(),
             store: Store::default(),
             document_id_field: None,
@@ -430,6 +436,12 @@ impl CollectionSpec {
         self
     }
 
+    /// Stores a top-level property in every index-only entry's value.
+    pub fn entry_payload(mut self, property: PropertyName) -> Self {
+        self.entry_payload.push(property);
+        self
+    }
+
     /// Prices an action.
     pub fn token_cost(mut self, action: ActionScope, cost: TokenCost) -> Self {
         self.token_costs.push(TokenCostSpec { action, cost });
@@ -458,6 +470,7 @@ impl CollectionSpec {
         normalize_fields(&mut normalized.fields);
         normalized.token_costs.sort_by_key(|cost| cost.action);
         normalized.requires.sort();
+        normalized.entry_payload.sort();
         normalized
     }
 }
