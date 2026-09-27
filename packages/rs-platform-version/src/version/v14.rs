@@ -1263,8 +1263,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     count in one element fetch; a poll started before keeps its plain tree
 ///     and has its contenders counted by a keys query of at most 1,000.
 ///     `maximum_contenders_to_consider` rises from 100 to 10,000, so the tally
-///     of an ended poll, and the cleanup built from it, cover every contender,
-///     those of a poll that grew past 1,000 before this version included. `check_for_ended_vote_polls` 1 compares every tied
+///     of an ended poll, and the cleanup built from it, cover every contender
+///     of a poll within the cap, and up to 10,000 of one that grew past it
+///     before this version. `check_for_ended_vote_polls` 1 compares every tied
 ///     contender; version 0 compared at most 100.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)

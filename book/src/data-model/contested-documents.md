@@ -19,9 +19,11 @@ document's owner may not be joined by the same identity twice.
 From protocol version 14, a contest accepts at most 1,000 contenders
 (`max_contenders_per_contest`): a document that would add one more is refused, paid, with
 `DocumentContestMaximumContendersReachedError` (40141). The bound is what lets one block end a
-contest: its end tallies every contender and removes every loser's entries
-(`maximum_contenders_to_consider`, 10,000 from version 14). Before 14 a contest accepted any number
-of contenders and its end tallied at most 100.
+contest: its end tallies up to `maximum_contenders_to_consider` contenders (10,000 from version 14)
+and removes the entries of those it tallied, so a contest within the cap is tallied and cleaned up
+whole. Before 14 a contest accepted any number of contenders and its end tallied at most 100; a
+contest that grew past 10,000 contenders before 14 is tallied and cleaned up for its first 10,000
+only.
 
 The index's `contested.resolution` says how the contest is decided.
 

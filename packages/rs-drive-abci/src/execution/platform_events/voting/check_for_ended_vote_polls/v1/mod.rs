@@ -115,7 +115,7 @@ where
                                 .map(|max_voted_contender| max_voted_contender.final_vote_tally)
                                 .unwrap_or_default();
                             // These are all the people who got top votes, every one of them
-                            // considered (up to `max_contenders_per_contest`); version 0
+                            // considered (up to `maximum_contenders_to_consider`); version 0
                             // compared at most 100
                             let top_contenders: Vec<FinalizedContender> = sorted_contenders
                                 .into_iter()
