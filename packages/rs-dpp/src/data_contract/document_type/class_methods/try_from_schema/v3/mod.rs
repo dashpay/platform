@@ -1211,7 +1211,7 @@ mod tests {
         PlatformVersion::latest()
     }
 
-    /// PV14 accepts the ranked keywords and carries them onto the parsed index
+    /// The latest protocol version accepts the ranked keywords and carries them onto the parsed index
     /// — both when parsed through this generation directly and when reached
     /// the way production reaches it, through the dispatcher. The dispatcher
     /// half is what pins that `try_from_schema: 3` actually routes here.
@@ -1232,7 +1232,7 @@ mod tests {
 
         // Same schema, same platform version, through the real dispatcher.
         let dispatched = parse_dispatched(schema, latest(), true)
-            .expect("the dispatcher must route PV14 to a generation that accepts the keywords");
+            .expect("the dispatcher must route the latest protocol version to a generation that accepts the keywords");
         let DocumentType::V2(dispatched) = dispatched else {
             panic!("generation 3 produces a V2-shaped document type");
         };
@@ -1242,7 +1242,7 @@ mod tests {
                 .get("byRestaurant")
                 .expect("index parsed under its name")
                 .ranked_averageable,
-            "dispatching at PV14 must reach generation 3, not an earlier generation"
+            "dispatching at the latest protocol version must reach generation 3, not an earlier generation"
         );
     }
 
@@ -1284,13 +1284,14 @@ mod tests {
         }
     }
 
-    /// Same schema, PV14, no full validation: accepted. Pins that the gate is
-    /// the parser *generation* and not the validation mode.
+    /// Same schema, latest protocol version, no full validation: accepted. Pins that the gate
+    /// is the parser *generation* and not the validation mode.
     #[test]
-    fn ranked_keywords_accepted_at_pv14_without_full_validation() {
+    fn ranked_keywords_accepted_at_latest_without_full_validation() {
         let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
-        let v2 = parse_with(schema, latest(), false)
-            .expect("PV14 structural parse must accept the ranked keywords");
+        let v2 = parse_with(schema, latest(), false).expect(
+            "the latest protocol version's structural parse must accept the ranked keywords",
+        );
         assert!(
             v2.indices
                 .get("byRestaurant")

@@ -1653,6 +1653,12 @@ mod tests {
         );
     }
 
+    /// The contested vote poll index cross-check changes accept/reject
+    /// behavior for document create transitions, so it lives in v14's own
+    /// validation table: a v13 node keeps running structure validation v0,
+    /// which validates only the prefunded amount and ignores the index name.
+    /// A change that made v13 non-zero here would retroactively reject
+    /// transitions already in the chain.
     #[test]
     fn contested_index_cross_check_is_v14_only() {
         assert_eq!(
