@@ -179,11 +179,11 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drive::drive::shielded::paths::shielded_credit_pool_path;
     use crate::query::tests::setup_platform;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::dashcore::Network;
+    use drive::drive::shielded::paths::shielded_credit_pool_path;
     use grovedb_commitment_tree::{DashMemo, NoteBytesData, TransmittedNoteCiphertext};
 
     /// MMR chunk size used for alignment. Derived from
