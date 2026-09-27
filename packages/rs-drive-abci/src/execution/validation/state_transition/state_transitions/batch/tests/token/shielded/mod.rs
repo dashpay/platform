@@ -3677,6 +3677,7 @@ mod document_shielded_token_payment_tests {
 /// and a fee bundle in the credit pool, no identity anywhere. The test wallet owns notes in
 /// both pools; the credit pool is funded directly in state, the token pool through a shield.
 mod token_pool_paid_transitions_tests {
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::insert_dummy_encrypted_notes;
     use super::token_shielded_pool_tests::{
         assert_check_tx_accepts, assert_tokens_conserved, build_shield_bundle, dummy_bundle,
         enable_shielded_pool, identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
@@ -4074,6 +4075,27 @@ mod token_pool_paid_transitions_tests {
             platform_version,
         )
         .expect("build transition");
+
+        // The agreed price leaves the credit pool for the seller's balance, so the purchase owes
+        // the same anonymity set as every other way credits leave that pool. The same transition
+        // is refused while the pool is too small and accepted once it is not; the refusal is
+        // unpaid, so it records nothing and the retry is the same bundle.
+        let result = process(&platform, &transition);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::StateError(StateError::InsufficientPoolNotesError(_))
+            )],
+            "a purchase may not walk credits out of a pool too small to hide where they came from"
+        );
+        insert_dummy_encrypted_notes(
+            &platform,
+            platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants
+                .minimum_pool_notes_for_outgoing,
+        );
 
         let result = process(&platform, &transition);
         assert_matches!(
@@ -4480,6 +4502,7 @@ mod token_pool_paid_transitions_tests {
 /// bundle the verifier never accepted anywhere is refused for any reason at all. The repeat
 /// must then fail on the original's first dummy nullifier, and nothing it carries may move.
 mod token_pool_outputs_only_copy_tests {
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::insert_dummy_encrypted_notes;
     use super::token_pool_paid_transitions_tests::{
         credit_pool_balance, fund_credit_pool, spendable, wallet_address, Prover, CREDIT_NOTE,
     };
@@ -6750,6 +6773,19 @@ mod token_pool_outputs_only_copy_tests {
         assert_matches!(
             process(platform, &set_price).execution_results().as_slice(),
             [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        // A purchase moves the agreed price out of the credit pool to the seller, so it owes the
+        // same anonymity set as every other way credits leave that pool. Seeding it here keeps the
+        // tests below about what they are named for; the threshold itself is pinned by
+        // `test_token_purchase_from_shielded_pool`, which submits the same purchase on both sides
+        // of it.
+        insert_dummy_encrypted_notes(
+            platform,
+            platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants
+                .minimum_pool_notes_for_outgoing,
         );
         (seller.id(), contract.id(), token_id)
     }

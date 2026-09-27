@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::execution::validation::state_transition::state_transitions::shielded_common::validate_minimum_pool_notes;
 use crate::execution::validation::state_transition::state_transitions::token_pool_paid_common::{
     resolve_pooled_token, validate_credit_pool_fee_spend, validate_token_pool_outputs,
 };
@@ -126,6 +127,21 @@ impl TokenPurchaseFromShieldedPoolStateTransitionTransformIntoActionValidationV0
         )? {
             return Ok(rejection);
         }
+        // The agreed price leaves the credit pool for the contract owner's balance, so this is a
+        // value exit from the shielded set to a named identity and owes the same anonymity set as
+        // the other four: unshield, shielded withdrawal, and the identity create and top up paid
+        // from the pool. Without it a contract owner buys from itself and walks credits out of a
+        // pool too small to hide where they came from.
+        let mut drive_operations = vec![];
+        if let Some(consensus_error) = validate_minimum_pool_notes(
+            drive,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )? {
+            return Ok(consensus_error);
+        }
+
         let fee_nullifiers: Vec<[u8; 32]> = v0.fee_actions.iter().map(|a| a.nullifier).collect();
         let current_credit_pool_balance = match validate_credit_pool_fee_spend(
             drive,
