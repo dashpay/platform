@@ -33,9 +33,14 @@ impl Countability {
 /// Contested index resolution.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ContestedResolution {
-    /// Masternode vote, the only native resolution.
+    /// Masternodes vote for a contender, abstain, or lock the value so nobody
+    /// gets it.
     #[default]
     MasternodeVote,
+    /// Masternodes vote for a contender or abstain; there is no lock choice,
+    /// so the contest always ends with a winner, and a lone contender at the
+    /// end of the join window is awarded at once.
+    MasternodeVoteNoLocking,
 }
 
 /// Contested index parameters. The native award is an internal native action;
@@ -64,6 +69,12 @@ impl ContestedSpec {
     /// Adds a description.
     pub fn description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
+        self
+    }
+
+    /// Sets the resolution.
+    pub fn resolution(mut self, resolution: ContestedResolution) -> Self {
+        self.resolution = resolution;
         self
     }
 }
@@ -113,8 +124,10 @@ pub struct TimeRangeSpec {
 /// Index-only options: only meaningful when the collection is index-only.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct IndexOnlySpec {
-    /// The member key property; `$ownerId` when absent.
-    pub terminal: Option<PropertyPath>,
+    /// The member key: one property, or an ordered list of properties whose
+    /// encoded values are concatenated (a composite terminal). `$ownerId`
+    /// when empty. Order is part of the key and is preserved.
+    pub terminal: Vec<PropertyPath>,
     /// Preallocate the index path when the referenced document is created.
     pub preallocated: bool,
     /// Write no entry when the first property is absent.
