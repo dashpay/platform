@@ -1,3 +1,4 @@
+use drive::util::grove_operations::DirectQueryType;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::TokenBaseTransitionActionValidation;
@@ -162,6 +163,7 @@ impl TokenUnshieldTransitionActionStateValidationV0 for TokenUnshieldTransitionA
 
         let pool_balance = platform.drive.read_token_shielded_pool_total_balance(
             &token_id_bytes,
+            DirectQueryType::StatefulDirectQuery,
             transaction,
             &mut drive_operations,
             platform_version,
