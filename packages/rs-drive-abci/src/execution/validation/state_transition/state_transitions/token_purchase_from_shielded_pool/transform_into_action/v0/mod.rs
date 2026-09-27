@@ -73,7 +73,13 @@ impl TokenPurchaseFromShieldedPoolStateTransitionTransformIntoActionValidationV0
         ) {
             return Ok(ConsensusValidationResult::new_with_error(consensus_error));
         }
-        // Minting into the pool must respect the max supply.
+        // Minting into the pool must respect the supply ceiling. A mint into the pool never
+        // saturates: the bundle proves exactly the purchased count entering the pool, so a supply
+        // that stopped short would leave the pool holding value the supply does not record. The
+        // supply lives in a sum item, so `i64::MAX` is a ceiling of its own, and it bounds the
+        // purchase even where the token configures no max supply. Without that bound the count
+        // reaches the writer as an overflow and the node reports its own code as broken, dropping
+        // the purchase from the block unpaid and leaving it resubmittable forever.
         let Some(total_supply) = drive.fetch_token_total_supply(
             v0.token_id.to_buffer(),
             transaction,
@@ -88,20 +94,23 @@ impl TokenPurchaseFromShieldedPoolStateTransitionTransformIntoActionValidationV0
                 .into(),
             ));
         };
-        if let Some(max_supply) = configuration.max_supply() {
-            match total_supply.checked_add(v0.token_count) {
-                Some(after) if after <= max_supply => {}
-                _ => {
-                    return Ok(ConsensusValidationResult::new_with_error(
-                        TokenMintPastMaxSupplyError::new(
-                            v0.token_id,
-                            v0.token_count,
-                            total_supply,
-                            max_supply,
-                        )
-                        .into(),
-                    ));
-                }
+        let max_supply = configuration
+            .max_supply()
+            .map_or(i64::MAX as u64, |max_supply| {
+                max_supply.min(i64::MAX as u64)
+            });
+        match total_supply.checked_add(v0.token_count) {
+            Some(after) if after <= max_supply => {}
+            _ => {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    TokenMintPastMaxSupplyError::new(
+                        v0.token_id,
+                        v0.token_count,
+                        total_supply,
+                        max_supply,
+                    )
+                    .into(),
+                ));
             }
         }
         // The credit bundle carries the price plus the fee; the fee was pinned by the
