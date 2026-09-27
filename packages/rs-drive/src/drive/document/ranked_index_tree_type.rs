@@ -168,9 +168,10 @@ pub(crate) fn property_name_tree_type_and_ranked_axes(
 /// grouping or propagating level; both fail closed here on a stamped
 /// terminator rather than pick one of two contradictory layouts.
 ///
-/// Shipped generations depend on this function: `insert_contract` v0 and
-/// `update_contract` v0 (protocol versions 1-13) call it to choose the tree
-/// type of every top-level index level they create. Changing what it returns
+/// Shipped generations depend on this function: the `insert_contract` v0 and
+/// `update_contract` v0 operations call it to choose the tree type of every
+/// top-level index level they create, and every later generation of both
+/// composes those operations, so every protocol version reaches it. Changing what it returns
 /// for an index level protocol versions 1-13 can declare changes the trees
 /// and fees of those versions; make such a change a new versioned method
 /// instead of editing this function.
