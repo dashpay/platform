@@ -45,9 +45,18 @@ fn data(entries: &[(&str, Value)]) -> Value {
 
 /// The value of `expression`, parsed as the left side of an `equal`, for `data`.
 fn evaluate(expression: Value, data: &Value) -> Result<i128, PropertyConstraintViolation> {
-    parse_rule_value(platform_value!({ "equal": [expression, "anchor"] }))
-        .left
-        .evaluate(data)
+    match parse_rule_value(platform_value!({ "equal": [expression, "anchor"] })) {
+        PropertyConstraint::Compare { left, .. } => left.evaluate(data),
+        other => panic!("an equal parses to a comparison, got {other:?}"),
+    }
+}
+
+/// The comparison `rule` is, which it must be.
+fn comparison_of(rule: &PropertyConstraint) -> ConstraintComparison {
+    match rule {
+        PropertyConstraint::Compare { comparison, .. } => *comparison,
+        other => panic!("expected a comparison, got {other:?}"),
+    }
 }
 
 // ── parsing ─────────────────────────────────────────────────────────────
@@ -93,7 +102,7 @@ fn should_parse_every_operator_comparison_and_the_if_absent_operand() {
     );
     assert_eq!(
         rules["depositCoversOrder"],
-        PropertyConstraint {
+        PropertyConstraint::Compare {
             comparison: ConstraintComparison::LessThanOrEqual,
             left: ConstraintExpression::Multiply(vec![
                 ConstraintExpression::Add(vec![property("price"), property("fee")]),
@@ -104,7 +113,7 @@ fn should_parse_every_operator_comparison_and_the_if_absent_operand() {
     );
     assert_eq!(
         rules["wholeLots"],
-        PropertyConstraint {
+        PropertyConstraint::Compare {
             comparison: ConstraintComparison::Equal,
             left: ConstraintExpression::Modulo(
                 Box::new(property("quantity")),
@@ -115,7 +124,7 @@ fn should_parse_every_operator_comparison_and_the_if_absent_operand() {
     );
     assert_eq!(
         rules["minimumOrder"],
-        PropertyConstraint {
+        PropertyConstraint::Compare {
             comparison: ConstraintComparison::GreaterThanOrEqual,
             left: ConstraintExpression::Multiply(vec![
                 property("price"),
@@ -129,7 +138,7 @@ fn should_parse_every_operator_comparison_and_the_if_absent_operand() {
     );
     assert_eq!(
         rules["rest"],
-        PropertyConstraint {
+        PropertyConstraint::Compare {
             comparison: ConstraintComparison::NotEqual,
             left: ConstraintExpression::Subtract(
                 Box::new(ConstraintExpression::Divide(
@@ -144,8 +153,14 @@ fn should_parse_every_operator_comparison_and_the_if_absent_operand() {
             right: ConstraintExpression::Value(-5),
         }
     );
-    assert_eq!(rules["less"].comparison, ConstraintComparison::LessThan);
-    assert_eq!(rules["more"].comparison, ConstraintComparison::GreaterThan);
+    assert_eq!(
+        comparison_of(&rules["less"]),
+        ConstraintComparison::LessThan
+    );
+    assert_eq!(
+        comparison_of(&rules["more"]),
+        ConstraintComparison::GreaterThan
+    );
 }
 
 #[test]
@@ -173,15 +188,15 @@ fn should_refuse_a_malformed_declaration() {
         ),
         (
             platform_value!({ "rule": ["price", 1] }),
-            "rule \"rule\" must be an object with one key, its comparison",
+            "rule \"rule\" must be an object with one key: a comparison (equal, notEqual",
         ),
         (
             platform_value!({ "rule": { "equal": ["price", 1], "lessThan": ["price", 1] } }),
-            "rule \"rule\" must be an object with one key, its comparison",
+            "rule \"rule\" must be an object with one key: a comparison (equal, notEqual",
         ),
         (
             platform_value!({ "rule": { "atMost": ["price", 1] } }),
-            "compares with \"atMost\", which is not a comparison",
+            "rule \"rule\" names \"atMost\", which is not a comparison (equal",
         ),
         (
             platform_value!({ "rule": { "equal": ["price"] } }),
@@ -275,7 +290,7 @@ fn should_read_a_float_literal_without_a_fractional_part_as_an_integer() {
     }));
     assert_eq!(
         rule,
-        PropertyConstraint {
+        PropertyConstraint::Compare {
             comparison: ConstraintComparison::Equal,
             left: ConstraintExpression::Property {
                 path: "price".to_string(),
@@ -333,6 +348,198 @@ fn should_count_nodes_and_list_the_paths_a_rule_reads() {
     // lessThanOrEqual, multiply, add, price, ifAbsent fee, price, 7
     assert_eq!(rule.node_count(), 7);
     assert_eq!(rule.property_paths(), ["price", "fee", "price"]);
+}
+
+// ── anyOf, allOf and not ────────────────────────────────────────────────
+
+fn compare(
+    comparison: ConstraintComparison,
+    left: ConstraintExpression,
+    right: ConstraintExpression,
+) -> PropertyConstraint {
+    PropertyConstraint::Compare {
+        comparison,
+        left,
+        right,
+    }
+}
+
+#[test]
+fn should_parse_any_of_all_of_and_not() {
+    let rules = parse(platform_value!({
+        "aIsZeroOrBIsFour": { "anyOf": [{ "equal": ["a", 0] }, { "equal": ["b", 4] }] },
+        "notBoth": {
+            "not": { "allOf": [{ "greaterThan": ["a", 0] }, { "greaterThan": ["b", 0] }] }
+        },
+        "nested": {
+            "allOf": [
+                { "anyOf": [{ "equal": ["a", 0] }, { "lessThan": ["a", "b"] }] },
+                { "not": { "equal": [{ "ifAbsent": ["b", 1] }, 3] } }
+            ]
+        }
+    }))
+    .expect("the declaration parses");
+
+    let a_is = |value| {
+        compare(
+            ConstraintComparison::Equal,
+            property("a"),
+            ConstraintExpression::Value(value),
+        )
+    };
+    assert_eq!(
+        rules["aIsZeroOrBIsFour"],
+        PropertyConstraint::AnyOf(vec![
+            a_is(0),
+            compare(
+                ConstraintComparison::Equal,
+                property("b"),
+                ConstraintExpression::Value(4)
+            ),
+        ])
+    );
+    assert_eq!(
+        rules["notBoth"],
+        PropertyConstraint::Not(Box::new(PropertyConstraint::AllOf(vec![
+            compare(
+                ConstraintComparison::GreaterThan,
+                property("a"),
+                ConstraintExpression::Value(0)
+            ),
+            compare(
+                ConstraintComparison::GreaterThan,
+                property("b"),
+                ConstraintExpression::Value(0)
+            ),
+        ])))
+    );
+    assert_eq!(
+        rules["nested"],
+        PropertyConstraint::AllOf(vec![
+            PropertyConstraint::AnyOf(vec![
+                a_is(0),
+                compare(ConstraintComparison::LessThan, property("a"), property("b")),
+            ]),
+            PropertyConstraint::Not(Box::new(compare(
+                ConstraintComparison::Equal,
+                ConstraintExpression::Property {
+                    path: "b".to_string(),
+                    if_absent: 1
+                },
+                ConstraintExpression::Value(3)
+            ))),
+        ])
+    );
+}
+
+/// The errors place a fault by its path through the conditions, then through the
+/// operands of the comparison it sits in.
+#[test]
+fn should_refuse_a_malformed_condition() {
+    let one = platform_value!({ "equal": ["price", 1] });
+    let two = platform_value!({ "equal": ["price", 2] });
+    let fee = platform_value!({ "equal": ["fee", 1] });
+    let cases = [
+        (
+            platform_value!({ "anyOf": [one.clone()] }),
+            "rule \"rule\" at anyOf must list two or more conditions",
+        ),
+        (
+            platform_value!({ "allOf": one.clone() }),
+            "rule \"rule\" at allOf must list two or more conditions",
+        ),
+        (
+            platform_value!({ "allOf": [] }),
+            "rule \"rule\" at allOf must list two or more conditions",
+        ),
+        (
+            platform_value!({ "not": [one.clone()] }),
+            "rule \"rule\" at not must be an object with one key: a comparison",
+        ),
+        (
+            platform_value!({ "anyOf": [one.clone(), two.clone()], "equal": ["price", 3] }),
+            "rule \"rule\" must be an object with one key: a comparison",
+        ),
+        (
+            platform_value!({ "anyOf": [one.clone(), ["price", 1]] }),
+            "rule \"rule\" at anyOf[1] must be an object with one key: a comparison",
+        ),
+        (
+            platform_value!({ "anyOf": [one.clone(), { "or": [one.clone(), two.clone()] }] }),
+            "rule \"rule\" at anyOf[1] names \"or\", which is not a comparison",
+        ),
+        // A flat list says the same
+        (
+            platform_value!({ "anyOf": [{ "anyOf": [one.clone(), two.clone()] }, fee.clone()] }),
+            "rule \"rule\" at anyOf[0] is an anyOf directly inside an anyOf",
+        ),
+        (
+            platform_value!({ "allOf": [fee.clone(), { "allOf": [one.clone(), two.clone()] }] }),
+            "rule \"rule\" at allOf[1] is an allOf directly inside an allOf",
+        ),
+        // A double negation says what the condition inside it says
+        (
+            platform_value!({ "not": { "not": one.clone() } }),
+            "rule \"rule\" at not.not is a not directly inside a not",
+        ),
+        (
+            platform_value!({ "anyOf": [one.clone(), two.clone(), one.clone()] }),
+            "rule \"rule\" at anyOf[2] repeats the condition at anyOf[0]",
+        ),
+        // Alike once parsed: JSON does not tell `1` from `1.0`
+        (
+            platform_value!({ "allOf": [one.clone(), { "equal": ["price", 1.0] }] }),
+            "rule \"rule\" at allOf[1] repeats the condition at allOf[0]",
+        ),
+        // Every comparison reads a property, not only the rule as a whole: a constant
+        // one would make the anyOf hold for every document
+        (
+            platform_value!({ "anyOf": [one.clone(), { "equal": [1, 1] }] }),
+            "rule \"rule\" at anyOf[1] reads no property",
+        ),
+        (
+            platform_value!({ "not": { "equal": [2, { "add": [1, 1] }] } }),
+            "rule \"rule\" at not reads no property",
+        ),
+        (
+            platform_value!({
+                "allOf": [one.clone(), { "not": { "lessThan": [{ "divide": ["price", 0] }, 1] } }]
+            }),
+            "rule \"rule\" at allOf[1].not.lessThan[0].divide divides by 0",
+        ),
+        (
+            platform_value!({ "anyOf": [one.clone(), { "equal": ["price"] }] }),
+            "rule \"rule\" at anyOf[1].equal must list exactly two operands",
+        ),
+    ];
+    for (condition, needle) in cases {
+        expect_refusal(platform_value!({ "rule": condition }), needle);
+    }
+}
+
+/// Conditions nest within the same cap as operands: the rule's own condition is at
+/// depth 0, and whatever a condition holds one level deeper.
+#[test]
+fn should_refuse_conditions_nested_deeper_than_the_parse_depth_cap() {
+    let nested = |levels: usize| {
+        let mut condition = platform_value!({ "equal": ["price", 0] });
+        for level in 0..levels {
+            // Alternating, since an anyOf directly inside an anyOf is refused
+            let key = if level % 2 == 0 { ANY_OF } else { ALL_OF };
+            let sibling = platform_value!({ "equal": ["price", level as u64 + 1] });
+            condition = Value::Map(vec![(
+                Value::Text(key.to_string()),
+                Value::Array(vec![condition, sibling]),
+            )]);
+        }
+        platform_value!({ "rule": condition })
+    };
+    // The innermost comparison sits `levels` deep, its operands one deeper
+    parse(nested(MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH - 1)).expect("at the cap");
+    expect_refusal(
+        nested(MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH),
+        &format!("nests deeper than {MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH} levels"),
+    );
 }
 
 // ── evaluation ──────────────────────────────────────────────────────────
@@ -592,4 +799,109 @@ fn should_report_whether_a_rule_holds_and_the_left_fault_first() {
             comparison.wire_name()
         );
     }
+}
+
+/// `a == 0 || b == 4`, and `allOf` and `not` over the same comparisons.
+#[test]
+fn should_combine_conditions_with_any_of_all_of_and_not() {
+    let any_of = parse_rule_value(platform_value!({
+        "anyOf": [{ "equal": ["a", 0] }, { "equal": ["b", 4] }]
+    }));
+    let all_of = parse_rule_value(platform_value!({
+        "allOf": [{ "equal": ["a", 0] }, { "equal": ["b", 4] }]
+    }));
+    let not = parse_rule_value(platform_value!({
+        "not": { "anyOf": [{ "equal": ["a", 0] }, { "equal": ["b", 4] }] }
+    }));
+    for (a, b, either, both) in [
+        (0, 4, true, true),
+        (0, 5, true, false),
+        (1, 4, true, false),
+        (1, 5, false, false),
+    ] {
+        let values = data(&[("a", Value::U64(a)), ("b", Value::U64(b))]);
+        assert_eq!(any_of.holds(&values), Ok(either), "a {a}, b {b}: anyOf");
+        assert_eq!(all_of.holds(&values), Ok(both), "a {a}, b {b}: allOf");
+        assert_eq!(not.holds(&values), Ok(!either), "a {a}, b {b}: not");
+        assert_eq!(
+            any_of.violation(&values),
+            (!either).then_some(PropertyConstraintViolation::NotMet),
+            "a {a}, b {b}"
+        );
+    }
+    // An absent property still counts as 0
+    assert_eq!(any_of.holds(&data(&[("b", Value::U64(5))])), Ok(true));
+}
+
+/// Conditions are checked in declared order, no further than the outcome needs, so an
+/// earlier one guards a later one; a fault in a condition that is checked breaks the rule
+/// whatever the others would say, and `not` does not turn it into a pass.
+#[test]
+fn should_stop_at_the_outcome_and_break_the_rule_on_the_first_fault() {
+    let quotient_is_two = platform_value!({ "equal": [{ "divide": ["a", "b"] }, 2] });
+    let guarded_any_of = parse_rule_value(platform_value!({
+        "anyOf": [{ "equal": ["b", 0] }, quotient_is_two.clone()]
+    }));
+    let unguarded_any_of = parse_rule_value(platform_value!({
+        "anyOf": [quotient_is_two.clone(), { "equal": ["b", 0] }]
+    }));
+    let guarded_all_of = parse_rule_value(platform_value!({
+        "allOf": [{ "notEqual": ["b", 0] }, quotient_is_two.clone()]
+    }));
+    let negated = parse_rule_value(platform_value!({ "not": quotient_is_two }));
+
+    let values = |a: u64, b: u64| data(&[("a", Value::U64(a)), ("b", Value::U64(b))]);
+    let zero_divisor = values(6, 0);
+    assert_eq!(guarded_any_of.violation(&zero_divisor), None);
+    assert_eq!(
+        unguarded_any_of.violation(&zero_divisor),
+        Some(PropertyConstraintViolation::DivisionByZero)
+    );
+    assert_eq!(
+        guarded_all_of.violation(&zero_divisor),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    assert_eq!(
+        negated.violation(&zero_divisor),
+        Some(PropertyConstraintViolation::DivisionByZero)
+    );
+
+    // 4 / 2 = 2, 6 / 2 = 3
+    for rule in [&guarded_any_of, &unguarded_any_of, &guarded_all_of] {
+        assert_eq!(rule.violation(&values(4, 2)), None, "{rule:?}");
+        assert_eq!(
+            rule.violation(&values(6, 2)),
+            Some(PropertyConstraintViolation::NotMet),
+            "{rule:?}"
+        );
+    }
+    assert_eq!(
+        negated.violation(&values(4, 2)),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    assert_eq!(negated.violation(&values(6, 2)), None);
+
+    // An allOf stops at the first condition that fails, before a later fault
+    let fails_before_the_fault = parse_rule_value(platform_value!({
+        "allOf": [{ "equal": ["a", 1] }, { "equal": [{ "divide": ["a", "b"] }, 2] }]
+    }));
+    assert_eq!(
+        fails_before_the_fault.violation(&zero_divisor),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+}
+
+/// Every comparison and logical operator is a node, and the paths are listed in declared
+/// order.
+#[test]
+fn should_count_the_nodes_and_list_the_paths_of_combined_conditions() {
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "equal": ["a", 0] },
+            { "not": { "equal": [{ "ifAbsent": ["b", 1] }, "a"] } }
+        ]
+    }));
+    // anyOf, equal, a, 0, not, equal, ifAbsent b, a
+    assert_eq!(rule.node_count(), 8);
+    assert_eq!(rule.property_paths(), ["a", "b", "a"]);
 }

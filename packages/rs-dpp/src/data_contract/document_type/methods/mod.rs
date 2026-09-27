@@ -683,9 +683,9 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
 
     /// Judges a document's properties, `data` (a map), against every rule of the document
     /// type's `propertyConstraints`, in name order: the first rule it breaks fails with
-    /// `DocumentPropertyConstraintViolatedError` (10422), naming the rule and why (the
-    /// comparison does not hold, or evaluating it overflowed, divided by zero, raised to a
-    /// negative power or read a value that is not an integer). A property the document
+    /// `DocumentPropertyConstraintViolatedError` (10422), naming the rule and why (the rule
+    /// does not hold, or evaluating it overflowed, divided by zero, raised to a negative
+    /// power or read a value that is not an integer). A property the document
     /// leaves out counts as 0, or as its `ifAbsent` value. Reads the properties alone:
     /// `DataContract::validate_document_properties` runs it after the schema validation,
     /// so document create and replace, and every client validating a document, apply it.

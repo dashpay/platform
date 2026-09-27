@@ -1,7 +1,7 @@
 //! The doctype-level `propertyConstraints` keyword (meta-schema v3, protocol
 //! version 14): named rules every document of the type must meet, each a
-//! comparison of two integer expressions over the document's integer
-//! properties.
+//! condition on the document's integer properties: a comparison of two integer
+//! expressions, or `anyOf`, `allOf` or `not` over conditions.
 //!
 //! ```json
 //! "propertyConstraints": {
@@ -14,6 +14,9 @@
 //!   "wholeLots": { "equal": [{ "modulo": ["quantity", 10] }, 0] },
 //!   "minimumOrder": {
 //!     "greaterThanOrEqual": [{ "multiply": ["price", { "ifAbsent": ["quantity", 1] }] }, 100]
+//!   },
+//!   "feeWaivedOrAtLeastTen": {
+//!     "anyOf": [{ "equal": ["fee", 0] }, { "greaterThanOrEqual": ["fee", 10] }]
 //!   }
 //! }
 //! ```
@@ -23,7 +26,8 @@
 //! `ifAbsent`, a property with the value it takes when the document leaves it
 //! out. A property named on its own takes 0 when absent. How the arithmetic
 //! treats overflow, division and powers is set out on
-//! [`ConstraintExpression::evaluate`].
+//! [`ConstraintExpression::evaluate`], and how conditions combine on
+//! [`PropertyConstraint::holds`].
 //!
 //! [`parse_property_constraints`] checks the declaration's shape on every
 //! parse, [`MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH`] included. Which properties a
@@ -51,22 +55,27 @@ const MULTIPLY: &str = "multiply";
 const DIVIDE: &str = "divide";
 const MODULO: &str = "modulo";
 const POWER: &str = "power";
+const ANY_OF: &str = "anyOf";
+const ALL_OF: &str = "allOf";
+const NOT: &str = "not";
 
 /// Every key an operand object may hold, for the errors.
 const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power or ifAbsent";
 
-/// The deepest an operand may sit in its rule, the two sides of the comparison
-/// at depth 1. Checked on every parse, stored contracts included, so that a
-/// declaration handed to a parse without full validation cannot drive the
-/// parser, or the evaluation of what it builds, into unbounded recursion. A
-/// registrable rule stays far below it: it has at most
+/// The deepest a condition or an operand may sit in its rule: the rule's own
+/// condition at depth 0, and each operand of a comparison, and each condition
+/// under `anyOf`, `allOf` or `not`, one level deeper than what holds it.
+/// Checked on every parse, stored contracts included, so that a declaration
+/// handed to a parse without full validation cannot drive the parser, or the
+/// evaluation of what it builds, into unbounded recursion. A registrable rule
+/// stays far below it: it has at most
 /// `SystemLimits::max_property_constraint_nodes` nodes, so it is never deeper
 /// than that (a test holds every protocol version's limit to it). A constant
 /// rather than a limit, like `MAX_REFERENCE_EXPRESSION_DECODE_DEPTH`, so that
 /// no change to a limit can make a stored contract unparseable.
 pub const MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH: usize = 64;
 
-/// How the two sides of a rule must compare.
+/// How the two sides of a comparison must compare.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstraintComparison {
     /// `equal`: the two sides are the same number.
@@ -256,46 +265,115 @@ impl ConstraintExpression {
     }
 }
 
-/// One rule of `propertyConstraints`: its two sides must compare as
-/// `comparison` says.
+/// A rule of `propertyConstraints`, or a condition inside one: a comparison of
+/// two integer expressions, or `anyOf`, `allOf` or `not` over conditions.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PropertyConstraint {
-    pub comparison: ConstraintComparison,
-    pub left: ConstraintExpression,
-    pub right: ConstraintExpression,
+pub enum PropertyConstraint {
+    /// A comparison: the two sides must compare as `comparison` says.
+    Compare {
+        comparison: ConstraintComparison,
+        left: ConstraintExpression,
+        right: ConstraintExpression,
+    },
+    /// `anyOf`: at least one of two or more conditions holds.
+    AnyOf(Vec<PropertyConstraint>),
+    /// `allOf`: every one of two or more conditions holds.
+    AllOf(Vec<PropertyConstraint>),
+    /// `not`: the condition does not hold.
+    Not(Box<PropertyConstraint>),
 }
 
 impl PropertyConstraint {
+    /// Whether a document whose properties are `data` meets the condition.
+    ///
+    /// Evaluated left to right, and no further than the outcome needs: a
+    /// comparison evaluates its left side, then its right one; `anyOf` checks
+    /// its conditions in declared order and holds at the first that holds;
+    /// `allOf` fails at the first that fails; `not` inverts its condition. The
+    /// first fault an evaluated expression meets ([`ConstraintExpression::evaluate`])
+    /// is returned whatever the conditions left unevaluated would say, and `not`
+    /// never turns a fault into a pass. So an earlier condition guards a later
+    /// one: `anyOf: [{ equal: ["b", 0] }, { equal: [{ divide: ["a", "b"] }, 2] }]`
+    /// holds for a `b` of 0 without dividing by it, while the same two
+    /// conditions the other way round divide by zero.
+    pub fn holds(&self, data: &Value) -> Result<bool, PropertyConstraintViolation> {
+        match self {
+            PropertyConstraint::Compare {
+                comparison,
+                left,
+                right,
+            } => {
+                let (left, right) = (left.evaluate(data)?, right.evaluate(data)?);
+                Ok(comparison.holds(left, right))
+            }
+            PropertyConstraint::AnyOf(conditions) => {
+                for condition in conditions {
+                    if condition.holds(data)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            PropertyConstraint::AllOf(conditions) => {
+                for condition in conditions {
+                    if !condition.holds(data)? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            PropertyConstraint::Not(condition) => Ok(!condition.holds(data)?),
+        }
+    }
+
     /// Why a document whose properties are `data` breaks the rule, `None` when
-    /// it meets it. The left side is evaluated before the right one, so a fault
-    /// on both sides is reported from the left.
+    /// it meets it: the first fault met on the way ([`Self::holds`]), or
+    /// [`PropertyConstraintViolation::NotMet`] when the rule evaluates to false.
     pub fn violation(&self, data: &Value) -> Option<PropertyConstraintViolation> {
-        let left = match self.left.evaluate(data) {
-            Ok(left) => left,
-            Err(violation) => return Some(violation),
-        };
-        let right = match self.right.evaluate(data) {
-            Ok(right) => right,
-            Err(violation) => return Some(violation),
-        };
-        (!self.comparison.holds(left, right)).then_some(PropertyConstraintViolation::NotMet)
+        match self.holds(data) {
+            Ok(true) => None,
+            Ok(false) => Some(PropertyConstraintViolation::NotMet),
+            Err(violation) => Some(violation),
+        }
     }
 
     /// The nodes of the rule, counted against
-    /// `SystemLimits::max_property_constraint_nodes`: its comparison, every
-    /// operator and every operand (an integer value, or a property with or
-    /// without `ifAbsent`).
+    /// `SystemLimits::max_property_constraint_nodes`: every comparison and
+    /// logical operator, every arithmetic operator and every operand (an
+    /// integer value, or a property with or without `ifAbsent`).
     pub fn node_count(&self) -> usize {
-        1 + self.left.node_count() + self.right.node_count()
+        1 + match self {
+            PropertyConstraint::Compare { left, right, .. } => {
+                left.node_count() + right.node_count()
+            }
+            PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
+                conditions.iter().map(PropertyConstraint::node_count).sum()
+            }
+            PropertyConstraint::Not(condition) => condition.node_count(),
+        }
     }
 
-    /// The dotted paths of the properties the rule reads, in the order it reads
-    /// them, a path read twice listed twice.
+    /// The dotted paths of the properties the rule reads, in declared order, a
+    /// path read twice listed twice.
     pub fn property_paths(&self) -> Vec<&str> {
         let mut paths = Vec::new();
-        self.left.collect_property_paths(&mut paths);
-        self.right.collect_property_paths(&mut paths);
+        self.collect_property_paths(&mut paths);
         paths
+    }
+
+    fn collect_property_paths<'a>(&'a self, paths: &mut Vec<&'a str>) {
+        match self {
+            PropertyConstraint::Compare { left, right, .. } => {
+                left.collect_property_paths(paths);
+                right.collect_property_paths(paths);
+            }
+            PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
+                for condition in conditions {
+                    condition.collect_property_paths(paths);
+                }
+            }
+            PropertyConstraint::Not(condition) => condition.collect_property_paths(paths),
+        }
     }
 }
 
@@ -305,15 +383,18 @@ impl PropertyConstraint {
 ///
 /// The rules of the declaration's shape are checked here, on every parse: an
 /// object of one or more rules, each named with 1 to 64 letters, digits or
-/// underscores and holding one comparison of exactly two operands. An operand
-/// is an integer value, a property path, or an object with one key: `ifAbsent`
-/// with a path and an integer value, `add` or `multiply` with two or more
-/// operands, or `subtract`, `divide`, `modulo` or `power` with exactly two.
-/// An integer value may be spelled as a float with no fractional part, as the
-/// meta-schema's `integer` type admits one. A literal 0 divisor, a literal
-/// negative exponent, a rule that reads no property, which would hold for every
-/// document or for none, and an operand deeper than
-/// [`MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH`] are refused.
+/// underscores and holding one condition. A condition is an object with one
+/// key: a comparison of exactly two operands, `anyOf` or `allOf` with two or
+/// more conditions, no two alike and none of them directly the same operator
+/// (it says what one flat list says), or `not` with one condition that is not
+/// directly another `not`. An operand is an integer value, a property path, or
+/// an object with one key: `ifAbsent` with a path and an integer value, `add`
+/// or `multiply` with two or more operands, or `subtract`, `divide`, `modulo`
+/// or `power` with exactly two. An integer value may be spelled as a float with
+/// no fractional part, as the meta-schema's `integer` type admits one. A
+/// literal 0 divisor, a literal negative exponent, a comparison that reads no
+/// property, which would hold for every document or for none, and a condition
+/// or operand deeper than [`MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH`] are refused.
 /// What the paths name is checked against the parsed document type, and the
 /// limits under full validation, by parser generation 3.
 pub fn parse_property_constraints(
@@ -353,14 +434,10 @@ pub fn parse_property_constraints(
                 name.non_qualified_string_representation()
             )));
         };
-        let constraint = parse_rule(rule)
+        // Where a condition or an operand sits in the rule (`anyOf[1].lessThan[0]`),
+        // grown and trimmed in place as the parse descends and only read into an error
+        let constraint = parse_condition(rule, &mut String::new(), 0)
             .map_err(|message| structure_error(format!("rule \"{name}\" {message}")))?;
-        if constraint.property_paths().is_empty() {
-            return Err(structure_error(format!(
-                "rule \"{name}\" reads no property, so it would hold for every document or for \
-                 none"
-            )));
-        }
         if constraints.insert(name.to_string(), constraint).is_some() {
             return Err(structure_error(format!("declares rule \"{name}\" twice")));
         }
@@ -389,38 +466,132 @@ fn single_entry(value: &Value) -> Option<(&str, &Value)> {
     Some((key.as_text()?, value))
 }
 
-/// One rule: an object whose one key names the comparison and lists its two
-/// sides. The error is the rest of a message naming the rule.
-fn parse_rule(rule: &Value) -> Result<PropertyConstraint, String> {
-    let comparison_names = || {
+/// Every key a condition object may hold, for the errors.
+fn condition_keys() -> String {
+    format!(
+        "a comparison ({}), anyOf, allOf or not",
         ConstraintComparison::ALL
             .map(ConstraintComparison::wire_name)
             .join(", ")
-    };
-    let Some((key, sides)) = single_entry(rule) else {
+    )
+}
+
+/// `at ` followed by where something sits in its rule, nothing for the rule's
+/// own condition, to open the rest of an error naming the rule.
+fn located(at: &str) -> String {
+    if at.is_empty() {
+        String::new()
+    } else {
+        format!("at {at} ")
+    }
+}
+
+/// A condition at `at` (`anyOf[1]`, empty for the rule's own), where the
+/// errors place it, `depth` levels into its rule: an object whose one key is a
+/// comparison listing its two sides, or `anyOf`, `allOf` or `not`. The error is
+/// the rest of a message naming the rule. `at` is extended for what the
+/// condition holds and trimmed back before a successful return.
+fn parse_condition(
+    value: &Value,
+    at: &mut String,
+    depth: usize,
+) -> Result<PropertyConstraint, String> {
+    if depth > MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH {
         return Err(format!(
-            "must be an object with one key, its comparison: {}",
-            comparison_names()
+            "{}nests deeper than {MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH} levels",
+            located(at)
+        ));
+    }
+    let Some((key, body)) = single_entry(value) else {
+        return Err(format!(
+            "{}must be an object with one key: {}",
+            located(at),
+            condition_keys()
         ));
     };
-    let Some(comparison) = ConstraintComparison::ALL
-        .into_iter()
-        .find(|comparison| comparison.wire_name() == key)
-    else {
-        return Err(format!(
-            "compares with \"{key}\", which is not a comparison: {}",
-            comparison_names()
-        ));
+    let parent = at.len();
+    if parent > 0 {
+        at.push('.');
+    }
+    at.push_str(key);
+    let condition = match key {
+        ANY_OF => PropertyConstraint::AnyOf(condition_list(body, key, at, depth + 1)?),
+        ALL_OF => PropertyConstraint::AllOf(condition_list(body, key, at, depth + 1)?),
+        NOT => {
+            if single_entry(body).is_some_and(|(inner, _)| inner == NOT) {
+                return Err(format!(
+                    "at {at}.{NOT} is a not directly inside a not, which says what the \
+                     condition inside it says: declare that condition"
+                ));
+            }
+            PropertyConstraint::Not(Box::new(parse_condition(body, at, depth + 1)?))
+        }
+        _ => {
+            let Some(comparison) = ConstraintComparison::ALL
+                .into_iter()
+                .find(|comparison| comparison.wire_name() == key)
+            else {
+                at.truncate(parent);
+                return Err(format!(
+                    "{}names \"{key}\", which is not {}",
+                    located(at),
+                    condition_keys()
+                ));
+            };
+            let (left, right) = operand_pair(body, at, depth + 1)?;
+            let compare = PropertyConstraint::Compare {
+                comparison,
+                left,
+                right,
+            };
+            if compare.property_paths().is_empty() {
+                at.truncate(parent);
+                return Err(format!(
+                    "{}reads no property, so it would hold for every document or for none",
+                    located(at)
+                ));
+            }
+            compare
+        }
     };
-    // Where an operand sits in the rule (`lessThan[0].add[1]`), grown and trimmed
-    // in place as the parse descends and only read into an error
-    let mut at = key.to_string();
-    let (left, right) = operand_pair(sides, &mut at, 1)?;
-    Ok(PropertyConstraint {
-        comparison,
-        left,
-        right,
-    })
+    at.truncate(parent);
+    Ok(condition)
+}
+
+/// The two or more conditions the `anyOf` or `allOf` named `key` lists at
+/// `at`, `depth` levels into their rule: none of them directly another `key`,
+/// which says what one flat list says, and no two alike.
+fn condition_list(
+    conditions: &Value,
+    key: &str,
+    at: &mut String,
+    depth: usize,
+) -> Result<Vec<PropertyConstraint>, String> {
+    let Some(values) = conditions.as_array().filter(|values| values.len() >= 2) else {
+        return Err(format!("at {at} must list two or more conditions"));
+    };
+    let base = at.len();
+    let mut parsed: Vec<PropertyConstraint> = Vec::with_capacity(values.len());
+    for (index, value) in values.iter().enumerate() {
+        // Writing to a `String` cannot fail
+        let _ = write!(at, "[{index}]");
+        if single_entry(value).is_some_and(|(inner, _)| inner == key) {
+            return Err(format!(
+                "at {at} is an {key} directly inside an {key}, which says what one flat list \
+                 says: list its conditions in the outer {key}"
+            ));
+        }
+        let condition = parse_condition(value, at, depth)?;
+        if let Some(earlier) = parsed.iter().position(|earlier| *earlier == condition) {
+            return Err(format!(
+                "at {at} repeats the condition at {}[{earlier}]",
+                &at[..base]
+            ));
+        }
+        parsed.push(condition);
+        at.truncate(base);
+    }
+    Ok(parsed)
 }
 
 /// An operand at `at` (`lessThan[0].add[1]`), where the errors place it,

@@ -1044,21 +1044,30 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///
 /// 39. **Property constraints**: the doctype-level `propertyConstraints`
 ///     keyword (meta-schema v3, `parse_property_constraints` 0) names rules a
-///     document's integer properties must meet, each a comparison (`equal`,
-///     `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
+///     document's integer properties must meet, each a condition: a comparison
+///     (`equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
 ///     `greaterThanOrEqual`) of two integer expressions built from integer
 ///     literals, property paths and `add`, `subtract`, `multiply`, `divide`,
-///     `modulo` and `power`. A property the document leaves out counts as 0,
-///     or as the value of an `ifAbsent` operand naming it. Arithmetic is exact
+///     `modulo` and `power`, or `anyOf` or `allOf` over two or more conditions,
+///     or `not` over one. A property the document leaves out counts as 0, or
+///     as the value of an `ifAbsent` operand naming it. Arithmetic is exact
 ///     `i128`: `divide` and `modulo` are Euclidean (the remainder is never
 ///     negative), and an overflow, a zero divisor, a negative exponent or a
 ///     value that is not an integer refuses the document rather than wrapping.
-///     The parser checks that every path names an integer property that is
-///     neither transient nor inside a transient object, and that no operand
-///     nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every
-///     parse, and under full validation the limits
-///     `SystemLimits::max_property_constraints` (16 rules) and
-///     `max_property_constraint_nodes` (32 per rule).
+///     Conditions are checked in declared order and no further than the
+///     outcome needs (`anyOf` stops at the first that holds, `allOf` at the
+///     first that fails), a fault in one that is checked refuses the document
+///     whatever the others say, and `not` never turns a fault into a pass, so
+///     an earlier condition guards a later one. The parser checks that every
+///     path names an integer property that is neither transient nor inside a
+///     transient object, that every comparison reads a property, that an
+///     `anyOf` or `allOf` holds no two alike conditions and none directly of
+///     its own kind, that a `not` holds no `not` directly, and that no
+///     condition or operand nests deeper than
+///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse, and under
+///     full validation the limits `SystemLimits::max_property_constraints` (16
+///     rules) and `max_property_constraint_nodes` (32 per rule, every
+///     comparison and logical operator counting as one).
 ///     `DataContract::validate_document_properties` 0 (extended in place, inert
 ///     before this version) calls `validate_property_constraints`
 ///     (`validate_property_constraints` 0) after the schema validation, so

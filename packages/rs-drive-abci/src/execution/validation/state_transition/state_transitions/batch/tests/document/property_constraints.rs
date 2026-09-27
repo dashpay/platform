@@ -37,6 +37,8 @@ mod property_constraints_tests {
     /// * `boostPower`: `ifAbsent(boost, 1) ^ 20 >= 1`, which overflows for a large boost
     /// * `depositCoversOrder`: `(price + fee) * quantity <= deposit`
     /// * `discountBelowPrice`: `discount < price`, an absent discount counting as 0
+    /// * `feeWaivedOnlyWithDiscount`: `!(fee == 0 && discount == 0)`
+    /// * `feeWaivedOrAtLeastTen`: `fee == 0 || fee >= 10`
     /// * `perUnitDeposit`: `deposit / quantity >= 1`, which divides by zero for no quantity
     fn offer_schema() -> Value {
         platform_value!({
@@ -68,6 +70,12 @@ mod property_constraints_tests {
                     ]
                 },
                 "discountBelowPrice": { "lessThan": ["discount", "price"] },
+                "feeWaivedOnlyWithDiscount": {
+                    "not": { "allOf": [{ "equal": ["fee", 0] }, { "equal": ["discount", 0] }] }
+                },
+                "feeWaivedOrAtLeastTen": {
+                    "anyOf": [{ "equal": ["fee", 0] }, { "greaterThanOrEqual": ["fee", 10] }]
+                },
                 "perUnitDeposit": {
                     "greaterThanOrEqual": [{ "divide": ["deposit", "quantity"] }, 1]
                 }
@@ -437,6 +445,44 @@ mod property_constraints_tests {
         expect_violated(result, "boostPower", PropertyConstraintViolation::Overflow);
 
         assert!(fixture.stored_offers().is_empty());
+    }
+
+    /// A fee of 5 is neither waived nor at least 10, and a waived fee needs a
+    /// discount; a waived fee on a discounted offer meets both rules.
+    #[tokio::test]
+    async fn should_judge_any_of_all_of_and_not() {
+        let mut fixture = OfferFixture::new();
+
+        let result = fixture
+            .create(|document| document.set("fee", Value::U64(5)))
+            .await;
+        expect_violated(
+            result,
+            "feeWaivedOrAtLeastTen",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| document.set("fee", Value::U64(0)))
+            .await;
+        expect_violated(
+            result,
+            "feeWaivedOnlyWithDiscount",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        // (100 + 0) * 2 = 200 <= 220, and 10 < 100
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("fee", Value::U64(0));
+                    document.set("discount", Value::U64(10));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
     }
 
     #[tokio::test]

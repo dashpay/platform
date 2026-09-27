@@ -132,6 +132,63 @@ fn should_parse_the_rules_onto_the_document_type_on_both_paths() {
     assert!(document_type.property_constraints().is_empty());
 }
 
+/// `anyOf`, `allOf` and `not` register and parse on both paths, and every property
+/// a condition reads, however deep, is held to the same checks as a comparison's.
+#[test]
+fn should_parse_combined_conditions_and_check_every_property_they_read() {
+    let rules = json!({
+        "feeWaivedOrAtLeastTen": {
+            "anyOf": [{ "equal": ["fee", 0] }, { "greaterThanOrEqual": ["fee", 10] }]
+        },
+        "noFreeLargeOrder": {
+            "not": { "allOf": [{ "equal": ["price", 0] }, { "greaterThan": ["quantity", 10] }] }
+        },
+        "depositOrSmallOrder": {
+            "allOf": [
+                {
+                    "anyOf": [
+                        { "greaterThan": ["deposit", 0] },
+                        { "not": { "greaterThan": ["quantity", 1] } }
+                    ]
+                },
+                { "lessThanOrEqual": [{ "ifAbsent": ["meta.total", 0] }, "deposit"] }
+            ]
+        }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["feeWaivedOrAtLeastTen"].property_paths(),
+            ["fee", "fee"]
+        );
+        assert_eq!(
+            constraints["noFreeLargeOrder"].property_paths(),
+            ["price", "quantity"]
+        );
+        assert_eq!(
+            constraints["depositOrSmallOrder"].property_paths(),
+            ["deposit", "quantity", "meta.total", "deposit"]
+        );
+    }
+
+    let nested_string = json!({
+        "rule": {
+            "anyOf": [
+                { "equal": ["fee", 0] },
+                { "not": { "lessThan": [{ "add": ["price", "note"] }, 10] } }
+            ]
+        }
+    });
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_order(nested_string.clone(), full_validation),
+            "rule \"rule\" reads \"note\", which has type string, not integer",
+        );
+    }
+}
+
 /// Only an integer property's value is a number the rule can compute with: a
 /// string, a float, an array, an object and a system property are refused on
 /// both paths, as is a path naming nothing.
@@ -316,6 +373,30 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
         json!({ "rule": { "equal": [{ "ifAbsent": ["price", "fee"] }, 1] } }),
         json!({ "bad-name": { "equal": ["price", 1] } }),
         json!(["price"]),
+        json!({ "rule": { "or": [{ "equal": ["price", 1] }, { "equal": ["fee", 1] }] } }),
+        json!({ "rule": { "anyOf": [{ "equal": ["price", 1] }] } }),
+        json!({ "rule": { "allOf": { "equal": ["price", 1] } } }),
+        json!({ "rule": { "not": [{ "equal": ["price", 1] }] } }),
+        json!({ "rule": { "not": { "equal": ["price", 1] }, "equal": ["fee", 1] } }),
+        json!({ "rule": { "anyOf": [{ "equal": ["price", 1] }, { "equal": ["price", 1] }] } }),
+        json!({
+            "rule": {
+                "anyOf": [
+                    { "anyOf": [{ "equal": ["price", 1] }, { "equal": ["price", 2] }] },
+                    { "equal": ["fee", 1] }
+                ]
+            }
+        }),
+        json!({
+            "rule": {
+                "allOf": [
+                    { "equal": ["fee", 1] },
+                    { "allOf": [{ "equal": ["price", 1] }, { "equal": ["price", 2] }] }
+                ]
+            }
+        }),
+        json!({ "rule": { "not": { "not": { "equal": ["price", 1] } } } }),
+        json!({ "rule": { "anyOf": [{ "equal": ["price", 1] }, { "equal": ["price"] }] } }),
     ] {
         let registered = parse_order(rules.clone(), true);
         assert!(
@@ -342,6 +423,10 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
         (
             json!({ "rule": { "equal": [{ "add": [1, 2] }, 3] } }),
             "rule \"rule\" reads no property",
+        ),
+        (
+            json!({ "rule": { "anyOf": [{ "equal": ["price", 1] }, { "equal": [1, 1] }] } }),
+            "rule \"rule\" at anyOf[1] reads no property",
         ),
     ] {
         for full_validation in [true, false] {
