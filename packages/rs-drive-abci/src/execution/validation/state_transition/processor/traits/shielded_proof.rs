@@ -928,6 +928,11 @@ pub(crate) fn validate_batch_token_pool_nullifiers_unspent(
     drive: &Drive,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
+    // The pools root subtree is created by the version that introduced token shielded pools, and
+    // a membership read under a subtree that is not there fails inside GroveDB rather than
+    // answering "absent". Before that version `is_allowed` refuses any batch naming a pool kind
+    // on the first check, so nothing pool-bearing is in the mempool for the re-check to read
+    // either.
     let mut drive_operations = vec![];
     let mut pools_without_a_subtree = HashSet::new();
 
@@ -2208,6 +2213,95 @@ mod tests {
                     "protocol version {protocol_version} allows ShieldFromIdentity unbound"
                 );
             }
+        }
+    }
+
+    mod validate_batch_token_pool_nullifiers_unspent_tests {
+        use super::*;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            create_dummy_serialized_action, setup_platform,
+        };
+        use crate::test::helpers::setup::TestPlatformBuilder;
+        use dpp::prelude::Identifier;
+        use dpp::version::feature_initial_protocol_versions::TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
+        use dpp::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
+        use dpp::state_transition::batch_transition::batched_transition::token_unshield_transition::v0::TokenUnshieldTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::token_unshield_transition::TokenUnshieldTransition;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV1;
+
+        const TOKEN_ID: [u8; 32] = [0xcc; 32];
+
+        /// A batch whose only transition unshields from `TOKEN_ID`'s pool, spending `nullifier`.
+        /// Unsigned and unproven: this path reads neither.
+        fn pool_bearing_batch(nullifier: [u8; 32]) -> BatchTransition {
+            let mut action = create_dummy_serialized_action();
+            action.nullifier = nullifier;
+            BatchTransition::V1(BatchTransitionV1 {
+                owner_id: Identifier::new([1u8; 32]),
+                transitions: vec![BatchedTransition::Token(TokenTransition::Unshield(
+                    TokenUnshieldTransition::V0(TokenUnshieldTransitionV0 {
+                        base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                            identity_contract_nonce: 1,
+                            token_contract_position: 0,
+                            data_contract_id: Identifier::new([2u8; 32]),
+                            token_id: Identifier::new(TOKEN_ID),
+                            using_group_info: None,
+                        }),
+                        amount: 1,
+                        recipient_id: Identifier::new([3u8; 32]),
+                        actions: vec![action],
+                        ..Default::default()
+                    }),
+                ))],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            })
+        }
+
+        /// The token shielded pools root is only created by the version that introduced the
+        /// pools, so before it the whole subtree this reads under is absent. GroveDB answers some
+        /// reads of a subtree that is not there with an error rather than with "absent" — the
+        /// shielded note-count and encrypted-note queries were fixed for exactly that — and an
+        /// error here would turn a mempool decision into an internal error the node logs at error
+        /// level. A membership read is not one of those: it answers absent, which is the answer
+        /// this needs. That is a GroveDB behaviour rather than something this function arranges,
+        /// so it is pinned here.
+        #[test]
+        fn a_version_with_no_token_pools_root_reads_as_nothing_spent() {
+            let before_pools = TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1;
+            let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(before_pools)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let platform_version =
+                PlatformVersion::get(before_pools).expect("the version before token pools");
+
+            let result = validate_batch_token_pool_nullifiers_unspent(
+                &pool_bearing_batch([9u8; 32]),
+                &platform.drive,
+                platform_version,
+            )
+            .expect("must answer rather than fail inside GroveDB");
+            assert!(result.is_valid(), "got {:?}", result.errors);
+        }
+
+        /// A token that never opted into a pool has no subtree under the root either. "There is
+        /// no such pool" must read as nothing spent and never as a spent nullifier, which would
+        /// refuse a batch for a note it has not spent.
+        #[test]
+        fn a_token_with_no_pool_holds_no_spent_nullifier() {
+            let platform = setup_platform();
+
+            let result = validate_batch_token_pool_nullifiers_unspent(
+                &pool_bearing_batch([9u8; 32]),
+                &platform.drive,
+                PlatformVersion::latest(),
+            )
+            .expect("must answer rather than fail inside GroveDB");
+            assert!(result.is_valid(), "got {:?}", result.errors);
         }
     }
 }

@@ -6,7 +6,10 @@ use dpp::data_contract::associated_token::token_configuration_item::TokenConfigu
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
+use dpp::state_transition::batch_transition::batched_transition::token_transition::{
+    TokenTransition, TokenTransitionV0Methods,
+};
+use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionTypeGetter;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
@@ -108,27 +111,16 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                     if let Some(transition) =
                         st.transitions_iter()
                             .find_map(|transition| match transition {
-                                BatchedTransitionRef::Token(TokenTransition::Shield(_)) => {
-                                    Some("TokenShield")
+                                // Every kind that carries a bundle against a token's shielded
+                                // pool, asked as one question so that a kind added later is
+                                // gated by this without anyone having to remember to list it.
+                                // The names are what they have always been: the action type's
+                                // own name under a `Token` prefix.
+                                BatchedTransitionRef::Token(token_transition)
+                                    if token_transition.shielded_pool_actions().is_some() =>
+                                {
+                                    Some(format!("Token{}", token_transition.action_type()))
                                 }
-                                BatchedTransitionRef::Token(TokenTransition::Unshield(_)) => {
-                                    Some("TokenUnshield")
-                                }
-                                BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(
-                                    _,
-                                )) => Some("TokenShieldedTransfer"),
-                                BatchedTransitionRef::Token(TokenTransition::MintToPool(_)) => {
-                                    Some("TokenMintToPool")
-                                }
-                                BatchedTransitionRef::Token(TokenTransition::BurnFromPool(_)) => {
-                                    Some("TokenBurnFromPool")
-                                }
-                                BatchedTransitionRef::Token(TokenTransition::ClaimToPool(_)) => {
-                                    Some("TokenClaimToPool")
-                                }
-                                BatchedTransitionRef::Token(
-                                    TokenTransition::DirectPurchaseToPool(_),
-                                ) => Some("TokenDirectPurchaseToPool"),
                                 // Only a token with a pool has an outgoing notes threshold,
                                 // and software older than it cannot decode these items.
                                 BatchedTransitionRef::Token(TokenTransition::ConfigUpdate(
@@ -140,7 +132,9 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                                         | TokenConfigurationChangeItem::MinimumPoolNotesForOutgoingAdminGroup(_)
                                 ) =>
                                 {
-                                    Some("TokenConfigUpdateMinimumPoolNotesForOutgoing")
+                                    Some(
+                                        "TokenConfigUpdateMinimumPoolNotesForOutgoing".to_string(),
+                                    )
                                 }
                                 BatchedTransitionRef::Document(document_transition)
                                     if document_transition
@@ -149,7 +143,7 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                                         .as_ref()
                                         .is_some_and(|info| info.shielded_payment().is_some()) =>
                                 {
-                                    Some("DocumentShieldedTokenPayment")
+                                    Some("DocumentShieldedTokenPayment".to_string())
                                 }
                                 _ => None,
                             })
@@ -615,6 +609,124 @@ mod tests {
                     "expected has_is_allowed_validation=false for {:?}",
                     std::mem::discriminant(&st)
                 );
+            }
+        }
+    }
+
+    mod token_shielded_pool_gate {
+        use super::*;
+        use assert_matches::assert_matches;
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::ConsensusError;
+        use dpp::state_transition::batch_transition::batched_transition::token_burn_from_pool_transition::{TokenBurnFromPoolTransition, TokenBurnFromPoolTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::token_claim_to_pool_transition::{TokenClaimToPoolTransition, TokenClaimToPoolTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::token_direct_purchase_to_pool_transition::{TokenDirectPurchaseToPoolTransition, TokenDirectPurchaseToPoolTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::token_mint_to_pool_transition::{TokenMintToPoolTransition, TokenMintToPoolTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::token_shield_transition::{TokenShieldTransition, TokenShieldTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::token_shielded_transfer_transition::{TokenShieldedTransferTransition, TokenShieldedTransferTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::token_unshield_transition::{TokenUnshieldTransition, TokenUnshieldTransitionV0};
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV1;
+        use dpp::platform_value::BinaryData;
+
+        /// A batch whose only transition is `token_transition`.
+        fn batch_with(token_transition: TokenTransition) -> StateTransition {
+            StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+                owner_id: Default::default(),
+                transitions: vec![BatchedTransition::Token(token_transition)],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: BinaryData::default(),
+            }))
+        }
+
+        /// Every kind that carries a bundle against a token's shielded pool, with the name the
+        /// gate reports it under.
+        fn every_pool_kind() -> Vec<(TokenTransition, &'static str)> {
+            vec![
+                (
+                    TokenTransition::Shield(TokenShieldTransition::V0(
+                        TokenShieldTransitionV0::default(),
+                    )),
+                    "TokenShield",
+                ),
+                (
+                    TokenTransition::Unshield(TokenUnshieldTransition::V0(
+                        TokenUnshieldTransitionV0::default(),
+                    )),
+                    "TokenUnshield",
+                ),
+                (
+                    TokenTransition::ShieldedTransfer(TokenShieldedTransferTransition::V0(
+                        TokenShieldedTransferTransitionV0::default(),
+                    )),
+                    "TokenShieldedTransfer",
+                ),
+                (
+                    TokenTransition::MintToPool(TokenMintToPoolTransition::V0(
+                        TokenMintToPoolTransitionV0::default(),
+                    )),
+                    "TokenMintToPool",
+                ),
+                (
+                    TokenTransition::BurnFromPool(TokenBurnFromPoolTransition::V0(
+                        TokenBurnFromPoolTransitionV0::default(),
+                    )),
+                    "TokenBurnFromPool",
+                ),
+                (
+                    TokenTransition::ClaimToPool(TokenClaimToPoolTransition::V0(
+                        TokenClaimToPoolTransitionV0::default(),
+                    )),
+                    "TokenClaimToPool",
+                ),
+                (
+                    TokenTransition::DirectPurchaseToPool(TokenDirectPurchaseToPoolTransition::V0(
+                        TokenDirectPurchaseToPoolTransitionV0::default(),
+                    )),
+                    "TokenDirectPurchaseToPool",
+                ),
+            ]
+        }
+
+        /// Before the version that introduced the token shielded pools, every pool kind is
+        /// refused, and refused under the name a client is told. The names are part of the
+        /// answer a node of an older version gives, so they are pinned here rather than left to
+        /// whatever the gate happens to build them from.
+        #[test]
+        fn every_pool_kind_is_refused_under_its_own_name_before_the_pools_exist() {
+            let platform_version =
+                PlatformVersion::get(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1)
+                    .expect("the version before token shielded pools");
+
+            for (token_transition, expected_name) in every_pool_kind() {
+                let result = batch_with(token_transition)
+                    .validate_is_allowed(platform_version)
+                    .expect("should not error");
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))]
+                        if error.state_transition_type() == expected_name
+                            && error.required_protocol_version()
+                                == TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+                    "expected {expected_name} to be refused, got {:?}",
+                    result.errors
+                );
+            }
+        }
+
+        /// And from that version on, none of them is refused by this gate.
+        #[test]
+        fn no_pool_kind_is_refused_once_the_pools_exist() {
+            let platform_version =
+                PlatformVersion::get(TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION)
+                    .expect("the version that introduced token shielded pools");
+
+            for (token_transition, name) in every_pool_kind() {
+                let result = batch_with(token_transition)
+                    .validate_is_allowed(platform_version)
+                    .expect("should not error");
+                assert!(result.is_valid(), "{name}: {:?}", result.errors);
             }
         }
     }
