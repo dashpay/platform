@@ -14,7 +14,7 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, PropertyConstraint, PropertyRead, SystemProperty,
+    DocumentSystemValues, ElementKind, PropertyConstraint, PropertyRead, SystemProperty,
 };
 use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
 use crate::data_contract::DataContract;
@@ -1563,6 +1563,198 @@ fn should_read_the_system_times_and_heights_the_type_records() {
         assert!(
             registered.as_ref().is_err_and(is_json_schema_error),
             "{name}: the meta-schema should refuse it, got {registered:?}"
+        );
+    }
+}
+
+/// A `listing` type with typed arrays of strings (with an `enum`), of
+/// identifiers, of integers and of booleans, a byte array, a string, an
+/// integer and an identifier, declaring `rules`, `transient` listed transient.
+fn listing_schema(rules: serde_json::Value, transient: Option<&str>) -> Value {
+    let mut schema = json!({
+        "type": "object",
+        "properties": {
+            "labels": {
+                "type": "array",
+                "maxItems": 5,
+                "items": { "type": "string", "maxLength": 10, "enum": ["sale", "new", "used"] },
+                "position": 0
+            },
+            "members": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier"
+                },
+                "position": 1
+            },
+            "scores": {
+                "type": "array",
+                "maxItems": 5,
+                "items": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "position": 2
+            },
+            "flags": {
+                "type": "array",
+                "maxItems": 2,
+                "items": { "type": "boolean" },
+                "position": 3
+            },
+            "signature": { "type": "array", "byteArray": true, "maxItems": 65, "position": 4 },
+            "status": { "type": "string", "maxLength": 10, "position": 5 },
+            "pick": { "type": "integer", "minimum": 0, "maximum": 100, "position": 6 },
+            "buyerId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 7
+            }
+        },
+        "additionalProperties": false,
+        "propertyConstraints": rules
+    });
+    if let Some(transient) = transient {
+        schema["transient"] = json!([transient]);
+    }
+    schema_value(schema)
+}
+
+/// `contains` looks among the elements of a typed array of integers, strings
+/// or identifiers, on both paths, for what the array's elements are.
+#[test]
+fn should_look_among_the_elements_of_typed_arrays() {
+    let rules = json!({
+        "onSale": { "contains": ["labels", { "const": "sale" }] },
+        "labelledAsStatus": { "contains": ["labels", "status"] },
+        "ownerIsMember": { "contains": ["members", "$ownerId"] },
+        "buyerIsMember": { "contains": ["members", "buyerId"] },
+        "pickScored": { "not": { "contains": ["scores", "pick"] } }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_dispatched(
+            listing_schema(rules.clone(), None),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["onSale"].property_reads(),
+            [("labels", PropertyRead::Elements(ElementKind::Text))]
+        );
+        assert_eq!(
+            constraints["labelledAsStatus"].property_reads(),
+            [
+                ("labels", PropertyRead::Elements(ElementKind::Text)),
+                ("status", PropertyRead::Text)
+            ]
+        );
+        assert!(constraints["ownerIsMember"].reads_owner());
+        assert_eq!(
+            constraints["buyerIsMember"].property_reads(),
+            [
+                ("members", PropertyRead::Elements(ElementKind::Identifier)),
+                ("buyerId", PropertyRead::Identifier)
+            ]
+        );
+        assert_eq!(
+            constraints["pickScored"].property_reads(),
+            [
+                ("scores", PropertyRead::Elements(ElementKind::Integer)),
+                ("pick", PropertyRead::Value)
+            ]
+        );
+    }
+}
+
+/// The array must be a typed array whose elements are of the kind looked for,
+/// stored, and a constant one of the elements' enum values; what is looked
+/// for is held to its own kind's checks.
+#[test]
+fn should_hold_contains_to_arrays_of_the_kind_looked_for() {
+    for (rule, needle) in [
+        (
+            json!({ "contains": ["labels", { "const": "old" }] }),
+            "rule \"rule\" compares \"labels\" with \"old\", which is not one of its enum values",
+        ),
+        (
+            json!({ "contains": ["flags", 1] }),
+            "rule \"rule\" looks in \"flags\" for an integer, but its elements have type boolean",
+        ),
+        (
+            json!({ "contains": ["status", { "const": "sale" }] }),
+            "rule \"rule\" looks in \"status\", which has type string, not an array with items",
+        ),
+        (
+            json!({ "contains": ["signature", 64] }),
+            "rule \"rule\" looks in \"signature\", which has type byteArray, not an array with \
+             items",
+        ),
+        (
+            json!({ "contains": ["missing", 1] }),
+            "rule \"rule\" looks in \"missing\", which is not an array property of the document \
+             type",
+        ),
+        (
+            json!({ "contains": ["scores", "status"] }),
+            "reads \"status\", which has type string, not integer or boolean",
+        ),
+        (
+            json!({ "contains": ["labels", "buyerId"] }),
+            "compares \"buyerId\" with a string, but it has type identifier, not string",
+        ),
+        (
+            json!({ "contains": ["members", "status"] }),
+            "compares \"status\" with an identifier, but it has type string, not identifier",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_dispatched(
+                    listing_schema(json!({ "rule": rule.clone() }), None),
+                    PlatformVersion::latest(),
+                    full_validation,
+                ),
+                needle,
+            );
+        }
+    }
+
+    // A transient array is never stored, so no rule may look in one
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                listing_schema(
+                    json!({ "rule": { "contains": ["labels", { "const": "sale" }] } }),
+                    Some("labels"),
+                ),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "looks in \"labels\", which is transient or inside a transient object",
+        );
+    }
+
+    // The meta-schema checks the shape when registering
+    for rules in [
+        json!({ "rule": { "contains": ["labels"] } }),
+        json!({ "rule": { "contains": ["labels", "status", "pick"] } }),
+        json!({ "rule": { "contains": "labels" } }),
+    ] {
+        let registered = parse_dispatched(
+            listing_schema(rules.clone(), None),
+            PlatformVersion::latest(),
+            true,
+        );
+        assert!(
+            registered.as_ref().is_err_and(is_json_schema_error),
+            "{rules}: the meta-schema should refuse it, got {registered:?}"
         );
     }
 }

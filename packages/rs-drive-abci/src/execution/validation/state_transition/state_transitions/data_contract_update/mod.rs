@@ -1,4 +1,6 @@
 mod basic_structure;
+#[cfg(test)]
+mod contract_structure_error_tests;
 mod identity_contract_nonce;
 mod state;
 

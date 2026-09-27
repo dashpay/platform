@@ -2,6 +2,8 @@ mod advanced_structure;
 mod basic_structure;
 #[cfg(test)]
 mod contract_group_tests;
+#[cfg(test)]
+mod contract_structure_error_tests;
 mod identity_nonce;
 mod state;
 

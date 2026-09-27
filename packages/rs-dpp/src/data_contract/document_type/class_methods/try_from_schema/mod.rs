@@ -2,7 +2,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraints, EqualityKind, PropertyRead,
+    parse_property_constraints, ElementKind, EqualityKind, PropertyRead,
 };
 use crate::data_contract::document_type::reference_lookup::{
     MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
@@ -1949,13 +1949,20 @@ fn apply_property_constraints_v0(
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
     let flattened_properties = &document_type.flattened_properties;
+    let equality_kind = |property_type: &DocumentPropertyType| match property_type {
+        DocumentPropertyType::String(_) => Some(EqualityKind::Text),
+        property_type if property_type.is_identifier() => Some(EqualityKind::Identifier),
+        _ => None,
+    };
+    // A typed array compares as its elements do, in a `contains`; anywhere else
+    // the reads below refuse an array where a string or an identifier belongs
     let property_kind = |path: &str| match flattened_properties
         .get(path)
         .map(|property| &property.property_type)
     {
-        Some(DocumentPropertyType::String(_)) => Some(EqualityKind::Text),
-        Some(property_type) if property_type.is_identifier() => Some(EqualityKind::Identifier),
-        _ => None,
+        Some(DocumentPropertyType::TypedArray(array)) => equality_kind(&array.item_type),
+        Some(property_type) => equality_kind(property_type),
+        None => None,
     };
     let constraints =
         parse_property_constraints(&document_type.schema, document_type_name, &property_kind)?;
@@ -1973,6 +1980,7 @@ fn apply_property_constraints_v0(
                 PropertyRead::Text | PropertyRead::Identifier => "compares",
                 PropertyRead::Length => "measures",
                 PropertyRead::Count => "counts the items of",
+                PropertyRead::Elements(_) => "looks in",
             };
             match read {
                 PropertyRead::Value => match document_type
@@ -2107,6 +2115,53 @@ fn apply_property_constraints_v0(
                         )));
                     }
                 },
+                PropertyRead::Elements(kind) => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    Some(DocumentPropertyType::TypedArray(array)) => {
+                        let element_type = array.item_type.as_ref();
+                        let (holds, kind_name) = match kind {
+                            ElementKind::Integer => (
+                                element_type.is_integer()
+                                    || matches!(
+                                        element_type,
+                                        DocumentPropertyType::U128 | DocumentPropertyType::I128
+                                    ),
+                                "an integer",
+                            ),
+                            ElementKind::Text => (
+                                matches!(element_type, DocumentPropertyType::String(_)),
+                                "a string",
+                            ),
+                            ElementKind::Identifier => {
+                                (element_type.is_identifier(), "an identifier")
+                            }
+                        };
+                        if !holds {
+                            return Err(structure_error(format!(
+                                "rule \"{name}\" looks in \"{path}\" for {kind_name}, but its \
+                                 elements have type {}: contains looks for an integer, a string \
+                                 or an identifier among elements of that type",
+                                element_type.name()
+                            )));
+                        }
+                    }
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" looks in \"{path}\", which has type {}, not an \
+                             array with items",
+                            other.name()
+                        )));
+                    }
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" looks in \"{path}\", which is not an array property \
+                             of the document type (a nested one is named by its dotted path)"
+                        )));
+                    }
+                },
                 PropertyRead::Identifier => match document_type
                     .flattened_properties
                     .get(path)
@@ -2218,6 +2273,11 @@ fn enum_admits(schema: &Value, path: &str, value: &str) -> Result<bool, DataCont
     let Some(property_schema) = schema_at_path(schema, path)? else {
         return Ok(true);
     };
+    // A value a `contains` looks for in an array is one of its elements
+    let property_schema = match property_schema.get(property_names::ITEMS) {
+        Some(items) => resolve_schema(schema, items)?,
+        None => property_schema,
+    };
     let Some(Value::Array(members)) = property_schema.get(property_names::ENUM) else {
         return Ok(true);
     };
@@ -2230,19 +2290,7 @@ fn schema_at_path<'a>(
     schema: &'a Value,
     path: &str,
 ) -> Result<Option<BTreeMap<String, &'a Value>>, DataContractError> {
-    fn resolve<'a>(
-        root_schema: &'a Value,
-        value: &'a Value,
-    ) -> Result<BTreeMap<String, &'a Value>, DataContractError> {
-        let map = value.to_btree_ref_string_map()?;
-        match map.get_optional_str(property_names::REF)? {
-            Some(schema_ref) => {
-                Ok(resolve_uri(root_schema, schema_ref)?.to_btree_ref_string_map()?)
-            }
-            None => Ok(map),
-        }
-    }
-    let mut current = resolve(schema, schema)?;
+    let mut current = resolve_schema(schema, schema)?;
     for segment in path.split('.') {
         let Some(properties) = current.get(property_names::PROPERTIES) else {
             return Ok(None);
@@ -2250,9 +2298,22 @@ fn schema_at_path<'a>(
         let Some(next) = properties.to_btree_ref_string_map()?.get(segment).copied() else {
             return Ok(None);
         };
-        current = resolve(schema, next)?;
+        current = resolve_schema(schema, next)?;
     }
     Ok(Some(current))
+}
+
+/// The schema `value` is within the document type schema `schema`, its `$ref`
+/// followed.
+fn resolve_schema<'a>(
+    schema: &'a Value,
+    value: &'a Value,
+) -> Result<BTreeMap<String, &'a Value>, DataContractError> {
+    let map = value.to_btree_ref_string_map()?;
+    match map.get_optional_str(property_names::REF)? {
+        Some(schema_ref) => Ok(resolve_uri(schema, schema_ref)?.to_btree_ref_string_map()?),
+        None => Ok(map),
+    }
 }
 
 /// Whether the property at the dotted `path` of `schema` is declared as an

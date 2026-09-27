@@ -373,6 +373,83 @@ mod tests {
         );
     }
 
+    /// A round 1 proposal rejected before it is executed leaves this node without a block
+    /// execution context. Tenderdash can still precommit the round 0 block it locked, in round 1
+    /// and without processing it again, and it must be given that block's withdrawals.
+    #[tokio::test]
+    async fn should_sign_a_locked_block_after_a_later_proposal_was_rejected_before_execution() {
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config())
+            .build_with_mock_rpc();
+        let outcome = run_chain(&mut platform).await;
+
+        queue_withdrawal_transaction(&outcome);
+
+        let round_0_core_height = outcome
+            .abci_app
+            .platform
+            .state
+            .load()
+            .last_committed_core_height();
+        let round_0 = proposal(&outcome, 0, round_0_core_height, ROUND_0_BLOCK);
+        let mut rejected_round_1 = proposal(&outcome, 1, round_0_core_height + 1, ROUND_1_BLOCK);
+        // A protocol version this node does not run is refused before the block is executed
+        rejected_round_1.version = Some(Consensus {
+            block: 0,
+            app: PlatformVersion::latest().protocol_version as u64 + 1,
+        });
+
+        let response = outcome
+            .abci_app
+            .process_proposal(round_0.clone())
+            .expect("expected to process the round 0 proposal");
+        assert_eq!(response.status, ProposalStatus::Accept as i32);
+        let round_0_extensions = extend_vote(&outcome, &round_0);
+
+        let response = outcome
+            .abci_app
+            .process_proposal(rejected_round_1.clone())
+            .expect("expected to process the round 1 proposal");
+        assert_eq!(response.status, ProposalStatus::Reject as i32);
+
+        assert!(
+            outcome
+                .abci_app
+                .block_execution_context
+                .read()
+                .unwrap()
+                .is_none(),
+            "test premise: the rejected proposal left no block execution context"
+        );
+        assert_eq!(
+            round_0_extensions.len(),
+            1,
+            "test premise: the queued withdrawal transaction is signed at this height"
+        );
+
+        let round_0_relocked_in_round_1 = RequestProcessProposal {
+            round: 1,
+            ..round_0
+        };
+        assert_eq!(
+            extend_vote(&outcome, &round_0_relocked_in_round_1),
+            round_0_extensions,
+            "the locked block must be signed with the withdrawals built when it was accepted"
+        );
+
+        assert!(
+            outcome
+                .abci_app
+                .extend_vote(RequestExtendVote {
+                    hash: rejected_round_1.hash.clone(),
+                    height: rejected_round_1.height,
+                    round: rejected_round_1.round,
+                })
+                .is_err(),
+            "the rejected block must not be signed"
+        );
+    }
+
     /// How a round 1 proposal is made unacceptable
     #[derive(Clone, Copy, Debug)]
     enum Refusal {

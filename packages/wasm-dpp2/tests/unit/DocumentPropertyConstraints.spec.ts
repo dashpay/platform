@@ -281,6 +281,48 @@ describe('DataContract: propertyConstraints (v14)', () => {
         .to.equal(undefined);
     });
 
+    it('should report the array a contains looks in, and check it', () => {
+      const rules = {
+        notUsed: { not: { contains: ['labels', { const: 'used' }] } },
+      };
+      const contract = buildContract({
+        listing: {
+          type: 'object',
+          properties: {
+            labels: {
+              type: 'array',
+              maxItems: 4,
+              items: { type: 'string', maxLength: 10, enum: ['new', 'used'] },
+              position: 0,
+            },
+          },
+          additionalProperties: false,
+          propertyConstraints: rules,
+        },
+      });
+
+      expect(contract.documentTypePropertyConstraints('listing')).to.deep.equal([
+        {
+          name: 'notUsed',
+          rule: rules.notUsed,
+          reads: [{ path: 'labels', kind: 'elements' }],
+          readsOwner: false,
+          readsSystem: [],
+        },
+      ]);
+
+      const listing = (labels: string[]) => new wasm.Document({
+        properties: { labels },
+        documentTypeName: 'listing',
+        dataContractId: contract.id,
+        ownerId,
+        revision: BigInt(1),
+      });
+      expect(contract.checkDocumentPropertyConstraints(listing(['new']))).to.equal(undefined);
+      expect(contract.checkDocumentPropertyConstraints(listing(['new', 'used'])))
+        .to.deep.include({ rule: 'notUsed', violation: 'NotMet' });
+    });
+
     it('should report integer literals past Number.MAX_SAFE_INTEGER exactly, as bigint', () => {
       const big = 9007199254740993n; // 2 ** 53 + 1, which a number rounds
       const rules = {
