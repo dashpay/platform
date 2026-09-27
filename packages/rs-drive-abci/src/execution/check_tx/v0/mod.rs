@@ -201,7 +201,13 @@ where
             // discovering the free reason to refuse. Batches are the only transitions whose pool
             // bundles are checked against state nowhere in the mempool passes: the pool-paid
             // transitions do it in their own transformer, which runs here too.
-            if errors.is_empty() && matches!(check_tx_level, CheckTxLevel::FirstTimeCheck) {
+            //
+            // Both levels read it. The first check keeps such a batch out; the re-check after
+            // every block is what evicts one that was admitted while its note was still unspent,
+            // and without it that batch sits in the mempool until a proposer spends a block slot
+            // on it. A batch's pool checks are in its per-action state validation, which a
+            // re-check does not run.
+            if errors.is_empty() {
                 if let StateTransition::Batch(batch) = &state_transition {
                     let result = validate_batch_token_pool_nullifiers_unspent(
                         batch,

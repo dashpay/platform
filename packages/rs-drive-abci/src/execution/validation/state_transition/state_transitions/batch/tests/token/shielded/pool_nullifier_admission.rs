@@ -1,9 +1,11 @@
 //! What the mempool does with a batch whose token shielded pool nullifiers are already spent.
 //!
 //! Such a batch can never execute: the pool holds the nullifier, so block validation refuses it
-//! on that. Admission has to reach the same conclusion without paying for the batch's Halo 2
-//! verification first, so that an unauthenticated submitter cannot buy proof work with a bundle
-//! that is already dead.
+//! on that. Both mempool passes have to reach the same conclusion without paying for the batch's
+//! Halo 2 verification first — admission, so an unauthenticated submitter cannot buy proof work
+//! with a bundle that is already dead, and the re-check after every block, so a batch that was
+//! admitted before the note was spent leaves the mempool rather than waiting for a proposer to
+//! spend a block slot on it.
 
 use super::token_shielded_pool_tests::{
     build_shield_bundle, build_spend_bundle, insert_token_pool_anchor, nullifier_is_spent,
@@ -209,5 +211,24 @@ async fn check_tx_refuses_a_spent_pool_nullifier_without_verifying_the_bundle() 
         [ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))]
             if error.nullifier() == fixture.nullifier,
         "the pool read must refuse this batch before its proof is verified, got {errors:?}"
+    );
+}
+
+/// A batch admitted while its note was still unspent is re-checked after every block. Once the
+/// note is spent the batch can only fail, so the re-check must drop it: left in the mempool it
+/// occupies a slot in a proposer's block and lands there as a paid failure.
+#[tokio::test]
+async fn recheck_evicts_a_batch_whose_pool_nullifier_has_been_spent() {
+    let fixture = pool_with_a_spent_note().await;
+
+    // A valid bundle, so nothing but the pool's record can refuse it.
+    let repeat = fixture.unshield_again(fixture.bundle.clone()).await;
+
+    let errors = check_tx_errors(&fixture.platform, &repeat, CheckTxLevel::Recheck);
+    assert_matches!(
+        errors.as_slice(),
+        [ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))]
+            if error.nullifier() == fixture.nullifier,
+        "the re-check must evict this batch, got {errors:?}"
     );
 }
