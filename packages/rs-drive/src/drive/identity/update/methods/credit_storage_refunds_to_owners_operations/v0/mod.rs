@@ -82,19 +82,15 @@ impl Drive {
 
                 // From a zero balance the helper clears negative credit first and only
                 // the remainder becomes the new balance; from a positive balance the
-                // whole refund is added. Whatever did not reach the balance repaid
-                // debt, which lives outside the sum trees and is reported for the
-                // caller's processing pool write.
-                let reached_balance = if existing_balance == 0 {
-                    outcome.balance_modified().unwrap_or(0)
-                } else {
+                // whole refund is added. The helper reports the part that repaid debt,
+                // which lives outside the sum trees and is passed on for the caller's
+                // processing pool write; the rest reached the balance.
+                let owner_repaid_debt = outcome.repaid_debt();
+                let reached_balance =
                     credits
-                };
-                let owner_repaid_debt =
-                    credits
-                        .checked_sub(reached_balance)
+                        .checked_sub(owner_repaid_debt)
                         .ok_or(ProtocolError::Overflow(
-                            "a storage refund cannot raise a balance by more than the refund",
+                            "storage refund debt repayment cannot exceed the refund",
                         ))?;
 
                 repaid_debt =
