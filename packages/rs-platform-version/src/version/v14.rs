@@ -1047,8 +1047,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     document's properties must meet, each a condition: a comparison
 ///     (`equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
 ///     `greaterThanOrEqual`) of two integer expressions built from integer
-///     literals, property paths and `add`, `subtract`, `multiply`, `divide`,
-///     `modulo` and `power`; `in`, whether an integer expression takes one of
+///     literals, paths of integer or boolean properties (a boolean reading as
+///     1 for true and 0 for false) and `add`, `subtract`, `multiply`,
+///     `divide`, `modulo` and `power`; `in`, whether an integer expression takes one of
 ///     two or more distinct integer values; `present` or `absent` naming a
 ///     property of any type, whether the document holds it (the one way to
 ///     tell a property left out from one set to 0); `anyOf` or `allOf` over
@@ -1063,8 +1064,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     that is checked refuses the document whatever the others say, and `not`
 ///     never turns a fault into a pass, so an earlier condition guards a later
 ///     one. The parser checks that every path an operand reads names an
-///     integer property and every path `present` or `absent` tests names a
-///     property of any type, neither transient nor inside a transient object;
+///     integer or boolean property and every path `present` or `absent`
+///     tests names a property of any type, neither transient nor inside a
+///     transient object;
 ///     that every comparison and `in` reads a property; that no `in` lists a
 ///     value twice; that an `anyOf` or `allOf` holds none directly of its own
 ///     kind and a `not` no `not`; and that no condition or operand nests

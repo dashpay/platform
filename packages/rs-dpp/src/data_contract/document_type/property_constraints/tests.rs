@@ -1207,3 +1207,43 @@ fn should_tell_a_property_left_out_from_one_set_to_zero() {
         Some(PropertyConstraintViolation::NotMet)
     );
 }
+
+/// A boolean reads as 1 for true and 0 for false, and one the document leaves out as 0
+/// or its `ifAbsent` value, as any operand does.
+#[test]
+fn should_read_a_boolean_as_one_or_zero() {
+    let values = data(&[
+        ("yes", Value::Bool(true)),
+        ("no", Value::Bool(false)),
+        ("fee", Value::U64(10)),
+    ]);
+    for (expression, expected) in [
+        (platform_value!("yes"), 1),
+        (platform_value!("no"), 0),
+        (platform_value!("missing"), 0),
+        (platform_value!({ "ifAbsent": ["missing", 1] }), 1),
+        (platform_value!({ "ifAbsent": ["no", 1] }), 0),
+        (platform_value!({ "add": ["yes", "yes", "no"] }), 2),
+        (platform_value!({ "multiply": ["yes", "fee"] }), 10),
+        (platform_value!({ "multiply": ["no", "fee"] }), 0),
+    ] {
+        assert_eq!(
+            evaluate(expression.clone(), &values),
+            Ok(expected),
+            "{expression:?}"
+        );
+    }
+
+    // A waived fee is 0: `waived * fee == 0`
+    let rule = parse_rule_value(platform_value!({
+        "equal": [{ "multiply": ["waived", "fee"] }, 0]
+    }));
+    let order =
+        |waived: bool, fee: u64| data(&[("waived", Value::Bool(waived)), ("fee", Value::U64(fee))]);
+    assert_eq!(rule.violation(&order(true, 0)), None);
+    assert_eq!(rule.violation(&order(false, 10)), None);
+    assert_eq!(
+        rule.violation(&order(true, 10)),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+}

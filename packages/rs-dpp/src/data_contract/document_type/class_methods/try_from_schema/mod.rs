@@ -1872,9 +1872,9 @@ pub(super) fn validate_encrypted_for_declarations(
 }
 
 /// Reads the `propertyConstraints` keyword onto the document type and checks
-/// every property its rules read: by its value, an integer property of the
-/// type (a nested one named by its dotted path, as the flattened map names
-/// it); by its presence, a property of any type, an object included; either
+/// every property its rules read: by its value, an integer or boolean
+/// property of the type (a nested one named by its dotted path, as the
+/// flattened map names it); by its presence, a property of any type, an object included; either
 /// way one that is neither transient nor inside a transient object. A
 /// transient value is never stored, so a stored document could not be held to
 /// a rule reading one. The declaration's shape ([`parse_property_constraints`]) and these reads are
@@ -1957,24 +1957,29 @@ fn apply_property_constraints_v0(
                     .get(path)
                     .map(|property| &property.property_type)
                 {
-                    // `is_integer` leaves out the 128-bit types, which the arithmetic holds too
+                    // `is_integer` leaves out the 128-bit types, which the arithmetic holds
+                    // too; a boolean reads as 1 for true and 0 for false
                     Some(property_type)
                         if property_type.is_integer()
                             || matches!(
                                 property_type,
-                                DocumentPropertyType::U128 | DocumentPropertyType::I128
+                                DocumentPropertyType::U128
+                                    | DocumentPropertyType::I128
+                                    | DocumentPropertyType::Boolean
                             ) => {}
                     Some(other) => {
                         return Err(structure_error(format!(
-                            "rule \"{name}\" reads \"{path}\", which has type {}, not integer",
+                            "rule \"{name}\" reads \"{path}\", which has type {}, not integer or \
+                             boolean",
                             other.name()
                         )));
                     }
                     // An object is not in the flattened map either: only its members hold values
                     None => {
                         return Err(structure_error(format!(
-                            "rule \"{name}\" reads \"{path}\", which is not an integer property \
-                             of the document type (a nested one is named by its dotted path)"
+                            "rule \"{name}\" reads \"{path}\", which is not an integer or boolean \
+                             property of the document type (a nested one is named by its dotted \
+                             path)"
                         )));
                     }
                 },
