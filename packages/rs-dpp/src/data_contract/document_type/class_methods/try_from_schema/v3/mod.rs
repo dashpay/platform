@@ -248,6 +248,28 @@ const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
 const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
     common::no_ranked_index_key_length_check;
 
+/// Reports a rule broken in a stage shared with generation 2 as a consensus
+/// error, as every other rule of this generation is reported.
+///
+/// The doctype-level aggregate stages
+/// ([`common::parse_doctype_aggregate_keywords`] and
+/// [`common::apply_doctype_aggregates`]) return the rules they enforce as a
+/// bare `ProtocolError::DataContractError`. A node takes that for a failure of
+/// its own: the transition carrying the contract is refused without a fee or a
+/// nonce bump, and a block carrying it is rejected. As a consensus error it is
+/// a paid rejection instead, like a contract failing any other rule.
+///
+/// The stages themselves keep the bare error, because generation 2 still
+/// reaches them at protocol versions 12 and 13. A node running this code at
+/// those versions must judge a block exactly as a node running the release
+/// that shipped them, and that release refuses such a transition unpaid.
+fn consensus_or_protocol_shared_stage_error(error: ProtocolError) -> ProtocolError {
+    match error {
+        ProtocolError::DataContractError(error) => consensus_or_protocol_data_contract_error(error),
+        error => error,
+    }
+}
+
 /// Parses a document type schema through the generation-3 grammar: the
 /// generation-2 doctype-level aggregate keywords, plus the ranked index
 /// keywords and the tighter index-key ceilings they impose.
@@ -321,7 +343,8 @@ fn try_from_schema_generation_3(
     // `schema`. Each is read wherever it appears, and its shape is enforced on
     // both paths: see "Doctype-level keywords on contracts that predate them"
     // above.
-    let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
+    let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)
+        .map_err(consensus_or_protocol_shared_stage_error)?;
     let index_only = common::parse_index_only_keyword(&schema)?;
     let entry_payload =
         common::parse_property_name_list_keyword(&schema, name, property_names::ENTRY_PAYLOAD)?;
@@ -456,7 +479,8 @@ fn try_from_schema_generation_3(
     }
     v2.owner_reference = owner_reference;
     v2.creator_reference = creator_reference;
-    common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
+    common::apply_doctype_aggregates(&mut v2, aggregates, name)
+        .map_err(consensus_or_protocol_shared_stage_error)?;
     // After the aggregates: `apply_index_only` rejects the doctype-level
     // aggregate flags (they describe the primary-key tree, which an
     // indexOnly type does not have), so it has to see them already applied.
@@ -1033,6 +1057,8 @@ mod reference_expression_tests;
 mod reference_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_test_helpers;
+#[cfg(all(test, feature = "validation"))]
+mod shared_stage_error_tests;
 #[cfg(all(test, feature = "validation"))]
 mod transient_tests;
 #[cfg(all(test, feature = "validation"))]

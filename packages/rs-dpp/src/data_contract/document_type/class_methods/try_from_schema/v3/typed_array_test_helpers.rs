@@ -47,16 +47,14 @@ pub(super) fn expect_json_schema_error<T: std::fmt::Debug>(
 }
 
 /// The parser's structure errors surface as `InvalidContractStructure`
-/// either directly or, with the `validation` feature on, wrapped as the basic
-/// `ContractError`.
+/// wrapped as the basic `ContractError` (this module only builds with the
+/// `validation` feature): a bare `ProtocolError::DataContractError` would
+/// refuse the transition unpaid.
 pub(super) fn expect_structure_error<T: std::fmt::Debug>(
     result: Result<T, ProtocolError>,
     needle: &str,
 ) {
     let message = match result {
-        Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-            message,
-        ))) => message,
         Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
             ConsensusError::BasicError(BasicError::ContractError(
                 DataContractError::InvalidContractStructure(message),

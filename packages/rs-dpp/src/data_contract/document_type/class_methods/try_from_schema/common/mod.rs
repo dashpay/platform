@@ -2492,8 +2492,12 @@ pub(super) fn apply_index_only(
 ) -> Result<(), ProtocolError> {
     use crate::document::property_names::{CREATED_AT, OWNER_ID};
 
+    // Only generation 3 calls this, so no protocol version before 14 sees
+    // these rules or the class of error they are reported with.
     let structure_error = |message: String| {
-        ProtocolError::DataContractError(DataContractError::InvalidContractStructure(message))
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
     };
 
     if !index_only {
@@ -2847,9 +2851,12 @@ pub(super) fn apply_index_only(
         // (canonical property, i64-safe integer type, `required`
         // membership) run for every doctype, indexOnly included.
 
+        // `parse_indices` gives every index of an indexOnly type a terminal,
+        // and the index parser refuses an empty one, so a contract cannot get
+        // here: this is the parser failing, not the contract.
         let components = index.terminal_components();
         if components.is_empty() {
-            return Err(structure_error(format!(
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
                 "index \"{}\" on indexOnly document type \"{}\" has no terminal after \
                  normalization: internal parser error",
                 index_name, name,

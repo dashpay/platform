@@ -154,21 +154,33 @@ fn likes_schema_with_index_key(index_position: usize, key: &str, value: Value) -
     schema
 }
 
+/// The constraint matrix reports through `InvalidContractStructure`, as a
+/// consensus error whenever the `validation` feature is on: a bare
+/// `ProtocolError::DataContractError` would refuse the transition unpaid.
 fn expect_structure_error(result: Result<DocumentTypeV2, ProtocolError>, needle: &str) {
-    match result {
+    let message = match result {
+        #[cfg(feature = "validation")]
+        Err(ProtocolError::ConsensusError(error)) => match *error {
+            ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(message),
+            )) => message,
+            other => {
+                panic!("expected InvalidContractStructure containing {needle:?}, got {other}")
+            }
+        },
+        #[cfg(not(feature = "validation"))]
         Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
             message,
-        ))) => {
-            assert!(
-                message.contains(needle),
-                "expected structure error containing {needle:?}, got: {message}"
-            );
-        }
+        ))) => message,
         Err(other) => {
             panic!("expected InvalidContractStructure containing {needle:?}, got {other}")
         }
         Ok(_) => panic!("expected rejection containing {needle:?}, but the schema parsed"),
-    }
+    };
+    assert!(
+        message.contains(needle),
+        "expected structure error containing {needle:?}, got: {message}"
+    );
 }
 
 /// The terminal shares the prefix positions' shape checks, which report
