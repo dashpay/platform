@@ -9,6 +9,13 @@ package = Path(__file__).resolve().parent.parent
 expected = {p.relative_to(package).as_posix(): p.read_bytes()
             for p in (package / 'clients').rglob('*')
             if p.is_file() and p.relative_to(package).parts[3] in ('web', 'nodejs')}
+required = {f'clients/{service}/v0/{directory}/{service}{suffix}'
+            for service in ('core', 'drive', 'platform')
+            for directory, suffix in (('web', '_pb.js'), ('web', '_pb.d.ts'),
+                                      ('web', '_pb_service.js'), ('web', '_pb_service.d.ts'),
+                                      ('nodejs', '_protoc.js'), ('nodejs', '_pbjs.js'))}
+if not required <= expected.keys():
+    raise SystemExit('Missing generated source clients: ' + ', '.join(sorted(required - expected.keys())))
 found = 0
 for archive in Path(sys.argv[1]).glob('*.tgz'):
     with tarfile.open(archive) as tar:
