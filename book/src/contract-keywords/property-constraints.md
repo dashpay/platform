@@ -73,6 +73,7 @@ A rule is a condition: a JSON object with exactly one key.
 | `equal`, `notEqual` | `[left, right]` | The two sides are equal, or differ. The sides are two integer expressions, or a string property and a string constant or another string property, or an identifier property and an identifier constant, another identifier property or `$ownerId` |
 | `lessThan`, `lessThanOrEqual`, `greaterThan`, `greaterThanOrEqual` | `[left, right]` | The left integer expression compares with the right one this way. Integers only |
 | `in` | `[expression, [v1, v2, ...]]` | The expression takes one of the listed values: two or more, no two alike, all integers or all strings. With strings, the expression is a string property, or an identifier property or `$ownerId` with the strings as base58 identifiers |
+| `contains` | `["path", value]` | The typed array property at the path holds an element equal to the value: an integer expression among integers; a string constant, a string property or an `ifAbsent` string default among strings; an identifier constant, an identifier property or `$ownerId` among identifiers. An array the document leaves out holds nothing, and a string or identifier property it leaves out is among no elements |
 | `present` | `"path"` | The document holds the property, with a value other than null |
 | `absent` | `"path"` | The document leaves the property out, or sets it to null |
 | `anyOf` | `[c1, c2, ...]` | At least one of two or more conditions holds |
@@ -82,6 +83,14 @@ A rule is a condition: a JSON object with exactly one key.
 Conditions nest: `{ "not": { "allOf": [{ "equal": ["price", 0] }, { "greaterThan": ["quantity", 10] }] } }` refuses a free order of more than 10. An `anyOf` or `allOf` may not list the same condition twice, nor hold one of its own kind directly (it says what one flat list says), and a `not` may not hold a `not` directly.
 
 An `in` says what an `anyOf` of `equal` comparisons says, in far fewer nodes: `{ "in": ["fee", [0, 10, 25, 50]] }` is 6 nodes where the `anyOf` is 13.
+
+A `contains` looks the other way round, for one value among an array's elements:
+
+- `{ "not": { "contains": ["labels", { "const": "used" }] } }` refuses a `"used"` label;
+- `{ "contains": ["participants", "$ownerId"] }` holds the owner to the participants, and since it reads `$ownerId`, a transfer or purchase to someone else is refused;
+- `{ "contains": ["tiers", "quantity"] }` holds the quantity to one of the tiers the document lists.
+
+The kind of the array's elements decides what the value is: a `{ "const": "sale" }` is a string among strings and a base58 identifier among identifiers.
 
 ## Expressions
 
@@ -186,7 +195,7 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):
 
-- every path an integer expression reads names an integer or boolean property; every path `length` or `byteLength` measures names a string property, and every path `count` counts an array or byte array property; every path compared with a string names a string property; every path compared with an identifier names an identifier property; every path `present` or `absent` tests names a property of any type, an object included;
+- every path an integer expression reads names an integer or boolean property; every path `length` or `byteLength` measures names a string property, and every path `count` counts an array or byte array property; every path a `contains` looks in names a typed array property whose elements are integers, strings or identifiers, of the kind of the value looked for (a string constant among them in the elements' `enum` when they declare one); every path compared with a string names a string property; every path compared with an identifier names an identifier property; every path `present` or `absent` tests names a property of any type, an object included;
 - no rule reads a property that is `transient` or inside a transient object, since a stored document could never be held to it;
 - every comparison and `in` reads at least one property: a comparison of constants would hold for every document or for none;
 - strings and identifiers are compared only with `equal`, `notEqual` and `in`; a string is never compared with an identifier; a property is never compared with itself;
@@ -210,6 +219,7 @@ A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes a
 | An `equal` or `notEqual` of strings or identifiers | 3: the comparison and its two sides |
 | An `in` over integers | 1, plus its expression, plus 1 per value |
 | An `in` over strings or identifiers | 2, plus 1 per value |
+| `contains` | 2, plus the value it looks for |
 | `present`, `absent` | 1 |
 | `anyOf`, `allOf` | 1, plus their conditions |
 | `not` | 1, plus its condition |

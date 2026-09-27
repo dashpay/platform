@@ -4,8 +4,9 @@
 //! expressions, a test of whether an integer expression takes one of listed
 //! values (`in`), a comparison of a string or an identifier property with
 //! constants (`equal`, `notEqual`, `in`) or with another property of its kind
-//! (`equal`, `notEqual`), a test of whether the document holds a property
-//! (`present`, `absent`), or `anyOf`, `allOf` or `not` over conditions.
+//! (`equal`, `notEqual`), a test of whether an array property holds a value
+//! (`contains`), a test of whether the document holds a property (`present`,
+//! `absent`), or `anyOf`, `allOf` or `not` over conditions.
 //!
 //! ```json
 //! "propertyConstraints": {
@@ -99,6 +100,7 @@ const NOT: &str = "not";
 const PRESENT: &str = "present";
 const ABSENT: &str = "absent";
 const IN: &str = "in";
+const CONTAINS: &str = "contains";
 const LENGTH: &str = "length";
 const BYTE_LENGTH: &str = "byteLength";
 const COUNT: &str = "count";
@@ -617,13 +619,29 @@ pub enum PropertyRead {
     Length,
     /// By its size, in a `count` operand: an array or byte array property.
     Count,
+    /// By its elements, which a `contains` looks among for a value of the
+    /// kind given: a typed array property with elements of that kind.
+    Elements(ElementKind),
+}
+
+/// What a `contains` looks for among an array's elements, which decides the
+/// elements the array must have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ElementKind {
+    /// An integer, the value of an integer expression.
+    Integer,
+    /// A string.
+    Text,
+    /// An identifier.
+    Identifier,
 }
 
 /// What a comparison of equality compares when it is not integers: strings or
 /// identifiers. [`parse_property_constraints`] asks it of every bare path on
-/// either side of an `equal` or `notEqual`, and of an `in`'s operand, since
-/// the declaration alone does not tell a string property, an identifier
-/// property or an integer one apart.
+/// either side of an `equal` or `notEqual`, of an `in`'s operand, and of the
+/// array a `contains` looks in (the kind of its elements), since the
+/// declaration alone does not tell a string property, an identifier property
+/// or an integer one apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EqualityKind {
     /// A string property.
@@ -657,6 +675,24 @@ impl TextProperty {
             Ok(Some(_)) => None,
         }
     }
+}
+
+/// What a `contains` looks for among an array property's elements, of the
+/// kind of its elements.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContainsNeedle {
+    /// The value of an integer expression, among integers.
+    Integer(ConstraintExpression),
+    /// A string constant, among strings.
+    TextConstant(String),
+    /// The string a string property holds, or its `ifAbsent` default, among
+    /// strings; one the document leaves out without a default is among none.
+    TextProperty(TextProperty),
+    /// An identifier constant, among identifiers.
+    IdentifierConstant(Identifier),
+    /// The identifier at the dotted path, or `$ownerId`, among identifiers;
+    /// one the document leaves out is among none.
+    IdentifierProperty(String),
 }
 
 /// A rule of `propertyConstraints`, or a condition inside one: a comparison of
@@ -724,6 +760,13 @@ pub enum PropertyConstraint {
     IdentifierIn {
         path: String,
         values: BTreeSet<Identifier>,
+    },
+    /// `contains`: the typed array property at the dotted path `array` holds
+    /// an element equal to `needle`, `{ "contains": ["tags", { "const": "sale" }] }`.
+    /// An array the document leaves out holds nothing.
+    Contains {
+        array: String,
+        needle: ContainsNeedle,
     },
     /// `present`: the document holds the property at the dotted path. One it
     /// leaves out, or sets to null, is absent, as it is for an operand. Unlike
@@ -823,6 +866,40 @@ impl PropertyConstraint {
                 Ok(identifier_value(data, owner_id, path)
                     .is_some_and(|value| values.contains(&value)))
             }
+            PropertyConstraint::Contains { array, needle } => {
+                let elements = match data.get_optional_value_at_path(array) {
+                    Ok(Some(Value::Array(elements))) => elements.as_slice(),
+                    _ => &[],
+                };
+                Ok(match needle {
+                    ContainsNeedle::Integer(expression) => {
+                        let value = expression.evaluate(data, system)?;
+                        elements.iter().any(|element| {
+                            element.is_integer() && element.to_integer::<i128>().ok() == Some(value)
+                        })
+                    }
+                    ContainsNeedle::TextConstant(value) => elements
+                        .iter()
+                        .any(|element| element.as_text() == Some(value.as_str())),
+                    ContainsNeedle::TextProperty(property) => {
+                        property.value(data).is_some_and(|value| {
+                            elements
+                                .iter()
+                                .any(|element| element.as_text() == Some(value))
+                        })
+                    }
+                    ContainsNeedle::IdentifierConstant(value) => elements
+                        .iter()
+                        .any(|element| element.to_identifier().ok() == Some(*value)),
+                    ContainsNeedle::IdentifierProperty(path) => {
+                        identifier_value(data, owner_id, path).is_some_and(|value| {
+                            elements
+                                .iter()
+                                .any(|element| element.to_identifier().ok() == Some(value))
+                        })
+                    }
+                })
+            }
             PropertyConstraint::Present(path) => Ok(is_present(data, path)),
             PropertyConstraint::Absent(path) => Ok(!is_present(data, path)),
             PropertyConstraint::AnyOf(conditions) => {
@@ -874,7 +951,8 @@ impl PropertyConstraint {
     /// The nodes of the rule, counted against
     /// `SystemLimits::max_property_constraint_nodes`: every comparison and
     /// logical operator, every `in` and each value it lists, every string
-    /// constant, every `present` or `absent` with the property it names, every
+    /// constant, every `contains` with its array and what it looks for, every
+    /// `present` or `absent` with the property it names, every
     /// arithmetic operator and every operand (an integer value, a property with
     /// or without `ifAbsent`, a size or a system property).
     pub fn node_count(&self) -> usize {
@@ -890,6 +968,16 @@ impl PropertyConstraint {
             | PropertyConstraint::IdentifierCompareProperties { .. } => 2,
             PropertyConstraint::TextIn { values, .. } => 1 + values.len(),
             PropertyConstraint::IdentifierIn { values, .. } => 1 + values.len(),
+            // The array, and what is looked for among its elements
+            PropertyConstraint::Contains { needle, .. } => {
+                1 + match needle {
+                    ContainsNeedle::Integer(expression) => expression.node_count(),
+                    ContainsNeedle::TextConstant(_)
+                    | ContainsNeedle::TextProperty(_)
+                    | ContainsNeedle::IdentifierConstant(_)
+                    | ContainsNeedle::IdentifierProperty(_) => 1,
+                }
+            }
             PropertyConstraint::Present(_) | PropertyConstraint::Absent(_) => 0,
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
                 conditions.iter().map(PropertyConstraint::node_count).sum()
@@ -920,6 +1008,10 @@ impl PropertyConstraint {
     /// judged against it too.
     pub fn reads_owner(&self) -> bool {
         match self {
+            PropertyConstraint::Contains {
+                needle: ContainsNeedle::IdentifierProperty(path),
+                ..
+            } => path == OWNER_ID,
             PropertyConstraint::IdentifierCompare { path, .. }
             | PropertyConstraint::IdentifierIn { path, .. } => path == OWNER_ID,
             PropertyConstraint::IdentifierCompareProperties { left, right, .. } => {
@@ -934,6 +1026,7 @@ impl PropertyConstraint {
             | PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => false,
         }
@@ -968,6 +1061,10 @@ impl PropertyConstraint {
                 right.collect_system_reads(reads);
             }
             PropertyConstraint::In { operand, .. } => operand.collect_system_reads(reads),
+            PropertyConstraint::Contains {
+                needle: ContainsNeedle::Integer(expression),
+                ..
+            } => expression.collect_system_reads(reads),
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
                 for condition in conditions {
                     condition.collect_system_reads(reads);
@@ -980,6 +1077,7 @@ impl PropertyConstraint {
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => {}
         }
@@ -1029,11 +1127,16 @@ impl PropertyConstraint {
                 }
             }
             PropertyConstraint::Not(condition) => condition.collect_text_properties(properties),
+            PropertyConstraint::Contains {
+                needle: ContainsNeedle::TextProperty(property),
+                ..
+            } => properties.push(property),
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => {}
         }
@@ -1055,12 +1158,18 @@ impl PropertyConstraint {
                 }
             }
             PropertyConstraint::Not(condition) => condition.collect_text_constants(constants),
+            // Checked against the enum of the array's elements
+            PropertyConstraint::Contains {
+                array,
+                needle: ContainsNeedle::TextConstant(value),
+            } => constants.push((array, value)),
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => {}
         }
@@ -1091,6 +1200,7 @@ impl PropertyConstraint {
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => return None,
             PropertyConstraint::AnyOf(conditions) => (ANY_OF, conditions),
@@ -1151,6 +1261,29 @@ impl PropertyConstraint {
                     }
                 }
             }
+            PropertyConstraint::Contains { array, needle } => match needle {
+                ContainsNeedle::Integer(expression) => {
+                    reads.push((array, PropertyRead::Elements(ElementKind::Integer)));
+                    expression.collect_property_reads(reads);
+                }
+                ContainsNeedle::TextConstant(_) => {
+                    reads.push((array, PropertyRead::Elements(ElementKind::Text)))
+                }
+                ContainsNeedle::TextProperty(property) => {
+                    reads.push((array, PropertyRead::Elements(ElementKind::Text)));
+                    reads.push((&property.path, PropertyRead::Text));
+                }
+                ContainsNeedle::IdentifierConstant(_) => {
+                    reads.push((array, PropertyRead::Elements(ElementKind::Identifier)))
+                }
+                ContainsNeedle::IdentifierProperty(path) => {
+                    reads.push((array, PropertyRead::Elements(ElementKind::Identifier)));
+                    // `$ownerId` is the document's owner, no property of it
+                    if path != OWNER_ID {
+                        reads.push((path, PropertyRead::Identifier));
+                    }
+                }
+            },
             PropertyConstraint::Present(path) | PropertyConstraint::Absent(path) => {
                 reads.push((path, PropertyRead::Presence))
             }
@@ -1269,7 +1402,7 @@ fn single_entry(value: &Value) -> Option<(&str, &Value)> {
 /// Every key a condition object may hold, for the errors.
 fn condition_keys() -> String {
     format!(
-        "a comparison ({}), in, present, absent, anyOf, allOf or not",
+        "a comparison ({}), in, contains, present, absent, anyOf, allOf or not",
         ConstraintComparison::ALL
             .map(ConstraintComparison::wire_name)
             .join(", ")
@@ -1404,6 +1537,44 @@ fn parse_condition(
                 let values = in_values(values, at)?;
                 at.truncate(base);
                 PropertyConstraint::In { operand, values }
+            }
+        }
+        CONTAINS => {
+            let Some([array, needle]) = body.as_array().map(Vec::as_slice) else {
+                return Err(format!(
+                    "at {at} must list an array property path and the value looked for among \
+                     its elements"
+                ));
+            };
+            // `$ownerId` and the system times are values, never arrays
+            let Some(array) = array.as_text().filter(|path| !path.starts_with('$')) else {
+                return Err(format!("at {at}[0] must name an array property path"));
+            };
+            let base = at.len();
+            at.push_str("[1]");
+            // The kind of the array's elements decides what a const spells, and
+            // what is checked against the parsed document type
+            let needle = match property_kind(array) {
+                Some(EqualityKind::Text) => match text_side(needle, at)? {
+                    TextSide::Constant(value) => ContainsNeedle::TextConstant(value),
+                    TextSide::Property(property) => ContainsNeedle::TextProperty(property),
+                },
+                Some(EqualityKind::Identifier) => match identifier_side(needle, at)? {
+                    IdentifierSide::Constant(value) => ContainsNeedle::IdentifierConstant(value),
+                    IdentifierSide::Property(path) => ContainsNeedle::IdentifierProperty(path),
+                },
+                None if is_const(needle) => {
+                    return Err(format!(
+                        "at {at} is a const, but {array} holds no strings or identifiers: an \
+                         integer is written as itself"
+                    ));
+                }
+                None => ContainsNeedle::Integer(parse_expression(needle, at, depth + 1)?),
+            };
+            at.truncate(base);
+            PropertyConstraint::Contains {
+                array: array.to_string(),
+                needle,
             }
         }
         // What the path names is checked against the parsed document type

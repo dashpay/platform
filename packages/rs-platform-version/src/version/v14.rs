@@ -1068,23 +1068,28 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     declaring `refersTo` included) or of `$ownerId`, the document's owner,
 ///     likewise, with base58 identifier constants or another identifier operand
 ///     and no default, an identifier the document leaves out equalling none;
-///     `present` or `absent` naming a property of any type, whether the
-///     document holds it (the one way to tell a property left out from one set
-///     to 0); `anyOf` or `allOf` over two or more conditions; or `not` over
-///     one. In an operand, a property the document leaves out counts as 0, or
-///     as the value of an `ifAbsent` operand naming it. Arithmetic is exact
-///     `i128`: `divide` and `modulo` are Euclidean (the remainder is never
-///     negative), and an overflow, a zero divisor, a negative exponent or a
-///     value that is not an integer refuses the document rather than wrapping.
-///     Conditions are checked in declared order and no further than the outcome
-///     needs (`anyOf` stops at the first that holds, `allOf` at the first that
-///     fails), a fault in one that is checked refuses the document whatever the
-///     others say, and `not` never turns a fault into a pass, so an earlier
-///     condition guards a later one. The parser checks that every path an
-///     operand reads names an integer or boolean property, every path a
-///     `length` or `byteLength` measures a string property, every path a
-///     `count` counts an array or byte array property, every system time or
-///     height a rule reads one the type lists in `required` (none on an
+///     `contains`, whether a typed array property holds an element equal to an
+///     integer expression, a string or an identifier operand (a constant, a
+///     property, or `$ownerId`), as its elements are, an array the document
+///     leaves out holding nothing; `present` or `absent` naming a property of
+///     any type, whether the document holds it (the one way to tell a property
+///     left out from one set to 0); `anyOf` or `allOf` over two or more
+///     conditions; or `not` over one. In an operand, a property the document
+///     leaves out counts as 0, or as the value of an `ifAbsent` operand naming
+///     it. Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
+///     remainder is never negative), and an overflow, a zero divisor, a
+///     negative exponent or a value that is not an integer refuses the document
+///     rather than wrapping. Conditions are checked in declared order and no
+///     further than the outcome needs (`anyOf` stops at the first that holds,
+///     `allOf` at the first that fails), a fault in one that is checked refuses
+///     the document whatever the others say, and `not` never turns a fault into
+///     a pass, so an earlier condition guards a later one. The parser checks
+///     that every path an operand reads names an integer or boolean property,
+///     every path a `length` or `byteLength` measures a string property, every
+///     path a `count` counts an array or byte array property, every array a
+///     `contains` looks in a typed array of the kind it looks for (a string
+///     constant in the elements' `enum` when they declare one), every system
+///     time or height a rule reads one the type lists in `required` (none on an
 ///     indexOnly type), every path compared with identifiers an identifier
 ///     property, every path compared with strings a string property (whose
 ///     `enum`, if it declares one, lists every constant it is compared with),
