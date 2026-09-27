@@ -28,6 +28,7 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use dash_sdk::dpp::consensus::basic::document::PropertyConstraintViolation;
 use dash_sdk::dpp::consensus::basic::BasicError;
@@ -37,7 +38,9 @@ use dash_sdk::dpp::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dash_sdk::dpp::data_contract::document_type::property_constraints::PropertyRead;
+use dash_sdk::dpp::data_contract::document_type::property_constraints::{
+    DocumentSystemValues, PropertyRead,
+};
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::platform_value::Value;
@@ -58,15 +61,18 @@ const PROPERTY_CONSTRAINTS_KEYWORD: &str = "propertyConstraints";
 /// Get the `propertyConstraints` rules of a document type as a JSON array
 ///
 /// Each element is
-/// `{ "name": string, "rule": object, "reads": [{ "path": string, "kind": string }], "readsOwner": bool }`:
+/// `{ "name": string, "rule": object, "reads": [{ "path": string, "kind": string }], "readsOwner": bool, "readsSystem": [string] }`:
 /// the rule's name (its key in `propertyConstraints`), the rule exactly as the
 /// document type's schema declares it, every property it reads in declared
 /// order (`kind` is `"value"` for an integer operand, `"presence"` for
 /// `present` / `absent`, `"text"` for a string comparison, `"identifier"` for
 /// an identifier comparison, `"length"` for a `length` or `byteLength` operand
 /// and `"count"` for a `count` operand; `$ownerId` is no property and is not
-/// listed), and whether it reads `$ownerId`, which makes a transfer or a
-/// purchase answer to it too. Rules are listed in name order, the order
+/// listed), whether it reads `$ownerId`, which makes a transfer or a
+/// purchase answer to it too, and the system times and heights it reads
+/// (`"$createdAt"`, ...), which make a price update answer to a rule reading
+/// the update's and a transfer or purchase one reading the transfer's. Rules
+/// are listed in name order, the order
 /// consensus checks them in. A document type declaring none gives `[]`, and so
 /// does every document type when the SDK's protocol version is below 14.
 ///
@@ -129,6 +135,9 @@ pub unsafe extern "C" fn dash_sdk_data_contract_get_property_constraints(
 /// value is typed as it would be sent; the document is then judged by DPP's
 /// `validate_property_constraints`, the check consensus runs on a create:
 /// every rule, in name order, evaluated by `PropertyConstraint::violation`.
+/// The device clock stands in for the block time the create records
+/// (`$createdAt`, `$updatedAt`, `$transferredAt`), and a rule reading a block
+/// height is not judged, since the height is unknown until the block.
 /// Nothing but the rules is checked: not the JSON schema, not the state.
 ///
 /// The result is the first rule broken, as
@@ -310,23 +319,49 @@ fn property_constraints_json(
             "rule": rule,
             "reads": reads,
             "readsOwner": constraint.reads_owner(),
+            "readsSystem": constraint
+                .system_reads()
+                .into_iter()
+                .map(|property| property.name())
+                .collect::<Vec<_>>(),
         }));
     }
     Ok(serde_json::Value::Array(rules))
 }
 
+/// The system values a create of a document owned by `owner_id` will have, as
+/// far as a client can tell before its block: the device clock stands in for
+/// the block time it records as its creation, update and transfer, and the
+/// block heights are unknown until the block, so a rule reading one is not
+/// judged.
+fn system_values_for_create(owner_id: Identifier) -> DocumentSystemValues {
+    // A clock before the epoch reads as the epoch; milliseconds fit a `u64`
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or(0);
+    DocumentSystemValues {
+        created_at: Some(now),
+        updated_at: Some(now),
+        transferred_at: Some(now),
+        ..DocumentSystemValues::owned_by(owner_id)
+    }
+}
+
 /// The first rule of `document_type`'s `propertyConstraints` that `document`
-/// breaks, judged as consensus judges a create (its properties, and its owner
-/// for `$ownerId`), as the JSON `dash_sdk_data_contract_check_property_constraints`
-/// returns: JSON `null` when it meets them all.
+/// breaks, judged as consensus judges a create (its properties, its owner for
+/// `$ownerId`, and the system times [`system_values_for_create`] estimates),
+/// as the JSON `dash_sdk_data_contract_check_property_constraints` returns:
+/// JSON `null` when it meets them all.
 fn property_constraint_violation_json(
     document_type: DocumentTypeRef<'_>,
     document: &Document,
     platform_version: &PlatformVersion,
 ) -> Result<serde_json::Value, DashSDKError> {
     let data = Value::from(document.properties().clone());
+    let system = system_values_for_create(document.owner_id());
     let result = document_type
-        .validate_property_constraints(&data, Some(document.owner_id()), platform_version)
+        .validate_property_constraints(&data, &system, platform_version)
         .map_err(|e| {
             DashSDKError::new(
                 DashSDKErrorCode::ProtocolError,
@@ -579,7 +614,8 @@ mod tests {
                         { "path": "status", "kind": "text" },
                         { "path": "closedAt", "kind": "presence" }
                     ],
-                    "readsOwner": false
+                    "readsOwner": false,
+                    "readsSystem": []
                 },
                 {
                     "name": "discountBelowPrice",
@@ -588,7 +624,8 @@ mod tests {
                         { "path": "discount", "kind": "value" },
                         { "path": "price", "kind": "value" }
                     ],
-                    "readsOwner": false
+                    "readsOwner": false,
+                    "readsSystem": []
                 },
                 {
                     "name": "perUnitFee",
@@ -597,7 +634,8 @@ mod tests {
                         { "path": "price", "kind": "value" },
                         { "path": "fee", "kind": "value" }
                     ],
-                    "readsOwner": false
+                    "readsOwner": false,
+                    "readsSystem": []
                 },
                 {
                     "name": "sellerIsOwner",
@@ -606,13 +644,15 @@ mod tests {
                         { "path": "sellerId", "kind": "presence" },
                         { "path": "sellerId", "kind": "identifier" }
                     ],
-                    "readsOwner": true
+                    "readsOwner": true,
+                    "readsSystem": []
                 },
                 {
                     "name": "tieredFee",
                     "rule": declared["tieredFee"],
                     "reads": [{ "path": "fee", "kind": "value" }],
-                    "readsOwner": false
+                    "readsOwner": false,
+                    "readsSystem": []
                 }
             ])
         );
@@ -851,5 +891,71 @@ mod tests {
                 DashSDKErrorCode::InvalidParameter
             );
         }
+    }
+
+    /// A `listing` type recording its creation time and block height, with a
+    /// rule on each: it ends after its creation, and is listed from block 10 on.
+    fn timed_contract_bytes() -> Vec<u8> {
+        let platform_version = PlatformVersion::latest();
+        let documents = platform_value!({
+            "listing": {
+                "type": "object",
+                "properties": {
+                    "endsAt": { "type": "integer", "minimum": 0, "position": 0 }
+                },
+                "required": ["endsAt", "$createdAt", "$createdAtBlockHeight"],
+                "additionalProperties": false,
+                "propertyConstraints": {
+                    "endsAfterCreation": { "greaterThan": ["endsAt", "$createdAt"] },
+                    "listedAfterHeight10": {
+                        "greaterThanOrEqual": ["$createdAtBlockHeight", 10]
+                    }
+                }
+            }
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory for the protocol version")
+            .create_with_value_config(Identifier::new(OWNER), 1, documents, None, None)
+            .expect("listing contract")
+            .data_contract()
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialized contract")
+    }
+
+    /// The pre-check reads the device clock for the times a create records, and
+    /// leaves a rule reading a block height unjudged, since the height is unknown
+    /// until the block.
+    #[test]
+    fn should_read_the_clock_for_system_times_and_skip_block_heights() {
+        let sdk = sdk_handle(PlatformVersion::latest());
+        let contract = timed_contract_bytes();
+
+        let rules = rules_of(sdk, &contract, "listing");
+        // Ended in 1970, before any create today
+        let ended = check(sdk, &contract, "listing", json!({ "endsAt": 1 }), OWNER);
+        // Ends in 2100; the height rule, which it would not meet at block 0, is skipped
+        let open = check(
+            sdk,
+            &contract,
+            "listing",
+            json!({ "endsAt": 4_102_444_800_000u64 }),
+            OWNER,
+        );
+        destroy_mock_sdk_handle(sdk);
+
+        let rules = rules.expect("rules of listing");
+        assert_eq!(rules[0]["name"], "endsAfterCreation");
+        assert_eq!(rules[0]["readsSystem"], json!(["$createdAt"]));
+        assert_eq!(
+            rules[0]["reads"],
+            json!([{ "path": "endsAt", "kind": "value" }])
+        );
+        assert_eq!(rules[1]["readsSystem"], json!(["$createdAtBlockHeight"]));
+        assert_eq!(rules[1]["reads"], json!([]));
+
+        let ended = ended.expect("checked");
+        assert_eq!(ended["rule"], "endsAfterCreation");
+        assert_eq!(ended["violation"], "NotMet");
+        assert_eq!(open.expect("checked"), serde_json::Value::Null);
     }
 }

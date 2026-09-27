@@ -13,7 +13,9 @@ use crate::consensus::basic::basic_error::BasicError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::document_type::property_constraints::{PropertyConstraint, PropertyRead};
+use crate::data_contract::document_type::property_constraints::{
+    DocumentSystemValues, PropertyConstraint, PropertyRead, SystemProperty,
+};
 use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
 use crate::data_contract::DataContract;
 use crate::serialization::{
@@ -667,6 +669,11 @@ fn should_compare_identifier_properties_that_declare_refers_to() {
                     "sellerId": Identifier::new([9; 32]),
                 })
             };
+            // The system values of an order owned by `owner`, no time or height
+            let owned = |owner: Option<Identifier>| DocumentSystemValues {
+                owner_id: owner,
+                ..Default::default()
+            };
             for (name, owner, holds_for_token, holds_for_other) in [
                 ("boughtWithToken", None, true, false),
                 ("buyerIsNotSeller", None, true, true),
@@ -674,12 +681,12 @@ fn should_compare_identifier_properties_that_declare_refers_to() {
                 ("knownBuyer", None, true, true),
             ] {
                 assert_eq!(
-                    constraints[name].holds(&order(token), owner),
+                    constraints[name].holds(&order(token), &owned(owner)),
                     Ok(holds_for_token),
                     "{name}"
                 );
                 assert_eq!(
-                    constraints[name].holds(&order(other), owner),
+                    constraints[name].holds(&order(other), &owned(owner)),
                     Ok(holds_for_other),
                     "{name}"
                 );
@@ -687,7 +694,7 @@ fn should_compare_identifier_properties_that_declare_refers_to() {
             // The seller's id as the buyer's: listed nowhere, and equal to the seller
             for name in ["knownBuyer", "buyerIsNotSeller"] {
                 assert_eq!(
-                    constraints[name].holds(&order(Identifier::new([9; 32])), None),
+                    constraints[name].holds(&order(Identifier::new([9; 32])), &owned(None)),
                     Ok(false),
                     "{name}"
                 );
@@ -723,8 +730,10 @@ fn should_compare_identifier_properties_that_declare_refers_to() {
     }
 }
 
-/// `$ownerId` is the document's owner, which every document has, not a
-/// property of the type: a presence test of it is refused on both paths, and
+/// `$ownerId` and the system times and heights are no properties of the type:
+/// every document has an owner, and a type that records a time holds it on
+/// every document. A presence test of one is refused on both paths (the
+/// meta-schema admits them as paths, for comparisons and operands), and one of
 /// any other system property the meta-schema refuses when registering.
 #[test]
 fn should_refuse_a_presence_test_of_a_system_property() {
@@ -737,7 +746,18 @@ fn should_refuse_a_presence_test_of_a_system_property() {
             "tests the presence of \"$ownerId\", which is not a property of the document type",
         );
     }
-    let rules = json!({ "rule": { "present": "$createdAt" } });
+    // The meta-schema admits a system time or height as a path, for an operand to
+    // read, and the parser refuses a presence test of one on both paths
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_order(
+                json!({ "rule": { "absent": "$createdAt" } }),
+                full_validation,
+            ),
+            "tests the presence of \"$createdAt\", which is not a property of the document type",
+        );
+    }
+    let rules = json!({ "rule": { "present": "$revision" } });
     let registered = parse_order(rules.clone(), true);
     assert!(
         registered.as_ref().is_err_and(is_json_schema_error),
@@ -745,7 +765,7 @@ fn should_refuse_a_presence_test_of_a_system_property() {
     );
     expect_structure_error(
         parse_order(rules, false),
-        "tests the presence of \"$createdAt\", which is not a property of the document type",
+        "tests the presence of \"$revision\", which is not a property of the document type",
     );
 }
 
@@ -850,7 +870,11 @@ fn should_refuse_a_rule_reading_anything_but_an_integer_property() {
         ),
         (
             "$createdAt",
-            "reads \"$createdAt\", which is not an integer or boolean property",
+            "reads $createdAt, which the document type does not record: list it in required",
+        ),
+        (
+            "$revision",
+            "reads \"$revision\", which is not an integer or boolean property",
         ),
     ] {
         for full_validation in [true, false] {
@@ -859,8 +883,13 @@ fn should_refuse_a_rule_reading_anything_but_an_integer_property() {
                 full_validation,
             );
             // The meta-schema refuses a `$` in a path when registering, but for
-            // `$ownerId`, which only a comparison of identifiers may read
-            if full_validation && operand.starts_with('$') && operand != "$ownerId" {
+            // `$ownerId`, which only a comparison of identifiers may read, and the
+            // system times and heights an operand may read
+            if full_validation
+                && operand.starts_with('$')
+                && operand != "$ownerId"
+                && SystemProperty::from_name(operand).is_none()
+            {
                 assert!(
                     result.as_ref().is_err_and(is_json_schema_error),
                     "{operand}: {result:?}"
@@ -1439,5 +1468,101 @@ fn should_hold_a_size_to_the_property_it_measures() {
                 &format!("{verb} \"{path}\", which is transient or inside a transient object"),
             );
         }
+    }
+}
+
+/// A rule reads a system time or height the type records, by listing it in
+/// `required`, on both paths; one the type does not record is refused, and so
+/// is any on an indexOnly type, whose deletes carry none.
+#[test]
+fn should_read_the_system_times_and_heights_the_type_records() {
+    let rules = json!({
+        "depositAfterCreation": { "greaterThan": ["deposit", "$createdAt"] },
+        "pricedAboveHeight": { "lessThan": ["$updatedAtBlockHeight", "price"] },
+        "transferredOnCore": { "notEqual": ["$transferredAtCoreBlockHeight", 0] }
+    });
+    let recording = |required: &[&str]| {
+        let mut schema = order_schema(Some(rules.clone()), None);
+        let mut names = vec!["price", "fee", "quantity", "deposit"];
+        names.extend_from_slice(required);
+        schema["required"] = json!(names);
+        schema_value(schema)
+    };
+    for full_validation in [true, false] {
+        let document_type = parse_dispatched(
+            recording(&[
+                "$createdAt",
+                "$updatedAtBlockHeight",
+                "$transferredAtCoreBlockHeight",
+            ]),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["depositAfterCreation"].system_reads(),
+            [SystemProperty::CreatedAt]
+        );
+        assert_eq!(
+            constraints["depositAfterCreation"].property_paths(),
+            ["deposit"]
+        );
+        assert_eq!(
+            constraints["pricedAboveHeight"].system_reads(),
+            [SystemProperty::UpdatedAtBlockHeight]
+        );
+        assert_eq!(
+            constraints["transferredOnCore"].system_reads(),
+            [SystemProperty::TransferredAtCoreBlockHeight]
+        );
+
+        // Not recording `$updatedAtBlockHeight`, the type may not read it
+        expect_structure_error(
+            parse_dispatched(
+                recording(&["$createdAt", "$transferredAtCoreBlockHeight"]),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "rule \"pricedAboveHeight\" reads $updatedAtBlockHeight, which the document type \
+             does not record: list it in required",
+        );
+    }
+
+    let index_only = schema_value(json!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "indices": [{
+            "name": "byTopic",
+            "properties": [{ "topic": "asc" }, { "until": "asc" }]
+        }],
+        "properties": {
+            "topic": { "type": "string", "maxLength": 50, "position": 0 },
+            "until": { "type": "integer", "minimum": 0, "position": 1 }
+        },
+        "required": ["topic", "until", "$createdAt"],
+        "additionalProperties": false,
+        "propertyConstraints": { "rule": { "lessThan": ["$createdAt", "until"] } }
+    }));
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                index_only.clone(),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "rule \"rule\" reads $createdAt, which a delete of an indexOnly document does not \
+             carry",
+        );
+    }
+
+    // The meta-schema admits exactly the nine names
+    for name in ["$createdAtHeight", "$deletedAt", "$updatedAtCoreHeight"] {
+        let registered = parse_order(json!({ "rule": { "lessThan": [name, "price"] } }), true);
+        assert!(
+            registered.as_ref().is_err_and(is_json_schema_error),
+            "{name}: the meta-schema should refuse it, got {registered:?}"
+        );
     }
 }

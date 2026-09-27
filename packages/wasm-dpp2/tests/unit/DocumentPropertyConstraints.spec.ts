@@ -110,6 +110,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
             { path: 'closedAt', kind: 'presence' },
           ],
           readsOwner: false,
+          readsSystem: [],
         },
         {
           name: 'discountBelowPrice',
@@ -119,6 +120,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
             { path: 'price', kind: 'value' },
           ],
           readsOwner: false,
+          readsSystem: [],
         },
         {
           name: 'perUnitFee',
@@ -128,6 +130,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
             { path: 'fee', kind: 'value' },
           ],
           readsOwner: false,
+          readsSystem: [],
         },
         {
           name: 'sellerIsOwner',
@@ -137,12 +140,14 @@ describe('DataContract: propertyConstraints (v14)', () => {
             { path: 'sellerId', kind: 'identifier' },
           ],
           readsOwner: true,
+          readsSystem: [],
         },
         {
           name: 'tieredFee',
           rule: schemas.offer.propertyConstraints.tieredFee,
           reads: [{ path: 'fee', kind: 'value' }],
           readsOwner: false,
+          readsSystem: [],
         },
       ]);
     });
@@ -196,12 +201,14 @@ describe('DataContract: propertyConstraints (v14)', () => {
           rule: rules.tagsWithinLimit,
           reads: [{ path: 'tags', kind: 'count' }, { path: 'maxTags', kind: 'value' }],
           readsOwner: false,
+          readsSystem: [],
         },
         {
           name: 'titleBytes',
           rule: rules.titleBytes,
           reads: [{ path: 'title', kind: 'length' }],
           readsOwner: false,
+          readsSystem: [],
         },
       ]);
 
@@ -222,6 +229,56 @@ describe('DataContract: propertyConstraints (v14)', () => {
       expect(contract.checkDocumentPropertyConstraints(
         listing({ title: 'éééééééé' }),
       )).to.deep.include({ rule: 'titleBytes', violation: 'NotMet' });
+    });
+
+    it('should list system times it reads, and check them with the device clock', () => {
+      const rules = {
+        endsAfterCreation: { greaterThan: ['endsAt', '$createdAt'] },
+        listedAfterHeight10: { greaterThanOrEqual: ['$createdAtBlockHeight', 10] },
+      };
+      const contract = buildContract({
+        listing: {
+          type: 'object',
+          properties: {
+            endsAt: { type: 'integer', minimum: 0, position: 0 },
+          },
+          required: ['endsAt', '$createdAt', '$createdAtBlockHeight'],
+          additionalProperties: false,
+          propertyConstraints: rules,
+        },
+      });
+
+      expect(contract.documentTypePropertyConstraints('listing')).to.deep.equal([
+        {
+          name: 'endsAfterCreation',
+          rule: rules.endsAfterCreation,
+          reads: [{ path: 'endsAt', kind: 'value' }],
+          readsOwner: false,
+          readsSystem: ['$createdAt'],
+        },
+        {
+          name: 'listedAfterHeight10',
+          rule: rules.listedAfterHeight10,
+          reads: [],
+          readsOwner: false,
+          readsSystem: ['$createdAtBlockHeight'],
+        },
+      ]);
+
+      const listing = (endsAt: number) => new wasm.Document({
+        properties: { endsAt },
+        documentTypeName: 'listing',
+        dataContractId: contract.id,
+        ownerId,
+        revision: BigInt(1),
+      });
+      // Ended in 1970: before a create today, by the device clock
+      expect(contract.checkDocumentPropertyConstraints(listing(1)))
+        .to.deep.include({ rule: 'endsAfterCreation', violation: 'NotMet' });
+      // Ends in 2100; the block height a create records is unknown before its
+      // block, so the height rule is not judged
+      expect(contract.checkDocumentPropertyConstraints(listing(4102444800000)))
+        .to.equal(undefined);
     });
 
     it('should report integer literals past Number.MAX_SAFE_INTEGER exactly, as bigint', () => {
@@ -247,12 +304,14 @@ describe('DataContract: propertyConstraints (v14)', () => {
           rule: rules.balanceBelowCap,
           reads: [{ path: 'balance', kind: 'value' }],
           readsOwner: false,
+          readsSystem: [],
         },
         {
           name: 'knownTier',
           rule: rules.knownTier,
           reads: [{ path: 'tier', kind: 'value' }],
           readsOwner: false,
+          readsSystem: [],
         },
       ];
 

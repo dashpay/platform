@@ -49,9 +49,10 @@
 
 - **Create and replace.** The rules run after the JSON schema validation of the document's properties (and after [maxBytes](max-bytes.md)), so every value a rule reads has passed its property's schema. A replace is judged on the whole new document, not only on what changed.
 - **Name order, first failure.** Rules are checked in the order of their names, and the first rule the document breaks refuses the transition with `DocumentPropertyConstraintViolatedError` (10422). The error names the document type, the rule, and why it failed (below).
-- **Transfer and purchase.** These change only the owner. Rules that read `$ownerId` are judged again, against the stored document and its new owner; other rules are not, since nothing they read changed. A transfer or purchase that would break an owner rule is refused with 10422.
-- **Price updates and deletes** are not judged, with one exception: a delete of an [index-only](index-only.md) document carries the row's values, which are validated like a create's, rules included. The delete does not carry the owner, which is why an index-only type may not have a rule reading `$ownerId`.
-- **No state, no fee.** A rule reads only the document and its owner. It changes nothing stored and adds no fee; the limits below bound its cost. SDKs that validate a document before sending it apply the same rules.
+- **Transfer and purchase.** These change only the owner and the transfer's time and heights. Rules that read `$ownerId` or `$transferredAt…` are judged again, against the stored document with its new owner and transfer values; other rules are not, since nothing they read changed. A transfer or purchase that would break such a rule is refused with 10422.
+- **Price updates** change only the update's time and heights, so the rules that read `$updatedAt…` are judged again the same way; other rules are not.
+- **Deletes** are not judged, with one exception: a delete of an [index-only](index-only.md) document carries the row's values, which are validated like a create's, rules included. The delete carries neither the owner nor any time or height, which is why an index-only type may not have a rule reading `$ownerId` or a system time or height.
+- **No state, no fee.** A rule reads only the document, its owner and its times and heights. It changes nothing stored and adds no fee; the limits below bound its cost. SDKs that validate a document before sending it apply the same rules.
 
 Why a rule fails, as the error reports it:
 
@@ -98,6 +99,7 @@ An integer expression is one of:
 | `power` | `{ "power": [a, b] }` | `a` to the power `b` |
 | `length`, `byteLength` | `{ "length": "title" }` | The characters (as `maxLength` counts them) or UTF-8 bytes (as `maxBytes` counts them) of a string property, 0 when the document leaves it out |
 | `count` | `{ "count": "tags" }` | The items of an array property, or the bytes of a byte array property, 0 when the document leaves it out |
+| system time or height | `"$createdAt"`, `"$updatedAtBlockHeight"` | A time or height the document records (see [Times and heights](#times-and-heights)) |
 
 Where `maxLength`, `maxBytes` and `maxItems` bound one property by a fixed number, a size can be compared with another property or bounded only under a condition: `{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }` holds a list to its own limit. A size never breaks a rule by itself: a property left out or null has size 0, and so would a value of another type, which the schema validation refuses first.
 
@@ -108,7 +110,7 @@ Two more forms appear only in string and identifier comparisons, never inside ar
 | `{ "const": "closed" }` | A string constant, or, compared with an identifier property or `$ownerId`, a base58 identifier |
 | `{ "ifAbsent": ["status", "open"] }` | A string property, read as the given string when the document leaves it out |
 
-A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` name a rule accepts is `$ownerId`.
+A bare JSON string is always a path and a bare JSON number always a value, so a constant string needs `{ "const": ... }`. The values an `in` lists are literals and need no wrapper. A path is a property name, or names joined by dots for a nested property (`"rewardSplit.leader"`); the only `$` names a rule accepts are `$ownerId` and the times and heights below.
 
 A `number` property (a float) cannot be read by a rule, which keeps every result exact.
 
@@ -134,6 +136,24 @@ An identifier property compares in the same three ways: `{ "equal": ["paymentTok
 - `{ "in": ["$ownerId", ["<base58>", "<base58>"]] }` lets only the listed identities own a document of the type.
 
 It is not a property: `present`, `absent` and integer expressions refuse it, and comparing it with itself is refused. On create and replace it is the writer. A transfer or purchase is judged with the new owner, as described in [How it works](#how-it-works). An [index-only](index-only.md) type may not declare a rule that reads it.
+
+## Times and heights
+
+A rule can read when the document was created, last updated and last transferred, as an integer:
+
+| | block time (ms) | Platform block height | Core block height |
+|---|---|---|---|
+| creation | `$createdAt` | `$createdAtBlockHeight` | `$createdAtCoreBlockHeight` |
+| last update: a create, a replace or a price update | `$updatedAt` | `$updatedAtBlockHeight` | `$updatedAtCoreBlockHeight` |
+| last transfer: a create, a transfer or a purchase | `$transferredAt` | `$transferredAtBlockHeight` | `$transferredAtCoreBlockHeight` |
+
+- `{ "lessThanOrEqual": [{ "subtract": ["endsAt", "$createdAt"] }, 604800000] }` keeps a listing to a week from its creation.
+- `{ "lessThanOrEqual": ["$updatedAt", "endsAt"] }` refuses a replace or a price update after the listing ends.
+- `{ "lessThanOrEqual": ["$transferredAt", "endsAt"] }` refuses a transfer or a purchase after it ends.
+
+A rule may read one only when the document type records it by listing it in `required`, so every stored document holds it. None takes an `ifAbsent` default, `present` and `absent` refuse them, and an [index-only](index-only.md) type reads none. Each write is judged with the values the stored document ends up with: a create with its block's time and heights for all three events; a replace with the stored creation and transfer values and its block's as the update; a price update with its block's as the update; a transfer or a purchase with its block's as the transfer.
+
+SDK pre-checks run before the block exists: they use the device clock for the times a write records, and do not judge a rule reading a block height, which is unknown until the block.
 
 ## Evaluation order and short-circuiting
 
@@ -162,7 +182,7 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 - every condition and every operator object has exactly one key;
 - a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings;
 - no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not`;
-- a path matches `$ownerId` or dotted names of 1 to 64 letters, digits or underscores, so `$createdAt` and other system properties are refused.
+- a path matches `$ownerId`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, so `$revision` and other system properties are refused.
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):
 
@@ -172,7 +192,8 @@ The parser then checks the rules against the document type (`InvalidContractStru
 - strings and identifiers are compared only with `equal`, `notEqual` and `in`; a string is never compared with an identifier; a property is never compared with itself;
 - string constants and `ifAbsent` defaults are in the property's `enum` when it has one; identifier constants are base58 identifiers of 32 bytes;
 - no literal divisor is 0 and no literal exponent is negative;
-- `present` and `absent` do not name `$ownerId`, and an index-only type has no rule reading it;
+- every time or height a rule reads is one the type lists in `required`, and takes no `ifAbsent` default;
+- `present` and `absent` do not name `$ownerId` or a time or height, and an index-only type has no rule reading any of them;
 - no `anyOf` or `allOf` lists two conditions that parse alike, such as `1` and `1.0`, or two `in` conditions listing the same values in another order;
 - no condition or operand nests more than 64 levels deep.
 
@@ -192,7 +213,7 @@ A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes a
 | `present`, `absent` | 1 |
 | `anyOf`, `allOf` | 1, plus their conditions |
 | `not` | 1, plus its condition |
-| An integer, a path, an `ifAbsent` or a size (`length`, `byteLength`, `count`) | 1 |
+| An integer, a path, an `ifAbsent`, a size (`length`, `byteLength`, `count`) or a time or height | 1 |
 | `add`, `multiply`, `subtract`, `divide`, `modulo`, `power` | 1, plus their operands |
 
 `depositCoversOrder` above is 7 nodes (the comparison, `multiply`, `add` and four paths), and `closedNeedsClosedAt` is 5. An `in` fits up to 30 values in 32 nodes.

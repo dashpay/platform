@@ -256,6 +256,80 @@ mod property_constraints_tests {
         })
     }
 
+    /// A mutable, transferable and purchasable `offer` type with the integers
+    /// [`set_valid_offer`] fills and an `endsAt` time, recording the time of its
+    /// creation, last update and last transfer and the block height of its
+    /// creation, and five rules on them: `endsAfterCreation`
+    /// (`endsAt > $createdAt`), `endsWithinAWeek` (`endsAt - $createdAt` at most
+    /// a week), `listedAfterHeight10` (`$createdAtBlockHeight >= 10`),
+    /// `updatedBeforeEnd` (`$updatedAt <= endsAt`) and `transferredBeforeEnd`
+    /// (`$transferredAt <= endsAt`).
+    fn timed_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "transferable": 1,
+            "tradeMode": 1,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "endsAt": { "type": "integer", "minimum": 0, "position": 4 }
+            },
+            "required": [
+                "price",
+                "fee",
+                "quantity",
+                "deposit",
+                "endsAt",
+                "$createdAt",
+                "$updatedAt",
+                "$transferredAt",
+                "$createdAtBlockHeight"
+            ],
+            "propertyConstraints": {
+                "endsAfterCreation": { "greaterThan": ["endsAt", "$createdAt"] },
+                "endsWithinAWeek": {
+                    "lessThanOrEqual": [{ "subtract": ["endsAt", "$createdAt"] }, WEEK_MS]
+                },
+                "listedAfterHeight10": { "greaterThanOrEqual": ["$createdAtBlockHeight", 10] },
+                "updatedBeforeEnd": { "lessThanOrEqual": ["$updatedAt", "endsAt"] },
+                "transferredBeforeEnd": { "lessThanOrEqual": ["$transferredAt", "endsAt"] }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    const DAY_MS: u64 = 86_400_000;
+    const WEEK_MS: u64 = 7 * DAY_MS;
+    /// The block time the timed tests start at.
+    const NOW: u64 = 1_700_000_000_000;
+
+    /// A block at `time_ms` and Platform `height`.
+    fn at_block(time_ms: u64, height: u64) -> BlockInfo {
+        BlockInfo {
+            time_ms,
+            height,
+            core_height: 1000,
+            ..Default::default()
+        }
+    }
+
+    /// The fixture over [`timed_offer_schema`] with an offer created at [`NOW`],
+    /// block 20, ending a day later.
+    async fn timed_offer() -> OfferFixture {
+        let mut fixture = OfferFixture::with_schema(timed_offer_schema());
+        fixture.block_info = at_block(NOW, 20);
+        assert_matches!(
+            fixture
+                .create(|document| document.set("endsAt", Value::U64(NOW + DAY_MS)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        fixture
+    }
+
     /// An offer that meets every rule: (100 + 10) * 2 = 220.
     fn set_valid_offer(document: &mut Document) {
         document.set("price", Value::U64(100));
@@ -279,6 +353,9 @@ mod property_constraints_tests {
         /// processed transition consumes one, including the ones that fail
         /// with a paid consensus error.
         next_nonce: IdentityNonce,
+        /// The block every transition is processed in: its time and heights are
+        /// the ones a write records.
+        block_info: BlockInfo,
     }
 
     impl OfferFixture {
@@ -324,6 +401,7 @@ mod property_constraints_tests {
                 contract,
                 document: None,
                 next_nonce: 1,
+                block_info: BlockInfo::default(),
             }
         }
 
@@ -340,7 +418,7 @@ mod property_constraints_tests {
                 .process_raw_state_transitions(
                     &[serialized],
                     &platform_state,
-                    &BlockInfo::default(),
+                    &self.block_info,
                     &transaction,
                     platform_version,
                     false,
@@ -505,8 +583,18 @@ mod property_constraints_tests {
             result
         }
 
-        /// Puts the stored offer up for sale at `price`.
+        /// Puts the stored offer up for sale at `price`, which must succeed.
         async fn set_price(&mut self, price: Credits) {
+            assert_matches!(
+                self.try_set_price(price).await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "setting the price must succeed"
+            );
+        }
+
+        /// Puts the stored offer up for sale at `price`. On success the fixture's
+        /// document becomes the priced version.
+        async fn try_set_price(&mut self, price: Credits) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let mut priced = self
                 .document
@@ -538,12 +626,14 @@ mod property_constraints_tests {
             };
             self.next_nonce += 1;
 
-            assert_matches!(
-                self.process(&transition),
-                StateTransitionExecutionResult::SuccessfulExecution { .. },
-                "setting the price must succeed"
-            );
-            self.document = Some(priced);
+            let result = self.process(&transition);
+            if matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            ) {
+                self.document = Some(priced);
+            }
+            result
         }
 
         /// A second funded identity on the fixture's platform.
@@ -1464,5 +1554,135 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// The times and heights a create records are its block's: an offer must end
+    /// after its creation and within a week of it, and be listed from block 10 on.
+    #[tokio::test]
+    async fn should_judge_a_create_by_the_time_and_height_of_its_block() {
+        let mut fixture = OfferFixture::with_schema(timed_offer_schema());
+        fixture.block_info = at_block(NOW, 20);
+
+        let result = fixture
+            .create(|document| document.set("endsAt", Value::U64(NOW)))
+            .await;
+        expect_violated(
+            result,
+            "endsAfterCreation",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| document.set("endsAt", Value::U64(NOW + 8 * DAY_MS)))
+            .await;
+        expect_violated(
+            result,
+            "endsWithinAWeek",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        fixture.block_info = at_block(NOW, 5);
+        let result = fixture
+            .create(|document| document.set("endsAt", Value::U64(NOW + DAY_MS)))
+            .await;
+        expect_violated(
+            result,
+            "listedAfterHeight10",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        fixture.block_info = at_block(NOW, 20);
+        assert_matches!(
+            fixture
+                .create(|document| document.set("endsAt", Value::U64(NOW + DAY_MS)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let stored = fixture.stored_offers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].created_at(), Some(NOW));
+    }
+
+    /// A replace keeps the creation time and records its own update time: moving
+    /// the end is measured from the stored `$createdAt`, and a replace after the
+    /// end breaks `updatedBeforeEnd`. A price update, which records an update
+    /// time too, is judged the same way.
+    #[tokio::test]
+    async fn should_judge_a_replace_and_a_price_update_by_the_update_time() {
+        let mut fixture = timed_offer().await;
+
+        // Three days on, the end moves to six days after creation
+        fixture.block_info = at_block(NOW + 3 * DAY_MS, 30);
+        assert_matches!(
+            fixture
+                .replace(|document| document.set("endsAt", Value::U64(NOW + 6 * DAY_MS)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // Nine days after creation is more than a week, whenever the replace happens
+        let result = fixture
+            .replace(|document| document.set("endsAt", Value::U64(NOW + 9 * DAY_MS)))
+            .await;
+        expect_violated(
+            result,
+            "endsWithinAWeek",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        // After the end, neither a replace nor a price update is accepted
+        fixture.block_info = at_block(NOW + 7 * DAY_MS, 40);
+        let result = fixture
+            .replace(|document| document.set("fee", Value::U64(20)))
+            .await;
+        expect_violated(
+            result,
+            "updatedBeforeEnd",
+            PropertyConstraintViolation::NotMet,
+        );
+        let result = fixture.try_set_price(1000).await;
+        expect_violated(
+            result,
+            "updatedBeforeEnd",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        // Before it, the price update is accepted
+        fixture.block_info = at_block(NOW + 5 * DAY_MS, 40);
+        fixture.set_price(1000).await;
+    }
+
+    /// A transfer and a purchase record the transfer's time: after the end each
+    /// breaks `transferredBeforeEnd`, while the rules reading the creation and
+    /// update times are not judged again.
+    #[tokio::test]
+    async fn should_judge_a_transfer_and_a_purchase_by_the_transfer_time() {
+        let mut fixture = timed_offer().await;
+        let (recipient, _, _) = fixture.other_identity(7);
+
+        fixture.block_info = at_block(NOW + 2 * DAY_MS, 30);
+        let result = fixture.transfer(recipient.id()).await;
+        expect_violated(
+            result,
+            "transferredBeforeEnd",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        fixture.block_info = at_block(NOW + DAY_MS / 2, 30);
+        fixture.set_price(1000).await;
+        let buyer = fixture.other_identity(8);
+        fixture.block_info = at_block(NOW + 2 * DAY_MS, 40);
+        let result = fixture.purchase_by(&buyer, 1000).await;
+        expect_violated(
+            result,
+            "transferredBeforeEnd",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        fixture.block_info = at_block(NOW + DAY_MS / 2, 40);
+        assert_matches!(
+            fixture.transfer(recipient.id()).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
     }
 }

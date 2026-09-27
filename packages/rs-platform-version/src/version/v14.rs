@@ -1047,23 +1047,28 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     document's properties must meet, each a condition: a comparison
 ///     (`equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
 ///     `greaterThanOrEqual`) of two integer expressions built from integer
-///     literals, paths of integer or boolean properties (a boolean reading as
-///     1 for true and 0 for false), `add`, `subtract`, `multiply`,
-///     `divide`, `modulo` and `power`, and sizes: `length` and `byteLength`,
-///     the characters and UTF-8 bytes of a string property, and `count`, the
-///     items of an array or byte array property, each 0 for a property the
-///     document leaves out; `in`, whether an integer expression
-///     takes one of two or more distinct integer values; `equal` or `notEqual`
-///     of a string property and a `{ "const": string }` or of two bare paths
-///     naming string properties, or `in` of a string property and two or more
-///     distinct strings, a string the document leaves out equalling no
-///     constant and no other string unless an `ifAbsent` gives it a string
-///     default (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum`
-///     must list too); `equal`, `notEqual` or `in` of an identifier property
-///     (one declaring `refersTo` included) or of `$ownerId`, the document's
-///     owner, likewise, with base58 identifier constants or another identifier
-///     operand and no default, an identifier the document leaves out equalling
-///     none; `present` or `absent` naming a property of any type, whether the
+///     literals, paths of integer or boolean properties (a boolean reading as 1
+///     for true and 0 for false), `add`, `subtract`, `multiply`, `divide`,
+///     `modulo` and `power`, and sizes: `length` and `byteLength`, the
+///     characters and UTF-8 bytes of a string property, and `count`, the items
+///     of an array or byte array property, each 0 for a property the document
+///     leaves out, and the system times and heights `$createdAt`, `$updatedAt`
+///     and `$transferredAt` (block times in milliseconds), each also with
+///     `BlockHeight` or `CoreBlockHeight` appended, of the document's creation,
+///     last update (create, replace, price update) and last transfer (create,
+///     transfer, purchase), which a rule may read only on a type listing them
+///     in `required`; `in`, whether an integer expression takes one of two or
+///     more distinct integer values; `equal` or `notEqual` of a string property
+///     and a `{ "const": string }` or of two bare paths naming string
+///     properties, or `in` of a string property and two or more distinct
+///     strings, a string the document leaves out equalling no constant and no
+///     other string unless an `ifAbsent` gives it a string default
+///     (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum` must list
+///     too); `equal`, `notEqual` or `in` of an identifier property (one
+///     declaring `refersTo` included) or of `$ownerId`, the document's owner,
+///     likewise, with base58 identifier constants or another identifier operand
+///     and no default, an identifier the document leaves out equalling none;
+///     `present` or `absent` naming a property of any type, whether the
 ///     document holds it (the one way to tell a property left out from one set
 ///     to 0); `anyOf` or `allOf` over two or more conditions; or `not` over
 ///     one. In an operand, a property the document leaves out counts as 0, or
@@ -1078,39 +1083,47 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     condition guards a later one. The parser checks that every path an
 ///     operand reads names an integer or boolean property, every path a
 ///     `length` or `byteLength` measures a string property, every path a
-///     `count` counts an array or byte array property, every path compared
-///     with identifiers an identifier property, every path compared with
-///     strings a string property (whose `enum`, if it declares one, lists every
-///     constant it is compared with), and every path `present` or `absent`
-///     tests a property of any type, none transient nor inside a transient
-///     object; that every comparison and `in` reads a property or the owner;
-///     that nothing is compared with itself; that strings and identifiers are
-///     only compared for equality, and never with each other; that no `in`
-///     lists a value twice; that an `anyOf` or `allOf` holds none directly of
-///     its own kind and a `not` no `not`; that an indexOnly type, whose deletes
-///     carry no owner, reads no `$ownerId`; and that no condition or operand
-///     nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every
-///     parse. Under full validation it holds the limits
-///     `SystemLimits::max_property_constraints` (16 rules) and
-///     `max_property_constraint_nodes` (32 per rule, every comparison, `in`,
-///     listed value, `const`, presence test and logical operator counting as
-///     one), and that no `anyOf` or `allOf` lists the same condition twice.
-///     `DataContract::validate_document_properties` 0 (extended in place, inert
-///     before this version, and taking the document's owner for `$ownerId`)
-///     calls `validate_property_constraints` (`validate_property_constraints`
-///     0) after the schema validation, so document create and replace, and any
-///     client validating a document, refuse a broken rule with
-///     `DocumentPropertyConstraintViolatedError` (10422), naming the rule and
-///     why. A transfer and a purchase, which give the document a new owner,
-///     are judged against the rules reading `$ownerId` with that owner
-///     (`validate_property_constraints_for_new_owner`, beside `distinctFrom` in
-///     their structure validation, in place and inert before this version).
-///     The rules read no state and change nothing stored. They are fixed when
-///     the document type is created: a changed `propertyConstraints` is an
-///     incompatible schema change on update. The moderation charters contract
-///     declares its first one: a `submittedCharter`'s `rewardSplit` members add
-///     up to 100, replacing the charter-specific check, whose error 11001
-///     keeps its place in `BasicError` but is never produced.
+///     `count` counts an array or byte array property, every system time or
+///     height a rule reads one the type lists in `required` (none on an
+///     indexOnly type), every path compared with identifiers an identifier
+///     property, every path compared with strings a string property (whose
+///     `enum`, if it declares one, lists every constant it is compared with),
+///     and every path `present` or `absent` tests a property of any type, none
+///     transient nor inside a transient object; that every comparison and `in`
+///     reads a property or the owner; that nothing is compared with itself;
+///     that strings and identifiers are only compared for equality, and never
+///     with each other; that no `in` lists a value twice; that an `anyOf` or
+///     `allOf` holds none directly of its own kind and a `not` no `not`; that
+///     an indexOnly type, whose deletes carry no owner, reads no `$ownerId`;
+///     and that no condition or operand nests deeper than
+///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse. Under full
+///     validation it holds the limits `SystemLimits::max_property_constraints`
+///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
+///     comparison, `in`, listed value, `const`, presence test and logical
+///     operator counting as one), and that no `anyOf` or `allOf` lists the same
+///     condition twice. `DataContract::validate_document_properties` 0
+///     (extended in place, inert before this version, and taking the document's
+///     owner for `$ownerId`) calls `validate_property_constraints`
+///     (`validate_property_constraints` 0) after the schema validation, so
+///     document create and replace, and any client validating a document,
+///     refuse a broken rule with `DocumentPropertyConstraintViolatedError`
+///     (10422), naming the rule and why. A transfer and a purchase, which give
+///     the document a new owner, are judged against the rules reading
+///     `$ownerId` or the transfer's time and heights, with the new values, and
+///     a price update, which sets the update's time and heights, against the
+///     rules reading those (`validate_property_constraints_for_system_change`,
+///     in their structure validation, in place and inert before this version;
+///     the price update's call is new there). `validate_document_properties`
+///     takes the document version's system values (`DocumentSystemValues`):
+///     consensus gives the writer and the block's time and heights on create,
+///     and on replace the stored creation and transfer values with the block's
+///     as the update. The rules read no state and change nothing stored. They
+///     are fixed when the document type is created: a changed
+///     `propertyConstraints` is an incompatible schema change on update. The
+///     moderation charters contract declares its first one: a
+///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
+///     charter-specific check, whose error 11001 keeps its place in
+///     `BasicError` but is never produced.
 ///
 /// 40. **Elected moderation teams moderate from their stored charter**: seating
 ///     writes nothing. Awarding the contest of item 37 writes the winning

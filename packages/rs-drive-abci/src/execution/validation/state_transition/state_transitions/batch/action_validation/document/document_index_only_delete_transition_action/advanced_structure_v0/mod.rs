@@ -1,3 +1,4 @@
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::consensus::basic::document::{
     InvalidDocumentTransitionActionError, InvalidDocumentTypeError,
 };
@@ -128,7 +129,7 @@ impl DocumentIndexOnlyDeleteTransitionActionStructureValidationV0
             .validate_document_properties(
                 document_type_name,
                 user_data.into(),
-                None,
+                &DocumentSystemValues::default(),
                 platform_version,
             )
             .map_err(Error::Protocol)

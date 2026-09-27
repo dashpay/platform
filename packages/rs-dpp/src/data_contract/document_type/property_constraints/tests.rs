@@ -63,7 +63,9 @@ fn data(entries: &[(&str, Value)]) -> Value {
 /// The value of `expression`, parsed as the left side of an `equal`, for `data`.
 fn evaluate(expression: Value, data: &Value) -> Result<i128, PropertyConstraintViolation> {
     match parse_rule_value(platform_value!({ "equal": [expression, "anchor"] })) {
-        PropertyConstraint::Compare { left, .. } => left.evaluate(data),
+        PropertyConstraint::Compare { left, .. } => {
+            left.evaluate(data, &DocumentSystemValues::default())
+        }
         other => panic!("an equal parses to a comparison, got {other:?}"),
     }
 }
@@ -737,27 +739,45 @@ fn should_hold_an_in_when_its_operand_takes_a_listed_value() {
     let rule = parse_rule_value(platform_value!({ "in": ["kind", [1, 3, 7]] }));
     for (kind, holds) in [(1, true), (3, true), (7, true), (2, false), (8, false)] {
         assert_eq!(
-            rule.holds(&data(&[("kind", Value::U64(kind))]), None),
+            rule.holds(
+                &data(&[("kind", Value::U64(kind))]),
+                &DocumentSystemValues::default()
+            ),
             Ok(holds),
             "kind {kind}"
         );
     }
     // An absent operand reads as 0
-    assert_eq!(rule.holds(&data(&[]), None), Ok(false));
+    assert_eq!(
+        rule.holds(&data(&[]), &DocumentSystemValues::default()),
+        Ok(false)
+    );
     let with_zero = parse_rule_value(platform_value!({ "in": ["kind", [0, 1]] }));
-    assert_eq!(with_zero.holds(&data(&[]), None), Ok(true));
+    assert_eq!(
+        with_zero.holds(&data(&[]), &DocumentSystemValues::default()),
+        Ok(true)
+    );
 
     let divided = parse_rule_value(platform_value!({ "in": [{ "divide": [10, "kind"] }, [2, 5]] }));
     assert_eq!(
-        divided.violation(&data(&[("kind", Value::U64(5))]), None),
+        divided.violation(
+            &data(&[("kind", Value::U64(5))]),
+            &DocumentSystemValues::default()
+        ),
         None
     );
     assert_eq!(
-        divided.violation(&data(&[("kind", Value::U64(3))]), None),
+        divided.violation(
+            &data(&[("kind", Value::U64(3))]),
+            &DocumentSystemValues::default()
+        ),
         Some(PropertyConstraintViolation::NotMet)
     );
     assert_eq!(
-        divided.violation(&data(&[("kind", Value::U64(0))]), None),
+        divided.violation(
+            &data(&[("kind", Value::U64(0))]),
+            &DocumentSystemValues::default()
+        ),
         Some(PropertyConstraintViolation::DivisionByZero)
     );
 
@@ -903,17 +923,17 @@ fn should_compare_a_string_property_with_constants() {
             None => data(&[]),
         };
         assert_eq!(
-            equal.holds(&values, None),
+            equal.holds(&values, &DocumentSystemValues::default()),
             Ok(is_closed),
             "equal, {status:?}"
         );
         assert_eq!(
-            not_equal.holds(&values, None),
+            not_equal.holds(&values, &DocumentSystemValues::default()),
             Ok(!is_closed),
             "notEqual, {status:?}"
         );
         assert_eq!(
-            in_list.holds(&values, None),
+            in_list.holds(&values, &DocumentSystemValues::default()),
             Ok(is_listed),
             "in, {status:?}"
         );
@@ -924,16 +944,22 @@ fn should_compare_a_string_property_with_constants() {
         "anyOf": [{ "notEqual": ["status", { "const": "closed" }] }, { "present": "closedAt" }]
     }));
     let closed = Value::Text("closed".to_string());
-    assert_eq!(rule.violation(&data(&[]), None), None);
+    assert_eq!(
+        rule.violation(&data(&[]), &DocumentSystemValues::default()),
+        None
+    );
     assert_eq!(
         rule.violation(
             &data(&[("status", closed.clone()), ("closedAt", Value::U64(9))]),
-            None
+            &DocumentSystemValues::default()
         ),
         None
     );
     assert_eq!(
-        rule.violation(&data(&[("status", closed)]), None),
+        rule.violation(
+            &data(&[("status", closed)]),
+            &DocumentSystemValues::default()
+        ),
         Some(PropertyConstraintViolation::NotMet)
     );
 }
@@ -1043,12 +1069,12 @@ fn should_compare_two_string_properties() {
         }
         let values = data(&entries);
         assert_eq!(
-            equal.holds(&values, None),
+            equal.holds(&values, &DocumentSystemValues::default()),
             Ok(same),
             "equal, {from:?} {to:?}"
         );
         assert_eq!(
-            not_equal.holds(&values, None),
+            not_equal.holds(&values, &DocumentSystemValues::default()),
             Ok(!same),
             "notEqual, {from:?} {to:?}"
         );
@@ -1158,25 +1184,45 @@ fn should_read_a_string_default_for_a_property_left_out() {
             Some(value) => data(&[("status", value.clone())]),
             None => data(&[]),
         };
-        assert_eq!(open.holds(&values, None), Ok(is_open), "equal, {status:?}");
-        assert_eq!(listed.holds(&values, None), Ok(is_open), "in, {status:?}");
+        assert_eq!(
+            open.holds(&values, &DocumentSystemValues::default()),
+            Ok(is_open),
+            "equal, {status:?}"
+        );
+        assert_eq!(
+            listed.holds(&values, &DocumentSystemValues::default()),
+            Ok(is_open),
+            "in, {status:?}"
+        );
     }
 
     let same_default = parse_rule_value(platform_value!({
         "equal": [{ "ifAbsent": ["from", "USD"] }, { "ifAbsent": ["to", "USD"] }]
     }));
-    assert_eq!(same_default.holds(&data(&[]), None), Ok(true));
     assert_eq!(
-        same_default.holds(&data(&[("to", text_value("USD"))]), None),
+        same_default.holds(&data(&[]), &DocumentSystemValues::default()),
         Ok(true)
     );
     assert_eq!(
-        same_default.holds(&data(&[("to", text_value("EUR"))]), None),
+        same_default.holds(
+            &data(&[("to", text_value("USD"))]),
+            &DocumentSystemValues::default()
+        ),
+        Ok(true)
+    );
+    assert_eq!(
+        same_default.holds(
+            &data(&[("to", text_value("EUR"))]),
+            &DocumentSystemValues::default()
+        ),
         Ok(false)
     );
     // Without defaults, two properties left out are not equal
     let bare = parse_rule_value(platform_value!({ "equal": ["from", "to"] }));
-    assert_eq!(bare.holds(&data(&[]), None), Ok(false));
+    assert_eq!(
+        bare.holds(&data(&[]), &DocumentSystemValues::default()),
+        Ok(false)
+    );
 
     // A default is part of the node it sits in, and listed for the enum check apart
     // from the constants compared
@@ -1326,8 +1372,16 @@ fn should_compare_identifier_properties() {
             Some(value) => data(&[("buyerId", value.clone())]),
             None => data(&[]),
         };
-        assert_eq!(is_a.holds(&values, None), Ok(equals_a), "equal, {buyer:?}");
-        assert_eq!(listed.holds(&values, None), Ok(is_listed), "in, {buyer:?}");
+        assert_eq!(
+            is_a.holds(&values, &DocumentSystemValues::default()),
+            Ok(equals_a),
+            "equal, {buyer:?}"
+        );
+        assert_eq!(
+            listed.holds(&values, &DocumentSystemValues::default()),
+            Ok(is_listed),
+            "in, {buyer:?}"
+        );
     }
 
     let distinct = parse_rule_value(platform_value!({ "notEqual": ["buyerId", "sellerId"] }));
@@ -1341,11 +1395,23 @@ fn should_compare_identifier_properties() {
         }
         data(&entries)
     };
-    assert_eq!(distinct.holds(&pair(Some(a), Some(b)), None), Ok(true));
-    assert_eq!(distinct.holds(&pair(Some(a), Some(a)), None), Ok(false));
-    assert_eq!(distinct.holds(&pair(Some(a), None), None), Ok(true));
+    assert_eq!(
+        distinct.holds(&pair(Some(a), Some(b)), &DocumentSystemValues::default()),
+        Ok(true)
+    );
+    assert_eq!(
+        distinct.holds(&pair(Some(a), Some(a)), &DocumentSystemValues::default()),
+        Ok(false)
+    );
+    assert_eq!(
+        distinct.holds(&pair(Some(a), None), &DocumentSystemValues::default()),
+        Ok(true)
+    );
     // Two identifiers left out are not equal
-    assert_eq!(distinct.holds(&pair(None, None), None), Ok(true));
+    assert_eq!(
+        distinct.holds(&pair(None, None), &DocumentSystemValues::default()),
+        Ok(true)
+    );
 
     // A comparison of a path with a constant is three nodes, an in two plus one per value
     assert_eq!(is_a.node_count(), 3);
@@ -1437,13 +1503,34 @@ fn should_compare_the_owner() {
     let buyer =
         |identifier: Identifier| data(&[("buyerId", Value::Identifier(identifier.to_buffer()))]);
 
-    assert_eq!(buyer_owns.holds(&buyer(a), Some(a)), Ok(true));
-    assert_eq!(buyer_owns.holds(&buyer(a), Some(b)), Ok(false));
-    assert_eq!(buyer_owns.holds(&buyer(a), None), Ok(false));
-    assert_eq!(buyer_owns.holds(&data(&[]), Some(a)), Ok(false));
-    assert_eq!(allowed_writers.holds(&data(&[]), Some(b)), Ok(true));
-    assert_eq!(allowed_writers.holds(&data(&[]), Some(c)), Ok(false));
-    assert_eq!(allowed_writers.holds(&data(&[]), None), Ok(false));
+    assert_eq!(
+        buyer_owns.holds(&buyer(a), &DocumentSystemValues::owned_by(a)),
+        Ok(true)
+    );
+    assert_eq!(
+        buyer_owns.holds(&buyer(a), &DocumentSystemValues::owned_by(b)),
+        Ok(false)
+    );
+    assert_eq!(
+        buyer_owns.holds(&buyer(a), &DocumentSystemValues::default()),
+        Ok(false)
+    );
+    assert_eq!(
+        buyer_owns.holds(&data(&[]), &DocumentSystemValues::owned_by(a)),
+        Ok(false)
+    );
+    assert_eq!(
+        allowed_writers.holds(&data(&[]), &DocumentSystemValues::owned_by(b)),
+        Ok(true)
+    );
+    assert_eq!(
+        allowed_writers.holds(&data(&[]), &DocumentSystemValues::owned_by(c)),
+        Ok(false)
+    );
+    assert_eq!(
+        allowed_writers.holds(&data(&[]), &DocumentSystemValues::default()),
+        Ok(false)
+    );
 
     assert_eq!(
         buyer_owns.property_reads(),
@@ -1745,10 +1832,16 @@ fn should_report_whether_a_rule_holds_and_the_left_fault_first() {
         ])
     };
     // (10 + 2) * 3 = 36
-    assert_eq!(rule.violation(&order(10, 2, 3, 36), None), None);
-    assert_eq!(rule.violation(&order(10, 2, 3, 100), None), None);
     assert_eq!(
-        rule.violation(&order(10, 2, 3, 35), None),
+        rule.violation(&order(10, 2, 3, 36), &DocumentSystemValues::default()),
+        None
+    );
+    assert_eq!(
+        rule.violation(&order(10, 2, 3, 100), &DocumentSystemValues::default()),
+        None
+    );
+    assert_eq!(
+        rule.violation(&order(10, 2, 3, 35), &DocumentSystemValues::default()),
         Some(PropertyConstraintViolation::NotMet)
     );
 
@@ -1761,7 +1854,7 @@ fn should_report_whether_a_rule_holds_and_the_left_fault_first() {
         ("negative", Value::I64(-1)),
     ]);
     assert_eq!(
-        both_sides_fail.violation(&values, None),
+        both_sides_fail.violation(&values, &DocumentSystemValues::default()),
         Some(PropertyConstraintViolation::DivisionByZero)
     );
 
@@ -1807,20 +1900,34 @@ fn should_combine_conditions_with_any_of_all_of_and_not() {
     ] {
         let values = data(&[("a", Value::U64(a)), ("b", Value::U64(b))]);
         assert_eq!(
-            any_of.holds(&values, None),
+            any_of.holds(&values, &DocumentSystemValues::default()),
             Ok(either),
             "a {a}, b {b}: anyOf"
         );
-        assert_eq!(all_of.holds(&values, None), Ok(both), "a {a}, b {b}: allOf");
-        assert_eq!(not.holds(&values, None), Ok(!either), "a {a}, b {b}: not");
         assert_eq!(
-            any_of.violation(&values, None),
+            all_of.holds(&values, &DocumentSystemValues::default()),
+            Ok(both),
+            "a {a}, b {b}: allOf"
+        );
+        assert_eq!(
+            not.holds(&values, &DocumentSystemValues::default()),
+            Ok(!either),
+            "a {a}, b {b}: not"
+        );
+        assert_eq!(
+            any_of.violation(&values, &DocumentSystemValues::default()),
             (!either).then_some(PropertyConstraintViolation::NotMet),
             "a {a}, b {b}"
         );
     }
     // An absent property still counts as 0
-    assert_eq!(any_of.holds(&data(&[("b", Value::U64(5))]), None), Ok(true));
+    assert_eq!(
+        any_of.holds(
+            &data(&[("b", Value::U64(5))]),
+            &DocumentSystemValues::default()
+        ),
+        Ok(true)
+    );
 }
 
 /// Conditions are checked in declared order, no further than the outcome needs, so an
@@ -1842,41 +1949,51 @@ fn should_stop_at_the_outcome_and_break_the_rule_on_the_first_fault() {
 
     let values = |a: u64, b: u64| data(&[("a", Value::U64(a)), ("b", Value::U64(b))]);
     let zero_divisor = values(6, 0);
-    assert_eq!(guarded_any_of.violation(&zero_divisor, None), None);
     assert_eq!(
-        unguarded_any_of.violation(&zero_divisor, None),
+        guarded_any_of.violation(&zero_divisor, &DocumentSystemValues::default()),
+        None
+    );
+    assert_eq!(
+        unguarded_any_of.violation(&zero_divisor, &DocumentSystemValues::default()),
         Some(PropertyConstraintViolation::DivisionByZero)
     );
     assert_eq!(
-        guarded_all_of.violation(&zero_divisor, None),
+        guarded_all_of.violation(&zero_divisor, &DocumentSystemValues::default()),
         Some(PropertyConstraintViolation::NotMet)
     );
     assert_eq!(
-        negated.violation(&zero_divisor, None),
+        negated.violation(&zero_divisor, &DocumentSystemValues::default()),
         Some(PropertyConstraintViolation::DivisionByZero)
     );
 
     // 4 / 2 = 2, 6 / 2 = 3
     for rule in [&guarded_any_of, &unguarded_any_of, &guarded_all_of] {
-        assert_eq!(rule.violation(&values(4, 2), None), None, "{rule:?}");
         assert_eq!(
-            rule.violation(&values(6, 2), None),
+            rule.violation(&values(4, 2), &DocumentSystemValues::default()),
+            None,
+            "{rule:?}"
+        );
+        assert_eq!(
+            rule.violation(&values(6, 2), &DocumentSystemValues::default()),
             Some(PropertyConstraintViolation::NotMet),
             "{rule:?}"
         );
     }
     assert_eq!(
-        negated.violation(&values(4, 2), None),
+        negated.violation(&values(4, 2), &DocumentSystemValues::default()),
         Some(PropertyConstraintViolation::NotMet)
     );
-    assert_eq!(negated.violation(&values(6, 2), None), None);
+    assert_eq!(
+        negated.violation(&values(6, 2), &DocumentSystemValues::default()),
+        None
+    );
 
     // An allOf stops at the first condition that fails, before a later fault
     let fails_before_the_fault = parse_rule_value(platform_value!({
         "allOf": [{ "equal": ["a", 1] }, { "equal": [{ "divide": ["a", "b"] }, 2] }]
     }));
     assert_eq!(
-        fails_before_the_fault.violation(&zero_divisor, None),
+        fails_before_the_fault.violation(&zero_divisor, &DocumentSystemValues::default()),
         Some(PropertyConstraintViolation::NotMet)
     );
 }
@@ -1921,12 +2038,12 @@ fn should_tell_a_property_left_out_from_one_set_to_zero() {
         let present_rule = parse_rule_value(platform_value!({ "present": path }));
         let absent_rule = parse_rule_value(platform_value!({ "absent": path }));
         assert_eq!(
-            present_rule.holds(&values, None),
+            present_rule.holds(&values, &DocumentSystemValues::default()),
             Ok(present),
             "present {path}"
         );
         assert_eq!(
-            absent_rule.holds(&values, None),
+            absent_rule.holds(&values, &DocumentSystemValues::default()),
             Ok(!present),
             "absent {path}"
         );
@@ -1937,13 +2054,22 @@ fn should_tell_a_property_left_out_from_one_set_to_zero() {
     let rule = parse_rule_value(platform_value!({
         "anyOf": [{ "absent": "discount" }, { "greaterThan": ["discount", 0] }]
     }));
-    assert_eq!(rule.violation(&data(&[]), None), None);
     assert_eq!(
-        rule.violation(&data(&[("discount", Value::U64(5))]), None),
+        rule.violation(&data(&[]), &DocumentSystemValues::default()),
         None
     );
     assert_eq!(
-        rule.violation(&data(&[("discount", Value::U64(0))]), None),
+        rule.violation(
+            &data(&[("discount", Value::U64(5))]),
+            &DocumentSystemValues::default()
+        ),
+        None
+    );
+    assert_eq!(
+        rule.violation(
+            &data(&[("discount", Value::U64(0))]),
+            &DocumentSystemValues::default()
+        ),
         Some(PropertyConstraintViolation::NotMet)
     );
 }
@@ -1980,10 +2106,16 @@ fn should_read_a_boolean_as_one_or_zero() {
     }));
     let order =
         |waived: bool, fee: u64| data(&[("waived", Value::Bool(waived)), ("fee", Value::U64(fee))]);
-    assert_eq!(rule.violation(&order(true, 0), None), None);
-    assert_eq!(rule.violation(&order(false, 10), None), None);
     assert_eq!(
-        rule.violation(&order(true, 10), None),
+        rule.violation(&order(true, 0), &DocumentSystemValues::default()),
+        None
+    );
+    assert_eq!(
+        rule.violation(&order(false, 10), &DocumentSystemValues::default()),
+        None
+    );
+    assert_eq!(
+        rule.violation(&order(true, 10), &DocumentSystemValues::default()),
         Some(PropertyConstraintViolation::NotMet)
     );
 }
@@ -2158,7 +2290,7 @@ fn should_take_a_size_of_zero_for_a_property_left_out_or_of_another_type() {
         "greaterThanOrEqual": [{ "count": "tags" }, 1]
     }));
     assert_eq!(
-        rule.violation(&data(&[]), None),
+        rule.violation(&data(&[]), &DocumentSystemValues::default()),
         Some(PropertyConstraintViolation::NotMet)
     );
 }
@@ -2172,11 +2304,17 @@ fn should_compare_a_size_with_other_properties() {
     }));
     let tags = |count: usize| Value::Array(vec![Value::Text("tag".to_string()); count]);
     assert_eq!(
-        tags_within_limit.violation(&data(&[("tags", tags(2)), ("maxTags", Value::U8(3))]), None),
+        tags_within_limit.violation(
+            &data(&[("tags", tags(2)), ("maxTags", Value::U8(3))]),
+            &DocumentSystemValues::default()
+        ),
         None
     );
     assert_eq!(
-        tags_within_limit.violation(&data(&[("tags", tags(4)), ("maxTags", Value::U8(3))]), None),
+        tags_within_limit.violation(
+            &data(&[("tags", tags(4)), ("maxTags", Value::U8(3))]),
+            &DocumentSystemValues::default()
+        ),
         Some(PropertyConstraintViolation::NotMet)
     );
 
@@ -2189,15 +2327,266 @@ fn should_compare_a_size_with_other_properties() {
     let listing =
         |fee: u64, title: &str| data(&[("fee", Value::U64(fee)), ("title", Value::from(title))]);
     assert_eq!(
-        short_title_when_free.violation(&listing(0, "héllo"), None),
+        short_title_when_free.violation(&listing(0, "héllo"), &DocumentSystemValues::default()),
         None
     );
     assert_eq!(
-        short_title_when_free.violation(&listing(10, "a long title"), None),
+        short_title_when_free.violation(
+            &listing(10, "a long title"),
+            &DocumentSystemValues::default()
+        ),
         None
     );
     assert_eq!(
-        short_title_when_free.violation(&listing(0, "a long title"), None),
+        short_title_when_free.violation(
+            &listing(0, "a long title"),
+            &DocumentSystemValues::default()
+        ),
         Some(PropertyConstraintViolation::NotMet)
+    );
+}
+
+// ── system times and heights ────────────────────────────────────────────
+
+/// Each system time and height is an integer operand named as `required` names
+/// it, one node, read from the system values rather than the properties.
+#[test]
+fn should_parse_the_system_times_and_heights_as_operands() {
+    for system in SystemProperty::ALL {
+        assert_eq!(SystemProperty::from_name(system.name()), Some(system));
+        let rule = parse_rule_value(platform_value!({
+            "lessThan": [system.name(), "deadline"]
+        }));
+        assert_eq!(
+            rule,
+            PropertyConstraint::Compare {
+                comparison: ConstraintComparison::LessThan,
+                left: ConstraintExpression::System(system),
+                right: property("deadline"),
+            },
+            "{}",
+            system.name()
+        );
+        assert_eq!(rule.node_count(), 3);
+        assert_eq!(rule.property_reads(), [("deadline", PropertyRead::Value)]);
+        assert_eq!(rule.system_reads(), [system]);
+        assert!(!rule.reads_owner());
+    }
+    for name in ["$ownerId", "$id", "$revision", "$createdat", "createdAt"] {
+        assert_eq!(SystemProperty::from_name(name), None, "{name}");
+    }
+
+    // A system value alone keeps a comparison with a literal meaningful: it
+    // differs from document to document
+    let rule = parse_rule_value(platform_value!({
+        "greaterThan": ["$createdAtBlockHeight", 1000]
+    }));
+    assert_eq!(rule.system_reads(), [SystemProperty::CreatedAtBlockHeight]);
+}
+
+#[test]
+fn should_refuse_a_default_for_a_system_property() {
+    expect_refusal(
+        platform_value!({
+            "rule": { "lessThan": [{ "ifAbsent": ["$createdAt", 0] }, "deadline"] }
+        }),
+        "at lessThan[0].ifAbsent gives $createdAt a default, but a system property a rule \
+         reads is always set: name it on its own",
+    );
+}
+
+/// A rule reads the system values it is judged with: here a listing ends
+/// within a week of its creation.
+#[test]
+fn should_read_the_system_values_the_rule_is_judged_with() {
+    let rule = parse_rule_value(platform_value!({
+        "lessThanOrEqual": [{ "subtract": ["endsAt", "$createdAt"] }, 604800000]
+    }));
+    let created_at = |time: u64| DocumentSystemValues {
+        created_at: Some(time),
+        ..Default::default()
+    };
+    let listing = |ends_at: u64| data(&[("endsAt", Value::U64(ends_at))]);
+    let day = 86_400_000u64;
+    assert_eq!(
+        rule.violation(&listing(10 * day), &created_at(4 * day)),
+        None
+    );
+    assert_eq!(
+        rule.violation(&listing(12 * day), &created_at(4 * day)),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+
+    // Every system value reads its own field
+    let values = DocumentSystemValues {
+        owner_id: None,
+        created_at: Some(1),
+        updated_at: Some(2),
+        transferred_at: Some(3),
+        created_at_block_height: Some(4),
+        updated_at_block_height: Some(5),
+        transferred_at_block_height: Some(6),
+        created_at_core_block_height: Some(7),
+        updated_at_core_block_height: Some(8),
+        transferred_at_core_block_height: Some(9),
+    };
+    for (index, property) in SystemProperty::ALL.into_iter().enumerate() {
+        let expected = i128::try_from(index + 1).expect("small");
+        assert_eq!(
+            values.value(property),
+            Some(expected),
+            "{}",
+            property.name()
+        );
+        let rule = parse_rule_value(platform_value!({ "equal": [property.name(), "expected"] }));
+        let expected_data = data(&[("expected", Value::I128(expected))]);
+        assert_eq!(
+            rule.violation(&expected_data, &values),
+            None,
+            "{}",
+            property.name()
+        );
+    }
+}
+
+/// Consensus gives every system value a type records, the only ones a rule may
+/// read; a client that does not know one skips the rule rather than guess.
+#[test]
+fn should_not_judge_a_rule_reading_a_system_value_not_given() {
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "absent": "endsAt" },
+            { "greaterThan": ["endsAt", "$updatedAtBlockHeight"] }
+        ]
+    }));
+    let early = data(&[("endsAt", Value::U64(5))]);
+    assert_eq!(
+        rule.violation(&early, &DocumentSystemValues::default()),
+        None
+    );
+    // Given, it is judged
+    let at_height = |height: u64| DocumentSystemValues {
+        updated_at_block_height: Some(height),
+        ..Default::default()
+    };
+    assert_eq!(rule.violation(&early, &at_height(3)), None);
+    assert_eq!(
+        rule.violation(&early, &at_height(9)),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+}
+
+/// A transfer or a purchase can break the rules reading the owner or the
+/// transfer's time and heights, a price update those reading the update's.
+#[test]
+fn should_tell_which_writes_a_rule_answers_to() {
+    for (rule, transfer, price_update) in [
+        (
+            platform_value!({ "lessThan": ["$transferredAt", "endsAt"] }),
+            true,
+            false,
+        ),
+        (
+            platform_value!({ "not": { "in": ["$transferredAtCoreBlockHeight", [1, 2]] } }),
+            true,
+            false,
+        ),
+        (
+            platform_value!({ "lessThan": ["$updatedAt", "endsAt"] }),
+            false,
+            true,
+        ),
+        (
+            platform_value!({
+                "anyOf": [
+                    { "absent": "endsAt" },
+                    { "lessThan": [{ "add": ["$updatedAtBlockHeight", 1] }, "endsAt"] }
+                ]
+            }),
+            false,
+            true,
+        ),
+        (
+            platform_value!({ "lessThan": ["$createdAt", "endsAt"] }),
+            false,
+            false,
+        ),
+        (
+            platform_value!({ "equal": ["sellerId", "$ownerId"] }),
+            true,
+            false,
+        ),
+        (
+            platform_value!({ "lessThan": ["price", "endsAt"] }),
+            false,
+            false,
+        ),
+    ] {
+        let parsed = parse_rule_value(rule.clone());
+        assert_eq!(
+            parsed.reads_change(SystemChange::Transfer),
+            transfer,
+            "transfer, {rule:?}"
+        );
+        assert_eq!(
+            parsed.reads_change(SystemChange::PriceUpdate),
+            price_update,
+            "price update, {rule:?}"
+        );
+    }
+}
+
+/// A create records every time and height at its block; a stored document's
+/// values are read back from it.
+#[test]
+fn should_take_the_system_values_of_a_create_and_of_a_document() {
+    let owner = Identifier::new([3; 32]);
+    let block = BlockInfo {
+        time_ms: 1_700_000_000_000,
+        height: 42,
+        core_height: 2_100_000,
+        ..Default::default()
+    };
+    let created = DocumentSystemValues::created_in_block(owner, &block);
+    assert_eq!(created.owner_id, Some(owner));
+    for property in SystemProperty::ALL {
+        let expected = match property {
+            SystemProperty::CreatedAt
+            | SystemProperty::UpdatedAt
+            | SystemProperty::TransferredAt => 1_700_000_000_000,
+            SystemProperty::CreatedAtBlockHeight
+            | SystemProperty::UpdatedAtBlockHeight
+            | SystemProperty::TransferredAtBlockHeight => 42,
+            _ => 2_100_000,
+        };
+        assert_eq!(
+            created.value(property),
+            Some(expected),
+            "{}",
+            property.name()
+        );
+    }
+
+    let document: Document = crate::document::DocumentV0 {
+        owner_id: owner,
+        created_at: Some(10),
+        updated_at: Some(20),
+        transferred_at: None,
+        created_at_block_height: Some(1),
+        updated_at_core_block_height: Some(7),
+        ..Default::default()
+    }
+    .into();
+    let stored = DocumentSystemValues::of_document(&document);
+    assert_eq!(
+        stored,
+        DocumentSystemValues {
+            owner_id: Some(owner),
+            created_at: Some(10),
+            updated_at: Some(20),
+            created_at_block_height: Some(1),
+            updated_at_core_block_height: Some(7),
+            ..Default::default()
+        }
     );
 }
