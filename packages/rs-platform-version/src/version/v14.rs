@@ -1054,7 +1054,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     of a string property and a `{ "const": string }` or of two bare paths
 ///     naming string properties, or `in` of a string property and two or more
 ///     distinct strings, a string the document leaves out equalling no
-///     constant and no other string; `present` or `absent` naming a property of
+///     constant and no other string unless an `ifAbsent` gives it a string
+///     default (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum`
+///     must list too); `present` or `absent` naming a property of
 ///     any type, whether the document holds it (the one way to tell a property
 ///     left out from one set to 0); `anyOf` or `allOf` over two or more
 ///     conditions; or `not` over one. In an operand, a property the document

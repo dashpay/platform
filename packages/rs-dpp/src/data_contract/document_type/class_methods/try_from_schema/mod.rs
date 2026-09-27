@@ -2045,22 +2045,21 @@ fn apply_property_constraints_v0(
                 )));
             }
         }
-        // A constant a string property's `enum` does not list is a typo: the
-        // property could never hold it
+        // A constant or a default a string property's `enum` does not list is a
+        // typo: the property could never hold it
         for (path, constant) in constraint.text_constants() {
-            let Some(property_schema) = schema_at_path(&document_type.schema, path)? else {
-                continue;
-            };
-            let Some(Value::Array(members)) = property_schema.get(property_names::ENUM) else {
-                continue;
-            };
-            if !members
-                .iter()
-                .any(|member| member.as_text() == Some(constant))
-            {
+            if !enum_admits(&document_type.schema, path, constant)? {
                 return Err(structure_error(format!(
                     "rule \"{name}\" compares \"{path}\" with \"{constant}\", which is not one of \
                      its enum values"
+                )));
+            }
+        }
+        for (path, default) in constraint.text_defaults() {
+            if !enum_admits(&document_type.schema, path, default)? {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" gives \"{path}\" the default \"{default}\", which is not \
+                     one of its enum values"
                 )));
             }
         }
@@ -2093,6 +2092,19 @@ fn apply_property_constraints_v0(
 
     document_type.property_constraints = constraints;
     Ok(())
+}
+
+/// Whether the string property at the dotted `path` of `schema`, a document
+/// type's, may hold `value`: always, unless it declares an `enum` that does not
+/// list it.
+fn enum_admits(schema: &Value, path: &str, value: &str) -> Result<bool, DataContractError> {
+    let Some(property_schema) = schema_at_path(schema, path)? else {
+        return Ok(true);
+    };
+    let Some(Value::Array(members)) = property_schema.get(property_names::ENUM) else {
+        return Ok(true);
+    };
+    Ok(members.iter().any(|member| member.as_text() == Some(value)))
 }
 
 /// The schema of the property at the dotted `path` of `schema`, a document
