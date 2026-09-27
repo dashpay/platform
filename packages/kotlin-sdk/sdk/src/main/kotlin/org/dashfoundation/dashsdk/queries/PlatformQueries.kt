@@ -666,6 +666,11 @@ class Contracts internal constructor(private val sdk: Sdk) {
      * declaring none, and for every type while this SDK's protocol version is
      * below 14. Port of Swift's `SDK.documentPropertyConstraints`.
      *
+     * Each rule lists the properties it reads and how
+     * ([DocumentPropertyConstraint.reads]), whether it reads the owner
+     * ([DocumentPropertyConstraint.readsOwner]) and the system times and
+     * heights it reads ([DocumentPropertyConstraint.readsSystem]).
+     *
      * [serializedContract] is the contract's platform serialization, the bytes
      * kept beside a fetched contract ([ContractWithSerialization.binarySerialization],
      * `DataContractEntity.binarySerialization`). Rust reads it at this SDK's
@@ -699,7 +704,12 @@ class Contracts internal constructor(private val sdk: Sdk) {
      * with (what `DocumentTransactions.create` takes) and [ownerId] the 32-byte
      * identity that would own it, which `$ownerId` reads. Rust builds the
      * document the create path builds and judges it with the check consensus
-     * runs; nothing but the rules is checked. [serializedContract] is as for
+     * runs; nothing but the rules is checked. The device clock stands in for
+     * the block time the create records (`$createdAt`, `$updatedAt`,
+     * `$transferredAt`), so a rule comparing one is judged as of now; a rule
+     * reading a block height (`$createdAtBlockHeight`, ...) is not judged,
+     * since the height is unknown until the block, and consensus may still
+     * refuse the document for it. [serializedContract] is as for
      * [propertyConstraints]; no network call.
      *
      * @throws DashSdkError.InvalidParameter for empty contract bytes, an owner
