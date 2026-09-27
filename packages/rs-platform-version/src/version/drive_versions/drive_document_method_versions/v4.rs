@@ -74,6 +74,14 @@ use crate::version::drive_versions::drive_document_method_versions::{
 /// continuation demotion decides the *value* tree type, and the two
 /// levels never contend. See
 /// `packages/rs-drive/src/drive/document/index_level_tree_types.rs`.
+///
+/// ## 3. Contenders counted
+///
+/// `insert_contested.add_contested_indices_for_contract_operations: 0 → 1`: a
+/// contested vote poll started from v14 holds its choices under its last index
+/// value in a count tree, so the contender count a join is checked against
+/// (`max_contenders_per_contest`) is one element read. A poll started before
+/// keeps its plain tree for the rest of its life.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
@@ -135,7 +143,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             add_contested_document_for_contract_apply_and_add_to_operations: 0,
             add_contested_document_for_contract_operations: 1, // changed in v14: no-locking contests end at the join window until a second contender joins
             add_contested_document_to_primary_storage: 0,
-            add_contested_indices_for_contract_operations: 0,
+            add_contested_indices_for_contract_operations: 1, // changed in v14: a poll's last index level is a count tree, counting its contenders
             add_contested_reference_and_vote_subtree_to_document_operations: 0,
             add_contested_vote_subtree_for_non_identities_operations: 1, // changed in v4: recreates the abstain or lock vote tree over the storage an earlier poll's cleanup left orphaned when a resource is contested again
             fetch_charter_election_windows: Some(0), // new in v14: a moderation election runs on the join and vote windows its target contract declares

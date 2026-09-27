@@ -372,6 +372,7 @@ impl ErrorWithCode for StateError {
             Self::ReferencedDocumentListInvalidError(_) => 40138,
             Self::DocumentActionFeeModeratorsShareMismatchError(_) => 40139,
             Self::DocumentExpiredError(_) => 40140,
+            Self::DocumentContestMaximumContendersReachedError(_) => 40141,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,
