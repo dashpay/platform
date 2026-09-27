@@ -309,7 +309,8 @@ fn should_hold_string_comparisons_to_string_properties_and_their_enums() {
         (
             json!({ "rule": { "equal": ["state", "price"] } }),
             "rule \"rule\" reads \"state\", which has type string, not integer or boolean: a \
-             string property is compared with a { \"const\": ... }",
+             string property is compared, by equal or notEqual, with a { \"const\": ... } or \
+             another string property",
         ),
         (
             json!({ "rule": { "lessThan": ["state", { "const": "open" }] } }),
@@ -324,6 +325,64 @@ fn should_hold_string_comparisons_to_string_properties_and_their_enums() {
 
     let schema = order_schema(
         Some(json!({ "rule": { "equal": ["note", { "const": "x" }] } })),
+        Some("note"),
+    );
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                schema_value(schema.clone()),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "rule \"rule\" compares \"note\", which is transient or inside a transient object",
+        );
+    }
+}
+
+/// Two bare paths naming string properties compare the strings, by `equal` or
+/// `notEqual` only, on both paths; one string and one integer property stay an
+/// integer comparison, refused for its string.
+#[test]
+fn should_compare_two_string_properties() {
+    let rules = json!({
+        "noteIsNotTag": { "notEqual": ["note", "meta.tag"] },
+        "stateIsNote": { "equal": ["state", "note"] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["noteIsNotTag"].property_reads(),
+            [
+                ("note", PropertyRead::Text),
+                ("meta.tag", PropertyRead::Text)
+            ]
+        );
+        assert_eq!(
+            constraints["stateIsNote"].property_reads(),
+            [("state", PropertyRead::Text), ("note", PropertyRead::Text)]
+        );
+
+        expect_structure_error(
+            parse_order(
+                json!({ "rule": { "lessThan": ["note", "state"] } }),
+                full_validation,
+            ),
+            "rule \"rule\" at lessThan compares two string properties, which only equal and \
+             notEqual do",
+        );
+        expect_structure_error(
+            parse_order(
+                json!({ "rule": { "equal": ["note", "price"] } }),
+                full_validation,
+            ),
+            "rule \"rule\" reads \"note\", which has type string, not integer or boolean",
+        );
+    }
+
+    let schema = order_schema(
+        Some(json!({ "rule": { "notEqual": ["state", "note"] } })),
         Some("note"),
     );
     for full_validation in [true, false] {

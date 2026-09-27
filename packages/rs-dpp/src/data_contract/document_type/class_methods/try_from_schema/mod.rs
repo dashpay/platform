@@ -1938,7 +1938,20 @@ fn apply_property_constraints_v0(
     full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
-    let constraints = parse_property_constraints(&document_type.schema, document_type_name)?;
+    let flattened_properties = &document_type.flattened_properties;
+    let is_string_property = |path: &str| {
+        matches!(
+            flattened_properties
+                .get(path)
+                .map(|property| &property.property_type),
+            Some(DocumentPropertyType::String(_))
+        )
+    };
+    let constraints = parse_property_constraints(
+        &document_type.schema,
+        document_type_name,
+        &is_string_property,
+    )?;
     let structure_error = |message: String| {
         DataContractError::InvalidContractStructure(format!(
             "document type \"{document_type_name}\" propertyConstraints {message}"
@@ -1972,8 +1985,9 @@ fn apply_property_constraints_v0(
                     Some(DocumentPropertyType::String(_)) => {
                         return Err(structure_error(format!(
                             "rule \"{name}\" reads \"{path}\", which has type string, not integer \
-                             or boolean: a string property is compared with a {{ \"const\": ... }} \
-                             by equal or notEqual, or with the strings an in lists"
+                             or boolean: a string property is compared, by equal or notEqual, \
+                             with a {{ \"const\": ... }} or another string property, or with the \
+                             strings an in lists"
                         )));
                     }
                     Some(other) => {

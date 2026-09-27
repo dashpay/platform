@@ -2,10 +2,18 @@ use super::*;
 use platform_value::platform_value;
 use platform_version::version::PLATFORM_VERSIONS;
 
+/// The paths the unit tests treat as string properties; every other path is an
+/// integer one.
+const STRING_PROPERTIES: [&str; 4] = ["status", "from", "to", "meta.state"];
+
+fn is_string_property(path: &str) -> bool {
+    STRING_PROPERTIES.contains(&path)
+}
+
 /// The rules of a schema whose `propertyConstraints` is `declaration`.
 fn parse(declaration: Value) -> Result<BTreeMap<String, PropertyConstraint>, DataContractError> {
     let schema = platform_value!({ "type": "object", "propertyConstraints": declaration });
-    parse_property_constraints(&schema, "order")
+    parse_property_constraints(&schema, "order", &is_string_property)
 }
 
 /// The one rule of a declaration naming it `rule`.
@@ -166,15 +174,19 @@ fn should_parse_every_operator_comparison_and_the_if_absent_operand() {
 #[test]
 fn should_read_nothing_from_a_schema_without_the_keyword() {
     let schema = platform_value!({ "type": "object" });
-    assert!(parse_property_constraints(&schema, "order")
-        .expect("parses")
-        .is_empty());
-    // A schema that is not an object is the core parser's to refuse
     assert!(
-        parse_property_constraints(&Value::Text("x".to_string()), "order")
+        parse_property_constraints(&schema, "order", &is_string_property)
             .expect("parses")
             .is_empty()
     );
+    // A schema that is not an object is the core parser's to refuse
+    assert!(parse_property_constraints(
+        &Value::Text("x".to_string()),
+        "order",
+        &is_string_property
+    )
+    .expect("parses")
+    .is_empty());
 }
 
 #[test]
@@ -925,6 +937,88 @@ fn should_count_and_list_what_a_string_comparison_reads() {
         rule.repeated_condition(),
         Some(("anyOf[2]".to_string(), "anyOf[0]".to_string()))
     );
+}
+
+/// Two bare paths that both name string properties compare the strings; anything else
+/// between two expressions stays an integer comparison.
+#[test]
+fn should_parse_a_comparison_of_two_string_properties() {
+    assert_eq!(
+        parse_rule_value(platform_value!({ "equal": ["from", "to"] })),
+        PropertyConstraint::TextCompareProperties {
+            comparison: ConstraintComparison::Equal,
+            left: "from".to_string(),
+            right: "to".to_string(),
+        }
+    );
+    assert_eq!(
+        parse_rule_value(platform_value!({ "notEqual": ["status", "meta.state"] })),
+        PropertyConstraint::TextCompareProperties {
+            comparison: ConstraintComparison::NotEqual,
+            left: "status".to_string(),
+            right: "meta.state".to_string(),
+        }
+    );
+    // A string and an integer property, or a path inside an expression, stay integer
+    // comparisons, which the document type check refuses for the string
+    assert!(matches!(
+        parse_rule_value(platform_value!({ "equal": ["from", "price"] })),
+        PropertyConstraint::Compare { .. }
+    ));
+    assert!(matches!(
+        parse_rule_value(platform_value!({ "equal": [{ "ifAbsent": ["from", 0] }, "to"] })),
+        PropertyConstraint::Compare { .. }
+    ));
+
+    expect_refusal(
+        platform_value!({
+            "rule": { "anyOf": [{ "equal": ["fee", 1] }, { "lessThan": ["from", "to"] }] }
+        }),
+        "rule \"rule\" at anyOf[1].lessThan compares two string properties, which only equal and \
+         notEqual do",
+    );
+}
+
+/// Two string properties are equal when the document holds the same string in both; one
+/// it leaves out equals no string, not even another one it leaves out.
+#[test]
+fn should_compare_two_string_properties() {
+    let equal = parse_rule_value(platform_value!({ "equal": ["from", "to"] }));
+    let not_equal = parse_rule_value(platform_value!({ "notEqual": ["from", "to"] }));
+    let text = |value: &str| Value::Text(value.to_string());
+    for (from, to, same) in [
+        (Some(text("USD")), Some(text("USD")), true),
+        (Some(text("USD")), Some(text("EUR")), false),
+        (Some(text("USD")), Some(text("usd")), false),
+        (Some(text("")), Some(text("")), true),
+        (Some(text("USD")), None, false),
+        (None, None, false),
+        (Some(Value::Null), Some(Value::Null), false),
+        (Some(Value::U64(1)), Some(Value::U64(1)), false),
+    ] {
+        let mut entries = Vec::new();
+        if let Some(from) = &from {
+            entries.push(("from", from.clone()));
+        }
+        if let Some(to) = &to {
+            entries.push(("to", to.clone()));
+        }
+        let values = data(&entries);
+        assert_eq!(equal.holds(&values), Ok(same), "equal, {from:?} {to:?}");
+        assert_eq!(
+            not_equal.holds(&values),
+            Ok(!same),
+            "notEqual, {from:?} {to:?}"
+        );
+    }
+
+    // equal, from, to
+    assert_eq!(equal.node_count(), 3);
+    assert_eq!(
+        equal.property_reads(),
+        [("from", PropertyRead::Text), ("to", PropertyRead::Text)]
+    );
+    assert!(equal.text_constants().is_empty());
 }
 
 // ── present and absent ──────────────────────────────────────────────────
