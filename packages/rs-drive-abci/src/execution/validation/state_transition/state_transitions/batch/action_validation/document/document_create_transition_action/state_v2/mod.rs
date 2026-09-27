@@ -1,5 +1,6 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
+use dpp::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -55,6 +56,40 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
         )?;
         if !validation_result.is_valid() {
             return Ok(validation_result);
+        }
+
+        // A contest accepts at most `max_contenders_per_contest` contenders, so the end of the
+        // poll can tally and clean up every one in a block. v1 has let the document join the
+        // contest when it exists; a new contest has no contenders to count.
+        if let Some((contested_document_resource_vote_poll, _)) = self.prefunded_voting_balance() {
+            if self.current_store_contest_info().is_some() {
+                let max_contenders = platform_version.system_limits.max_contenders_per_contest;
+                let (fee_result, contenders) = platform
+                    .drive
+                    .fetch_contested_document_vote_poll_contender_count(
+                        contested_document_resource_vote_poll,
+                        max_contenders,
+                        &block_info.epoch,
+                        transaction,
+                        platform_version,
+                    )?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                if contenders >= max_contenders {
+                    return Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::DocumentContestMaximumContendersReachedError(
+                                DocumentContestMaximumContendersReachedError::new(
+                                    contested_document_resource_vote_poll.into(),
+                                    max_contenders,
+                                ),
+                            ),
+                        ),
+                    ));
+                }
+            }
         }
 
         // The creator of a document being created is its writer

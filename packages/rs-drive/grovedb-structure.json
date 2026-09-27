@@ -4205,8 +4205,10 @@
                                   "description": "The value of the next index property; empty for null"
                                 },
                                 "kinds": [
-                                  "Tree"
+                                  "Tree",
+                                  "CountTree"
                                 ],
+                                "kinds_note": "A count tree for the last value of the index when the poll started at protocol version 14 or later, counting its contenders plus its stored info, abstain and lock entries, so a join reads how many contenders the poll has in one fetch. A tree otherwise.",
                                 "flags": [
                                   "EpochOwned",
                                   "None"
@@ -4478,8 +4480,10 @@
                                       "description": "The value of the next index property; empty for null"
                                     },
                                     "kinds": [
-                                      "Tree"
+                                      "Tree",
+                                      "CountTree"
                                     ],
+                                    "kinds_note": "A count tree for the last value of the index when the poll started at protocol version 14 or later, counting its contenders plus its stored info, abstain and lock entries, so a join reads how many contenders the poll has in one fetch. A tree otherwise.",
                                     "flags": [
                                       "EpochOwned",
                                       "None"

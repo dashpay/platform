@@ -2000,7 +2000,7 @@ pub(in crate::execution) mod tests {
                 ..
             } = result
             else {
-                panic!("expected a paid consensus error");
+                panic!("expected a paid consensus error, got {result:?}");
             };
             assert_eq!(consensus_error.to_string(), expected_err);
         } else {

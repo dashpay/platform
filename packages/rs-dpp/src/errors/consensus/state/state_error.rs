@@ -63,6 +63,7 @@ use crate::consensus::state::data_contract::document_type_update_error::Document
 use crate::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use crate::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use crate::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use crate::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
 use crate::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
@@ -621,6 +622,11 @@ pub enum StateError {
     // 14).
     #[error(transparent)]
     ModerationReasonNotListedError(ModerationReasonNotListedError),
+
+    // A contest holding the most contenders a contest accepts refuses another (protocol version
+    // 14).
+    #[error(transparent)]
+    DocumentContestMaximumContendersReachedError(DocumentContestMaximumContendersReachedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1290,12 +1296,23 @@ mod tests {
             149
         );
         // A seated moderation team's action names a reason its proposal lists (protocol
-        // version 14): the tail of the enum.
+        // version 14).
         assert_eq!(
             discriminant_of(StateError::ModerationReasonNotListedError(
                 ModerationReasonNotListedError::new(group_id, identity_id, None)
             )),
             150
+        );
+        // A contest holding the most contenders a contest accepts refuses another (protocol
+        // version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentContestMaximumContendersReachedError(
+                DocumentContestMaximumContendersReachedError::new(
+                    ContestedDocumentResourceVotePoll::default(),
+                    10_000,
+                )
+            )),
+            151
         );
     }
 }

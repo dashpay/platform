@@ -9,7 +9,9 @@ use crate::version::drive_versions::drive_vote_method_versions::{
 /// Identical to [`super::v2::DRIVE_VOTE_METHOD_VERSIONS_V2`] except
 /// `cleanup.remove_contested_resource_vote_poll_end_date_query_operations` is
 /// bumped to `2`: the end-date cleanup of ended contested vote polls removes an
-/// end date only once none of its polls remain.
+/// end date only once none of its polls remain. It also carries
+/// `fetch.fetch_contested_document_vote_poll_contender_count` (0 in every table),
+/// which only protocol v14's contested document create state validation reads.
 pub const DRIVE_VOTE_METHOD_VERSIONS_V3: DriveVoteMethodVersions = DriveVoteMethodVersions {
     insert: DriveVoteInsertMethodVersions {
         register_identity_vote: 0,
@@ -40,5 +42,6 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V3: DriveVoteMethodVersions = DriveVoteMeth
         fetch_identities_voting_for_contenders: 0,
         fetch_contested_document_vote_poll_stored_info: 0,
         fetch_identity_contested_resource_vote: 0,
+        fetch_contested_document_vote_poll_contender_count: 0,
     },
 };

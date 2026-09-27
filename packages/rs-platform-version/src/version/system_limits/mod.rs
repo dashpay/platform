@@ -197,6 +197,12 @@ pub struct SystemLimits {
     /// after the election (`maxAddedModerators`). Read by the declaration's validation
     /// (protocol version 14) and never reached before.
     pub max_contract_moderation_added_moderators: u16,
+    /// Most contenders one contested document resource vote poll accepts: a document that
+    /// would add one more is refused. The end of a poll tallies, and cleans up, every
+    /// contender in one block, so this bounds that work; `maximum_contenders_to_consider`
+    /// must stay at least this where it is read. Read by the contested document create
+    /// state validation v2 (protocol version 14) and never reached before.
+    pub max_contenders_per_contest: u16,
     // This the max redemption cycles we can process if we don't use a constant distribution
     // For a constant perpetual distribution this is very cheap since it's just a multiplication
     // For other distributions we much calculate at each cycle the rewards, so we don't want to
