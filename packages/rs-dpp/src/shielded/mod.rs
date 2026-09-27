@@ -160,6 +160,40 @@ pub const SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES: u64 = 8;
 /// [`compute_minimum_shielded_fee::compute_shielded_identity_balance_write_fee`].
 pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 20;
 
+/// Flat component (in effective bytes at the per-byte storage rate) for the recipient's token
+/// balance item a `TokenUnshieldWithShieldedFee` writes on top of its per-action nullifier and
+/// note writes.
+///
+/// It prices the write as an INSERT, not a rewrite. A recipient who already holds the token has a
+/// balance sum item to replace, which adds no storage; a recipient who has never held it has no
+/// item, so the write creates one and it is real new storage. Measured at protocol version 14:
+/// 6,102,000 credits of storage, the same for the smallest balance and the widest, because the
+/// item is fixed-width — 223 effective bytes at 27,400 credits/byte, against 8 for the rewrite.
+/// 230 leaves headroom for the node layout gaining a few bytes without a fresh calibration.
+///
+/// The expensive case is priced unconditionally, and there are two independent reasons for that.
+///
+/// The first is that the component may never fall below what the write really costs.
+/// `execute_event` books a pool-paid transition as `storage = min(real_storage, carved_fee)` and
+/// pays the proposer only the remainder, so a component under the real cost comes out of the
+/// proposer's reward for the proof it verified and leaves the storage pool short of an item the
+/// chain then carries forever. Recipient state is not reachable where the number is needed in any
+/// case: the fee is fixed by the SDK builder on the client and re-derived by the stateless
+/// `validate_minimum_shielded_fee` gate, and neither reads a balance.
+///
+/// The second reason is decisive even where that state IS reachable, and it is why the cheap case
+/// must not be split out later as an optimisation: `credit_amount` is public and must equal this
+/// fee EXACTLY, so a fee that varied with the recipient's holdings would publish whether the
+/// recipient holds this token for the first time. That is precisely the fee fingerprint the
+/// shielded design exists to deny.
+///
+/// Pricing the worst case is the standing choice here, not an exception:
+/// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES` sizes an `AddBalanceToAddress` to its new-address
+/// worst case, and the estimation branch of `add_to_identity_token_balance_operations` assumes
+/// the insert for the same reason. See
+/// [`compute_minimum_shielded_fee::compute_token_unshield_with_shielded_fee_fee`].
+pub const SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES: u64 = 230;
+
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
 /// Groups the fields that every shielded transition carries identically:

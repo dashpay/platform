@@ -3990,6 +3990,101 @@ mod token_pool_paid_transitions_tests {
         assert_tokens_conserved(&platform);
     }
 
+    /// A token unshield's flat fee sets one storage component aside for the recipient's token
+    /// balance item, and that component has to cover the write in the shape it actually takes.
+    /// A recipient who has never held this token has no balance item, so the write INSERTS a sum
+    /// item instead of replacing one — an insert that costs two orders of magnitude more than a
+    /// rewrite of an existing item, because the item and its tree node are new storage rather
+    /// than replaced bytes.
+    ///
+    /// Underpricing it is not absorbed by the sender: `execute_event` books a pool-paid
+    /// transition as `storage = min(real_storage, carved_fee)` and hands the proposer only
+    /// `carved_fee - storage`, so a component below the real cost comes out of the proposer's
+    /// reward for the Halo 2 proof it verified, and the storage pool is left short of the cost
+    /// of an item the chain now carries forever.
+    ///
+    /// The allowance is read as the difference between the unshield's fee and the two bundle
+    /// bases it is built from, so this pins the component itself rather than any one constant.
+    #[tokio::test]
+    async fn test_token_unshield_with_shielded_fee_covers_a_first_time_holders_balance_insert() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9412);
+        let block_info = BlockInfo::default();
+
+        let (owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (_, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let credit = |holder: Identifier, amount: u64| {
+            platform
+                .drive
+                .add_to_identity_token_balance(
+                    token_id.to_buffer(),
+                    holder.to_buffer(),
+                    amount,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("credit a token balance")
+        };
+
+        // A holder the token has never seen: crediting them inserts the sum item. The balance
+        // rides in that item, so a wider balance is a wider insert. Balances live in a sum tree
+        // whose total may not exceed `i64::MAX`, so the widest one measurable here leaves room
+        // for the other holders this test credits.
+        const WIDEST_MEASURABLE_BALANCE: u64 = 1 << 62;
+        let smallest_insert = credit(Identifier::from(rng.gen::<[u8; 32]>()), 1);
+        let largest_insert = credit(
+            Identifier::from(rng.gen::<[u8; 32]>()),
+            WIDEST_MEASURABLE_BALANCE,
+        );
+        let worst_insert = smallest_insert.storage_fee.max(largest_insert.storage_fee);
+        // A holder who already has the item: this one only replaces bytes, so it adds no storage.
+        let existing_holder = Identifier::from(rng.gen::<[u8; 32]>());
+        credit(existing_holder, 1);
+        let replace = credit(existing_holder, 1);
+
+        let storage = &platform_version.fee_version.storage;
+        let per_byte_rate =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+        let allowance =
+            dpp::shielded::compute_token_unshield_with_shielded_fee_fee(1, 1, platform_version)
+                .expect("unshield fee")
+                - 2 * dpp::shielded::compute_minimum_shielded_fee(1, platform_version)
+                    .expect("bundle base");
+
+        assert!(
+            replace.storage_fee < worst_insert,
+            "a rewrite of an existing balance item must cost less storage than inserting one, \
+             otherwise this test is not measuring the insert: insert {worst_insert} vs replace {}",
+            replace.storage_fee
+        );
+        assert!(
+            allowance >= worst_insert,
+            "the unshield fee sets aside {allowance} credits ({} effective bytes) for the \
+             recipient's balance item, but inserting one for a first-time holder really costs up \
+             to {worst_insert} credits of storage ({} effective bytes: {} for the smallest \
+             balance, {} for the largest) — the shortfall of {} credits is taken out of the \
+             proposer's processing reward",
+            allowance / per_byte_rate,
+            worst_insert.div_ceil(per_byte_rate),
+            smallest_insert.storage_fee,
+            largest_insert.storage_fee,
+            worst_insert.saturating_sub(allowance),
+        );
+    }
+
     #[tokio::test]
     async fn test_token_purchase_from_shielded_pool() {
         let platform_version = PlatformVersion::latest();
