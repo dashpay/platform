@@ -1,0 +1,30 @@
+name: Mac ARM64 ordinary pool proof
+
+on:
+  push:
+    branches: [ci/mac-arm64-ordinary-proof-20260928]
+    paths: [.github/workflows/mac-arm64-ordinary-proof.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: read
+  actions: read
+
+jobs:
+  rust:
+    name: Ordinary ARM64 Rust slot ${{ matrix.slot }}
+    strategy:
+      fail-fast: false
+      matrix:
+        slot: [1, 2]
+    # Run the merged reusable workflow unchanged. Both replicas use rust-ci,
+    # not rust-ci-validation; GitHub must assign the two ordinary ARM64 runners.
+    uses: ./.github/workflows/tests-rs-workspace.yml
+    with:
+      runner-architecture: ARM64
+      validate-arm64-image: false
+      doctests-changed: true
+      shielded-changed: true
+      coverage: false
