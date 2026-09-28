@@ -463,6 +463,9 @@ fn parse_generation_3(
             // choice, a generation-3 value from the same shared mapping.
             admit_index_no_locking_resolution: IndexGrammarAdmissions::for_schema_generation(3)
                 .no_locking_resolution,
+            // MODERATION STAMPS: `$moderatedAt` and `$moderatedBy`, which only a type keeping
+            // fields for its moderators carries (checked by `apply_moderator_abilities`).
+            admit_moderation_stamp_indexes: true,
         },
         platform_version,
     )?;

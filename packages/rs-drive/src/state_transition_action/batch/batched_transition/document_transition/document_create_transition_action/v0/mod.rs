@@ -10,7 +10,7 @@ use std::vec;
 use dpp::ProtocolError;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, TRANSFERRED_AT,
@@ -169,6 +169,12 @@ impl DocumentFromCreateTransitionActionV0 for Document {
 
                 drop_transient_values(&mut data, document_type.transient_fields());
 
+                // A create that sets a field the type keeps for its moderators is a
+                // moderator's: the batch transformer refuses anyone else's. The document is
+                // stamped as its owner's, at the block's time.
+                let moderator_fields = document_type.moderator_changeable_fields();
+                let moderated = data.keys().any(|field| moderator_fields.contains(field));
+
                 let creator_id = if document_type.should_use_creator_id(
                     data_contract.contract.system_version_type(),
                     data_contract.contract.config().version(),
@@ -255,6 +261,8 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                                 None
                             },
                         creator_id,
+                        moderated_at: moderated.then_some(block_info.time_ms),
+                        moderated_by: moderated.then_some(owner_id),
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
@@ -297,6 +305,12 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                 let required_fields = document_type.required_fields();
 
                 drop_transient_values(&mut data, document_type.transient_fields());
+
+                // A create that sets a field the type keeps for its moderators is a
+                // moderator's: the batch transformer refuses anyone else's. The document is
+                // stamped as its owner's, at the block's time.
+                let moderator_fields = document_type.moderator_changeable_fields();
+                let moderated = data.keys().any(|field| moderator_fields.contains(field));
 
                 let creator_id = if document_type.should_use_creator_id(
                     data_contract.contract.system_version_type(),
@@ -384,6 +398,8 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                                 None
                             },
                         creator_id,
+                        moderated_at: moderated.then_some(block_info.time_ms),
+                        moderated_by: moderated.then_some(owner_id),
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {

@@ -85,6 +85,8 @@ fn insert_person_doc(
         updated_at_core_block_height: None,
         transferred_at_core_block_height: None,
         creator_id: None,
+        moderated_at: None,
+        moderated_by: None,
     }
     .into();
 
@@ -1293,6 +1295,8 @@ fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -1570,6 +1574,8 @@ fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -2902,6 +2908,8 @@ mod range_countable_point_lookup_tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -2951,6 +2959,8 @@ mod range_countable_point_lookup_tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));

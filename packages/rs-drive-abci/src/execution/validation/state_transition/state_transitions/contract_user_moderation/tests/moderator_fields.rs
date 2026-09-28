@@ -5,6 +5,7 @@
 use super::*;
 use dpp::data_contract::config::v0::{DataContractConfigGettersV0, DataContractConfigSettersV0};
 use dpp::data_contract::config::DataContractConfig;
+use drive::config::DriveConfig;
 
 const REPORT: &str = "report";
 const TICKET: &str = "ticket";
@@ -18,8 +19,8 @@ const DOCUMENT_PROPERTY_CONSTRAINT_VIOLATED: u32 = 10422;
 const NOTICE: &str = "notice";
 
 /// A report of a post, which its author can not replace, which moderators may delete, and
-/// whose `status` and `resolution` only they write. Its `postId` refers to a post that may be
-/// deleted.
+/// whose `status` and `resolution` only they write, queried by who handled it last and when.
+/// Its `postId` refers to a post that may be deleted.
 fn report_schema() -> Value {
     platform_value!({
         "type": "object",
@@ -27,6 +28,11 @@ fn report_schema() -> Value {
         "moderatorAbilities": { "delete": true, "changeFields": ["status", "resolution"] },
         "indices": [
             { "name": "byStatus", "properties": [{ "status": "asc" }, { "$createdAt": "asc" }] },
+            { "name": "byModeratedAt", "properties": [{ "$moderatedAt": "asc" }] },
+            {
+                "name": "byModerator",
+                "properties": [{ "$moderatedBy": "asc" }, { "$moderatedAt": "asc" }],
+            },
         ],
         "properties": {
             "postId": {
@@ -203,6 +209,31 @@ async fn replace_ticket(setup: &Setup, actor: &Actor, document: Document) -> Sta
 }
 
 impl Setup {
+    /// The ids of the reports `query` (a where and order-by query) returns
+    fn query_reports(&self, query: Value, transaction: Option<&Transaction>) -> Vec<Identifier> {
+        let platform_version = PlatformVersion::latest();
+        let document_type = self
+            .contract
+            .document_type_for_name(REPORT)
+            .expect("expected the report type");
+        let query = DriveDocumentQuery::from_value(
+            query,
+            &self.contract,
+            document_type,
+            &DriveConfig::default(),
+            platform_version,
+        )
+        .expect("expected a valid query");
+        self.platform
+            .drive
+            .query_documents(query, None, false, transaction, None)
+            .expect("expected to query the reports")
+            .documents_owned()
+            .iter()
+            .map(|document| document.id())
+            .collect()
+    }
+
     /// Proves the committed state for a document field change and returns the document the
     /// proof shows
     fn assert_change_proved(&self, transition: &StateTransition) -> Document {
@@ -782,4 +813,209 @@ async fn should_change_and_delete_documents_of_a_contract_that_can_not_be_delete
     assert_success(&setup.process(&delete, &transaction));
     setup.commit(transaction);
     assert_eq!(setup.stored_document(REPORT, report.id(), None), None);
+}
+
+#[tokio::test]
+async fn should_stamp_the_moderator_who_last_wrote_the_fields() {
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+    let (report, create) =
+        create_report(&setup, &setup.stranger, post.id(), platform_value!({})).await;
+    assert_success(&setup.process(&create, &transaction));
+    let (untouched, create_untouched) =
+        create_report(&setup, &setup.stranger, post.id(), platform_value!({})).await;
+    assert_success(&setup.process(&create_untouched, &transaction));
+    // A report nobody moderated carries no stamp.
+    let filed = setup
+        .stored_document(REPORT, report.id(), Some(&transaction))
+        .expect("expected the report");
+    assert_eq!(filed.moderated_at(), None);
+    assert_eq!(filed.moderated_by(), None);
+    setup.commit(transaction);
+
+    let handled_at = BLOCK_TIME_MS + 5_000;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let handle = setup
+        .moderate(
+            &setup.moderator,
+            change_action(REPORT, report.id(), platform_value!({ "status": 2u64 })),
+        )
+        .await;
+    assert_success(&setup.process_at(&handle, handled_at, &transaction));
+    let handled = setup
+        .stored_document(REPORT, report.id(), Some(&transaction))
+        .expect("expected the report");
+    assert_eq!(handled.moderated_at(), Some(handled_at));
+    assert_eq!(handled.moderated_by(), Some(setup.moderator.id()));
+    // Its own clocks stay as its author left them.
+    assert_eq!(handled.updated_at(), filed.updated_at());
+    setup.commit(transaction);
+    let proved = setup.assert_change_proved(&handle);
+    assert_eq!(proved.moderated_by(), Some(setup.moderator.id()));
+    assert_eq!(proved.moderated_at(), Some(handled_at));
+
+    // The reports are queried by who handled them and when; the one nobody touched is in
+    // neither.
+    let moderator_id = Value::Identifier(setup.moderator.id().to_buffer());
+    assert_eq!(
+        setup.query_reports(
+            platform_value!({
+                "where": [["$moderatedBy", "==", moderator_id.clone()]],
+                "orderBy": [["$moderatedAt", "asc"]],
+            }),
+            None,
+        ),
+        vec![report.id()]
+    );
+    assert_eq!(
+        setup.query_reports(
+            platform_value!({
+                "where": [["$moderatedAt", ">", BLOCK_TIME_MS]],
+                "orderBy": [["$moderatedAt", "asc"]],
+            }),
+            None,
+        ),
+        vec![report.id()]
+    );
+
+    // The last moderator to write the fields is the one stamped: the contract owner, later,
+    // takes over the stamp and the entries of both indexes.
+    let resolved_at = BLOCK_TIME_MS + 9_000;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let resolve = setup
+        .moderate(
+            &setup.owner,
+            change_action(
+                REPORT,
+                report.id(),
+                platform_value!({ "resolution": "the post was removed" }),
+            ),
+        )
+        .await;
+    assert_success(&setup.process_at(&resolve, resolved_at, &transaction));
+    setup.commit(transaction);
+    let resolved = setup
+        .stored_document(REPORT, report.id(), None)
+        .expect("expected the report");
+    assert_eq!(resolved.moderated_at(), Some(resolved_at));
+    assert_eq!(resolved.moderated_by(), Some(setup.owner.id()));
+    assert!(setup
+        .query_reports(
+            platform_value!({
+                "where": [["$moderatedBy", "==", moderator_id]],
+                "orderBy": [["$moderatedAt", "asc"]],
+            }),
+            None,
+        )
+        .is_empty());
+    assert_eq!(
+        setup.query_reports(
+            platform_value!({
+                "where": [["$moderatedBy", "==", Value::Identifier(setup.owner.id().to_buffer())]],
+                "orderBy": [["$moderatedAt", "asc"]],
+            }),
+            None,
+        ),
+        vec![report.id()]
+    );
+    assert_eq!(
+        setup.query_reports(
+            platform_value!({
+                "where": [["$moderatedAt", ">", handled_at]],
+                "orderBy": [["$moderatedAt", "asc"]],
+            }),
+            None,
+        ),
+        vec![report.id()]
+    );
+    assert_ne!(untouched.id(), report.id());
+}
+
+#[tokio::test]
+async fn should_stamp_a_moderator_who_writes_the_fields_in_their_own_documents() {
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+
+    // A moderator filing a report already marked handled is stamped as its moderator, at the
+    // block's time.
+    let (report, create) = create_report(
+        &setup,
+        &setup.moderator,
+        post.id(),
+        platform_value!({ "status": 1u64 }),
+    )
+    .await;
+    assert_success(&setup.process_at(&create, BLOCK_TIME_MS + 1_000, &transaction));
+    let filed = setup
+        .stored_document(REPORT, report.id(), Some(&transaction))
+        .expect("expected the report");
+    assert_eq!(filed.moderated_at(), Some(BLOCK_TIME_MS + 1_000));
+    assert_eq!(filed.moderated_by(), Some(setup.moderator.id()));
+    // One filed without the moderators' fields is not, even by a moderator.
+    let (plain, create_plain) =
+        create_report(&setup, &setup.moderator, post.id(), platform_value!({})).await;
+    assert_success(&setup.process(&create_plain, &transaction));
+    let plain = setup
+        .stored_document(REPORT, plain.id(), Some(&transaction))
+        .expect("expected the report");
+    assert_eq!(plain.moderated_by(), None);
+
+    // A ticket's author who does not moderate keeps the stamp a moderator's change left when
+    // replacing the rest.
+    let (ticket, create_the_ticket) =
+        create_ticket(&setup, &setup.user, "printer", platform_value!({})).await;
+    assert_success(&setup.process(&create_the_ticket, &transaction));
+    let assign = setup
+        .moderate(
+            &setup.moderator,
+            change_action(TICKET, ticket.id(), platform_value!({ "slot": 4u64 })),
+        )
+        .await;
+    assert_success(&setup.process_at(&assign, BLOCK_TIME_MS + 2_000, &transaction));
+    let mut renamed = setup
+        .stored_document(TICKET, ticket.id(), Some(&transaction))
+        .expect("expected the ticket");
+    renamed.set("title", Value::Text("scanner".to_string()));
+    renamed.increment_revision().expect("expected a revision");
+    let replace = replace_ticket(&setup, &setup.user, renamed).await;
+    assert_success(&setup.process_at(&replace, BLOCK_TIME_MS + 3_000, &transaction));
+    let replaced = setup
+        .stored_document(TICKET, ticket.id(), Some(&transaction))
+        .expect("expected the ticket");
+    assert_eq!(
+        replaced.get("title"),
+        Some(&Value::Text("scanner".to_string()))
+    );
+    assert_eq!(replaced.moderated_at(), Some(BLOCK_TIME_MS + 2_000));
+    assert_eq!(replaced.moderated_by(), Some(setup.moderator.id()));
+
+    // A moderator replacing their own ticket's slot is stamped; replacing only its title
+    // leaves the stamp as it was.
+    let (own, create_own) =
+        create_ticket(&setup, &setup.moderator, "desk", platform_value!({})).await;
+    assert_success(&setup.process(&create_own, &transaction));
+    let mut reslotted = setup
+        .stored_document(TICKET, own.id(), Some(&transaction))
+        .expect("expected the ticket");
+    reslotted.set("slot", Value::U64(7));
+    reslotted.increment_revision().expect("expected a revision");
+    let replace = replace_ticket(&setup, &setup.moderator, reslotted).await;
+    assert_success(&setup.process_at(&replace, BLOCK_TIME_MS + 4_000, &transaction));
+    let mut retitled = setup
+        .stored_document(TICKET, own.id(), Some(&transaction))
+        .expect("expected the ticket");
+    assert_eq!(retitled.moderated_at(), Some(BLOCK_TIME_MS + 4_000));
+    assert_eq!(retitled.moderated_by(), Some(setup.moderator.id()));
+    retitled.set("title", Value::Text("chair".to_string()));
+    retitled.increment_revision().expect("expected a revision");
+    let replace = replace_ticket(&setup, &setup.moderator, retitled).await;
+    assert_success(&setup.process_at(&replace, BLOCK_TIME_MS + 6_000, &transaction));
+    let kept = setup
+        .stored_document(TICKET, own.id(), Some(&transaction))
+        .expect("expected the ticket");
+    assert_eq!(kept.moderated_at(), Some(BLOCK_TIME_MS + 4_000));
 }

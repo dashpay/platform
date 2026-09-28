@@ -49,7 +49,7 @@ use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
-use crate::document::property_names::{CREATED_AT, UPDATED_AT};
+use crate::document::property_names::{CREATED_AT, MODERATED_AT, MODERATED_BY, UPDATED_AT};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -107,6 +107,10 @@ use std::collections::HashSet;
 
 #[cfg(feature = "validation")]
 use super::NOT_ALLOWED_SYSTEM_PROPERTIES;
+
+/// The system properties a moderator's write of the fields a type keeps for its moderators
+/// stamps on the document: indexable from generation 3, on such a type only.
+const MODERATION_STAMP_PROPERTIES: [&str; 2] = [MODERATED_AT, MODERATED_BY];
 use super::{MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH};
 use crate::consensus::basic::data_contract::{
     InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
@@ -236,6 +240,11 @@ pub(super) struct ParserGeneration {
     /// vote without a Lock choice. Forwarded to [`Index::try_from_value_map`]
     /// exactly like the admissions above.
     pub admit_index_no_locking_resolution: bool,
+    /// Whether an index may name `$moderatedAt` or `$moderatedBy`, the stamp a moderator's
+    /// write of the fields a type keeps for its moderators leaves. Admitted here for every
+    /// type; `apply_moderator_abilities` then refuses it on a type that keeps no such field,
+    /// and in a unique index.
+    pub admit_moderation_stamp_indexes: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -1273,6 +1282,14 @@ fn validate_index_properties(
             )));
         }
 
+        // The moderation stamps, where the generation admits them: whether the type carries
+        // them is `apply_moderator_abilities`'s to judge
+        if ctx.generation.admit_moderation_stamp_indexes
+            && MODERATION_STAMP_PROPERTIES.contains(&index_property.name.as_str())
+        {
+            return Ok(());
+        }
+
         // Indexed property must be defined in user schema if it's not a system one
         if !DocumentType::system_properties_contains(
             ctx.data_contract_system_version,
@@ -2240,6 +2257,33 @@ pub(super) fn apply_moderator_abilities(
             message,
         ))
     };
+    // Only a type keeping fields for its moderators has its documents stamped, so only such a
+    // type indexes the stamp. Never in a unique index: the stamp is the moderator's and the
+    // time, and a moderator's change refused because another document holds the same would
+    // make no sense.
+    for (index_name, index) in &document_type.indices {
+        let Some(stamp) = index
+            .properties
+            .iter()
+            .map(|property| property.name.as_str())
+            .find(|property| MODERATION_STAMP_PROPERTIES.contains(property))
+        else {
+            continue;
+        };
+        if change_fields.is_empty() {
+            return Err(structure_error(format!(
+                "index \"{index_name}\" of document type \"{name}\" reads `{stamp}`, which only \
+                 the documents of a type listing `{MODERATOR_ABILITIES}.{CHANGE_FIELDS}` carry",
+            )));
+        }
+        if index.unique {
+            return Err(structure_error(format!(
+                "unique index \"{index_name}\" of document type \"{name}\" reads `{stamp}`: a \
+                 moderator's change would be refused because another document holds the same \
+                 stamp",
+            )));
+        }
+    }
     if !delete
         && delete_within.is_none()
         && delete_keeps_record.is_none()

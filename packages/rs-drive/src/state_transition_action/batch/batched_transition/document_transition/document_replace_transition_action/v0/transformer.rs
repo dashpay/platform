@@ -123,6 +123,13 @@ impl DocumentReplaceTransitionActionV0 {
 
         let original_creator_id = original_document.creator_id();
 
+        // The last moderator's stamp stays as it is unless the transformer stamps the
+        // replace as a moderator's
+        let original_moderation_stamp = original_document
+            .moderated_at()
+            .zip(original_document.moderated_by())
+            .map(Box::new);
+
         // The fields the stored document had no value for: this replace sets
         // them for the first time. A subset of the changed fields below, kept
         // apart because the immutable-property check treats a first-time set
@@ -211,6 +218,7 @@ impl DocumentReplaceTransitionActionV0 {
                     removed_identifier_fields,
                     stored_changed_values,
                     creator_id: original_creator_id,
+                    moderation_stamp: original_moderation_stamp,
                     property_constraint_aggregates: Default::default(),
                 }
                 .into(),

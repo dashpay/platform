@@ -405,6 +405,7 @@ fn make_replace_v0() -> DocumentReplaceTransitionActionV0 {
         removed_identifier_fields: BTreeMap::new(),
         stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
+        moderation_stamp: None,
         property_constraint_aggregates: Default::default(),
     }
 }
@@ -2987,6 +2988,7 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         removed_identifier_fields: BTreeMap::new(),
         stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
+        moderation_stamp: None,
         property_constraint_aggregates: Default::default(),
     })
 }

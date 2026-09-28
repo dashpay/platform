@@ -134,12 +134,18 @@ Time-related fields use a compact encoding with a **bitfield** to indicate which
 | 6 (0x0040) | `$createdAtCoreBlockHeight` |
 | 7 (0x0080) | `$updatedAtCoreBlockHeight` |
 | 8 (0x0100) | `$transferredAtCoreBlockHeight` |
+| 9 (0x0200) | `$moderatedAt` (version 3) |
+| 10 (0x0400) | `$moderatedBy` (version 3) |
 
 **Data**: For each bit that is set (in the order above), the corresponding value is appended:
 
 - `$createdAt`, `$updatedAt`, `$transferredAt`: **8 bytes big-endian u64** — milliseconds since Unix epoch
 - `$createdAtBlockHeight`, `$updatedAtBlockHeight`, `$transferredAtBlockHeight`: **8 bytes big-endian u64** — platform block height
 - `$createdAtCoreBlockHeight`, `$updatedAtCoreBlockHeight`, `$transferredAtCoreBlockHeight`: **4 bytes big-endian u32** — core chain block height
+- `$moderatedAt`: **8 bytes big-endian u64**, milliseconds since Unix epoch
+- `$moderatedBy`: **32 bytes**, the moderator's identity id
+
+Bits 9 and 10 are read only in version 3, the format of protocol version 14. They are set only on a document a moderator has written the fields only moderators write of (see [System Properties](../contract-keywords/system-properties.md#moderatedat-and-moderatedby)), so every other document's bitfield is as it was before the bits had a meaning.
 
 For example, if a document has `$createdAt` and `$updatedAt` set, the bitfield would be `0x0003`, followed by 16 bytes (8 for each timestamp).
 

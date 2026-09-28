@@ -62,6 +62,12 @@ pub struct DocumentReplaceTransitionActionV0 {
     pub stored_changed_values: BTreeMap<String, Value>,
     /// Creator id
     pub creator_id: Option<Identifier>,
+    /// When a moderator of the contract last wrote the fields the document type keeps for
+    /// its moderators, and who: the stored document's stamp, carried over, or the replace's
+    /// block time and owner when the owner moderates the contract and changes one of them.
+    /// Boxed, since only a document of such a type carries one and the action is one variant
+    /// of a large enum.
+    pub moderation_stamp: Option<Box<(TimestampMillis, Identifier)>>,
     /// The `countOf` and `sumOf` totals the document type's `propertyConstraints` rules
     /// read, each as it will be once this write is done, read from state when the action is
     /// built; `None` when the rules judging the write read none, and boxed, since only
@@ -119,6 +125,16 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
 
     /// creator id
     fn creator_id(&self) -> Option<Identifier>;
+
+    /// When a moderator last wrote the document's moderator fields
+    fn moderated_at(&self) -> Option<TimestampMillis>;
+
+    /// The moderator who last wrote the document's moderator fields
+    fn moderated_by(&self) -> Option<Identifier>;
+
+    /// Stamps the document as written at `moderated_at` by `moderator`, a moderator of the
+    /// contract whose replace changes fields only moderators write
+    fn set_moderated(&mut self, moderated_at: TimestampMillis, moderator: Identifier);
 
     /// The `countOf` and `sumOf` totals the rules judging this write read, each as it will
     /// be once the write is done
@@ -186,6 +202,7 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             transferred_at_core_block_height,
             data,
             creator_id,
+            moderation_stamp,
             ..
         } = value;
 
@@ -212,6 +229,8 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
                 updated_at_core_block_height: *updated_at_core_block_height,
                 transferred_at_core_block_height: *transferred_at_core_block_height,
                 creator_id: *creator_id,
+                moderated_at: moderation_stamp.as_deref().map(|(at, _)| *at),
+                moderated_by: moderation_stamp.as_deref().map(|(_, by)| *by),
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -241,6 +260,7 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             transferred_at_core_block_height,
             data,
             creator_id,
+            moderation_stamp,
             ..
         } = value;
 
@@ -267,6 +287,8 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
                 creator_id,
+                moderated_at: moderation_stamp.as_deref().map(|(at, _)| *at),
+                moderated_by: moderation_stamp.as_deref().map(|(_, by)| *by),
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

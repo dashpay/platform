@@ -395,6 +395,7 @@ mod max_bytes_tests {
                 removed_identifier_fields: BTreeMap::new(),
                 stored_changed_values: BTreeMap::new(),
                 creator_id: None,
+                moderation_stamp: None,
                 property_constraint_aggregates: Default::default(),
             })
         };

@@ -217,6 +217,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let profile_document_type = dashpay_contract
@@ -366,6 +368,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let profile_document_type = dashpay_contract

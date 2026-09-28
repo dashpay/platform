@@ -17,22 +17,25 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 
-/// The refusal of the create or the replace in `result`, by `writer`, when it sets, changes or
-/// removes a field its document type keeps for the contract's moderators
-/// (`moderatorAbilities.changeFields`) and `writer` does not moderate the contract: a create
-/// that sets one, a replace whose changed fields hold one (the first in name order is the one
-/// reported). `None` for any other action, a refused one included, and for a writer that
-/// moderates.
+/// Judges a create or a replace in `result`, by `writer`, that sets, changes or removes a
+/// field its document type keeps for the contract's moderators
+/// (`moderatorAbilities.changeFields`): a create that sets one, a replace whose changed fields
+/// hold one (the first in name order is the one reported). When `writer` does not moderate
+/// the contract the write is refused and the refusal returned; when it does, a replace is
+/// stamped as a moderator's, so the document is written with `$moderatedAt` the block's time
+/// and `$moderatedBy` the writer (a create needs no stamp here: the create action stamps the
+/// document as its owner's whenever it sets such a field, which only a moderator's may).
+/// `None` for any other action, a refused one included.
 ///
 /// Judged in the transformer, so the mempool refuses such a write as a block does. Added in
 /// place to the shipped transformer at protocol version 14 and inert before it: only meta-schema
 /// v3 (protocol version 14) admits the keyword, so no earlier document type keeps such a field
-/// and nothing is read.
+/// and nothing is read or stamped.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn moderator_field_refusal(
+pub(super) fn judge_moderator_field_write(
     drive: &Drive,
     contract: &DataContract,
-    result: &ConsensusValidationResult<BatchedTransitionAction>,
+    result: &mut ConsensusValidationResult<BatchedTransitionAction>,
     writer: Identifier,
     block_info: &BlockInfo,
     execution_context: &mut StateTransitionExecutionContext,
@@ -42,38 +45,48 @@ pub(super) fn moderator_field_refusal(
     if !result.is_valid() {
         return Ok(None);
     }
-    let Some(BatchedTransitionAction::DocumentAction(action)) = result.data.as_ref() else {
+    let Some(BatchedTransitionAction::DocumentAction(action)) = result.data.as_mut() else {
         return Ok(None);
     };
-    let (base, mut written) = match action {
-        DocumentTransitionAction::CreateAction(action) => (
-            action.base(),
-            Box::new(action.data().keys()) as Box<dyn Iterator<Item = &String>>,
-        ),
-        DocumentTransitionAction::ReplaceAction(action) => (
-            action.base(),
-            Box::new(action.changed_data_fields().iter()) as Box<dyn Iterator<Item = &String>>,
-        ),
-        _ => return Ok(None),
+    let refusal = {
+        let (base, mut written) = match &*action {
+            DocumentTransitionAction::CreateAction(action) => (
+                action.base(),
+                Box::new(action.data().keys()) as Box<dyn Iterator<Item = &String>>,
+            ),
+            DocumentTransitionAction::ReplaceAction(action) => (
+                action.base(),
+                Box::new(action.changed_data_fields().iter()) as Box<dyn Iterator<Item = &String>>,
+            ),
+            _ => return Ok(None),
+        };
+        let document_type_name = base.document_type_name();
+        let Some(document_type) = contract.document_type_optional_for_name(document_type_name)
+        else {
+            return Ok(None);
+        };
+        let moderator_fields = document_type.moderator_changeable_fields();
+        let Some(field) = written.find(|field| moderator_fields.contains(*field)) else {
+            return Ok(None);
+        };
+        moderator_field_write_refusal(
+            drive,
+            contract,
+            document_type_name,
+            base.id(),
+            field,
+            writer,
+            &block_info.epoch,
+            execution_context,
+            transaction,
+            platform_version,
+        )?
     };
-    let document_type_name = base.document_type_name();
-    let Some(document_type) = contract.document_type_optional_for_name(document_type_name) else {
-        return Ok(None);
-    };
-    let moderator_fields = document_type.moderator_changeable_fields();
-    let Some(field) = written.find(|field| moderator_fields.contains(*field)) else {
-        return Ok(None);
-    };
-    moderator_field_write_refusal(
-        drive,
-        contract,
-        document_type_name,
-        base.id(),
-        field,
-        writer,
-        &block_info.epoch,
-        execution_context,
-        transaction,
-        platform_version,
-    )
+    if refusal.is_some() {
+        return Ok(refusal);
+    }
+    if let DocumentTransitionAction::ReplaceAction(action) = action {
+        action.set_moderated(block_info.time_ms, writer);
+    }
+    Ok(None)
 }

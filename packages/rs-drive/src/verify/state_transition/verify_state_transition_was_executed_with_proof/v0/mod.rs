@@ -3158,16 +3158,18 @@ fn verify_contract_document_change_execution(
         document_type,
         platform_version,
     )?;
+    // The document as changed holds every value set, none removed, and the signer's stamp.
     let changed = document.filter(|document| {
-        fields.iter().all(|(field, value)| {
-            let stored = document.properties().get(field);
-            // The document is read back under its type, so an integer comes back at the
-            // width the type stores it in, whichever the transition carried it in.
-            match value {
-                Value::Null => stored.is_none(),
-                value => stored.is_some_and(|stored| stored.equal_underlying_data(value)),
-            }
-        })
+        document.moderated_by() == Some(transition.owner_id())
+            && fields.iter().all(|(field, value)| {
+                let stored = document.properties().get(field);
+                // The document is read back under its type, so an integer comes back at the
+                // width the type stores it in, whichever the transition carried it in.
+                match value {
+                    Value::Null => stored.is_none(),
+                    value => stored.is_some_and(|stored| stored.equal_underlying_data(value)),
+                }
+            })
     });
     match changed {
         Some(document) => Ok((
