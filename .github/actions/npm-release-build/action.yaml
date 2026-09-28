@@ -97,7 +97,7 @@ runs:
 
     - name: Build packages
       shell: bash
-      run: yarn build
+      run: python3 .github/scripts/run-npm-build.py
       env:
         CARGO_BUILD_PROFILE: release
 
