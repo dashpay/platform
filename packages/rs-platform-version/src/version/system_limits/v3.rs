@@ -40,11 +40,11 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_contract_moderation_reason_length: 1024,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
-    min_contract_moderation_election_window_seconds: 86_400, // one day
-    max_contract_moderation_election_window_seconds: 2_419_200, // four weeks
+    min_mainnet_contract_moderation_election_window_seconds: 3_600, // one hour
+    max_contract_moderation_election_window_seconds: 2_419_200,     // four weeks
     min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
-    contract_document_restore_window_ms: 604_800_000,        // 7 days
+    contract_document_restore_window_ms: 604_800_000,               // 7 days
     max_contract_moderation_added_moderators: 15,
     max_contenders_per_contest: 1_000,
     max_token_redemption_cycles: 128,

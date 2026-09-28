@@ -596,7 +596,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_contract_moderation_reason_length: 1024,
         max_contract_warnings_per_identity: 16,
         max_contract_moderation_reason_documents: 16,
-        min_contract_moderation_election_window_seconds: 86_400,
+        min_mainnet_contract_moderation_election_window_seconds: 3_600,
         max_contract_moderation_election_window_seconds: 2_419_200,
         min_contract_moderation_challenge_cool_down_seconds: 1_209_600,
         max_contract_moderation_challenge_cool_down_seconds: 94_608_000,
