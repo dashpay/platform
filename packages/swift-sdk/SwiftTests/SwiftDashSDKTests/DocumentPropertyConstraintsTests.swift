@@ -24,6 +24,7 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
           {
             "name": "closedNeedsClosedAt",
             "readsOwner": false,
+            "readsSystem": [],
             "reads": [
               { "kind": "text", "path": "status" },
               { "kind": "presence", "path": "closedAt" }
@@ -38,6 +39,7 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
           {
             "name": "perUnitFee",
             "readsOwner": false,
+            "readsSystem": [],
             "reads": [
               { "kind": "value", "path": "price" },
               { "kind": "value", "path": "fee" }
@@ -47,12 +49,92 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
           {
             "name": "sellerIsOwner",
             "readsOwner": true,
+            "readsSystem": [],
             "reads": [
               { "kind": "presence", "path": "sellerId" },
               { "kind": "identifier", "path": "sellerId" }
             ],
             "rule": {
               "anyOf": [{ "absent": "sellerId" }, { "equal": ["sellerId", "$ownerId"] }]
+            }
+          }
+        ]
+        """
+
+    /// Rules measuring sizes and looking among an array's elements, as the FFI
+    /// reports them: the `length`, `count` and `elements` read kinds.
+    private let sizeAndElementRulesJSON = """
+        [
+          {
+            "name": "notUsed",
+            "readsOwner": false,
+            "readsSystem": [],
+            "reads": [{ "kind": "elements", "path": "labels" }],
+            "rule": { "not": { "contains": ["labels", { "const": "used" }] } }
+          },
+          {
+            "name": "shortTitle",
+            "readsOwner": false,
+            "readsSystem": [],
+            "reads": [
+              { "kind": "length", "path": "title" },
+              { "kind": "length", "path": "title" }
+            ],
+            "rule": {
+              "allOf": [
+                { "lessThanOrEqual": [{ "length": "title" }, 20] },
+                { "lessThanOrEqual": [{ "byteLength": "title" }, 40] }
+              ]
+            }
+          },
+          {
+            "name": "tagsFitSlots",
+            "readsOwner": false,
+            "readsSystem": [],
+            "reads": [
+              { "kind": "count", "path": "tags" },
+              { "kind": "value", "path": "slots" }
+            ],
+            "rule": { "lessThanOrEqual": [{ "count": "tags" }, "slots"] }
+          }
+        ]
+        """
+
+    /// Rules reading system times and heights, as the FFI reports them: the
+    /// `listing` type of rs-sdk-ffi's
+    /// `should_read_the_clock_for_system_times_and_skip_block_heights`, and a
+    /// rule comparing the last update with the last transfer.
+    private let systemRulesJSON = """
+        [
+          {
+            "name": "endsAfterCreation",
+            "readsOwner": false,
+            "readsSystem": ["$createdAt"],
+            "reads": [{ "kind": "value", "path": "endsAt" }],
+            "rule": { "greaterThan": ["endsAt", "$createdAt"] }
+          },
+          {
+            "name": "listedAfterHeight10",
+            "readsOwner": false,
+            "readsSystem": ["$createdAtBlockHeight"],
+            "reads": [],
+            "rule": { "greaterThanOrEqual": ["$createdAtBlockHeight", 10] }
+          },
+          {
+            "name": "repricedAfterTransfer",
+            "readsOwner": false,
+            "readsSystem": [
+              "$updatedAt",
+              "$transferredAt",
+              "$updatedAtCoreBlockHeight",
+              "$transferredAtCoreBlockHeight"
+            ],
+            "reads": [],
+            "rule": {
+              "allOf": [
+                { "greaterThanOrEqual": ["$updatedAt", "$transferredAt"] },
+                { "greaterThanOrEqual": ["$updatedAtCoreBlockHeight", "$transferredAtCoreBlockHeight"] }
+              ]
             }
           }
         ]
@@ -87,6 +169,7 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
         XCTAssertEqual(rules[1].reads.map(\.kind), [.value, .value])
         XCTAssertEqual(rules[2].reads.map(\.kind), [.presence, .identifier])
         XCTAssertEqual(rules.map(\.readsOwner), [false, false, true])
+        XCTAssertEqual(rules.map(\.readsSystem), [[], [], []])
     }
 
     /// The rule is kept as the JSON the schema declares, compact with sorted
@@ -147,6 +230,148 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
                 }
             }
         }
+    }
+
+    // MARK: - Read kinds
+
+    func testSizeAndElementReadsDecodeToTheirKinds() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: sizeAndElementRulesJSON)
+
+        XCTAssertEqual(rules.map(\.name), ["notUsed", "shortTitle", "tagsFitSlots"])
+        XCTAssertEqual(rules[0].reads, [PropertyConstraintRead(path: "labels", kind: .elements)])
+        // `length` and `byteLength` both read a string's size
+        XCTAssertEqual(
+            rules[1].reads,
+            [
+                PropertyConstraintRead(path: "title", kind: .length),
+                PropertyConstraintRead(path: "title", kind: .length)
+            ]
+        )
+        XCTAssertEqual(
+            rules[2].reads,
+            [
+                PropertyConstraintRead(path: "tags", kind: .count),
+                PropertyConstraintRead(path: "slots", kind: .value)
+            ]
+        )
+        XCTAssertEqual(
+            rules[1].ruleJSON,
+            #"{"allOf":[{"lessThanOrEqual":[{"length":"title"},20]},{"lessThanOrEqual":[{"byteLength":"title"},40]}]}"#
+        )
+    }
+
+    func testEveryReadKindNameRoundTrips() {
+        let names = ["value", "presence", "text", "identifier", "length", "count", "elements"]
+        let kinds: [PropertyConstraintRead.Kind] = [
+            .value, .presence, .text, .identifier, .length, .count, .elements
+        ]
+        XCTAssertEqual(names.map(PropertyConstraintRead.Kind.init(name:)), kinds)
+        XCTAssertEqual(kinds.map(\.name), names)
+        XCTAssertEqual(PropertyConstraintRead.Kind(name: "Length"), .other("Length"))
+    }
+
+    // MARK: - System reads
+
+    func testSystemReadsDecodeInDeclaredOrder() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: systemRulesJSON)
+
+        XCTAssertEqual(
+            rules.map(\.readsSystem),
+            [
+                ["$createdAt"],
+                ["$createdAtBlockHeight"],
+                [
+                    "$updatedAt",
+                    "$transferredAt",
+                    "$updatedAtCoreBlockHeight",
+                    "$transferredAtCoreBlockHeight"
+                ]
+            ]
+        )
+        // A system time or height is no property, and not the owner
+        XCTAssertEqual(rules[0].reads, [PropertyConstraintRead(path: "endsAt", kind: .value)])
+        XCTAssertEqual(rules[1].reads, [])
+        XCTAssertEqual(rules[2].reads, [])
+        XCTAssertEqual(rules.map(\.readsOwner), [false, false, false])
+    }
+
+    /// Every name Rust reports is kept as it is, in order, a system value read
+    /// twice listed twice.
+    func testEverySystemNameIsKeptVerbatimWithRepeats() throws {
+        let names = [
+            "$createdAt",
+            "$updatedAt",
+            "$transferredAt",
+            "$createdAtBlockHeight",
+            "$updatedAtBlockHeight",
+            "$transferredAtBlockHeight",
+            "$createdAtCoreBlockHeight",
+            "$updatedAtCoreBlockHeight",
+            "$transferredAtCoreBlockHeight"
+        ]
+        let quoted = names.map { "\"\($0)\"" }.joined(separator: ", ")
+
+        let rules = try DocumentPropertyConstraint.list(fromJSON: """
+            [{ "name": "r", "readsOwner": false, "reads": [],
+               "readsSystem": [\(quoted), "$createdAt"],
+               "rule": { "greaterThan": [{ "add": [\(quoted)] }, "$createdAt"] } }]
+            """)
+
+        XCTAssertEqual(rules.first?.readsSystem, names + ["$createdAt"])
+    }
+
+    /// A library built before `readsSystem` leaves the key out.
+    func testMissingSystemReadsDecodeAsEmpty() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: """
+            [{ "name": "r", "rule": { "present": "a" }, "readsOwner": false,
+               "reads": [{ "path": "a", "kind": "presence" }] }]
+            """)
+
+        XCTAssertEqual(rules.first?.readsSystem, [])
+    }
+
+    func testMalformedSystemReadsAreRefused() {
+        let rule = #""name": "r", "rule": {"present": "a"}, "reads": [], "readsOwner": false"#
+        let malformed = [
+            // Not an array
+            #"[{\#(rule), "readsSystem": "$createdAt"}]"#,
+            #"[{\#(rule), "readsSystem": {"$createdAt": true}}]"#,
+            // A null is no missing key
+            #"[{\#(rule), "readsSystem": null}]"#,
+            // An element that is not a string
+            #"[{\#(rule), "readsSystem": ["$createdAt", 1]}]"#,
+            #"[{\#(rule), "readsSystem": [["$createdAt"]]}]"#
+        ]
+        for json in malformed {
+            XCTAssertThrowsError(try DocumentPropertyConstraint.list(fromJSON: json), json) { error in
+                guard case SDKError.serializationError = error else {
+                    return XCTFail("\(json): expected a serialization error, got \(error)")
+                }
+            }
+        }
+    }
+
+    /// The initializer still builds a rule without naming `readsSystem`, as it
+    /// did before the field existed.
+    func testInitializerDefaultsToNoSystemReads() {
+        let rule = DocumentPropertyConstraint(
+            name: "r",
+            ruleJSON: #"{"present":"a"}"#,
+            reads: [PropertyConstraintRead(path: "a", kind: .presence)],
+            readsOwner: false
+        )
+
+        XCTAssertEqual(rule.readsSystem, [])
+        XCTAssertNotEqual(
+            rule,
+            DocumentPropertyConstraint(
+                name: "r",
+                ruleJSON: #"{"present":"a"}"#,
+                reads: [PropertyConstraintRead(path: "a", kind: .presence)],
+                readsOwner: false,
+                readsSystem: ["$createdAt"]
+            )
+        )
     }
 
     // MARK: - Violations

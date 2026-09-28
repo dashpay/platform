@@ -451,7 +451,8 @@ struct ExpandableIndexRowView: View {
 }
 
 /// One `propertyConstraints` rule: its name, the rule as declared, what it
-/// reads, and whether an owner change is judged against it too.
+/// reads (properties, `$ownerId`, system times and heights), and whether an
+/// owner change is judged against it too.
 struct PropertyConstraintRowView: View {
     let rule: DocumentPropertyConstraint
 
@@ -493,8 +494,21 @@ struct PropertyConstraintRowView: View {
                 .font(.caption2)
                 .foregroundColor(.purple)
             }
+
+            if !systemReadsText.isEmpty {
+                Label("Reads \(systemReadsText)", systemImage: "clock")
+                    .font(.caption2)
+                    .foregroundColor(.teal)
+                    .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsSystem")
+                Text("A price update is judged against the rules reading $updatedAt or its block heights, and a transfer or purchase against those reading $transferredAt or its block heights.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 4)
+        // Keeps the row's identifier on the row and the readsSystem line's on
+        // that line, rather than the row's on every child
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name)")
     }
 
@@ -504,6 +518,14 @@ struct PropertyConstraintRowView: View {
         return rule.reads
             .filter { seen.insert($0).inserted }
             .map { "\($0.path) (\($0.kind.name))" }
+            .joined(separator: ", ")
+    }
+
+    /// The system times and heights the rule reads, repeats dropped.
+    private var systemReadsText: String {
+        var seen = Set<String>()
+        return rule.readsSystem
+            .filter { seen.insert($0).inserted }
             .joined(separator: ", ")
     }
 }
