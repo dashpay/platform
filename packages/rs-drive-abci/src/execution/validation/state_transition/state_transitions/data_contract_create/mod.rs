@@ -6016,48 +6016,6 @@ mod tests {
             );
         }
 
-        /// A preallocated index keyed through an agreement pair makes the
-        /// referenced property's value a tree key when a referenced document is
-        /// created. A `post.hashtag` of up to 280 characters can take 1,120
-        /// bytes, past the 255 a tree key holds, so every post carrying a long
-        /// one could never be created: the contract is refused instead.
-        #[tokio::test]
-        async fn should_reject_an_agreement_keying_a_preallocated_index_by_a_property_wider_than_a_tree_key(
-        ) {
-            let result = run_contract_create(
-                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-preallocated-too-wide.json",
-            )
-            .await;
-
-            assert_matches!(
-                result,
-                StateTransitionExecutionResult::PaidConsensusError {
-                    error: ConsensusError::StateError(
-                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
-                    ),
-                    ..
-                } if error.referring_property() == "hashtag"
-                    && error.reason().contains("preallocated index byHashtagPost")
-                    && error.reason().contains("up to 1120 bytes")
-            );
-        }
-
-        /// At most 63 characters, 252 bytes: every `post.hashtag` fits a tree
-        /// key.
-        #[tokio::test]
-        async fn should_register_an_agreement_keying_a_preallocated_index_by_a_property_that_fits_a_tree_key(
-        ) {
-            let result = run_contract_create(
-                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-preallocated-fits.json",
-            )
-            .await;
-
-            assert_matches!(
-                result,
-                StateTransitionExecutionResult::SuccessfulExecution { .. }
-            );
-        }
-
         /// No stored document carries a transient value, so an agreement with
         /// one on the referenced side could only hold for a referring document
         /// omitting its own side, and a required one never. A property inside a

@@ -172,7 +172,7 @@ Binds the referring document to the document it references: each pair `{ "<refer
 
 This is the moderation charters contract's `electedCharter.submittedCharterId`: the proposal it names must be owned by the writer, and must be for the same `targetContractId` as the elected charter. Other patterns: `{ "authorId": "$ownerId" }` makes a like carry its post's owner, and `{ "$ownerId": "$creatorId" }` lets only the referenced document's creator write.
 
-At registration both sides must exist and hold the same type of value (for integers, the same stored integer type). Neither side may be an object or a typed array, the referring side may not be the reference property itself, and the referenced side may not be `transient` (no stored document carries it; the referring side may be). A pair through which a [`preallocated`](index-only.md#preallocated) index is keyed needs a referenced property whose every value fits an index key, at most 255 bytes: a string of at most 63 characters or with `maxBytes` at most 255, or a byte array of at most 255 bytes. A pair breaking one of these is refused with `ReferencedDocumentPropertyAgreementInvalidError` (40126).
+At registration both sides must exist and hold the same type of value (for integers, the same stored integer type). Neither side may be an object or a typed array, the referring side may not be the reference property itself, and the referenced side may not be `transient` (no stored document carries it; the referring side may be). A pair breaking one of these is refused with `ReferencedDocumentPropertyAgreementInvalidError` (40126).
 
 ### `contractRequirements`
 
@@ -298,7 +298,7 @@ A contract's declarations are checked when it is registered, and again for the w
 | `ReferencedIdentityKeyNotFoundError` | 40123 | Write: the identity has no key with that id, or the identity does not exist. |
 | `ReferencedIdentityKeyDisabledError` | 40124 | Write: the key is disabled. |
 | `ReferencedKeyIdPropertyInvalidError` | 40125 | Registration: `keyIdProperty` or `identityProperty` names a property that does not fit, `$creatorId` on a type that records no creator ids, or a stored key id paired with a transient identity. Write: a key id without its identity, or an identity without its key id. |
-| `ReferencedDocumentPropertyAgreementInvalidError` | 40126 | Registration: a `propertyAgreement` pair names a missing, transient, object or typed array property, or two properties of different types, or `$creatorId` on a type that does not record it, or keys a preallocated index by a property that can hold more than 255 bytes. |
+| `ReferencedDocumentPropertyAgreementInvalidError` | 40126 | Registration: a `propertyAgreement` pair names a missing, transient, object or typed array property, or two properties of different types, or `$creatorId` on a type that does not record it. |
 | `ReferencedDocumentPropertyMismatchError` | 40127 | Write: a `propertyAgreement` pair does not hold. |
 | `ReferencedDocumentTypeNotDeletableError` | 40131 | Registration: a `deletableDocument` reference names a type whose documents can never disappear. |
 | `ReferencedContractRequirementNotMetError` | 40135 | Write: the referenced contract exists but does not meet a `contractRequirements` entry. |

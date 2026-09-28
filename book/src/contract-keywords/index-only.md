@@ -154,10 +154,7 @@ Rules at registration:
 
 - Only on an `indexOnly` type.
 - Every index property is either a property with a `permanentDocument` reference to a type of the same contract, or a key of that reference's `propertyAgreement`. A `deletableDocument` reference does not qualify, since the trees would outlive a deleted target. `$ownerId` may only be the terminal.
-- The referenced property of each such agreement key holds at most 255 bytes, since creating a referenced document makes its value an index key (40126 when the contract is created or updated).
 - Not with `timeRange`.
-
-A referenced document whose agreed value takes more bytes than the referring property can hold preallocates nothing for that index, since no entry could agree with it.
 
 ## `skipIfAbsent`
 

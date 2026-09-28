@@ -58,11 +58,7 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::{
-    DocumentPropertyType, DocumentTypeRef, Index, PreallocatedKeySource,
-};
-use dpp::document::{Document, DocumentV0Getters};
-use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use dpp::data_contract::document_type::{Index, IndexLevel, PreallocatedKeySource};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
@@ -96,7 +92,7 @@ impl Drive {
         let contract = document_and_contract_info.contract;
         let target_name = document_and_contract_info.document_type.name().as_str();
 
-        for referring_document_type in contract.document_types().values() {
+        for (referring_name, referring_document_type) in contract.document_types() {
             let referring_type = referring_document_type.as_ref();
             // `preallocated` is only valid on indexOnly document types, so
             // this filter also keeps the per-insert scan trivially cheap for
@@ -137,7 +133,8 @@ impl Drive {
                 ) {
                     self.add_preallocated_index_tree_operations_for_binding(
                         document_and_contract_info,
-                        referring_type,
+                        referring_name,
+                        referring_type.index_structure(),
                         index,
                         &binding.key_sources,
                         storage_flags,
@@ -155,17 +152,17 @@ impl Drive {
 
     /// Adds the operations preallocating ONE index's trees for entries
     /// referencing the inserted document: walks the referring type's
-    /// [`IndexLevel`](dpp::data_contract::document_type::IndexLevel) along
-    /// the index's properties, resolving each path key from the inserted
-    /// document per the binding's key sources, and creates each
-    /// property-name tree, value tree and the terminal `0` member bucket
-    /// with exactly the tree types and estimation layers the entry-insert
-    /// walkers use.
+    /// [`IndexLevel`] along the index's properties, resolving each path key
+    /// from the inserted document per the binding's key sources, and creates
+    /// each property-name tree, value tree and the terminal `0` member
+    /// bucket with exactly the tree types and estimation layers the
+    /// entry-insert walkers use.
     #[allow(clippy::too_many_arguments)]
     fn add_preallocated_index_tree_operations_for_binding(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        referring_type: DocumentTypeRef,
+        referring_type_name: &str,
+        referring_index_structure: &IndexLevel,
         index: &Index,
         key_sources: &[PreallocatedKeySource],
         storage_flags: Option<&StorageFlags>,
@@ -183,9 +180,8 @@ impl Drive {
         let document_info = &document_and_contract_info.owned_document_info.document_info;
         let event_id = unique_event_id();
 
-        let referring_index_structure = referring_type.index_structure();
         let contract_document_type_path =
-            contract_document_type_path_vec(contract.id_ref().as_bytes(), referring_type.name());
+            contract_document_type_path_vec(contract.id_ref().as_bytes(), referring_type_name);
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // The referring doctype tree layer — mirror of the entry-insert
@@ -227,43 +223,13 @@ impl Drive {
             // property otherwise — validated at contract registration to
             // share one value kind with the referring side, so the encoded
             // bytes match what an entry insert would write.
-            let (source_property, source_type) = match *key_source {
-                PreallocatedKeySource::ReferencedDocumentId => ("$id", target_document_type),
-                PreallocatedKeySource::ReferencedDocumentProperty(referenced) => {
-                    match document_info.get_borrowed_document() {
-                        // Without a document the key is sized as the
-                        // referring property, the bound every key an entry
-                        // writes at this level has
-                        None => (property_name, referring_type),
-                        Some(document) => {
-                            let referring_property_type = &referring_type
-                                .flattened_properties()
-                                .get(property_name)
-                                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                                    "a preallocated index's property must be a property of \
-                                     its document type",
-                                )))?
-                                .property_type;
-                            if !bound_value_fits_referring_property(
-                                document,
-                                referenced,
-                                referring_property_type,
-                                platform_version,
-                            )? {
-                                // No entry can ever agree with a value wider
-                                // than the referring property holds, and it
-                                // may not fit a tree key at all. Nothing to
-                                // preallocate.
-                                return Ok(());
-                            }
-                            (referenced, target_document_type)
-                        }
-                    }
-                }
+            let source_property = match *key_source {
+                PreallocatedKeySource::ReferencedDocumentId => "$id",
+                PreallocatedKeySource::ReferencedDocumentProperty(referenced) => referenced,
             };
             let Some(value_key) = document_info.get_raw_for_document_type(
                 source_property,
-                source_type,
+                target_document_type,
                 document_and_contract_info.owned_document_info.owner_id,
                 Some((sub_level, event_id)),
                 platform_version,
@@ -281,7 +247,13 @@ impl Drive {
                 // the fallback.
                 return Ok(());
             }
-            resolved_levels.push((property_name, sub_level, value_key));
+            resolved_levels.push((
+                property_name,
+                sub_level,
+                source_property,
+                *key_source,
+                value_key,
+            ));
             current_level = sub_level;
         }
         let terminal_level = current_level;
@@ -298,7 +270,7 @@ impl Drive {
         // inversion the entry-insert walkers apply.
         let mut parent_counts_continuations = false;
 
-        for (property_name, sub_level, value_key) in resolved_levels {
+        for (property_name, sub_level, source_property, key_source, value_key) in resolved_levels {
             let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
             let property_name_tree_type = tree_types.property_name_tree_type;
             let ranked_axes = tree_types.ranked_axes.as_slice();
@@ -376,19 +348,19 @@ impl Drive {
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 // The property-name layer: children are value trees keyed by
-                // the referring property's values, sized exactly as an entry
-                // insert sizes this layer (32 bytes for the reference
-                // property). A referenced document only keys it with a value
-                // that fits that property, so a wider referenced property
-                // does not widen the estimate.
-                let value_key_estimated_size = document_info.get_estimated_size_for_document_type(
-                    property_name,
-                    referring_type,
-                    platform_version,
-                )?;
+                // the source property's values (32 bytes for `$id`).
+                let value_key_estimated_size = match key_source {
+                    PreallocatedKeySource::ReferencedDocumentId => DEFAULT_HASH_SIZE_U8 as u16,
+                    PreallocatedKeySource::ReferencedDocumentProperty(_) => document_info
+                        .get_estimated_size_for_document_type(
+                            source_property,
+                            target_document_type,
+                            platform_version,
+                        )?,
+                };
                 if value_key_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
-                        "document field is too big for being an index",
+                        "referenced document field is too big for being an index",
                     )));
                 }
                 estimated_costs_only_with_layer_info.insert(
@@ -499,6 +471,9 @@ impl Drive {
             // Same per-entry padding (and sum-item worst case) the
             // entry-insert terminal claims for this layer — see
             // `add_index_only_terminal_item_operations`.
+            let referring_type = contract
+                .document_type_for_name(referring_type_name)
+                .map_err(|e| Error::Protocol(Box::new(dpp::ProtocolError::DataContractError(e))))?;
             let estimated_item_value_size =
                 index_only_item_estimated_value_size(referring_type, platform_version)?;
             let member_key_max_size = match level_info.terminal.as_deref() {
@@ -528,37 +503,4 @@ impl Drive {
 
         Ok(())
     }
-}
-
-/// Whether `document`'s value of `referenced_property`, which a
-/// `propertyAgreement` binds to a referring index property of
-/// `referring_property_type`, is no wider as a tree key than a value of that
-/// property can be. A wider value equals no referring document's value, so no
-/// entry would ever sit under trees keyed by it, and past 255 bytes it is no
-/// tree key at all. An absent value fits (the caller skips it on its own), as
-/// do the referenced document's `$ownerId` and `$creatorId`, 32-byte
-/// identifiers that registration pairs with an identifier.
-fn bound_value_fits_referring_property(
-    document: &Document,
-    referenced_property: &str,
-    referring_property_type: &DocumentPropertyType,
-    platform_version: &PlatformVersion,
-) -> Result<bool, Error> {
-    if referenced_property.starts_with('$') {
-        return Ok(true);
-    }
-    let Some(value) = document
-        .properties()
-        .get_optional_at_path(referenced_property)?
-    else {
-        return Ok(true);
-    };
-    let Some(max_width) = referring_property_type.saturating_max_byte_size(platform_version)?
-    else {
-        return Ok(true);
-    };
-    let width = referring_property_type
-        .encode_value_for_tree_keys(value)?
-        .len();
-    Ok(width <= usize::from(max_width))
 }

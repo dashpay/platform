@@ -41,8 +41,7 @@ use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
-use dpp::tests::json_document::{json_document_to_contract, json_document_to_json_value};
-use serde_json::json;
+use dpp::tests::json_document::json_document_to_contract;
 
 const OWNER_POSTER: [u8; 32] = [0x0F; 32];
 const OWNER_1: [u8; 32] = [0x11; 32];
@@ -923,89 +922,6 @@ fn should_preallocate_only_reference_bound_trees_for_an_untagged_post() {
     assert!(
         read_grove_element(&drive, &member_bucket, &[0]).is_some(),
         "the preallocated member bucket must survive the unlike"
-    );
-
-    assert_grovedb_is_consistent(&drive);
-}
-
-/// The preallocated fixture with `post.hashtag` widened to 280 characters and
-/// unindexed, while `like.hashtag`, which `byHashtagPost` keys, stays at 63:
-/// the shape registration now refuses, as a contract applied before it did.
-fn setup_likes_with_a_wide_post_hashtag() -> (Drive, DataContract) {
-    let pv = platform_version();
-    let drive = setup_drive_with_initial_state_structure(None);
-    let mut schema = json_document_to_json_value(
-        "tests/supporting_files/contract/yappr-likes/yappr-likes-preallocated-contract.json",
-    )
-    .expect("read contract fixture");
-    let post = &mut schema["documentSchemas"]["post"];
-    post["properties"]["hashtag"]["maxLength"] = json!(280);
-    post.as_object_mut().expect("post schema").remove("indices");
-    let contract = DataContract::try_from_platform_versioned(
-        serde_json::from_value(schema).expect("contract serialization format"),
-        true,
-        &mut vec![],
-        pv,
-    )
-    .expect("parse the wide-hashtag contract");
-    drive
-        .apply_contract(
-            &contract,
-            BlockInfo::default(),
-            true,
-            StorageFlags::optional_default_as_cow(),
-            None,
-            pv,
-        )
-        .expect("expected to apply the contract");
-    (drive, contract)
-}
-
-/// A post whose agreement-bound hashtag is wider than any like's can hold is
-/// estimated and inserted, and preallocates nothing under `byHashtagPost`,
-/// which no like could ever reach, while the id-bound `byPost` still
-/// preallocates. A post whose hashtag a like can carry preallocates both.
-#[test]
-fn should_skip_preallocation_for_a_bound_value_wider_than_the_referring_property() {
-    let (drive, contract) = setup_likes_with_a_wide_post_hashtag();
-    let base = doctype_path(&contract);
-
-    // 70 characters of four bytes each: within the post's 280 characters,
-    // past the like's 63 and past the 255 bytes of any tree key.
-    let wide_post = build_post(&contract, &"\u{1F600}".repeat(70), 1);
-    let wide_post_id = wide_post.id().to_buffer();
-    let estimated = insert_post(&drive, &contract, &wide_post, false)
-        .expect("the dry-run of a post with a wide hashtag must work");
-    let actual = insert_post(&drive, &contract, &wide_post, true)
-        .expect("a post with a wide hashtag must be inserted");
-    assert!(
-        estimated.storage_fee >= actual.storage_fee,
-        "estimated post storage fee {} must upper-bound actual {}",
-        estimated.storage_fee,
-        actual.storage_fee
-    );
-    assert!(
-        matches!(
-            read_grove_element(&drive, &base, b"hashtag"),
-            Some(grovedb::Element::Tree(None, _))
-        ),
-        "no hashtag trees may be preallocated for a hashtag no like can carry"
-    );
-    let mut by_post_level = base.clone();
-    by_post_level.push(b"postId".to_vec());
-    assert!(
-        read_grove_element(&drive, &by_post_level, &wide_post_id).is_some(),
-        "the id-bound byPost trees must still be preallocated"
-    );
-
-    let post = build_post(&contract, "dash", 2);
-    insert_post(&drive, &contract, &post, false).expect("estimate a post with a short hashtag");
-    insert_post(&drive, &contract, &post, true).expect("insert a post with a short hashtag");
-    let mut hashtag_level = base.clone();
-    hashtag_level.push(b"hashtag".to_vec());
-    assert!(
-        read_grove_element(&drive, &hashtag_level, b"dash").is_some(),
-        "a hashtag a like can carry is preallocated as before"
     );
 
     assert_grovedb_is_consistent(&drive);
