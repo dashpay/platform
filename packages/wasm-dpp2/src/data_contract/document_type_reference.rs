@@ -15,7 +15,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentTypeRef, IdentityKeyReferenceRequirements,
-    KeyIdReference, LookupKeySource, LookupPreimagePart, PropertyReference,
+    KeyIdReference, LookupKeyParam, LookupKeySource, PropertyReference,
 };
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
@@ -288,11 +288,11 @@ export type DocumentReferenceLookup = {
   index: string;
   keys: Record<string, string | DocumentReferenceLookupHashKey>;
   /**
-   * With a computed key only: how many seconds before the block time of the
-   * create the document the key finds must have been created (code 40142
-   * when it was not).
+   * With a computed key only: how many blocks before the create the document
+   * the key finds must have been created, from its `$createdAtBlockHeight`,
+   * so 1 means an earlier block (code 40142 when it was not).
    */
-  minimumAgeSeconds?: number;
+  minimumAgeBlocks?: number;
   /**
    * With a computed key only: the create deletes the document the key finds,
    * the writer's own commitment, in the same state transition.
@@ -302,30 +302,20 @@ export type DocumentReferenceLookup = {
 
 /**
  * A computed lookup key, for a commit and reveal: the index property is
- * filled with the SHA-256 of the SHA-256 (`sha256d`) of the preimage the
- * parts assemble from the document being created, their bytes concatenated
- * with nothing between them (a string's UTF-8, a byte array's bytes, an
- * identifier's 32 bytes, a text part's UTF-8). The document it finds is a
+ * filled with the hash `function` (`sys.hash.sha256d`, SHA-256 of SHA-256)
+ * of the `params`' bytes joined in order with nothing between them. A param
+ * is `'.'`, the value carrying the reference (the property's value, such as
+ * a salt, or the writer's or creator's id), a property path of the document
+ * being created (a string's UTF-8, a byte array's bytes, an identifier's 32
+ * bytes), or `{ const }`, fixed UTF-8 text. The document it finds is a
  * commitment made earlier; the lookup is checked when the document is
  * created only. To reveal one, compute the same hash over the values you
  * create the document with.
  */
 export type DocumentReferenceLookupHashKey = {
-  sha256d: Array<
-    | DocumentReferenceLookupPreimagePart
-    | {
-        ifEmpty: string;
-        then: Array<DocumentReferenceLookupPreimagePart>;
-        else: Array<DocumentReferenceLookupPreimagePart>;
-      }
-  >;
+  function: 'sys.hash.sha256d';
+  params: Array<string | { const: string }>;
 };
-
-/**
- * One part of a computed lookup key's preimage: the value of a property of
- * the document being created, or fixed text.
- */
-export type DocumentReferenceLookupPreimagePart = { property: string } | { text: string };
 
 /**
  * A single `refersTo` declaration on a document type.
@@ -390,7 +380,7 @@ fn set_field(target: &Object, key: &str, value: &JsValue, path: &str) -> WasmDpp
 }
 
 /// A lookup key source as the schema spells it: `'.'`, `'$ownerId'` or a
-/// property path as a string, and a computed key as `{ <hash>: [part, ...] }`.
+/// property path as a string, and a computed key as `{ function, params }`.
 fn lookup_key_source_to_js(source: &LookupKeySource, path: &str) -> WasmDppResult<JsValue> {
     let LookupKeySource::Hash(key) = source else {
         return Ok(JsValue::from_str(source.as_str()));
@@ -398,44 +388,25 @@ fn lookup_key_source_to_js(source: &LookupKeySource, path: &str) -> WasmDppResul
     let computed = Object::new();
     set_field(
         &computed,
-        key.hash.wire_name(),
-        &preimage_parts_to_js(&key.preimage, path)?,
+        "function",
+        &JsValue::from_str(key.function.as_str()),
         path,
     )?;
-    Ok(computed.into())
-}
-
-/// The parts of a computed key's preimage: `{ property }`, `{ text }` and
-/// `{ ifEmpty, then, else }`.
-fn preimage_parts_to_js(parts: &[LookupPreimagePart], path: &str) -> WasmDppResult<JsValue> {
-    let array = Array::new();
-    for part in parts {
-        let object = Object::new();
-        match part {
-            LookupPreimagePart::Property(property) => {
-                set_field(&object, "property", &JsValue::from_str(property), path)?;
+    let params = Array::new();
+    for param in &key.params {
+        let param_value = match param {
+            LookupKeyParam::ReferenceValue => JsValue::from_str("."),
+            LookupKeyParam::Property(property) => JsValue::from_str(property),
+            LookupKeyParam::Const(text) => {
+                let object = Object::new();
+                set_field(&object, "const", &JsValue::from_str(text), path)?;
+                object.into()
             }
-            LookupPreimagePart::Text(text) => {
-                set_field(&object, "text", &JsValue::from_str(text), path)?;
-            }
-            LookupPreimagePart::IfEmpty {
-                property,
-                then,
-                otherwise,
-            } => {
-                set_field(&object, "ifEmpty", &JsValue::from_str(property), path)?;
-                set_field(&object, "then", &preimage_parts_to_js(then, path)?, path)?;
-                set_field(
-                    &object,
-                    "else",
-                    &preimage_parts_to_js(otherwise, path)?,
-                    path,
-                )?;
-            }
-        }
-        array.push(&object);
+        };
+        params.push(&param_value);
     }
-    Ok(array.into())
+    set_field(&computed, "params", &params, path)?;
+    Ok(computed.into())
 }
 
 /// The flat, internally-tagged JS object for an `identityPublicKey`
@@ -694,11 +665,11 @@ fn set_reference_target_fields(
                 }
                 set_field(&lookup_object, "keys", &keys, path)?;
                 // Present only where declared, as the schema spells them
-                if let Some(seconds) = lookup.minimum_age_seconds {
+                if let Some(blocks) = lookup.minimum_age_blocks {
                     set_field(
                         &lookup_object,
-                        "minimumAgeSeconds",
-                        &JsValue::from(seconds),
+                        "minimumAgeBlocks",
+                        &JsValue::from(blocks),
                         path,
                     )?;
                 }
@@ -773,7 +744,7 @@ pub(crate) fn references_for_document_type(
             PropertyReference::KeyId(reference) => {
                 references.push(&key_id_reference_to_js(path, reference)?);
             }
-            PropertyReference::Value(target) => {
+            PropertyReference::Value(target) | PropertyReference::Revealed(target) => {
                 references.push(&reference_to_js(path, target, declaring_contract_id)?);
             }
             PropertyReference::Elements { target, .. } => {

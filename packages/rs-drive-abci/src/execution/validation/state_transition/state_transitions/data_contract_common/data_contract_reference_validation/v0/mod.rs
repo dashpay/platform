@@ -236,7 +236,13 @@ pub(super) fn validate_data_contract_references_v0(
                     }
                     continue;
                 }
-                PropertyReference::Value(target) => (target, declaration_path),
+                // A string or byte array property revealed into a computed
+                // lookup key is judged as an identifier's reference is: the
+                // referenced type, its permanence, the agreement and the
+                // lookup. Only the protocol version 14 parser produces one
+                PropertyReference::Value(target) | PropertyReference::Revealed(target) => {
+                    (target, declaration_path)
+                }
                 // A typed array only parses from protocol version 14, whose
                 // contract create and update state validation are the only
                 // callers, so this arm is never reached before it

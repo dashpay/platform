@@ -11,7 +11,7 @@
 
 pub mod system_function;
 
-pub use system_function::{StringTransformation, SystemFunction};
+pub use system_function::{HashFunction, StringTransformation, SystemFunction};
 
 use serde::{Deserialize, Serialize};
 

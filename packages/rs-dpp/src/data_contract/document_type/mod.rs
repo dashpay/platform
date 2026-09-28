@@ -150,9 +150,9 @@ pub(crate) mod property_names {
     pub const LOOKUP_INDEX: &str = "index";
     /// `lookup`: every index property mapped to its referring-side source.
     pub const LOOKUP_KEYS: &str = "keys";
-    /// `lookup` with a computed key: how many seconds old the document the
-    /// key finds must be when the referring document is created.
-    pub const LOOKUP_MINIMUM_AGE_SECONDS: &str = "minimumAgeSeconds";
+    /// `lookup` with a computed key: how many blocks before the referring
+    /// document's create the document the key finds must have been created.
+    pub const LOOKUP_MINIMUM_AGE_BLOCKS: &str = "minimumAgeBlocks";
     /// `lookup` with a computed key: whether the create deletes the document
     /// the key finds.
     pub const LOOKUP_CONSUME: &str = "consume";

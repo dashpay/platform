@@ -5,7 +5,9 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{DocumentReferenceLookup, DocumentTypeRef};
+use dpp::data_contract::document_type::{
+    DocumentPropertyType, DocumentReferenceLookup, DocumentTypeRef,
+};
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
@@ -415,10 +417,11 @@ fn fetch_document_with_id_v1(
 
 /// The document a `refersTo` lookup resolves to for one value: the one the
 /// declared unique index of `document_type` finds for the key assembled from
-/// `reference_value` (the property's value, or one array element's), the
-/// writer `owner_id` and the sources in `document_data`, a document of
-/// `declaring_document_type` (whose property types tell a computed key's
-/// variable-length parts). `None` when no
+/// `reference_value` (the property's value, or one array element's, of
+/// `reference_type`: an identifier, or the string or byte array a computed
+/// key reveals), the writer `owner_id` and the sources in `document_data`, a
+/// document of `declaring_document_type` (whose property types tell a
+/// computed key's variable-length params). `None` when no
 /// document matches, and when the key cannot be assembled or the index is
 /// missing or not unique. Contract registration and update refuse the last
 /// three (an optional source, a missing or non-unique index), and a referenced
@@ -438,7 +441,8 @@ pub(crate) fn fetch_document_through_lookup(
     document_type: DocumentTypeRef,
     declaring_document_type: DocumentTypeRef,
     lookup: &DocumentReferenceLookup,
-    reference_value: Identifier,
+    reference_value: &Value,
+    reference_type: &DocumentPropertyType,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
     epoch: &Epoch,
@@ -456,6 +460,7 @@ pub(crate) fn fetch_document_through_lookup(
     let Some(key_values) = lookup.key_values(
         declaring_document_type,
         reference_value,
+        reference_type,
         document_data,
         owner_id,
     ) else {

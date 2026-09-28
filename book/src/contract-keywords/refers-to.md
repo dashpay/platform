@@ -4,7 +4,7 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
 
 | | |
 |---|---|
-| **Where** | An identifier property, at the top level or inside an object; the `items` of a typed array of identifiers, where every element is checked; and, for one form of `identityPublicKey`, an integer key id property. `ownerRefersTo` and `creatorRefersTo` carry the same declaration at the document type level. |
+| **Where** | An identifier property, at the top level or inside an object; the `items` of a typed array of identifiers, where every element is checked; for one form of `identityPublicKey`, an integer key id property; and a string or byte array property whose value a lookup's computed key reveals (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). `ownerRefersTo` and `creatorRefersTo` carry the same declaration at the document type level. |
 | **Value** | An object: `type`, naming one [target](#targets), with the [keys](#keys) that target takes; or an object holding only `anyOf` or only `allOf` (see [Expressions](refers-to-expressions.md)). |
 | **Default** | Absent: the identifier is not checked against anything. |
 | **Since** | protocol version 14 |

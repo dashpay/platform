@@ -60,11 +60,11 @@ pub enum LookupKeySource {
     /// A property path of the referring document type. The property must be
     /// required, so the key is never missing a part.
     Property(String),
-    /// `{ "sha256d": [part, ...] }`: the hash of a preimage the referring
-    /// document reveals, see [`LookupHashKey`]. A lookup holding one is
-    /// checked when the document is created only, and the document it finds
-    /// is a commitment. Appended, so every earlier source keeps its
-    /// consensus encoding.
+    /// `{ "function": "sys.hash.sha256d", "params": [...] }`: the hash of a
+    /// preimage the referring document reveals, see [`LookupHashKey`]. A
+    /// lookup holding one is checked when the document is created only, and
+    /// the document it finds is a commitment. Appended, so every earlier
+    /// source keeps its consensus encoding.
     Hash(LookupHashKey),
 }
 
@@ -108,7 +108,7 @@ impl LookupKeySource {
             LookupKeySource::ReferenceValue => LOOKUP_REFERENCE_VALUE,
             LookupKeySource::OwnerId => OWNER_ID,
             LookupKeySource::Property(path) => path.as_str(),
-            LookupKeySource::Hash(key) => key.hash.wire_name(),
+            LookupKeySource::Hash(key) => key.function.as_str(),
         }
     }
 }
@@ -133,17 +133,19 @@ pub struct DocumentReferenceLookup {
     pub index: String,
     /// Every property of the index, by its name on the referenced side
     /// (`$ownerId` among the system ones), mapped to the referring-side source
-    /// of its value. [`LookupKeySource::ReferenceValue`] appears exactly once,
-    /// except in the lookup of an `ownerRefersTo` or `creatorRefersTo` holding
-    /// a computed key, where it may be left out. At most one source is a
-    /// computed key ([`LookupKeySource::Hash`]).
+    /// of its value. The reference's own value, `"."`, fills a key part
+    /// exactly once, as a source ([`LookupKeySource::ReferenceValue`]) or as a
+    /// param of a computed key, except in the lookup of an `ownerRefersTo` or
+    /// `creatorRefersTo` holding a computed key, where it may be left out. At
+    /// most one source is a computed key ([`LookupKeySource::Hash`]).
     pub keys: BTreeMap<String, LookupKeySource>,
-    /// With a computed key only: how many seconds before the block time of
-    /// the create the document the key finds must have been created
-    /// (`minimumAgeSeconds`), so a commitment and its reveal cannot share a
-    /// block. The referenced document type must record `$createdAt`.
-    #[serde(rename = "minimumAgeSeconds", skip_serializing_if = "Option::is_none")]
-    pub minimum_age_seconds: Option<u32>,
+    /// With a computed key only: how many blocks before the create the
+    /// document the key finds must have been created (`minimumAgeBlocks`),
+    /// judged on its `$createdAtBlockHeight`, so that 1 keeps a commitment and
+    /// its reveal out of the same block. The referenced document type must
+    /// record `$createdAtBlockHeight`.
+    #[serde(rename = "minimumAgeBlocks", skip_serializing_if = "Option::is_none")]
+    pub minimum_age_blocks: Option<u32>,
     /// With a computed key only: whether the create deletes the document the
     /// key found (`consume`), in the same state transition. Only a
     /// `deletableDocument` reference whose `propertyAgreement` pairs the
@@ -161,7 +163,7 @@ impl DocumentReferenceLookup {
         DocumentReferenceLookup {
             index,
             keys,
-            minimum_age_seconds: None,
+            minimum_age_blocks: None,
             consume: false,
         }
     }
@@ -175,6 +177,19 @@ impl DocumentReferenceLookup {
                 LookupKeySource::Hash(key) => Some((index_property.as_str(), key)),
                 _ => None,
             })
+    }
+
+    /// How many times the reference's own value, `"."`, fills the key: as a
+    /// source or as a param of the computed key.
+    pub fn reference_value_uses(&self) -> usize {
+        self.keys
+            .values()
+            .map(|source| match source {
+                LookupKeySource::ReferenceValue => 1,
+                LookupKeySource::Hash(key) => key.reference_value_uses(),
+                LookupKeySource::OwnerId | LookupKeySource::Property(_) => 0,
+            })
+            .sum()
     }
 
     /// Whether this lookup is judged only when the referring document is
@@ -215,12 +230,16 @@ impl DocumentReferenceLookup {
     ///
     /// A lookup holding a computed key is checked when the document is
     /// created only, so nothing it reads may change afterwards: every property
-    /// source must be fixed once written as well, the computed key's parts
+    /// source must be fixed once written as well, the computed key's params
     /// follow [`LookupHashKey::referring_side_error`], and a property carrying
     /// it must be fixed once written and set when the document is created (not
     /// listed under `immutableAllowSetting`, which would let a replace set it
-    /// later unchecked). On a property the reference's own value must fill a
-    /// key part, `"."`, exactly once; only the lookup of an `ownerRefersTo` or
+    /// later unchecked), unless it is transient, never stored and read from
+    /// the create alone. On a property the reference's own value must fill
+    /// the key exactly once, `"."`, as a source or a param of the computed
+    /// key, and on a string or byte array property, `reference_type` not an
+    /// identifier, as a param only, a source having to match an index
+    /// property of the same kind; only the lookup of an `ownerRefersTo` or
     /// `creatorRefersTo`, `reference_path` `$ownerId` or `$creatorId`, may
     /// leave it out beside a computed key, its declaration applying to every
     /// create whatever the writer is.
@@ -228,26 +247,39 @@ impl DocumentReferenceLookup {
         &self,
         declaring: DocumentTypeRef,
         reference_path: &str,
+        reference_type: &DocumentPropertyType,
     ) -> Option<String> {
         let computed = self.is_checked_on_create_only();
         let on_the_document = reference_path == OWNER_ID || reference_path == CREATOR_ID;
-        if computed && !on_the_document {
-            let reference_value_uses = self
+        let revealed = !matches!(
+            reference_type,
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+        );
+        if revealed
+            && self
                 .keys
                 .values()
-                .filter(|source| matches!(source, LookupKeySource::ReferenceValue))
-                .count();
-            if reference_value_uses != 1 {
+                .any(|source| matches!(source, LookupKeySource::ReferenceValue))
+        {
+            return Some(format!(
+                "\"{reference_path}\" is not an identifier, so its value fills the key as a \
+                 param of a computed key, not as a source of its own"
+            ));
+        }
+        if computed && !on_the_document {
+            if self.reference_value_uses() != 1 {
                 return Some(format!(
-                    "keys fill no index property from \".\", the value of \"{reference_path}\": \
-                     only the lookup of an ownerRefersTo or creatorRefersTo may leave it out \
-                     beside a computed key"
+                    "the key reads \".\", the value of \"{reference_path}\", {} times: a \
+                     property's lookup reads it exactly once, and only the lookup of an \
+                     ownerRefersTo or creatorRefersTo may leave it out beside a computed key",
+                    self.reference_value_uses()
                 ));
             }
-            if !schema_property_is_fixed_once_written(declaring, reference_path)
-                || declaring
-                    .immutable_fields_allow_setting()
-                    .contains(reference_path.split('.').next().unwrap_or(reference_path))
+            if !is_transient(declaring, reference_path)
+                && (!schema_property_is_fixed_once_written(declaring, reference_path)
+                    || declaring
+                        .immutable_fields_allow_setting()
+                        .contains(reference_path.split('.').next().unwrap_or(reference_path)))
             {
                 return Some(format!(
                     "\"{reference_path}\" carries a lookup with a computed key, which is checked \
@@ -261,7 +293,7 @@ impl DocumentReferenceLookup {
             let path = match source {
                 LookupKeySource::ReferenceValue => continue,
                 LookupKeySource::Hash(key) => {
-                    if let Some(reason) = key.referring_side_error(declaring) {
+                    if let Some(reason) = key.referring_side_error(declaring, reference_type) {
                         return Some(format!("key \"{index_property}\" {reason}"));
                     }
                     continue;
@@ -434,7 +466,7 @@ impl DocumentReferenceLookup {
                 // A hash is a byte array exactly as long as the hash's output,
                 // which the index property must hold
                 LookupKeySource::Hash(key) => {
-                    let length = key.hash.output_length();
+                    let length = key.function.output_length();
                     let holds_hash = matches!(
                         referenced
                             .flattened_properties()
@@ -447,7 +479,7 @@ impl DocumentReferenceLookup {
                         return Some(format!(
                             "key \"{index_property}\" is a {} hash, so the index property must \
                              be a byte array of exactly {length} bytes",
-                            key.hash.wire_name()
+                            key.function.as_str()
                         ));
                     }
                     continue;
@@ -470,14 +502,18 @@ impl DocumentReferenceLookup {
                 ));
             }
         }
-        // A minimum age is judged against the found document's creation time,
+        // A minimum age is judged against the found document's creation height,
         // so the type must record one; consuming deletes the document as its
         // own owner would, which the type must allow
-        if self.minimum_age_seconds.is_some() && !referenced.required_fields().contains(CREATED_AT)
+        if self.minimum_age_blocks.is_some()
+            && !referenced
+                .required_fields()
+                .contains(CREATED_AT_BLOCK_HEIGHT)
         {
             return Some(format!(
-                "minimumAgeSeconds is judged against the found document's {CREATED_AT}, which \
-                 \"{}\" does not record: list {CREATED_AT} in its `required`",
+                "minimumAgeBlocks is judged against the found document's \
+                 {CREATED_AT_BLOCK_HEIGHT}, which \"{}\" does not record: list \
+                 {CREATED_AT_BLOCK_HEIGHT} in its `required`",
                 referenced.name()
             ));
         }
@@ -541,7 +577,9 @@ impl DocumentReferenceLookup {
 
     /// The equality values of the key the lookup assembles for one write of a
     /// document of `declaring`, by index property name: `reference_value` for
-    /// `"."` (the property's value, or one array element's), `owner_id` for
+    /// `"."` (the property's value, or one array element's, of
+    /// `reference_type`: an identifier, or the string or byte array a computed
+    /// key's `"."` param reads), `owner_id` for
     /// `"$ownerId"`, the value at each source path in `document_data`, and
     /// the hash of its preimage for a computed key. `None` when a source path
     /// holds no value or does not resolve, or a computed key's preimage
@@ -554,7 +592,8 @@ impl DocumentReferenceLookup {
     pub fn key_values(
         &self,
         declaring: DocumentTypeRef,
-        reference_value: Identifier,
+        reference_value: &Value,
+        reference_type: &DocumentPropertyType,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
     ) -> Option<BTreeMap<String, Value>> {
@@ -562,14 +601,14 @@ impl DocumentReferenceLookup {
             .iter()
             .map(|(index_property, source)| {
                 let value = match source {
-                    LookupKeySource::ReferenceValue => {
-                        Value::Identifier(reference_value.to_buffer())
-                    }
+                    LookupKeySource::ReferenceValue => reference_value.clone(),
                     LookupKeySource::OwnerId => Value::Identifier(owner_id.to_buffer()),
                     LookupKeySource::Property(path) => {
                         document_data.get_optional_at_path(path).ok()??.clone()
                     }
-                    LookupKeySource::Hash(key) => key.key_value(declaring, document_data).ok()?,
+                    LookupKeySource::Hash(key) => key
+                        .key_value(declaring, reference_value, reference_type, document_data)
+                        .ok()?,
                 };
                 Some((index_property.clone(), value))
             })
@@ -752,7 +791,7 @@ mod tests {
                     )
                 })
                 .collect(),
-            minimum_age_seconds: None,
+            minimum_age_blocks: None,
             consume: false,
         }
     }
@@ -768,7 +807,11 @@ mod tests {
         );
         let declaring = elected_charter();
         assert_eq!(
-            lookup.referring_side_error(declaring.as_ref(), "memberId"),
+            lookup.referring_side_error(
+                declaring.as_ref(),
+                "memberId",
+                &DocumentPropertyType::Identifier
+            ),
             None
         );
         assert_eq!(
@@ -843,7 +886,11 @@ mod tests {
                 "bySubmittedCharter",
                 &[("submittedCharterId", source), ("$ownerId", ".")],
             )
-            .referring_side_error(declaring.as_ref(), "memberId")
+            .referring_side_error(
+                declaring.as_ref(),
+                "memberId",
+                &DocumentPropertyType::Identifier,
+            )
             .expect("the source should be refused");
             assert!(error.contains(fragment), "{source}: {error}");
         }
@@ -934,7 +981,11 @@ mod tests {
             platform_value!({ "tradeMode": 1u8 }),
         ] {
             let error = lookup
-                .referring_side_error(elected_charter_with(extra.clone()).as_ref(), "memberId")
+                .referring_side_error(
+                    elected_charter_with(extra.clone()).as_ref(),
+                    "memberId",
+                    &DocumentPropertyType::Identifier,
+                )
                 .expect("a writer key part should be refused");
             assert!(
                 error.contains(
@@ -947,7 +998,11 @@ mod tests {
 
         // A type that can neither be transferred nor traded keeps its writer
         assert_eq!(
-            lookup.referring_side_error(elected_charter().as_ref(), "memberId"),
+            lookup.referring_side_error(
+                elected_charter().as_ref(),
+                "memberId",
+                &DocumentPropertyType::Identifier
+            ),
             None
         );
     }
@@ -1037,14 +1092,26 @@ mod tests {
         let declaring = elected_charter();
 
         assert_eq!(
-            lookup.key_values(declaring.as_ref(), member, &data, owner),
+            lookup.key_values(
+                declaring.as_ref(),
+                &Value::Identifier(member.to_buffer()),
+                &DocumentPropertyType::Identifier,
+                &data,
+                owner
+            ),
             Some(BTreeMap::from([
                 ("$ownerId".to_string(), Value::Identifier([3; 32])),
                 ("submittedCharterId".to_string(), Value::Identifier([5; 32])),
             ]))
         );
         assert_eq!(
-            lookup.key_values(declaring.as_ref(), member, &BTreeMap::new(), owner),
+            lookup.key_values(
+                declaring.as_ref(),
+                &Value::Identifier(member.to_buffer()),
+                &DocumentPropertyType::Identifier,
+                &BTreeMap::new(),
+                owner
+            ),
             None
         );
         assert_eq!(

@@ -483,62 +483,80 @@ A document type whose documents can be transferred or traded declares `creatorRe
 
 ### Commit and reveal (a computed lookup key)
 
-A lookup key may be computed instead of read: `{ "sha256d": [part, ...] }` in place of a source fills the index property with the SHA-256 of the SHA-256 of a preimage the document being created reveals. The document the key finds is a commitment made earlier, so the lookup is a commit and reveal: the document may be created only while a commitment to values it carries exists. DPNS registers names this way, with a `preorder` holding `saltedDomainHash` under a unique index, and a `domain` whose create trigger hashes what the domain reveals. The same rule, written as a declaration, reads:
+A lookup key may be computed instead of read: `{ "function": "sys.hash.sha256d", "params": [...] }` in place of a source fills the index property with a hash of values the document being created reveals. The document the key finds is a commitment made earlier, so the lookup is a commit and reveal: the document may be created only while a commitment to values it carries exists. The function is a system function, as in [`generatedFrom`](#generated-properties-generatedfrom), from the `sys.hash` namespace; `sys.hash.sha256d`, the SHA-256 of the SHA-256, is the one there is. DPNS registers names this way, with a `preorder` holding `saltedDomainHash` under a unique index, and a `domain` whose create trigger hashes what the domain reveals. The rule for a name under a parent, written as a declaration on the salt the domain reveals, reads:
 
 ```json
+"preorder": {
+  "type": "object",
+  "documentsMutable": false,
+  "canBeDeleted": true,
+  "properties": {
+    "saltedDomainHash": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0
+    }
+  },
+  "indices": [
+    { "name": "saltedHash", "properties": [{ "saltedDomainHash": "asc" }], "unique": true }
+  ],
+  "required": ["$createdAtBlockHeight", "saltedDomainHash"],
+  "additionalProperties": false
+},
 "domain": {
   "type": "object",
-  "transferable": 1,
-  "creatorRefersTo": {
-    "type": "deletableDocument",
-    "documentType": "preorder",
-    "lookup": {
-      "index": "saltedHash",
-      "keys": { "saltedDomainHash": { "sha256d": [
-        { "property": "preorderSalt" },
-        { "ifEmpty": "parentDomainName",
-          "then": [{ "property": "label" }],
-          "else": [
-            { "property": "normalizedLabel" },
-            { "text": "." },
-            { "property": "parentDomainName" }
-          ] }
-      ] } },
-      "minimumAgeSeconds": 60,
-      "consume": true
-    },
-    "propertyAgreement": { "$ownerId": "$ownerId" }
-  }
+  "properties": {
+    "preorderSalt": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 5,
+      "refersTo": {
+        "type": "deletableDocument",
+        "documentType": "preorder",
+        "lookup": {
+          "index": "saltedHash",
+          "keys": {
+            "saltedDomainHash": {
+              "function": "sys.hash.sha256d",
+              "params": [".", "normalizedLabel", { "const": "." }, "parentDomainName"]
+            }
+          },
+          "minimumAgeBlocks": 1,
+          "consume": true
+        },
+        "propertyAgreement": { "$ownerId": "$ownerId" }
+      }
+    }
+  },
+  "transient": ["preorderSalt"]
 }
 ```
 
-reads: the creator must own a `preorder`, at least a minute old, whose `saltedDomainHash` is the sha256d of the salt followed by the label for a top-level name, or by the normalized label, a dot and the parent otherwise, and creating the domain deletes that preorder. The hash is byte for byte the one `create_domain_data_trigger_v1` computes.
+reads: the salt refers to a `preorder` the writer owns, created in an earlier block, whose `saltedDomainHash` is the sha256d of the salt, the normalized label, a dot and the parent, and creating the domain deletes that preorder. The hash is byte for byte the one `create_domain_data_trigger_v1` computes for a name under a parent.
 
-The preimage is the bytes of its parts concatenated with nothing between them:
+`"."` is the value carrying the reference. A string or byte array property may carry a `refersTo` only this way: its value is not an id, so its declaration must be a `permanentDocument` or `deletableDocument` reference whose lookup has a computed key reading `"."` exactly once, and the property keeps its type (the meta-schema admits a `refersTo` with a `lookup` on a string or byte array). On an identifier property `"."` fills the key once, as a source or as a param. On `ownerRefersTo` and `creatorRefersTo`, where it is the writer's or the creator's id, it may be left out beside a computed key, since the declaration applies to every create.
 
-- `{ "property": path }`: a string property's UTF-8, a byte array property's bytes, an identifier property's 32 bytes;
-- `{ "text": text }`: fixed UTF-8 text, 1 to 64 bytes;
-- `{ "ifEmpty": path, "then": [...], "else": [...] }`, at most one: its `then` parts when the named string or byte array property is empty, its `else` parts otherwise. Neither branch holds another `ifEmpty`.
+The preimage is the bytes of the params joined in order with nothing between them:
 
-At most 16 parts in all. Plain concatenation is ambiguous when two variable-length parts meet (`"ab" + "c"` and `"a" + "bc"` are the same bytes), so every variable-length part (a string, or a byte array whose size is not fixed) that another one follows must be followed directly by a one-byte text part, its separator, and a value holding that byte is refused. Each preimage then splits into its parts one way only. Integers and other kinds are not parts.
+- `"."`: the value carrying the reference, a string's UTF-8, a byte array's bytes, an identifier's 32 bytes;
+- a property path: that property of the document being created, read the same way;
+- `{ "const": text }`: fixed UTF-8 text, 1 to 64 bytes.
+
+1 to 16 params. System values such as `"$ownerId"` are not params. Plain concatenation is ambiguous when two variable-length params meet (`"ab" + "c"` and `"a" + "bc"` are the same bytes), so every variable-length param (a string, or a byte array whose size is not fixed) that another one follows must be followed directly by a one-byte `const`, its separator, and a value holding that byte is refused. Each preimage then splits into its params one way only. Integers and other kinds are not params. A path that passes through a map holding a key more than once is refused, as for `generatedFrom`.
 
 The document such a key finds is judged once, when the document is created:
 
-- A part may be transient (the DPNS salt is), since it is read from the create transition, and optional, since a create missing one is refused. Every stored value the lookup reads, parts and other key parts alike, must be fixed once written (the type is immutable or lists the property under `immutable`), and a property carrying the reference must be set when the document is created (not listed under `immutableAllowSetting`). A replace leaves the reference alone: nothing it reads can have changed, and the commitment may be gone.
-- `"."` must still fill a key part on a property; on `ownerRefersTo` and `creatorRefersTo` it may be left out beside a computed key, since the declaration applies to every create. `creatorRefersTo` takes a `deletableDocument` target only through a computed key.
-- A lookup holds at most one computed key. The index property it fills must be a byte array of exactly 32 bytes. Beside it the lookup may declare:
-  - `minimumAgeSeconds`: the found document's `$createdAt` must be at least that many seconds before the block time of the create, so a commitment and its reveal cannot share a block. The referenced type must list `$createdAt` in `required`; a document recording no creation time never meets it.
+- A param may be transient (the DPNS salt is), since it is read from the create transition, and optional, since a create missing one is refused. Every stored value the lookup reads, params and other key parts alike, must be fixed once written (the type is immutable or lists the property under `immutable`), and so must a stored property carrying the reference, set when the document is created (not listed under `immutableAllowSetting`). A replace leaves the reference alone: nothing it reads can have changed, and the commitment may be gone.
+- `creatorRefersTo` takes a `deletableDocument` target only through a computed key.
+- A lookup holds at most one computed key. The index property it fills must be a byte array of exactly the hash's size, 32 bytes for `sys.hash.sha256d`. Beside it the lookup may declare:
+  - `minimumAgeBlocks`: the found document's `$createdAtBlockHeight` must be at least that many blocks below the height of the create. `1` means an earlier block, so a commitment and its reveal cannot share a block. The referenced type must list `$createdAtBlockHeight` in `required`; a document recording no creation height never meets it.
   - `consume: true`: the create deletes the found document in the same state transition, its storage refunded to its owner as a delete by that owner would be. Only on a `deletableDocument` reference whose `propertyAgreement` pairs `"$ownerId"` with `"$ownerId"`, into a document type of the declaring contract whose owner may delete its documents (`canBeDeleted: true`).
 - Whose commitment it is, is the `propertyAgreement` pair `{ "$ownerId": "$ownerId" }`: the writer must own the document found. Without it anyone who learns a preimage may reveal it.
 
 What is refused, and where:
 
-- The shape, the parts and the rules above: the contract parse on registration and update (meta-schema v3 `lookupHashKey`, `apply_property_reference` 0, `DocumentReferenceLookup::referring_side_error` and `referenced_side_error`), and for a lookup into another contract the registration state validation (`ReferencedDocumentLookupInvalidError`, 40137), which also refuses `consume` there.
-- A create missing a part, or whose variable-length value holds its separator: document create structure validation 1, before any read (`DocumentReferencePreimageInvalidError`, 10423). A computed key that is a leaf of a reference expression is left to the write-time check, where a key it cannot assemble finds no document, so that operand fails and the others still decide.
-- No document for the key: `ReferencedEntityNotFoundError` (40120), the lookup billed as the document fetch it is. Another identity's commitment where the owner pair is declared: `ReferencedDocumentPropertyMismatchError` (40127). A commitment younger than `minimumAgeSeconds`: `ReferencedDocumentRequirementNotMetError` (40142). All paid, from document create state validation 2.
+- The shape, the params and the rules above: the contract parse on registration and update (meta-schema v3 `lookupHashKey`, `apply_property_reference` 0, `DocumentReferenceLookup::referring_side_error` and `referenced_side_error`), and for a lookup into another contract the registration state validation (`ReferencedDocumentLookupInvalidError`, 40137), which also refuses `consume` there. Any change to a computed key, its `minimumAgeBlocks` or its `consume` is an incompatible schema change on update, like the rest of a `refersTo`.
+- A create missing a param, or whose variable-length value holds its separator: document create structure validation 1, before any read (`DocumentReferencePreimageInvalidError`, 10423). A computed key that is a leaf of a reference expression is left to the write-time check, where a key it cannot assemble finds no document, so that operand fails and the others still decide.
+- No document for the key: `ReferencedEntityNotFoundError` (40120), whose entity id for a string or byte array carrier is the hash, the lookup billed as the document fetch it is. Another identity's commitment where the owner pair is declared: `ReferencedDocumentPropertyMismatchError` (40127). A commitment younger than `minimumAgeBlocks`: `ReferencedDocumentRequirementNotMetError` (40142). All paid, from document create state validation 2.
 - A batch in which a create consumes a document that another create of the batch consumes too, or that another transition of the batch deletes, replaces, transfers, reprices or buys, refuses that create with 40120 (`ConsumedDocuments` in the batch state validation). Today a batch holds one transition, so this only guards the day that cap is raised.
 
-In Rust the key is `LookupKeySource::Hash(LookupHashKey)`, appended to the key sources, with its parts `LookupPreimagePart`; `DocumentReferenceLookup::is_checked_on_create_only` tells a lookup holding one, and `minimum_age_seconds` and `consume` sit on the lookup. `first_unrevealable_lookup_key` is the structure check. A create that consumes carries its commitments in `DocumentCreateTransitionAction::consumed_documents`, turned into delete operations with the create's own.
+In Rust the key is `LookupKeySource::Hash(LookupHashKey)`, appended to the key sources, with its `function` a `HashFunction` (the `SystemFunction::Hash` namespace, beside the string transformations `generatedFrom` takes) and its `params` `LookupKeyParam`s. A string or byte array property's declaration is `DocumentProperty::revealed_reference`, listed by `reference_declarations` as `PropertyReference::Revealed`. `DocumentReferenceLookup::is_checked_on_create_only` tells a lookup holding a computed key, and `minimum_age_blocks` and `consume` sit on the lookup. `first_unrevealable_lookup_key` is the structure check. A create that consumes carries its commitments in `DocumentCreateTransitionAction::consumed_documents`, turned into delete operations with the create's own.
 
 ## Immutable Properties on Mutable Document Types
 

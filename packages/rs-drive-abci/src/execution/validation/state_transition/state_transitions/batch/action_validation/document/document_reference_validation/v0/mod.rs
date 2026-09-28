@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::document::InvalidDocumentTypeError;
+use dpp::consensus::basic::document::{
+    DocumentReferencePreimageInvalidError, InvalidDocumentTypeError,
+};
 use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
@@ -314,6 +316,81 @@ fn validate_document_type_references_v0(
             }
             PropertyReference::Value(target) => (target, false),
             PropertyReference::Elements { target, .. } => (target, true),
+            // A string or byte array revealed into a computed lookup key, a
+            // commitment judged when the document is created only; an unset
+            // one is not validated. The key's hash stands for the value in the
+            // errors, the value being no id. In place in generation 0: only the
+            // protocol version 14 parser produces one
+            PropertyReference::Revealed(target) => {
+                let ReferenceHolder::Property(property_path) = holder else {
+                    continue;
+                };
+                if !is_create {
+                    continue;
+                }
+                let Ok(Some(value)) = document_data.get_optional_at_path(property_path) else {
+                    continue;
+                };
+                let Some((_, key)) = target
+                    .as_any_document_reference()
+                    .and_then(|declaration| declaration.lookup)
+                    .and_then(|lookup| lookup.hash_key())
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "a revealed reference carries a lookup with a computed key, which the \
+                         parser enforces",
+                    )));
+                };
+                let Some(property) = document_type.flattened_properties().get(property_path) else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "a revealed reference is declared on a property of its document type",
+                    )));
+                };
+                let referenced_id = match key.key_value(
+                    document_type,
+                    value,
+                    &property.property_type,
+                    document_data,
+                ) {
+                    Ok(Value::Bytes32(hash)) => hash,
+                    // The create's structure validation refused a value it could not
+                    // reveal, before any read
+                    Ok(_) | Err(_) => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            DocumentReferencePreimageInvalidError::new(
+                                document_type.name().clone(),
+                                path.to_string(),
+                                path.to_string(),
+                                "the value cannot be revealed into its lookup key".to_string(),
+                            )
+                            .into(),
+                        ))
+                    }
+                };
+                let result = validate_reference_v0(
+                    contract,
+                    document_type,
+                    document_data,
+                    owner_id,
+                    target,
+                    referenced_id,
+                    Some(value),
+                    path,
+                    &mut BTreeMap::new(),
+                    &mut fetched_documents,
+                    platform,
+                    block_info,
+                    is_create,
+                    consumed_documents,
+                    transaction,
+                    execution_context,
+                    platform_version,
+                )?;
+                if !result.is_valid() {
+                    return Ok(result);
+                }
+                continue;
+            }
         };
 
         let bound_property_changed = if let Some(changed) = changed_fields {
@@ -404,6 +481,7 @@ fn validate_document_type_references_v0(
                 owner_id,
                 reference_target,
                 referenced_id,
+                None,
                 path,
                 &mut referenced_contracts,
                 &mut fetched_documents,
@@ -486,6 +564,7 @@ fn validate_document_type_references_v0(
                     owner_id,
                     reference_target,
                     referenced_id,
+                    None,
                     &element_path,
                     &mut referenced_contracts,
                     &mut fetched_documents,
@@ -739,6 +818,7 @@ fn validate_reference_v0(
     owner_id: Identifier,
     reference_target: &DocumentPropertyReferenceTarget,
     referenced_id: [u8; 32],
+    revealed_value: Option<&Value>,
     path: &str,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
     fetched_documents: &mut FetchedDocuments,
@@ -758,6 +838,7 @@ fn validate_reference_v0(
             owner_id,
             reference_target,
             referenced_id,
+            revealed_value,
             path,
             referenced_contracts,
             fetched_documents,
@@ -791,6 +872,7 @@ fn validate_reference_v0(
             owner_id,
             operand,
             referenced_id,
+            revealed_value,
             path,
             referenced_contracts,
             fetched_documents,
@@ -840,7 +922,7 @@ fn validate_reference_v0(
 /// create only (`is_create`), and holds on a replace without a read, since
 /// registration made everything it reads fixed once written and the
 /// commitment it found may have been consumed or deleted since. On a create
-/// the document it finds must also meet the lookup's `minimumAgeSeconds`, and
+/// the document it finds must also meet the lookup's `minimumAgeBlocks`, and
 /// when the lookup declares `consume` the document is pushed onto
 /// `consumed_documents` once the leaf holds.
 #[allow(clippy::too_many_arguments)]
@@ -851,6 +933,7 @@ fn validate_reference_target_v0(
     owner_id: Identifier,
     reference_target: &DocumentPropertyReferenceTarget,
     referenced_id: [u8; 32],
+    revealed_value: Option<&Value>,
     path: &str,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
     fetched_documents: &mut FetchedDocuments,
@@ -1097,13 +1180,29 @@ fn validate_reference_target_v0(
             let referenced_document: Option<&Document> = match (lookup, document_id) {
                 (_, None) => None,
                 (Some(lookup), Some(document_id)) => {
+                    // The value the key reads for `"."`: the id, or the string or
+                    // byte array a revealed reference carries
+                    let identifier_type = DocumentPropertyType::Identifier;
+                    let identifier_value = Value::Identifier(document_id);
+                    let (reference_value, reference_type) = match revealed_value {
+                        Some(value) => (
+                            value,
+                            document_type
+                                .flattened_properties()
+                                .get(path)
+                                .map(|property| &property.property_type)
+                                .unwrap_or(&identifier_type),
+                        ),
+                        None => (&identifier_value, &identifier_type),
+                    };
                     looked_up_document = fetch_document_through_lookup(
                         platform.drive,
                         referenced_contract,
                         referenced_document_type,
                         document_type,
                         lookup,
-                        Identifier::from(document_id),
+                        reference_value,
+                        reference_type,
                         document_data,
                         owner_id,
                         &block_info.epoch,
@@ -1249,22 +1348,23 @@ fn validate_reference_target_v0(
             }
 
             // The commitment a computed key found: it must be old enough, and the create
-            // deletes it when the lookup consumes it. Its age is judged against the block
-            // time, its `$createdAt` (registration demands the type record one); a document
-            // recording none never meets it. Only a lookup the protocol version 14 parser
-            // produced has either
+            // deletes it when the lookup consumes it. Its age is judged in blocks, from its
+            // `$createdAtBlockHeight` (registration demands the type record one) to the
+            // block of the create, so 1 means an earlier block; a document recording none
+            // never meets it. Only a lookup the protocol version 14 parser produced has
+            // either
             if let (Some(lookup), Some(found)) = (lookup, referenced_document) {
-                if let Some(seconds) = lookup.minimum_age_seconds {
+                if let Some(blocks) = lookup.minimum_age_blocks {
                     let old_enough = found
-                        .created_at()
-                        .and_then(|created_at| block_info.time_ms.checked_sub(created_at))
-                        .is_some_and(|age_ms| age_ms >= u64::from(seconds) * 1000);
+                        .created_at_block_height()
+                        .and_then(|created_at| block_info.height.checked_sub(created_at))
+                        .is_some_and(|age| age >= u64::from(blocks));
                     if !old_enough {
                         return Ok(SimpleConsensusValidationResult::new_with_error(
                             ReferencedDocumentRequirementNotMetError::new(
                                 found.id(),
-                                "minimumAgeSeconds".to_string(),
-                                seconds.to_string(),
+                                "minimumAgeBlocks".to_string(),
+                                blocks.to_string(),
                                 path.to_string(),
                             )
                             .into(),

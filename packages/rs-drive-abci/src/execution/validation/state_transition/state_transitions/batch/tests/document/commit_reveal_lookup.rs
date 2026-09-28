@@ -1,16 +1,18 @@
 //! Commit and reveal through a `refersTo` lookup with a computed key (protocol
 //! version 14) through the full ABCI pipeline. The fixture's `preorder` holds
 //! a commitment, `saltedDomainHash`, under a unique index, as the DPNS
-//! preorder does. Its `domain` reveals one through `creatorRefersTo`: the key
-//! is the sha256d of `preorderSalt ++ label` when `parentDomainName` is empty,
-//! and of `preorderSalt ++ normalizedLabel ++ "." ++ parentDomainName`
-//! otherwise, byte for byte the hash the DPNS create trigger computes. The
-//! reveal must be the writer's own commitment (`$ownerId` agreement), at least
-//! 60 seconds old, and consumes it. `openClaim` reveals the sha256d of
-//! `preorderSalt ++ label` through `ownerRefersTo` and demands nothing more.
+//! preorder does. Its `domain`'s `preorderSalt` refers to one through the
+//! `sys.hash.sha256d` of `preorderSalt ++ normalizedLabel ++ "." ++
+//! parentDomainName`, byte for byte the hash the DPNS create trigger computes
+//! for a name under a parent. The reveal must be the writer's own commitment
+//! (`$ownerId` agreement), from an earlier block (`minimumAgeBlocks: 1`), and
+//! consumes it. `openClaim` reveals the sha256d of `preorderSalt ++ label`
+//! through `ownerRefersTo` and demands nothing more.
 //! `renewal` is a mutable type whose `ownerRefersTo` is an `allOf` of such a
 //! reveal, which consumes, and of the writer's `membership`, a deletable
-//! lookup every replace asks for again.
+//! lookup every replace asks for again. `saltedNote` is a mutable type whose
+//! transient salt reveals the sha256d of `preorderSalt ++ label ++ "/" ++
+//! secret`, `secret` transient too, and consumes it.
 
 use super::*;
 
@@ -26,7 +28,9 @@ mod commit_reveal_lookup_tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::consensus::basic::BasicError;
-    use dpp::data_contract::document_type::{DocumentPropertyReferenceTarget, DocumentTypeRef};
+    use dpp::data_contract::document_type::{
+        DocumentPropertyReferenceTarget, DocumentTypeRef, PropertyReference, ReferenceHolder,
+    };
     use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::prelude::{DataContract, IdentityNonce};
@@ -41,15 +45,21 @@ mod commit_reveal_lookup_tests {
     const CONTRACT_PATH: &str =
         "tests/supporting_files/contract/reference-validation/reference-validation-contract-commit-reveal.json";
 
-    /// The block time commitments are made at.
-    const COMMIT_TIME_MS: u64 = 1_700_000_000_000;
+    /// The block commitments are made in.
+    const COMMIT_HEIGHT: u64 = 10;
 
-    /// The `domain` reveal's `minimumAgeSeconds`, in milliseconds.
-    const MINIMUM_AGE_MS: u64 = 60_000;
+    /// The next block, where a commitment made in [`COMMIT_HEIGHT`] is old
+    /// enough for the `domain` reveal's `minimumAgeBlocks: 1`.
+    const REVEAL_HEIGHT: u64 = COMMIT_HEIGHT + 1;
 
-    /// A block time at which a commitment made at [`COMMIT_TIME_MS`] is old
-    /// enough to be revealed.
-    const REVEAL_TIME_MS: u64 = COMMIT_TIME_MS + MINIMUM_AGE_MS;
+    /// Block `height`, a second after the one before it.
+    fn block(height: u64) -> BlockInfo {
+        BlockInfo {
+            time_ms: 1_700_000_000_000 + height * 1_000,
+            height,
+            ..BlockInfo::default()
+        }
+    }
 
     /// The committer, and an identity copying what the committer revealed.
     #[derive(Clone, Copy)]
@@ -131,7 +141,7 @@ mod commit_reveal_lookup_tests {
         fn process(
             &self,
             transition: &StateTransition,
-            time_ms: u64,
+            height: u64,
         ) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let platform_state = self.platform.state.load();
@@ -145,7 +155,7 @@ mod commit_reveal_lookup_tests {
                 .process_raw_state_transitions(
                     &[serialized],
                     &platform_state,
-                    &BlockInfo::default_with_time(time_ms),
+                    &block(height),
                     &transaction,
                     platform_version,
                     false,
@@ -161,16 +171,16 @@ mod commit_reveal_lookup_tests {
             processing_result.into_execution_results().remove(0)
         }
 
-        /// Creates a `type_name` document owned by `who` at block time
-        /// `time_ms`, with `values` set over the random required ones and
-        /// `absent` removed, and returns it with the result.
+        /// Creates a `type_name` document owned by `who` in block `height`,
+        /// with `values` set over the random required ones and `absent`
+        /// removed, and returns it with the result.
         async fn create(
             &mut self,
             who: Who,
             type_name: &str,
             values: &[(&str, Value)],
             absent: &[&str],
-            time_ms: u64,
+            height: u64,
         ) -> (Document, StateTransitionExecutionResult) {
             let platform_version = PlatformVersion::latest();
             let owner_id = self.id(who);
@@ -218,19 +228,19 @@ mod commit_reveal_lookup_tests {
             )
             .await
             .expect("expected the create transition");
-            let result = self.process(&transition, time_ms);
+            let result = self.process(&transition, height);
             (document, result)
         }
 
-        /// A preorder by `who` at `time_ms` committing to `salt ++ name`.
-        async fn commit(&mut self, who: Who, salt: [u8; 32], name: &str, time_ms: u64) -> Document {
+        /// A preorder by `who` in block `height` committing to `salt ++ name`.
+        async fn commit(&mut self, who: Who, salt: [u8; 32], name: &str, height: u64) -> Document {
             let (preorder, result) = self
                 .create(
                     who,
                     "preorder",
                     &[("saltedDomainHash", salted_hash(&salt, name))],
                     &[],
-                    time_ms,
+                    height,
                 )
                 .await;
             assert_matches!(
@@ -240,26 +250,27 @@ mod commit_reveal_lookup_tests {
             preorder
         }
 
-        /// A `domain` by `who` at `time_ms` with `values`, `absent` removed.
+        /// A `domain` by `who` in block `height` with `values`, `absent`
+        /// removed.
         async fn reveal_domain(
             &mut self,
             who: Who,
             values: Vec<(&str, Value)>,
             absent: &[&str],
-            time_ms: u64,
+            height: u64,
         ) -> StateTransitionExecutionResult {
-            self.create(who, "domain", &values, absent, time_ms).await.1
+            self.create(who, "domain", &values, absent, height).await.1
         }
 
         /// Replaces `document`, as last accepted, with `change` applied, as
-        /// `who`, its owner, at `time_ms`.
+        /// `who`, its owner, in block `height`.
         async fn replace(
             &mut self,
             who: Who,
             type_name: &str,
             document: &Document,
             change: impl FnOnce(&mut Document),
-            time_ms: u64,
+            height: u64,
         ) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let mut replacement = document.clone();
@@ -290,7 +301,7 @@ mod commit_reveal_lookup_tests {
             )
             .await
             .expect("expected the replace transition");
-            self.process(&transition, time_ms)
+            self.process(&transition, height)
         }
 
         /// Whether the `preorder` with `id` is in state.
@@ -339,20 +350,33 @@ mod commit_reveal_lookup_tests {
         ]
     }
 
-    /// A paid refusal of the domain's `creatorRefersTo` with `ReferencedEntityNotFoundError`
-    /// (40120): no commitment matches what the create reveals.
-    fn assert_no_commitment(result: StateTransitionExecutionResult) {
+    /// The key a `domain` revealing `salt` for `normalized_label` under
+    /// `parent` computes: the commitment [`salted_hash`] makes to
+    /// `salt ++ normalized_label.parent`.
+    fn revealed_key(salt: [u8; 32], normalized_label: &str, parent: &str) -> Identifier {
+        let Value::Bytes32(hash) = salted_hash(&salt, &format!("{normalized_label}.{parent}"))
+        else {
+            unreachable!("a salted hash is 32 bytes");
+        };
+        Identifier::from(hash)
+    }
+
+    /// A paid refusal of the domain salt's `refersTo` with
+    /// `ReferencedEntityNotFoundError` (40120): no commitment matches `key`,
+    /// what the create reveals.
+    fn assert_no_commitment(result: StateTransitionExecutionResult, key: Identifier) {
         assert_matches!(
             result,
             PaidConsensusError {
                 error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(e)),
                 ..
-            } if e.path() == "$creatorId"
+            } if e.path() == "preorderSalt"
+                && *e.entity_id() == key
                 && matches!(
                     e.entity_type(),
                     DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
                 ),
-            "expected 40120 at $creatorId"
+            "expected 40120 at preorderSalt"
         );
     }
 
@@ -362,7 +386,7 @@ mod commit_reveal_lookup_tests {
         let alice = fixture.id(Who::Alice);
         let salt = [0x11; 32];
         let preorder = fixture
-            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_TIME_MS)
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
             .await;
         assert!(fixture.preorder_exists(preorder.id()));
 
@@ -371,7 +395,7 @@ mod commit_reveal_lookup_tests {
                 Who::Alice,
                 subdomain("Alice", "al1ce", "dash", salt),
                 &[],
-                REVEAL_TIME_MS,
+                REVEAL_HEIGHT,
             )
             .await;
 
@@ -395,28 +419,34 @@ mod commit_reveal_lookup_tests {
                 Who::Alice,
                 subdomain("Alice", "al1ce", "dash", salt),
                 &[],
-                REVEAL_TIME_MS + 1_000,
+                REVEAL_HEIGHT + 1,
             )
             .await;
-        assert_no_commitment(result);
+        assert_no_commitment(result, revealed_key(salt, "al1ce", "dash"));
     }
 
     #[tokio::test]
     async fn should_refuse_a_domain_revealing_no_commitment() {
         let mut fixture = CommitRevealFixture::new();
         fixture
-            .commit(Who::Alice, [0x11; 32], "al1ce.dash", COMMIT_TIME_MS)
+            .commit(Who::Alice, [0x11; 32], "al1ce.dash", COMMIT_HEIGHT)
             .await;
 
         // Another salt, and another name: neither was committed to
-        for values in [
-            subdomain("Alice", "al1ce", "dash", [0x12; 32]),
-            subdomain("Bob", "b0b", "dash", [0x11; 32]),
+        for (values, key) in [
+            (
+                subdomain("Alice", "al1ce", "dash", [0x12; 32]),
+                revealed_key([0x12; 32], "al1ce", "dash"),
+            ),
+            (
+                subdomain("Bob", "b0b", "dash", [0x11; 32]),
+                revealed_key([0x11; 32], "b0b", "dash"),
+            ),
         ] {
             let result = fixture
-                .reveal_domain(Who::Alice, values, &[], REVEAL_TIME_MS)
+                .reveal_domain(Who::Alice, values, &[], REVEAL_HEIGHT)
                 .await;
-            assert_no_commitment(result);
+            assert_no_commitment(result, key);
         }
     }
 
@@ -425,7 +455,7 @@ mod commit_reveal_lookup_tests {
         let mut fixture = CommitRevealFixture::new();
         let salt = [0x11; 32];
         let preorder = fixture
-            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_TIME_MS)
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
             .await;
 
         // Mallory copies what Alice's create reveals: the commitment exists and
@@ -435,7 +465,7 @@ mod commit_reveal_lookup_tests {
                 Who::Mallory,
                 subdomain("Alice", "al1ce", "dash", salt),
                 &[],
-                REVEAL_TIME_MS,
+                REVEAL_HEIGHT,
             )
             .await;
         assert_matches!(
@@ -445,7 +475,7 @@ mod commit_reveal_lookup_tests {
                     StateError::ReferencedDocumentPropertyMismatchError(e)
                 ),
                 ..
-            } if e.path() == "$creatorId"
+            } if e.path() == "preorderSalt"
                 && e.referring_property() == "$ownerId"
                 && e.referenced_property() == "$ownerId"
         );
@@ -454,64 +484,51 @@ mod commit_reveal_lookup_tests {
     }
 
     #[tokio::test]
-    async fn should_refuse_a_domain_revealing_a_commitment_younger_than_its_minimum_age() {
+    async fn should_refuse_a_domain_revealing_a_commitment_from_the_same_block() {
         let mut fixture = CommitRevealFixture::new();
         let salt = [0x11; 32];
         let preorder = fixture
-            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_TIME_MS)
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
             .await;
 
-        // In the same block, and a millisecond short of the minimum age
-        for time_ms in [COMMIT_TIME_MS, REVEAL_TIME_MS - 1] {
-            let result = fixture
-                .reveal_domain(
-                    Who::Alice,
-                    subdomain("Alice", "al1ce", "dash", salt),
-                    &[],
-                    time_ms,
-                )
-                .await;
-            assert_matches!(
-                result,
-                PaidConsensusError {
-                    error: ConsensusError::StateError(
-                        StateError::ReferencedDocumentRequirementNotMetError(e)
-                    ),
-                    ..
-                } if *e.document_id() == preorder.id()
-                    && e.field() == "minimumAgeSeconds"
-                    && e.required() == "60"
-                    && e.path() == "$creatorId"
-            );
-        }
-        assert!(fixture.preorder_exists(preorder.id()));
-    }
-
-    #[tokio::test]
-    async fn should_reveal_the_label_alone_when_the_parent_is_empty() {
-        let mut fixture = CommitRevealFixture::new();
-        let salt = [0x21; 32];
-        // A top-level name commits to its label as written, not normalized
-        fixture
-            .commit(Who::Alice, salt, "Dash", COMMIT_TIME_MS)
-            .await;
-
-        // The subdomain branch would hash "dash." and find nothing
-        let top_level = |normalized_label: &str| {
-            vec![
-                ("label", "Dash".into()),
-                ("normalizedLabel", normalized_label.into()),
-                ("parentDomainName", "".into()),
-                ("preorderSalt", Value::Bytes32(salt)),
-            ]
-        };
+        // In the block of the commitment: a proposer could order a copied reveal
+        // right behind its own commitment there
         let result = fixture
-            .reveal_domain(Who::Alice, top_level("dash"), &[], REVEAL_TIME_MS)
+            .reveal_domain(
+                Who::Alice,
+                subdomain("Alice", "al1ce", "dash", salt),
+                &[],
+                COMMIT_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentRequirementNotMetError(e)
+                ),
+                ..
+            } if *e.document_id() == preorder.id()
+                && e.field() == "minimumAgeBlocks"
+                && e.required() == "1"
+                && e.path() == "preorderSalt"
+        );
+        assert!(fixture.preorder_exists(preorder.id()));
+
+        // The next block is old enough
+        let result = fixture
+            .reveal_domain(
+                Who::Alice,
+                subdomain("Alice", "al1ce", "dash", salt),
+                &[],
+                REVEAL_HEIGHT,
+            )
             .await;
         assert_matches!(
             result,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
+        assert!(!fixture.preorder_exists(preorder.id()));
     }
 
     #[tokio::test]
@@ -519,16 +536,16 @@ mod commit_reveal_lookup_tests {
         let mut fixture = CommitRevealFixture::new();
         let salt = [0x11; 32];
         fixture
-            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_TIME_MS)
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
             .await;
 
-        // No parentDomainName: the ifEmpty part has nothing to test
+        // No parentDomainName: the key has nothing to hash for it
         let result = fixture
             .reveal_domain(
                 Who::Alice,
                 subdomain("Alice", "al1ce", "dash", salt),
                 &["parentDomainName"],
-                REVEAL_TIME_MS,
+                REVEAL_HEIGHT,
             )
             .await;
         assert_matches!(
@@ -538,7 +555,7 @@ mod commit_reveal_lookup_tests {
                     BasicError::DocumentReferencePreimageInvalidError(e)
                 ),
                 ..
-            } if e.path() == "$creatorId" && e.property() == "parentDomainName"
+            } if e.path() == "preorderSalt" && e.property() == "parentDomainName"
         );
 
         // "al.1ce" followed by "." then "dash" would read as "al" + "." +
@@ -548,7 +565,7 @@ mod commit_reveal_lookup_tests {
                 Who::Alice,
                 subdomain("Al.1ce", "al.1ce", "dash", salt),
                 &[],
-                REVEAL_TIME_MS,
+                REVEAL_HEIGHT,
             )
             .await;
         assert_matches!(
@@ -567,7 +584,7 @@ mod commit_reveal_lookup_tests {
         let mut fixture = CommitRevealFixture::new();
         let salt = [0x31; 32];
         let preorder = fixture
-            .commit(Who::Alice, salt, "claim", COMMIT_TIME_MS)
+            .commit(Who::Alice, salt, "claim", COMMIT_HEIGHT)
             .await;
 
         // `openClaim` declares no `$ownerId` pair, no minimum age and no
@@ -577,7 +594,7 @@ mod commit_reveal_lookup_tests {
             ("preorderSalt", Value::Bytes32(salt)),
         ];
         let (_, result) = fixture
-            .create(Who::Mallory, "openClaim", &claim, &[], COMMIT_TIME_MS)
+            .create(Who::Mallory, "openClaim", &claim, &[], COMMIT_HEIGHT)
             .await;
         assert_matches!(
             result,
@@ -605,7 +622,7 @@ mod commit_reveal_lookup_tests {
         // Mallory commits but holds no membership: the allOf fails on its second
         // leaf, so the create is refused and consumes nothing
         let mallory_preorder = fixture
-            .commit(Who::Mallory, [0x42; 32], "renew", COMMIT_TIME_MS)
+            .commit(Who::Mallory, [0x42; 32], "renew", COMMIT_HEIGHT)
             .await;
         let (_, result) = fixture
             .create(
@@ -613,7 +630,7 @@ mod commit_reveal_lookup_tests {
                 "renewal",
                 &renewal([0x42; 32], "first"),
                 &[],
-                COMMIT_TIME_MS,
+                COMMIT_HEIGHT,
             )
             .await;
         assert_matches!(
@@ -632,7 +649,7 @@ mod commit_reveal_lookup_tests {
                 "membership",
                 &[("note", "member".into())],
                 &[],
-                COMMIT_TIME_MS,
+                COMMIT_HEIGHT,
             )
             .await;
         assert_matches!(
@@ -640,7 +657,7 @@ mod commit_reveal_lookup_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         let preorder = fixture
-            .commit(Who::Alice, salt, "renew", COMMIT_TIME_MS)
+            .commit(Who::Alice, salt, "renew", COMMIT_HEIGHT)
             .await;
         let (document, result) = fixture
             .create(
@@ -648,7 +665,7 @@ mod commit_reveal_lookup_tests {
                 "renewal",
                 &renewal(salt, "first"),
                 &[],
-                COMMIT_TIME_MS,
+                COMMIT_HEIGHT,
             )
             .await;
         assert_matches!(
@@ -665,7 +682,57 @@ mod commit_reveal_lookup_tests {
                 "renewal",
                 &document,
                 |renewal| renewal.set("note", "second".into()),
-                REVEAL_TIME_MS,
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// A replace of a document whose salt revealed a commitment leaves the
+    /// reveal alone: the commitment it consumed is gone, nothing stored that
+    /// the key reads can have changed, and a transient param need not be
+    /// carried again, though the salt is.
+    #[tokio::test]
+    async fn should_consume_through_a_revealed_salt_and_leave_it_alone_on_replace() {
+        let mut fixture = CommitRevealFixture::new();
+        let salt = [0x61; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "noted/s3cret", COMMIT_HEIGHT)
+            .await;
+
+        let (document, result) = fixture
+            .create(
+                Who::Alice,
+                "saltedNote",
+                &[
+                    ("label", "noted".into()),
+                    ("preorderSalt", Value::Bytes32(salt)),
+                    ("secret", "s3cret".into()),
+                    ("note", "first".into()),
+                ],
+                &[],
+                COMMIT_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(!fixture.preorder_exists(preorder.id()));
+
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "saltedNote",
+                &document,
+                |note| {
+                    note.set("note", "second".into());
+                    note.remove("secret");
+                },
+                REVEAL_HEIGHT,
             )
             .await;
         assert_matches!(
@@ -683,7 +750,7 @@ mod commit_reveal_lookup_tests {
         let mut fixture = CommitRevealFixture::new();
         let salt = [0x51; 32];
         let preorder = fixture
-            .commit(Who::Mallory, salt, "fallback", COMMIT_TIME_MS)
+            .commit(Who::Mallory, salt, "fallback", COMMIT_HEIGHT)
             .await;
 
         let claim = vec![
@@ -691,7 +758,7 @@ mod commit_reveal_lookup_tests {
             ("preorderSalt", Value::Bytes32(salt)),
         ];
         let (_, result) = fixture
-            .create(Who::Mallory, "fallbackClaim", &claim, &[], COMMIT_TIME_MS)
+            .create(Who::Mallory, "fallbackClaim", &claim, &[], COMMIT_HEIGHT)
             .await;
         assert_matches!(
             result,
@@ -712,7 +779,7 @@ mod commit_reveal_lookup_tests {
         let alice = fixture.id(Who::Alice);
         let salt = [0x11; 32];
         let preorder = fixture
-            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_TIME_MS)
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
             .await;
 
         let (_, contract_fetch_info) = fixture
@@ -759,7 +826,7 @@ mod commit_reveal_lookup_tests {
                     changed_fields,
                     None,
                     &platform_ref,
-                    &BlockInfo::default_with_time(REVEAL_TIME_MS),
+                    &block(REVEAL_HEIGHT),
                     &mut consumed,
                     None,
                     &mut execution_context,
@@ -780,7 +847,7 @@ mod commit_reveal_lookup_tests {
             consumed.as_slice(),
             [consumed] if consumed.document.document_id == preorder.id()
                 && consumed.document.document_type_name == "preorder"
-                && consumed.path == "$creatorId"
+                && consumed.path == "preorderSalt"
         );
 
         // A replace neither reads nor consumes: the commitment was revealed once
@@ -792,7 +859,7 @@ mod commit_reveal_lookup_tests {
     }
 
     /// The type in the fixture reads what [`DocumentTypeRef`] reports: the
-    /// declaration is the creator's, and the key is computed.
+    /// declaration is the salt's, revealed, and the key is computed.
     #[test]
     fn should_parse_the_fixture_domain_as_revealing_a_computed_key() {
         let platform_version = PlatformVersion::latest();
@@ -801,17 +868,18 @@ mod commit_reveal_lookup_tests {
         let domain: DocumentTypeRef = contract
             .document_type_for_name("domain")
             .expect("expected the domain type");
-        let lookup = domain
-            .reference_declarations()
-            .find_map(|(_, reference)| {
-                reference
-                    .target()
-                    .and_then(|target| target.as_any_document_reference())
-                    .and_then(|declaration| declaration.lookup)
-            })
-            .expect("expected the creator's lookup");
+        let declarations = domain.reference_declarations().collect::<Vec<_>>();
+        let [(ReferenceHolder::Property("preorderSalt"), PropertyReference::Revealed(target))] =
+            declarations.as_slice()
+        else {
+            panic!("expected the salt's revealed reference alone");
+        };
+        let lookup = target
+            .as_any_document_reference()
+            .and_then(|declaration| declaration.lookup)
+            .expect("expected the salt's lookup");
         assert!(lookup.is_checked_on_create_only());
-        assert_eq!(lookup.minimum_age_seconds, Some(60));
+        assert_eq!(lookup.minimum_age_blocks, Some(1));
         assert!(lookup.consume);
     }
 }

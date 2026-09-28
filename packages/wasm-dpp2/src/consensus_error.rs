@@ -79,11 +79,11 @@ pub enum DocumentReferenceErrorCodeWasm {
     ReferencedDocumentListInvalid = 40138,
     /// The document a `refersTo` lookup with a computed key found, the
     /// commitment the create reveals, exists but does not meet the lookup's
-    /// `minimumAgeSeconds`: it was created too recently. Retry once it is old
-    /// enough.
+    /// `minimumAgeBlocks`: it was created too recently, in the same block
+    /// with a minimum of 1. Retry in a later block.
     ReferencedDocumentRequirementNotMet = 40142,
     /// A create cannot reveal the preimage of a `refersTo` lookup with a
-    /// computed key: a property a part reads is absent, or a variable-length
+    /// computed key: a value a param reads is absent, or a variable-length
     /// value holds the one-byte separator that follows it in the preimage.
     DocumentReferencePreimageInvalid = 10423,
 }
@@ -727,9 +727,9 @@ mod tests {
                 StateError::ReferencedDocumentRequirementNotMetError(
                     ReferencedDocumentRequirementNotMetError::new(
                         id(),
-                        "minimumAgeSeconds".to_string(),
-                        "60".to_string(),
-                        "$creatorId".to_string(),
+                        "minimumAgeBlocks".to_string(),
+                        "1".to_string(),
+                        "preorderSalt".to_string(),
                     ),
                 )
                 .into(),
@@ -739,7 +739,7 @@ mod tests {
                 BasicError::DocumentReferencePreimageInvalidError(
                     DocumentReferencePreimageInvalidError::new(
                         "domain".to_string(),
-                        "$creatorId".to_string(),
+                        "preorderSalt".to_string(),
                         "parentDomainName".to_string(),
                         "the value is absent".to_string(),
                     ),

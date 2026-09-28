@@ -86,7 +86,7 @@ fn expected_lookup(keys: &[(&str, LookupKeySource)]) -> DocumentReferenceLookup 
             .iter()
             .map(|(index_property, source)| (index_property.to_string(), source.clone()))
             .collect(),
-        minimum_age_seconds: None,
+        minimum_age_blocks: None,
         consume: false,
     }
 }
@@ -235,7 +235,7 @@ fn should_refuse_lookup_keys_that_use_the_reference_value_twice_or_not_at_all() 
         for full_validation in [true, false] {
             assert_refused(
                 contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
-                &format!("exactly one index property from \".\", the reference's own value, found {found}"),
+                &format!("must read \".\", the reference's own value, exactly once, found {found}"),
             );
         }
     }

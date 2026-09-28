@@ -199,6 +199,7 @@ mod tests {
             distinct_from: None,
             encrypted_for: None,
             generated_from: None,
+            revealed_reference: None,
             transient: false,
         }
     }
@@ -216,6 +217,7 @@ mod tests {
             distinct_from: None,
             encrypted_for: None,
             generated_from: None,
+            revealed_reference: None,
             transient: false,
         }
     }
@@ -228,6 +230,7 @@ mod tests {
             distinct_from: None,
             encrypted_for: None,
             generated_from: None,
+            revealed_reference: None,
             transient: false,
         }
     }
@@ -383,7 +386,7 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byAuthor".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
-                    minimum_age_seconds: None,
+                    minimum_age_blocks: None,
                     consume: false,
                 },
             },

@@ -29,7 +29,7 @@
         }
       ],
       "required": [
-        "$createdAt",
+        "$createdAtBlockHeight",
         "saltedDomainHash"
       ],
       "additionalProperties": false
@@ -62,7 +62,32 @@
           "byteArray": true,
           "minItems": 32,
           "maxItems": 32,
-          "position": 3
+          "position": 3,
+          "refersTo": {
+            "type": "deletableDocument",
+            "documentType": "preorder",
+            "lookup": {
+              "index": "saltedHash",
+              "keys": {
+                "saltedDomainHash": {
+                  "function": "sys.hash.sha256d",
+                  "params": [
+                    ".",
+                    "normalizedLabel",
+                    {
+                      "const": "."
+                    },
+                    "parentDomainName"
+                  ]
+                }
+              },
+              "minimumAgeBlocks": 1,
+              "consume": true
+            },
+            "propertyAgreement": {
+              "$ownerId": "$ownerId"
+            }
+          }
         }
       },
       "required": [
@@ -73,46 +98,6 @@
       "transient": [
         "preorderSalt"
       ],
-      "creatorRefersTo": {
-        "type": "deletableDocument",
-        "documentType": "preorder",
-        "lookup": {
-          "index": "saltedHash",
-          "keys": {
-            "saltedDomainHash": {
-              "sha256d": [
-                {
-                  "property": "preorderSalt"
-                },
-                {
-                  "ifEmpty": "parentDomainName",
-                  "then": [
-                    {
-                      "property": "label"
-                    }
-                  ],
-                  "else": [
-                    {
-                      "property": "normalizedLabel"
-                    },
-                    {
-                      "text": "."
-                    },
-                    {
-                      "property": "parentDomainName"
-                    }
-                  ]
-                }
-              ]
-            }
-          },
-          "minimumAgeSeconds": 60,
-          "consume": true
-        },
-        "propertyAgreement": {
-          "$ownerId": "$ownerId"
-        }
-      },
       "additionalProperties": false
     },
     "openClaim": {
@@ -148,13 +133,10 @@
           "index": "saltedHash",
           "keys": {
             "saltedDomainHash": {
-              "sha256d": [
-                {
-                  "property": "preorderSalt"
-                },
-                {
-                  "property": "label"
-                }
+              "function": "sys.hash.sha256d",
+              "params": [
+                "preorderSalt",
+                "label"
               ]
             }
           }
@@ -232,13 +214,10 @@
               "index": "saltedHash",
               "keys": {
                 "saltedDomainHash": {
-                  "sha256d": [
-                    {
-                      "property": "preorderSalt"
-                    },
-                    {
-                      "property": "label"
-                    }
+                  "function": "sys.hash.sha256d",
+                  "params": [
+                    "preorderSalt",
+                    "label"
                   ]
                 }
               },
@@ -299,13 +278,10 @@
                   "index": "saltedHash",
                   "keys": {
                     "saltedDomainHash": {
-                      "sha256d": [
-                        {
-                          "property": "preorderSalt"
-                        },
-                        {
-                          "property": "label"
-                        }
+                      "function": "sys.hash.sha256d",
+                      "params": [
+                        "preorderSalt",
+                        "label"
                       ]
                     }
                   },
@@ -332,6 +308,73 @@
           }
         ]
       },
+      "additionalProperties": false
+    },
+    "saltedNote": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "preorderSalt": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1,
+          "refersTo": {
+            "type": "deletableDocument",
+            "documentType": "preorder",
+            "lookup": {
+              "index": "saltedHash",
+              "keys": {
+                "saltedDomainHash": {
+                  "function": "sys.hash.sha256d",
+                  "params": [
+                    ".",
+                    "label",
+                    {
+                      "const": "/"
+                    },
+                    "secret"
+                  ]
+                }
+              },
+              "consume": true
+            },
+            "propertyAgreement": {
+              "$ownerId": "$ownerId"
+            }
+          }
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 2
+        },
+        "secret": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 3
+        }
+      },
+      "required": [
+        "label",
+        "preorderSalt"
+      ],
+      "transient": [
+        "preorderSalt",
+        "secret"
+      ],
+      "immutable": [
+        "label"
+      ],
       "additionalProperties": false
     }
   }

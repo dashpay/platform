@@ -9,9 +9,9 @@ use platform_value::Identifier;
 use thiserror::Error;
 
 /// The document a `refersTo` lookup with a computed key found, the commitment a create
-/// reveals, exists but does not meet what the lookup requires of it: `minimumAgeSeconds`,
-/// its recorded creation time at least that many seconds before the block time of the create
-/// (a document recording none never meets it).
+/// reveals, exists but does not meet what the lookup requires of it: `minimumAgeBlocks`,
+/// its recorded creation block height at least that many blocks below the height of the
+/// create (a document recording none never meets it).
 #[derive(
     Error,
     Debug,
@@ -56,18 +56,18 @@ impl ReferencedDocumentRequirementNotMetError {
         &self.document_id
     }
 
-    /// The `lookup` key of the requirement: `minimumAgeSeconds`
+    /// The `lookup` key of the requirement: `minimumAgeBlocks`
     pub fn field(&self) -> &str {
         &self.field
     }
 
-    /// The value the lookup requires as the schema spells it, the number of seconds for
-    /// `minimumAgeSeconds`
+    /// The value the lookup requires as the schema spells it, the number of blocks for
+    /// `minimumAgeBlocks`
     pub fn required(&self) -> &str {
         &self.required
     }
 
-    /// The referring property, `$ownerId` or `$creatorId`
+    /// Where the reference is declared: the property carrying it, `$ownerId` or `$creatorId`
     pub fn path(&self) -> &str {
         &self.path
     }

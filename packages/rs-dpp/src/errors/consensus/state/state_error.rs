@@ -636,7 +636,7 @@ pub enum StateError {
     DocumentContestMaximumContendersReachedError(DocumentContestMaximumContendersReachedError),
 
     // The commitment a `refersTo` lookup with a computed key found does not meet the lookup's
-    // `minimumAgeSeconds` (protocol version 14).
+    // `minimumAgeBlocks` (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentRequirementNotMetError(ReferencedDocumentRequirementNotMetError),
 }
@@ -734,7 +734,7 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
-                    minimum_age_seconds: None,
+                    minimum_age_blocks: None,
                     consume: false,
                 },
             }),
@@ -763,7 +763,7 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
-                    minimum_age_seconds: None,
+                    minimum_age_blocks: None,
                     consume: false,
                 },
             }),

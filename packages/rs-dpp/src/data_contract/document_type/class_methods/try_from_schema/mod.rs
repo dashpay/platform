@@ -22,7 +22,8 @@ use crate::data_contract::document_type::{
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements, KeyIdReference,
     KeyReferenceIdentityProperty, ListElementReference, LookupHashKey, LookupKeySource,
-    ReferenceCombinator, ReferenceOperands, SystemFunction, COMBINABLE_REFERENCE_TARGET_TYPES,
+    PropertyReference, ReferenceCombinator, ReferenceHolder, ReferenceOperands, SystemFunction,
+    COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -225,6 +226,8 @@ fn insert_values(
                     apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
                 let generated_from =
                     apply_generated_from(&inner_properties, &property_type, platform_version)?;
+                let revealed_reference =
+                    apply_revealed_reference(&inner_properties, &property_type, platform_version)?;
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -235,6 +238,7 @@ fn insert_values(
                         distinct_from,
                         encrypted_for,
                         generated_from,
+                        revealed_reference,
                     },
                 );
             }
@@ -366,6 +370,8 @@ fn insert_values_nested(
     let distinct_from = apply_distinct_from(&inner_properties, &property_type, platform_version)?;
     let encrypted_for = apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
     let generated_from = apply_generated_from(&inner_properties, &property_type, platform_version)?;
+    let revealed_reference =
+        apply_revealed_reference(&inner_properties, &property_type, platform_version)?;
 
     document_properties.insert(
         property_key,
@@ -377,6 +383,7 @@ fn insert_values_nested(
             distinct_from,
             encrypted_for,
             generated_from,
+            revealed_reference,
         },
     );
 
@@ -705,6 +712,18 @@ fn apply_property_reference_v0(
         return Ok(property_type);
     };
 
+    // A string or byte array property's value is not an id: a declaration
+    // with a lookup on one is read by `apply_revealed_reference`, which admits
+    // only a value revealed into a computed lookup key. Every other
+    // declaration on one is refused below
+    if matches!(
+        property_type,
+        DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_)
+    ) && declares_a_lookup(refers_to_value)
+    {
+        return Ok(property_type);
+    }
+
     // A typed array only exists from protocol version 14, where its element
     // reference is read off the items by the typed array parser
     if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
@@ -764,7 +783,9 @@ fn apply_property_reference_v0(
     ) {
         return Err(DataContractError::InvalidContractStructure(
             "refersTo is only allowed on identifier properties, except an identityPublicKey \
-             reference with identityProperty, which sits on the key id property"
+             reference with identityProperty, which sits on the key id property, and a document \
+             reference whose lookup reveals a string or byte array property's value in a \
+             computed key"
                 .to_string(),
         ));
     }
@@ -772,6 +793,84 @@ fn apply_property_reference_v0(
     Ok(DocumentPropertyType::IdentifierWithReference(
         parse_reference_target(&refers_to_map, reference_type)?,
     ))
+}
+
+/// Reads the `refersTo` of a string or byte array property: its value is not
+/// an id, so the one declaration it may carry is a document reference, of
+/// either kind, found through a `lookup` whose computed key reads the value as
+/// its `"."` param, a commitment the value is revealed to (a salt a preorder
+/// hashed). `None` for every other property type, and for a declaration
+/// without a lookup, which [`apply_property_reference`] folds into the type or
+/// refuses.
+///
+/// Versioned on `apply_property_reference`, the gate of the declaration it
+/// reads: `None` ignores the keyword, as it does on an identifier.
+fn apply_revealed_reference(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<Option<DocumentPropertyReferenceTarget>, DataContractError> {
+    if platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_property_reference
+        .is_none()
+    {
+        return Ok(None);
+    }
+    if !matches!(
+        property_type,
+        DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_)
+    ) {
+        return Ok(None);
+    }
+    let Some(refers_to_value) = inner_properties
+        .get(property_names::REFERS_TO)
+        .filter(|refers_to_value| declares_a_lookup(refers_to_value))
+    else {
+        return Ok(None);
+    };
+    let refused = || {
+        DataContractError::InvalidContractStructure(
+            "refersTo on a string or byte array property must be a permanentDocument or \
+             deletableDocument reference whose lookup reveals the value in a computed key, \
+             reading it as the \".\" param: the value is not an id"
+                .to_string(),
+        )
+    };
+    let refers_to_map = refers_to_value.to_btree_ref_string_map()?;
+    if reference_combinator_of(&refers_to_map).is_some()
+        || refers_to_map.contains_key(property_names::IDENTITY_PROPERTY)
+    {
+        return Err(refused());
+    }
+    let reference_type = refers_to_map
+        .get_str(property_names::TYPE)
+        .map_err(|e| DataContractError::ValueWrongType(e.to_string()))?;
+    if !matches!(reference_type, "permanentDocument" | "deletableDocument") {
+        return Err(refused());
+    }
+    validate_reference_target_keys(&refers_to_map, reference_type)?;
+    let target = parse_reference_target(&refers_to_map, reference_type)?;
+    let reveals_the_value = target
+        .as_any_document_reference()
+        .and_then(|declaration| declaration.lookup)
+        .and_then(|lookup| lookup.hash_key())
+        .is_some_and(|(_, key)| key.reference_value_uses() == 1);
+    if !reveals_the_value {
+        return Err(refused());
+    }
+    Ok(Some(target))
+}
+
+/// Whether a `refersTo` declaration is a single target with a `lookup`, the
+/// one form a string or byte array property may carry.
+fn declares_a_lookup(refers_to_value: &Value) -> bool {
+    refers_to_value
+        .to_btree_ref_string_map()
+        .is_ok_and(|declaration| declaration.contains_key(property_names::LOOKUP))
 }
 
 /// The combinator a `refersTo` declaration (or one operand of an expression)
@@ -1547,12 +1646,14 @@ pub(super) fn parse_doctype_reference(
 /// The `lookup` of a document reference: `index`, the name of an index of the
 /// referenced document type, and `keys`, every property of that index mapped to
 /// its referring-side source (`"."`, `"$ownerId"` or a property path), with `"."`
-/// exactly once, or to a computed key (`{ "sha256d": [part, ...] }`, see
-/// [`LookupHashKey`]), at most one of them. Beside a computed key `"."` may be
-/// left out, which only the lookup of an `ownerRefersTo` or `creatorRefersTo`
-/// may do (checked with the other referring-side rules), and the lookup may
-/// declare `minimumAgeSeconds` and `consume`, what the commitment the key finds
-/// must be and whether the create deletes it. What the names resolve to is
+/// exactly once, or to a computed key
+/// (`{ "function": "sys.hash.sha256d", "params": [...] }`, see [`LookupHashKey`]),
+/// at most one of them, whose params may read `"."` in place of a source. Beside
+/// a computed key `"."` may be left out, which only the lookup of an
+/// `ownerRefersTo` or `creatorRefersTo` may do (checked with the other
+/// referring-side rules), and the lookup may declare `minimumAgeBlocks` and
+/// `consume`, what the commitment the key finds must be and whether the create
+/// deletes it. What the names resolve to is
 /// checked once the document types are parsed: the sources against the
 /// declaring type ([`validate_reference_lookup_sources`]), the index against
 /// the referenced one (at contract level for a type of the same contract, at
@@ -1566,13 +1667,13 @@ fn parse_document_reference_lookup(
             key.as_str(),
             property_names::LOOKUP_INDEX
                 | property_names::LOOKUP_KEYS
-                | property_names::LOOKUP_MINIMUM_AGE_SECONDS
+                | property_names::LOOKUP_MINIMUM_AGE_BLOCKS
                 | property_names::LOOKUP_CONSUME
         )
     }) {
         return Err(DataContractError::InvalidContractStructure(format!(
             "refersTo lookup {unknown:?} is unknown: a lookup takes index, keys, \
-             minimumAgeSeconds and consume"
+             minimumAgeBlocks and consume"
         )));
     }
 
@@ -1610,8 +1711,8 @@ fn parse_document_reference_lookup(
                      and {MAX_LOOKUP_PATH_LENGTH} characters"
                 )));
             }
-            // A computed key is an object naming its hash; every other source a
-            // string
+            // A computed key is an object naming its function; every other
+            // source a string
             if matches!(source_value, Value::Map(_)) {
                 return Ok((
                     index_property,
@@ -1639,39 +1740,44 @@ fn parse_document_reference_lookup(
         )));
     }
 
+    let lookup = DocumentReferenceLookup {
+        index: index.to_string(),
+        keys,
+        minimum_age_blocks: None,
+        consume: false,
+    };
+
     // Without the reference's own value in the key, every document would
-    // resolve to the same referenced document whatever the property holds.
-    // A computed key makes the key the document's own, so beside one the
-    // value may be left out, on the writer or the creator alone
-    let reference_value_uses = keys
-        .values()
-        .filter(|source| matches!(source, LookupKeySource::ReferenceValue))
-        .count();
+    // resolve to the same referenced document whatever the property holds: it
+    // fills the key once, as a source or a param of the computed key. A
+    // computed key makes the key the document's own, so beside one the value
+    // may be left out, on the writer or the creator alone
+    let reference_value_uses = lookup.reference_value_uses();
     let allowed_uses: &[usize] = if computed_keys == 1 { &[0, 1] } else { &[1] };
     if !allowed_uses.contains(&reference_value_uses) {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "permanentDocument refersTo lookup keys must fill exactly one index property from \
-             \".\", the reference's own value, found {reference_value_uses}"
+            "refersTo lookup keys must read \".\", the reference's own value, exactly once, \
+             found {reference_value_uses}"
         )));
     }
 
     // What the commitment a computed key finds must be, and whether the create
     // deletes it: a lookup without one finds no commitment
-    let minimum_age_seconds = lookup_map
-        .get(property_names::LOOKUP_MINIMUM_AGE_SECONDS)
+    let minimum_age_blocks = lookup_map
+        .get(property_names::LOOKUP_MINIMUM_AGE_BLOCKS)
         .map(|value| {
-            let seconds: u32 = value.to_integer().map_err(|_| {
+            let blocks: u32 = value.to_integer().map_err(|_| {
                 DataContractError::InvalidContractStructure(
-                    "refersTo lookup minimumAgeSeconds must be an integer from 1 to 4294967295"
+                    "refersTo lookup minimumAgeBlocks must be an integer from 1 to 4294967295"
                         .to_string(),
                 )
             })?;
-            if seconds == 0 {
+            if blocks == 0 {
                 return Err(DataContractError::InvalidContractStructure(
-                    "refersTo lookup minimumAgeSeconds must be at least 1".to_string(),
+                    "refersTo lookup minimumAgeBlocks must be at least 1".to_string(),
                 ));
             }
-            Ok(seconds)
+            Ok(blocks)
         })
         .transpose()?;
     let consume = match lookup_map.get(property_names::LOOKUP_CONSUME) {
@@ -1683,19 +1789,18 @@ fn parse_document_reference_lookup(
             ))
         }
     };
-    if computed_keys == 0 && (minimum_age_seconds.is_some() || consume) {
+    if computed_keys == 0 && (minimum_age_blocks.is_some() || consume) {
         return Err(DataContractError::InvalidContractStructure(
-            "refersTo lookup minimumAgeSeconds and consume need a computed key: they describe \
+            "refersTo lookup minimumAgeBlocks and consume need a computed key: they describe \
              the commitment a create reveals"
                 .to_string(),
         ));
     }
 
     Ok(DocumentReferenceLookup {
-        index: index.to_string(),
-        keys,
-        minimum_age_seconds,
+        minimum_age_blocks,
         consume,
+        ..lookup
     })
 }
 
@@ -1726,6 +1831,18 @@ pub(super) fn validate_reference_lookup_sources(
         let Some(target) = reference.target() else {
             continue;
         };
+        // What `"."` reads: the string or byte array a revealed reference
+        // carries, and otherwise an identifier (the property's, an element's,
+        // the writer's or the creator's)
+        let identifier = DocumentPropertyType::Identifier;
+        let reference_type = match (holder, reference) {
+            (ReferenceHolder::Property(path), PropertyReference::Revealed(_)) => document_type
+                .flattened_properties()
+                .get(path)
+                .map(|property| &property.property_type)
+                .unwrap_or(&identifier),
+            _ => &identifier,
+        };
         // Each leaf of a reference expression reads its key as it would
         // alone, and the error names the leaf (`refersTo anyOf[1] lookup`)
         for (leaf_path, leaf) in target.leaves_with_paths() {
@@ -1735,7 +1852,9 @@ pub(super) fn validate_reference_lookup_sources(
             else {
                 continue;
             };
-            if let Some(reason) = lookup.referring_side_error(document_type, holder.path()) {
+            if let Some(reason) =
+                lookup.referring_side_error(document_type, holder.path(), reference_type)
+            {
                 let at = if leaf_path.is_empty() {
                     String::new()
                 } else {
@@ -2095,20 +2214,33 @@ fn apply_generated_from_v0(
             "generatedFrom function {function_name:?} is unknown, expected one of {}",
             SystemFunction::ALL
                 .iter()
+                .filter(|function| matches!(function, SystemFunction::StringTransformation(_)))
                 .map(|function| format!("{:?}", function.as_str()))
                 .collect::<Vec<_>>()
                 .join(", ")
         ))
     })?;
 
+    // A property is generated with a string transformation; the other
+    // namespaces (`sys.hash`) belong to other keywords
+    let Some(parameter_count) = function
+        .parameter_count()
+        .filter(|_| matches!(function, SystemFunction::StringTransformation(_)))
+    else {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "generatedFrom function {function} does not generate a string: a property is \
+             generated with a sys.stringTransformations function"
+        )));
+    };
+
     let params = generated_from_map
         .get(property_names::PARAMS)
         .and_then(|value| value.as_array())
         .ok_or_else(shape_error)?;
-    if params.len() != function.parameter_count() {
+    if params.len() != parameter_count {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "generatedFrom function {function} takes {} parameter(s), but params lists {}",
-            function.parameter_count(),
+            "generatedFrom function {function} takes {parameter_count} parameter(s), but params \
+             lists {}",
             params.len()
         )));
     }

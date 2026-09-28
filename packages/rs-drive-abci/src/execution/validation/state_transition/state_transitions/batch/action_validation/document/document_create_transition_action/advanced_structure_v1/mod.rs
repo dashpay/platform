@@ -183,17 +183,19 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
 
         // A `refersTo` lookup with a computed key reveals a commitment: the create must carry
         // every value its preimage reads, and a variable-length value may not hold the
-        // separator that follows it, or the preimage could split into its parts more than one
+        // separator that follows it, or the preimage could split into its params more than one
         // way. The values are on the transition, so this is a structure check, refused before
         // the lookup reads state; it runs after the schema validation above so every value is
         // of its property's kind. Only the protocol version 14 parser produces a computed key,
         // and this generation runs from that version alone
-        if let Some((path, error)) = first_unrevealable_lookup_key(document_type, self.data()) {
+        if let Some((path, error)) =
+            first_unrevealable_lookup_key(document_type, self.data(), owner_id)
+        {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 DocumentReferencePreimageInvalidError::new(
                     document_type_name.clone(),
                     path,
-                    error.property,
+                    error.param,
                     error.reason,
                 )
                 .into(),
