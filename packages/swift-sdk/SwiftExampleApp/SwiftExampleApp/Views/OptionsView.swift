@@ -36,6 +36,12 @@ struct OptionsView: View {
     @State private var devnetQuorumURLSnapshot: String? = nil
     @State private var devnetNameSnapshot: String? = nil
 
+    /// Devnet edits whose rebuild has not run yet: Options closed while a
+    /// network switch was running, or the rebuild's stop failed. The next
+    /// close rebuilds for them; a completed network switch clears them, since
+    /// every devnet SDK build reads the edited settings.
+    @State private var devnetRebuildPending = false
+
     /// Driven by the 0.5s-debounced `.task(id: faucetPassword)`.
     /// Runs a single cheap `getblockcount` JSON-RPC against the
     /// dashmate-managed Core (`127.0.0.1:<faucetRPCPort>`) and
@@ -171,18 +177,19 @@ struct OptionsView: View {
                                     platformBalanceSyncService.reset()
                                     shieldedService.reset()
 
-                                    // Auto-disable Docker when leaving Local, in
-                                    // the same main-actor turn as the network
-                                    // change: the Docker toggle is only on screen
-                                    // on regtest, and flipped while it still is,
-                                    // its `onChange` would start a second SDK
-                                    // switch.
+                                    // Update platform state (which will trigger SDK switch)
+                                    appState.currentNetwork = newNetwork
+                                    devnetRebuildPending = false
+
+                                    // Auto-disable Docker when leaving Local, after
+                                    // the network is published and in the same
+                                    // main-actor turn: `useDockerSetup` then skips
+                                    // its own SDK rebuild (the network's rebuild
+                                    // picks the flag up), and the Docker toggle's
+                                    // `onChange` cannot start a second switch.
                                     if newNetwork != .regtest && appState.useDockerSetup {
                                         appState.useDockerSetup = false
                                     }
-
-                                    // Update platform state (which will trigger SDK switch)
-                                    appState.currentNetwork = newNetwork
 
                                     await MainActor.run {
                                         isSwitchingNetwork = false
@@ -337,12 +344,16 @@ struct OptionsView: View {
                             let nameChanged = devnetNameSnapshot != devnetName
                             devnetQuorumURLSnapshot = nil
                             devnetNameSnapshot = nil
-                            guard quorumChanged || nameChanged else { return }
+                            guard quorumChanged || nameChanged || devnetRebuildPending else { return }
                             guard appState.currentNetwork == .devnet else { return }
-                            // A network switch in progress replaces the SDK
-                            // anyway; the edited settings apply the next time
-                            // a devnet SDK is built.
-                            guard !isSwitchingNetwork else { return }
+                            // A network switch in progress replaces the SDK if
+                            // it succeeds; keep the edits pending in case it
+                            // fails and the app stays on devnet.
+                            guard !isSwitchingNetwork else {
+                                devnetRebuildPending = true
+                                return
+                            }
+                            devnetRebuildPending = false
                             // Widest supersession gap (stop → await SDK
                             // rebuild → activate). Invalidate first so a
                             // start resuming anywhere in it bails.
@@ -352,7 +363,10 @@ struct OptionsView: View {
                                 defer { isSwitchingNetwork = false }
                                 guard await stopSpvForReconfiguration(
                                     failurePrefix: "Failed to stop SPV, so the devnet settings were not applied"
-                                ) else { return }
+                                ) else {
+                                    devnetRebuildPending = true
+                                    return
+                                }
                                 // Re-checked after the stop's suspension.
                                 guard appState.currentNetwork == .devnet else { return }
                                 await appState.switchNetwork(to: .devnet)
