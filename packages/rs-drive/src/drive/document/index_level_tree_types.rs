@@ -77,9 +77,12 @@ use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::util::object_size_info::DriveKeyInfo;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 #[cfg(feature = "server")]
 use dpp::data_contract::document_type::TimeRangeTransform;
-use dpp::data_contract::document_type::{IndexCountability, IndexLevel, IndexLevelTypeInfo};
+use dpp::data_contract::document_type::{
+    DocumentTypeRef, IndexCountability, IndexLevel, IndexLevelTypeInfo,
+};
 #[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
@@ -363,6 +366,18 @@ pub(crate) fn continuation_contributes_zero(
 /// (a prefix-ranking chain level or a count-propagating level).
 pub(crate) fn level_counts_continuations(level: &IndexLevel) -> bool {
     level.ranked_count_grouping() || level.count_propagating()
+}
+
+/// Whether a document without a value for `property`, the first property of
+/// a top-level index level, writes nothing under that level: an unrequired
+/// property of an indexOnly type is a skipIfAbsent index's trigger (the
+/// parser admits no other optional property there). The insert and delete
+/// walkers skip with this, and `drive::document::layout` notes it.
+pub(crate) fn index_only_level_skips_when_absent(
+    document_type: DocumentTypeRef,
+    property: &str,
+) -> bool {
+    document_type.index_only() && !document_type.required_fields().contains(property)
 }
 
 /// The wrapper that makes an empty `inner_tree_type` tree contribute zero to

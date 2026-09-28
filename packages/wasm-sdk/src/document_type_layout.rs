@@ -3,7 +3,6 @@
 
 use crate::error::WasmSdkError;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::version::PlatformVersion;
 use drive::drive::document::layout::document_type_layout as drive_document_type_layout;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -65,7 +64,8 @@ extern "C" {
 /// tree, a zero-contribution wrapper, a reference or an indexOnly item).
 ///
 /// Computed from the contract alone, with the functions Drive's index walkers
-/// use, so it needs no network. Each node names the node of Drive's structure
+/// use, so it needs no network. Those are the walkers of protocol version 14
+/// on; an earlier `platformVersion` is refused. Each node names the node of Drive's structure
 /// description it is an instance of (`structureNode`), for linking to the
 /// GroveDB structure viewer.
 #[wasm_bindgen(js_name = "documentTypeLayout")]
@@ -75,8 +75,8 @@ pub fn document_type_layout(
     #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
 ) -> Result<DocumentTypeLayoutJs, WasmSdkError> {
     let platform_version: PlatformVersion = PlatformVersionWasm::try_from(platform_version)?.into();
-    let contract: DataContract = contract.clone().into();
     let document_type = contract
+        .as_ref()
         .document_type_for_name(&document_type_name)
         .map_err(|_| {
             WasmSdkError::invalid_argument(format!(

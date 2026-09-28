@@ -1,7 +1,7 @@
 /**
  * `documentTypeLayout`: the GroveDB layout of a document type, computed by
  * Drive from the contract alone (no connection). The Drive test
- * `layout_matches_what_drive_writes` holds the layout to what Drive writes;
+ * `should_lay_out_what_drive_writes` holds the layout to what Drive writes;
  * this checks the binding and the shape JS receives.
  */
 import { expect } from './helpers/chai.ts';

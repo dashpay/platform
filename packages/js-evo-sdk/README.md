@@ -460,14 +460,15 @@ Rules come back in name order, the order consensus checks them in; `contract.doc
 
 ## How a document type is stored (`documentTypeLayout`)
 
-`documentTypeLayout(contract, documentTypeName, platformVersion)` returns the GroveDB layout of a document type as Drive writes it: the document type tree, the documents by id and, for each index, the property and value trees down to where the index ends. Each layer carries the tree or element type Drive writes there (a count or sum tree, a ranked indexed tree, a reference, an indexOnly item), the wrapper a continuation tree gets under an aggregating value tree, the indexes that use it, and conditions such as the tree a unique index falls back to when a value is null. It runs locally with Drive's own rules, so it needs no connection:
+`documentTypeLayout(contract, documentTypeName, platformVersion)` returns the GroveDB layout of a document type as Drive writes it: the document type tree, the documents by id and, for each index, the property and value trees down to where the index ends. Each layer carries the tree or element type Drive writes there (a count or sum tree, a ranked indexed tree, a reference, an indexOnly item), the wrapper a continuation tree gets under an aggregating value tree, the indexes that use it, and conditions such as the tree a unique index falls back to when a value is null. It runs locally with Drive's own rules, those of protocol version 14 on (an earlier version is refused), so it needs no connection:
 
 ```ts
 import { documentTypeLayout, PlatformVersion } from '@dashevo/evo-sdk';
 
 const { root } = documentTypeLayout(contract, 'review', new PlatformVersion(14));
 // root.children: the documents by id ([0]) and one tree per first index property;
-// each node: { key, role, element, wrapper, rankedAxes, indexes, notes, alternative, children, structureNode }
+// each node: { key, role, element, wrapper?, rankedAxes, indexes, notes, alternative?, children, structureNode }
+// (wrapper and alternative are left out when there is none)
 ```
 
 `structureNode` names the layer of Drive's GroveDB structure description it is an instance of, as the [GroveDB structure viewer](https://dashpay.github.io/grovedb-structure-viewer/) shows it (`#/<structureNode>`).

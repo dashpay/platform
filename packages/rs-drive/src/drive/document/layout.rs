@@ -4,27 +4,28 @@
 //! document type alone.
 //!
 //! The tree types come from the functions the insert walkers call
-//! (`primary_key_tree_type`, `property_name_tree_type_and_ranked_axes_for_level`,
-//! `index_level_tree_types_with_continuation_demotion`,
+//! (`primary_key_tree_type`, `index_level_tree_types_with_continuation_demotion`,
 //! `terminal_member_tree_type`, `continuation_contributes_zero`,
-//! `zero_contribution_wrapper`); the element choices the walkers make inline
-//! (history, unique terminals, indexOnly entries, sum-carrying references) are
-//! restated here and held to the walkers by a test that inserts documents
-//! and compares every element Drive wrote with this layout
-//! (`tests::layout_matches_what_drive_writes`).
+//! `zero_contribution_wrapper`, `index_only_level_skips_when_absent`); the
+//! element choices the walkers make inline (history, unique terminals,
+//! indexOnly entries, sum-carrying references) are restated here and held to
+//! the walkers by a test that inserts documents and compares what Drive wrote
+//! with this layout, both ways (`tests::should_lay_out_what_drive_writes`).
+//! Those are the rules of the v2 index walkers, so only a platform version
+//! that selects them has a layout.
 //!
 //! Each node names the node of the static structure description
 //! (`drive::document::structure`, published as `grovedb-structure.json`) it
 //! is an instance of, so a viewer can link a concrete layer to the general
 //! description of that kind of layer.
 
+pub use crate::drive::document::index_level_tree_types::ZeroContributionWrapper;
 use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
-    level_counts_continuations, terminal_member_tree_type, zero_contribution_wrapper,
-    ZeroContributionWrapper,
+    index_only_level_skips_when_absent, level_counts_continuations, terminal_member_tree_type,
+    zero_contribution_wrapper,
 };
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
-use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -177,7 +178,8 @@ impl LayoutRole {
         }
     }
 
-    fn name(&self) -> &'static str {
+    /// The role's name, as `to_value` spells it.
+    pub fn name(&self) -> &'static str {
         match self {
             LayoutRole::DocumentType => "documentType",
             LayoutRole::PrimaryKey => "primaryKey",
@@ -307,7 +309,8 @@ pub enum LayoutNote {
 }
 
 impl LayoutNote {
-    fn code(&self) -> &'static str {
+    /// The note's code, as `to_value` spells it.
+    pub fn code(&self) -> &'static str {
         match self {
             LayoutNote::IndexOnly => "indexOnly",
             LayoutNote::NotNullSearchable => "notNullSearchable",
@@ -355,10 +358,30 @@ impl LayoutNote {
 }
 
 /// The GroveDB layout of `document_type` at `platform_version`.
+///
+/// The layout follows the v2 index walkers (protocol version 14 on); a
+/// version that selects other walkers is refused, since they pick other
+/// trees and wrappers for some shapes.
 pub fn document_type_layout(
     document_type: DocumentTypeRef,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeLayout, Error> {
+    match platform_version
+        .drive
+        .methods
+        .document
+        .insert
+        .add_indices_for_index_level_for_contract_operations
+    {
+        2 => {}
+        version => {
+            return Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "document_type_layout".to_string(),
+                known_versions: vec![2],
+                received: version,
+            }))
+        }
+    }
     let index_paths = index_paths(document_type);
     let mut children = Vec::new();
 
@@ -405,8 +428,8 @@ fn index_paths(document_type: DocumentTypeRef) -> Vec<(String, Vec<String>)> {
         .values()
         .map(|index| {
             let path = match index.flat_level_key() {
-                Some(flat_key) if index.properties.is_empty() => vec![flat_key],
-                _ => index
+                Some(flat_key) => vec![flat_key],
+                None => index
                     .properties
                     .iter()
                     .enumerate()
@@ -497,8 +520,7 @@ fn top_index_node(
     index_paths: &[(String, Vec<String>)],
 ) -> Result<LayoutNode, Error> {
     let path = vec![level_key.to_string()];
-    let (property_name_tree_type, ranked_axes) =
-        property_name_tree_type_and_ranked_axes_for_level(level)?;
+    let tree_types = index_level_tree_types_with_continuation_demotion(level)?;
 
     if is_flat_level_key(level_key) {
         // A flat indexOnly index: its entries live straight under the level,
@@ -517,9 +539,9 @@ fn top_index_node(
             ),
             role: LayoutRole::IndexProperty,
             element: LayoutElement {
-                kind: LayoutElementKind::Tree(property_name_tree_type),
+                kind: LayoutElementKind::Tree(tree_types.property_name_tree_type),
                 wrapper: None,
-                ranked_axes,
+                ranked_axes: tree_types.ranked_axes,
             },
             alternative: None,
             indexes: indexes_through(index_paths, &path),
@@ -533,13 +555,10 @@ fn top_index_node(
         Some(transform) => transform.source.clone(),
         None => level_key.to_string(),
     };
-    // As the top-level walker: only an absent value skips, and a system
-    // property is never absent where it is indexed ($id and $ownerId always
-    // exist; an indexed time or height must be required).
-    if document_type.index_only()
-        && !property.starts_with('$')
-        && !document_type.required_fields().contains(&property)
-    {
+    // The walkers' skip rule, for a property that can be absent: a system
+    // property never is where it is indexed ($id and $ownerId always exist;
+    // an indexed time or height must be required).
+    if !property.starts_with('$') && index_only_level_skips_when_absent(document_type, &property) {
         notes.push(LayoutNote::SkipIfAbsent {
             property: property.clone(),
         });
@@ -549,27 +568,33 @@ fn top_index_node(
         key: fixed(level_key.as_bytes().to_vec(), level_key),
         role: LayoutRole::IndexProperty,
         element: LayoutElement {
-            kind: LayoutElementKind::Tree(property_name_tree_type),
+            kind: LayoutElementKind::Tree(tree_types.property_name_tree_type),
             wrapper: None,
-            ranked_axes,
+            ranked_axes: tree_types.ranked_axes,
         },
         alternative: None,
         indexes: indexes_through(index_paths, &path),
         notes,
-        children: vec![value_node(level, level_key, &path, true, index_paths)?],
+        children: vec![value_node(
+            level,
+            tree_types.value_tree_type,
+            level_key,
+            &path,
+            true,
+            index_paths,
+        )?],
     })
 }
 
 /// The values of one indexed property, with what hangs under each.
 fn value_node(
     level: &IndexLevel,
+    value_tree_type: TreeType,
     level_key: &str,
     path: &[String],
     top: bool,
     index_paths: &[(String, Vec<String>)],
 ) -> Result<LayoutNode, Error> {
-    let value_tree_type = index_level_tree_types_with_continuation_demotion(level)?.value_tree_type;
-
     let mut notes = Vec::new();
     let key = match level.time_range().filter(|_| top) {
         Some(transform) => {
@@ -598,21 +623,19 @@ fn value_node(
 
     let parent_counts_continuations = level_counts_continuations(level);
     for (sub_key, sub_level) in level.sub_levels() {
-        let (property_name_tree_type, ranked_axes) =
-            property_name_tree_type_and_ranked_axes_for_level(sub_level)?;
+        let sub_tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
         let wrapper = if continuation_contributes_zero(
             value_tree_type,
             parent_counts_continuations,
             sub_level,
         ) {
-            zero_contribution_wrapper(value_tree_type, property_name_tree_type).map_err(
-                |refusal| {
+            zero_contribution_wrapper(value_tree_type, sub_tree_types.property_name_tree_type)
+                .map_err(|refusal| {
                     Error::Drive(DriveError::CorruptedContractIndexes(format!(
                         "index level {sub_key:?} cannot hang under a {} value tree: {refusal:?}",
                         tree_kind_name(value_tree_type)
                     )))
-                },
-            )?
+                })?
         } else {
             None
         };
@@ -622,15 +645,16 @@ fn value_node(
             key: fixed(sub_key.as_bytes().to_vec(), sub_key),
             role: LayoutRole::NextIndexProperty,
             element: LayoutElement {
-                kind: LayoutElementKind::Tree(property_name_tree_type),
+                kind: LayoutElementKind::Tree(sub_tree_types.property_name_tree_type),
                 wrapper,
-                ranked_axes,
+                ranked_axes: sub_tree_types.ranked_axes,
             },
             alternative: None,
             indexes: indexes_through(index_paths, &sub_path),
             notes: vec![],
             children: vec![value_node(
                 sub_level,
+                sub_tree_types.value_tree_type,
                 sub_key,
                 &sub_path,
                 false,
@@ -664,50 +688,55 @@ fn terminal_node(info: &IndexLevelTypeInfo, indexes: Vec<String>) -> LayoutNode 
         notes.push(LayoutNote::Preallocated);
     }
 
-    let members = |member: LayoutNode| LayoutNode {
+    let members = |member: LayoutNode, indexes: Vec<String>, notes: Vec<LayoutNote>| LayoutNode {
         key: fixed(vec![0], "Members"),
         role: LayoutRole::Terminal,
         element: tree(terminal_member_tree_type(info)),
         alternative: None,
-        indexes: indexes.clone(),
-        notes: notes.clone(),
+        indexes,
+        notes,
         children: vec![member],
     };
 
     if let Some(components) = &info.terminal {
         // indexOnly: each entry is an item keyed by its terminal components.
-        return members(leaf(
-            LayoutKey::MemberKey {
-                components: components.clone(),
-            },
-            LayoutRole::Member,
-            element(if summable {
-                LayoutElementKind::ItemWithSumItem
-            } else {
-                LayoutElementKind::Item
-            }),
-        ));
+        return members(
+            leaf(
+                LayoutKey::MemberKey {
+                    components: components.clone(),
+                },
+                LayoutRole::Member,
+                element(if summable {
+                    LayoutElementKind::ItemWithSumItem
+                } else {
+                    LayoutElementKind::Item
+                }),
+            ),
+            indexes,
+            notes,
+        );
     }
 
-    let by_document = members(leaf(
+    let by_document = leaf(
         LayoutKey::DocumentId,
         LayoutRole::Member,
         reference(summable),
-    ));
+    );
     if !info.index_type.is_unique() {
-        return by_document;
+        return members(by_document, indexes, notes);
     }
 
     // A unique index writes the reference straight at `[0]`, unless a
     // value is null: then several documents can share the key, and they
-    // go in a tree by id like a non-unique index.
+    // go in a tree by id like a non-unique index. The alternative does not
+    // repeat the indexes and notes of the `[0]` it stands in for.
     LayoutNode {
         key: fixed(vec![0], "Unique reference"),
         role: LayoutRole::Terminal,
         element: reference(summable),
         alternative: Some(Box::new(LayoutAlternative {
             when: "an indexed value of the document is null",
-            node: by_document,
+            node: members(by_document, vec![], vec![]),
         })),
         indexes,
         notes,
@@ -947,6 +976,21 @@ mod tests {
         }
     }
 
+    /// Whether Drive may write nothing for `child` in a tree `parent` stands
+    /// for: the terminal a document with only null values skips
+    /// (`nullSearchable: false`), the entries of a preallocated terminal
+    /// (created empty), and the values of a level every document may leave
+    /// out.
+    fn may_be_absent(parent: &LayoutNode, child: &LayoutNode) -> bool {
+        child.notes.contains(&LayoutNote::NotNullSearchable)
+            || parent.notes.iter().any(|note| {
+                matches!(
+                    note,
+                    LayoutNote::Preallocated | LayoutNote::SkipIfAbsent { .. }
+                )
+            })
+    }
+
     fn describe(node: &LayoutNode) -> String {
         match &node.key {
             LayoutKey::Fixed { label, .. } => format!("{:?} {label:?}", node.role),
@@ -967,17 +1011,23 @@ mod tests {
     }
 
     impl Walk {
-        /// Checks every element under `path`, whose element `node` describes.
+        /// Checks every element under `path`, whose element `node` describes,
+        /// and that every layer the layout names under it was written.
         fn layer(&mut self, drive: &Drive, path: Vec<Vec<u8>>, node: &LayoutNode) {
+            let mut reached = vec![false; node.children.len()];
             for (key, element) in layer(drive, &path) {
-                let fixed = node.children.iter().find(
-                    |child| matches!(&child.key, LayoutKey::Fixed { bytes, .. } if bytes == &key),
-                );
-                let Some(described) = fixed.or_else(|| {
-                    node.children
-                        .iter()
-                        .find(|child| !matches!(child.key, LayoutKey::Fixed { .. }))
-                }) else {
+                let position = node
+                    .children
+                    .iter()
+                    .position(
+                        |child| matches!(&child.key, LayoutKey::Fixed { bytes, .. } if bytes == &key),
+                    )
+                    .or_else(|| {
+                        node.children
+                            .iter()
+                            .position(|child| !matches!(child.key, LayoutKey::Fixed { .. }))
+                    });
+                let Some(position) = position else {
                     self.mismatches.push(format!(
                         "under {} at {}: key {} is not in the layout",
                         describe(node),
@@ -986,6 +1036,8 @@ mod tests {
                     ));
                     continue;
                 };
+                reached[position] = true;
+                let described = &node.children[position];
 
                 let kind = format!("{:?}", ElementKind::of(&element));
                 let wrapper = wrapper_of(&element);
@@ -1029,6 +1081,17 @@ mod tests {
                     let mut below = path.clone();
                     below.push(key);
                     self.layer(drive, below, chosen);
+                }
+            }
+
+            for (child, reached) in node.children.iter().zip(reached) {
+                if !reached && !may_be_absent(node, child) {
+                    self.mismatches.push(format!(
+                        "under {} at {}: the layout has {} but Drive wrote nothing there",
+                        describe(node),
+                        hex::encode(path.concat()),
+                        describe(child)
+                    ));
                 }
             }
         }
@@ -1112,7 +1175,7 @@ mod tests {
     }
 
     #[test]
-    fn layout_matches_what_drive_writes() {
+    fn should_lay_out_what_drive_writes() {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let mut walk = Walk::default();
@@ -1167,7 +1230,7 @@ mod tests {
     }
 
     #[test]
-    fn every_layer_names_a_node_of_the_structure_description() {
+    fn should_name_a_node_of_the_structure_description_for_every_layer() {
         fn ids(node: &StructureNode, out: &mut BTreeSet<String>) {
             out.insert(node.id.to_string());
             for child in &node.children {
@@ -1197,7 +1260,7 @@ mod tests {
     }
 
     #[test]
-    fn only_an_optional_property_of_an_index_only_type_is_skipped_when_absent() {
+    fn should_skip_only_an_optional_property_of_an_index_only_type_when_absent() {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = apply(&drive, 0, CONTRACTS[9]);
@@ -1229,7 +1292,7 @@ mod tests {
     }
 
     #[test]
-    fn a_type_with_history_stores_each_document_as_a_tree_of_revisions() {
+    fn should_store_each_document_of_a_type_with_history_as_a_tree_of_revisions() {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = apply(&drive, 0, CONTRACTS[3]);
@@ -1247,5 +1310,22 @@ mod tests {
             document.children.iter().map(|c| c.role).collect::<Vec<_>>(),
             vec![LayoutRole::LatestRevision, LayoutRole::Revision]
         );
+    }
+
+    #[test]
+    fn should_refuse_a_version_that_selects_other_index_walkers() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = apply(&drive, 0, CONTRACTS[0]);
+        let person = contract.document_type_for_name("person").expect("person");
+        let version_13 = PlatformVersion::get(13).expect("protocol version 13");
+        assert!(matches!(
+            document_type_layout(person, version_13),
+            Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                received: 1,
+                ..
+            }))
+        ));
+        assert!(document_type_layout(person, platform_version).is_ok());
     }
 }

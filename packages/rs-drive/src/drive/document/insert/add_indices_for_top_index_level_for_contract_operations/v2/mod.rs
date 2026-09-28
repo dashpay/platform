@@ -20,7 +20,8 @@ use dpp::version::PlatformVersion;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, time_range_index_keys,
+    index_level_tree_types_with_continuation_demotion, index_only_level_skips_when_absent,
+    time_range_index_keys,
 };
 use crate::drive::document::paths::contract_document_type_path_vec;
 use grovedb::batch::KeyInfoPath;
@@ -245,9 +246,7 @@ impl Drive {
                 // skips exactly when apply skips), and the timestamp of a
                 // bucketed level can never land here (its source is
                 // `$createdAt`, required whenever indexed).
-                None if document_type.index_only()
-                    && !document_type.required_fields().contains(property_name) =>
-                {
+                None if index_only_level_skips_when_absent(document_type, property_name) => {
                     continue;
                 }
                 // A stored type's absent value keeps its null-layout empty

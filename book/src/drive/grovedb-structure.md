@@ -200,13 +200,18 @@ and conditions such as the tree a unique index falls back to when a value is
 null. Each layer names the node of the description it is an instance of, so a
 viewer can link to it. It needs only the contract, so it is compiled with the
 `verify` feature as well, and the JavaScript SDKs expose it as
-`documentTypeLayout(contract, documentTypeName, platformVersion)`.
+`documentTypeLayout(contract, documentTypeName, platformVersion)`. It follows
+the v2 index walkers, so it refuses a platform version before 14.
 
 The tree types come from the functions the walkers call, and the element
 choices the walkers make inline are held to them by
-`layout_matches_what_drive_writes`, which applies a set of contracts covering
-every index shape, inserts documents and fails on any element whose kind or
-wrapper the layout does not predict.
+`should_lay_out_what_drive_writes`. It applies 19 test contracts (plain,
+unique, compound, countable, summable, ranked and chained indexes, history,
+time windows, indexOnly types with flat and preallocated indexes), inserts
+documents, and fails on any element whose kind or wrapper the layout does not
+predict, and on any layer of the layout Drive did not write. It does not cover
+contested indexes, time windows with a `ttl`, or document updates and
+deletes.
 
 ## Pull requests that change the structure
 
