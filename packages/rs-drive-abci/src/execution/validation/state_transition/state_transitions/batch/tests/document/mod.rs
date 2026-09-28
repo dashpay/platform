@@ -1,4 +1,5 @@
 mod action_fees;
+mod commit_reveal_lookup;
 mod contract_owner_requirement;
 mod creation;
 mod deletable_document_reference;

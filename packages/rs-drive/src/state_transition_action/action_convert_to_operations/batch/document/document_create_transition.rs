@@ -50,6 +50,13 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
 
                 let document_creation_token_cost = self.base().token_cost();
 
+                // In place in generation 0, which every table selects: only the protocol
+                // version 14 batch state validation sets consumed documents, and only for a
+                // create revealing a commitment through a `refersTo` lookup with a computed key
+                // declaring `consume`, which only that version's parser produces. Every earlier
+                // create has none and converts to exactly the operations it always did
+                let consumed_documents = self.consumed_documents().to_vec();
+
                 let document = Document::try_from_owned_create_transition_action(
                     self,
                     owner_id,
@@ -125,7 +132,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                                 owner_id: Some(owner_id.into_buffer()),
                             },
                             contested_document_resource_vote_poll,
-                            contract_info: DataContractFetchInfo(contract_fetch_info),
+                            contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
                             document_type_info: DocumentTypeInfo::DocumentTypeName(
                                 document_type_name,
                             ),
@@ -143,9 +150,21 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                             )),
                             owner_id: Some(owner_id.into_buffer()),
                         },
-                        contract_info: DataContractFetchInfo(contract_fetch_info),
+                        contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
                         document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
                         override_document: false,
+                    }));
+                }
+
+                // The commitments the create revealed and consumes, deleted as their owner,
+                // the writer, would delete them: each is in the create's own contract
+                for consumed in consumed_documents {
+                    ops.push(DocumentOperation(DocumentOperationType::DeleteDocument {
+                        document_id: consumed.document_id,
+                        contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
+                        document_type_info: DocumentTypeInfo::DocumentTypeName(
+                            consumed.document_type_name,
+                        ),
                     }));
                 }
 

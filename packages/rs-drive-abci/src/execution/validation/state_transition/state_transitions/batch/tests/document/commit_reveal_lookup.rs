@@ -1,0 +1,789 @@
+//! Commit and reveal through a `refersTo` lookup with a computed key (protocol
+//! version 14) through the full ABCI pipeline. The fixture's `preorder` holds
+//! a commitment, `saltedDomainHash`, under a unique index, as the DPNS
+//! preorder does. Its `domain` reveals one through `creatorRefersTo`: the key
+//! is the sha256d of `preorderSalt ++ label` when `parentDomainName` is empty,
+//! and of `preorderSalt ++ normalizedLabel ++ "." ++ parentDomainName`
+//! otherwise, byte for byte the hash the DPNS create trigger computes. The
+//! reveal must be the writer's own commitment (`$ownerId` agreement), at least
+//! 60 seconds old, and consumes it. `openClaim` reveals the sha256d of
+//! `preorderSalt ++ label` through `ownerRefersTo` and demands nothing more.
+//! `renewal` is a mutable type whose `ownerRefersTo` is an `allOf` of such a
+//! reveal, which consumes, and of the writer's `membership`, a deletable
+//! lookup every replace asks for again.
+
+use super::*;
+
+mod commit_reveal_lookup_tests {
+    use super::*;
+    use crate::execution::types::execution_operation::ValidationOperation;
+    use crate::execution::types::state_transition_execution_context::{
+        StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+    };
+    use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::DocumentReferenceValidation;
+    use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_document_with_id;
+    use crate::platform_types::platform::PlatformStateRef;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dpp::consensus::basic::BasicError;
+    use dpp::data_contract::document_type::{DocumentPropertyReferenceTarget, DocumentTypeRef};
+    use dpp::document::Document;
+    use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::prelude::{DataContract, IdentityNonce};
+    use dpp::state_transition::StateTransition;
+    use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use dpp::util::hash::hash_double;
+    use dpp::version::DefaultForPlatformVersion;
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
+    use simple_signer::signer::SimpleSigner;
+    use std::collections::BTreeMap;
+
+    const CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/reference-validation/reference-validation-contract-commit-reveal.json";
+
+    /// The block time commitments are made at.
+    const COMMIT_TIME_MS: u64 = 1_700_000_000_000;
+
+    /// The `domain` reveal's `minimumAgeSeconds`, in milliseconds.
+    const MINIMUM_AGE_MS: u64 = 60_000;
+
+    /// A block time at which a commitment made at [`COMMIT_TIME_MS`] is old
+    /// enough to be revealed.
+    const REVEAL_TIME_MS: u64 = COMMIT_TIME_MS + MINIMUM_AGE_MS;
+
+    /// The committer, and an identity copying what the committer revealed.
+    #[derive(Clone, Copy)]
+    enum Who {
+        Alice,
+        Mallory,
+    }
+
+    struct Writer {
+        identity: Identity,
+        signer: SimpleSigner,
+        key: IdentityPublicKey,
+        /// The identity contract nonce the next transition uses; every
+        /// processed transition consumes one, a refused one included.
+        next_nonce: IdentityNonce,
+    }
+
+    struct CommitRevealFixture {
+        platform: TempPlatform<MockCoreRPCLike>,
+        contract: DataContract,
+        rng: StdRng,
+        alice: Writer,
+        mallory: Writer,
+    }
+
+    impl CommitRevealFixture {
+        fn new() -> Self {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut writer = |seed| {
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, seed, dash_to_credits!(0.5));
+                Writer {
+                    identity,
+                    signer,
+                    key,
+                    next_nonce: 1,
+                }
+            };
+            let alice = writer(4711);
+            let mallory = writer(4712);
+
+            // Parsed with full validation, so the contract-level lookup checks
+            // run on the fixture too
+            let contract = json_document_to_contract(CONTRACT_PATH, true, platform_version)
+                .expect("expected to parse the contract");
+            platform
+                .drive
+                .apply_contract(
+                    &contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply the contract");
+
+            Self {
+                platform,
+                contract,
+                rng: StdRng::seed_from_u64(9061),
+                alice,
+                mallory,
+            }
+        }
+
+        fn id(&self, who: Who) -> Identifier {
+            match who {
+                Who::Alice => self.alice.identity.id(),
+                Who::Mallory => self.mallory.identity.id(),
+            }
+        }
+
+        fn process(
+            &self,
+            transition: &StateTransition,
+            time_ms: u64,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let platform_state = self.platform.state.load();
+            let serialized = transition
+                .serialize_to_bytes()
+                .expect("expected the transition to serialize");
+            let transaction = self.platform.drive.grove.start_transaction();
+            let processing_result = self
+                .platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default_with_time(time_ms),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process the state transition");
+            self.platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit the transaction");
+            processing_result.into_execution_results().remove(0)
+        }
+
+        /// Creates a `type_name` document owned by `who` at block time
+        /// `time_ms`, with `values` set over the random required ones and
+        /// `absent` removed, and returns it with the result.
+        async fn create(
+            &mut self,
+            who: Who,
+            type_name: &str,
+            values: &[(&str, Value)],
+            absent: &[&str],
+            time_ms: u64,
+        ) -> (Document, StateTransitionExecutionResult) {
+            let platform_version = PlatformVersion::latest();
+            let owner_id = self.id(who);
+            let document_type = self
+                .contract
+                .document_type_for_name(type_name)
+                .expect("expected the document type");
+            let entropy = Bytes32::random_with_rng(&mut self.rng);
+            let mut document = document_type
+                .random_document_with_identifier_and_entropy(
+                    &mut self.rng,
+                    owner_id,
+                    entropy,
+                    DocumentFieldFillType::DoNotFillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random document");
+            for (property, value) in values {
+                document.set(property, value.clone());
+            }
+            for property in absent {
+                document.remove(property);
+            }
+            let writer = match who {
+                Who::Alice => &mut self.alice,
+                Who::Mallory => &mut self.mallory,
+            };
+            let nonce = writer.next_nonce;
+            writer.next_nonce += 1;
+            document
+                .set_id_for_creation(document_type, &entropy.0, nonce, platform_version)
+                .expect("expected to set the document id");
+            let transition = BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                document_type,
+                entropy.0,
+                &writer.key,
+                nonce,
+                0,
+                None,
+                &writer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the create transition");
+            let result = self.process(&transition, time_ms);
+            (document, result)
+        }
+
+        /// A preorder by `who` at `time_ms` committing to `salt ++ name`.
+        async fn commit(&mut self, who: Who, salt: [u8; 32], name: &str, time_ms: u64) -> Document {
+            let (preorder, result) = self
+                .create(
+                    who,
+                    "preorder",
+                    &[("saltedDomainHash", salted_hash(&salt, name))],
+                    &[],
+                    time_ms,
+                )
+                .await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            preorder
+        }
+
+        /// A `domain` by `who` at `time_ms` with `values`, `absent` removed.
+        async fn reveal_domain(
+            &mut self,
+            who: Who,
+            values: Vec<(&str, Value)>,
+            absent: &[&str],
+            time_ms: u64,
+        ) -> StateTransitionExecutionResult {
+            self.create(who, "domain", &values, absent, time_ms).await.1
+        }
+
+        /// Replaces `document`, as last accepted, with `change` applied, as
+        /// `who`, its owner, at `time_ms`.
+        async fn replace(
+            &mut self,
+            who: Who,
+            type_name: &str,
+            document: &Document,
+            change: impl FnOnce(&mut Document),
+            time_ms: u64,
+        ) -> StateTransitionExecutionResult {
+            let platform_version = PlatformVersion::latest();
+            let mut replacement = document.clone();
+            replacement
+                .increment_revision()
+                .expect("the revision increments");
+            change(&mut replacement);
+            let document_type = self
+                .contract
+                .document_type_for_name(type_name)
+                .expect("expected the document type");
+            let writer = match who {
+                Who::Alice => &mut self.alice,
+                Who::Mallory => &mut self.mallory,
+            };
+            let nonce = writer.next_nonce;
+            writer.next_nonce += 1;
+            let transition = BatchTransition::new_document_replacement_transition_from_document(
+                replacement,
+                document_type,
+                &writer.key,
+                nonce,
+                0,
+                None,
+                &writer.signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected the replace transition");
+            self.process(&transition, time_ms)
+        }
+
+        /// Whether the `preorder` with `id` is in state.
+        fn preorder_exists(&self, id: Identifier) -> bool {
+            let platform_version = PlatformVersion::latest();
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected an execution context");
+            fetch_document_with_id(
+                &self.platform.drive,
+                &self.contract,
+                self.contract
+                    .document_type_for_name("preorder")
+                    .expect("expected the preorder type"),
+                id,
+                &BlockInfo::default().epoch,
+                &mut execution_context,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the preorder")
+            .is_some()
+        }
+    }
+
+    /// The commitment to `salt ++ name`: its sha256d, as the DPNS create
+    /// trigger computes a preorder's `saltedDomainHash`.
+    fn salted_hash(salt: &[u8; 32], name: &str) -> Value {
+        let mut preimage = salt.to_vec();
+        preimage.extend_from_slice(name.as_bytes());
+        Value::Bytes32(hash_double(preimage))
+    }
+
+    /// A subdomain `label` of `parent`, revealing `salt`.
+    fn subdomain<'a>(
+        label: &str,
+        normalized_label: &str,
+        parent: &str,
+        salt: [u8; 32],
+    ) -> Vec<(&'a str, Value)> {
+        vec![
+            ("label", label.into()),
+            ("normalizedLabel", normalized_label.into()),
+            ("parentDomainName", parent.into()),
+            ("preorderSalt", Value::Bytes32(salt)),
+        ]
+    }
+
+    /// A paid refusal of the domain's `creatorRefersTo` with `ReferencedEntityNotFoundError`
+    /// (40120): no commitment matches what the create reveals.
+    fn assert_no_commitment(result: StateTransitionExecutionResult) {
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(e)),
+                ..
+            } if e.path() == "$creatorId"
+                && matches!(
+                    e.entity_type(),
+                    DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
+                ),
+            "expected 40120 at $creatorId"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_create_a_domain_revealing_its_writers_old_enough_commitment_and_consume_it() {
+        let mut fixture = CommitRevealFixture::new();
+        let alice = fixture.id(Who::Alice);
+        let salt = [0x11; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_TIME_MS)
+            .await;
+        assert!(fixture.preorder_exists(preorder.id()));
+
+        let result = fixture
+            .reveal_domain(
+                Who::Alice,
+                subdomain("Alice", "al1ce", "dash", salt),
+                &[],
+                REVEAL_TIME_MS,
+            )
+            .await;
+
+        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
+            panic!("expected the reveal to be accepted, got {result:?}");
+        };
+        // The commitment is gone, deleted with the create, and its storage is
+        // refunded to its owner, the writer
+        assert!(!fixture.preorder_exists(preorder.id()));
+        assert!(
+            fee_result
+                .fee_refunds
+                .calculate_refunds_amount_for_identity(alice)
+                .is_some_and(|refund| refund > 0),
+            "expected the consumed commitment's storage to be refunded to its owner"
+        );
+
+        // A second reveal of the same commitment finds nothing
+        let result = fixture
+            .reveal_domain(
+                Who::Alice,
+                subdomain("Alice", "al1ce", "dash", salt),
+                &[],
+                REVEAL_TIME_MS + 1_000,
+            )
+            .await;
+        assert_no_commitment(result);
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_domain_revealing_no_commitment() {
+        let mut fixture = CommitRevealFixture::new();
+        fixture
+            .commit(Who::Alice, [0x11; 32], "al1ce.dash", COMMIT_TIME_MS)
+            .await;
+
+        // Another salt, and another name: neither was committed to
+        for values in [
+            subdomain("Alice", "al1ce", "dash", [0x12; 32]),
+            subdomain("Bob", "b0b", "dash", [0x11; 32]),
+        ] {
+            let result = fixture
+                .reveal_domain(Who::Alice, values, &[], REVEAL_TIME_MS)
+                .await;
+            assert_no_commitment(result);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_domain_revealing_another_identitys_commitment() {
+        let mut fixture = CommitRevealFixture::new();
+        let salt = [0x11; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_TIME_MS)
+            .await;
+
+        // Mallory copies what Alice's create reveals: the commitment exists and
+        // is old enough, but it is not Mallory's
+        let result = fixture
+            .reveal_domain(
+                Who::Mallory,
+                subdomain("Alice", "al1ce", "dash", salt),
+                &[],
+                REVEAL_TIME_MS,
+            )
+            .await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(
+                    StateError::ReferencedDocumentPropertyMismatchError(e)
+                ),
+                ..
+            } if e.path() == "$creatorId"
+                && e.referring_property() == "$ownerId"
+                && e.referenced_property() == "$ownerId"
+        );
+        // The refused create consumed nothing
+        assert!(fixture.preorder_exists(preorder.id()));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_domain_revealing_a_commitment_younger_than_its_minimum_age() {
+        let mut fixture = CommitRevealFixture::new();
+        let salt = [0x11; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_TIME_MS)
+            .await;
+
+        // In the same block, and a millisecond short of the minimum age
+        for time_ms in [COMMIT_TIME_MS, REVEAL_TIME_MS - 1] {
+            let result = fixture
+                .reveal_domain(
+                    Who::Alice,
+                    subdomain("Alice", "al1ce", "dash", salt),
+                    &[],
+                    time_ms,
+                )
+                .await;
+            assert_matches!(
+                result,
+                PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentRequirementNotMetError(e)
+                    ),
+                    ..
+                } if *e.document_id() == preorder.id()
+                    && e.field() == "minimumAgeSeconds"
+                    && e.required() == "60"
+                    && e.path() == "$creatorId"
+            );
+        }
+        assert!(fixture.preorder_exists(preorder.id()));
+    }
+
+    #[tokio::test]
+    async fn should_reveal_the_label_alone_when_the_parent_is_empty() {
+        let mut fixture = CommitRevealFixture::new();
+        let salt = [0x21; 32];
+        // A top-level name commits to its label as written, not normalized
+        fixture
+            .commit(Who::Alice, salt, "Dash", COMMIT_TIME_MS)
+            .await;
+
+        // The subdomain branch would hash "dash." and find nothing
+        let top_level = |normalized_label: &str| {
+            vec![
+                ("label", "Dash".into()),
+                ("normalizedLabel", normalized_label.into()),
+                ("parentDomainName", "".into()),
+                ("preorderSalt", Value::Bytes32(salt)),
+            ]
+        };
+        let result = fixture
+            .reveal_domain(Who::Alice, top_level("dash"), &[], REVEAL_TIME_MS)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_domain_that_cannot_assemble_its_preimage_before_reading_state() {
+        let mut fixture = CommitRevealFixture::new();
+        let salt = [0x11; 32];
+        fixture
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_TIME_MS)
+            .await;
+
+        // No parentDomainName: the ifEmpty part has nothing to test
+        let result = fixture
+            .reveal_domain(
+                Who::Alice,
+                subdomain("Alice", "al1ce", "dash", salt),
+                &["parentDomainName"],
+                REVEAL_TIME_MS,
+            )
+            .await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::BasicError(
+                    BasicError::DocumentReferencePreimageInvalidError(e)
+                ),
+                ..
+            } if e.path() == "$creatorId" && e.property() == "parentDomainName"
+        );
+
+        // "al.1ce" followed by "." then "dash" would read as "al" + "." +
+        // "1ce.dash" as well: a value holding its separator is refused
+        let result = fixture
+            .reveal_domain(
+                Who::Alice,
+                subdomain("Al.1ce", "al.1ce", "dash", salt),
+                &[],
+                REVEAL_TIME_MS,
+            )
+            .await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::BasicError(
+                    BasicError::DocumentReferencePreimageInvalidError(e)
+                ),
+                ..
+            } if e.property() == "normalizedLabel"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_let_anyone_reveal_at_once_where_the_lookup_demands_nothing_more() {
+        let mut fixture = CommitRevealFixture::new();
+        let salt = [0x31; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "claim", COMMIT_TIME_MS)
+            .await;
+
+        // `openClaim` declares no `$ownerId` pair, no minimum age and no
+        // consume: whoever learns the preimage may reveal it, in the same block
+        let claim = vec![
+            ("label", "claim".into()),
+            ("preorderSalt", Value::Bytes32(salt)),
+        ];
+        let (_, result) = fixture
+            .create(Who::Mallory, "openClaim", &claim, &[], COMMIT_TIME_MS)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.preorder_exists(preorder.id()));
+    }
+
+    /// An expression holding a reveal is judged whole when the document is
+    /// created, and consumes only if it holds; on a replace, which the
+    /// membership leaf asks for, the reveal holds without a read, though the
+    /// commitment it consumed is gone.
+    #[tokio::test]
+    async fn should_consume_through_an_expression_and_leave_the_reveal_alone_on_replace() {
+        let mut fixture = CommitRevealFixture::new();
+        let salt = [0x41; 32];
+        let renewal = |salt: [u8; 32], note: &str| {
+            vec![
+                ("label", "renew".into()),
+                ("preorderSalt", Value::Bytes32(salt)),
+                ("note", note.into()),
+            ]
+        };
+
+        // Mallory commits but holds no membership: the allOf fails on its second
+        // leaf, so the create is refused and consumes nothing
+        let mallory_preorder = fixture
+            .commit(Who::Mallory, [0x42; 32], "renew", COMMIT_TIME_MS)
+            .await;
+        let (_, result) = fixture
+            .create(
+                Who::Mallory,
+                "renewal",
+                &renewal([0x42; 32], "first"),
+                &[],
+                COMMIT_TIME_MS,
+            )
+            .await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::StateError(StateError::ReferencedEntityNotFoundError(e)),
+                ..
+            } if e.path() == "$ownerId"
+        );
+        assert!(fixture.preorder_exists(mallory_preorder.id()));
+
+        // Alice holds both: the create consumes her commitment
+        let (_, result) = fixture
+            .create(
+                Who::Alice,
+                "membership",
+                &[("note", "member".into())],
+                &[],
+                COMMIT_TIME_MS,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let preorder = fixture
+            .commit(Who::Alice, salt, "renew", COMMIT_TIME_MS)
+            .await;
+        let (document, result) = fixture
+            .create(
+                Who::Alice,
+                "renewal",
+                &renewal(salt, "first"),
+                &[],
+                COMMIT_TIME_MS,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(!fixture.preorder_exists(preorder.id()));
+
+        // A replace re-validates the expression for its membership leaf; the
+        // reveal it holds is not asked for again
+        let result = fixture
+            .replace(
+                Who::Alice,
+                "renewal",
+                &document,
+                |renewal| renewal.set("note", "second".into()),
+                REVEAL_TIME_MS,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// The lookup is billed as the document fetch it is, and a reveal that
+    /// consumes reports the commitment it consumes; the check runs on a create
+    /// only.
+    #[tokio::test]
+    async fn should_bill_the_commitment_lookup_and_report_the_consumed_commitment() {
+        let mut fixture = CommitRevealFixture::new();
+        let platform_version = PlatformVersion::latest();
+        let alice = fixture.id(Who::Alice);
+        let salt = [0x11; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "al1ce.dash", COMMIT_TIME_MS)
+            .await;
+
+        let (_, contract_fetch_info) = fixture
+            .platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                fixture.contract.id().to_buffer(),
+                None,
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch the contract");
+        let base = DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
+            id: Identifier::from([0xAA; 32]),
+            identity_contract_nonce: 1,
+            document_type_name: "domain".to_string(),
+            data_contract: contract_fetch_info.expect("the contract is in state"),
+            token_cost: None,
+            gas_fees_paid_by: GasFeesPaidBy::default(),
+            contract_gas_fees_paid_by: GasFeesPaidBy::default(),
+            declared_action_fee: None,
+        });
+        let platform_state = fixture.platform.state.load();
+        let platform_ref = PlatformStateRef {
+            drive: &fixture.platform.drive,
+            state: &platform_state,
+            config: &fixture.platform.config,
+        };
+        let data: BTreeMap<String, Value> = subdomain("Alice", "al1ce", "dash", salt)
+            .into_iter()
+            .map(|(property, value)| (property.to_string(), value))
+            .collect();
+        let validate = |changed_fields: Option<&std::collections::BTreeSet<String>>| {
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("expected an execution context");
+            let mut consumed = Vec::new();
+            let result = base
+                .validate_document_references(
+                    &data,
+                    alice,
+                    Some(alice),
+                    changed_fields,
+                    None,
+                    &platform_ref,
+                    &BlockInfo::default_with_time(REVEAL_TIME_MS),
+                    &mut consumed,
+                    None,
+                    &mut execution_context,
+                    platform_version,
+                )
+                .expect("expected the references to be validated");
+            (result, execution_context, consumed)
+        };
+
+        let (result, execution_context, consumed) = validate(None);
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_matches!(
+            execution_context.operations_slice(),
+            [ValidationOperation::PrecalculatedOperation(fee)] if fee.processing_fee > 0,
+            "the commitment query is the one billed operation"
+        );
+        assert_matches!(
+            consumed.as_slice(),
+            [consumed] if consumed.document.document_id == preorder.id()
+                && consumed.document.document_type_name == "preorder"
+                && consumed.path == "$creatorId"
+        );
+
+        // A replace neither reads nor consumes: the commitment was revealed once
+        let changed = std::collections::BTreeSet::from(["label".to_string()]);
+        let (result, execution_context, consumed) = validate(Some(&changed));
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert!(execution_context.operations_slice().is_empty());
+        assert!(consumed.is_empty());
+    }
+
+    /// The type in the fixture reads what [`DocumentTypeRef`] reports: the
+    /// declaration is the creator's, and the key is computed.
+    #[test]
+    fn should_parse_the_fixture_domain_as_revealing_a_computed_key() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(CONTRACT_PATH, true, platform_version)
+            .expect("expected to parse the contract");
+        let domain: DocumentTypeRef = contract
+            .document_type_for_name("domain")
+            .expect("expected the domain type");
+        let lookup = domain
+            .reference_declarations()
+            .find_map(|(_, reference)| {
+                reference
+                    .target()
+                    .and_then(|target| target.as_any_document_reference())
+                    .and_then(|declaration| declaration.lookup)
+            })
+            .expect("expected the creator's lookup");
+        assert!(lookup.is_checked_on_create_only());
+        assert_eq!(lookup.minimum_age_seconds, Some(60));
+        assert!(lookup.consume);
+    }
+}

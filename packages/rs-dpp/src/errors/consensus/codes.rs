@@ -170,6 +170,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidEncryptedPropertyShapeError(_) => 10420,
             Self::DocumentPropertyMaxBytesExceededError(_) => 10421,
             Self::DocumentPropertyConstraintViolatedError(_) => 10422,
+            Self::DocumentReferencePreimageInvalidError(_) => 10423,
             Self::DocumentPropertyNotGeneratedError(_) => 10424,
 
             // Token Errors: 10450-10499
@@ -374,6 +375,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentActionFeeModeratorsShareMismatchError(_) => 40139,
             Self::DocumentExpiredError(_) => 40140,
             Self::DocumentContestMaximumContendersReachedError(_) => 40141,
+            Self::ReferencedDocumentRequirementNotMetError(_) => 40142,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

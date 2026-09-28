@@ -86,6 +86,8 @@ fn expected_lookup(keys: &[(&str, LookupKeySource)]) -> DocumentReferenceLookup 
             .iter()
             .map(|(index_property, source)| (index_property.to_string(), source.clone()))
             .collect(),
+        minimum_age_seconds: None,
+        consume: false,
     }
 }
 

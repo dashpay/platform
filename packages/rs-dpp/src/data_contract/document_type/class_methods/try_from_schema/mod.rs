@@ -21,8 +21,8 @@ use crate::data_contract::document_type::{
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements, KeyIdReference,
-    KeyReferenceIdentityProperty, ListElementReference, LookupKeySource, ReferenceCombinator,
-    ReferenceOperands, SystemFunction, COMBINABLE_REFERENCE_TARGET_TYPES,
+    KeyReferenceIdentityProperty, ListElementReference, LookupHashKey, LookupKeySource,
+    ReferenceCombinator, ReferenceOperands, SystemFunction, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -1033,11 +1033,22 @@ fn parse_reference_target(
                     // shape (and its encoding in the reference errors)
                     match refers_to_map.get(property_names::LOOKUP) {
                         Some(lookup_value) => {
+                            let lookup = parse_document_reference_lookup(lookup_value)?;
+                            // A permanent document is never deleted, so there is
+                            // nothing to consume
+                            if lookup.consume {
+                                return Err(DataContractError::InvalidContractStructure(
+                                    "permanentDocument refersTo lookup cannot consume the \
+                                     document it finds, which is never deleted: consume needs a \
+                                     deletableDocument reference"
+                                        .to_string(),
+                                ));
+                            }
                             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                                 contract_id,
                                 document_type_name,
                                 property_agreement,
-                                lookup: parse_document_reference_lookup(lookup_value)?,
+                                lookup,
                             }
                         }
                         None => DocumentPropertyReferenceTarget::PermanentDocument {
@@ -1049,11 +1060,26 @@ fn parse_reference_target(
                 }
                 "deletableDocument" => match refers_to_map.get(property_names::LOOKUP) {
                     Some(lookup_value) => {
+                        let lookup = parse_document_reference_lookup(lookup_value)?;
+                        // Consuming deletes the found document, so only its
+                        // owner's own reveal may: the `$ownerId` pair makes the
+                        // writer the found document's owner
+                        if lookup.consume
+                            && property_agreement.get(OWNER_ID).map(String::as_str)
+                                != Some(OWNER_ID)
+                        {
+                            return Err(DataContractError::InvalidContractStructure(
+                                "deletableDocument refersTo lookup may consume the document it \
+                                 finds only when the writer owns it: declare the \
+                                 propertyAgreement pair \"$ownerId\": \"$ownerId\""
+                                    .to_string(),
+                            ));
+                        }
                         DocumentPropertyReferenceTarget::DeletableDocumentLookup {
                             contract_id,
                             document_type_name,
                             property_agreement,
-                            lookup: parse_document_reference_lookup(lookup_value)?,
+                            lookup,
                         }
                     }
                     None => DocumentPropertyReferenceTarget::DeletableDocument {
@@ -1384,10 +1410,12 @@ fn apply_element_reference_v0(
 /// and `creatorRefersTo` its `$creatorId` (the creator), named `value` in the
 /// errors. The declaration goes through [`apply_property_reference`] as one
 /// declared on an identifier property does, `propertyAgreement` and `lookup`
-/// included (where `"."` is that identity), but only two targets can hold an
-/// identity: `identity`, a `permanentDocument` found through a `lookup`, and a
-/// `listElement` (the identity an element of the list), alone or as the leaves
-/// of an `anyOf` / `allOf` expression.
+/// included (where `"."` is that identity), but only these targets can hold an
+/// identity: `identity`, a `permanentDocument` found through a `lookup`, a
+/// `listElement` (the identity an element of the list), and a
+/// `deletableDocument` found through a `lookup`, on the writer, or on the
+/// creator when the lookup's key is computed (a commitment the create
+/// reveals), alone or as the leaves of an `anyOf` / `allOf` expression.
 /// The others are refused: `contract`, `token` and a document by id, since an
 /// identity id is never a contract, token or document id, so a type declaring
 /// one could never be written, and `identityPublicKey`, which pairs the value
@@ -1485,11 +1513,17 @@ pub(super) fn parse_doctype_reference(
             // keeps to targets that hold for good
             DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
                 if keyword == property_names::OWNER_REFERS_TO => {}
+            // A lookup with a computed key is judged when the document is
+            // created only, by its creator: a commitment the creator revealed,
+            // which no replace asks for again, so the creator's gate cannot
+            // outlive a transfer
+            DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. }
+                if lookup.is_checked_on_create_only() => {}
             DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "{keyword}{at} does not take a deletableDocument reference: the creator \
-                     never changes, and a document a transfer handed on could not be replaced \
-                     once the one the lookup found is deleted"
+                    "{keyword}{at} does not take a deletableDocument reference unless its lookup \
+                     key is computed: the creator never changes, and a document a transfer \
+                     handed on could not be replaced once the one the lookup found is deleted"
                 )))
             }
             DocumentPropertyReferenceTarget::PermanentDocument { .. }
@@ -1513,11 +1547,16 @@ pub(super) fn parse_doctype_reference(
 /// The `lookup` of a document reference: `index`, the name of an index of the
 /// referenced document type, and `keys`, every property of that index mapped to
 /// its referring-side source (`"."`, `"$ownerId"` or a property path), with `"."`
-/// exactly once. What the names resolve to is checked once the document types
-/// are parsed: the sources against the declaring type
-/// ([`validate_reference_lookup_sources`]), the index against the referenced
-/// one (at contract level for a type of the same contract, at registration for
-/// one of another contract).
+/// exactly once, or to a computed key (`{ "sha256d": [part, ...] }`, see
+/// [`LookupHashKey`]), at most one of them. Beside a computed key `"."` may be
+/// left out, which only the lookup of an `ownerRefersTo` or `creatorRefersTo`
+/// may do (checked with the other referring-side rules), and the lookup may
+/// declare `minimumAgeSeconds` and `consume`, what the commitment the key finds
+/// must be and whether the create deletes it. What the names resolve to is
+/// checked once the document types are parsed: the sources against the
+/// declaring type ([`validate_reference_lookup_sources`]), the index against
+/// the referenced one (at contract level for a type of the same contract, at
+/// registration for one of another contract).
 fn parse_document_reference_lookup(
     lookup_value: &Value,
 ) -> Result<DocumentReferenceLookup, DataContractError> {
@@ -1525,12 +1564,15 @@ fn parse_document_reference_lookup(
     if let Some(unknown) = lookup_map.keys().find(|key| {
         !matches!(
             key.as_str(),
-            property_names::LOOKUP_INDEX | property_names::LOOKUP_KEYS
+            property_names::LOOKUP_INDEX
+                | property_names::LOOKUP_KEYS
+                | property_names::LOOKUP_MINIMUM_AGE_SECONDS
+                | property_names::LOOKUP_CONSUME
         )
     }) {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "permanentDocument refersTo lookup {unknown:?} is unknown: a lookup takes index and \
-             keys"
+            "permanentDocument refersTo lookup {unknown:?} is unknown: a lookup takes index, \
+             keys, minimumAgeSeconds and consume"
         )));
     }
 
@@ -1568,10 +1610,18 @@ fn parse_document_reference_lookup(
                      and {MAX_LOOKUP_PATH_LENGTH} characters"
                 )));
             }
+            // A computed key is an object naming its hash; every other source a
+            // string
+            if matches!(source_value, Value::Map(_)) {
+                return Ok((
+                    index_property,
+                    LookupKeySource::Hash(LookupHashKey::from_value(source_value)?),
+                ));
+            }
             let source = source_value.as_text().ok_or_else(|| {
                 DataContractError::InvalidContractStructure(
                     "permanentDocument refersTo lookup keys must map each index property to a \
-                     string: \".\", \"$ownerId\" or a property path"
+                     string, \".\", \"$ownerId\" or a property path, or to a computed key"
                         .to_string(),
                 )
             })?;
@@ -1579,22 +1629,73 @@ fn parse_document_reference_lookup(
         })
         .collect::<Result<BTreeMap<String, LookupKeySource>, DataContractError>>()?;
 
+    let computed_keys = keys
+        .values()
+        .filter(|source| matches!(source, LookupKeySource::Hash(_)))
+        .count();
+    if computed_keys > 1 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "refersTo lookup keys hold at most one computed key, found {computed_keys}"
+        )));
+    }
+
     // Without the reference's own value in the key, every document would
-    // resolve to the same referenced document whatever the property holds
+    // resolve to the same referenced document whatever the property holds.
+    // A computed key makes the key the document's own, so beside one the
+    // value may be left out, on the writer or the creator alone
     let reference_value_uses = keys
         .values()
         .filter(|source| matches!(source, LookupKeySource::ReferenceValue))
         .count();
-    if reference_value_uses != 1 {
+    let allowed_uses: &[usize] = if computed_keys == 1 { &[0, 1] } else { &[1] };
+    if !allowed_uses.contains(&reference_value_uses) {
         return Err(DataContractError::InvalidContractStructure(format!(
             "permanentDocument refersTo lookup keys must fill exactly one index property from \
              \".\", the reference's own value, found {reference_value_uses}"
         )));
     }
 
+    // What the commitment a computed key finds must be, and whether the create
+    // deletes it: a lookup without one finds no commitment
+    let minimum_age_seconds = lookup_map
+        .get(property_names::LOOKUP_MINIMUM_AGE_SECONDS)
+        .map(|value| {
+            let seconds: u32 = value.to_integer().map_err(|_| {
+                DataContractError::InvalidContractStructure(
+                    "refersTo lookup minimumAgeSeconds must be an integer from 1 to 4294967295"
+                        .to_string(),
+                )
+            })?;
+            if seconds == 0 {
+                return Err(DataContractError::InvalidContractStructure(
+                    "refersTo lookup minimumAgeSeconds must be at least 1".to_string(),
+                ));
+            }
+            Ok(seconds)
+        })
+        .transpose()?;
+    let consume = match lookup_map.get(property_names::LOOKUP_CONSUME) {
+        None => false,
+        Some(value) if value.as_bool() == Some(true) => true,
+        Some(_) => {
+            return Err(DataContractError::InvalidContractStructure(
+                "refersTo lookup consume may only be declared true".to_string(),
+            ))
+        }
+    };
+    if computed_keys == 0 && (minimum_age_seconds.is_some() || consume) {
+        return Err(DataContractError::InvalidContractStructure(
+            "refersTo lookup minimumAgeSeconds and consume need a computed key: they describe \
+             the commitment a create reveals"
+                .to_string(),
+        ));
+    }
+
     Ok(DocumentReferenceLookup {
         index: index.to_string(),
         keys,
+        minimum_age_seconds,
+        consume,
     })
 }
 

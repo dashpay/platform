@@ -3,18 +3,36 @@ pub mod v0;
 use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::DocumentPropertyReferenceTarget;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::DocumentReferenceValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
+
+/// A document a create consumes: the commitment a `refersTo` lookup with a computed key
+/// declaring `consume` found, with what a refusal naming the reference needs should the
+/// batch touch the same document elsewhere.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ConsumedLookupDocument {
+    /// The document the create deletes.
+    pub(crate) document: ConsumedDocument,
+    /// The value the reference was checked for: the writer, the creator, or the property's
+    /// value (one element's for a typed array).
+    pub(crate) referenced_id: Identifier,
+    /// The leaf declaring the lookup.
+    pub(crate) reference_target: DocumentPropertyReferenceTarget,
+    /// How the reference errors name the reference.
+    pub(crate) path: String,
+}
 
 pub(crate) trait DocumentReferenceValidation {
     /// Whether the top-level `property` of this document's type is a
@@ -74,6 +92,12 @@ pub(crate) trait DocumentReferenceValidation {
     /// (registration then admits neither), or it was written before its type
     /// did: a `$creatorId` key id property a contract update added may then
     /// not be set, and an update cannot add a `creatorRefersTo`.
+    ///
+    /// A lookup with a computed key reveals a commitment and is judged on a create only
+    /// (`changed_fields` is `None`): the document it finds must meet the lookup's
+    /// `minimumAgeSeconds`, and when the lookup declares `consume` the document is pushed onto
+    /// `consumed_documents` for the caller to delete with the create once it accepts it. A
+    /// replace leaves it alone, since nothing it reads can have changed.
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,
@@ -84,6 +108,7 @@ pub(crate) trait DocumentReferenceValidation {
         stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -135,6 +160,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
         stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -154,6 +180,7 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
                 stored_values,
                 platform,
                 block_info,
+                consumed_documents,
                 transaction,
                 execution_context,
                 platform_version,

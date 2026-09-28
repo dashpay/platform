@@ -483,6 +483,22 @@ fn validate_reference_target_declaration_v0(
     // document type in hand.
     if let Some(lookup) = lookup {
         if effective_contract_id != contract.id() {
+            // Consuming deletes the found document with the create, an operation on the
+            // create's own contract: a commitment in another contract is only read. In place
+            // in generation 0, which every table selects: only the protocol version 14 parser
+            // produces a lookup, let alone one that consumes
+            if lookup.consume {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ReferencedDocumentLookupInvalidError::new(
+                        declaration_path,
+                        lookup.index.clone(),
+                        "consume deletes the document the lookup finds with the create, so it \
+                         is only allowed on a lookup into the declaring contract"
+                            .to_string(),
+                    )
+                    .into(),
+                ));
+            }
             if let Some(reason) =
                 lookup.referenced_side_error(document_type, referenced_document_type)
             {

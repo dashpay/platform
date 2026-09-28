@@ -73,6 +73,7 @@ use crate::consensus::state::document::referenced_document_type_deletable_error:
 use crate::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+use crate::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -633,6 +634,11 @@ pub enum StateError {
     // 14).
     #[error(transparent)]
     DocumentContestMaximumContendersReachedError(DocumentContestMaximumContendersReachedError),
+
+    // The commitment a `refersTo` lookup with a computed key found does not meet the lookup's
+    // `minimumAgeSeconds` (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentRequirementNotMetError(ReferencedDocumentRequirementNotMetError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -728,6 +734,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_seconds: None,
+                    consume: false,
                 },
             }),
             6
@@ -755,6 +763,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_seconds: None,
+                    consume: false,
                 },
             }),
             10
@@ -1322,7 +1332,7 @@ mod tests {
             151
         );
         // A contest holding the most contenders a contest accepts refuses another (protocol
-        // version 14): the tail of the enum.
+        // version 14).
         assert_eq!(
             discriminant_of(StateError::DocumentContestMaximumContendersReachedError(
                 DocumentContestMaximumContendersReachedError::new(
@@ -1331,6 +1341,19 @@ mod tests {
                 )
             )),
             152
+        );
+        // A commitment a computed lookup key found that does not meet the lookup's
+        // `minimumAgeSeconds` (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentRequirementNotMetError(
+                ReferencedDocumentRequirementNotMetError::new(
+                    identity_id,
+                    "minimumAgeSeconds".to_string(),
+                    "60".to_string(),
+                    "$creatorId".to_string(),
+                )
+            )),
+            153
         );
     }
 }

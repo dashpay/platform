@@ -26,6 +26,7 @@ use dpp::errors::consensus::state::document::referenced_document_type_deletable_
 use dpp::errors::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+use dpp::errors::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
 use dpp::errors::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
 use dpp::errors::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
 use dpp::errors::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
@@ -47,6 +48,7 @@ use drive::drive::identity::key::fetch::{
 use drive::query::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -54,6 +56,7 @@ use crate::execution::types::execution_operation::{RetrieveIdentityInfo, Validat
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::{
     fetch_document_through_lookup, fetch_document_with_id,
 };
@@ -89,6 +92,7 @@ pub(crate) trait DocumentReferenceValidationV0 {
         stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -182,6 +186,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
         stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -207,6 +212,7 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             stored_values,
             platform,
             block_info,
+            consumed_documents,
             transaction,
             execution_context,
             platform_version,
@@ -225,12 +231,17 @@ fn validate_document_type_references_v0(
     stored_values: Option<&BTreeMap<String, Value>>,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
+    consumed_documents: &mut Vec<ConsumedLookupDocument>,
     transaction: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     // The documents this write's references fetch by id, shared among them
     let mut fetched_documents = FetchedDocuments::default();
+
+    // A create is the one write with no changed fields, and the only one a lookup with a
+    // computed key, which reveals a commitment, is judged at
+    let is_create = changed_fields.is_none();
 
     // Whether a replace may be written by an owner other than the one who
     // wrote a reference: a transfer or a purchase hands the document on
@@ -398,6 +409,8 @@ fn validate_document_type_references_v0(
                 &mut fetched_documents,
                 platform,
                 block_info,
+                is_create,
+                consumed_documents,
                 transaction,
                 execution_context,
                 platform_version,
@@ -478,6 +491,8 @@ fn validate_document_type_references_v0(
                     &mut fetched_documents,
                     platform,
                     block_info,
+                    is_create,
+                    consumed_documents,
                     transaction,
                     execution_context,
                     platform_version,
@@ -602,6 +617,16 @@ fn binds_a_changed_property(
     changed_fields: &BTreeSet<String>,
     writer_can_change: bool,
 ) -> bool {
+    // A lookup with a computed key is judged on a create only: nothing it reads can change,
+    // and the commitment it found may be gone. In place in generation 0, reached from
+    // protocol version 14 only, the only version whose parser produces one
+    if reference_target
+        .as_any_document_reference()
+        .and_then(|declaration| declaration.lookup)
+        .is_some_and(|lookup| lookup.is_checked_on_create_only())
+    {
+        return false;
+    }
     match reference_target {
         DocumentPropertyReferenceTarget::PermanentDocument {
             property_agreement, ..
@@ -719,6 +744,8 @@ fn validate_reference_v0(
     fetched_documents: &mut FetchedDocuments,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
+    is_create: bool,
+    consumed_documents: &mut Vec<ConsumedLookupDocument>,
     transaction: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
@@ -736,6 +763,8 @@ fn validate_reference_v0(
             fetched_documents,
             platform,
             block_info,
+            is_create,
+            consumed_documents,
             transaction,
             execution_context,
             platform_version,
@@ -762,6 +791,8 @@ fn validate_reference_v0(
             fetched_documents,
             platform,
             block_info,
+            is_create,
+            consumed_documents,
             transaction,
             execution_context,
             platform_version,
@@ -791,6 +822,14 @@ fn validate_reference_v0(
 /// referenced document type is resolved through `referenced_contracts`,
 /// which the caller shares among the elements of one array and the leaves
 /// of one reference expression.
+///
+/// A lookup with a computed key reveals a commitment: it is judged on a
+/// create only (`is_create`), and holds on a replace without a read, since
+/// registration made everything it reads fixed once written and the
+/// commitment it found may have been consumed or deleted since. On a create
+/// the document it finds must also meet the lookup's `minimumAgeSeconds`, and
+/// when the lookup declares `consume` the document is pushed onto
+/// `consumed_documents` once the leaf holds.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_target_v0(
     contract: &DataContract,
@@ -804,6 +843,8 @@ fn validate_reference_target_v0(
     fetched_documents: &mut FetchedDocuments,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
+    is_create: bool,
+    consumed_documents: &mut Vec<ConsumedLookupDocument>,
     transaction: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
@@ -901,6 +942,12 @@ fn validate_reference_target_v0(
                     "every document reference target carries a document reference declaration",
                 )));
             };
+            // A commitment is revealed once, by the create; nothing the lookup reads can
+            // change on a replace. In place in generation 0: only the protocol version 14
+            // parser produces a computed key
+            if !is_create && lookup.is_some_and(|lookup| lookup.is_checked_on_create_only()) {
+                return Ok(SimpleConsensusValidationResult::new());
+            }
             let list_reference = reference_target.as_list_element_reference();
             // An absent contract id targets the declaring contract itself; the
             // declaring contract may also name its own id explicitly. Either
@@ -1041,6 +1088,7 @@ fn validate_reference_target_v0(
                         platform.drive,
                         referenced_contract,
                         referenced_document_type,
+                        document_type,
                         lookup,
                         Identifier::from(document_id),
                         document_data,
@@ -1184,6 +1232,42 @@ fn validate_reference_target_v0(
                     if referring_encoded != referenced_encoded {
                         return Ok(mismatch());
                     }
+                }
+            }
+
+            // The commitment a computed key found: it must be old enough, and the create
+            // deletes it when the lookup consumes it. Its age is judged against the block
+            // time, its `$createdAt` (registration demands the type record one); a document
+            // recording none never meets it. Only a lookup the protocol version 14 parser
+            // produced has either
+            if let (Some(lookup), Some(found)) = (lookup, referenced_document) {
+                if let Some(seconds) = lookup.minimum_age_seconds {
+                    let old_enough = found
+                        .created_at()
+                        .and_then(|created_at| block_info.time_ms.checked_sub(created_at))
+                        .is_some_and(|age_ms| age_ms >= u64::from(seconds) * 1000);
+                    if !old_enough {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ReferencedDocumentRequirementNotMetError::new(
+                                found.id(),
+                                "minimumAgeSeconds".to_string(),
+                                seconds.to_string(),
+                                path.to_string(),
+                            )
+                            .into(),
+                        ));
+                    }
+                }
+                if lookup.consume {
+                    consumed_documents.push(ConsumedLookupDocument {
+                        document: ConsumedDocument {
+                            document_id: found.id(),
+                            document_type_name: document_type_name.to_string(),
+                        },
+                        referenced_id: Identifier::from(referenced_id),
+                        reference_target: reference_target.clone(),
+                        path: path.to_string(),
+                    });
                 }
             }
 

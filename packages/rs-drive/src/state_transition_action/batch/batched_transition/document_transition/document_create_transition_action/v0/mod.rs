@@ -48,6 +48,23 @@ pub struct DocumentCreateTransitionActionV0 {
     /// built; `None` when the rules judging the write read none, and boxed, since only
     /// such a write holds any and the action is one variant of a large enum.
     pub property_constraint_aggregates: Option<Box<BTreeMap<AggregateRead, i128>>>,
+    /// The documents this create consumes: commitments it revealed through a `refersTo` lookup
+    /// with a computed key declaring `consume`, deleted in the same state transition. Empty
+    /// when the action is built; the batch state validation (protocol version 14) sets it once
+    /// the create is accepted.
+    pub consumed_documents: Vec<ConsumedDocument>,
+}
+
+/// A document of the create's own contract that the create deletes because it revealed it:
+/// the commitment a `refersTo` lookup with a computed key found, declaring `consume`. Its
+/// owner is the writer (registration demands the `$ownerId` agreement pair), so the delete is
+/// the one that owner could have made, and its storage is refunded the same way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsumedDocument {
+    /// The consumed document's id.
+    pub document_id: Identifier,
+    /// The consumed document's type, in the create's contract.
+    pub document_type_name: String,
 }
 
 /// document create transition action accessors v0
@@ -99,6 +116,12 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
 
     /// Sets the totals the rules judging this write read, once they are read from state
     fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>);
+
+    /// The documents this create consumes, deleted in the same state transition.
+    fn consumed_documents(&self) -> &[ConsumedDocument];
+
+    /// Sets the documents this create consumes.
+    fn set_consumed_documents(&mut self, consumed_documents: Vec<ConsumedDocument>);
 }
 
 /// documents from create transition v0

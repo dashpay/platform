@@ -1423,6 +1423,33 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     extended in place and is inert before this version, where the three
 ///     slots are `None` and the meta-schemas refuse the keyword.
 ///
+/// 54. **A `refersTo` lookup key may be a hash the document reveals**: a
+///     lookup key may be `{ "sha256d": [part, ...] }` (meta-schema v3, parser
+///     generation 3, `apply_property_reference` 0), the SHA-256 of the SHA-256
+///     of its parts' bytes concatenated with nothing between them: a string
+///     property's UTF-8, a byte array property's bytes, an identifier's 32
+///     bytes, fixed text, and at most one `ifEmpty` part choosing between two
+///     lists of parts by whether a string or byte array property is empty. The
+///     document such a key finds is a commitment made earlier, so the lookup is
+///     judged when the document is created only: its parts may be transient or
+///     optional, every stored value it reads must be fixed once written, and a
+///     replace leaves it alone. Document create structure validation 1 refuses a
+///     create missing a part, or whose variable-length part holds the one-byte
+///     separator that must follow it (`DocumentReferencePreimageInvalidError`,
+///     10423). Beside the key a lookup may declare `minimumAgeSeconds`, judged
+///     by document create state validation 2 against the found document's
+///     `$createdAt` (`ReferencedDocumentRequirementNotMetError`, 40142), and
+///     `consume`, which deletes the found document with the create
+///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch
+///     touching it elsewhere refused with 40120). A `propertyAgreement` pair
+///     `{"$ownerId": "$ownerId"}` makes the commitment the writer's own, and
+///     `consume` requires it, into the declaring contract, on a type whose
+///     owners may delete. `creatorRefersTo` takes a `deletableDocument` target
+///     through a computed key, and an `ownerRefersTo` or `creatorRefersTo`
+///     lookup may leave `"."` out beside one. The keyword reproduces the DPNS
+///     preorder hash byte for byte; the DPNS contract and its create trigger are
+///     unchanged. See `book/src/data-model/documents.md`.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

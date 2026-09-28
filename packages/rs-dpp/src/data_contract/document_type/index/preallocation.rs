@@ -383,6 +383,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byAuthor".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_seconds: None,
+                    consume: false,
                 },
             },
         );

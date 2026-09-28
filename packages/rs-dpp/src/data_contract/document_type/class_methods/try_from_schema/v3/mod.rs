@@ -1083,6 +1083,8 @@ impl DocumentType {
     }
 }
 
+#[cfg(all(test, feature = "validation"))]
+mod commit_reveal_lookup_tests;
 #[cfg(test)]
 mod documents_ttl_tests;
 #[cfg(test)]

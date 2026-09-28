@@ -203,6 +203,8 @@ fn expected_join_request_lookup() -> DocumentPropertyReferenceTarget {
                 ("$ownerId".to_string(), LookupKeySource::ReferenceValue),
             ]
             .into(),
+            minimum_age_seconds: None,
+            consume: false,
         },
     }
 }
@@ -222,6 +224,8 @@ fn expected_added_moderator_lookup() -> DocumentPropertyReferenceTarget {
                 ("moderatorId".to_string(), LookupKeySource::ReferenceValue),
             ]
             .into(),
+            minimum_age_seconds: None,
+            consume: false,
         },
     }
 }

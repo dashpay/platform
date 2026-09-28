@@ -416,7 +416,9 @@ fn fetch_document_with_id_v1(
 /// The document a `refersTo` lookup resolves to for one value: the one the
 /// declared unique index of `document_type` finds for the key assembled from
 /// `reference_value` (the property's value, or one array element's), the
-/// writer `owner_id` and the sources in `document_data`. `None` when no
+/// writer `owner_id` and the sources in `document_data`, a document of
+/// `declaring_document_type` (whose property types tell a computed key's
+/// variable-length parts). `None` when no
 /// document matches, and when the key cannot be assembled or the index is
 /// missing or not unique. Contract registration and update refuse the last
 /// three (an optional source, a missing or non-unique index), and a referenced
@@ -434,6 +436,7 @@ pub(crate) fn fetch_document_through_lookup(
     drive: &Drive,
     contract: &DataContract,
     document_type: DocumentTypeRef,
+    declaring_document_type: DocumentTypeRef,
     lookup: &DocumentReferenceLookup,
     reference_value: Identifier,
     document_data: &BTreeMap<String, Value>,
@@ -450,7 +453,12 @@ pub(crate) fn fetch_document_through_lookup(
     {
         return Ok(None);
     }
-    let Some(key_values) = lookup.key_values(reference_value, document_data, owner_id) else {
+    let Some(key_values) = lookup.key_values(
+        declaring_document_type,
+        reference_value,
+        document_data,
+        owner_id,
+    ) else {
         return Ok(None);
     };
     let equal_clauses = key_values

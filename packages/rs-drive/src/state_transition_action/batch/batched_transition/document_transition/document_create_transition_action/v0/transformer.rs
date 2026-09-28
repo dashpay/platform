@@ -165,6 +165,7 @@ impl DocumentCreateTransitionActionV0 {
                     current_store_contest_info,
                     should_store_contest_info,
                     property_constraint_aggregates: Default::default(),
+                    consumed_documents: Vec::new(),
                 }
                 .into(),
             ))

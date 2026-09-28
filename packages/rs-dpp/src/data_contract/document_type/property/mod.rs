@@ -43,12 +43,17 @@ pub mod array;
 pub mod encrypted_for;
 pub mod generated_from;
 pub mod list_element_reference;
+pub mod lookup_preimage;
 pub mod reference_expression;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
 pub use generated_from::{GeneratedFrom, GenerationParam, StringTransformation, SystemFunction};
 pub use list_element_reference::ListElementReference;
+pub use lookup_preimage::{
+    first_unrevealable_lookup_key, LookupHashKey, LookupKeyHash, LookupPreimageError,
+    LookupPreimagePart,
+};
 pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
     MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
@@ -1534,6 +1539,14 @@ fn write_document_reference(
     }
     if let Some(lookup) = lookup {
         write!(f, ", found through unique index {}", lookup.index)?;
+        // A computed key: the document found is a commitment the write reveals
+        if let Some((index_property, key)) = lookup.hash_key() {
+            write!(
+                f,
+                ", {index_property} the {} of a revealed preimage",
+                key.hash.wire_name()
+            )?;
+        }
     }
     write!(f, ")")
 }
@@ -10225,6 +10238,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "bySubmittedCharter".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_seconds: None,
+                    consume: false,
                 },
             }
             .to_string(),
@@ -10270,6 +10285,8 @@ mod tests {
         let lookup = DocumentReferenceLookup {
             index: "bySubmittedCharter".to_string(),
             keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+            minimum_age_seconds: None,
+            consume: false,
         };
         let target = DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id: None,
@@ -10602,6 +10619,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_seconds: None,
+                    consume: false,
                 },
             },
             DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
@@ -10633,6 +10652,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_seconds: None,
+                    consume: false,
                 },
             },
         ];

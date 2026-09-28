@@ -56,10 +56,10 @@ use crate::consensus::basic::document::{
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
     DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError,
     DocumentPropertyNotDistinctError, DocumentPropertyNotGeneratedError,
-    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    DocumentReferencePreimageInvalidError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
     MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
     MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
@@ -841,6 +841,11 @@ pub enum BasicError {
     // (protocol version 14).
     #[error(transparent)]
     DocumentPropertyNotGeneratedError(DocumentPropertyNotGeneratedError),
+
+    // A create that cannot assemble the preimage of a `refersTo` lookup key it reveals
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentReferencePreimageInvalidError(DocumentReferencePreimageInvalidError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1006,6 +1011,19 @@ mod tests {
                 )
             )),
             200
+        );
+        // A create that cannot assemble the preimage of a `refersTo` lookup key it reveals
+        // (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentReferencePreimageInvalidError(
+                DocumentReferencePreimageInvalidError::new(
+                    "domain".to_string(),
+                    "$creatorId".to_string(),
+                    "normalizedLabel".to_string(),
+                    "reason".to_string(),
+                )
+            )),
+            201
         );
     }
 

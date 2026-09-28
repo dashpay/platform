@@ -182,6 +182,8 @@ mod tests {
             lookup: DocumentReferenceLookup {
                 index: "byModerator".to_string(),
                 keys: [("moderatorId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                minimum_age_seconds: None,
+                consume: false,
             },
         }
     }

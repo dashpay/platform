@@ -1,0 +1,266 @@
+{
+  "$formatVersion": "1",
+  "id": "548jb4wcUtpbNS1TAva8TXJmeXd5QpCCXUzNVogwpzMR",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "preorder": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "saltedDomainHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0
+        }
+      },
+      "indices": [
+        {
+          "name": "saltedHash",
+          "properties": [
+            {
+              "saltedDomainHash": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "$createdAt",
+        "saltedDomainHash"
+      ],
+      "additionalProperties": false
+    },
+    "domain": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "transferable": 1,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "normalizedLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 1
+        },
+        "parentDomainName": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 2
+        },
+        "preorderSalt": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 3
+        }
+      },
+      "required": [
+        "label",
+        "normalizedLabel",
+        "preorderSalt"
+      ],
+      "transient": [
+        "preorderSalt"
+      ],
+      "creatorRefersTo": {
+        "type": "deletableDocument",
+        "documentType": "preorder",
+        "lookup": {
+          "index": "saltedHash",
+          "keys": {
+            "saltedDomainHash": {
+              "sha256d": [
+                {
+                  "property": "preorderSalt"
+                },
+                {
+                  "ifEmpty": "parentDomainName",
+                  "then": [
+                    {
+                      "property": "label"
+                    }
+                  ],
+                  "else": [
+                    {
+                      "property": "normalizedLabel"
+                    },
+                    {
+                      "text": "."
+                    },
+                    {
+                      "property": "parentDomainName"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "minimumAgeSeconds": 60,
+          "consume": true
+        },
+        "propertyAgreement": {
+          "$ownerId": "$ownerId"
+        }
+      },
+      "additionalProperties": false
+    },
+    "openClaim": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "preorderSalt": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1
+        }
+      },
+      "required": [
+        "label",
+        "preorderSalt"
+      ],
+      "transient": [
+        "preorderSalt"
+      ],
+      "ownerRefersTo": {
+        "type": "deletableDocument",
+        "documentType": "preorder",
+        "lookup": {
+          "index": "saltedHash",
+          "keys": {
+            "saltedDomainHash": {
+              "sha256d": [
+                {
+                  "property": "preorderSalt"
+                },
+                {
+                  "property": "label"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "membership": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "note": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 0
+        }
+      },
+      "indices": [
+        {
+          "name": "byOwner",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "note"
+      ],
+      "additionalProperties": false
+    },
+    "renewal": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "preorderSalt": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 2
+        }
+      },
+      "required": [
+        "label",
+        "preorderSalt"
+      ],
+      "transient": [
+        "preorderSalt"
+      ],
+      "immutable": [
+        "label"
+      ],
+      "ownerRefersTo": {
+        "allOf": [
+          {
+            "type": "deletableDocument",
+            "documentType": "preorder",
+            "lookup": {
+              "index": "saltedHash",
+              "keys": {
+                "saltedDomainHash": {
+                  "sha256d": [
+                    {
+                      "property": "preorderSalt"
+                    },
+                    {
+                      "property": "label"
+                    }
+                  ]
+                }
+              },
+              "consume": true
+            },
+            "propertyAgreement": {
+              "$ownerId": "$ownerId"
+            }
+          },
+          {
+            "type": "deletableDocument",
+            "documentType": "membership",
+            "lookup": {
+              "index": "byOwner",
+              "keys": {
+                "$ownerId": "."
+              }
+            }
+          }
+        ]
+      },
+      "additionalProperties": false
+    }
+  }
+}
