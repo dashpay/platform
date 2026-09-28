@@ -14,11 +14,11 @@ type LayoutNode = {
   role: string;
   structureNode: string;
   element: string;
-  wrapper: string | null;
+  wrapper?: string;
   rankedAxes: string[];
   indexes: string[];
   notes: Array<{ code: string; text: string }>;
-  alternative: { when: string; node: LayoutNode } | null;
+  alternative?: { when: string; node: LayoutNode };
   children: LayoutNode[];
 };
 

@@ -815,62 +815,57 @@ impl LayoutKey {
 
 impl LayoutNode {
     /// The node as a plain value: `{ key, role, structureNode, element,
-    /// wrapper, rankedAxes, indexes, notes, alternative, children }`.
+    /// wrapper?, rankedAxes, indexes, notes, alternative?, children }`, with
+    /// `wrapper` and `alternative` left out when there is none.
     pub fn to_value(&self) -> Value {
-        map(vec![
+        let mut entries = vec![
             ("key", self.key.to_value()),
             ("role", text(self.role.name())),
             ("structureNode", text(self.role.structure_node())),
             ("element", text(self.element.kind.name())),
-            (
-                "wrapper",
+        ];
+        if let Some(wrapper) = self.element.wrapper {
+            entries.push(("wrapper", text(wrapper_name(wrapper))));
+        }
+        entries.push((
+            "rankedAxes",
+            Value::Array(
                 self.element
-                    .wrapper
-                    .map(|wrapper| text(wrapper_name(wrapper)))
-                    .unwrap_or(Value::Null),
+                    .ranked_axes
+                    .iter()
+                    .map(|axis| text(axis_name(*axis)))
+                    .collect(),
             ),
-            (
-                "rankedAxes",
-                Value::Array(
-                    self.element
-                        .ranked_axes
-                        .iter()
-                        .map(|axis| text(axis_name(*axis)))
-                        .collect(),
-                ),
-            ),
-            ("indexes", texts(&self.indexes)),
-            (
-                "notes",
-                Value::Array(
-                    self.notes
-                        .iter()
-                        .map(|note| {
-                            map(vec![
-                                ("code", text(note.code())),
-                                ("text", text(&note.text())),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-            (
-                "alternative",
-                self.alternative
-                    .as_ref()
-                    .map(|alternative| {
+        ));
+        entries.push(("indexes", texts(&self.indexes)));
+        entries.push((
+            "notes",
+            Value::Array(
+                self.notes
+                    .iter()
+                    .map(|note| {
                         map(vec![
-                            ("when", text(alternative.when)),
-                            ("node", alternative.node.to_value()),
+                            ("code", text(note.code())),
+                            ("text", text(&note.text())),
                         ])
                     })
-                    .unwrap_or(Value::Null),
+                    .collect(),
             ),
-            (
-                "children",
-                Value::Array(self.children.iter().map(LayoutNode::to_value).collect()),
-            ),
-        ])
+        ));
+        if let Some(alternative) = &self.alternative {
+            entries.push((
+                "alternative",
+                map(vec![
+                    ("when", text(alternative.when)),
+                    ("node", alternative.node.to_value()),
+                ]),
+            ));
+        }
+        entries.push((
+            "children",
+            Value::Array(self.children.iter().map(LayoutNode::to_value).collect()),
+        ));
+        map(entries)
     }
 }
 

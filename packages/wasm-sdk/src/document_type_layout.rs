@@ -39,15 +39,15 @@ export interface DocumentTypeLayoutNode {
   structureNode: string;
   /** The element kind: 'Tree', 'CountTree', 'ProvableCountTree', …, 'Item', 'Reference', …. */
   element: string;
-  /** The wrapper that makes the tree contribute nothing to the aggregating tree above it. */
-  wrapper: 'NonCounted' | 'NotSummed' | 'NotCountedOrSummed' | null;
+  /** The wrapper that makes the tree contribute nothing to the aggregating tree above it, when there is one. */
+  wrapper?: 'NonCounted' | 'NotSummed' | 'NotCountedOrSummed';
   /** The ranking axes of an indexed tree. */
   rankedAxes: Array<'count' | 'sum' | 'avg'>;
   /** The indexes of the document type that use this layer. */
   indexes: string[];
   notes: Array<{ code: string; text: string }>;
   /** What Drive writes at this key instead in some cases, and when. */
-  alternative: { when: string; node: DocumentTypeLayoutNode } | null;
+  alternative?: { when: string; node: DocumentTypeLayoutNode };
   children: DocumentTypeLayoutNode[];
 }
 "#;
