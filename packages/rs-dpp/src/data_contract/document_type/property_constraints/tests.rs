@@ -3020,7 +3020,7 @@ fn should_test_whether_a_string_starts_or_ends_with_another() {
     );
 }
 
-// ── min, max, abs, implies and notIn ────────────────────────────────────
+// ── min, max, abs, ifThen, ifThenElse and notIn ──────────────────────────
 
 /// `min` and `max` take two or more operands and evaluate every one; `abs`
 /// takes one. Each is one node plus its operands.
