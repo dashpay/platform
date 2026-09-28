@@ -36,8 +36,14 @@ const schemas = {
       { name: 'byShopRating', properties: [{ shop: 'asc' }, { rating: 'asc' }] },
       { name: 'byCode', properties: [{ code: 'asc' }], unique: true },
       { name: 'topRated', properties: [{ rating: 'asc' }], countable: 'countable', rangeCountable: true, rankedCountable: true },
+      {
+        name: 'recent',
+        properties: [{ $createdAt: 'asc' }],
+        timeRange: { on: '$createdAt', range: 86400, step: 3600 },
+        countable: 'countable',
+      },
     ],
-    required: ['shop', 'rating'],
+    required: ['shop', 'rating', '$createdAt'],
     additionalProperties: false,
   },
   /** An indexOnly type keyed by its owner. */
@@ -92,14 +98,25 @@ describe('documentTypeLayout()', () => {
     expect(documentType).to.equal('review');
     expect(root).to.include({ role: 'documentType', element: 'Tree' });
     expect(root.structureNode).to.equal('contracts.contract.documents.document_type');
-    expect(root.indexes).to.have.members(['byShop', 'byShopRating', 'byCode', 'topRated']);
+    expect(root.indexes).to.have.members(['byShop', 'byShopRating', 'byCode', 'topRated', 'recent']);
 
     const primary = child(root, 'PrimaryKey');
     expect(primary.role).to.equal('primaryKey');
     expect(primary.children[0]).to.include({ role: 'document', element: 'Item' });
     expect(primary.children[0].key.kind).to.equal('documentId');
 
-    expect(root.children.map((c) => c.key.label)).to.have.members(['PrimaryKey', 'shop', 'code', 'rating']);
+    expect(root.children.map((c) => c.key.label)).to.have.members([
+      'PrimaryKey', 'shop', 'code', 'rating', '$createdAt#86400#3600',
+    ]);
+  });
+
+  it('should key a time window level by its grid and give the grid as numbers', () => {
+    const windows = child(layout('review').root, '$createdAt#86400#3600').children[0];
+
+    expect(windows.key).to.deep.equal({
+      kind: 'timeRangeBucket', property: '$createdAt', rangeSeconds: 86400, stepSeconds: 3600, phaseSeconds: 0,
+    });
+    expect(windows.notes.map((n) => n.code)).to.include('timeRangeOverlap');
   });
 
   it('should count at a countable terminal and share the prefix of a compound index', () => {

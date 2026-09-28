@@ -761,6 +761,14 @@ fn map(entries: Vec<(&str, Value)>) -> Value {
     )
 }
 
+/// Seconds as a value JavaScript reads as a number: a u32 (every valid
+/// window fits), else a float, rather than a u64, which becomes a BigInt.
+fn seconds(value: u64) -> Value {
+    u32::try_from(value)
+        .map(Value::U32)
+        .unwrap_or(Value::Float(value as f64))
+}
+
 fn texts(values: &[String]) -> Value {
     Value::Array(values.iter().map(|value| text(value)).collect())
 }
@@ -787,9 +795,9 @@ impl LayoutKey {
             } => map(vec![
                 ("kind", text("timeRangeBucket")),
                 ("property", text(property)),
-                ("rangeSeconds", Value::U64(*range_seconds)),
-                ("stepSeconds", Value::U64(*step_seconds)),
-                ("phaseSeconds", Value::U64(*phase_seconds)),
+                ("rangeSeconds", seconds(*range_seconds)),
+                ("stepSeconds", seconds(*step_seconds)),
+                ("phaseSeconds", seconds(*phase_seconds)),
             ]),
             LayoutKey::MemberKey { components } => map(vec![
                 ("kind", text("memberKey")),
