@@ -1,0 +1,211 @@
+name: CI recovery proof - exact Swift PR heads
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/swift-followup-proof-20260928]
+    paths: [.github/workflows/ci-recovery-swift-followup.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  swift-sdk-build:
+    name: Native Swift proof - PR ${{ matrix.pr }}
+    # Fixed in-repository targets only. No pull_request trigger or user-provided ref.
+    if: >-
+      github.repository == 'dashpay/platform'
+      && github.ref == 'refs/heads/ci/swift-followup-proof-20260928'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pr: '5130'
+            sha: 6164dfd95842c16fd91e4b3e82328fead8409703
+          - pr: '5041'
+            sha: 3d165a46cc70ee9a4843f3d22ad3c0733c645b23
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 90
+    defaults:
+      run:
+        # The runner's work/temp directory can be on a volume with spaces.
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
+
+    steps:
+      - name: Snapshot service-account keychain preferences
+        run: |
+          set -euo pipefail
+          snapshot="$RUNNER_TEMP/swift-followup-keychain-$GITHUB_RUN_ID-${{ matrix.pr }}"
+          mkdir -p "$snapshot"
+          rc=0
+          LC_ALL=C security default-keychain -d user > "$snapshot/default-before" 2>&1 || rc=$?
+          printf '%s\n' "$rc" > "$snapshot/status-before"
+          security list-keychains -d user > "$snapshot/list-before"
+
+      - name: Checkout reviewed proof harness
+        uses: actions/checkout@v4
+        with:
+          repository: dashpay/platform
+          ref: ${{ github.sha }}
+          path: native-swift-harness
+          sparse-checkout: .github/ci-recovery/swift-keychain.patch
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Checkout exact reviewed PR head
+        uses: actions/checkout@v4
+        with:
+          repository: dashpay/platform
+          ref: ${{ matrix.sha }}
+          path: native-swift-pr-${{ matrix.pr }}
+          persist-credentials: false
+
+      - name: Verify exact source and apply only the proven keychain repair
+        working-directory: native-swift-pr-${{ matrix.pr }}
+        env:
+          EXPECTED_SHA: ${{ matrix.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+          patch="$GITHUB_WORKSPACE/native-swift-harness/.github/ci-recovery/swift-keychain.patch"
+          git apply --check "$patch"
+          git apply "$patch"
+          test "$(git diff --name-only)" = packages/swift-sdk/run_tests.sh
+          bash -n packages/swift-sdk/run_tests.sh
+          git diff --stat
+          printf 'Exact PR source: %s; only reviewed keychain setup/cleanup overlaid.\n' "$EXPECTED_SHA"
+
+      # Rust + Cargo cache to speed up FFI build
+      - name: Set up Rust toolchain (stable)
+        # Composite actions choose their own shell and do not inherit the
+        # quoted script path above. Keep setup here for space-safe execution.
+        env:
+          RUSTUP_PERMIT_COPY_RENAME: "1"
+        run: |
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          export PATH="$CARGO_HOME/bin:$PATH"
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused \
+              --location --silent --show-error --fail https://sh.rustup.rs \
+              | sh -s -- --default-toolchain none --no-modify-path -y
+          fi
+          rustup toolchain install stable --profile minimal --no-self-update \
+            --target aarch64-apple-ios --target aarch64-apple-ios-sim
+          {
+            echo "CARGO_HOME=$CARGO_HOME"
+            echo "RUSTUP_TOOLCHAIN=stable"
+            echo "CARGO_INCREMENTAL=${CARGO_INCREMENTAL-0}"
+            echo "CARGO_TERM_COLOR=${CARGO_TERM_COLOR-always}"
+          } >> "$GITHUB_ENV"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          rustc +stable --version --verbose
+
+      - name: Restore cargo registry cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles(format('native-swift-pr-{0}/Cargo.lock', matrix.pr)) }}
+          restore-keys: |
+            cargo-registry-
+
+      - name: Restore cached Protobuf (protoc)
+        id: cache-protoc
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+
+      - name: Install Protobuf (protoc) if cache miss
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          VERSION=32.0
+          OS=osx-universal_binary
+          PROTOC_DIR="$HOME/.local/protoc-${VERSION}"
+          mkdir -p "$PROTOC_DIR"
+          curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
+            -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${VERSION}/protoc-${VERSION}-${OS}.zip"
+          unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
+
+      - name: Save cached Protobuf (protoc)
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+
+      - name: Verify protoc and export env
+        run: |
+          set -euxo pipefail
+          echo "$HOME/.local/protoc-32.0/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=$HOME/.local/protoc-32.0/bin/protoc" >> "$GITHUB_ENV"
+          "$HOME/.local/protoc-32.0/bin/protoc" --version
+
+      - name: Build and test exact Swift SDK and example app
+        working-directory: native-swift-pr-${{ matrix.pr }}
+        env:
+          # Bound intermediates only inside this isolated checkout; never delete
+          # another checkout, native runner workspace, or global DerivedData.
+          PRUNE_CARGO_TARGETS: "1"
+          CARGO_BUILD_JOBS: "2"
+          PROOF_PR: ${{ matrix.pr }}
+        run: |
+          log_dir="$RUNNER_TEMP/swift-followup-$GITHUB_RUN_ID-$PROOF_PR"
+          mkdir -p "$log_dir"
+          bash packages/swift-sdk/run_tests.sh 2>&1 | tee "$log_dir/build-test.log"
+
+      - name: Capture isolated asset compiler diagnostics on failure
+        if: failure()
+        working-directory: native-swift-pr-${{ matrix.pr }}
+        env:
+          PROOF_PR: ${{ matrix.pr }}
+        run: |
+          log_dir="$RUNNER_TEMP/swift-followup-$GITHUB_RUN_ID-$PROOF_PR"
+          mkdir -p "$log_dir/asset-output"
+          xcodebuild -version > "$log_dir/xcode-version.log" 2>&1
+          set +e
+          xcrun actool packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/Assets.xcassets \
+            --compile "$log_dir/asset-output" \
+            --output-format human-readable-text --notices --warnings \
+            --output-partial-info-plist "$log_dir/asset-info.plist" \
+            --app-icon AppIcon --accent-color AccentColor --compress-pngs \
+            --enable-on-demand-resources YES --development-region en \
+            --target-device iphone --target-device ipad \
+            --minimum-deployment-target 18.5 --platform iphonesimulator \
+            > "$log_dir/actool.log" 2>&1
+          status=$?
+          printf 'Standalone actool diagnostic exit: %s\n' "$status"
+          cat "$log_dir/actool.log"
+
+      - name: Verify original keychain preferences restored
+        if: always()
+        run: |
+          set -euo pipefail
+          snapshot="$RUNNER_TEMP/swift-followup-keychain-$GITHUB_RUN_ID-${{ matrix.pr }}"
+          rc=0
+          LC_ALL=C security default-keychain -d user > "$snapshot/default-after" 2>&1 || rc=$?
+          printf '%s\n' "$rc" > "$snapshot/status-after"
+          security list-keychains -d user > "$snapshot/list-after"
+          cmp "$snapshot/status-before" "$snapshot/status-after"
+          cmp "$snapshot/default-before" "$snapshot/default-after"
+          cmp "$snapshot/list-before" "$snapshot/list-after"
+          echo 'Original default-keychain and search-list state restored.'
+
+      - name: Preserve native proof logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-native-pr-${{ matrix.pr }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/swift-followup-${{ github.run_id }}-${{ matrix.pr }}/*.log
+          if-no-files-found: ignore
+          retention-days: 7
