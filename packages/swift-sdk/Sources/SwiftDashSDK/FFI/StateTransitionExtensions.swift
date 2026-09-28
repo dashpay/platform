@@ -372,8 +372,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        errorString, ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -430,8 +432,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        errorString, ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -604,8 +608,9 @@ extension SDK {
                         String(cString: error.pointee.message) : "Failed to put document to platform"
                     print("❌ [DOCUMENT CREATE] Platform submission failed: \(errorString)")
                     print("⏱️ [DOCUMENT CREATE] Total operation time: \(Date().timeIntervalSince(startTime)) seconds")
+                    let failure = SDKError.stateTransitionFailure(errorString, ffiError: error.pointee)
                     dash_sdk_error_free(error)
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    continuation.resume(throwing: failure)
                 } else if putResult.data_type == DashSDKFFI.String,
                           let jsonData = putResult.data {
                     // Parse the returned JSON
@@ -797,8 +802,9 @@ extension SDK {
                 if let error = replaceResult.error {
                     print("❌ [DOCUMENT REPLACE] Replace failed after \(replaceTime) seconds")
                     let errorString = String(cString: error.pointee.message)
+                    let failure = SDKError.stateTransitionFailure(errorString, ffiError: error.pointee)
                     dash_sdk_error_free(error)
-                    continuation.resume(throwing: SDKError.internalError(errorString))
+                    continuation.resume(throwing: failure)
                 } else if replaceResult.data_type == DashSDKFFI.ResultDocumentHandle,
                           let resultHandle = replaceResult.data {
                     // Document was successfully replaced
@@ -889,8 +895,10 @@ extension SDK {
 
                     if let error = result.error {
                         let errorMessage = String(cString: error.pointee.message)
+                        let failure = SDKError.stateTransitionFailure(
+                            errorMessage, ffiError: error.pointee, otherwise: SDKError.protocolError)
                         dash_sdk_error_free(error)
-                        throw SDKError.protocolError(errorMessage)
+                        throw failure
                     }
 
                     let totalTime = Date().timeIntervalSince(startTime)
@@ -1036,7 +1044,8 @@ extension SDK {
                     let errorMsg = String(cString: error.message)
                     dash_sdk_error_free(transitionResult.error)
                     print("❌ [DOCUMENT TRANSFER] Failed to create transition: \(errorMsg)")
-                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    continuation.resume(throwing: SDKError.stateTransitionFailure(
+                        errorMsg, ffiError: error, otherwise: SDKError.protocolError))
                     return
                 }
 
@@ -1080,7 +1089,8 @@ extension SDK {
                     }
 
                     print("❌ [DOCUMENT TRANSFER] Broadcast failed: \(errorMsg)")
-                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    continuation.resume(throwing: SDKError.stateTransitionFailure(
+                        errorMsg, ffiError: error, otherwise: SDKError.protocolError))
                     return
                 }
 
@@ -1223,7 +1233,8 @@ extension SDK {
                     let errorMsg = String(cString: error.message)
                     dash_sdk_error_free(updateResult.error)
                     print("❌ [DOCUMENT UPDATE PRICE] Failed: \(errorMsg)")
-                    continuation.resume(throwing: SDKError.protocolError(errorMsg))
+                    continuation.resume(throwing: SDKError.stateTransitionFailure(
+                        errorMsg, ffiError: error, otherwise: SDKError.protocolError))
                     return
                 }
 
@@ -1360,13 +1371,15 @@ extension SDK {
 
                 if let error = result.error {
                     let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Document purchase failed: \(errorMessage)", ffiError: error.pointee)
                     dash_sdk_error_free(error)
 
                     print("❌ [DOCUMENT PURCHASE] Failed: \(errorMessage)")
                     let totalTime = Date().timeIntervalSince(startTime)
                     print("❌ [DOCUMENT PURCHASE] Total time: \(totalTime) seconds")
 
-                    continuation.resume(throwing: SDKError.internalError("Document purchase failed: \(errorMessage)"))
+                    continuation.resume(throwing: failure)
                     return
                 }
 
@@ -1608,8 +1621,10 @@ extension SDK {
                         String(cString: result.error!.pointee.message) : "Unknown error"
                     let errorCode = result.error?.pointee.code.rawValue ?? 0
                     print("❌ TOKEN MINT: Failed with error code \(errorCode): \(errorString)")
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token mint failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token mint failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -1740,8 +1755,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token freeze failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token freeze failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -1872,8 +1889,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token unfreeze failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token unfreeze failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -1992,8 +2011,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token burn failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token burn failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -2124,8 +2145,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token destroy frozen funds failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token destroy frozen funds failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -2251,8 +2274,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token claim failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token claim failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -2380,8 +2405,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token transfer failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token transfer failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -2520,8 +2547,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    let failure = SDKError.stateTransitionFailure(
+                        "Token set price failed: \(errorString)", ffiError: result.error?.pointee)
                     dash_sdk_error_free(result.error)
-                    continuation.resume(throwing: SDKError.internalError("Token set price failed: \(errorString)"))
+                    continuation.resume(throwing: failure)
                 }
             }
         }
