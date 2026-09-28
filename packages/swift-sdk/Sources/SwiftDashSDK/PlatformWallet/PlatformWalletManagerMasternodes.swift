@@ -358,84 +358,29 @@ extension PlatformWalletManager {
         }.value
     }
 
-    /// What the synced masternode list shows for a masternode's service,
-    /// to prefill the update-service form. A hint only: show every value
-    /// and have the user confirm or correct it before building the
-    /// `MasternodeServiceConfirmation` an update-service call takes. The
-    /// list does not carry an evonode's platform P2P port, so that one is
-    /// always entered.
-    ///
-    /// `poseBanned` lets the form warn when the node looks healthy; the
-    /// update itself never refuses on it. Throws `.notFound` when the list
-    /// has no such masternode and `.masternodeListUnavailable` before the
-    /// list has synced. Local; no network.
-    public func masternodeUpdateServiceSuggestion(
-        proTxHash: Data
-    ) async throws -> MasternodeServiceSuggestion {
-        guard isConfigured, handle != NULL_HANDLE, proTxHash.count == 32 else {
-            throw PlatformWalletError.invalidParameter(
-                "Manager not configured, or proTxHash not 32 bytes")
-        }
-
-        let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) { () -> MasternodeServiceSuggestion in
-            var out = MasternodeServiceSuggestionFFI()
-            let ffiResult = proTxHash.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
-                platform_wallet_manager_masternode_update_service_suggestion(
-                    handle,
-                    raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    &out
-                )
-            }
-            // Rust heap-allocates the address string on success; copy it
-            // into Swift and free it on every path.
-            defer {
-                if out.service_address != nil {
-                    platform_wallet_string_free(out.service_address)
-                }
-            }
-            let result = PlatformWalletResult(ffiResult)
-            guard result.isSuccess else {
-                throw PlatformWalletError(result: result)
-            }
-            return MasternodeServiceSuggestion(
-                serviceAddress: out.service_address.map { String(cString: $0) },
-                isEvonode: out.is_evonode,
-                platformNodeId: out.has_platform_node_id
-                    ? withUnsafeBytes(of: &out.platform_node_id) { Data($0) }
-                    : nil,
-                platformHTTPPort: out.has_platform_http_port ? out.platform_http_port : nil,
-                poseBanned: out.pose_banned,
-                hasExtendedNetInfo: out.has_extended_net_info
-            )
-        }.value
-    }
-
-    /// Update service (which also unbans): broadcast a ProUpServTx
-    /// asserting the service values the user confirmed for this
-    /// wallet-owned masternode, which revives it if it is PoSe-banned.
-    /// Pure bridge: the whole orchestration (list lookup, operator-key
-    /// derive + match, registration check, payout rule, funding, BLS
+    /// Unban / update-service: broadcast a ProUpServTx re-asserting this
+    /// wallet-owned masternode's current service values — which revives it
+    /// if it is PoSe-banned. Pure bridge — the whole orchestration (list
+    /// lookup, operator-key derive + match, payout rule, funding, BLS
     /// payload sign, input sign, broadcast) lives in `platform-wallet`
     /// behind this one FFI call, per CLAUDE.md.
     ///
     /// - `operatorKeyIndex`: the wallet's operator-key index for this
-    ///   masternode, the record's `operatorKeyIndex` join field.
-    /// - `service`: the confirmed service values; the payload carries these,
-    ///   not the masternode list's entry. Prefill them from
-    ///   `masternodeUpdateServiceSuggestion(proTxHash:)`.
+    ///   masternode — the record's `operatorKeyIndex` join field.
+    /// - `platformP2PPort`: required for an evonode (the masternode list
+    ///   does not carry it); must be nil for a regular masternode.
     /// - `operatorPayoutAddress`: must be nil when the masternode's
     ///   registered `operatorReward` is 0, and must be given when it is
-    ///   not; the payload REPLACES the operator payout script on-chain.
+    ///   not — the payload REPLACES the operator payout script on-chain.
     ///
     /// Returns the ProUpServTx txid (32 wire-order bytes). A
     /// `.transactionBroadcastUnconfirmed` error means the outcome is
-    /// ambiguous: never retry; the wallet reconciles through sync.
+    /// ambiguous — never retry; the wallet reconciles through sync.
     public func masternodeUpdateService(
         walletId: Data,
         proTxHash: Data,
         operatorKeyIndex: UInt32,
-        service: MasternodeServiceConfirmation,
+        platformP2PPort: UInt16? = nil,
         operatorPayoutAddress: String? = nil
     ) async throws -> Data {
         guard isConfigured, handle != NULL_HANDLE,
@@ -444,7 +389,6 @@ extension PlatformWalletManager {
             throw PlatformWalletError.invalidParameter(
                 "Manager not configured, or wallet id / proTxHash not 32 bytes")
         }
-        try service.validateShape()
 
         let handle = self.handle
         return try await Task.detached(priority: .userInitiated) { () -> Data in
@@ -465,27 +409,23 @@ extension PlatformWalletManager {
             let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
                 walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
                     proTxHash.withUnsafeBytes { (ptRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
-                        service.withFFIArguments { (cAddress, nodeId, p2pPort, httpPort) -> PlatformWalletFFIResult in
-                            func call(_ payoutPtr: UnsafePointer<CChar>?) -> PlatformWalletFFIResult {
-                                platform_wallet_manager_masternode_update_service(
-                                    handle,
-                                    widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                                    ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                                    operatorKeyIndex,
-                                    cAddress,
-                                    nodeId,
-                                    p2pPort,
-                                    httpPort,
-                                    payoutPtr,
-                                    resolver.handle,
-                                    &txidTuple
-                                )
-                            }
-                            if let operatorPayoutAddress {
-                                return operatorPayoutAddress.withCString { call($0) }
-                            }
-                            return call(nil)
+                        func call(_ payoutPtr: UnsafePointer<CChar>?) -> PlatformWalletFFIResult {
+                            platform_wallet_manager_masternode_update_service(
+                                handle,
+                                widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                operatorKeyIndex,
+                                platformP2PPort != nil,
+                                platformP2PPort ?? 0,
+                                payoutPtr,
+                                resolver.handle,
+                                &txidTuple
+                            )
                         }
+                        if let operatorPayoutAddress {
+                            return operatorPayoutAddress.withCString { call($0) }
+                        }
+                        return call(nil)
                     }
                 }
             }
@@ -497,20 +437,20 @@ extension PlatformWalletManager {
         }.value
     }
 
-    /// Prepare, but do not broadcast, the same ProUpServTx
+    /// Prepare — but do not broadcast — the same ProUpServTx
     /// `masternodeUpdateService` would send, so the host can show the
     /// transaction before the user commits to it.
     ///
     /// The returned token owns a signed transaction whose inputs are
     /// reserved: broadcast it with
     /// `ManagedCoreWallet.broadcastTransactionWithOutcome(_:)`, or let it
-    /// deinit, which abandons it and releases the reservation. Its `fee`
+    /// deinit — which abandons it and releases the reservation. Its `fee`
     /// and `serializedData()` describe exactly what a broadcast would send.
     public func masternodePrepareUpdateService(
         walletId: Data,
         proTxHash: Data,
         operatorKeyIndex: UInt32,
-        service: MasternodeServiceConfirmation,
+        platformP2PPort: UInt16? = nil,
         operatorPayoutAddress: String? = nil
     ) async throws -> FinalizedCoreTransaction {
         guard isConfigured, handle != NULL_HANDLE,
@@ -519,7 +459,6 @@ extension PlatformWalletManager {
             throw PlatformWalletError.invalidParameter(
                 "Manager not configured, or wallet id / proTxHash not 32 bytes")
         }
-        try service.validateShape()
 
         let handle = self.handle
         // Only the raw handle crosses the task boundary; the owning token is
@@ -530,27 +469,23 @@ extension PlatformWalletManager {
             let ffiResult = withExtendedLifetime(resolver) { () -> PlatformWalletFFIResult in
                 walletId.withUnsafeBytes { (widRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
                     proTxHash.withUnsafeBytes { (ptRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
-                        service.withFFIArguments { (cAddress, nodeId, p2pPort, httpPort) -> PlatformWalletFFIResult in
-                            func call(_ payoutPtr: UnsafePointer<CChar>?) -> PlatformWalletFFIResult {
-                                platform_wallet_manager_masternode_prepare_update_service(
-                                    handle,
-                                    widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                                    ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                                    operatorKeyIndex,
-                                    cAddress,
-                                    nodeId,
-                                    p2pPort,
-                                    httpPort,
-                                    payoutPtr,
-                                    resolver.handle,
-                                    &outHandle
-                                )
-                            }
-                            if let operatorPayoutAddress {
-                                return operatorPayoutAddress.withCString { call($0) }
-                            }
-                            return call(nil)
+                        func call(_ payoutPtr: UnsafePointer<CChar>?) -> PlatformWalletFFIResult {
+                            platform_wallet_manager_masternode_prepare_update_service(
+                                handle,
+                                widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                ptRaw.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                                operatorKeyIndex,
+                                platformP2PPort != nil,
+                                platformP2PPort ?? 0,
+                                payoutPtr,
+                                resolver.handle,
+                                &outHandle
+                            )
                         }
+                        if let operatorPayoutAddress {
+                            return operatorPayoutAddress.withCString { call($0) }
+                        }
+                        return call(nil)
                     }
                 }
             }
@@ -562,112 +497,6 @@ extension PlatformWalletManager {
         }.value
 
         return try FinalizedCoreTransaction(handle: transactionHandle)
-    }
-}
-
-/// The service values an update-service ProUpServTx asserts, as the user
-/// confirmed them. The payload is built from these values alone.
-///
-/// `PlatformWalletManager.masternodeUpdateServiceSuggestion(proTxHash:)`
-/// offers what the synced masternode list shows to prefill a form; that is a
-/// hint, so show every value and let the user confirm or correct it before
-/// building this. The shape (regular or evonode) must match how the
-/// masternode was registered; the update refuses a mismatch.
-public struct MasternodeServiceConfirmation: Sendable, Equatable {
-    /// Core P2P endpoint as `"a.b.c.d:port"`. IPv4, and the port is
-    /// required.
-    public let serviceAddress: String
-    /// The evonode platform fields; `nil` for a regular masternode.
-    public let evonode: EvonodePlatformService?
-
-    public init(serviceAddress: String, evonode: EvonodePlatformService? = nil) {
-        self.serviceAddress = serviceAddress
-        self.evonode = evonode
-    }
-
-    /// The Swift-side shape check the FFI relies on: an evonode's node id
-    /// must be 20 bytes, since an empty `Data` would reach Rust as a null
-    /// pointer, which means a regular masternode.
-    func validateShape() throws {
-        if let evonode, evonode.platformNodeId.count != 20 {
-            throw PlatformWalletError.invalidParameter(
-                "the platform node id must be 20 bytes")
-        }
-    }
-
-    /// Calls `body` with the C views the update-service externs take: the
-    /// address as a C string, then the node id (null for a regular
-    /// masternode) and the two platform ports (0 for a regular masternode).
-    /// Call `validateShape()` first.
-    func withFFIArguments<R>(
-        _ body: (UnsafePointer<CChar>, UnsafePointer<UInt8>?, UInt16, UInt16) -> R
-    ) -> R {
-        serviceAddress.withCString { cAddress in
-            guard let evonode else {
-                return body(cAddress, nil, 0, 0)
-            }
-            return evonode.platformNodeId.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> R in
-                body(
-                    cAddress,
-                    raw.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                    evonode.platformP2PPort,
-                    evonode.platformHTTPPort
-                )
-            }
-        }
-    }
-}
-
-/// The platform fields of an evonode's update-service payload.
-public struct EvonodePlatformService: Sendable, Equatable {
-    /// Tenderdash node id, 20 bytes.
-    public let platformNodeId: Data
-    /// Tenderdash P2P port. The masternode list does not carry it.
-    public let platformP2PPort: UInt16
-    /// Platform HTTP (DAPI) port.
-    public let platformHTTPPort: UInt16
-
-    public init(platformNodeId: Data, platformP2PPort: UInt16, platformHTTPPort: UInt16) {
-        self.platformNodeId = platformNodeId
-        self.platformP2PPort = platformP2PPort
-        self.platformHTTPPort = platformHTTPPort
-    }
-}
-
-/// What the synced masternode list shows for a masternode's service. See
-/// `PlatformWalletManager.masternodeUpdateServiceSuggestion(proTxHash:)`:
-/// a prefill hint the user confirms, never a payload source.
-public struct MasternodeServiceSuggestion: Sendable, Equatable {
-    /// `"ip:port"` of the Core P2P endpoint the list shows; `nil` for Tor /
-    /// I2P / domain-only entries.
-    public let serviceAddress: String?
-    /// The list shows an evonode entry.
-    public let isEvonode: Bool
-    /// Tenderdash node id (20 bytes), evonodes only.
-    public let platformNodeId: Data?
-    /// Platform HTTP (DAPI) port, evonodes only.
-    public let platformHTTPPort: UInt16?
-    /// The list shows the masternode PoSe-banned. When false, the form may
-    /// warn that the node looks healthy; updating it is still allowed.
-    public let poseBanned: Bool
-    /// The list shows v3 extended network info, which the update refuses
-    /// (a version-2 payload would replace the whole endpoint map).
-    public let hasExtendedNetInfo: Bool
-
-    public init(
-        serviceAddress: String?,
-        isEvonode: Bool,
-        platformNodeId: Data?,
-        platformHTTPPort: UInt16?,
-        poseBanned: Bool,
-        hasExtendedNetInfo: Bool
-    ) {
-        self.serviceAddress = serviceAddress
-        self.isEvonode = isEvonode
-        self.platformNodeId = platformNodeId
-        self.platformHTTPPort = platformHTTPPort
-        self.poseBanned = poseBanned
-        self.hasExtendedNetInfo = hasExtendedNetInfo
     }
 }
 
