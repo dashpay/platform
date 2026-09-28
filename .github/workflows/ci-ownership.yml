@@ -1,0 +1,83 @@
+name: Assign CI owner
+
+# Assignment gives the CI maintainer early responsibility and notifications,
+# including on drafts. Review invitations and approvals remain with PR Hygiene;
+# the centrally generated, intentionally empty CODEOWNERS file is unchanged.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  assign:
+    if: github.repository == 'dashpay/platform'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # Never check out or execute pull-request code with this write token.
+      - name: Assign ktechmidas when CI infrastructure changes
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const owner = 'ktechmidas';
+            const params = { ...context.repo, pull_number: context.issue.number };
+            const { data: pr } = await github.rest.pulls.get(params);
+            const assigned = (assignees) => assignees.some(
+              (user) => user.login.toLowerCase() === owner
+            );
+            if (pr.state !== 'open' || assigned(pr.assignees)) {
+              return;
+            }
+
+            const directories = [
+              '.github/', '.cargo/', '.devcontainer/', 'ci/', 'scripts/',
+              'packages/scripts/', 'packages/dapi-grpc/scripts/',
+              'packages/swift-sdk/scripts/', 'packages/swift-sdk/SwiftExampleApp/Scripts/',
+              'packages/wasm-dpp/scripts/',
+              'packages/wasm-dpp2/scripts/', 'packages/wasm-drive-verify/scripts/',
+              'packages/wasm-sdk/scripts/',
+            ];
+            const buildConfiguration = new Set([
+              'Dockerfile', '.dockerignore', '.codecov.yml', '.coderabbit.yaml',
+              '.pre-commit-config.yaml', '.yarnrc.yml', 'yarn.config.cjs',
+              'rust-toolchain.toml', 'package.json', 'Cargo.toml',
+              'packages/platform-test-suite/bin/test.sh',
+            ]);
+            const isCI = (path) => path && (
+              directories.some((directory) => path.startsWith(directory)) ||
+              buildConfiguration.has(path) ||
+              // Package-level build, test, packaging and release entry points.
+              /^packages\/[^/]+\/(?:build|setup_.*build|verify_build|run_(?:integration_)?tests|release|publish|pack)(?:[._-][^/]*)?\.sh$/.test(path)
+            );
+
+            // API pagination avoids the 300-file limit of Actions path filters.
+            // Include the previous name so moving a file out of CI still routes.
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...params, per_page: 100,
+            });
+            const incomplete = files.length < pr.changed_files;
+            if (incomplete) {
+              // GitHub caps this endpoint at 3,000 files. Route conservatively
+              // rather than silently overlooking CI in an incomplete diff.
+              core.warning('Incomplete PR file list; assigning the CI owner.');
+            }
+            if (!incomplete && !files.some(
+              (file) => isCI(file.filename) || isCI(file.previous_filename)
+            )) {
+              core.info('No CI infrastructure changes.');
+              return;
+            }
+
+            // Adding an assignee preserves everyone already assigned. Do not
+            // remove this owner if a later push drops CI files from the diff.
+            const { data: updated } = await github.rest.issues.addAssignees({
+              ...context.repo,
+              issue_number: pr.number,
+              assignees: [owner],
+            });
+            if (!assigned(updated.assignees)) {
+              throw new Error('GitHub did not assign ' + owner + '; check repository access.');
+            }
+            core.info('Assigned CI responsibility to ' + owner + '.');
