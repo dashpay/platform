@@ -2,6 +2,8 @@ name: CI recovery proof - Pasta native Swift
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ci/platform-ci-recovery-proof-20260928]
 
 jobs:
   swift-sdk-build:
