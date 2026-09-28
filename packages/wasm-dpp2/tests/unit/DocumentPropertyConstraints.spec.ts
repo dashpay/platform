@@ -358,6 +358,65 @@ describe('DataContract: propertyConstraints (v14)', () => {
         .to.deep.include({ rule: 'secureUrl', violation: 'NotMet' });
     });
 
+    it('should check ifThen, ifThenElse, notIn, min, max and abs', () => {
+      const contract = buildContract({
+        order: {
+          type: 'object',
+          properties: {
+            price: { type: 'integer', minimum: 0, position: 0 },
+            fee: { type: 'integer', minimum: 0, position: 1 },
+            discount: { type: 'integer', minimum: 0, position: 2 },
+          },
+          required: ['price', 'fee'],
+          additionalProperties: false,
+          propertyConstraints: {
+            discountNeedsPrice: {
+              ifThen: [{ greaterThan: ['discount', 0] }, { greaterThanOrEqual: ['price', 100] }],
+            },
+            feeCapped: { lessThanOrEqual: ['fee', { max: [10, { divide: ['price', 10] }] }] },
+            feeNotBanned: { notIn: ['fee', [7, 13]] },
+            feeTiers: {
+              ifThenElse: [
+                { greaterThanOrEqual: ['price', 1000] },
+                { lessThanOrEqual: ['fee', 50] },
+                { lessThanOrEqual: ['fee', 10] },
+              ],
+            },
+            spreadSmall: { lessThanOrEqual: [{ abs: { subtract: ['price', 'fee'] } }, 1000] },
+            termsPositive: { greaterThan: [{ min: ['price', 'fee'] }, 0] },
+          },
+        },
+      });
+      const order = (properties: Record<string, number>) => new wasm.Document({
+        properties,
+        documentTypeName: 'order',
+        dataContractId: contract.id,
+        ownerId,
+        revision: BigInt(1),
+      });
+      const violationOf = (properties: Record<string, number>) => (
+        contract.checkDocumentPropertyConstraints(order(properties))
+      );
+
+      expect(violationOf({ price: 100, fee: 10 })).to.equal(undefined);
+      expect(violationOf({ price: 50, fee: 5, discount: 5 }))
+        .to.deep.include({ rule: 'discountNeedsPrice', violation: 'NotMet' });
+      expect(violationOf({ price: 100, fee: 11 }))
+        .to.deep.include({ rule: 'feeCapped', violation: 'NotMet' });
+      expect(violationOf({ price: 100, fee: 7 }))
+        .to.deep.include({ rule: 'feeNotBanned', violation: 'NotMet' });
+      // Each branch of the ifThenElse
+      expect(violationOf({ price: 1000, fee: 40 })).to.equal(undefined);
+      expect(violationOf({ price: 1000, fee: 60 }))
+        .to.deep.include({ rule: 'feeTiers', violation: 'NotMet' });
+      expect(violationOf({ price: 500, fee: 20 }))
+        .to.deep.include({ rule: 'feeTiers', violation: 'NotMet' });
+      expect(violationOf({ price: 5000, fee: 10 }))
+        .to.deep.include({ rule: 'spreadSmall', violation: 'NotMet' });
+      expect(violationOf({ price: 100, fee: 0 }))
+        .to.deep.include({ rule: 'termsPositive', violation: 'NotMet' });
+    });
+
     it('should report integer literals past Number.MAX_SAFE_INTEGER exactly, as bigint', () => {
       const big = 9007199254740993n; // 2 ** 53 + 1, which a number rounds
       const rules = {
