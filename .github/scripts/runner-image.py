@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.request
 
 MANIFEST = ".github/runner-requirements.json"
+ARM64_MANIFEST = ".github/runner-requirements.arm64.json"
 REPO = "dashpay/platform"
 
 
@@ -28,8 +29,18 @@ def read_manifest(path):
     require(set(manifest) == {"schema", "recipe_revision", "requirements"} and manifest["schema"] == 1,
             "Unsupported requirements manifest")
     require(re.fullmatch(r"[0-9a-f]{40}", manifest["recipe_revision"]), "Pin the image recipe to a full SHA")
-    require(manifest["requirements"]["platform"] == "linux/amd64", "Unsupported image platform")
+    require(manifest["requirements"]["platform"] in ("linux/amd64", "linux/arm64"),
+            "Unsupported image platform")
+    if manifest["requirements"]["platform"] == "linux/arm64":
+        require(manifest["requirements"].get("profile") == "rust", "ARM64 requires the Rust-only profile")
     return manifest
+
+
+def runtime_manifest():
+    # Hosted selector jobs must not select a manifest for the eventual runner.
+    # Only env/verify use the actual job runner's OS and architecture.
+    return ARM64_MANIFEST if (os.environ.get("RUNNER_OS") == "Linux"
+                              and os.environ.get("RUNNER_ARCH") == "ARM64") else MANIFEST
 
 
 def fingerprint(value):
@@ -46,11 +57,11 @@ def api(path):
         return json.load(response)
 
 
-def changed_requirements(pr):
+def changed_requirements(pr, manifest_path=MANIFEST):
     require(pr.get("changed_files", 0) <= 3000, "PR exceeds GitHub's file-list limit; requirements need explicit review")
     for page in range(1, 31):
         files = api(f"pulls/{pr['number']}/files?per_page=100&page={page}")
-        if any(f["filename"] == MANIFEST or f.get("previous_filename") == MANIFEST for f in files):
+        if any(f["filename"] == manifest_path or f.get("previous_filename") == manifest_path for f in files):
             return True
         if len(files) < 100:
             return False
@@ -59,16 +70,20 @@ def changed_requirements(pr):
 
 def export_environment(manifest, output):
     lock = manifest["requirements"]
-    versions, android = lock["versions"], lock["android"]
+    versions = lock["versions"]
     values = {
         "CI_CARGO_LLVM_COV_VERSION": versions["llvm_cov"],
         "CI_CARGO_NEXTEST_VERSION": versions["nextest"],
         "CI_CARGO_MACHETE_VERSION": versions["machete"],
-        "CI_CARGO_NDK_VERSION": versions["cargo_ndk"],
         "CI_PROTOC_VERSION": versions["protoc"], "CI_JAVA_MAJOR": str(lock["java_major"]),
-        "CI_ANDROID_API": str(android["api"]), "CI_ANDROID_NDK": android["ndk"],
-        "CI_ANDROID_BUILD_TOOLS": android["build_tools"],
     }
+    if lock.get("profile", "full") == "full":
+        android = lock["android"]
+        values.update({
+            "CI_CARGO_NDK_VERSION": versions["cargo_ndk"],
+            "CI_ANDROID_API": str(android["api"]), "CI_ANDROID_NDK": android["ndk"],
+            "CI_ANDROID_BUILD_TOOLS": android["build_tools"],
+        })
     require(all(isinstance(value, str) and re.fullmatch(r"[0-9]+(?:[.][0-9]+){0,3}(?:[-+][A-Za-z0-9.-]+)?", value)
                 for value in values.values()), "Versions must be version-pinned, newline-free values")
     with open(output, "a") as handle:
@@ -76,8 +91,18 @@ def export_environment(manifest, output):
             handle.write(f"{key}={value}\n")
 
 
-def select(manifest, kind, output, wait_seconds):
-    fallback = ["self-hosted", {"rust": "rust-ci", "kotlin": "kotlin-ci", "npm": "npm-pr"}[kind]]
+def select(manifest, kind, output, wait_seconds, arch=None, validation=False):
+    require(arch in (None, "", "X64", "ARM64"), "Unsupported runner architecture")
+    require(not arch or kind == "rust", "Architecture selection is only supported for Rust")
+    require(not validation or (kind == "rust" and arch == "ARM64"),
+            "The validation-only pool is for explicitly selected ARM64 Rust jobs")
+    # Linux describes the runner process, not the physical host: ARM64 Linux
+    # containers on Macs remain in this pool; native macOS stays for Swift.
+    fallback = ["self-hosted"] + (["Linux"] if kind == "rust" else [])
+    if arch:
+        fallback.append(arch)
+    fallback.append("rust-ci-validation" if validation else
+                    {"rust": "rust-ci", "kotlin": "kotlin-ci", "npm": "npm-pr"}[kind])
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     requested = event.get("pull_request")
     labels, changed = fallback, False
@@ -85,7 +110,22 @@ def select(manifest, kind, output, wait_seconds):
         pr = api(f"pulls/{requested['number']}")
         head = requested["head"]["sha"]
         require(pr["state"] == "open" and pr["head"]["sha"] == head, "This PR run has been superseded")
-        changed = changed_requirements(pr)
+        changed = changed_requirements(pr, ARM64_MANIFEST if arch == "ARM64" else MANIFEST)
+        if arch == "ARM64":
+            # ARM64 is explicitly provisioned from a published immutable image.
+            # The AMD64/KVM candidate publisher is not ARM64 validation. The
+            # separate ARM64 job verifies its exact lock/recipe on real capacity.
+            if changed:
+                import base64
+                remote = api("contents/" + ARM64_MANIFEST + "?" + urllib.parse.urlencode({"ref": head}))
+                expected = json.loads(base64.b64decode(remote["content"]))
+                require(fingerprint(expected) == fingerprint(read_manifest(ARM64_MANIFEST)),
+                        "Merge-tree ARM64 requirements differ from PR head; rebase before validation")
+            with open(output, "a") as handle:
+                handle.write("labels=" + json.dumps(fallback, separators=(",", ":")) + "\n")
+                handle.write("image_changed=" + str(changed).lower() + "\n")
+            print("Using explicitly provisioned ARM64 image capacity; exact runtime verification is required")
+            return
         if changed:
             # Use the exact PR requirement, not an accidental merge-tree mix
             # after both branches edited this file. Rebase such a PR first.
@@ -127,19 +167,22 @@ def select(manifest, kind, output, wait_seconds):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["env", "verify", "select"])
-    parser.add_argument("--manifest", default=MANIFEST)
+    parser.add_argument("--manifest")
     parser.add_argument("--env", default=os.environ.get("GITHUB_ENV"))
     parser.add_argument("--output", default=os.environ.get("GITHUB_OUTPUT"))
     parser.add_argument("--kind", choices=["rust", "kotlin", "npm"])
+    parser.add_argument("--arch", choices=["", "X64", "ARM64"])
+    parser.add_argument("--validation", action="store_true")
     parser.add_argument("--wait-seconds", type=int, default=7200)
     args = parser.parse_args()
-    manifest = read_manifest(args.manifest)
+    manifest_path = args.manifest or (MANIFEST if args.command == "select" else runtime_manifest())
+    manifest = read_manifest(manifest_path)
     if args.command == "select":
         require(args.kind and args.output, "Runner selection needs kind and output")
-        select(manifest, args.kind, args.output, args.wait_seconds)
+        select(manifest, args.kind, args.output, args.wait_seconds, args.arch, args.validation)
         return
     if args.command == "verify":
-        subprocess.run(["ci-image-contract", "verify", args.manifest], check=True)
+        subprocess.run(["ci-image-contract", "verify", manifest_path], check=True)
     require(args.env, "Environment output file is required")
     export_environment(manifest, args.env)
 
