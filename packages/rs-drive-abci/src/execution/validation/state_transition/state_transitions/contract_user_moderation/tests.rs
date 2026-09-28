@@ -3401,8 +3401,8 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
     setup
         .contract
         .set_config(contract.config().clone().with_moderation(Some(with(|d| {
-            d.join_window = 3_600;
-            d.vote_window = 3_600;
+            d.join_window = 86_400;
+            d.vote_window = 86_400;
         }))));
     let create = setup
         .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
@@ -3436,11 +3436,11 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
     );
 }
 
-/// On mainnet an elected declaration's windows are at least an hour: a window of 3,599
-/// seconds is refused, unpaid, at the create, and 3,600 is accepted. The floor is read from
+/// On mainnet an elected declaration's windows are at least a day: a window of 86,399
+/// seconds is refused, unpaid, at the create, and 86,400 is accepted. The floor is read from
 /// the network the node runs, so every other network takes 0.
 #[tokio::test]
-async fn should_floor_the_election_windows_at_an_hour_on_mainnet() {
+async fn should_floor_the_election_windows_at_a_day_on_mainnet() {
     let mut setup = Setup::new(None).await;
     setup.platform.platform.config.network = Network::Mainnet;
     let transaction = setup.platform.drive.grove.start_transaction();
@@ -3454,8 +3454,8 @@ async fn should_floor_the_election_windows_at_an_hour_on_mainnet() {
         moderation
     };
     for (moderation, what) in [
-        (with_windows(3_599, 3_600), "join window of 3599 seconds"),
-        (with_windows(3_600, 3_599), "vote window of 3599 seconds"),
+        (with_windows(86_399, 86_400), "join window of 86399 seconds"),
+        (with_windows(86_400, 86_399), "vote window of 86399 seconds"),
         (with_windows(0, 0), "join window of 0 seconds"),
     ] {
         setup
@@ -3475,7 +3475,7 @@ async fn should_floor_the_election_windows_at_an_hour_on_mainnet() {
         contract
             .config()
             .clone()
-            .with_moderation(Some(with_windows(3_600, 3_600))),
+            .with_moderation(Some(with_windows(86_400, 86_400))),
     );
     let create = setup
         .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())

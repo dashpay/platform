@@ -314,7 +314,7 @@ pub struct ElectedModerators {
     /// How long, in seconds, applicants may join an election once the first one applied.
     /// At most `SystemLimits::max_contract_moderation_election_window_seconds` (four weeks),
     /// and on mainnet at least
-    /// `SystemLimits::min_mainnet_contract_moderation_election_window_seconds` (one hour);
+    /// `SystemLimits::min_mainnet_contract_moderation_election_window_seconds` (one day);
     /// any other network takes 0. [`DEFAULT_ELECTION_WINDOW_SECONDS`] when the declaration
     /// leaves it out.
     pub join_window: u32,
@@ -662,7 +662,7 @@ mod tests {
         let window_max = limits.max_contract_moderation_election_window_seconds;
         let cool_down_min = limits.min_contract_moderation_challenge_cool_down_seconds;
         let cool_down_max = limits.max_contract_moderation_challenge_cool_down_seconds;
-        assert_eq!(window_min, 3_600);
+        assert_eq!(window_min, 86_400);
         assert_eq!(window_max, 2_419_200);
         assert_eq!(cool_down_min, 1_209_600);
         assert_eq!(cool_down_max, 94_608_000);
@@ -699,7 +699,7 @@ mod tests {
         }
     }
 
-    /// The windows have a floor on mainnet only, one hour: every other network takes 0, and
+    /// The windows have a floor on mainnet only, one day: every other network takes 0, and
     /// its elections resolve in a block or two. The four-week ceiling holds everywhere.
     #[test]
     fn should_floor_the_windows_on_mainnet_only() {
@@ -712,10 +712,10 @@ mod tests {
 
         let on_mainnet = refusal_on(Network::Mainnet, &with_windows(0)).expect("refused");
         assert!(
-            on_mainnet.contains("the join window of 0 seconds is outside 3600 to 2419200 seconds"),
+            on_mainnet.contains("the join window of 0 seconds is outside 86400 to 2419200 seconds"),
             "{on_mainnet}"
         );
-        assert_eq!(refusal_on(Network::Mainnet, &with_windows(3_600)), None);
+        assert_eq!(refusal_on(Network::Mainnet, &with_windows(86_400)), None);
 
         for network in [Network::Testnet, Network::Devnet, Network::Regtest] {
             assert_eq!(

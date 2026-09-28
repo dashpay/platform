@@ -515,7 +515,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     elected by masternodes and evonodes (`ContractModerators::Elected`, a third kind
 ///     beside the owner and an appointed set, in the same config V2). The
 ///     declaration is frozen: the join and vote windows (at most four weeks, at
-///     least one hour on mainnet and 0 elsewhere, one week by default), in
+///     least one day on mainnet and 0 elsewhere, one week by default), in
 ///     seconds and bounded by `SYSTEM_LIMITS_V4`;
 ///     whether the seat can be contested again once a team is seated
 ///     (`seatContestable`, required with no default), and for a contestable

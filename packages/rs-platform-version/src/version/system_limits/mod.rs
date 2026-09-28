@@ -181,7 +181,7 @@ pub struct SystemLimits {
     /// version 14) and never reached before.
     pub max_contract_moderation_reason_documents: u16,
     /// Shortest join window and vote window, in seconds, an elected moderation team
-    /// declaration (`ContractModerators::Elected`) may set on mainnet: one hour. Every other
+    /// declaration (`ContractModerators::Elected`) may set on mainnet: one day. Every other
     /// network has no floor, a window of 0 included, so test elections resolve at once. Read
     /// by the contract's `validate_moderation_config` v0 (protocol version 14) and never
     /// reached before.

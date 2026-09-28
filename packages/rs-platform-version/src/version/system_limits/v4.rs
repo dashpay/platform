@@ -49,7 +49,7 @@ use crate::version::system_limits::SystemLimits;
 ///   text of the reason a ban or a suspension carries is at most 1024 bytes.
 /// * Elected moderation teams (protocol version 14): a contract that declares an elected
 ///   moderation team sets its join window and vote window at most four weeks, and at least
-///   one hour on mainnet (0 is allowed on every other network), and its challenge cool-down
+///   one day on mainnet (0 is allowed on every other network), and its challenge cool-down
 ///   between two weeks and three years, all in seconds.
 /// * Typed array document properties (protocol version 14): a typed array property declares
 ///   `maxItems`, at most 1024 elements (`max_typed_array_items`, backfilled into the
@@ -119,11 +119,11 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_moderation_reason_length: 1024,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
-    min_mainnet_contract_moderation_election_window_seconds: 3_600, // one hour
-    max_contract_moderation_election_window_seconds: 2_419_200,     // four weeks
-    min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
+    min_mainnet_contract_moderation_election_window_seconds: 86_400, // one day
+    max_contract_moderation_election_window_seconds: 2_419_200,      // four weeks
+    min_contract_moderation_challenge_cool_down_seconds: 1_209_600,  // two weeks
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
-    contract_document_restore_window_ms: 604_800_000,               // 7 days
+    contract_document_restore_window_ms: 604_800_000,                // 7 days
     max_contract_moderation_added_moderators: 15,
     max_contenders_per_contest: 1_000,
     max_token_redemption_cycles: 128,
