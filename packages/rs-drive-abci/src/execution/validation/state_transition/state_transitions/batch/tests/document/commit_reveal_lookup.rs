@@ -674,6 +674,34 @@ mod commit_reveal_lookup_tests {
         );
     }
 
+    /// A branch of an expression that fails consumes nothing, even when another
+    /// branch lets the create through: `fallbackClaim` holds through
+    /// `anyOf(allOf(<consuming reveal>, <membership>), identity)`, and a writer
+    /// without a membership is accepted by the identity branch alone.
+    #[tokio::test]
+    async fn should_keep_a_commitment_whose_revealing_branch_failed() {
+        let mut fixture = CommitRevealFixture::new();
+        let salt = [0x51; 32];
+        let preorder = fixture
+            .commit(Who::Mallory, salt, "fallback", COMMIT_TIME_MS)
+            .await;
+
+        let claim = vec![
+            ("label", "fallback".into()),
+            ("preorderSalt", Value::Bytes32(salt)),
+        ];
+        let (_, result) = fixture
+            .create(Who::Mallory, "fallbackClaim", &claim, &[], COMMIT_TIME_MS)
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // The reveal held, but its allOf failed on the membership: the
+        // commitment stays
+        assert!(fixture.preorder_exists(preorder.id()));
+    }
+
     /// The lookup is billed as the document fetch it is, and a reveal that
     /// consumes reports the commitment it consumes; the check runs on a create
     /// only.

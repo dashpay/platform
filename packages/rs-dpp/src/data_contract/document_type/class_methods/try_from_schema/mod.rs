@@ -1571,8 +1571,8 @@ fn parse_document_reference_lookup(
         )
     }) {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "permanentDocument refersTo lookup {unknown:?} is unknown: a lookup takes index, \
-             keys, minimumAgeSeconds and consume"
+            "refersTo lookup {unknown:?} is unknown: a lookup takes index, keys, \
+             minimumAgeSeconds and consume"
         )));
     }
 

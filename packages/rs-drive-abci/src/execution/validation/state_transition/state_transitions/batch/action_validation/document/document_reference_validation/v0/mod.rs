@@ -777,8 +777,13 @@ fn validate_reference_v0(
              enforces",
         )));
     }
+    // The commitments recorded for consumption before this expression: a
+    // branch that fails consumes nothing, even when another branch then lets
+    // the write through
+    let consumed_before = consumed_documents.len();
     let mut result = SimpleConsensusValidationResult::new();
     for operand in operands.operands() {
+        let consumed_before_operand = consumed_documents.len();
         result = validate_reference_v0(
             contract,
             document_type,
@@ -797,16 +802,24 @@ fn validate_reference_v0(
             execution_context,
             platform_version,
         )?;
+        if !result.is_valid() {
+            consumed_documents.truncate(consumed_before_operand);
+        }
         let decided = match combinator {
             ReferenceCombinator::AnyOf => result.is_valid(),
             ReferenceCombinator::AllOf => !result.is_valid(),
         };
         if decided {
+            // An allOf that fails keeps nothing its earlier operands recorded
+            if !result.is_valid() {
+                consumed_documents.truncate(consumed_before);
+            }
             return Ok(result);
         }
     }
     // Every operand was checked: for an anyOf none held and this is the last
-    // one's refusal, for an allOf all held
+    // one's refusal, each operand's records already dropped; for an allOf all
+    // held
     Ok(result)
 }
 
