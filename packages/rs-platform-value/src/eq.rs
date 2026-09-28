@@ -236,8 +236,13 @@ impl Value {
     ///   `number` properties as floats while a transition may carry one as an
     ///   integer. Past 2^53 an integer rounds to the nearest `f64`, as it does
     ///   when stored.
-    /// * A `Map` or an `Array` on either side is not a single value and never
-    ///   compares equal, not even to an equal container.
+    /// * An `Array` whose every element is a `U8` holds the bytes it lists, as
+    ///   [`to_identifier_bytes`](Self::to_identifier_bytes) reads it, so it
+    ///   equals the same bytes carried as bytes, an identifier, or another
+    ///   such array: a transition may carry an identifier or a byte array
+    ///   that way. Any other `Array`, and a `Map` on either side, is not a
+    ///   single value and never compares equal, not even to an equal
+    ///   container.
     /// * Otherwise the two must be the same variant and compare with `==`:
     ///   two `Null`s are equal and a `Null` equals nothing else, text compares
     ///   as text (so `""` is not `"\0"`, though a tree key encodes both as
@@ -246,15 +251,35 @@ impl Value {
     /// A value of any size compares: two equal strings or byte arrays longer
     /// than the 255 bytes a tree key holds are equal.
     pub fn same_scalar_data(&self, other: &Value) -> bool {
+        /// The bytes `value` holds: a bytes-like variant's, or those an array
+        /// of `U8`s lists. `None` for anything else.
+        fn held_bytes(value: &Value) -> Option<Vec<u8>> {
+            match value {
+                Value::Array(items) => items
+                    .iter()
+                    .map(|item| match item {
+                        Value::U8(byte) => Some(*byte),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => value.as_bytes_slice().ok().map(<[u8]>::to_vec),
+            }
+        }
+
         match (self, other) {
-            // 1) a container is no single value
-            (Value::Map(_) | Value::Array(_), _) | (_, Value::Map(_) | Value::Array(_)) => false,
-            // 2) floats by bits, an integer read as the float it converts to
+            // 1) an array is a single value only as the bytes it lists
+            (Value::Array(_), _) | (_, Value::Array(_)) => matches!(
+                (held_bytes(self), held_bytes(other)),
+                (Some(this), Some(that)) if this == that
+            ),
+            // 2) a map is no single value
+            (Value::Map(_), _) | (_, Value::Map(_)) => false,
+            // 3) floats by bits, an integer read as the float it converts to
             (Value::Float(_), _) | (_, Value::Float(_)) => matches!(
                 (self.to_float(), other.to_float()),
                 (Ok(this), Ok(that)) if this.to_bits() == that.to_bits()
             ),
-            // 3) bytes by bytes, integers by value, anything else by `==`
+            // 4) bytes by bytes, integers by value, anything else by `==`
             _ => self.equal_underlying_data(other),
         }
     }
@@ -486,19 +511,42 @@ mod same_scalar_data_tests {
     }
 
     #[test]
-    fn should_never_equate_a_map_or_an_array() {
+    fn should_never_equate_a_map_or_an_array_of_anything_but_bytes() {
         let empty_map = Value::Map(vec![]);
         let one_entry_map = Value::Map(vec![(Value::Text("a".into()), Value::U8(1))]);
-        let empty_array = Value::Array(vec![]);
-        let byte_array = Value::Array(vec![Value::U8(1)]);
+        let wide_integers = Value::Array(vec![Value::U64(1), Value::U64(2)]);
+        let texts = Value::Array(vec![Value::Text("a".into())]);
 
         assert!(!same(&empty_map, &empty_map.clone()));
         assert!(!same(&one_entry_map, &one_entry_map.clone()));
         assert!(one_entry_map.equal_underlying_data(&one_entry_map.clone()));
-        assert!(!same(&empty_array, &empty_array.clone()));
-        assert!(!same(&byte_array, &Value::Bytes(vec![1])));
-        assert!(!same(&byte_array, &Value::Float(1.0)));
+        assert!(!same(&wide_integers, &wide_integers.clone()));
+        assert!(!same(&wide_integers, &Value::Bytes(vec![1, 2])));
+        assert!(!same(&texts, &texts.clone()));
         assert!(!same(&empty_map, &Value::Null));
+        assert!(!same(&empty_map, &Value::Array(vec![])));
+    }
+
+    /// A transition may carry an identifier or a byte array as an array of
+    /// `U8`s, which `to_identifier_bytes` reads as those bytes.
+    #[test]
+    fn should_read_an_array_of_u8_as_the_bytes_it_lists() {
+        let id = [7u8; 32];
+        let listed = Value::Array(id.iter().copied().map(Value::U8).collect());
+
+        assert!(same(&listed, &Value::Identifier(id)));
+        assert!(same(&listed, &Value::Bytes32(id)));
+        assert!(same(&listed, &Value::Bytes(id.to_vec())));
+        assert!(same(&listed, &listed.clone()));
+        assert!(same(&Value::Array(vec![]), &Value::Bytes(vec![])));
+        assert!(!same(&listed, &Value::Identifier([8u8; 32])));
+        assert!(!same(&Value::Array(vec![Value::U8(1)]), &Value::Float(1.0)));
+        assert!(!same(&Value::Array(vec![Value::U8(1)]), &Value::U8(1)));
+        assert!(!same(
+            &Value::Array(vec![Value::U8(97)]),
+            &Value::Text("a".into())
+        ));
+        assert!(!same(&Value::Array(vec![Value::U8(1)]), &Value::Null));
     }
 
     #[test]
