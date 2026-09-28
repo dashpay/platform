@@ -62,8 +62,8 @@
 //! integer property over them, from the count and sum trees their indexes keep
 //! (`{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }`), as the total will
 //! be once the write is done. Consensus reads them before judging the rules
-//! ([`DocumentSystemValues::aggregates`]); a rule reading one it is not given is
-//! not judged.
+//! ([`DocumentSystemValues::aggregates`]), and a total missing there is an
+//! error; a client, which reads none, does not judge a rule reading one.
 //! How the arithmetic treats overflow, division and powers is set out on
 //! [`ConstraintExpression::evaluate`], and how conditions combine on
 //! [`PropertyConstraint::holds`].
@@ -312,9 +312,13 @@ pub struct DocumentSystemValues {
     pub updated_at_core_block_height: Option<CoreBlockHeight>,
     pub transferred_at_core_block_height: Option<CoreBlockHeight>,
     /// The `countOf` and `sumOf` totals the rules read, each as it will be once
-    /// the write is done ([`AggregateRead`]). Consensus reads every one the
-    /// rules judged against the write read; a client gives none.
-    pub aggregates: BTreeMap<AggregateRead, i128>,
+    /// the write is done ([`AggregateRead`]). `None` for a client, which reads
+    /// no state: a rule reading a total is then not judged. `Some` for
+    /// consensus, which reads every total the rules judging the write read, so
+    /// that one missing there is a fault in the code building the write, which
+    /// `validate_property_constraints` reports as an error rather than skip the
+    /// rule ([`PropertyConstraint::unread_aggregate`]).
+    pub aggregates: Option<BTreeMap<AggregateRead, i128>>,
 }
 
 impl DocumentSystemValues {
@@ -341,7 +345,7 @@ impl DocumentSystemValues {
             created_at_core_block_height: Some(block_info.core_height),
             updated_at_core_block_height: Some(block_info.core_height),
             transferred_at_core_block_height: Some(block_info.core_height),
-            aggregates: BTreeMap::new(),
+            aggregates: None,
         }
     }
 
@@ -358,7 +362,7 @@ impl DocumentSystemValues {
             created_at_core_block_height: document.created_at_core_block_height(),
             updated_at_core_block_height: document.updated_at_core_block_height(),
             transferred_at_core_block_height: document.transferred_at_core_block_height(),
-            aggregates: BTreeMap::new(),
+            aggregates: None,
         }
     }
 
@@ -573,9 +577,12 @@ impl ConstraintExpression {
         match self {
             ConstraintExpression::Value(value) => Ok(*value),
             ConstraintExpression::System(property) => Ok(system.value(*property).unwrap_or(0)),
-            ConstraintExpression::Aggregate(read) => {
-                Ok(system.aggregates.get(read).copied().unwrap_or(0))
-            }
+            ConstraintExpression::Aggregate(read) => Ok(system
+                .aggregates
+                .as_ref()
+                .and_then(|aggregates| aggregates.get(read))
+                .copied()
+                .unwrap_or(0)),
             ConstraintExpression::Property { path, if_absent } => {
                 property_value(data, path, *if_absent)
             }
@@ -796,9 +803,24 @@ impl ConstraintExpression {
     /// Whether an aggregate the expression reads depends on the document's
     /// owner ([`AggregateRead::reads_owner`]).
     fn reads_owner(&self) -> bool {
-        let mut reads = Vec::new();
-        self.collect_aggregate_reads(&mut reads);
-        reads.into_iter().any(AggregateRead::reads_owner)
+        match self {
+            ConstraintExpression::Aggregate(read) => read.reads_owner(),
+            ConstraintExpression::Value(_)
+            | ConstraintExpression::Property { .. }
+            | ConstraintExpression::Size { .. }
+            | ConstraintExpression::System(_) => false,
+            ConstraintExpression::Add(operands)
+            | ConstraintExpression::Multiply(operands)
+            | ConstraintExpression::Min(operands)
+            | ConstraintExpression::Max(operands) => {
+                operands.iter().any(ConstraintExpression::reads_owner)
+            }
+            ConstraintExpression::Abs(operand) => operand.reads_owner(),
+            ConstraintExpression::Subtract(left, right)
+            | ConstraintExpression::Divide(left, right)
+            | ConstraintExpression::Modulo(left, right)
+            | ConstraintExpression::Power(left, right) => left.reads_owner() || right.reads_owner(),
+        }
     }
 }
 
@@ -1239,10 +1261,12 @@ impl PropertyConstraint {
             .system_reads()
             .into_iter()
             .any(|property| system.value(property).is_none())
-            || self
-                .aggregate_reads()
-                .into_iter()
-                .any(|read| !system.aggregates.contains_key(read))
+            || self.aggregate_reads().into_iter().any(|read| {
+                !system
+                    .aggregates
+                    .as_ref()
+                    .is_some_and(|aggregates| aggregates.contains_key(read))
+            })
         {
             return None;
         }
@@ -1367,6 +1391,21 @@ impl PropertyConstraint {
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => false,
         }
+    }
+
+    /// A total the rule reads that consensus did not read: `None` unless
+    /// `system` holds consensus's totals (`Some`) and lacks one the rule reads.
+    /// Every write consensus judges reads the totals of the rules it judges, so
+    /// one missing is a fault in the code building the write, not a rule to
+    /// skip.
+    pub fn unread_aggregate<'a>(
+        &'a self,
+        system: &DocumentSystemValues,
+    ) -> Option<&'a AggregateRead> {
+        let aggregates = system.aggregates.as_ref()?;
+        self.aggregate_reads()
+            .into_iter()
+            .find(|read| !aggregates.contains_key(*read))
     }
 
     /// The aggregates the rule reads (`countOf`, `sumOf`), in declared order,

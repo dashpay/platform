@@ -2438,7 +2438,7 @@ fn should_read_the_system_values_the_rule_is_judged_with() {
         created_at_core_block_height: Some(7),
         updated_at_core_block_height: Some(8),
         transferred_at_core_block_height: Some(9),
-        aggregates: BTreeMap::new(),
+        aggregates: None,
     };
     for (index, property) in SystemProperty::ALL.into_iter().enumerate() {
         let expected = i128::try_from(index + 1).expect("small");
@@ -3574,7 +3574,7 @@ fn should_read_an_aggregate_from_the_system_values_and_skip_a_rule_not_given_one
     let read = rule.aggregate_reads()[0].clone();
     let cheap = data(&[("price", Value::U64(5))]);
     let with_total = |total: i128| DocumentSystemValues {
-        aggregates: BTreeMap::from([(read.clone(), total)]),
+        aggregates: Some(BTreeMap::from([(read.clone(), total)])),
         ..DocumentSystemValues::default()
     };
 
@@ -3590,16 +3590,24 @@ fn should_read_an_aggregate_from_the_system_values_and_skip_a_rule_not_given_one
     // The first condition holds, so the total is never compared
     let dear = data(&[("price", Value::U64(5000))]);
     assert_eq!(rule.violation(&dear, &with_total(11)), None);
-    // A total given for another read leaves this rule unjudged
+    // Consensus's totals lacking this one: the rule is not evaluated, and the
+    // missing total is reported, which `validate_property_constraints` turns
+    // into an error; a client's, which reads none, only skips the rule
     let other = DocumentSystemValues {
-        aggregates: BTreeMap::from([(
+        aggregates: Some(BTreeMap::from([(
             AggregateRead {
                 document_type: "listing".to_string(),
                 ..read.clone()
             },
             99,
-        )]),
+        )])),
         ..DocumentSystemValues::default()
     };
     assert_eq!(rule.violation(&cheap, &other), None);
+    assert_eq!(rule.unread_aggregate(&other), Some(&read));
+    assert_eq!(rule.unread_aggregate(&with_total(3)), None);
+    assert_eq!(
+        rule.unread_aggregate(&DocumentSystemValues::default()),
+        None
+    );
 }

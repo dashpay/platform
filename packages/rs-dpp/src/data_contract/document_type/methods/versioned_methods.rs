@@ -4,7 +4,7 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, SystemChange,
+    DocumentSystemValues, PropertyConstraint, SystemChange,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -865,28 +865,49 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
 
     /// `validate_property_constraints` version 0: every rule of the document type's
     /// `propertyConstraints` is evaluated against `data` in name order, and the first one
-    /// broken is reported. A type without rules costs nothing.
+    /// broken is reported. A type without rules costs nothing. A rule reading a total
+    /// consensus did not read ([`PropertyConstraint::unread_aggregate`]) is an error.
     fn validate_property_constraints_v0(
         &self,
         data: &Value,
         system: &DocumentSystemValues,
-    ) -> SimpleConsensusValidationResult
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
     where
         Self: DocumentTypeV2Getters,
     {
         for (name, constraint) in self.property_constraints() {
+            self.expect_every_aggregate_read(name, constraint, system)?;
             if let Some(violation) = constraint.violation(data, system) {
-                return SimpleConsensusValidationResult::new_with_error(
+                return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
                         self.name().clone(),
                         name.clone(),
                         violation,
                     )
                     .into(),
-                );
+                ));
             }
         }
-        SimpleConsensusValidationResult::default()
+        Ok(SimpleConsensusValidationResult::default())
+    }
+
+    /// An error when `system` holds consensus's totals and lacks one the rule `name`
+    /// reads, which would otherwise leave the rule unjudged.
+    fn expect_every_aggregate_read(
+        &self,
+        name: &str,
+        constraint: &PropertyConstraint,
+        system: &DocumentSystemValues,
+    ) -> Result<(), ProtocolError> {
+        match constraint.unread_aggregate(system) {
+            None => Ok(()),
+            Some(read) => Err(ProtocolError::CorruptedCodeExecution(format!(
+                "rule {name} of document type {} reads a {} of {} that consensus did not read",
+                self.name(),
+                read.wire_name(),
+                read.document_type
+            ))),
+        }
     }
 
     /// `validate_property_constraints_for_system_change` version 0: every rule of the
@@ -898,7 +919,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         data: &BTreeMap<String, Value>,
         system: &DocumentSystemValues,
         change: SystemChange,
-    ) -> SimpleConsensusValidationResult
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
     where
         Self: DocumentTypeV2Getters,
     {
@@ -908,22 +929,23 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
             .filter(|(_, constraint)| constraint.reads_change(change))
             .peekable();
         if changed_rules.peek().is_none() {
-            return SimpleConsensusValidationResult::default();
+            return Ok(SimpleConsensusValidationResult::default());
         }
         let data = Value::from(data.clone());
         for (name, constraint) in changed_rules {
+            self.expect_every_aggregate_read(name, constraint, system)?;
             if let Some(violation) = constraint.violation(&data, system) {
-                return SimpleConsensusValidationResult::new_with_error(
+                return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
                         self.name().clone(),
                         name.clone(),
                         violation,
                     )
                     .into(),
-                );
+                ));
             }
         }
-        SimpleConsensusValidationResult::default()
+        Ok(SimpleConsensusValidationResult::default())
     }
 }
 

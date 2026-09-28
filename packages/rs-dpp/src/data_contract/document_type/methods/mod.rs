@@ -716,7 +716,7 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .validate_property_constraints
         {
             None => Ok(SimpleConsensusValidationResult::default()),
-            Some(0) => Ok(self.validate_property_constraints_v0(data, system)),
+            Some(0) => self.validate_property_constraints_v0(data, system),
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_property_constraints".to_string(),
                 known_versions: vec![0],
@@ -758,7 +758,7 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         {
             None => Ok(SimpleConsensusValidationResult::default()),
             Some(0) => {
-                Ok(self.validate_property_constraints_for_system_change_v0(data, system, change))
+                self.validate_property_constraints_for_system_change_v0(data, system, change)
             }
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_property_constraints_for_system_change".to_string(),

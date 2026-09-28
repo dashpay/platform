@@ -9,16 +9,121 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::property_constraints::{AggregateRead, SystemChange};
 use dpp::data_contract::DataContract;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::{Identifier, Value};
+use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A document version a write stores or replaces: its properties and its owner.
-pub(super) struct DocumentVersion<'a> {
-    pub properties: &'a BTreeMap<String, Value>,
-    pub owner_id: Identifier,
+#[derive(Clone, Copy)]
+struct DocumentVersion<'a> {
+    properties: &'a BTreeMap<String, Value>,
+    owner_id: Identifier,
+}
+
+impl<'a> DocumentVersion<'a> {
+    /// `document` as it stands, with its own owner.
+    fn of(document: &'a Document) -> Self {
+        DocumentVersion {
+            properties: document.properties(),
+            owner_id: document.owner_id(),
+        }
+    }
+}
+
+/// Reads the `countOf` and `sumOf` totals the rules judging the write in `result`
+/// read ([`read_property_constraint_aggregates`]) and hands them to its action: a
+/// create or a replace of a document of `writer`'s, stored as `stored` before
+/// (`None` for a create), or a transfer, a purchase or a price update of `stored`,
+/// judged by the rules the change can break. Any other action, a refused write
+/// included, reads nothing.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn attach_property_constraint_aggregates(
+    drive: &Drive,
+    contract: &DataContract,
+    result: &mut ConsensusValidationResult<BatchedTransitionAction>,
+    stored: Option<&Document>,
+    writer: Identifier,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    let Some(BatchedTransitionAction::DocumentAction(action)) = result.data.as_mut() else {
+        return Ok(());
+    };
+    let stored = stored.map(DocumentVersion::of);
+    let mut read = |document_type_name: &str, written: DocumentVersion, change| {
+        read_property_constraint_aggregates(
+            drive,
+            contract,
+            document_type_name,
+            written,
+            stored,
+            change,
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+        )
+    };
+    match action {
+        DocumentTransitionAction::CreateAction(action) => {
+            let written = DocumentVersion {
+                properties: action.data(),
+                owner_id: writer,
+            };
+            let aggregates = read(action.base().document_type_name(), written, None)?;
+            action.set_property_constraint_aggregates(aggregates);
+        }
+        DocumentTransitionAction::ReplaceAction(action) => {
+            let written = DocumentVersion {
+                properties: action.data(),
+                owner_id: writer,
+            };
+            let aggregates = read(action.base().document_type_name(), written, None)?;
+            action.set_property_constraint_aggregates(aggregates);
+        }
+        // The action's document carries its new owner
+        DocumentTransitionAction::TransferAction(action) => {
+            let aggregates = read(
+                action.base().document_type_name(),
+                DocumentVersion::of(action.document()),
+                Some(SystemChange::Transfer),
+            )?;
+            action.set_property_constraint_aggregates(aggregates);
+        }
+        DocumentTransitionAction::PurchaseAction(action) => {
+            let aggregates = read(
+                action.base().document_type_name(),
+                DocumentVersion::of(action.document()),
+                Some(SystemChange::Transfer),
+            )?;
+            action.set_property_constraint_aggregates(aggregates);
+        }
+        DocumentTransitionAction::UpdatePriceAction(action) => {
+            let aggregates = read(
+                action.base().document_type_name(),
+                DocumentVersion::of(action.document()),
+                Some(SystemChange::PriceUpdate),
+            )?;
+            action.set_property_constraint_aggregates(aggregates);
+        }
+        DocumentTransitionAction::DeleteAction(_)
+        | DocumentTransitionAction::IndexOnlyDeleteAction(_) => {}
+    }
+    Ok(())
 }
 
 /// Reads from state the `countOf` and `sumOf` totals the `propertyConstraints` rules of
@@ -41,7 +146,7 @@ pub(super) struct DocumentVersion<'a> {
 ///
 /// [`DocumentSystemValues::aggregates`]: dpp::data_contract::document_type::property_constraints::DocumentSystemValues::aggregates
 #[allow(clippy::too_many_arguments)]
-pub(super) fn read_property_constraint_aggregates(
+fn read_property_constraint_aggregates(
     drive: &Drive,
     contract: &DataContract,
     document_type_name: &str,
