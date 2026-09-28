@@ -605,6 +605,41 @@ mod tests {
         }
 
         #[test]
+        fn should_name_the_family_of_a_code_from_its_range() {
+            use DashSDKConsensusErrorKind as Kind;
+
+            let families = [
+                (10_000, Kind::ConsensusErrorKindBasic),
+                (10_422, Kind::ConsensusErrorKindBasic),
+                (19_999, Kind::ConsensusErrorKindBasic),
+                (20_000, Kind::ConsensusErrorKindSignature),
+                (20_002, Kind::ConsensusErrorKindSignature),
+                (29_999, Kind::ConsensusErrorKindSignature),
+                (30_000, Kind::ConsensusErrorKindFee),
+                (39_999, Kind::ConsensusErrorKindFee),
+                (40_000, Kind::ConsensusErrorKindState),
+                (41_107, Kind::ConsensusErrorKindState),
+                (49_999, Kind::ConsensusErrorKindState),
+            ];
+            for (code, kind) in families {
+                let error = convert(FFIError::SDKError(failed_in_block(code, None)));
+                assert_eq!(error.consensus_code, code);
+                assert_eq!(error.consensus_kind, kind, "code {code}");
+            }
+
+            // A number outside the four families is no consensus code at all.
+            for code in [0, 1, 16, 9_999, 50_000] {
+                let error = convert(FFIError::SDKError(failed_in_block(code, None)));
+                assert_eq!(error.consensus_code, 0, "code {code}");
+                assert_eq!(
+                    error.consensus_kind,
+                    Kind::ConsensusErrorKindNone,
+                    "code {code}"
+                );
+            }
+        }
+
+        #[test]
         fn should_carry_the_code_of_the_last_refusal_once_retries_ran_out() {
             let exhausted = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
                 refused_by_platform(&property_constraint_violated()),
