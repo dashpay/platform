@@ -20,6 +20,7 @@ mod max_bytes;
 mod nft;
 mod owner_balance_proof;
 mod owner_reference;
+mod preallocated_agreement_source;
 mod property_constraints;
 mod ranked_group_drain;
 mod reference_expression;
