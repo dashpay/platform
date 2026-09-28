@@ -34,6 +34,7 @@
 - [Fee System Overview](fees/overview.md)
 - [Platform Address Fees](fees/platform-address-fees.md)
 - [Shielded Transaction Fees](fees/shielded-fees.md)
+- [What a Document Costs](fees/document-cost.md)
 
 # Error Handling
 

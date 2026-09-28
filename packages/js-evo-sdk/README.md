@@ -20,6 +20,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Immutable properties (`immutable`)](#immutable-properties-immutable)
 - [Property constraints (`propertyConstraints`)](#property-constraints-propertyconstraints)
 - [How a document type is stored (`documentTypeLayout`)](#how-a-document-type-is-stored-documenttypelayout)
+- [What a document costs (`documentCreateCost`)](#what-a-document-costs-documentcreatecost)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
 - [Contributing](#contributing)
@@ -472,6 +473,31 @@ const { root } = documentTypeLayout(contract, 'review', new PlatformVersion(14))
 ```
 
 `structureNode` names the layer of Drive's GroveDB structure description it is an instance of, as the [GroveDB structure viewer](https://dashpay.github.io/grovedb-structure-viewer/) shows it (`#/<structureNode>`).
+
+## What a document costs (`documentCreateCost`)
+
+`documentCreateCost(contract, documentTypeName, options, platformVersion)` returns what creating a document of a type costs, in credits (`creditsPerDash` of them make one Dash), computed locally by Drive from the contract:
+
+- `storage`: the bytes the insert writes and their fee, exact, under two scenarios: `newValues` (the first document with these index values creates their trees) and `knownValues` (a later document with the same values adds only its own entries);
+- `indexes`: per index, the bytes of the layers it shares with other indexes and of its own, so its cost on its own is `sharedBytes + ownBytes`;
+- `processing`: the signature and identity fetch (exact) and the work of the writes (estimated for `existingDocuments` stored documents);
+- `contractCharges`: the create's action fee, token cost and contest fund, when the type has them (a contested create is stored in the vote poll until the contest ends; that storage is not priced);
+- `refund`: what a delete refunds, in the same epoch and a year later;
+- `fields`: how the priced document was filled.
+
+The document is built from sizes, not values: by default each variable-size field is at the middle of its bounds and each optional field is present. Pass `fields` to change that:
+
+```ts
+import { documentCreateCost, PlatformVersion } from '@dashevo/evo-sdk';
+
+const cost = documentCreateCost(contract, 'note', {
+  fields: { text: { length: 200 }, mood: { present: false } },
+  existingDocuments: 10_000,
+}, PlatformVersion.latest());
+const dash = cost.totalCredits.newValues / cost.creditsPerDash;
+```
+
+It follows protocol version 14 on; an earlier version is refused. A type whose documents have a `ttl` is priced by lifetime, with no refund.
 
 ## Chained queries (provable semi-join)
 
