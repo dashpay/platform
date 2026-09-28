@@ -31,7 +31,8 @@ pub use tracked::{
     PlatformKeySnapshot, RegistrationDetails, TrackedMasternode, TrackedMasternodeSnapshot,
 };
 pub use update_service::{
-    execute_masternode_update_service, prepare_masternode_update_service,
+    execute_masternode_update_service, masternode_update_service_suggestion, parse_service_address,
+    prepare_masternode_update_service, ConfirmedMasternodeService, MasternodeServiceSuggestion,
     MasternodeUpdateServiceParams,
 };
 
