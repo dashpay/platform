@@ -9,7 +9,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::reference_lookup::owner_can_change;
 use dpp::data_contract::document_type::{
     is_referring_system_agreement_property, DocumentPropertyReferenceTarget,
@@ -1073,10 +1072,13 @@ fn validate_reference_target_v0(
 
             // Property agreement: the referenced document is already in
             // hand for the existence check, so comparing the declared
-            // pairs adds no reads. Each side is normalized through its
-            // OWN document type's key encoding — one deterministic
-            // normal form per value kind, so an identifier stored as
-            // bytes and one carried as an identifier compare equal.
+            // pairs adds no reads. The two sides are compared as values
+            // of the referring side's type, which registration made the
+            // referenced side's kind too, so an identifier stored as bytes
+            // and one carried as an identifier compare equal, as do an
+            // integer carried at one width and stored at another. Not as
+            // tree keys: those map the empty string to `"\0"`'s key and
+            // hold no value past 255 bytes, which no agreement bounds.
             //
             // Absence is part of the agreement, strictly: both sides
             // absent agree, one side absent is a mismatch. Anything
@@ -1089,6 +1091,8 @@ fn validate_reference_target_v0(
             // agreement key triggers a skipIfAbsent index stay
             // consistently absent for untagged targets.
             if let Some(referenced_document) = referenced_document {
+                // The type the writer's `$ownerId` is compared as
+                let writer_identifier_type = DocumentPropertyType::Identifier;
                 for (referring_property, referenced_property) in property_agreement {
                     // A list element's document is the one its `$id` pair
                     // names, fetched by that very id: the pair holds
@@ -1134,8 +1138,8 @@ fn validate_reference_target_v0(
                     // document's own (the pair a list element is found by,
                     // which holds by construction). Contract
                     // registration validated that each faces an identifier
-                    // property on the referring side, and the key serializer
-                    // below already encodes the names as 32-byte identifiers.
+                    // property on the referring side, so the two compare as
+                    // identifiers below.
                     let referenced_value: Option<Cow<Value>> = match referenced_property.as_str() {
                         OWNER_ID => Some(Cow::Owned(Value::Identifier(
                             referenced_document.owner_id().to_buffer(),
@@ -1167,21 +1171,21 @@ fn validate_reference_target_v0(
                             // differing value would be.
                             (Some(_), None) | (None, Some(_)) => return Ok(mismatch()),
                         };
-                    let Ok(referring_encoded) = document_type.serialize_value_for_key(
-                        referring_property,
-                        &referring_value,
-                        platform_version,
-                    ) else {
-                        return Ok(mismatch());
+                    // In place in generation 0, which every table selects: a
+                    // `propertyAgreement` only parses from protocol version
+                    // 14 (`apply_property_reference` 0), so before it no
+                    // document type carries a pair to reach this comparison
+                    let referring_type = if referring_property == OWNER_ID {
+                        &writer_identifier_type
+                    } else {
+                        let Some(referring) =
+                            document_type.flattened_properties().get(referring_property)
+                        else {
+                            return Ok(mismatch());
+                        };
+                        &referring.property_type
                     };
-                    let Ok(referenced_encoded) = referenced_document_type.serialize_value_for_key(
-                        referenced_property,
-                        &referenced_value,
-                        platform_version,
-                    ) else {
-                        return Ok(mismatch());
-                    };
-                    if referring_encoded != referenced_encoded {
+                    if !referring_type.values_are_equal(&referring_value, &referenced_value) {
                         return Ok(mismatch());
                     }
                 }

@@ -1346,6 +1346,27 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     create structure validation 1 leaves the amount to state validation;
 ///     version 0 wants exactly the contest's fund.
 ///
+/// 53. **A `propertyAgreement` pair compares values, and an agreement keying a
+///     preallocated index fits a tree key**: document reference validation 0
+///     judges each pair as two values of the referring property's type
+///     (`DocumentPropertyType::values_are_equal`): strings as text, byte
+///     arrays and identifiers as bytes, integers as numbers, floats as `f64`
+///     bits, booleans as booleans. It compared the two sides' index key
+///     encodings, under which `""` agreed with `"\0"` and two equal values
+///     over 255 bytes, which an unindexed string of 64 characters or more can
+///     hold, were refused (`ReferencedDocumentPropertyMismatchError`, 40127).
+///     Contract create and update state validation 1 refuse, paid, a pair
+///     through which a preallocated index is keyed when its referenced
+///     property can hold a value over 255 bytes
+///     (`ReferencedDocumentPropertyAgreementInvalidError`, 40126): creating a
+///     referenced document writes that value as a tree key, which failed with
+///     an internal error for a value over 255 bytes, and for any value once
+///     the property's midway size, which sized the estimate, passed 255
+///     bytes. `add_document_for_contract_operations` 1 now estimates that
+///     layer from the referring property, as an entry insert does, and
+///     preallocates nothing for a referenced value wider than the referring
+///     property can hold, which no referring document can agree with.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
