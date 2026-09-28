@@ -159,14 +159,12 @@ struct OptionsView: View {
                                     // TODO(platform-wallet): Once
                                     // PlatformWalletManager supports network
                                     // switching cleanly, call into it here.
-                                    do {
-                                        try await walletManager.stopSpv()
-                                    } catch {
-                                        // An incomplete stop can leave the old
-                                        // run loop parked; stay on this network
-                                        // so picking again retries the stop.
-                                        appState.showError(
-                                            message: "Failed to stop SPV, staying on \(appState.currentNetwork.displayName): \(error.localizedDescription)")
+                                    // An incomplete stop can leave the old run
+                                    // loop parked; stay on this network so
+                                    // picking again retries the stop.
+                                    guard await stopSpvForReconfiguration(
+                                        failurePrefix: "Failed to stop SPV, staying on \(appState.currentNetwork.displayName)"
+                                    ) else {
                                         isSwitchingNetwork = false
                                         return
                                     }
@@ -337,13 +335,9 @@ struct OptionsView: View {
                             // start resuming anywhere in it bails.
                             walletManagerStore.invalidatePendingSpvStarts()
                             Task {
-                                do {
-                                    try await walletManager.stopSpv()
-                                } catch {
-                                    appState.showError(
-                                        message: "Failed to stop SPV, so the devnet settings were not applied: \(error.localizedDescription)")
-                                    return
-                                }
+                                guard await stopSpvForReconfiguration(
+                                    failurePrefix: "Failed to stop SPV, so the devnet settings were not applied"
+                                ) else { return }
                                 await appState.switchNetwork(to: .devnet)
                                 // `switchNetwork` rebuilds `appState.sdk` but
                                 // doesn't refresh per-network managers (the
@@ -391,12 +385,8 @@ struct OptionsView: View {
                                 // Stop SPV so the next start picks up the
                                 // new peer config in CoreContentView.
                                 Task {
-                                    do {
-                                        try await walletManager.stopSpv()
-                                    } catch {
-                                        appState.showError(
-                                            message: "Failed to stop SPV, so the new peer setting is not applied yet: \(error.localizedDescription)")
-                                    }
+                                    _ = await stopSpvForReconfiguration(
+                                        failurePrefix: "Failed to stop SPV, so the new peer setting is not applied yet")
                                 }
                             }
                             .help("Connect Core SPV to specific peers (e.g. a local rust-dashcore) instead of the public seed nodes. Restart SPV from the Wallet tab to apply.")
@@ -630,6 +620,22 @@ struct OptionsView: View {
             } message: {
                 Text(logExportError ?? "")
             }
+        }
+    }
+
+    /// Stop SPV before a flow replaces or reconfigures it. Returns false,
+    /// after showing `failurePrefix` with the error, only when the stop may
+    /// have left the old run loop behind. A manager that is not configured,
+    /// or whose shutdown has begun, throws `invalidHandle`: it has nothing to
+    /// stop, so the flow goes ahead.
+    private func stopSpvForReconfiguration(failurePrefix: String) async -> Bool {
+        do {
+            try await walletManager.stopSpv()
+            return true
+        } catch {
+            if case PlatformWalletError.invalidHandle = error { return true }
+            appState.showError(message: "\(failurePrefix): \(error.localizedDescription)")
+            return false
         }
     }
 
