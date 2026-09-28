@@ -1,465 +1,248 @@
-name: Release Platform
-
-on:
-  release:
-    types:
-      - published
+# Operator-admitted exact-head proof. No release/tag/package publishing.
+name: Historical release recovery (build only)
+'on':
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Version (i.e. v0.22.3-pre.2); prefix with npm-test: to run only the NPM release dry-run"
+      source_run_id:
+        description: Original Platform release run whose application SHA must be preserved
+        type: string
         required: true
-      only_drive:
-        type: boolean
-        description: Only build Drive image
-        default: false
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-# Required for NPM publish
+      tag:
+        description: Existing release tag; must match the source run and its SHA
+        type: string
+        required: true
+      kind:
+        description: Build only; no publishing jobs exist
+        type: choice
+        options:
+        - kotlin
+        - npm
+        required: true
 permissions:
-  id-token: write
   contents: read
-
+  actions: read
+concurrency:
+  group: historical-build-${{ inputs.source_run_id }}-${{ inputs.kind }}
+  cancel-in-progress: false
 jobs:
-  build-npm:
-    if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
-    permissions:
-      contents: read
-    # Keep the workflow with its release source. The host controller supplies
-    # a fresh JIT runner bound to this run/attempt, independent of branch name.
-    uses: ./.github/workflows/release-npm-build.yml
-
-  release-npm:
-    name: Publish NPM packages
-    needs: build-npm
-    # npm trusted publishing currently accepts GitHub-hosted runners only.
+  source:
+    if: github.repository == 'dashpay/platform' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/ci/historical-release-recovery-20260928'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+    - name: Resolve immutable historical source
+      id: resolve
+      uses: actions/github-script@v8
+      env:
+        SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        RELEASE_TAG: ${{ inputs.tag }}
+      with:
+        script: |
+          const id = process.env.SOURCE_RUN_ID;
+          if (!/^[1-9][0-9]*$/.test(id)) throw new Error('Expected a numeric historical run ID');
+          const {owner, repo} = context.repo;
+          const {data: run} = await github.rest.actions.getWorkflowRun({owner, repo, run_id: id});
+          if (run.event !== 'release' || run.path !== '.github/workflows/release.yml'
+              || run.repository.full_name !== 'dashpay/platform'
+              || run.head_repository.full_name !== 'dashpay/platform') {
+            throw new Error('Source must be a Platform release run');
+          }
+          const tag = process.env.RELEASE_TAG;
+          if (!/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/.test(tag)
+              || run.head_branch !== tag) throw new Error('Release tag does not match historical run');
+          const {data: release} = await github.rest.repos.getReleaseByTag({owner, repo, tag});
+          if (release.draft) throw new Error('Draft releases are not eligible');
+          let {data: ref} = await github.rest.git.getRef({owner, repo, ref: `tags/${tag}`});
+          let object = ref.object;
+          for (let i=0; object.type === 'tag' && i<5; ++i) {
+            const {data: annotated} = await github.rest.git.getTag({owner, repo, tag_sha: object.sha});
+            object = annotated.object;
+          }
+          if (object.type !== 'commit' || object.sha !== run.head_sha
+              || !/^[a-f0-9]{40}$/.test(run.head_sha)) throw new Error('Source tag moved or is invalid');
+          core.setOutput('sha', run.head_sha);
+          core.setOutput('version', tag.substring(1));
+          core.info(`Recovering ${tag} source ${run.head_sha} from run ${id}; build only`);
+  build:
+    name: Recover ${{ inputs.kind }} from historical source
+    needs: source
+    runs-on:
+      group: platform-release-builds
+      labels:
+      - self-hosted
+      - Linux
+      - X64
+      - platform-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.kind }}
+    timeout-minutes: 180
     permissions:
-      id-token: write
       contents: read
     steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
+    - name: Verify exact disposable recovery worker
+      shell: bash
+      env:
+        KIND: ${{ inputs.kind }}
+      run: |
+        set -euo pipefail
+        test "${DASH_RELEASE_RUNNER:-}" = 1
+        test "${DASH_RELEASE_RUN_ID:-}" = "$GITHUB_RUN_ID"
+        test "${DASH_RELEASE_RUN_ATTEMPT:-}" = "$GITHUB_RUN_ATTEMPT"
+        test "${DASH_RELEASE_KIND:-}" = "$KIND"
+    - name: Checkout historical application source
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.source.outputs.sha }}
+        persist-credentials: false
+    - name: Checkout reviewed CI definitions
+      uses: actions/checkout@v4
+      with:
+        ref: ad99cc12db3b92530336e4fdb7634488133b40dc
+        path: .recovery-ci
+        sparse-checkout: .github
+        persist-credentials: false
+    - name: Apply CI-only overlay and prove source identity
+      shell: bash
+      env:
+        SOURCE_SHA: ${{ needs.source.outputs.sha }}
+        SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        RELEASE_TAG: ${{ inputs.tag }}
+        CI_SHA: ad99cc12db3b92530336e4fdb7634488133b40dc
+      run: |
+        set -euo pipefail
+        test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+        test "$(git -C .recovery-ci rev-parse HEAD)" = "$CI_SHA"
+        rm -rf .github
+        cp -a .recovery-ci/.github .github
+        rm -rf .recovery-ci
+        git diff --exit-code -- . ':!.github'
+        test -z "$(git ls-files --others --exclude-standard -- . ':!.github')"
+        python3 - <<'PY'
+        import json, os
+        from pathlib import Path
+        keys = ('SOURCE_SHA', 'SOURCE_RUN_ID', 'RELEASE_TAG', 'CI_SHA', 'GITHUB_RUN_ID')
+        Path('recovery-provenance.json').write_text(json.dumps({k:os.environ[k] for k in keys}, indent=2)+'\n')
+        PY
+    - name: Build and pack exact-source NPM packages
+      if: inputs.kind == 'npm'
+      uses: ./.github/actions/npm-release-build
+    - name: Upload exact-source NPM artifacts
+      if: inputs.kind == 'npm'
+      uses: actions/upload-artifact@v4
+      with:
+        name: recovered-npm-${{ needs.source.outputs.sha }}
+        path: |-
+          npm-packages/*.tgz
+          recovery-provenance.json
+        if-no-files-found: error
+        retention-days: 7
+    - name: Verify runner dependencies
+      run: |
+        set -euo pipefail
 
-      - name: Check package version matches tag
-        uses: geritol/match-tag-to-package-version@0.2.0
-        if: github.event_name == 'release'
-        env:
-          TAG_PREFIX: v
-
-      - name: Check package version matches requested test tag
-        id: test-tag
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-        run: |
-          TAG="${INPUT_TAG#npm-test:}"
-          PACKAGE_VERSION=$(jq -r '.version' package.json)
-          if [ "$TAG" != "v${PACKAGE_VERSION}" ]; then
-            echo "::error::Requested tag $TAG does not match package version v${PACKAGE_VERSION}"
-            exit 1
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-      # Only npm itself is needed here. Do not install dependencies or restore
-      # executable caches shared with the persistent builder in this OIDC job.
-      # No registry-url: with it, setup-node@v4 writes an _authToken line to
-      # .npmrc and exports a placeholder NODE_AUTH_TOKEN, so `npm publish` can
-      # attempt token auth instead of the trusted-publishing OIDC exchange.
-      # npm's default registry is already registry.npmjs.org.
-      - name: Setup Node.JS
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24.14.1'
-
-      - name: Download built package artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: js-build-${{ github.sha }}
-          path: release-artifacts
-
-      # Verify every tarball against the trusted checkout metadata before the
-      # credentialed publish. Tarball contents are treated as data; no package
-      # script from the persistent builder is executed on this runner.
-      - name: Validate packed package identities
-        env:
-          ARTIFACT_DIR: release-artifacts/npm-packages
-        run: |
-          set -euo pipefail
-          NPM_CLI_PATH="$(command -v npm)" node <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-          // Match npm publish's own manifest parser, including archive path aliases.
-          const npmBin = path.dirname(fs.realpathSync(process.env.NPM_CLI_PATH));
-          const pacote = require(path.join(npmBin, '../node_modules/pacote'));
-          (async () => {
-            const trusted = new Map();
-            for (const workspace of JSON.parse(fs.readFileSync('package.json')).workspaces) {
-              const manifest = JSON.parse(fs.readFileSync(path.join(workspace, 'package.json')));
-              if (!manifest.private) trusted.set(manifest.name, manifest.version);
-            }
-            const tarballs = fs.readdirSync(process.env.ARTIFACT_DIR).filter(file => file.endsWith('.tgz'));
-            if (!tarballs.length) throw new Error('No NPM tarballs were uploaded.');
-            const seen = new Set();
-            for (const file of tarballs) {
-              const tarball = path.resolve(process.env.ARTIFACT_DIR, file);
-              if (!fs.lstatSync(tarball).isFile()) throw new Error(`Not a regular tarball: ${file}`);
-              const manifest = await pacote.manifest(tarball, {
-                fullmetadata: true,
-                fullReadJson: true,
-                ignoreScripts: true,
-                cache: path.join(process.env.RUNNER_TEMP, 'npm-metadata-cache'),
-              });
-              if (!trusted.has(manifest.name) || trusted.get(manifest.name) !== manifest.version) {
-                throw new Error(`Untrusted package identity in ${file}`);
-              }
-              if (seen.has(manifest.name)) throw new Error(`Duplicate tarball for ${manifest.name}`);
-              seen.add(manifest.name);
-              // No workspace requires publishConfig. It can override npm's proxy,
-              // TLS and registry options even with --ignore-scripts, exposing OIDC.
-              if (manifest.publishConfig !== undefined && JSON.stringify(manifest.publishConfig) !== '{}') {
-                throw new Error(`Builder-supplied publishConfig is not allowed in ${file}`);
-              }
-            }
-            // A partial artifact would otherwise publish an incomplete release.
-            const missing = [...trusted.keys()].filter(name => !seen.has(name));
-            if (missing.length) throw new Error(`Missing NPM tarballs: ${missing.join(', ')}`);
-          })().catch(error => { console.error(error.message); process.exitCode = 1; });
-          NODE
-
-      - name: Set suffix
-        uses: actions/github-script@v8
-        id: suffix
-        with:
-          result-encoding: string
-          script: |
-            const fullTag = "${{ steps.test-tag.outputs.tag }}" || context.payload.release.tag_name;
-            if (fullTag.includes('-')) {
-              const [, fullSuffix] = fullTag.split('-');
-              const [suffix] = fullSuffix.split('.');
-              return suffix;
-            } else {
-              return '';
-            }
-
-      - name: Set NPM release tag
-        uses: actions/github-script@v8
-        id: tag
-        with:
-          result-encoding: string
-          script: |
-            const tag = "${{ steps.test-tag.outputs.tag }}" || context.payload.release.tag_name;
-            const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
-            return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
-
-      - name: Show NPM release tag
-        run: |
-          echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
-          echo "NPM release tag: ${{ steps.tag.outputs.result }}"
-
-      # --provenance=false keeps what `yarn npm publish` did before. After a
-      # trusted-publishing token exchange from a public repository, npm turns
-      # provenance on unless it is set explicitly, and the registry then
-      # rejects every package whose repository.url does not name
-      # github.com/dashpay/platform (all but wasm-drive-verify today).
-      - name: Publish NPM packages
-        if: github.event_name == 'release'
-        env:
-          NPM_TAG: ${{ steps.tag.outputs.result }}
-        run: |
-          set -euo pipefail
-          REGISTRY="$(npm config get registry)"
-          REGISTRY="${REGISTRY%/}"
-          for tarball in release-artifacts/npm-packages/*.tgz; do
-            metadata=$(tar -xOf "$tarball" package/package.json)
-            name=$(jq -r '.name' <<<"$metadata")
-            version=$(jq -r '.version' <<<"$metadata")
-            # npm addresses scoped packages as @scope%2fname: keep the leading @,
-            # percent-encode only the scope separator.
-            encoded_name=${name//\//%2f}
-            status=$(curl --silent --show-error --location --output "$RUNNER_TEMP/npm-metadata.json" \
-              --write-out '%{http_code}' --connect-timeout 10 --max-time 30 \
-              "$REGISTRY/$encoded_name") || {
-              echo "::error::Could not query $REGISTRY for $name@$version."
-              exit 1
-            }
-            case "$status" in
-              404)
-                ;;
-              200)
-                jq -e --arg version "$version" '.versions[$version] != null' "$RUNNER_TEMP/npm-metadata.json" >/dev/null || {
-                  jq -e . "$RUNNER_TEMP/npm-metadata.json" >/dev/null || { echo "::error::Invalid registry response for $name."; exit 1; }
-                  npm publish "$tarball" --ignore-scripts --provenance=false --access public --tag "$NPM_TAG"
-                  continue
-                }
-                echo "::notice::$name@$version already exists on $REGISTRY; skipping."
-                continue
-                ;;
-              *)
-                echo "::error::Registry query for $name@$version returned HTTP $status; refusing to publish blindly."
-                exit 1
-                ;;
-            esac
-            npm publish "$tarball" --ignore-scripts --provenance=false --access public --tag "$NPM_TAG"
-          done
-
-      - name: Dry-run NPM packages
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          NPM_TAG: ${{ steps.tag.outputs.result }}
-        run: |
-          set -euo pipefail
-          for tarball in release-artifacts/npm-packages/*.tgz; do
-            npm publish "$tarball" --ignore-scripts --provenance=false --dry-run --access public --tag "$NPM_TAG"
-          done
-
-  release-drive-image:
-    name: Release Drive image
-    if: ${{ !startsWith(inputs.tag, 'npm-test:') }}
-    secrets: inherit
-    uses: ./.github/workflows/release-docker-image.yml
-    with:
-      name: Drive
-      image_org: dashpay
-      image_name: drive
-      target: drive-abci
-      tag: ${{ inputs.tag || github.event.release.tag_name }}
-
-  release-drive-image-debug:
-    name: Release Drive debug image
-    if: ${{ !startsWith(inputs.tag, 'npm-test:') }}
-    secrets: inherit
-    uses: ./.github/workflows/release-docker-image.yml
-    with:
-      name: Drive
-      image_org: dashpay
-      image_name: drive
-      target: drive-abci
-      cargo_profile: dev
-      tag: ${{ inputs.tag || github.event.release.tag_name }}-debug
-      additional_features: console,grovedbg,replay
-
-  release-rs-dapi-image:
-    name: Release RS-DAPI image
-    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
-    secrets: inherit
-    uses: ./.github/workflows/release-docker-image.yml
-    with:
-      name: RS-DAPI
-      image_org: dashpay
-      image_name: rs-dapi
-      target: rs-dapi
-      tag: ${{ inputs.tag || github.event.release.tag_name }}
-
-  release-test-suite-image:
-    name: Release Test Suite image
-    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
-    secrets: inherit
-    uses: ./.github/workflows/release-docker-image.yml
-    with:
-      name: Test Suite
-      image_org: dashpay
-      image_name: platform-test-suite
-      target: test-suite
-      tag: ${{ inputs.tag || github.event.release.tag_name }}
-
-  release-dashmate-helper-image:
-    name: Release Dashmate Helper image
-    secrets: inherit
-    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
-    uses: ./.github/workflows/release-docker-image.yml
-    with:
-      name: Dashmate Helper
-      image_org: dashpay
-      image_name: dashmate-helper
-      target: dashmate-helper
-      tag: ${{ inputs.tag || github.event.release.tag_name }}
-
-  # The SDK jobs run only on a published release, not on this workflow's
-  # dispatch path: a dispatch runs at a BRANCH ref, which the maven-central
-  # environment's v* tag policy rejects, and a dispatched tag may have no
-  # published release to attach assets to. To re-run an SDK release, dispatch
-  # release-kotlin-sdk.yml / release-swift-sdk.yml directly AT THE TAG REF.
-  release-kotlin-sdk:
-    name: Release Kotlin SDK
-    if: ${{ github.event_name == 'release' }}
-    permissions:
-      contents: write # attach the AAR to the release (workflow default is read)
-    uses: ./.github/workflows/release-kotlin-sdk.yml
-    with:
-      tag: ${{ github.event.release.tag_name }}
-
-  release-swift-sdk:
-    name: Release Swift SDK FFI
-    if: ${{ github.event_name == 'release' }}
-    permissions:
-      contents: write # attach the xcframework to the release (workflow default is read)
-    uses: ./.github/workflows/release-swift-sdk.yml
-    with:
-      tag: ${{ github.event.release.tag_name }}
-
-  build-dashmate-packages:
-    name: Build Dashmate packages
-    runs-on: ${{ matrix.os }}
-    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
-    needs: release-npm
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - package_type: tarballs
-            os: ubuntu-24.04
-          - package_type: win
-            os: ubuntu-24.04
-          - package_type: deb
-            os: ubuntu-24.04
-          - package_type: macos
-            os: macos-14
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Download JS build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: js-build-${{ github.sha }}
-          # The mixed JS/NPM artifact is rooted at the repository, since its
-          # paths contain both packages/ and npm-packages/.
-          path: .
-
-      - name: Install macOS build deps
-        if: runner.os == 'macOS'
-        run: |
-          brew install llvm coreutils
-
-      - name: Set up Docker for macOS
-        if: runner.os == 'macOS'
-        uses: docker-practice/actions-setup-docker@master
-
-      - name: Install Linux build deps
-        if: runner.os == 'Linux'
-        run: sudo apt-get install -y nsis
-
-      - name: Setup Node.JS
-        uses: ./.github/actions/nodejs
-
-      # `npm publish` in release-npm returns before the registry makes the new
-      # versions resolvable; pack_dashmate.sh installs them from the registry.
-      - name: Wait for published NPM packages to become resolvable
-        run: "${GITHUB_WORKSPACE}/scripts/wait_for_npm_packages.sh"
-
-      - name: Create package
-        env:
-          # Packaging executes dependency and lifecycle scripts, including
-          # output from the persistent builder. Signing happens in a new job.
-          DASHMATE_UNSIGNED: 'true'
-        run: |
-          "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh" "${{ matrix.package_type }}"
-
-      - name: Upload Dashmate packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
-          path: packages/dashmate/dist/**
-          if-no-files-found: error
-          retention-days: 7
-
-  release-dashmate-packages:
-    name: Release Dashmate packages
-    needs: build-dashmate-packages
-    # `needs` on a matrix job waits for every leg and reports failure if any
-    # one leg failed, which by default would skip all four release legs. Each
-    # leg below needs only its own package type's artifact, so run whenever
-    # the build matrix ran at all: a leg whose build failed then fails at its
-    # own download step, and the other package types still ship.
-    if: >-
-      !cancelled()
-      && github.event_name == 'release'
-      && needs.build-dashmate-packages.result != 'skipped'
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - package_type: tarballs
-            os: ubuntu-24.04
-          - package_type: win
-            os: ubuntu-24.04
-          - package_type: deb
-            os: ubuntu-24.04
-          - package_type: macos
-            os: macos-14
-    steps:
-      # Treat finished installers as data. This job never installs or runs
-      # package code and never restores caches from the build jobs.
-      - name: Download Dashmate packages
-        uses: actions/download-artifact@v4
-        with:
-          name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
-          path: release-artifacts
-
-      - name: Install the Apple certificate
-        if: runner.os == 'macOS'
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.MACOS_BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-
-      - name: Sign macOS installers
-        if: runner.os == 'macOS'
-        run: |
-          set -euo pipefail
-          found=false
-          while IFS= read -r -d '' pkg; do
-            found=true
-            productsign --sign 'Developer ID Installer: The Dash Foundation, Inc.' \
-              --keychain "$RUNNER_TEMP/app-signing.keychain-db" \
-              "$pkg" "$RUNNER_TEMP/signed.pkg"
-            mv "$RUNNER_TEMP/signed.pkg" "$pkg"
-          done < <(find release-artifacts -type f -name '*.pkg' -print0)
-          "$found" || { echo '::error::No macOS installers were uploaded.'; exit 1; }
-
-      - name: Notarize MacOS Release Build
-        if: runner.os == 'macOS'
-        env:
-          APPLE_ID: ${{ secrets.MACOS_APPLE_ID }}
-          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
-          NOTARIZING_PASSWORD: ${{ secrets.MACOS_NOTARIZING_PASSWORD }}
-        run: |
-          while IFS= read -r -d '' pkg; do
-            xcrun notarytool submit "$pkg" --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$NOTARIZING_PASSWORD" --wait
-          done < <(find release-artifacts -type f -name '*.pkg' -print0)
-
-      - name: Delete the Apple keychain
-        if: always() && runner.os == 'macOS'
-        run: |
-          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db"
-          rm -f "$RUNNER_TEMP/build_certificate.p12"
-
-      - name: Upload artifacts to release
-        uses: softprops/action-gh-release@v0.1.15
-        if: github.event_name == 'release'
-        with:
-          files: release-artifacts/**
+        for pkg in build-essential cmake curl gh jq libgmp-dev libpulse0 libssl-dev libx11-xcb1 pkg-config python3 unzip zip; do
+          dpkg-query -W -f='${Status}' "$pkg" | grep -Fx 'install ok installed'
+        done
+        test -x "$HOME/.cargo/bin/rustup"
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      if: inputs.kind == 'kotlin'
+    - name: Verify release image contract
+      run: ci-image-contract verify .github/runner-requirements.json
+      if: inputs.kind == 'kotlin'
+    - name: Verify JDK 17
+      run: |
+        JAVA_HOME_RESOLVED=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
+        JAVA_VERSION_OUTPUT=$("$JAVA_HOME_RESOLVED/bin/java" -version 2>&1)
+        printf '%s\n' "$JAVA_VERSION_OUTPUT"
+        printf '%s\n' "$JAVA_VERSION_OUTPUT" | grep -Eq 'version "17([.]|\")'
+        echo "JAVA_HOME=$JAVA_HOME_RESOLVED" >> "$GITHUB_ENV"
+        echo "$JAVA_HOME_RESOLVED/bin" >> "$GITHUB_PATH"
+      if: inputs.kind == 'kotlin'
+    - name: Verify prebaked Android SDK
+      run: |
+        test -f "$ANDROID_SDK_ROOT/platforms/android-35/android.jar"
+        test -x "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt2"
+        test -x "$ANDROID_SDK_ROOT/ndk/28.1.13356709/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+      if: inputs.kind == 'kotlin'
+    - name: Set up Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-linux-android,x86_64-linux-android
+      if: inputs.kind == 'kotlin'
+    - name: Prepare release Cargo target cache
+      uses: ./.github/actions/release-cargo-target-cache
+      with:
+        name: release-kotlin-sdk-target
+      if: inputs.kind == 'kotlin'
+    - name: Install cargo-ndk v4.1.2
+      run: |
+        set -euo pipefail
+        cargo install cargo-ndk --version 4.1.2 --locked --force
+        cargo ndk --version | grep -qx 'cargo-ndk 4.1.2'
+      if: inputs.kind == 'kotlin'
+    - name: Install protoc v32.0
+      env:
+        PROTOC_SHA256: 7ca037bfe5e5cabd4255ccd21dd265f79eb82d3c010117994f5dc81d2140ee88
+      run: |
+        set -euo pipefail
+        PROTOC_DIR="$RUNNER_TEMP/protoc-32.0"
+        curl -fsSL -o "$RUNNER_TEMP/protoc.zip" \
+          https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip
+        echo "$PROTOC_SHA256  $RUNNER_TEMP/protoc.zip" | sha256sum -c -
+        rm -rf "$PROTOC_DIR"
+        unzip -q "$RUNNER_TEMP/protoc.zip" -d "$PROTOC_DIR"
+        echo "PROTOC=$PROTOC_DIR/bin/protoc" >> "$GITHUB_ENV"
+        echo "$PROTOC_DIR/bin" >> "$GITHUB_PATH"
+        "$PROTOC_DIR/bin/protoc" --version
+      if: inputs.kind == 'kotlin'
+    - name: Build native library (both ABIs, release profile)
+      working-directory: packages/kotlin-sdk
+      run: |
+        export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT:?}/ndk/28.1.13356709"
+        ./build_android.sh --abi all --profile release --verify
+      if: inputs.kind == 'kotlin'
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-disabled: true
+      if: inputs.kind == 'kotlin'
+    - name: Build release AAR
+      working-directory: packages/kotlin-sdk
+      run: ./gradlew :sdk:assembleRelease --stacktrace
+      if: inputs.kind == 'kotlin'
+    - name: Prepare versioned assets (AAR + build provenance)
+      env:
+        VERSION: ${{ needs.source.outputs.version }}
+        BUILT_SHA: ${{ needs.source.outputs.sha }}
+      run: |
+        cd packages/kotlin-sdk/sdk/build/outputs/aar
+        cp sdk-release.aar "dash-sdk-android-${VERSION}.aar"
+        printf '%s\n' "$BUILT_SHA" > "dash-sdk-android-${VERSION}.commit.txt"
+      if: inputs.kind == 'kotlin'
+    - name: Upload release assets
+      uses: actions/upload-artifact@v4
+      with:
+        name: kotlin-sdk-release-assets
+        path: |
+          packages/kotlin-sdk/sdk/build/outputs/aar/dash-sdk-android-${{ needs.source.outputs.version }}.aar
+          packages/kotlin-sdk/sdk/build/outputs/aar/dash-sdk-android-${{ needs.source.outputs.version }}.commit.txt
+        if-no-files-found: error
+        retention-days: 7
+      if: inputs.kind == 'kotlin'
+    - name: Upload native libraries for the deploy job
+      uses: actions/upload-artifact@v4
+      with:
+        name: kotlin-sdk-jnilibs
+        path: packages/kotlin-sdk/sdk/src/main/jniLibs
+        if-no-files-found: error
+        retention-days: 7
+      if: inputs.kind == 'kotlin'
+    - name: Upload recovery provenance
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: recovery-provenance-${{ inputs.kind }}
+        path: recovery-provenance.json
+        if-no-files-found: error
+        retention-days: 7
