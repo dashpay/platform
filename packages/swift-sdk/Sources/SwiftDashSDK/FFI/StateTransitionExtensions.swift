@@ -543,7 +543,7 @@ extension SDK {
 
                 defer {
                     // Clean up document handle when done
-                    dash_sdk_document_handle_destroy(documentHandle)
+                    dash_sdk_document_free(documentHandle)
                 }
 
                 // 2. Create identity public key handle directly from our local data (no network fetch)
@@ -628,6 +628,10 @@ extension SDK {
                         continuation.resume(returning: ["status": "success", "raw": jsonString])
                     }
                 } else {
+                    if putResult.data_type == DashSDKFFI.ResultDocumentHandle,
+                       let createdHandle = putResult.data {
+                        dash_sdk_document_free(OpaquePointer(createdHandle))
+                    }
                     print("✅ [DOCUMENT CREATE] Success! Total operation time: \(Date().timeIntervalSince(startTime)) seconds")
                     continuation.resume(returning: ["status": "success", "message": "Document created successfully"])
                 }
@@ -1016,7 +1020,7 @@ extension SDK {
                 }
 
                 defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+                    dash_sdk_document_free(OpaquePointer(documentHandle))
                 }
 
                 print("✅ [DOCUMENT TRANSFER] Document fetched successfully")
@@ -1049,6 +1053,10 @@ extension SDK {
                     return
                 }
 
+                // The serialized transition is not used; the _and_wait call below builds its own.
+                if transitionResult.data_type == DashSDKFFI.BinaryData, let bytes = transitionResult.data {
+                    dash_sdk_binary_data_free(bytes.assumingMemoryBound(to: DashSDKBinaryData.self))
+                }
 
                 // Now try the _and_wait version which handles broadcasting internally
                 print("🔄 [DOCUMENT TRANSFER] Broadcasting and waiting for confirmation...")
@@ -1092,6 +1100,11 @@ extension SDK {
                     continuation.resume(throwing: SDKError.stateTransitionFailure(
                         errorMsg, ffiError: error, otherwise: SDKError.protocolError))
                     return
+                }
+
+                if result.data_type == DashSDKFFI.ResultDocumentHandle,
+                   let transferredHandle = result.data {
+                    dash_sdk_document_free(OpaquePointer(transferredHandle))
                 }
 
                 // Document transfer was successful
@@ -1192,7 +1205,7 @@ extension SDK {
                 }
 
                 defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+                    dash_sdk_document_free(OpaquePointer(documentHandle))
                 }
 
                 print("✅ [DOCUMENT UPDATE PRICE] Document fetched successfully")
@@ -1236,6 +1249,11 @@ extension SDK {
                     continuation.resume(throwing: SDKError.stateTransitionFailure(
                         errorMsg, ffiError: error, otherwise: SDKError.protocolError))
                     return
+                }
+
+                if updateResult.data_type == DashSDKFFI.ResultDocumentHandle,
+                   let updatedHandle = updateResult.data {
+                    dash_sdk_document_free(OpaquePointer(updatedHandle))
                 }
 
                 let totalTime = Date().timeIntervalSince(startTime)
@@ -1342,7 +1360,7 @@ extension SDK {
                 }
 
                 defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+                    dash_sdk_document_free(OpaquePointer(documentHandle))
                 }
 
                 print("📝 [DOCUMENT PURCHASE] Document fetched in \(Date().timeIntervalSince(documentFetchStart)) seconds")
@@ -1401,7 +1419,7 @@ extension SDK {
                     }
 
                     // Clean up the purchased document handle
-                    dash_sdk_document_destroy(handle, purchasedDocHandle)
+                    dash_sdk_document_free(purchasedDocHandle)
 
                     let totalTime = Date().timeIntervalSince(startTime)
                     print("✅ [DOCUMENT PURCHASE] Purchase completed and confirmed in \(totalTime) seconds")
