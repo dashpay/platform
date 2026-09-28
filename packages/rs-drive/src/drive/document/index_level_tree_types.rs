@@ -75,13 +75,15 @@
 
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::util::object_size_info::DriveKeyInfo;
-use dpp::data_contract::document_type::{
-    IndexCountability, IndexLevel, IndexLevelTypeInfo, TimeRangeTransform,
-};
+#[cfg(feature = "server")]
+use dpp::data_contract::document_type::TimeRangeTransform;
+use dpp::data_contract::document_type::{IndexCountability, IndexLevel, IndexLevelTypeInfo};
+#[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
-use grovedb::TreeType;
+use grovedb_merk::tree_type::TreeType;
 
 /// The two tree types an index sub-level materializes: the
 /// property-name tree (keys = the property's distinct values) and the
@@ -172,6 +174,7 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
 /// never exceed it, so the clamp only bounds estimation work for a transform
 /// built outside validation, and reading it from the version keeps the
 /// estimated fan-out in step with whatever a future protocol version allows.
+#[cfg(feature = "server")]
 pub(crate) fn time_range_index_keys<'a>(
     transform: Option<&TimeRangeTransform>,
     document_top_field: DriveKeyInfo<'a>,
@@ -310,6 +313,111 @@ fn derive_value_tree_type(
         }
     } else {
         value_tree_type
+    }
+}
+
+/// The wrapper an empty continuation property-name tree is inserted in so
+/// it contributes nothing to the aggregating value tree above it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZeroContributionWrapper {
+    /// `Element::NonCounted`: counted as zero by a count-bearing parent.
+    NonCounted,
+    /// `Element::NotSummed`: summed as zero by a sum-bearing parent.
+    NotSummed,
+    /// `Element::NotCountedOrSummed`: neither counted nor summed.
+    NotCountedOrSummed,
+}
+
+/// Why a continuation tree cannot be made to contribute zero to its parent.
+/// `LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent`
+/// turns each into its `NotSupported` error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ZeroContributionRefusal {
+    /// An indexed (ranked) tree cannot be wrapped under an aggregating parent.
+    IndexedInner,
+    /// An indexed tree is a property-name tree, never a value tree.
+    IndexedParent,
+    /// A provable count-bearing parent rejects count-suppressed children.
+    ProvableCountParent,
+    /// The parent does not aggregate, so no wrapper applies.
+    NonAggregatingParent,
+}
+
+/// Whether the continuation property-name tree of `sub_level`, under a value
+/// tree of `parent_level` whose type is `parent_value_tree_type`, is inserted
+/// so it contributes zero to that value tree: the parent aggregates, and it
+/// does not count its continuations (a prefix-ranking chain level or a
+/// count-propagating level does), unless `sub_level` is a count-exempt
+/// branch. The entry-insert walker and the preallocation path both decide
+/// with this.
+pub(crate) fn continuation_contributes_zero(
+    parent_value_tree_type: TreeType,
+    parent_counts_continuations: bool,
+    sub_level: &IndexLevel,
+) -> bool {
+    !matches!(parent_value_tree_type, TreeType::NormalTree)
+        && (!parent_counts_continuations || sub_level.count_exempt_branch())
+}
+
+/// Whether the value trees of `level` count their continuation subtrees
+/// (a prefix-ranking chain level or a count-propagating level).
+pub(crate) fn level_counts_continuations(level: &IndexLevel) -> bool {
+    level.ranked_count_grouping() || level.count_propagating()
+}
+
+/// The wrapper that makes an empty `inner_tree_type` tree contribute zero to
+/// an `aggregating_parent_tree_type` parent, or `None` when it contributes
+/// zero unwrapped (a non-sum tree under a sum-only parent):
+/// - a `CountTree` parent: `NonCounted`, whatever the inner;
+/// - a `CountSumTree` parent: `NotCountedOrSummed` for a sum-bearing inner,
+///   else `NonCounted`;
+/// - a `SumTree`, `BigSumTree` or `ProvableSumTree` parent: `NotSummed` for a
+///   sum-bearing inner, else no wrapper.
+///
+/// An indexed inner, an indexed or provable count-bearing parent, and a
+/// parent that does not aggregate are refused.
+pub(crate) fn zero_contribution_wrapper(
+    aggregating_parent_tree_type: TreeType,
+    inner_tree_type: TreeType,
+) -> Result<Option<ZeroContributionWrapper>, ZeroContributionRefusal> {
+    if matches!(
+        inner_tree_type,
+        TreeType::ProvableSumIndexedTree
+            | TreeType::ProvableCountIndexedTree
+            | TreeType::ProvableCountProvableSumIndexedTree
+    ) {
+        return Err(ZeroContributionRefusal::IndexedInner);
+    }
+    let inner_is_sum_bearing = matches!(
+        inner_tree_type,
+        TreeType::SumTree
+            | TreeType::BigSumTree
+            | TreeType::ProvableSumTree
+            | TreeType::CountSumTree
+            | TreeType::ProvableCountSumTree
+            | TreeType::ProvableCountProvableSumTree
+    );
+    match aggregating_parent_tree_type {
+        TreeType::CountTree => Ok(Some(ZeroContributionWrapper::NonCounted)),
+        TreeType::CountSumTree => Ok(Some(if inner_is_sum_bearing {
+            ZeroContributionWrapper::NotCountedOrSummed
+        } else {
+            ZeroContributionWrapper::NonCounted
+        })),
+        TreeType::SumTree | TreeType::BigSumTree | TreeType::ProvableSumTree => {
+            Ok(inner_is_sum_bearing.then_some(ZeroContributionWrapper::NotSummed))
+        }
+        TreeType::ProvableCountIndexedTree
+        | TreeType::ProvableSumIndexedTree
+        | TreeType::ProvableCountProvableSumIndexedTree => {
+            Err(ZeroContributionRefusal::IndexedParent)
+        }
+        TreeType::ProvableCountTree
+        | TreeType::ProvableCountSumTree
+        | TreeType::ProvableCountProvableSumTree => {
+            Err(ZeroContributionRefusal::ProvableCountParent)
+        }
+        _ => Err(ZeroContributionRefusal::NonAggregatingParent),
     }
 }
 

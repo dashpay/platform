@@ -19,6 +19,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Building a document create transition by hand](#building-a-document-create-transition-by-hand)
 - [Immutable properties (`immutable`)](#immutable-properties-immutable)
 - [Property constraints (`propertyConstraints`)](#property-constraints-propertyconstraints)
+- [How a document type is stored (`documentTypeLayout`)](#how-a-document-type-is-stored-documenttypelayout)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
 - [Contributing](#contributing)
@@ -456,6 +457,20 @@ if (broken) {
 ```
 
 Rules come back in name order, the order consensus checks them in; `contract.documentPropertyConstraints` maps every document type that declares rules to its list. The `PropertyConstraintCondition`, `PropertyConstraintExpression` and `PropertyConstraintEqualityOperand` types spell out the rule grammar, and `violation` is one of `NotMet`, `Overflow`, `DivisionByZero`, `NegativeExponent` or `NotAnInteger`, the reason consensus would report.
+
+## How a document type is stored (`documentTypeLayout`)
+
+`documentTypeLayout(contract, documentTypeName, platformVersion)` returns the GroveDB layout of a document type as Drive writes it: the document type tree, the documents by id and, for each index, the property and value trees down to where the index ends. Each layer carries the tree or element type Drive writes there (a count or sum tree, a ranked indexed tree, a reference, an indexOnly item), the wrapper a continuation tree gets under an aggregating value tree, the indexes that use it, and conditions such as the tree a unique index falls back to when a value is null. It runs locally with Drive's own rules, so it needs no connection:
+
+```ts
+import { documentTypeLayout, PlatformVersion } from '@dashevo/evo-sdk';
+
+const { root } = documentTypeLayout(contract, 'review', new PlatformVersion(14));
+// root.children: the documents by id ([0]) and one tree per first index property;
+// each node: { key, role, element, wrapper, rankedAxes, indexes, notes, alternative, children, structureNode }
+```
+
+`structureNode` names the layer of Drive's GroveDB structure description it is an instance of, as the [GroveDB structure viewer](https://dashpay.github.io/grovedb-structure-viewer/) shows it (`#/<structureNode>`).
 
 ## Chained queries (provable semi-join)
 

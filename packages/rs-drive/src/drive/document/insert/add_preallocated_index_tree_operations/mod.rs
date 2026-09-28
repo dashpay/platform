@@ -38,8 +38,8 @@
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, terminal_member_tree_type,
-    terminal_value_tree_type,
+    continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
+    level_counts_continuations, terminal_member_tree_type, terminal_value_tree_type,
 };
 use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::drive::document::index_only_item_estimated_value_size;
@@ -340,9 +340,11 @@ impl Drive {
                     // may itself be the plain sibling): its branch tree is
                     // zero-wrapped even under a chain level that counts its
                     // own continuation — matching the entry-insert walkers.
-                    if !matches!(parent_value_tree_type, TreeType::NormalTree)
-                        && (!parent_counts_continuations || sub_level.count_exempt_branch())
-                    {
+                    if continuation_contributes_zero(
+                        parent_value_tree_type,
+                        parent_counts_continuations,
+                        sub_level,
+                    ) {
                         self.batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists(
                             path_key_info,
                             parent_value_tree_type,
@@ -452,8 +454,7 @@ impl Drive {
 
             index_path_info = Some(path_info);
             parent_value_tree_type = value_tree_type;
-            parent_counts_continuations =
-                sub_level.ranked_count_grouping() || sub_level.count_propagating();
+            parent_counts_continuations = level_counts_continuations(sub_level);
         }
 
         let mut path_info = index_path_info.ok_or(Error::Drive(

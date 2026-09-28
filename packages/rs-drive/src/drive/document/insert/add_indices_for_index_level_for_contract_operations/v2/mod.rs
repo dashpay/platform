@@ -1,5 +1,8 @@
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
-use crate::drive::document::index_level_tree_types::index_level_tree_types_with_continuation_demotion;
+use crate::drive::document::index_level_tree_types::{
+    continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
+    level_counts_continuations,
+};
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -127,10 +130,10 @@ impl Drive {
         // wrapper-choice for child continuations all agree on the
         // exact variant.
         let current_layer_tree_type = parent_value_tree_type;
-        // True iff the parent value tree aggregates anything (count,
-        // sum, or both) — decides whether continuation children go
-        // through the zero-contribution helper or the plain one.
-        let parent_value_tree_aggregates = !matches!(parent_value_tree_type, TreeType::NormalTree);
+        // Continuation children go through the zero-contribution helper
+        // when the parent value tree aggregates anything (count, sum, or
+        // both) — `continuation_contributes_zero`, shared with the
+        // preallocation path and `drive::document::layout`.
         // A prefix-ranking chain level (`rankedCountable: { at }`) inverts
         // that choice for its CHAIN continuation: the value trees count the
         // continuation's subtree — the total the grouping secondary ranks
@@ -144,8 +147,7 @@ impl Drive {
         // admitted sibling is flag-free at and below the shared levels, so
         // nothing under a wrapped branch needs the counts the wrapper
         // suppresses.
-        let continuations_contribute =
-            index_level.ranked_count_grouping() || index_level.count_propagating();
+        let continuations_contribute = level_counts_continuations(index_level);
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
@@ -214,9 +216,11 @@ impl Drive {
                 .add_path_info(sub_level_index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            if parent_value_tree_aggregates
-                && (!continuations_contribute || sub_level.count_exempt_branch())
-            {
+            if continuation_contributes_zero(
+                parent_value_tree_type,
+                continuations_contribute,
+                sub_level,
+            ) {
                 // A ranked terminal level reaching this branch is
                 // rejected inside the helper (it passes `ranked_axes`
                 // straight through): an indexed tree can neither be
