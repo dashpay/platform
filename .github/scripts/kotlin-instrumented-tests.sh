@@ -31,4 +31,4 @@ if [ "$unlocked" != true ]; then
   exit 1
 fi
 
-./gradlew :sdk:connectedDebugAndroidTest --stacktrace
+./gradlew :sdk:connectedDebugAndroidTest --stacktrace "$@"
