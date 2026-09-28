@@ -578,13 +578,16 @@ describe('DataContract — refersTo declarations (v14)', () => {
       },
     };
 
-    function buildExpressionContract(documentSchemas: object) {
+    // Full validation runs the meta-schema first in this build (it has
+    // dpp's `validation` feature); the refusals below check the parser's own
+    // rule with full validation off, and that full validation refuses too.
+    function buildExpressionContract(documentSchemas: object, fullValidation = true) {
       return new wasm.DataContract({
         ownerId,
         identityNonce: BigInt(2),
         schemas: documentSchemas,
         definitions: null,
-        fullValidation: true,
+        fullValidation,
         platformVersion: new PlatformVersion(14),
       });
     }
@@ -694,9 +697,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
         anyOf: [{ type: 'identity' }, { type: 'contract' }],
       };
 
-      expect(() => buildExpressionContract(withContract)).to.throw(
+      expect(() => buildExpressionContract(withContract, false)).to.throw(
         /refersTo anyOf\[1\] is a reference of type contract, which a reference expression does not take/,
       );
+      expect(() => buildExpressionContract(withContract)).to.throw(/JsonSchemaError/);
     });
 
     it('should refuse an anyOf directly inside an anyOf', () => {
@@ -706,9 +710,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
         anyOf: [{ type: 'identity' }, { anyOf: memberId.refersTo.anyOf }],
       };
 
-      expect(() => buildExpressionContract(flat)).to.throw(
+      expect(() => buildExpressionContract(flat, false)).to.throw(
         /refersTo anyOf\[1\] is an anyOf directly inside an anyOf/,
       );
+      expect(() => buildExpressionContract(flat)).to.throw(/JsonSchemaError/);
     });
   });
 
