@@ -202,22 +202,7 @@ extension SDK {
 
     /// Process DashSDKResult and extract string
     private func processStringResult(_ result: DashSDKResult) throws -> String {
-        if let error = result.error {
-            // Preserve the FFI error code so transport failures surface as
-            // .networkError / .timeout rather than a misleading .internalError.
-            let sdkError = SDKError.fromDashSDKError(error.pointee)
-            dash_sdk_error_free(error)
-            throw sdkError
-        }
-
-        guard let dataPtr = result.data else {
-            throw SDKError.notFound("No data returned")
-        }
-
-        let string: String = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
-        dash_sdk_string_free(dataPtr)
-
-        return string
+        try Self.consumeStringResult(result)
     }
 
     /// Process DashSDKResult and extract UInt64
@@ -556,7 +541,11 @@ extension SDK {
     // MARK: - Document Queries
 
     /// List documents
-    public func documentList(
+    ///
+    /// `nonisolated`: the contract fetch and the search both block on the
+    /// network inside Rust, so they run on the shared Platform query queue
+    /// (see ``performBlockingQuery(_:)``) instead of on the caller's actor.
+    public nonisolated func documentList(
         dataContractId: String,
         documentType: String,
         whereClause: String? = nil,
@@ -564,11 +553,36 @@ extension SDK {
         limit: UInt32? = nil,
         startAfter: String? = nil,
         startAt: String? = nil
-    ) async throws -> [String: Any] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try Self.documentListJSON(
+                handle: handle,
+                dataContractId: dataContractId,
+                documentType: documentType,
+                whereClause: whereClause,
+                orderByClause: orderByClause,
+                limit: limit,
+                startAfter: startAfter,
+                startAt: startAt)
         }
+        return try Self.parseJSONObject(json)
+    }
 
+    /// The blocking half of ``documentList(dataContractId:documentType:whereClause:orderByClause:limit:startAfter:startAt:)``.
+    ///
+    /// Every C string and the contract handle live until the search returns,
+    /// and the search result is copied into a Swift `String` and freed before
+    /// this returns, so nothing FFI-owned leaves the queue thread.
+    private nonisolated static func documentListJSON(
+        handle: OpaquePointer,
+        dataContractId: String,
+        documentType: String,
+        whereClause: String?,
+        orderByClause: String?,
+        limit: UInt32?,
+        startAfter: String?,
+        startAt: String?
+    ) throws -> String {
         // First fetch the data contract
         let contractResult = dash_sdk_data_contract_fetch(handle, dataContractId)
         if let error = contractResult.error {
@@ -650,7 +664,7 @@ extension SDK {
             }
         }
 
-        return try processJSONResult(result)
+        return try consumeStringResult(result)
     }
 
     /// Get a specific document
@@ -1107,16 +1121,29 @@ extension SDK {
     }
 
     /// Check DPNS name availability
-    public func dpnsCheckAvailability(name: String) async throws -> Bool {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    ///
+    /// `nonisolated`: the lookup blocks on the network inside Rust, so it
+    /// runs on the shared Platform query queue (see
+    /// ``performBlockingQuery(_:)``) instead of on the caller's actor — this
+    /// is called while the user types a username.
+    public nonisolated func dpnsCheckAvailability(name: String) async throws -> Bool {
+        try await performBlockingQuery { handle in
+            try Self.dpnsCheckAvailabilityBlocking(handle: handle, name: name)
         }
+    }
 
+    /// The blocking half of ``dpnsCheckAvailability(name:)``. `name` is
+    /// bridged to a C string that lives for the whole FFI call; the result is
+    /// copied and freed here.
+    private nonisolated static func dpnsCheckAvailabilityBlocking(
+        handle: OpaquePointer,
+        name: String
+    ) throws -> Bool {
         // Call native FFI function
         let result = dash_sdk_dpns_check_availability(handle, name)
 
         // Process the result to get the availability info
-        let json = try processJSONResult(result)
+        let json = try parseJSONObject(consumeStringResult(result))
 
         // Extract the "available" boolean from the result
         guard let isAvailable = json["available"] as? Bool else {
@@ -2234,5 +2261,97 @@ extension SDK {
         }
 
         return String(cString: json)
+    }
+}
+
+// MARK: - Off-main Platform queries
+
+/// The executor for Platform reads that block inside Rust.
+///
+/// The same reasoning as for `dataContractGetOffMain(id:)` above applies to
+/// every query that is `nonisolated` and routed through
+/// ``SDK/performBlockingQuery(_:)``: the FFI entry point parks the calling
+/// thread in `block_on` until DAPI answers, so the call is made from a GCD
+/// thread and the caller's actor only awaits a continuation.
+extension SDK {
+    /// Concurrent, not serial. The FFI handle is safe to use from several
+    /// threads at once: every query entry point takes it as a shared
+    /// `&SDKWrapper`, `dash_sdk::Sdk` is `Send + Sync`, and
+    /// `BigStackRuntime::block_on` drives each call on its own scoped thread
+    /// over a multi-threaded Tokio runtime — the same handle is already used
+    /// concurrently by `dpnsActiveContests` and `dataContractGetOffMain` on
+    /// their own queues. Serializing here would make the newest availability
+    /// check (one per keystroke) wait behind every stale one; GCD's worker
+    /// limit still bounds how many callers can be parked at once.
+    private static let platformQueryQueue = DispatchQueue(
+        label: "org.dash.swift-dash-sdk.platform-query",
+        qos: .userInitiated,
+        attributes: .concurrent)
+
+    /// Run `body` with the live SDK handle on ``platformQueryQueue`` and
+    /// resume the caller with its result.
+    ///
+    /// `self` (not the raw handle) crosses into the queue: `SDK` owns the
+    /// handle and frees it in `deinit`, so the strong capture keeps it valid
+    /// until `body` returns. `body` must keep its own C-string and pointer
+    /// arguments alive for the whole FFI call and copy and free every
+    /// FFI-owned result before returning — only the `Sendable` Swift value it
+    /// returns leaves the queue thread.
+    ///
+    /// The FFI call itself cannot be interrupted, so task cancellation does
+    /// not cut it short; the caller resumes when it returns.
+    nonisolated func performBlockingQuery<T: Sendable>(
+        _ body: @escaping @Sendable (OpaquePointer) throws -> T
+    ) async throws -> T {
+        guard handle != nil else {
+            throw SDKError.invalidState("SDK not initialized")
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            Self.platformQueryQueue.async { [self] in
+                do {
+                    // Re-read at execution time rather than trusting the
+                    // check made before the hop.
+                    guard let handle = handle else {
+                        throw SDKError.invalidState("SDK not initialized")
+                    }
+                    let value = try withExtendedLifetime(self) { try body(handle) }
+                    continuation.resume(returning: value)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Copy the C string a `DashSDKResult` carries into a Swift `String` and
+    /// free it; throw the typed FFI error (freeing it) when the call failed.
+    /// Takes ownership of `result` on every path.
+    fileprivate nonisolated static func consumeStringResult(_ result: DashSDKResult) throws -> String {
+        if let error = result.error {
+            // Preserve the FFI error code so transport failures surface as
+            // .networkError / .timeout rather than a misleading .internalError.
+            let sdkError = SDKError.fromDashSDKError(error.pointee)
+            dash_sdk_error_free(error)
+            throw sdkError
+        }
+
+        guard let dataPtr = result.data else {
+            throw SDKError.notFound("No data returned")
+        }
+
+        let string: String = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+
+        return string
+    }
+
+    /// Parse a JSON object payload returned by a query.
+    fileprivate nonisolated static func parseJSONObject(_ json: String) throws -> sending [String: Any] {
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw SDKError.serializationError("Failed to parse JSON data")
+        }
+        return object
     }
 }
