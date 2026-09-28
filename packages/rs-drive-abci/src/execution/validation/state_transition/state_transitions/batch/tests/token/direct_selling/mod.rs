@@ -27,9 +27,21 @@ mod token_selling_tests {
             // PROTOCOL_VERSION_14: 27_400 credits more in fees — genesis system
             // documents now carry the contract-version stamp, shifting
             // byte-billed subtree reads
-            699_868_046_180,
+            // PROTOCOL_VERSION_17: 208_680 credits more in fees, the purchase
+            // mints and so resolves the token to its issuer through the
+            // contract info leaf and rewrites the issuer's lifecycle record
+            699_867_837_500,
         )
         .await;
+    }
+
+    /// PROTOCOL_VERSION_14: the token lifecycle ledger does not exist yet, so the mint of
+    /// the purchase reads no contract info and writes no issuer record; the buyer balance
+    /// must be exactly what it was before the ledger was added. Pinned so v14 chain history
+    /// stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_successful_direct_purchase_single_price_protocol_version_14() {
+        run_successful_direct_purchase_single_price_at_protocol_version(14, 699_868_046_180).await;
     }
 
     /// PROTOCOL_VERSION_13: pre-stamp buyer balance — genesis system documents

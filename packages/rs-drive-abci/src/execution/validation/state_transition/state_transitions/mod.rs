@@ -482,7 +482,14 @@ pub(in crate::execution) mod tests {
         identity_id: Identifier,
         balance_to_add: Credits,
     ) {
-        let platform_version = PlatformVersion::latest();
+        // The platform's own version, not the latest: from protocol version 17 the supply
+        // writer also moves the issuer's lifecycle rollup, which a state built at an earlier
+        // version does not have.
+        let platform_version = platform
+            .state
+            .load()
+            .current_platform_version()
+            .expect("expected the platform version of the state");
         platform
             .drive
             .add_to_identity_token_balance(

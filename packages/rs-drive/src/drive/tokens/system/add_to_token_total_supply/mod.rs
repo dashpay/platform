@@ -1,4 +1,5 @@
 mod v0;
+pub(in crate::drive::tokens::system) mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -43,9 +44,19 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.add_to_token_total_supply_v1(
+                token_id,
+                amount,
+                allow_first_mint,
+                allow_saturation,
+                apply,
+                block_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_token_total_supply".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -81,15 +92,27 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            1 => self.add_to_token_total_supply_add_to_operations_v1(
+                token_id,
+                amount,
+                allow_first_mint,
+                allow_saturation,
+                apply,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_token_total_supply_add_to_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
     }
 
-    /// The operations needed to add to the token total supply
+    /// The operations needed to add to the token total supply. `previous_batch_operations`
+    /// is the batch accumulated so far, so a pending write of the issuer's lifecycle record
+    /// is folded rather than duplicated; `None` outside a batch.
     #[allow(clippy::too_many_arguments)]
     pub fn add_to_token_total_supply_operations(
         &self,
@@ -97,6 +120,7 @@ impl Drive {
         amount: TokenAmount,
         allow_first_mint: bool,
         allow_saturation: bool,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -119,9 +143,19 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.add_to_token_total_supply_operations_v1(
+                token_id,
+                amount,
+                allow_first_mint,
+                allow_saturation,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_to_token_total_supply_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

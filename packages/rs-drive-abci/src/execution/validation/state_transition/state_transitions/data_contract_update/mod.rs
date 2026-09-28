@@ -1382,6 +1382,143 @@ mod tests {
             assert_matches!(result, StateTransitionProofResult::VerifiedDataContract(_));
         }
 
+        /// A contract update that adds two tokens in one transition creates the issuer's
+        /// lifecycle record once, at zero, and the tokens start with no supply; the batch
+        /// consistency check of the test drive would reject a second write of the record.
+        #[tokio::test]
+        async fn test_data_contract_update_adding_two_tokens_creates_one_lifecycle_record() {
+            use dpp::tokens::contract_lifecycle::v0::ContractTokenLifecycleV0Accessors;
+            use dpp::tokens::contract_lifecycle::TokenLifecycle;
+
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+            let platform_state = platform.state.load();
+            let platform_version = PlatformVersion::latest();
+
+            let mut original_contract =
+                get_data_contract_fixture(None, 0, platform_version.protocol_version)
+                    .data_contract_owned();
+            original_contract.set_owner_id(identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &original_contract,
+                    BlockInfo::default(),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to apply contract");
+
+            let mut updated_contract = original_contract.clone();
+            updated_contract.set_version(2);
+
+            for position in 0..2u16 {
+                let mut token_config =
+                    TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+                token_config.set_base_supply(0);
+                token_config.set_conventions(TokenConfigurationConvention::V0(
+                    TokenConfigurationConventionV0 {
+                        localizations: BTreeMap::from([(
+                            "en".to_string(),
+                            TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                                should_capitalize: true,
+                                singular_form: format!("test{position}"),
+                                plural_form: format!("tests{position}"),
+                            }),
+                        )]),
+                        decimals: 8,
+                    },
+                ));
+                updated_contract.add_token(position, token_config);
+            }
+
+            let data_contract_update_transition =
+                DataContractUpdateTransition::new_from_data_contract(
+                    updated_contract.clone(),
+                    &identity.into_partial_identity_info(),
+                    key.id(),
+                    2,
+                    0,
+                    &signer,
+                    platform_version,
+                    None,
+                )
+                .await
+                .expect("expect to create data contract update transition");
+
+            let tx_bytes = data_contract_update_transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[tx_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let record = platform
+                .drive
+                .fetch_contract_token_lifecycle(
+                    updated_contract.id().to_buffer(),
+                    None,
+                    platform_version,
+                )
+                .expect("expected to read the ledger")
+                .expect("expected a lifecycle record");
+            assert_eq!(record.issued_supply(), 0);
+            assert!(!record.is_wiped());
+
+            let token_ids: Vec<[u8; 32]> = (0..2u16)
+                .map(|position| {
+                    updated_contract
+                        .token_id(position)
+                        .expect("expected a token id")
+                        .to_buffer()
+                })
+                .collect();
+            let lifecycles = platform
+                .drive
+                .fetch_token_lifecycles(&token_ids, None, platform_version)
+                .expect("expected to resolve the tokens");
+            assert_eq!(lifecycles.len(), 2);
+            assert!(lifecycles
+                .values()
+                .all(|lifecycle| *lifecycle == TokenLifecycle::Live));
+
+            let totals = platform
+                .drive
+                .calculate_total_tokens_balance(None, platform_version)
+                .expect("expected totals");
+            assert!(totals.ok().expect("expected a verdict"));
+        }
+
         #[tokio::test]
         async fn test_data_contract_update_with_token_setting_identifier_that_does_exist() {
             let mut platform = TestPlatformBuilder::new()

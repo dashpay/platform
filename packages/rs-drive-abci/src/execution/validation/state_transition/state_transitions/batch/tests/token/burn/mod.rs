@@ -3960,7 +3960,23 @@ mod token_burn_tests {
             PlatformVersion::latest().protocol_version,
             // PROTOCOL_VERSION_14: +400 — genesis system documents now carry
             // the contract-version stamp, shifting byte-billed subtree reads
-            4_368_280,
+            // PROTOCOL_VERSION_17: +208_680, the burn resolves the token to its
+            // issuer through the contract info leaf and rewrites the issuer's
+            // lifecycle record with the supply
+            4_576_960,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_14: the token lifecycle ledger does not exist yet, so a burn reads
+    /// no contract info and writes no issuer record; the fee must be exactly what it was
+    /// before the ledger was added. Pinned so v14 chain history stays bit-for-bit
+    /// reproducible.
+    #[tokio::test]
+    async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads_protocol_version_14(
+    ) {
+        run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+            14, 4_368_280,
         )
         .await;
     }

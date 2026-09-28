@@ -45,6 +45,7 @@ pub trait DriveLowLevelOperationConverter {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -54,6 +55,8 @@ pub trait DriveLowLevelOperationConverter {
     ) -> Result<Vec<LowLevelDriveOperation>, Error>;
 }
 ```
+
+`previous_batch_operations` is the batch accumulated by the operations lowered before this one. A batch is lowered in full before any of it is applied, so every operation reads the same stored state; a write that rewrites a whole element from its stored value (the issuer's token lifecycle record, which a mint or burn of any of the issuer's tokens rewrites) would emit one replacement per operation and GroveDB would either reject the duplicate key or keep the last one. Converters that write such elements fold onto the replacement already pending in the batch instead; the others ignore the parameter. Balance and supply leaves are not folded: each operation of a network batch targets its own leaves, and the single-transition limit on batches keeps it that way.
 
 The `estimated_costs_only_with_layer_info` parameter is key. When it is `None`, the converter performs actual operations (stateful mode). When it is `Some(HashMap)`, the converter only estimates costs and fills in layer information for GroveDB's cost estimation (stateless mode).
 

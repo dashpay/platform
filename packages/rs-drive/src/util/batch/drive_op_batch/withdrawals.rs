@@ -62,6 +62,7 @@ impl DriveLowLevelOperationConverter for WithdrawalOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
+        _previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         _estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,

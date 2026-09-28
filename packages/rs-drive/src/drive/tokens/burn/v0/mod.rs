@@ -99,6 +99,7 @@ impl Drive {
         drive_operations.extend(self.remove_from_token_total_supply_operations(
             token_id,
             burn_amount,
+            &mut None,
             estimated_costs_only_with_layer_info,
             transaction,
             platform_version,

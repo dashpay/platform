@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -47,9 +48,20 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.create_token_trees_v1(
+                contract_id,
+                token_contract_position,
+                token_id,
+                start_as_paused,
+                allow_already_exists,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "create_token_trees".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -89,9 +101,21 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            1 => self.create_token_trees_add_to_operations_v1(
+                contract_id,
+                token_contract_position,
+                token_id,
+                start_as_paused,
+                allow_already_exists,
+                apply,
+                previous_batch_operations,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "create_token_trees_add_to_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -131,9 +155,20 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.create_token_trees_operations_v1(
+                contract_id,
+                token_contract_position,
+                token_id,
+                start_as_paused,
+                allow_already_exists,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "create_token_trees_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

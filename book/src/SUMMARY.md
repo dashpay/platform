@@ -69,6 +69,7 @@
 - [Document Ranked Trees](drive/document-ranked-trees.md)
 - [Ranked Index Examples](drive/ranked-index-examples.md)
 - [Index-Only Document Types](drive/index-only-document-types.md)
+- [Token Contract Lifecycles](drive/token-contract-lifecycles.md)
 
 # Testing
 

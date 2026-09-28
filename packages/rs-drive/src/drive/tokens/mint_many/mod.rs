@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -36,9 +37,19 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.token_mint_many_v1(
+                token_id,
+                recipients,
+                issuance_amount,
+                allow_first_mint,
+                block_info,
+                apply,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "token_mint_many".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -68,9 +79,19 @@ impl Drive {
                 drive_operations,
                 platform_version,
             ),
+            1 => self.token_mint_many_add_to_operations_v1(
+                token_id,
+                recipients,
+                issuance_amount,
+                allow_first_mint,
+                apply,
+                transaction,
+                drive_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "token_mint_many_add_to_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -84,6 +105,7 @@ impl Drive {
         recipients: Vec<(Identifier, u64)>,
         issuance_amount: u64,
         allow_first_mint: bool,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -100,9 +122,19 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            1 => self.token_mint_many_operations_v1(
+                token_id,
+                recipients,
+                issuance_amount,
+                allow_first_mint,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "token_mint_many_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

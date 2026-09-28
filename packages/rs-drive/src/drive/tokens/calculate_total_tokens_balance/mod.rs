@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -8,9 +9,11 @@ use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Calculates the total credits balance.
+    /// Calculates the total tokens balance.
     ///
-    /// This function verifies that the sum tree identity credits + pool credits + refunds are equal to the total credits in the system.
+    /// Reads the aggregate of every token supply and of every identity token balance, and from
+    /// generation 1 the destroyed supply ledger, so the block end check can require the raw
+    /// totals to match and the destroyed supply to stay within them.
     ///
     /// # Arguments
     ///
@@ -37,9 +40,10 @@ impl Drive {
             .calculate_total_tokens_balance
         {
             0 => self.calculate_total_tokens_balance_v0(transaction, platform_version),
+            1 => self.calculate_total_tokens_balance_v1(transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "calculate_total_tokens_balance".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

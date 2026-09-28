@@ -173,8 +173,8 @@ mod tests {
 
     #[test]
     fn should_add_to_existing_token_total_supply() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [1u8; 32];
         let contract_id = Identifier::from([3u8; 32]);
@@ -237,8 +237,8 @@ mod tests {
 
     #[test]
     fn should_error_when_adding_to_non_existent_token_without_allow_first_mint() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [7u8; 32];
 
@@ -262,8 +262,8 @@ mod tests {
 
     #[test]
     fn should_error_on_overflow_when_allow_saturation_is_false() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [2u8; 32];
         let contract_id = Identifier::from([4u8; 32]);
@@ -316,8 +316,8 @@ mod tests {
 
     #[test]
     fn should_saturate_on_overflow_when_allow_saturation_is_true() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [3u8; 32];
         let contract_id = Identifier::from([5u8; 32]);
@@ -377,8 +377,8 @@ mod tests {
     #[test]
     fn should_estimate_costs_without_mutating_state_when_apply_false() {
         // apply=false triggers the estimated_costs_only_with_layer_info branch.
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [70u8; 32];
         let contract_id = Identifier::from([71u8; 32]);
@@ -435,8 +435,8 @@ mod tests {
     #[test]
     fn should_report_full_added_amount_on_fresh_first_mint() {
         // First mint branch returns `amount` as added; covers the `allow_first_mint` insert path.
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [80u8; 32];
 
@@ -464,8 +464,8 @@ mod tests {
 
     #[test]
     fn should_error_when_first_mint_amount_exceeds_i64_max() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let block_info = BlockInfo::default();
         let token_id = [9u8; 32];
 
