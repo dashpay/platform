@@ -74,8 +74,20 @@ final class PlatformWalletStopSpvTests: XCTestCase {
             calls: Self.makeTeardownCalls(recorder: recorder, log: log))
     }
 
-    private func waitUntilStopStarted(_ recorder: StopRecorder) async throws {
+    private struct StopDidNotStart: Error, CustomStringConvertible {
+        let timeout: Duration
+        var description: String { "the native stop did not start within \(timeout)" }
+    }
+
+    /// Waits until the fake native stop has been entered, and fails the test
+    /// instead of hanging when it never is.
+    private func waitUntilStopStarted(
+        _ recorder: StopRecorder,
+        timeout: Duration = .seconds(5)
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
         while recorder.count == 0 {
+            guard ContinuousClock.now < deadline else { throw StopDidNotStart(timeout: timeout) }
             try await Task.sleep(for: .milliseconds(5))
         }
     }
