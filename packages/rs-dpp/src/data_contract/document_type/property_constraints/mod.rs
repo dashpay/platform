@@ -7,7 +7,8 @@
 //! (`equal`, `notEqual`), a test of whether a string starts or ends with
 //! another (`startsWith`, `endsWith`), a test of whether an array property
 //! holds a value (`contains`), a test of whether the document holds a property
-//! (`present`, `absent`), or `anyOf`, `allOf` or `not` over conditions.
+//! (`present`, `absent`), or `anyOf`, `allOf`, `not` or `implies` over
+//! conditions; `notIn` is an `in` negated.
 //!
 //! ```json
 //! "propertyConstraints": {
@@ -36,7 +37,8 @@
 //!
 //! An operand is an integer value, the dotted path of an integer or boolean
 //! property (a boolean reads as 1 for true and 0 for false), or an object with
-//! one key: an arithmetic operator over its operands, `ifAbsent`, a property
+//! one key: an arithmetic operator over its operands (`min`, `max` and `abs`
+//! included), `ifAbsent`, a property
 //! with the value it takes when the document leaves it out, or a size:
 //! `length` and `byteLength`, the characters and the UTF-8 bytes of a string
 //! property, and `count`, the items of an array or byte array property. A
@@ -98,6 +100,11 @@ const POWER: &str = "power";
 const ANY_OF: &str = "anyOf";
 const ALL_OF: &str = "allOf";
 const NOT: &str = "not";
+const IMPLIES: &str = "implies";
+const NOT_IN: &str = "notIn";
+const MIN: &str = "min";
+const MAX: &str = "max";
+const ABS: &str = "abs";
 const PRESENT: &str = "present";
 const ABSENT: &str = "absent";
 const IN: &str = "in";
@@ -111,8 +118,8 @@ const COUNT: &str = "count";
 const CONST: &str = "const";
 
 /// Every key an operand object may hold, for the errors.
-const OPERAND_KEYS: &str =
-    "add, subtract, multiply, divide, modulo, power, ifAbsent, length, byteLength or count";
+const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power, min, max, abs, \
+                            ifAbsent, length, byteLength or count";
 
 /// The deepest a condition or an operand may sit in its rule: the rule's own
 /// condition at depth 0, and each operand of a comparison, and each condition
@@ -424,6 +431,12 @@ pub enum ConstraintExpression {
     Modulo(Box<ConstraintExpression>, Box<ConstraintExpression>),
     /// `power`: the left operand raised to the right one.
     Power(Box<ConstraintExpression>, Box<ConstraintExpression>),
+    /// `min`: the least of two or more operands.
+    Min(Vec<ConstraintExpression>),
+    /// `max`: the greatest of two or more operands.
+    Max(Vec<ConstraintExpression>),
+    /// `abs`: the absolute value of its one operand.
+    Abs(Box<ConstraintExpression>),
 }
 
 impl ConstraintExpression {
@@ -453,6 +466,9 @@ impl ConstraintExpression {
     ///   remainder `1`), which for operands that are not negative is ordinary
     ///   integer division. A divisor of 0 is a
     ///   [`PropertyConstraintViolation::DivisionByZero`];
+    /// * `min` and `max` evaluate every operand, so a fault in any breaks the
+    ///   rule; `abs` of `i128::MIN` does not fit
+    ///   ([`PropertyConstraintViolation::Overflow`]);
     /// * `power` refuses a negative exponent
     ///   ([`PropertyConstraintViolation::NegativeExponent`]), which has no
     ///   integer result, and takes `0` to the power `0` as `1`.
@@ -520,6 +536,23 @@ impl ConstraintExpression {
                     (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 power(base, exponent)
             }
+            ConstraintExpression::Min(operands) | ConstraintExpression::Max(operands) => {
+                let mut values = Vec::with_capacity(operands.len());
+                for operand in operands {
+                    values.push(operand.evaluate(data, system)?);
+                }
+                let extreme = if matches!(self, ConstraintExpression::Min(_)) {
+                    values.into_iter().min()
+                } else {
+                    values.into_iter().max()
+                };
+                // A parsed min or max has two or more operands
+                extreme.ok_or(PropertyConstraintViolation::Overflow)
+            }
+            ConstraintExpression::Abs(operand) => operand
+                .evaluate(data, system)?
+                .checked_abs()
+                .ok_or(PropertyConstraintViolation::Overflow),
         }
     }
 
@@ -530,9 +563,13 @@ impl ConstraintExpression {
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
             | ConstraintExpression::System(_) => 0,
-            ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
+            ConstraintExpression::Add(operands)
+            | ConstraintExpression::Multiply(operands)
+            | ConstraintExpression::Min(operands)
+            | ConstraintExpression::Max(operands) => {
                 operands.iter().map(ConstraintExpression::node_count).sum()
             }
+            ConstraintExpression::Abs(operand) => operand.node_count(),
             ConstraintExpression::Subtract(left, right)
             | ConstraintExpression::Divide(left, right)
             | ConstraintExpression::Modulo(left, right)
@@ -547,9 +584,13 @@ impl ConstraintExpression {
             ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
             | ConstraintExpression::System(_) => true,
-            ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
+            ConstraintExpression::Add(operands)
+            | ConstraintExpression::Multiply(operands)
+            | ConstraintExpression::Min(operands)
+            | ConstraintExpression::Max(operands) => {
                 operands.iter().any(ConstraintExpression::reads_property)
             }
+            ConstraintExpression::Abs(operand) => operand.reads_property(),
             ConstraintExpression::Subtract(left, right)
             | ConstraintExpression::Divide(left, right)
             | ConstraintExpression::Modulo(left, right)
@@ -566,11 +607,15 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_) | ConstraintExpression::System(_) => {}
             ConstraintExpression::Property { path, .. } => reads.push((path, PropertyRead::Value)),
             ConstraintExpression::Size { measure, path } => reads.push((path, measure.read())),
-            ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
+            ConstraintExpression::Add(operands)
+            | ConstraintExpression::Multiply(operands)
+            | ConstraintExpression::Min(operands)
+            | ConstraintExpression::Max(operands) => {
                 for operand in operands {
                     operand.collect_property_reads(reads);
                 }
             }
+            ConstraintExpression::Abs(operand) => operand.collect_property_reads(reads),
             ConstraintExpression::Subtract(left, right)
             | ConstraintExpression::Divide(left, right)
             | ConstraintExpression::Modulo(left, right)
@@ -589,11 +634,15 @@ impl ConstraintExpression {
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. } => {}
-            ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
+            ConstraintExpression::Add(operands)
+            | ConstraintExpression::Multiply(operands)
+            | ConstraintExpression::Min(operands)
+            | ConstraintExpression::Max(operands) => {
                 for operand in operands {
                     operand.collect_system_reads(reads);
                 }
             }
+            ConstraintExpression::Abs(operand) => operand.collect_system_reads(reads),
             ConstraintExpression::Subtract(left, right)
             | ConstraintExpression::Divide(left, right)
             | ConstraintExpression::Modulo(left, right)
@@ -845,6 +894,14 @@ pub enum PropertyConstraint {
     AllOf(Vec<PropertyConstraint>),
     /// `not`: the condition does not hold.
     Not(Box<PropertyConstraint>),
+    /// `implies`: the second condition holds whenever the first does,
+    /// `{ "implies": [{ "equal": ["status", { "const": "closed" }] }, { "present": "closedAt" }] }`.
+    /// The second is evaluated only when the first holds.
+    Implies(Box<PropertyConstraint>, Box<PropertyConstraint>),
+    /// `notIn`: an `in` ([`Self::In`], [`Self::TextIn`] or
+    /// [`Self::IdentifierIn`]) that does not hold, the operand taking none of
+    /// the listed values. It costs what the `in` costs.
+    NotIn(Box<PropertyConstraint>),
 }
 
 impl PropertyConstraint {
@@ -991,6 +1048,14 @@ impl PropertyConstraint {
                 Ok(true)
             }
             PropertyConstraint::Not(condition) => Ok(!condition.holds(data, system)?),
+            PropertyConstraint::Implies(premise, conclusion) => {
+                if premise.holds(data, system)? {
+                    conclusion.holds(data, system)
+                } else {
+                    Ok(true)
+                }
+            }
+            PropertyConstraint::NotIn(condition) => Ok(!condition.holds(data, system)?),
         }
     }
 
@@ -1056,6 +1121,11 @@ impl PropertyConstraint {
                 conditions.iter().map(PropertyConstraint::node_count).sum()
             }
             PropertyConstraint::Not(condition) => condition.node_count(),
+            PropertyConstraint::Implies(premise, conclusion) => {
+                premise.node_count() + conclusion.node_count()
+            }
+            // The `in`'s own nodes, the negation adding none
+            PropertyConstraint::NotIn(condition) => condition.node_count() - 1,
         }
     }
 
@@ -1093,7 +1163,12 @@ impl PropertyConstraint {
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
                 conditions.iter().any(PropertyConstraint::reads_owner)
             }
-            PropertyConstraint::Not(condition) => condition.reads_owner(),
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.reads_owner()
+            }
+            PropertyConstraint::Implies(premise, conclusion) => {
+                premise.reads_owner() || conclusion.reads_owner()
+            }
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
             | PropertyConstraint::TextCompare { .. }
@@ -1144,7 +1219,13 @@ impl PropertyConstraint {
                     condition.collect_system_reads(reads);
                 }
             }
-            PropertyConstraint::Not(condition) => condition.collect_system_reads(reads),
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_system_reads(reads)
+            }
+            PropertyConstraint::Implies(premise, conclusion) => {
+                premise.collect_system_reads(reads);
+                conclusion.collect_system_reads(reads);
+            }
             PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
@@ -1202,7 +1283,13 @@ impl PropertyConstraint {
                     condition.collect_text_affixes(affixes);
                 }
             }
-            PropertyConstraint::Not(condition) => condition.collect_text_affixes(affixes),
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_text_affixes(affixes)
+            }
+            PropertyConstraint::Implies(premise, conclusion) => {
+                premise.collect_text_affixes(affixes);
+                conclusion.collect_text_affixes(affixes);
+            }
             _ => {}
         }
     }
@@ -1228,7 +1315,13 @@ impl PropertyConstraint {
                     condition.collect_text_properties(properties);
                 }
             }
-            PropertyConstraint::Not(condition) => condition.collect_text_properties(properties),
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_text_properties(properties)
+            }
+            PropertyConstraint::Implies(premise, conclusion) => {
+                premise.collect_text_properties(properties);
+                conclusion.collect_text_properties(properties);
+            }
             PropertyConstraint::TextAffix { text, affix, .. } => {
                 for side in [text, affix] {
                     if let TextOperand::Property(property) = side {
@@ -1266,7 +1359,13 @@ impl PropertyConstraint {
                     condition.collect_text_constants(constants);
                 }
             }
-            PropertyConstraint::Not(condition) => condition.collect_text_constants(constants),
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_text_constants(constants)
+            }
+            PropertyConstraint::Implies(premise, conclusion) => {
+                premise.collect_text_constants(constants);
+                conclusion.collect_text_constants(constants);
+            }
             // Checked against the enum of the array's elements
             PropertyConstraint::Contains {
                 array,
@@ -1285,7 +1384,8 @@ impl PropertyConstraint {
         }
     }
 
-    /// Where an `anyOf` or `allOf` of the rule lists the same condition twice:
+    /// Where an `anyOf` or `allOf` of the rule lists the same condition twice,
+    /// or an `implies` implies its own premise:
     /// the repeat's place and the earlier one's (`anyOf[2]` and `anyOf[0]`),
     /// the first found in declared order, `None` when no list does. Conditions
     /// are alike when they parse alike, so `1` and `1.0` are the same value,
@@ -1313,7 +1413,8 @@ impl PropertyConstraint {
             | PropertyConstraint::IdentifierIn { .. }
             | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
-            | PropertyConstraint::Absent(_) => return None,
+            | PropertyConstraint::Absent(_)
+            | PropertyConstraint::NotIn(_) => return None,
             PropertyConstraint::AnyOf(conditions) => (ANY_OF, conditions),
             PropertyConstraint::AllOf(conditions) => (ALL_OF, conditions),
             PropertyConstraint::Not(condition) => {
@@ -1321,6 +1422,24 @@ impl PropertyConstraint {
                 let found = condition.find_repeated_condition(at);
                 at.truncate(parent);
                 return found;
+            }
+            // A condition implying itself holds for every document
+            PropertyConstraint::Implies(premise, conclusion) => {
+                let parent = enter(at, IMPLIES);
+                if premise == conclusion {
+                    return Some((format!("{at}[1]"), format!("{at}[0]")));
+                }
+                let base = at.len();
+                for (index, condition) in [premise, conclusion].into_iter().enumerate() {
+                    // Writing to a `String` cannot fail
+                    let _ = write!(at, "[{index}]");
+                    if let Some(found) = condition.find_repeated_condition(at) {
+                        return Some(found);
+                    }
+                    at.truncate(base);
+                }
+                at.truncate(parent);
+                return None;
             }
         };
         let parent = enter(at, key);
@@ -1410,7 +1529,13 @@ impl PropertyConstraint {
                     condition.collect_property_reads(reads);
                 }
             }
-            PropertyConstraint::Not(condition) => condition.collect_property_reads(reads),
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_property_reads(reads)
+            }
+            PropertyConstraint::Implies(premise, conclusion) => {
+                premise.collect_property_reads(reads);
+                conclusion.collect_property_reads(reads);
+            }
         }
     }
 }
@@ -1520,8 +1645,8 @@ fn single_entry(value: &Value) -> Option<(&str, &Value)> {
 /// Every key a condition object may hold, for the errors.
 fn condition_keys() -> String {
     format!(
-        "a comparison ({}), in, startsWith, endsWith, contains, present, absent, anyOf, allOf \
-         or not",
+        "a comparison ({}), in, notIn, startsWith, endsWith, contains, present, absent, \
+         anyOf, allOf, not or implies",
         ConstraintComparison::ALL
             .map(ConstraintComparison::wire_name)
             .join(", ")
@@ -1604,10 +1729,26 @@ fn parse_condition(
                 property_kind,
             )?))
         }
-        IN => {
+        IMPLIES => {
+            let Some([premise, conclusion]) = body.as_array().map(Vec::as_slice) else {
+                return Err(format!(
+                    "at {at} must list two conditions: one, then the one it implies"
+                ));
+            };
+            let base = at.len();
+            at.push_str("[0]");
+            let premise = parse_condition(premise, at, depth + 1, property_kind)?;
+            at.truncate(base);
+            at.push_str("[1]");
+            let conclusion = parse_condition(conclusion, at, depth + 1, property_kind)?;
+            at.truncate(base);
+            PropertyConstraint::Implies(Box::new(premise), Box::new(conclusion))
+        }
+        IN | NOT_IN => {
             let Some([operand, values]) = body.as_array().map(Vec::as_slice) else {
                 return Err(format!(
-                    "at {at} must list an integer expression and the values it may take"
+                    "at {at} must list an integer expression and the values it may {}take",
+                    if key == NOT_IN { "not " } else { "" }
                 ));
             };
             let base = at.len();
@@ -1621,7 +1762,7 @@ fn parse_condition(
             let identifier_path = operand
                 .as_text()
                 .filter(|path| over_strings && kind_of(path) == Some(EqualityKind::Identifier));
-            if let Some(path) = identifier_path {
+            let listed = if let Some(path) = identifier_path {
                 at.push_str("[1]");
                 let values = in_identifier_values(values, at)?;
                 at.truncate(base);
@@ -1656,6 +1797,11 @@ fn parse_condition(
                 let values = in_values(values, at)?;
                 at.truncate(base);
                 PropertyConstraint::In { operand, values }
+            };
+            if key == NOT_IN {
+                PropertyConstraint::NotIn(Box::new(listed))
+            } else {
+                listed
             }
         }
         STARTS_WITH | ENDS_WITH => {
@@ -2195,6 +2341,9 @@ fn parse_expression(
             }
         }
         ADD => ConstraintExpression::Add(operand_list(operands, at, depth + 1)?),
+        MIN => ConstraintExpression::Min(operand_list(operands, at, depth + 1)?),
+        MAX => ConstraintExpression::Max(operand_list(operands, at, depth + 1)?),
+        ABS => ConstraintExpression::Abs(Box::new(parse_expression(operands, at, depth + 1)?)),
         MULTIPLY => ConstraintExpression::Multiply(operand_list(operands, at, depth + 1)?),
         SUBTRACT => {
             let (left, right) = operand_pair(operands, at, depth + 1)?;

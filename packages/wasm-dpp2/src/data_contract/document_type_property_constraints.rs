@@ -38,8 +38,9 @@ const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
  *   document type records by listing it in `required`
  *   (`PropertyConstraintSystemProperty`);
  * - `ifAbsent`: a property path and the integer it takes when left out;
- * - `add` and `multiply` over two or more operands, `subtract`, `divide`,
- *   `modulo` and `power` over exactly two. Arithmetic is exact over 128-bit
+ * - `add`, `multiply`, `min` and `max` over two or more operands,
+ *   `subtract`, `divide`, `modulo` and `power` over exactly two, `abs` over
+ *   one. Arithmetic is exact over 128-bit
  *   integers; `divide` and `modulo` are Euclidean;
  * - `length` and `byteLength`: the characters (as `maxLength` counts them)
  *   and the UTF-8 bytes of a string property; `count`: the items of an array
@@ -57,6 +58,9 @@ export type PropertyConstraintExpression =
   | { divide: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { modulo: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { power: [PropertyConstraintExpression, PropertyConstraintExpression] }
+  | { min: PropertyConstraintExpression[] }
+  | { max: PropertyConstraintExpression[] }
+  | { abs: PropertyConstraintExpression }
   | { length: string }
   | { byteLength: string }
   | { count: string };
@@ -91,8 +95,10 @@ export type PropertyConstraintEqualityOperand =
  *   equal, an integer expression, a string or an identifier operand as its
  *   elements are; an array the document leaves out holds nothing;
  * - `present` / `absent`: whether the document holds a property of any type;
- * - `anyOf` / `allOf` over two or more conditions, `not` over one. Conditions
- *   are checked in order and no further than the outcome needs.
+ * - `notIn`: what `in` lists, holding when the operand takes none of the values;
+ * - `anyOf` / `allOf` over two or more conditions, `not` over one, `implies`
+ *   over two (the second holds whenever the first does). Conditions are
+ *   checked in order and no further than the outcome needs.
  */
 export type PropertyConstraintCondition =
   | { equal: [PropertyConstraintExpression, PropertyConstraintExpression] | [PropertyConstraintEqualityOperand, PropertyConstraintEqualityOperand] }
@@ -102,6 +108,7 @@ export type PropertyConstraintCondition =
   | { greaterThan: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { greaterThanOrEqual: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { in: [PropertyConstraintExpression, Array<number | bigint>] | [string | { ifAbsent: [path: string, value: string] }, string[]] }
+  | { notIn: [PropertyConstraintExpression, Array<number | bigint>] | [string | { ifAbsent: [path: string, value: string] }, string[]] }
   | { startsWith: [PropertyConstraintEqualityOperand, PropertyConstraintEqualityOperand] }
   | { endsWith: [PropertyConstraintEqualityOperand, PropertyConstraintEqualityOperand] }
   | { contains: [path: string, PropertyConstraintExpression | PropertyConstraintEqualityOperand] }
@@ -109,7 +116,8 @@ export type PropertyConstraintCondition =
   | { absent: string }
   | { anyOf: PropertyConstraintCondition[] }
   | { allOf: PropertyConstraintCondition[] }
-  | { not: PropertyConstraintCondition };
+  | { not: PropertyConstraintCondition }
+  | { implies: [PropertyConstraintCondition, PropertyConstraintCondition] };
 
 /**
  * How a rule reads a property: `value` as an integer operand, `presence` in

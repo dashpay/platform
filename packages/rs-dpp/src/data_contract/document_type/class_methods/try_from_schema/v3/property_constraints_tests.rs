@@ -1848,3 +1848,93 @@ fn should_test_string_properties_for_prefixes_and_suffixes() {
         );
     }
 }
+
+/// `min`, `max`, `abs`, `implies` and `notIn` register on both paths, their
+/// reads held to the same checks as any; a `notIn` string is checked against
+/// the property's enum, and an `implies` of its own premise is refused under
+/// full validation only, like any repeated condition.
+#[test]
+fn should_register_min_max_abs_implies_and_not_in() {
+    let seller = Identifier::new([5; 32]).to_string(Encoding::Base58);
+    let other = Identifier::new([6; 32]).to_string(Encoding::Base58);
+    let rules = json!({
+        "feeCapped": { "lessThanOrEqual": ["fee", { "max": [10, { "divide": ["price", 10] }] }] },
+        "cheapSide": { "greaterThanOrEqual": [{ "min": ["price", "fee"] }, 1] },
+        "depositNearOrder": {
+            "lessThanOrEqual": [{ "abs": { "subtract": ["deposit", "price"] } }, 1000]
+        },
+        "closedHasNote": {
+            "implies": [{ "equal": ["state", { "const": "closed" }] }, { "present": "note" }]
+        },
+        "feeNotBanned": { "notIn": ["fee", [13, 666]] },
+        "notSpam": { "notIn": ["note", ["spam", "scam"]] },
+        "notTheseSellers": { "notIn": ["sellerId", [seller.clone(), other.clone()]] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(constraints.len(), 7);
+        assert_eq!(
+            constraints["closedHasNote"].property_reads(),
+            [
+                ("state", PropertyRead::Text),
+                ("note", PropertyRead::Presence)
+            ]
+        );
+        assert_eq!(
+            constraints["depositNearOrder"].property_paths(),
+            ["deposit", "price"]
+        );
+    }
+
+    // The reads inside are held to the usual checks
+    for (rule, needle) in [
+        (
+            json!({ "notIn": ["state", ["open", "x"]] }),
+            "rule \"rule\" compares \"state\" with \"x\", which is not one of its enum values",
+        ),
+        (
+            json!({ "equal": [{ "abs": "note" }, 1] }),
+            "reads \"note\", which has type string, not integer or boolean",
+        ),
+        (
+            json!({ "implies": [{ "present": "note" }, { "lessThan": ["missing", 1] }] }),
+            "reads \"missing\", which is not an integer or boolean property",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(json!({ "rule": rule.clone() }), full_validation),
+                needle,
+            );
+        }
+    }
+
+    // An implies of its own premise holds for every document
+    let same = json!({
+        "rule": { "implies": [{ "present": "note" }, { "present": "note" }] }
+    });
+    expect_structure_error(
+        parse_order(same.clone(), true),
+        "rule \"rule\" at implies[1] repeats the condition at implies[0]",
+    );
+    parse_order(same, false).expect("a stored rule is not re-judged for repeats");
+
+    // The meta-schema checks the shapes when registering
+    for rules in [
+        json!({ "rule": { "implies": [{ "present": "note" }] } }),
+        json!({ "rule": { "implies": { "present": "note" } } }),
+        json!({ "rule": { "notIn": ["price"] } }),
+        json!({ "rule": { "notIn": ["price", [1, 1]] } }),
+        json!({ "rule": { "equal": [{ "min": ["price"] }, 1] } }),
+        json!({ "rule": { "equal": [{ "abs": ["price", "fee"] }, 1] } }),
+    ] {
+        let registered = parse_order(rules.clone(), true);
+        assert!(
+            registered.as_ref().is_err_and(is_json_schema_error),
+            "{rules}: the meta-schema should refuse it, got {registered:?}"
+        );
+        expect_structure_error(parse_order(rules, false), "propertyConstraints");
+    }
+}
