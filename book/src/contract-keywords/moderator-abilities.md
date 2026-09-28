@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Where** | document type, in a contract whose config declares `moderation` |
-| **Value** | object with at least one of `delete` (boolean), `deleteWithin` (seconds) and `changeFields` (array of top-level property names) |
+| **Value** | object with `delete` (boolean), `deleteWithin` (seconds, only beside `delete: true`) and `changeFields` (array of top-level property names), at least one of them given |
 | **Default** | absent: the moderators can do nothing to documents of the type |
 | **Since** | protocol version 14 |
 | **On update** | Fixed (`DocumentTypeUpdateError`, 40212): a type can neither gain, lose nor change it. A type the update adds may declare it. |
@@ -31,7 +31,7 @@ The top-level properties of the type that only the contract's moderators write. 
 | **Default** | absent: nobody but a document's owner writes its properties |
 | **Since** | protocol version 14 |
 | **On update** | Fixed (`DocumentTypeUpdateError`, 40212) |
-| **Errors** | `DocumentFieldNotChangeableByModeratorsError` (41123), `DocumentModeratorFieldNotWritableError` (41124), `InvalidContractModerationDocumentFieldsError` (10905), `IdentityNotContractModeratorError` (41101), `ContractModerationAbilityNotGrantedError` (41201) |
+| **Errors** | `DocumentFieldNotChangeableByModeratorsError` (41123), `DocumentModeratorFieldNotWritableError` (41124), `InvalidContractModerationDocumentFieldsError` (10905), `IdentityNotContractModeratorError` (41101), `ContractModerationAbilityNotGrantedError` (41201), `ModerationReasonNotListedError` (41203) |
 
 ### Example
 

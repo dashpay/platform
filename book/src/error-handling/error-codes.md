@@ -44,7 +44,7 @@ The `DefaultError` variant returns code 1 -- a sentinel value that should never 
 
 Error codes are organized into ranges that correspond to error categories and subcategories. Here is the complete map as it stands in the codebase:
 
-### BasicError codes (10000-10899)
+### BasicError codes (10000-10949)
 
 | Range | Category | Examples |
 |-------|----------|----------|

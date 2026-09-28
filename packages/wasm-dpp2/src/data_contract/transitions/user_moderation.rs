@@ -705,25 +705,29 @@ impl ContractUserModerationWasm {
             .map(Into::into)
     }
 
-    /// For a changeDocumentFields, the fields it sets, identifiers as base58 strings, a `null`
-    /// removing one
+    /// For a changeDocumentFields, the fields it sets, read as a document's properties are
+    /// (identifiers as base58 strings, integers as bigints), and `null` for a field it removes
     #[wasm_bindgen(
         getter = "fields",
         unchecked_return_type = "Record<string, unknown> | undefined"
     )]
     pub fn fields(&self) -> WasmDppResult<JsValue> {
-        match self.0.action().changed_document() {
-            None => Ok(JsValue::UNDEFINED),
-            Some((_, _, fields)) => {
-                let fields = Value::Map(
-                    fields
-                        .iter()
-                        .map(|(name, value)| (Value::Text(name.clone()), value.clone()))
-                        .collect(),
-                );
-                Ok(platform_value_to_object_with_base58_identifiers(&fields)?)
-            }
+        let Some((_, _, fields)) = self.0.action().changed_document() else {
+            return Ok(JsValue::UNDEFINED);
+        };
+        let object = js_sys::Object::new();
+        for (name, value) in fields {
+            // A removal stays `null`: the conversion of a document's properties would read it as
+            // `undefined`, which says nothing about the field.
+            let value = match value {
+                Value::Null => JsValue::NULL,
+                value => platform_value_to_object_with_base58_identifiers(value)?,
+            };
+            js_sys::Reflect::set(&object, &JsValue::from_str(name), &value).map_err(|_| {
+                WasmDppError::serialization(format!("failed to set field `{name}`"))
+            })?;
         }
+        Ok(object.into())
     }
 
     /// For a suspend, the block time in milliseconds at which the suspension lapses

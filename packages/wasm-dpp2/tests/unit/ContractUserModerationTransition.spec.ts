@@ -175,7 +175,8 @@ describe('ContractUserModeration', () => {
       expect(transition.action).to.equal('changeDocumentFields');
       expect(transition.documentTypeName).to.equal(DOCUMENT_TYPE_NAME);
       expect(transition.documentId?.toString()).to.equal(DOCUMENT_ID);
-      expect(transition.fields).to.deep.equal(FIELDS);
+      // Read back as a document's properties are, integers as bigints; a removal stays null.
+      expect(transition.fields).to.deep.equal({ status: BigInt(2), resolution: null });
       expect(transition.identityId).to.equal(undefined);
       expect(transition.document).to.equal(undefined);
       expect(transition.reason).to.deep.equal({ code: 4, text: 'handled' });

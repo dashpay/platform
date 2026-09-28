@@ -6,7 +6,7 @@ Every document carries a few values the platform manages rather than the writer:
 |---|---|---|
 | [`$id`](#id) | the document's id | always |
 | [`$ownerId`](#ownerid) | the identity that owns the document now | always |
-| [`$revision`](#revision) | how many times the document has changed, plus one | on types whose documents can be replaced, transferred or sold |
+| [`$revision`](#revision) | how many times the document has changed, plus one | on types whose documents can be replaced, transferred or sold, or that keep fields for their moderators |
 | [`$createdAt`, `$updatedAt`, `$transferredAt`](#timestamps) | block times of the creation, last update and last transfer | when listed in `required` |
 | [`$createdAtBlockHeight` and the other heights](#block-heights) | Platform and Core block heights of the same events | when listed in `required` |
 | [`$creatorId`](#creatorid) | the identity that created the document | on types whose documents can be transferred or sold |
@@ -70,13 +70,13 @@ The owner is the identity that created the document, until a transfer or a purch
 
 | | |
 |---|---|
-| **Where** | Documents of a type whose documents can be replaced (`documentsMutable`, true by default), transferred (`transferable: 1`) or sold (`tradeMode: 1`) |
+| **Where** | Documents of a type whose documents can be replaced (`documentsMutable`, true by default), transferred (`transferable: 1`) or sold (`tradeMode: 1`), or that keeps fields only its moderators write ([`moderatorAbilities.changeFields`](moderator-abilities.md#changefields)), even when its documents cannot be replaced |
 | **Value** | An integer, from 1 |
 | **Recorded** | On those types; absent on every other |
 | **Since** | protocol version 1 |
 | **Errors** | `InvalidDocumentRevisionError` (40106): a transition whose revision is not the stored one plus one |
 
-A new document has revision 1. Every replace, transfer, price update and purchase raises it by one, and the transition must state the new revision: the stored revision plus one. A transition built against an older copy of the document is refused, rather than silently overwriting a newer one. A type whose documents can never change after creation carries no revision. `$revision` is not one of the system properties an index may name.
+A new document has revision 1. Every replace, transfer, price update and purchase raises it by one, and the transition must state the new revision: the stored revision plus one. A transition built against an older copy of the document is refused, rather than silently overwriting a newer one. A moderator's change of the fields a type keeps for its moderators raises it by one too; the moderation transition states no revision, the platform sets it, and an owner's replace built before the change is refused. A type whose documents can never change after creation carries no revision. `$revision` is not one of the system properties an index may name.
 
 ## Timestamps
 
@@ -101,7 +101,7 @@ The platform sets these from the block that processes the transition; the writer
 Timestamps may be indexed. Some keywords need one in `required`, since they read it:
 
 - [`ttl`](ttl.md) counts from `$createdAt`.
-- `moderatorAbilities.deleteWithin` counts from `$updatedAt`, or from `$createdAt` on a type whose documents cannot be replaced (see [Deletion](deletion.md)).
+- `moderatorAbilities.deleteWithin` counts from `$updatedAt`, or from `$createdAt` on a type that does not record `$updatedAt` (see [Deletion](deletion.md)).
 - A [time-range index](time-range.md) needs the timestamp it buckets.
 
 ## Block heights

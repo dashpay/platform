@@ -47,7 +47,7 @@ A vote is cast once and stays as cast: no replace is accepted, and with `canBeDe
 - With `true`, the document's owner may replace it. The replace carries the whole new document, which is validated against the schema as a create is, and a `$revision` one higher than the stored one (`InvalidDocumentRevisionError`, 40106). Anyone other than the owner is refused (`DocumentOwnerIdMismatchError`, 40102). When the type lists `$updatedAt` in `required`, the replace sets it to the block's time, and likewise `$updatedAtBlockHeight` and `$updatedAtCoreBlockHeight` to the block heights.
 - With `false`, every replace is refused (`InvalidDocumentTransitionActionError`, 10404).
 - A type whose documents cannot be replaced may still let them be transferred or sold (`transferable`, `tradeMode`). Such a document changes owner and price, but its owner can never edit its properties. The DPNS `domain` type works this way.
-- A document stores a `$revision` when its type allows a replace, a transfer or trading. A type that allows none of them stores none. See [System Properties](system-properties.md).
+- A document stores a `$revision` when its type allows a replace, a transfer or trading, or keeps fields its moderators write ([`moderatorAbilities.changeFields`](moderator-abilities.md#changefields)), whose changes raise it even on a type whose documents cannot be replaced. A type that allows none of them stores none. See [System Properties](system-properties.md).
 
 ### Rules at registration
 
