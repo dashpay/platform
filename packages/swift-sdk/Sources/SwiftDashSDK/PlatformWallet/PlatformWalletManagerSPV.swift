@@ -277,10 +277,7 @@ extension PlatformWalletManager {
     /// tearing the previous client down: the main actor is free during that
     /// stop, so a start issued meanwhile would otherwise race it.
     public func startSpv(config: PlatformSpvStartConfig) throws {
-        guard spvStopsInFlight == 0 else {
-            throw PlatformWalletError.walletOperation(
-                "SPV stop in progress; await stopSpv() before starting SPV")
-        }
+        try ensureNoSpvStopInFlight(before: "starting SPV")
         // Peer array: allocate contiguous C strings.
         let peerCStrings: [UnsafeMutablePointer<CChar>?] = config.peers.map { strdup($0) }
         defer { peerCStrings.forEach { if let p = $0 { free(p) } } }
@@ -314,7 +311,12 @@ extension PlatformWalletManager {
     }
 
     /// Stop the SPV client (idempotent).
+    ///
+    /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
+    /// that stop is already tearing the client down, and this blocking one
+    /// would wait on the same teardown on the calling thread.
     public func stopSpv() throws {
+        try ensureNoSpvStopInFlight(before: "a blocking stopSpv()")
         try platform_wallet_manager_spv_stop(handle).check()
     }
 
@@ -333,9 +335,10 @@ extension PlatformWalletManager {
     /// requested once a shutdown has begun throws `invalidHandle` before any
     /// native work. [`startSpv(config:)`] throws while a stop is in flight.
     public func stopSpv() async throws {
+        try ensureConfigured()
         // Admission and the in-flight count change on the main actor with no
-        // suspension in between, so neither `shutdown()`'s drain nor
-        // `startSpv`'s guard can miss this stop.
+        // suspension in between, so neither `shutdown()`'s drain nor the
+        // in-flight guard of the other SPV calls can miss this stop.
         try admitNativeOp("stopSpv")
         defer { finishNativeOp() }
         spvStopsInFlight += 1
@@ -358,8 +361,22 @@ extension PlatformWalletManager {
     }
 
     /// Clear all persisted SPV storage (headers, filters, state).
+    ///
+    /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
+    /// the stopping client can still hold and write the same data directory.
     public func clearSpvStorage() throws {
+        try ensureNoSpvStopInFlight(before: "clearing SPV storage")
         try platform_wallet_manager_spv_clear_storage(handle).check()
+    }
+
+    /// Throws `walletOperation` while an async [`stopSpv()`] is in flight.
+    /// The main actor is free during that stop, so SPV calls issued meanwhile
+    /// would otherwise race the client's teardown.
+    func ensureNoSpvStopInFlight(before operation: String) throws {
+        guard spvStopsInFlight == 0 else {
+            throw PlatformWalletError.walletOperation(
+                "SPV stop in progress; await stopSpv() before \(operation)")
+        }
     }
 
     /// Arm an organic compact-filter rescan for one wallet by rewinding

@@ -22,6 +22,9 @@ final class PlatformWalletStopSpvTests: XCTestCase {
     /// Fake native SPV stop: records which thread ran it and, for the first
     /// call only, blocks on `gate` so a test can act while the stop is in
     /// flight. Later calls (the teardown's own SPV stop step) return at once.
+    /// The gate wait gives up after 10 s, so a stop that ran on the main
+    /// thread (blocking the test that would open the gate) fails the test
+    /// instead of hanging it.
     private final class StopRecorder: @unchecked Sendable {
         private let lock = NSLock()
         private let gate: DispatchSemaphore?
@@ -39,7 +42,7 @@ final class PlatformWalletStopSpvTests: XCTestCase {
                 return mainThreadFlags.count == 1
             }
             eventLog.append("spv_stop:begin")
-            if isFirst { gate?.wait() }
+            if isFirst { _ = gate?.wait(timeout: .now() + 10) }
             eventLog.append("spv_stop:end")
             return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
         }
@@ -74,31 +77,53 @@ final class PlatformWalletStopSpvTests: XCTestCase {
             calls: Self.makeTeardownCalls(recorder: recorder, log: log))
     }
 
-    private struct StopDidNotStart: Error, CustomStringConvertible {
+    private struct TimedOut: Error, CustomStringConvertible {
+        let what: String
         let timeout: Duration
-        var description: String { "the native stop did not start within \(timeout)" }
+        var description: String { "\(what) did not happen within \(timeout)" }
     }
 
-    /// Waits until the fake native stop has been entered, and fails the test
-    /// instead of hanging when it never is.
-    private func waitUntilStopStarted(
-        _ recorder: StopRecorder,
-        timeout: Duration = .seconds(5)
+    /// Polls `condition` on the main actor, and fails the test instead of
+    /// hanging when it does not hold within `timeout`.
+    private func waitUntil(
+        _ what: String,
+        timeout: Duration = .seconds(5),
+        _ condition: () -> Bool
     ) async throws {
         let deadline = ContinuousClock.now + timeout
-        while recorder.count == 0 {
-            guard ContinuousClock.now < deadline else { throw StopDidNotStart(timeout: timeout) }
+        while !condition() {
+            guard ContinuousClock.now < deadline else { throw TimedOut(what: what, timeout: timeout) }
             try await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    private func waitUntilStopStarted(_ recorder: StopRecorder) async throws {
+        try await waitUntil("the native stop starting") { recorder.count > 0 }
+    }
+
+    /// Asserts `call` throws the in-flight-stop refusal, not some other error.
+    private func assertRefusedWhileStopping(
+        _ call: @autoclosure () throws -> Void,
+        _ name: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertThrowsError(try call(), name, file: file, line: line) { error in
+            guard case PlatformWalletError.walletOperation(let message) = error,
+                  message.contains("SPV stop in progress") else {
+                return XCTFail("\(name): expected the in-flight stop refusal, got \(error)", file: file, line: line)
+            }
         }
     }
 
     // MARK: - Off-main execution
 
     /// The native stop runs off the main thread, and the main actor keeps
-    /// running work while that stop is blocked — this test's own polling
-    /// loop runs on the main actor for the whole blocked window.
+    /// running work while that stop is blocked: this test runs on the main
+    /// actor and polls for the stop to start while its gate is still closed.
     func testStopRunsOffMainWhileTheMainActorStaysFree() async throws {
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
         let log = EventLog()
         let recorder = StopRecorder(gate: gate, eventLog: log)
         let manager = makeManager(handle: 21, recorder: recorder, log: log)
@@ -106,13 +131,9 @@ final class PlatformWalletStopSpvTests: XCTestCase {
         let stopTask = Task { try await manager.stopSpv() }
         try await waitUntilStopStarted(recorder)
 
-        var mainActorTurns = 0
-        for _ in 0..<3 {
-            try await Task.sleep(for: .milliseconds(5))
-            mainActorTurns += 1
-        }
-        XCTAssertEqual(mainActorTurns, 3, "the main actor must stay free while the native stop blocks")
-        XCTAssertFalse(log.events.contains("spv_stop:end"), "the native stop must still be blocked")
+        XCTAssertFalse(
+            log.events.contains("spv_stop:end"),
+            "the main actor must run while the native stop is still blocked")
 
         gate.signal()
         try await stopTask.value
@@ -127,6 +148,7 @@ final class PlatformWalletStopSpvTests: XCTestCase {
     /// must be refused rather than race the teardown of the old client.
     func testStartSpvIsRefusedWhileAnAsyncStopIsInFlight() async throws {
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
         let log = EventLog()
         let recorder = StopRecorder(gate: gate, eventLog: log)
         let manager = makeManager(handle: 22, recorder: recorder, log: log)
@@ -134,17 +156,36 @@ final class PlatformWalletStopSpvTests: XCTestCase {
         let stopTask = Task { try await manager.stopSpv() }
         try await waitUntilStopStarted(recorder)
 
-        XCTAssertThrowsError(
-            try manager.startSpv(config: PlatformSpvStartConfig(dataDir: "/tmp/unused", network: .testnet))
-        ) { error in
-            guard case PlatformWalletError.walletOperation = error else {
-                return XCTFail("expected walletOperation, got \(error)")
-            }
-        }
+        assertRefusedWhileStopping(
+            try manager.startSpv(config: PlatformSpvStartConfig(dataDir: "/tmp/unused", network: .testnet)),
+            "startSpv")
 
         gate.signal()
         try await stopTask.value
         XCTAssertEqual(manager.spvStopsInFlight, 0, "the in-flight count must be released after the stop")
+        await manager.shutdown()
+    }
+
+    /// The blocking stop and the storage clear are refused the same way: the
+    /// blocking stop would wait on the same teardown on the calling thread,
+    /// and the stopping client can still hold the data directory.
+    func testBlockingStopAndStorageClearAreRefusedWhileAnAsyncStopIsInFlight() async throws {
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let log = EventLog()
+        let recorder = StopRecorder(gate: gate, eventLog: log)
+        let manager = makeManager(handle: 25, recorder: recorder, log: log)
+
+        let stopTask = Task { try await manager.stopSpv() }
+        try await waitUntilStopStarted(recorder)
+
+        // A synchronous context resolves `stopSpv()` to the blocking overload.
+        func blockingStop() throws { try manager.stopSpv() }
+        assertRefusedWhileStopping(try blockingStop(), "blocking stopSpv()")
+        assertRefusedWhileStopping(try manager.clearSpvStorage(), "clearSpvStorage()")
+
+        gate.signal()
+        try await stopTask.value
         await manager.shutdown()
     }
 
@@ -154,6 +195,7 @@ final class PlatformWalletStopSpvTests: XCTestCase {
     /// except the early shielded stop runs after the admitted SPV stop ends.
     func testShutdownWaitsForAnInFlightStopBeforeTearingDown() async throws {
         let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
         let log = EventLog()
         let recorder = StopRecorder(gate: gate, eventLog: log)
         let manager = makeManager(handle: 23, recorder: recorder, log: log)
@@ -162,7 +204,11 @@ final class PlatformWalletStopSpvTests: XCTestCase {
         try await waitUntilStopStarted(recorder)
 
         let shutdownTask = Task { await manager.shutdown() }
-        try await Task.sleep(for: .milliseconds(30))
+        // The early shielded stop is the step right before shutdown waits for
+        // admitted native operations; destroy can only follow that wait.
+        try await waitUntil("the early shielded stop") {
+            log.events.contains("teardown:shielded_sync_stop")
+        }
         XCTAssertFalse(
             log.events.contains("teardown:destroy"),
             "shutdown must not destroy the handle while an admitted stop runs")

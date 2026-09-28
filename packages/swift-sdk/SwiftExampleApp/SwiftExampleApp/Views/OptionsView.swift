@@ -155,7 +155,7 @@ struct OptionsView: View {
                                     // Reset per-network services. TODO(platform-wallet):
                                     // Once PlatformWalletManager supports network
                                     // switching cleanly, call into it here.
-                                    try? walletManager.stopSpv()
+                                    try? await walletManager.stopSpv()
                                     platformBalanceSyncService.reset()
                                     shieldedService.reset()
 
@@ -309,8 +309,8 @@ struct OptionsView: View {
                             // rebuild → activate). Invalidate first so a
                             // start resuming anywhere in it bails.
                             walletManagerStore.invalidatePendingSpvStarts()
-                            try? walletManager.stopSpv()
                             Task {
+                                try? await walletManager.stopSpv()
                                 await appState.switchNetwork(to: .devnet)
                                 // `switchNetwork` rebuilds `appState.sdk` but
                                 // doesn't refresh per-network managers (the
@@ -357,7 +357,7 @@ struct OptionsView: View {
                                 walletManagerStore.invalidatePendingSpvStarts()
                                 // Stop SPV so the next start picks up the
                                 // new peer config in CoreContentView.
-                                try? walletManager.stopSpv()
+                                Task { try? await walletManager.stopSpv() }
                             }
                             .help("Connect Core SPV to specific peers (e.g. a local rust-dashcore) instead of the public seed nodes. Restart SPV from the Wallet tab to apply.")
 
