@@ -11,7 +11,10 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::conditions::WhereClause;
 use crate::query::ordering::OrderClause;
-use crate::query::{defaults, index_admissible_for_resolved_time_range, DriveDocumentQuery};
+use crate::query::{
+    defaults, index_admissible_for_resolved_time_range, index_admissible_for_skip_if_absent,
+    DriveDocumentQuery,
+};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{Index, IndexProperty};
@@ -303,6 +306,11 @@ impl<'a> DriveDocumentQuery<'a> {
             })
             .collect();
 
+        // Every constraint the query makes, for the skip-index gate.
+        let skip_bindings = self
+            .internal_clauses
+            .skip_if_absent_bindings(&order_by_keys);
+
         let equality_len = equal_clauses.len();
         let mut best: Option<(&Index, Vec<&WhereClause>, u16)> = None;
         for index in self.document_type.indexes().values() {
@@ -311,6 +319,11 @@ impl<'a> DriveDocumentQuery<'a> {
             // resolved equality names its transform source, never for a raw
             // query. See `index_admissible_for_resolved_time_range`.
             if !index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges) {
+                continue;
+            }
+            // A skip index only for a query binding every skip property. See
+            // `index_admissible_for_skip_if_absent`.
+            if !index_admissible_for_skip_if_absent(index, &skip_bindings) {
                 continue;
             }
             let mut positioned: Vec<(usize, &WhereClause)> = Vec::with_capacity(in_clauses.len());

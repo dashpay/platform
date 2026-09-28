@@ -305,6 +305,26 @@ pub fn encode_prefix_branches(
     // and its terminal — the pin count singles one out; properties past
     // it are interior to the counted subtrees and never pinned).
     let (leading, _) = super::path::ranked_level_split(index, prefix_pins.len())?;
+    // A stored type's skip index holds no document missing a skip property,
+    // while an index that does not skip keeps such documents under the null
+    // key: a null pin on a skip property would read an empty ranking as if it
+    // were complete. (A ranking never sits above a skip property, so every
+    // skip property is either pinned here or the ranked property itself; an
+    // indexOnly type has no null values to pin.)
+    if index.skip_if_absent && index.terminal.is_none() {
+        if let Some(pin) = prefix_pins.iter().find(|pin| {
+            index.skip_if_absent_properties.contains(&pin.field)
+                && pin.values.iter().any(|value| value.is_null())
+        }) {
+            return Err(Error::Query(
+                QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                    "index \"{}\" skips documents missing \"{}\" (skipIfAbsent), so it \
+                     cannot rank documents pinned to a null \"{}\"",
+                    index.name, pin.field, pin.field
+                )),
+            ));
+        }
+    }
     // Enforced BEFORE any encoding: the ceiling bounds every downstream
     // cost (encode, sort, clone, walk, proof size), so an oversized pin
     // must not buy that work first. The post-product branch count check

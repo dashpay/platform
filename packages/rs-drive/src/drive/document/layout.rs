@@ -6,9 +6,9 @@
 //! The tree types come from the functions the insert walkers call
 //! (`primary_key_tree_type`, `index_level_tree_types_with_continuation_demotion`,
 //! `terminal_member_tree_type`, `continuation_contributes_zero`,
-//! `zero_contribution_wrapper`, `index_only_level_skips_when_absent`); the
-//! element choices the walkers make inline (history, unique terminals,
-//! indexOnly entries, sum-carrying references) are restated here and held to
+//! `zero_contribution_wrapper`); the element choices and skips the walkers
+//! make inline (history, unique terminals, indexOnly entries, sum-carrying
+//! references, `skipIfAbsent` levels) are restated here and held to
 //! the walkers by a test that inserts documents and compares what Drive wrote
 //! with this layout, both ways (`tests::should_lay_out_what_drive_writes`).
 //! Those are the rules of the v2 index walkers, so only a platform version
@@ -22,8 +22,7 @@
 pub use crate::drive::document::index_level_tree_types::ZeroContributionWrapper;
 use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
-    index_only_level_skips_when_absent, level_counts_continuations, terminal_member_tree_type,
-    zero_contribution_wrapper,
+    level_counts_continuations, terminal_member_tree_type, zero_contribution_wrapper,
 };
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::error::drive::DriveError;
@@ -285,11 +284,16 @@ pub enum LayoutNote {
     /// A contested index is laid out as a unique one here; the contest lives
     /// in the votes tree.
     Contested,
-    /// A value of an indexOnly type's first property that documents may
-    /// leave out: a document without it writes nothing in this index.
+    /// A level keyed by a property that `skipIfAbsent` indexes skip on: a
+    /// document without it writes nothing in those indexes (on a stored type,
+    /// an index through the level that does not skip on it writes the null
+    /// key instead).
     SkipIfAbsent {
         /// The property.
         property: String,
+        /// The indexes through this level that skip a document leaving the
+        /// property out, in name order.
+        indexes: Vec<String>,
     },
     /// A preallocated indexOnly index: its value trees and empty terminal
     /// are created when the referenced document is inserted.
@@ -338,8 +342,11 @@ impl LayoutNote {
                  votes tree"
                     .to_string()
             }
-            LayoutNote::SkipIfAbsent { property } => {
-                format!("a document that leaves out {property} writes nothing in this index")
+            LayoutNote::SkipIfAbsent { property, indexes } => {
+                format!(
+                    "a document that leaves out {property} writes nothing in {}",
+                    indexes.join(", ")
+                )
             }
             LayoutNote::Preallocated => {
                 "preallocated: the value trees and the empty terminal of this index are created \
@@ -550,19 +557,13 @@ fn top_index_node(
         });
     }
 
-    let mut notes = Vec::new();
     let property = match level.time_range() {
         Some(transform) => transform.source.clone(),
         None => level_key.to_string(),
     };
-    // The walkers' skip rule, for a property that can be absent: a system
-    // property never is where it is indexed ($id and $ownerId always exist;
-    // an indexed time or height must be required).
-    if !property.starts_with('$') && index_only_level_skips_when_absent(document_type, &property) {
-        notes.push(LayoutNote::SkipIfAbsent {
-            property: property.clone(),
-        });
-    }
+    let notes: Vec<LayoutNote> = skip_note(document_type, &property, &path, index_paths)
+        .into_iter()
+        .collect();
 
     Ok(LayoutNode {
         key: fixed(level_key.as_bytes().to_vec(), level_key),
@@ -576,6 +577,7 @@ fn top_index_node(
         indexes: indexes_through(index_paths, &path),
         notes,
         children: vec![value_node(
+            document_type,
             level,
             tree_types.value_tree_type,
             level_key,
@@ -586,8 +588,42 @@ fn top_index_node(
     })
 }
 
+/// The note of a level keyed by `property` on `path` when indexes through it
+/// skip a document that leaves `property` out (the walkers' rule: they build
+/// the level only for a document some index through it takes part in).
+/// System properties are never skip properties.
+fn skip_note(
+    document_type: DocumentTypeRef,
+    property: &str,
+    path: &[String],
+    index_paths: &[(String, Vec<String>)],
+) -> Option<LayoutNote> {
+    let through = indexes_through(index_paths, path);
+    let indexes: Vec<String> = document_type
+        .indexes()
+        .values()
+        .filter(|index| through.contains(&index.name))
+        .filter(|index| {
+            index
+                .skip_if_absent_properties
+                .iter()
+                .any(|skip_property| skip_property == property)
+        })
+        .map(|index| index.name.clone())
+        .collect();
+    if indexes.is_empty() {
+        None
+    } else {
+        Some(LayoutNote::SkipIfAbsent {
+            property: property.to_string(),
+            indexes,
+        })
+    }
+}
+
 /// The values of one indexed property, with what hangs under each.
 fn value_node(
+    document_type: DocumentTypeRef,
     level: &IndexLevel,
     value_tree_type: TreeType,
     level_key: &str,
@@ -651,8 +687,11 @@ fn value_node(
             },
             alternative: None,
             indexes: indexes_through(index_paths, &sub_path),
-            notes: vec![],
+            notes: skip_note(document_type, sub_key, &sub_path, index_paths)
+                .into_iter()
+                .collect(),
             children: vec![value_node(
+                document_type,
                 sub_level,
                 sub_tree_types.value_tree_type,
                 sub_key,
@@ -929,7 +968,7 @@ mod tests {
     /// compound indexes, history, countable and summable types and indexes,
     /// ranked and chained indexes, time windows, indexOnly types with
     /// terminals, flat and preallocated indexes.
-    const CONTRACTS: [&str; 19] = [
+    const CONTRACTS: [&str; 21] = [
         "tests/supporting_files/contract/family/family-contract.json",
         "tests/supporting_files/contract/family/family-contract-fields-optional.json",
         "tests/supporting_files/contract/family/family-contract-countable.json",
@@ -949,6 +988,8 @@ mod tests {
         "tests/supporting_files/contract/grades/grades-contract.json",
         "tests/supporting_files/contract/grades/grades-ranked-contract.json",
         "tests/supporting_files/contract/grades/grades-compound-ranked-contract.json",
+        "tests/supporting_files/contract/skip-if-absent/skip-likes-contract.json",
+        "tests/supporting_files/contract/skip-if-absent/skip-posts-contract.json",
     ];
 
     fn layer(drive: &Drive, path: &[Vec<u8>]) -> Vec<(Vec<u8>, Element)> {
@@ -982,7 +1023,20 @@ mod tests {
     /// (created empty), and the values of a level every document may leave
     /// out.
     fn may_be_absent(parent: &LayoutNode, child: &LayoutNode) -> bool {
-        child.notes.contains(&LayoutNote::NotNullSearchable)
+        // A value tree preallocation built (for a referenced document, before
+        // any entry) holds only the preallocated index's trees until a
+        // document of another index sharing the value arrives.
+        fn preallocated(node: &LayoutNode) -> bool {
+            node.notes.contains(&LayoutNote::Preallocated) || node.children.iter().any(preallocated)
+        }
+        (parent.children.iter().any(preallocated) && !preallocated(child))
+            || child.notes.contains(&LayoutNote::NotNullSearchable)
+            // A level whose property skip indexes skip on is only built for
+            // documents carrying the property.
+            || child
+                .notes
+                .iter()
+                .any(|note| matches!(note, LayoutNote::SkipIfAbsent { .. }))
             || parent.notes.iter().any(|note| {
                 matches!(
                     note,
@@ -1117,6 +1171,9 @@ mod tests {
                 if seed <= 2 {
                     leave_out_optional_unique_values(&mut document, document_type.as_ref());
                 }
+                if (3..=4).contains(&seed) {
+                    leave_out_skip_properties(&mut document, document_type.as_ref());
+                }
                 setup_document(drive, &document, &contract, document_type.as_ref(), None);
             }
         }
@@ -1137,6 +1194,16 @@ mod tests {
                 if !property.name.starts_with('$') && !required.contains(&property.name) {
                     document.properties_mut().remove(&property.name);
                 }
+            }
+        }
+    }
+
+    /// Leaves out every skip property of the type's `skipIfAbsent` indexes,
+    /// so those indexes skip the document while the others write it.
+    fn leave_out_skip_properties(document: &mut Document, document_type: DocumentTypeRef) {
+        for index in document_type.indexes().values() {
+            for skip_property in &index.skip_if_absent_properties {
+                document.properties_mut().remove(skip_property);
             }
         }
     }

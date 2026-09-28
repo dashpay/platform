@@ -1947,47 +1947,28 @@ fn accepts_skip_if_absent_index_with_optional_trigger() {
 }
 
 #[test]
-fn rejects_skip_if_absent_on_non_index_only_type() {
-    // A minimal stored doctype (no indexOnly, no terminal) with the flag:
-    // conditional participation only means anything when the entries ARE
-    // the storage.
-    let schema = platform_value!({
-        "type": "object",
-        "properties": {
-            "hashtag": { "type": "string", "maxLength": 63, "position": 0 }
-        },
-        "indices": [
-            {
-                "name": "byHashtag",
-                "properties": [{ "hashtag": "asc" }],
-                "skipIfAbsent": true
-            }
-        ],
-        "additionalProperties": false
-    });
-    expect_structure_error(
-        parse_with(schema, PlatformVersion::latest(), false),
-        "declares `skipIfAbsent`",
-    );
-}
-
-#[test]
-fn rejects_skip_if_absent_with_required_first_property() {
+fn rejects_skip_if_absent_index_with_no_optional_property() {
     // Flag on, but `hashtag` still required: the index could never skip.
     let schema = likes_schema_with_index_key(0, "skipIfAbsent", platform_value!(true));
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "but its first property",
+        "none of its properties is optional",
     );
 }
 
 #[test]
 fn rejects_skip_if_absent_with_system_property_trigger() {
-    // byLiker's first property is $ownerId, which is always present.
+    // byLiker's only property is $ownerId, which is always present: `true`
+    // resolves to an empty skip set, and naming it is refused outright.
     let schema = likes_schema_with_index_key(2, "skipIfAbsent", platform_value!(true));
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "system property",
+        "none of its properties is optional",
+    );
+    let schema = likes_schema_with_index_key(2, "skipIfAbsent", platform_value!(["$ownerId"]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "skips on system property",
     );
 }
 
@@ -2003,18 +1984,15 @@ fn rejects_optional_property_in_non_skip_index() {
     }));
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "does not set `skipIfAbsent`",
+        "which does not skip documents that omit it",
     );
 }
 
 #[test]
-fn rejects_optional_property_below_first_position() {
-    // An optional property below position 0 would strand the prefix
-    // levels above it when absent — only a leading trigger prunes the
-    // whole branch before anything is written.
-    // The extra index is deliberately NOT skipIfAbsent: with the flag set,
-    // its required first property (`postId`) would trip the trigger rule
-    // before the position rule is ever reached.
+fn rejects_optional_property_below_first_position_in_non_skip_index() {
+    // An optional property anywhere in an index that does not skip would
+    // need an index representation for its absence, which indexOnly types
+    // do not have.
     let schema = skip_likes_schema_with_extra_index(platform_value!({
         "name": "byPostHashtag",
         "properties": [{ "postId": "asc" }, { "hashtag": "asc" }],
@@ -2022,8 +2000,33 @@ fn rejects_optional_property_below_first_position() {
     }));
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "below its first position",
+        "which does not skip documents that omit it",
     );
+}
+
+#[test]
+fn accepts_skip_property_below_first_position() {
+    // A skip property may sit at any position: the walkers only build a
+    // level when an index the document takes part in continues through it,
+    // so an untagged like writes nothing under `postId` for this index.
+    let schema = skip_likes_schema_with_extra_index(platform_value!({
+        "name": "byPostHashtag",
+        "properties": [{ "postId": "asc" }, { "hashtag": "asc" }],
+        "terminal": "$ownerId",
+        "skipIfAbsent": true
+    }));
+    for full_validation in [false, true] {
+        let document_type = parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .unwrap_or_else(|error| panic!("full_validation {full_validation}: {error}"));
+        assert_eq!(
+            document_type
+                .indices
+                .get("byPostHashtag")
+                .expect("index present")
+                .skip_if_absent_properties,
+            vec!["hashtag".to_string()]
+        );
+    }
 }
 
 #[test]
@@ -2145,5 +2148,538 @@ fn skip_if_absent_flag_is_frozen_on_contract_update() {
         )),
         "expected a changed-index rejection, got: {:?}",
         result.errors
+    );
+}
+
+/// A windowed like: `byDayHashtagPost` buckets `$createdAt` by day with a
+/// seven-day TTL, then ranks hashtags and the posts under each within the
+/// window, and skips untagged likes. `byHashtagPost` gives `hashtag` a skip
+/// index of its own, and `byPost` is the proof index.
+fn windowed_skip_likes_schema(day_index_skip: Value) -> Value {
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "canBeDeleted": true,
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 61, "position": 0 },
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 1
+            }
+        },
+        "required": ["$createdAt", "postId"],
+        "indices": [
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "terminal": "$ownerId",
+                "rangeCountable": true,
+                "rankedCountable": true
+            },
+            {
+                "name": "byHashtagPost",
+                "properties": [{ "hashtag": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId",
+                "rangeCountable": true,
+                "rankedCountable": { "at": ["hashtag", "postId"] },
+                "skipIfAbsent": true
+            },
+            {
+                "name": "byDayHashtagPost",
+                "properties": [
+                    { "$createdAt": "asc" },
+                    { "hashtag": "asc" },
+                    { "postId": "asc" }
+                ],
+                "terminal": "$ownerId",
+                "rangeCountable": true,
+                "rankedCountable": { "at": ["hashtag", "postId"] },
+                "timeRange": {
+                    "on": "$createdAt",
+                    "range": 86400u64,
+                    "step": 86400u64,
+                    "ttl": 604800u64
+                },
+                "skipIfAbsent": day_index_skip
+            }
+        ],
+        "additionalProperties": false
+    })
+}
+
+#[test]
+fn accepts_skip_property_below_a_time_window() {
+    for full_validation in [false, true] {
+        let document_type = parse_with(
+            windowed_skip_likes_schema(platform_value!(true)),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|error| panic!("full_validation {full_validation}: {error}"));
+        let index = document_type
+            .indices
+            .get("byDayHashtagPost")
+            .expect("index present");
+        assert!(index.skip_if_absent);
+        assert_eq!(index.skip_if_absent_properties, vec!["hashtag".to_string()]);
+    }
+}
+
+#[test]
+fn should_parse_both_spellings_of_one_skip_set_to_equal_indexes() {
+    let platform_version = PlatformVersion::latest();
+    let with_true = parse_with(
+        windowed_skip_likes_schema(platform_value!(true)),
+        platform_version,
+        true,
+    )
+    .expect("true parses");
+    let with_array = parse_with(
+        windowed_skip_likes_schema(platform_value!(["hashtag"])),
+        platform_version,
+        true,
+    )
+    .expect("array parses");
+    assert_eq!(with_true.indices, with_array.indices);
+    assert_eq!(with_true.index_structure, with_array.index_structure);
+}
+
+#[test]
+fn should_accept_respelling_a_skip_set_on_contract_update() {
+    let platform_version = PlatformVersion::latest();
+    let old = parse_dispatched(
+        windowed_skip_likes_schema(platform_value!(true)),
+        platform_version,
+        false,
+    )
+    .expect("true parses");
+    let new = parse_dispatched(
+        windowed_skip_likes_schema(platform_value!(["hashtag"])),
+        platform_version,
+        false,
+    )
+    .expect("array parses");
+    let result = old
+        .as_ref()
+        .validate_update(new.as_ref(), 2, platform_version)
+        .expect("validate_update should not error");
+    assert!(
+        result.errors.is_empty(),
+        "respelling the same skip set is no index change, got: {:?}",
+        result.errors
+    );
+}
+
+/// A like with two optional properties, `hashtag` and `mood`, in one skip
+/// index, and `extra` spliced into the document type (properties, required
+/// and indices).
+fn two_optional_likes_schema(extra_indices: Value) -> Value {
+    let mut schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+            "mood": { "type": "string", "maxLength": 16, "position": 1 },
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 2
+            }
+        },
+        "required": ["postId"],
+        "indices": [
+            {
+                "name": "byPost",
+                "properties": [{ "postId": "asc" }],
+                "terminal": "$ownerId"
+            },
+            {
+                "name": "byHashtagMoodPost",
+                "properties": [{ "hashtag": "asc" }, { "mood": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId",
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    let indices = schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array");
+    for index in extra_indices.as_array().expect("an array").iter() {
+        indices.push(index.clone());
+    }
+    schema
+}
+
+#[test]
+fn accepts_true_with_two_optional_properties_each_with_its_own_skip_index() {
+    let schema = two_optional_likes_schema(platform_value!([
+        {
+            "name": "byHashtag",
+            "properties": [{ "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "skipIfAbsent": true
+        },
+        {
+            "name": "byMood",
+            "properties": [{ "mood": "asc" }],
+            "terminal": "$ownerId",
+            "skipIfAbsent": ["mood"]
+        }
+    ]));
+    let document_type = parse_with(schema, PlatformVersion::latest(), true).expect("schema parses");
+    assert_eq!(
+        document_type
+            .indices
+            .get("byHashtagMoodPost")
+            .expect("index present")
+            .skip_if_absent_properties,
+        vec!["hashtag".to_string(), "mood".to_string()]
+    );
+}
+
+#[test]
+fn rejects_optional_property_only_covered_by_a_wider_skip_index() {
+    // `mood` has no skip index of its own: a like carrying `mood` but no
+    // `hashtag` would skip byHashtagMoodPost and store `mood` nowhere.
+    let schema = two_optional_likes_schema(platform_value!([
+        {
+            "name": "byHashtag",
+            "properties": [{ "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "skipIfAbsent": true
+        }
+    ]));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "needs an index whose only skip property it is",
+    );
+}
+
+#[test]
+fn rejects_skip_array_missing_an_optional_property_of_an_index_only_index() {
+    // Listing only `hashtag` would leave an absent `mood` with nothing to
+    // write: an indexOnly index has no null layout.
+    let mut schema = two_optional_likes_schema(platform_value!([
+        {
+            "name": "byHashtag",
+            "properties": [{ "hashtag": "asc" }],
+            "terminal": "$ownerId",
+            "skipIfAbsent": true
+        },
+        {
+            "name": "byMood",
+            "properties": [{ "mood": "asc" }],
+            "terminal": "$ownerId",
+            "skipIfAbsent": true
+        }
+    ]));
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(1)
+        .expect("byHashtagMoodPost")
+        .set_value("skipIfAbsent", platform_value!(["hashtag"]))
+        .expect("skip set applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "which does not skip documents that omit it",
+    );
+}
+
+#[test]
+fn rejects_malformed_skip_arrays() {
+    let platform_version = PlatformVersion::latest();
+    for (skip, needle) in [
+        (platform_value!([]), "must name at least one property"),
+        (platform_value!(["hashtag", "hashtag"]), "twice"),
+        (
+            platform_value!(["hashtag", "mood"]),
+            "not one of the index's properties",
+        ),
+        (platform_value!(["postId"]), "which is listed in `required`"),
+    ] {
+        let schema = windowed_skip_likes_schema(skip);
+        expect_structure_error(parse_with(schema, platform_version, false), needle);
+    }
+}
+
+#[test]
+fn rejects_skip_array_under_full_validation_when_items_are_not_names() {
+    let schema = windowed_skip_likes_schema(platform_value!([7]));
+    assert!(parse_with(schema.clone(), PlatformVersion::latest(), true).is_err());
+    assert!(parse_with(schema, PlatformVersion::latest(), false).is_err());
+}
+
+#[test]
+fn rejects_ranking_above_a_skip_property() {
+    // byMoodHashtag ranks moods by like count, but only tagged likes enter
+    // the index, and no query can read it without binding `hashtag`.
+    let schema = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+            "mood": { "type": "string", "maxLength": 16, "position": 1 },
+            "postId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 2
+            }
+        },
+        "required": ["postId", "mood"],
+        "indices": [
+            {
+                "name": "byPostMood",
+                "properties": [{ "postId": "asc" }, { "mood": "asc" }],
+                "terminal": "$ownerId"
+            },
+            {
+                "name": "byHashtag",
+                "properties": [{ "hashtag": "asc" }],
+                "terminal": "$ownerId",
+                "skipIfAbsent": true
+            },
+            {
+                "name": "byMoodHashtag",
+                "properties": [{ "mood": "asc" }, { "hashtag": "asc" }],
+                "terminal": "$ownerId",
+                "rangeCountable": true,
+                "rankedCountable": { "at": ["mood", "hashtag"] },
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "ranks at \"mood\", above its skip property \"hashtag\"",
+    );
+}
+
+// ── skipIfAbsent on stored document types ───────────────────────────────
+
+/// A stored `post` type: `hashtag` and `language` optional, one index over
+/// both and the post's `$createdAt`, with `skip` as its `skipIfAbsent`.
+fn stored_post_schema(skip: Value) -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+            "language": { "type": "string", "maxLength": 8, "position": 1 },
+            "text": { "type": "string", "maxLength": 280, "position": 2 }
+        },
+        "required": ["text", "$createdAt"],
+        "indices": [
+            {
+                "name": "byHashtagLanguageTime",
+                "properties": [
+                    { "hashtag": "asc" },
+                    { "language": "asc" },
+                    { "$createdAt": "asc" }
+                ],
+                "skipIfAbsent": skip
+            }
+        ],
+        "additionalProperties": false
+    })
+}
+
+#[test]
+fn accepts_skip_if_absent_on_a_stored_type() {
+    for full_validation in [false, true] {
+        let document_type = parse_with(
+            stored_post_schema(platform_value!(true)),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|error| panic!("full_validation {full_validation}: {error}"));
+        assert!(!document_type.index_only());
+        assert_eq!(
+            document_type
+                .indices
+                .get("byHashtagLanguageTime")
+                .expect("index present")
+                .skip_if_absent_properties,
+            vec!["hashtag".to_string(), "language".to_string()],
+            "`true` skips on every optional property of the index"
+        );
+    }
+}
+
+#[test]
+fn accepts_a_partial_skip_array_on_a_stored_type() {
+    // `language` keeps the null layout: a tagged post without a language is
+    // written with `language` under the empty key.
+    let document_type = parse_with(
+        stored_post_schema(platform_value!(["hashtag"])),
+        PlatformVersion::latest(),
+        true,
+    )
+    .expect("schema parses");
+    assert_eq!(
+        document_type
+            .indices
+            .get("byHashtagLanguageTime")
+            .expect("index present")
+            .skip_if_absent_properties,
+        vec!["hashtag".to_string()]
+    );
+    let terminal = document_type
+        .index_structure
+        .sub_levels()
+        .get("hashtag")
+        .and_then(|level| level.sub_levels().get("language"))
+        .and_then(|level| level.sub_levels().get("$createdAt"))
+        .and_then(|level| level.has_index_with_type())
+        .expect("the index ends at $createdAt");
+    assert_eq!(
+        terminal.skip_if_absent_properties,
+        vec!["hashtag".to_string()]
+    );
+}
+
+#[test]
+fn accepts_skip_if_absent_with_unique_time_range_and_ranking_on_a_stored_type() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "hashtag": { "type": "string", "maxLength": 61, "position": 0 },
+            "slug": { "type": "string", "maxLength": 63, "position": 1 }
+        },
+        "required": ["$createdAt"],
+        "indices": [
+            {
+                "name": "bySlug",
+                "properties": [{ "slug": "asc" }],
+                "unique": true,
+                "skipIfAbsent": true
+            },
+            {
+                "name": "byDayHashtag",
+                "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                "rangeCountable": true,
+                "rankedCountable": true,
+                "timeRange": { "on": "$createdAt", "range": 86400u64, "step": 86400u64 },
+                "skipIfAbsent": ["hashtag"]
+            }
+        ],
+        "additionalProperties": false
+    });
+    for full_validation in [false, true] {
+        parse_with(schema.clone(), PlatformVersion::latest(), full_validation)
+            .unwrap_or_else(|error| panic!("full_validation {full_validation}: {error}"));
+    }
+}
+
+#[test]
+fn rejects_skip_if_absent_with_null_searchable_false_on_a_stored_type() {
+    let mut schema = stored_post_schema(platform_value!(true));
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .get_mut(0)
+        .expect("index exists")
+        .set_value("nullSearchable", platform_value!(false))
+        .expect("key applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "sets both `skipIfAbsent` and `nullSearchable: false`",
+    );
+}
+
+#[test]
+fn rejects_skip_if_absent_on_a_contested_index() {
+    let schema = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "properties": {
+            "label": { "type": "string", "minLength": 3, "maxLength": 19, "position": 0 }
+        },
+        "indices": [
+            {
+                "name": "byLabel",
+                "properties": [{ "label": "asc" }],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [
+                        { "field": "label", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
+                    ],
+                    "resolution": 0
+                },
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "is contested and declares `skipIfAbsent`",
+    );
+}
+
+#[test]
+fn rejects_skip_if_absent_on_a_stored_index_with_no_optional_property() {
+    let mut schema = stored_post_schema(platform_value!(true));
+    schema
+        .set_value(
+            "required",
+            platform_value!(["text", "$createdAt", "hashtag", "language"]),
+        )
+        .expect("required applies");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "none of its properties is optional",
+    );
+}
+
+#[test]
+fn rejects_a_nested_skip_property_on_a_stored_type() {
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "meta": {
+                "type": "object",
+                "properties": {
+                    "topic": { "type": "string", "maxLength": 32, "position": 0 }
+                },
+                "additionalProperties": false,
+                "position": 0
+            }
+        },
+        "indices": [
+            {
+                "name": "byTopic",
+                "properties": [{ "meta.topic": "asc" }],
+                "skipIfAbsent": true
+            }
+        ],
+        "additionalProperties": false
+    });
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "skips on nested property",
     );
 }

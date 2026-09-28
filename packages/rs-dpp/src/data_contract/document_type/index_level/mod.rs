@@ -134,6 +134,15 @@ pub struct IndexLevelTypeInfo {
     /// defines it instead of inferring it from a path height. `false` on
     /// every pre-PV14 contract and on every prefixed index.
     pub flat: bool,
+    /// The skip set of the terminating index
+    /// ([`Index::skip_if_absent_properties`]): the walkers write this
+    /// level's entry only for a document that carries every one of these
+    /// properties, and build a level only when some entry at or below it is
+    /// written. Carried here for the same reason as `terminal`: the walkers
+    /// only see the merged levels, and indexes with different skip sets can
+    /// share them. Empty on every index that does not skip, which is every
+    /// index of every pre-PV14 contract.
+    pub skip_if_absent_properties: Vec<String>,
 }
 
 impl IndexType {
@@ -535,6 +544,7 @@ impl IndexLevel {
             // document type: the one layout whose prune boundary is the
             // level's `0` bucket rather than the document type.
             flat: index.is_flat(),
+            skip_if_absent_properties: index.skip_if_absent_properties.clone(),
         }
     }
 
@@ -722,6 +732,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -761,6 +772,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![
@@ -785,6 +797,7 @@ mod tests {
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
             Index {
                 name: "test2".to_string(),
@@ -807,6 +820,7 @@ mod tests {
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
         ];
 
@@ -855,6 +869,7 @@ mod tests {
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
             Index {
                 name: "test2".to_string(),
@@ -877,6 +892,7 @@ mod tests {
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
         ];
 
@@ -901,6 +917,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -947,6 +964,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -976,6 +994,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1028,6 +1047,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1051,6 +1071,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1097,6 +1118,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1120,6 +1142,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1166,6 +1189,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1189,6 +1213,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1235,6 +1260,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1281,6 +1307,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1304,6 +1331,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1350,6 +1378,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1373,6 +1402,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1425,6 +1455,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1454,6 +1485,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1506,6 +1538,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1535,6 +1568,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1595,6 +1629,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -1661,6 +1696,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -1734,6 +1770,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -2133,6 +2170,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let mut new_indices = old_indices.clone();
@@ -2186,6 +2224,7 @@ mod tests {
             terminal: None,
             preallocated,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {

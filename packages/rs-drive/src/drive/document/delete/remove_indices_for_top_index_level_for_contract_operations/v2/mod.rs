@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     index_level_tree_types_with_continuation_demotion, index_only_level_skips_when_absent,
-    time_range_index_keys,
+    level_reaches_entry, time_range_index_keys,
 };
 use crate::drive::document::time_range_ttl::entry_key_bucket_start;
 use crate::drive::document::unique_event_id;
@@ -176,6 +176,21 @@ impl Drive {
                 continue;
             }
 
+            // Mirror of the insert walker: a branch under which the document
+            // wrote no entry (every index through it skipped the document)
+            // holds nothing of it to remove. The delete's worst-case
+            // estimation document carries every property, so it sweeps every
+            // branch, an over-estimate like the one below.
+            if !level_reaches_entry(
+                sub_level,
+                &document_and_contract_info.owned_document_info.document_info,
+                document_type,
+                document_and_contract_info.owned_document_info.owner_id,
+                platform_version,
+            )? {
+                continue;
+            }
+
             // The delete walker writes nothing itself, but its
             // estimation layers must describe the tree the insert path
             // actually laid down — including the meta-schema-v3 ranked
@@ -228,11 +243,13 @@ impl Drive {
                     platform_version,
                 )? {
                 Some(document_top_field) => document_top_field,
-                // An unrequired top-level property on an indexOnly type is a
-                // skipIfAbsent index's trigger: the insert walker wrote no
-                // entries through this branch for a trigger-absent document,
-                // so its delete removes none — mirroring the insert skip is
-                // what keeps delete-by-values exact. The delete's estimation
+                // An unrequired property on an indexOnly type is a skip
+                // property of every index that holds it: the insert walker
+                // wrote no entries through this branch for a document
+                // missing it, so its delete removes none — mirroring the
+                // insert skip is what keeps delete-by-values exact
+                // (`level_reaches_entry` has normally passed the branch by
+                // already; this is the defensive arm). The delete's estimation
                 // dry-run runs on a worst-case document info that always
                 // resolves a value, so estimation sweeps this branch as
                 // written — a deliberate over-estimate that keeps the dry

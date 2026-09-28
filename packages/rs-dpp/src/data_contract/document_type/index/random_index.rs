@@ -72,6 +72,7 @@ impl Index {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         })
     }
 }

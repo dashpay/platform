@@ -16,7 +16,10 @@
 
 use crate::query::drive_document_sum_query::{is_indexable_for_sum, is_range_operator};
 use crate::query::ResolvedTimeRange;
-use crate::query::{index_admissible_for_resolved_time_range, WhereClause, WhereOperator};
+use crate::query::{
+    index_admissible_for_resolved_time_range, index_admissible_for_skip_if_absent,
+    SkipIfAbsentBinding, WhereClause, WhereOperator,
+};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,6 +41,10 @@ pub fn find_summable_index_for_where_clauses<'b>(
     sum_property: &str,
     resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
+    // A skip index serves only a query binding every skip property
+    // ([`index_admissible_for_skip_if_absent`]): a prefix match may stop
+    // above a deep one.
+    let skip_bindings = SkipIfAbsentBinding::for_where_clauses(where_clauses);
     // Defense-in-depth: any non-indexable operator immediately disqualifies
     // — the sum point-lookup path can only serve Equal/In.
     if where_clauses
@@ -64,6 +71,9 @@ pub fn find_summable_index_for_where_clauses<'b>(
         // resolution-produced equality does that. Conversely a raw clause
         // must never bind to bucket keys.
         if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+            continue;
+        }
+        if !index_admissible_for_skip_if_absent(index, &skip_bindings) {
             continue;
         }
         // Skip if not summable OR if summable property doesn't match.
@@ -106,6 +116,10 @@ pub fn find_range_summable_index_for_where_clauses<'b>(
     sum_property: &str,
     resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
+    // A skip index serves only a query binding every skip property
+    // ([`index_admissible_for_skip_if_absent`]): a prefix match may stop
+    // above a deep one.
+    let skip_bindings = SkipIfAbsentBinding::for_where_clauses(where_clauses);
     let range_clauses: Vec<&WhereClause> = where_clauses
         .iter()
         .filter(|wc| is_range_operator(wc.operator))
@@ -150,6 +164,9 @@ pub fn find_range_summable_index_for_where_clauses<'b>(
         // pinned to a single bucket by a resolution-produced equality may
         // walk them, and raw clauses may never bind to bucket keys.
         if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+            continue;
+        }
+        if !index_admissible_for_skip_if_absent(index, &skip_bindings) {
             continue;
         }
         if !index.range_summable {

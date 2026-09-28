@@ -2174,11 +2174,136 @@ mod range_countable_picker_tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
     fn make_indexes(indexes: Vec<Index>) -> std::collections::BTreeMap<String, Index> {
         indexes.into_iter().map(|i| (i.name.clone(), i)).collect()
+    }
+
+    /// A `[brand, color]` index skipping documents without a `color`: a
+    /// count of one brand's documents read at its `brand` level would count
+    /// only those carrying a color, so no count picker may route a query
+    /// that leaves `color` unbound (or bound only to null, on a stored type)
+    /// to it — while a query binding `color` still routes there.
+    fn skip_on_color(index_only: bool) -> Index {
+        let mut index = make_index(
+            "byBrandColor",
+            &["brand", "color"],
+            IndexCountability::Countable,
+            true,
+        );
+        index.skip_if_absent = true;
+        index.skip_if_absent_properties = vec!["color".to_string()];
+        if index_only {
+            index.terminal = Some(vec!["$ownerId".to_string()]);
+        }
+        index
+    }
+
+    fn clause(field: &str, operator: WhereOperator, value: Value) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator,
+            value,
+        }
+    }
+
+    #[test]
+    fn should_not_count_a_prefix_of_a_skip_index_above_its_skip_property() {
+        for index_only in [false, true] {
+            let indexes = make_indexes(vec![skip_on_color(index_only)]);
+            let brand_only = vec![clause(
+                "brand",
+                WhereOperator::Equal,
+                Value::Text("acme".to_string()),
+            )];
+            assert!(
+                DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                    &indexes,
+                    &brand_only,
+                    &[],
+                )
+                .is_none(),
+                "index_only {index_only}: a brand count cannot be read off a color-skipping index"
+            );
+            let both = vec![
+                brand_only[0].clone(),
+                clause(
+                    "color",
+                    WhereOperator::Equal,
+                    Value::Text("red".to_string()),
+                ),
+            ];
+            assert_eq!(
+                DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                    &indexes,
+                    &both,
+                    &[],
+                )
+                .map(|index| index.name.as_str()),
+                Some("byBrandColor"),
+                "index_only {index_only}: binding color serves the count"
+            );
+            let range = vec![
+                brand_only[0].clone(),
+                clause(
+                    "color",
+                    WhereOperator::GreaterThan,
+                    Value::Text("a".to_string()),
+                ),
+            ];
+            assert_eq!(
+                DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                    &indexes,
+                    &range,
+                    &[],
+                )
+                .map(|index| index.name.as_str()),
+                Some("byBrandColor"),
+                "index_only {index_only}: a lower-bounded color range serves the range count"
+            );
+        }
+    }
+
+    #[test]
+    fn should_not_range_count_a_stored_skip_index_over_a_range_reaching_missing_values() {
+        // On a stored type a document without a color sits under the empty
+        // key of an index that does not skip it, and `color < "m"` reaches
+        // that key: the skip index would silently leave those documents out.
+        let indexes = make_indexes(vec![skip_on_color(false)]);
+        let upper_only = vec![
+            clause(
+                "brand",
+                WhereOperator::Equal,
+                Value::Text("acme".to_string()),
+            ),
+            clause(
+                "color",
+                WhereOperator::LessThan,
+                Value::Text("m".to_string()),
+            ),
+        ];
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &upper_only,
+                &[],
+            )
+            .is_none()
+        );
+        // On an indexOnly type no document is under an empty key, so the
+        // same range asks "among documents with a color".
+        let indexes = make_indexes(vec![skip_on_color(true)]);
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &upper_only,
+                &[],
+            )
+            .is_some()
+        );
     }
 
     /// Single-property range_countable index — straightforward range
@@ -3550,6 +3675,7 @@ mod time_range_picker_tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
