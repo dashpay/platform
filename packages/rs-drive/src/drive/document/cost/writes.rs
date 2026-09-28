@@ -33,13 +33,13 @@ use dpp::data_contract::document_type::{
 };
 use dpp::data_contract::DataContract;
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
 use grovedb::element::reference_path::ReferencePathType::SiblingReference;
 use grovedb::element::IndexAxis;
 use grovedb::Element;
 use grovedb_merk::tree_type::TreeType;
+use std::collections::HashSet;
 
 /// One element an insert writes.
 #[derive(Clone, Debug)]
@@ -69,6 +69,9 @@ pub(crate) struct Write {
     /// In the documents expirations tree (`[Misc, "E"]`) rather than under
     /// a document type: a document with a `ttl`'s entry there.
     pub expiration: bool,
+    /// Whether the element carries the owner's storage flags, which route
+    /// its refund when it is removed.
+    pub flagged: bool,
 }
 
 /// The row a ranked (indexed) tree keeps for one of its entries in the
@@ -153,7 +156,13 @@ struct Context<'a> {
     /// The type whose tree the walk is in, when it is a referring type's.
     referring_type: Option<String>,
     writes: Vec<Write>,
+    /// Where each recorded write is, to record it once.
+    recorded: HashSet<WriteLocation>,
 }
+
+/// Where a write is: the referring type whose tree it is in (if any),
+/// whether it is in the expirations tree, its path and its key.
+type WriteLocation = (Option<String>, bool, Vec<Vec<u8>>, Vec<u8>);
 
 fn serialized_len(element: &Element, platform_version: &PlatformVersion) -> Result<u32, Error> {
     Ok(element.serialized_size(&platform_version.drive.grove_version)? as u32)
@@ -171,12 +180,13 @@ fn empty_tree(tree_type: TreeType, wrapped: bool, flags: Option<&StorageFlags>) 
     }
 }
 
-/// Every element inserting `document` writes, owned by its owner in one
-/// epoch, as a document create stores it.
+/// Every element inserting `document`, serialized as `serialized`, writes,
+/// owned by its owner in one epoch, as a document create stores it.
 pub(crate) fn document_writes(
     contract: &DataContract,
     document_type: DocumentTypeRef,
     document: &Document,
+    serialized: &[u8],
     platform_version: &PlatformVersion,
 ) -> Result<Vec<Write>, Error> {
     let document_flags = document_type
@@ -197,9 +207,10 @@ pub(crate) fn document_writes(
         index_flags,
         referring_type: None,
         writes: Vec::new(),
+        recorded: HashSet::new(),
     };
     if !document_type.index_only() {
-        context.primary(contract)?;
+        context.primary(contract, serialized)?;
     }
     for (level_key, level) in document_type.index_structure().sub_levels() {
         context.top_level(level_key, level)?;
@@ -216,12 +227,12 @@ impl Context<'_> {
         write.referring_type = self.referring_type.clone();
         // Indexes sharing a prefix reach the same tree more than once; the
         // walkers insert it once.
-        if !self.writes.iter().any(|existing| {
-            existing.referring_type == write.referring_type
-                && existing.expiration == write.expiration
-                && existing.path == write.path
-                && existing.key == write.key
-        }) {
+        if self.recorded.insert((
+            write.referring_type.clone(),
+            write.expiration,
+            write.path.clone(),
+            write.key.clone(),
+        )) {
             self.writes.push(write);
         }
     }
@@ -272,6 +283,7 @@ impl Context<'_> {
                 }),
                 referring_type: None,
                 expiration: false,
+                flagged: false,
             });
         }
         Ok(())
@@ -287,12 +299,10 @@ impl Context<'_> {
     }
 
     /// The document by id (`add_document_to_primary_storage`).
-    fn primary(&mut self, contract: &DataContract) -> Result<(), Error> {
+    fn primary(&mut self, contract: &DataContract, serialized: &[u8]) -> Result<(), Error> {
         let document_type = self.document_type;
         let primary_key_tree_type = document_type.primary_key_tree_type(self.platform_version)?;
-        let serialized = self
-            .document
-            .serialize(document_type, contract, self.platform_version)?;
+        let serialized = serialized.to_vec();
         let sum_property = document_type.documents_summable();
         let document_flags = self.document_flags.clone();
         let id = self.document.id().to_vec();
@@ -325,6 +335,7 @@ impl Context<'_> {
                 ranking: None,
                 referring_type: None,
                 expiration: false,
+                flagged: document_flags.is_some(),
             });
             return Ok(());
         }
@@ -352,6 +363,7 @@ impl Context<'_> {
             ranking: None,
             referring_type: None,
             expiration: false,
+            flagged: tree_flags.is_some(),
         });
         // The revision key is the block time, 8 bytes whatever the time.
         let encoded_time = DocumentPropertyType::encode_date_timestamp(0);
@@ -375,6 +387,7 @@ impl Context<'_> {
             ranking: None,
             referring_type: None,
             expiration: false,
+            flagged: document_flags.is_some(),
         });
         let pointer_flags = StorageFlags::map_to_some_element_flags(tree_flags.as_ref());
         let pointer = match sum_property {
@@ -400,6 +413,7 @@ impl Context<'_> {
             ranking: None,
             referring_type: None,
             expiration: false,
+            flagged: tree_flags.is_some(),
         });
         Ok(())
     }
@@ -467,6 +481,7 @@ impl Context<'_> {
                 ranking: None,
                 referring_type: None,
                 expiration: false,
+                flagged: flags.is_some(),
             });
             // The first document under a value leaves it a count of one and
             // its own sum.
@@ -548,6 +563,7 @@ impl Context<'_> {
                 ranking: None,
                 referring_type: None,
                 expiration: false,
+                flagged: flags.is_some(),
             });
             let raw = self.raw(sub_key)?.unwrap_or_default();
             let null = raw.is_empty();
@@ -565,6 +581,7 @@ impl Context<'_> {
                 ranking: None,
                 referring_type: None,
                 expiration: false,
+                flagged: flags.is_some(),
             });
             let sum = self.sum_contribution(sub_level)?;
             self.ranking_rows(
@@ -614,6 +631,7 @@ impl Context<'_> {
             ranking: None,
             referring_type: None,
             expiration: true,
+            flagged: false,
         });
         self.push(Write {
             path: vec![time_key],
@@ -632,6 +650,7 @@ impl Context<'_> {
             ranking: None,
             referring_type: None,
             expiration: true,
+            flagged: false,
         });
         Ok(())
     }
@@ -761,6 +780,7 @@ impl Context<'_> {
                     ranking: None,
                     referring_type: None,
                     expiration: false,
+                    flagged: flags.is_some(),
                 });
             }
             path.push(name.as_bytes().to_vec());
@@ -776,6 +796,7 @@ impl Context<'_> {
                 ranking: None,
                 referring_type: None,
                 expiration: false,
+                flagged: flags.is_some(),
             });
             // An empty value tree ranks with its empty aggregate.
             let (count, sum) = empty_tree_aggregate(tree_types.value_tree_type);
@@ -796,6 +817,7 @@ impl Context<'_> {
             ranking: None,
             referring_type: None,
             expiration: false,
+            flagged: flags.is_some(),
         });
         Ok(())
     }
@@ -837,6 +859,7 @@ impl Context<'_> {
                 ranking: None,
                 referring_type: None,
                 expiration: false,
+                flagged: flags.is_some(),
             });
             let member_key = index_only_member_key(
                 self.document,
@@ -880,21 +903,28 @@ impl Context<'_> {
                 ranking: None,
                 referring_type: None,
                 expiration: false,
+                flagged: flags.is_some(),
             });
             return Ok(());
         }
 
-        // References carry the document's own flags.
-        let document_flags = self.document_flags.clone();
+        // References carry the document's own flags, except under a time
+        // window with a ttl, whose elements Drive strips of every flag
+        // (`retag_ephemeral_with`).
+        let reference_flags = if ephemeral {
+            None
+        } else {
+            self.document_flags.clone()
+        };
         let reference = match info.summable.as_deref() {
             Some(property) => make_document_reference_with_sum_item(
                 self.document,
                 self.document_type,
                 read_document_sum_contribution(self.document, property)?,
-                document_flags.as_ref(),
+                reference_flags.as_ref(),
             ),
             None => {
-                make_document_reference(self.document, self.document_type, document_flags.as_ref())
+                make_document_reference(self.document, self.document_type, reference_flags.as_ref())
             }
         };
         let reference = PricedElement::Serialized {
@@ -914,6 +944,7 @@ impl Context<'_> {
                 ranking: None,
                 referring_type: None,
                 expiration: false,
+                flagged: reference_flags.is_some(),
             });
             return Ok(());
         }
@@ -930,6 +961,7 @@ impl Context<'_> {
             ranking: None,
             referring_type: None,
             expiration: false,
+            flagged: flags.is_some(),
         });
         self.push(Write {
             path: members_path,
@@ -943,6 +975,7 @@ impl Context<'_> {
             ranking: None,
             referring_type: None,
             expiration: false,
+            flagged: reference_flags.is_some(),
         });
         Ok(())
     }

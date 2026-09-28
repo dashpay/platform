@@ -481,7 +481,7 @@ const { root } = documentTypeLayout(contract, 'review', new PlatformVersion(14))
 - `storage`: the bytes the insert writes and their fee, exact, under two scenarios: `newValues` (the first document with these index values creates their trees) and `knownValues` (a later document with the same values adds only its own entries);
 - `indexes`: per index, the bytes of the layers it shares with other indexes and of its own, so its cost on its own is `sharedBytes + ownBytes`;
 - `processing`: the signature and identity fetch (exact) and the work of the writes (estimated for `existingDocuments` stored documents);
-- `contractCharges`: the create's action fee, token cost and contest fund, when the type has them;
+- `contractCharges`: the create's action fee, token cost and contest fund, when the type has them (a contested create is stored in the vote poll until the contest ends; that storage is not priced);
 - `refund`: what a delete refunds, in the same epoch and a year later;
 - `fields`: how the priced document was filled.
 

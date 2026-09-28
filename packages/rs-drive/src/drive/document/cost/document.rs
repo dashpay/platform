@@ -16,7 +16,7 @@ use dpp::document::{Document, DocumentV0};
 use dpp::platform_value::{Identifier, Value};
 use dpp::version::PlatformVersion;
 use indexmap::IndexMap;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The block time the document is created at: its timestamps are 8 bytes
 /// whatever the time.
@@ -152,16 +152,22 @@ fn value_of(
     }
 }
 
-/// Fills `properties` into `data`, recording each field in `fields`.
+/// Fills `properties` into `data`, recording each field in `fields`. A
+/// transient property, by top-level name, is judged on the transition and
+/// never stored (`drop_transient_values`): it is neither filled nor listed.
 fn fill(
     properties: &IndexMap<String, DocumentProperty>,
     prefix: &str,
     choices: &BTreeMap<String, FieldChoice>,
-    platform_version: &PlatformVersion,
+    transient: &BTreeSet<String>,
     data: &mut BTreeMap<String, Value>,
     fields: &mut Vec<FieldSize>,
+    platform_version: &PlatformVersion,
 ) {
     for (name, property) in properties {
+        if prefix.is_empty() && transient.contains(name) {
+            continue;
+        }
         let path = format!("{prefix}{name}");
         let choice = choices.get(&path).copied().unwrap_or_default();
         let optional = !property.required;
@@ -190,9 +196,10 @@ fn fill(
                     sub_properties,
                     &format!("{path}."),
                     choices,
-                    platform_version,
+                    transient,
                     &mut sub_data,
                     fields,
+                    platform_version,
                 );
                 Value::Map(
                     sub_data
@@ -235,13 +242,11 @@ pub fn sized_document(
         document_type.properties(),
         "",
         choices,
-        platform_version,
+        document_type.transient_fields(),
         &mut data,
         &mut fields,
+        platform_version,
     );
-    // A transient value is judged on the transition and never stored
-    // (`drop_transient_values`).
-    data.retain(|name, _| !document_type.transient_fields().contains(name));
 
     let owner_id = Identifier::from([1; 32]);
     let required = document_type.required_fields();

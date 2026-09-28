@@ -95,6 +95,14 @@ pub mod layout;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod cost;
 
+/// The plain values the layout and the cost estimate hand to the SDKs
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) mod sdk_value;
+
+/// The test contracts the layout and the cost estimate are held to Drive with
+#[cfg(all(test, feature = "server"))]
+pub(crate) mod fixture_contracts;
+
 /// Shared TTL semantics for time-range indexes — see
 /// `book/src/drive/time-range-ttl.md`.
 #[cfg(feature = "server")]

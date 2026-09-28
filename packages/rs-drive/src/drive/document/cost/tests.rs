@@ -1,6 +1,10 @@
 use super::*;
 use crate::drive::document::expiration::paths::documents_expirations_path_vec;
 use crate::drive::document::expiration::pricing::document_expiration_cleanup_fee;
+use crate::drive::document::fixture_contracts::{
+    leave_out_optional_unique_values, small_sums, CONTRACTS,
+};
+use crate::drive::document::make_document_reference;
 use crate::drive::{Drive, RootTree};
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -15,31 +19,26 @@ use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier};
 use std::borrow::Cow;
-use std::collections::BTreeSet;
 
-/// The contracts `drive::document::layout` is held to: every index shape
-/// Drive lays out.
-const CONTRACTS: [&str; 19] = [
-    "tests/supporting_files/contract/family/family-contract.json",
-    "tests/supporting_files/contract/family/family-contract-fields-optional.json",
-    "tests/supporting_files/contract/family/family-contract-countable.json",
-    "tests/supporting_files/contract/family/family-contract-with-history.json",
-    "tests/supporting_files/contract/dashpay/dashpay-contract.json",
-    "tests/supporting_files/contract/references/references_with_contract_history.json",
-    "tests/supporting_files/contract/restaurants/restaurants-contract.json",
-    "tests/supporting_files/contract/trending/trending-contract.json",
-    "tests/supporting_files/contract/trending/trending-sibling-contract.json",
-    "tests/supporting_files/contract/yappr-likes/yappr-likes-contract.json",
-    "tests/supporting_files/contract/yappr-likes/yappr-likes-preallocated-contract.json",
-    "tests/supporting_files/contract/yappr-likes/yappr-likes-author-preallocated-contract.json",
-    "tests/supporting_files/contract/yappr-feed/yappr-feed-contract.json",
-    "tests/supporting_files/contract/index-only-scalar-terminal/index-only-scalar-terminal-contract.json",
-    "tests/supporting_files/contract/tally/tally-contract.json",
-    "tests/supporting_files/contract/tip-jar/tip-jar-contract.json",
-    "tests/supporting_files/contract/grades/grades-contract.json",
-    "tests/supporting_files/contract/grades/grades-ranked-contract.json",
-    "tests/supporting_files/contract/grades/grades-compound-ranked-contract.json",
-];
+/// The elements inserting `document` writes.
+fn writes_of(
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    document: &Document,
+) -> Vec<Write> {
+    let platform_version = PlatformVersion::latest();
+    let serialized = document
+        .serialize(document_type, contract, platform_version)
+        .expect("expected to serialize the document");
+    document_writes(
+        contract,
+        document_type,
+        document,
+        &serialized,
+        platform_version,
+    )
+    .expect("expected the writes")
+}
 
 /// Inserts `document` as a document create does: owned by its owner, in
 /// one epoch.
@@ -48,7 +47,7 @@ fn insert(
     contract: &DataContract,
     document_type: DocumentTypeRef,
     document: &Document,
-) -> Result<FeeResult, crate::error::Error> {
+) -> Result<FeeResult, Error> {
     insert_at(drive, contract, document_type, document, 0)
 }
 
@@ -59,7 +58,7 @@ fn insert_at(
     document_type: DocumentTypeRef,
     document: &Document,
     time_ms: u64,
-) -> Result<FeeResult, crate::error::Error> {
+) -> Result<FeeResult, Error> {
     let flags = StorageFlags::new_single_epoch(0, Some(document.owner_id().to_buffer()));
     drive.add_document_for_contract(
         DocumentAndContractInfo {
@@ -107,7 +106,7 @@ fn element(
     ) {
         Ok(element) => element,
         // A tree above it is missing too.
-        Err(crate::error::Error::GroveDB(error))
+        Err(Error::GroveDB(error))
             if matches!(
                 *error,
                 grovedb::Error::PathNotFound(_)
@@ -164,55 +163,6 @@ fn row_bytes(
     match before {
         None => bytes(after),
         Some(before) => bytes(after).saturating_sub(bytes(before)),
-    }
-}
-
-/// Random integers ignore the schema's bounds and overflow a sum tree;
-/// summed properties get small values instead.
-fn small_sums(document: &mut Document, document_type: DocumentTypeRef, seed: u64) {
-    let summed = document_type
-        .documents_summable()
-        .map(str::to_string)
-        .into_iter()
-        .chain(
-            document_type
-                .indexes()
-                .values()
-                .filter_map(|index| index.summable.clone()),
-        )
-        .collect::<BTreeSet<_>>();
-    for property in summed {
-        if let Some(value) = document.properties_mut().get_mut(&property) {
-            let small = match &*value {
-                Value::U8(_) => Value::U8(seed as u8),
-                Value::I8(_) => Value::I8(seed as i8),
-                Value::U16(_) => Value::U16(seed as u16),
-                Value::I16(_) => Value::I16(seed as i16),
-                Value::U32(_) => Value::U32(seed as u32),
-                Value::I32(_) => Value::I32(seed as i32),
-                Value::U64(_) => Value::U64(seed),
-                Value::I64(_) => Value::I64(seed as i64),
-                other => other.clone(),
-            };
-            *value = small;
-        }
-    }
-}
-
-/// Leaves out the optional properties of the type's unique indexes, so a
-/// unique index gets an entry with a null value.
-fn leave_out_optional_unique_values(document: &mut Document, document_type: DocumentTypeRef) {
-    let required = document_type.required_fields();
-    for index in document_type
-        .indexes()
-        .values()
-        .filter(|index| index.unique)
-    {
-        for property in &index.properties {
-            if !property.name.starts_with('$') && !required.contains(&property.name) {
-                document.properties_mut().remove(&property.name);
-            }
-        }
     }
 }
 
@@ -281,8 +231,7 @@ fn should_price_what_drive_charges() {
                     document = previous;
                 }
 
-                let writes = document_writes(&contract, document_type, &document, platform_version)
-                    .expect("expected the writes");
+                let writes = writes_of(&contract, document_type, &document);
                 let mut expected_bytes = 0u64;
                 let entry_of = |write: &Write| {
                     let row = write.ranking.as_ref()?;
@@ -364,8 +313,7 @@ fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
                     .random_document(Some(seed), platform_version)
                     .expect("expected a random document");
                 small_sums(&mut document, document_type, seed);
-                let writes = document_writes(&contract, document_type, &document, platform_version)
-                    .expect("expected the writes");
+                let writes = writes_of(&contract, document_type, &document);
                 let known: Vec<bool> = writes
                     .iter()
                     .map(|write| {
@@ -382,9 +330,10 @@ fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
                     &assumptions,
                     platform_version,
                 );
-                let Ok(fee) = insert(&drive, &contract, document_type, &document) else {
-                    continue;
-                };
+                let fee =
+                    insert(&drive, &contract, document_type, &document).unwrap_or_else(|error| {
+                        panic!("{} {name} seed {seed}: {error}", CONTRACTS[index])
+                    });
                 if [1, 10, 100].contains(&seed) {
                     ratios.push((
                         format!("{} {name} after {seed} documents", CONTRACTS[index]),
@@ -596,6 +545,126 @@ fn should_charge_a_later_document_with_known_values_no_more_than_the_first() {
 }
 
 #[test]
+fn should_price_a_time_window_with_a_ttl_without_flags_as_processing() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(platform_value!({ "ping": {
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": true,
+        "properties": { "tag": { "type": "string", "maxLength": 20, "position": 0 } },
+        "indices": [{
+            "name": "recent",
+            "properties": [{ "$createdAt": "asc" }, { "tag": "asc" }],
+            "timeRange": { "on": "$createdAt", "range": 3600, "step": 900, "ttl": 86400 },
+        }],
+        "required": ["$createdAt", "tag"],
+        "additionalProperties": false,
+    }}));
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply the contract");
+    let ping = contract.document_type_for_name("ping").expect("ping");
+    let (document, _) = sized_document(&contract, ping, &Default::default(), platform_version)
+        .expect("expected a sized document");
+
+    // Every entry under the window is ephemeral: its references carry no
+    // flags, as Drive strips them.
+    let writes = writes_of(&contract, ping, &document);
+    let flagless_reference = make_document_reference(&document, ping, None)
+        .serialized_size(&platform_version.drive.grove_version)
+        .expect("expected the reference size") as u32;
+    let references: Vec<&Write> = writes
+        .iter()
+        .filter(|write| write.role == LayoutRole::Member)
+        .collect();
+    assert_eq!(
+        references.len(),
+        4,
+        "a window of an hour every quarter hour"
+    );
+    for write in references {
+        assert!(write.ephemeral && !write.flagged);
+        assert_eq!(
+            write.element,
+            PricedElement::Serialized {
+                serialized_len: flagless_reference
+            }
+        );
+    }
+
+    let cost = document_create_cost(
+        &contract,
+        ping,
+        &document,
+        &CostAssumptions::new(platform_version),
+        platform_version,
+    )
+    .expect("expected a cost");
+    assert!(cost
+        .processing
+        .iter()
+        .any(|part| part.code == "timeWindowTtl" && part.credits.new_values > 0));
+    // What is not ephemeral is storage, exactly as Drive charges it.
+    let fee = insert_at(
+        &drive,
+        &contract,
+        ping,
+        &document,
+        document.created_at().expect("created at"),
+    )
+    .expect("expected to insert the document");
+    assert_eq!(fee.storage_fee, cost.storage_credits.new_values);
+}
+
+#[test]
+fn should_count_trees_keyed_by_the_document_id_as_new_and_unrefunded() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    // Likes' `byPost` index is preallocated for every post, keyed by its id.
+    let contract = apply(&drive, 10, CONTRACTS[10]);
+    let post = contract.document_type_for_name("post").expect("post");
+    let cost = document_type_create_cost(
+        &contract,
+        post,
+        &Default::default(),
+        &CostAssumptions::new(platform_version),
+        platform_version,
+    )
+    .expect("expected a cost");
+    assert!(cost.preallocated_bytes.new_values > 0);
+    // Every tree keyed by the post's id, and what is under it, is new
+    // whatever else is stored; a level keyed by a value another post shares
+    // (its hashtag) may already exist.
+    let (document, _) = sized_document(&contract, post, &Default::default(), platform_version)
+        .expect("expected a sized document");
+    let id = document.id().to_vec();
+    let writes = writes_of(&contract, post, &document);
+    let known = written_when_values_known(&writes, &id);
+    let keyed_by_id: Vec<bool> = writes
+        .iter()
+        .zip(&known)
+        .filter(|(write, _)| {
+            write.referring_type.is_some() && (write.key == id || write.path.contains(&id))
+        })
+        .map(|(_, known)| *known)
+        .collect();
+    assert!(!keyed_by_id.is_empty());
+    assert!(keyed_by_id.iter().all(|known| *known));
+    // A delete keeps preallocated trees: they are not refunded.
+    let kept = (cost.storage_bytes.new_values - cost.preallocated_bytes.new_values)
+        * cost.credits_per_byte;
+    assert!(cost.refund_same_epoch.expect("a refund").new_values < kept);
+}
+
+#[test]
 fn should_refuse_an_earlier_protocol_version() {
     let platform_version = PlatformVersion::latest();
     let contract = contract_with(platform_value!({ "note": note_schema() }));
@@ -659,6 +728,11 @@ fn should_price_a_document_with_a_ttl_by_its_lifetime() {
                 .storage_disk_usage_credit_per_byte
     );
     assert!(cost.expiration_bytes.new_values > 0);
+    // A later document expires at another time: its entry is new too.
+    assert_eq!(
+        cost.expiration_bytes.known_values,
+        cost.expiration_bytes.new_values
+    );
     assert_eq!(cost.refund_same_epoch, Some(Scenarios::default()));
     let cleanup = cost
         .processing

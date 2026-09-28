@@ -103,6 +103,7 @@ export interface DocumentCreateCost {
   contractCharges: Array<
     | { kind: 'actionFee'; pricing: 'feeMultiplier' | 'fixed'; declared: { owner: number; moderators: number }; charged: { owner: number; moderators: number } }
     | { kind: 'tokenCost'; tokenPosition: number; amount: number; effect: 'transferToContractOwner' | 'burn'; gasFeesPaidBy: string; optional: boolean; tokenContractId?: string }
+    /** Paid when the value is contested; such a create is stored in the vote poll until the contest ends, and that storage is not priced here. */
     | { kind: 'contestFund'; index: string; credits: number }
   >;
   /** The storage fee a delete refunds, in the same epoch and a year later (nothing for a ttl type). */

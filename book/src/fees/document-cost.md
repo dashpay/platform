@@ -32,7 +32,8 @@ subtree prefix, the serialized element (or a fixed size standing for a tree),
 the value and node hashes, the aggregate feature of the tree it sits in (8 or
 16 bytes in a count or sum tree), and the link its parent keeps to it. A
 document create's elements carry 35 bytes of storage flags (the owner and the
-epoch); index trees carry them only when the documents are mutable or can be
+epoch); index trees carry them only when the documents are mutable, the
+contract can be deleted, or the type is indexOnly and its documents can be
 deleted.
 
 The storage depends on what is already stored, so it comes in two scenarios:
@@ -41,8 +42,9 @@ The storage depends on what is already stored, so it comes in two scenarios:
   their trees;
 - **every value known**: a later document with the same values adds only its
   own entries. A unique index still adds its value, which no earlier document
-  can hold, and a ranked index's row for an existing value only moves, which
-  GroveDB bills as replaced bytes.
+  can hold, as does every tree keyed by the document's own id (a preallocated
+  index's, say) and a `ttl` document's expiration entry; a ranked index's row
+  for an existing value only moves, which GroveDB bills as replaced bytes.
 
 The estimate also splits the storage by index: the layers an index shares with
 other indexes (a common prefix of properties, paid once for the document) and
@@ -101,5 +103,9 @@ refunded.
 
 ## Not covered
 
-A protocol version before 14 is refused: its index walkers pick other trees for
-some shapes.
+- A create whose value starts a contest (a DPNS name matching the contest
+  rule, say) is stored in the contest's vote poll until the contest ends, not
+  in the index. The estimate prices an uncontested create and lists the contest
+  fund; the vote poll's storage is not priced.
+- A platform version whose insert methods differ from protocol version 14's is
+  refused: other versions write other elements for some shapes.

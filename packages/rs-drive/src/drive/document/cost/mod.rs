@@ -25,6 +25,7 @@ use crate::drive::document::expiration::pricing::{
     document_expiration_cleanup_fee, document_ttl_credit_per_byte,
 };
 use crate::drive::document::layout::LayoutRole;
+use crate::drive::document::sdk_value::{map, number, text, texts};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -35,13 +36,13 @@ use dpp::data_contract::document_type::action_fees::{ActionFeePricing, DocumentA
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 #[cfg(feature = "fee-distribution")]
 use dpp::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
 use dpp::fee::epoch::DEFAULT_EPOCHS_PER_ERA;
 use dpp::fee::Credits;
 use dpp::identity::KeyType;
-use dpp::platform_value::{Value, ValueMap};
+use dpp::platform_value::Value;
 use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_amount_on_contract_token::{
     DocumentActionTokenCost, DocumentActionTokenEffect,
@@ -178,7 +179,9 @@ pub enum ContractCharge {
     },
     /// The create's token cost, in tokens.
     TokenCost(DocumentActionTokenCost),
-    /// The vote fund a contender pays when the value is contested.
+    /// The vote fund a contender pays when the value is contested. Such a
+    /// create is stored in the contest's vote poll until the contest ends,
+    /// not in the index: the storage priced here is an uncontested create's.
     ContestFund {
         /// The contested index.
         index: String,
@@ -260,10 +263,12 @@ impl DocumentCreateCost {
 /// What creating `document` as a document of `document_type` costs under
 /// `assumptions`.
 ///
-/// Follows the index walkers of protocol version 14 on, like
-/// `drive::document::layout`; an earlier version is refused. A document with
-/// a `ttl` pays for its bytes by its lifetime, carries no flags (so nothing
-/// is refunded) and prepays its deletion.
+/// Follows the insert methods of protocol version 14, like
+/// `drive::document::layout`; a version with other ones is refused. A
+/// document with a `ttl` pays for its bytes by its lifetime, carries no flags
+/// (so nothing is refunded) and prepays its deletion. The storage is an
+/// uncontested create's: a value that starts a contest is stored in the
+/// contest's vote poll until it ends, which this does not price.
 pub fn document_create_cost(
     contract: &DataContract,
     document_type: DocumentTypeRef,
@@ -271,22 +276,7 @@ pub fn document_create_cost(
     assumptions: &CostAssumptions,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentCreateCost, Error> {
-    match platform_version
-        .drive
-        .methods
-        .document
-        .insert
-        .add_indices_for_index_level_for_contract_operations
-    {
-        2 => {}
-        version => {
-            return Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "document_create_cost".to_string(),
-                known_versions: vec![2],
-                received: version,
-            }))
-        }
-    }
+    check_mirrored_method_versions(platform_version)?;
     let fee_version = &platform_version.fee_version;
     // A document with a `ttl` pays for its bytes by the lifetime it has
     // left, all of its `ttl` when it is created.
@@ -296,11 +286,16 @@ pub fn document_create_cost(
         }
         None => fee_version.storage.storage_disk_usage_credit_per_byte,
     };
-    let document_bytes = document
-        .serialize(document_type, contract, platform_version)?
-        .len() as u64;
-    let writes = document_writes(contract, document_type, document, platform_version)?;
-    let known = written_when_values_known(&writes);
+    let serialized = document.serialize(document_type, contract, platform_version)?;
+    let document_bytes = serialized.len() as u64;
+    let writes = document_writes(
+        contract,
+        document_type,
+        document,
+        &serialized,
+        platform_version,
+    )?;
+    let known = written_when_values_known(&writes, document.id().as_slice());
 
     let mut elements = Vec::with_capacity(writes.len());
     let mut primary_bytes = Scenarios::default();
@@ -392,6 +387,60 @@ pub fn document_create_cost(
     })
 }
 
+/// Refuses a platform version whose insert methods are not the ones the
+/// estimate mirrors (those of protocol version 14): another version of any
+/// of them may write other elements.
+fn check_mirrored_method_versions(platform_version: &PlatformVersion) -> Result<(), Error> {
+    let document = &platform_version.drive.methods.document;
+    for (method, known, received) in [
+        (
+            "add_document_for_contract_operations",
+            1,
+            document.insert.add_document_for_contract_operations,
+        ),
+        (
+            "add_document_to_primary_storage",
+            0,
+            document.insert.add_document_to_primary_storage,
+        ),
+        (
+            "add_indices_for_top_index_level_for_contract_operations",
+            2,
+            document
+                .insert
+                .add_indices_for_top_index_level_for_contract_operations,
+        ),
+        (
+            "add_indices_for_index_level_for_contract_operations",
+            2,
+            document
+                .insert
+                .add_indices_for_index_level_for_contract_operations,
+        ),
+        (
+            "add_reference_for_index_level_for_contract_operations",
+            0,
+            document
+                .insert
+                .add_reference_for_index_level_for_contract_operations,
+        ),
+        (
+            "add_document_expiration_operations",
+            0,
+            document.expiration.add_document_expiration_operations,
+        ),
+    ] {
+        if received != known {
+            return Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: format!("document_create_cost ({method})"),
+                known_versions: vec![known],
+                received,
+            }));
+        }
+    }
+    Ok(())
+}
+
 /// What creating a document of `document_type` costs, for a document of
 /// the sizes `choices` name (every other variable-size value at its middle
 /// size, every optional value present).
@@ -452,48 +501,60 @@ fn refund(
 }
 
 /// Which writes happen even when every value an earlier document can hold
-/// is stored: the ones every insert makes, and the value tree of a unique
-/// index with no null value (no earlier document can hold that value) with
-/// everything under it.
-fn written_when_values_known(writes: &[Write]) -> Vec<bool> {
-    let unique_values: Vec<&Vec<Vec<u8>>> = writes
+/// is stored: the ones every insert makes; a document with a `ttl`'s entry
+/// in the expirations tree (a later document expires at another time); and
+/// a tree no earlier document can have made, with everything under it: the
+/// value tree of a unique index with no null value, and a tree keyed by the
+/// document's own id (`document_id`), such as a preallocated index's.
+fn written_when_values_known(writes: &[Write], document_id: &[u8]) -> Vec<bool> {
+    // A tree, named by where its path starts and its full path.
+    let tree =
+        |write: &Write, path: Vec<Vec<u8>>| (write.referring_type.clone(), write.expiration, path);
+    let full_path = |write: &Write| {
+        let mut full = write.path.clone();
+        full.push(write.key.clone());
+        full
+    };
+    let always_new: Vec<_> = writes
         .iter()
-        .filter(|write| {
-            write.role == LayoutRole::Terminal
+        .filter_map(|write| {
+            let unique_value = write.role == LayoutRole::Terminal
                 && !write.if_absent
                 && matches!(write.element, PricedElement::Serialized { .. })
-                && !write.indexes.is_empty()
+                && !write.indexes.is_empty();
+            if unique_value {
+                Some(tree(write, write.path.clone()))
+            } else if write.if_absent && write.key == document_id {
+                Some(tree(write, full_path(write)))
+            } else {
+                None
+            }
         })
-        .map(|write| &write.path)
         .collect();
     writes
         .iter()
         .map(|write| {
-            if !write.if_absent {
+            if !write.if_absent || write.expiration {
                 return true;
             }
-            let mut full = write.path.clone();
-            full.push(write.key.clone());
-            unique_values
+            let (area, expiration, full) = tree(write, full_path(write));
+            always_new
                 .iter()
-                .any(|unique_value| full.starts_with(unique_value))
+                .any(|(new_area, new_expiration, new_path)| {
+                    *new_area == area && *new_expiration == expiration && full.starts_with(new_path)
+                })
         })
         .collect()
 }
 
-/// The storage bytes a delete refunds: those of elements carrying the
-/// owner's flags. Trees an index writes without flags stay unpaid for.
+/// The storage bytes a delete refunds: those of the elements it removes that
+/// carry the owner's flags. Not refunded: elements without flags (a ranked
+/// tree's rows, trees an index writes without flags), ephemeral elements,
+/// and preallocated trees, which a delete keeps.
 fn refundable_bytes(writes: &[Write], known: &[bool], elements: &[ElementCost]) -> Scenarios {
     let mut total = Scenarios::default();
     for ((write, known), element) in writes.iter().zip(known).zip(elements) {
-        let flagged = match write.element {
-            PricedElement::Tree { flags_len, .. } => flags_len.is_some(),
-            PricedElement::ItemWithSumItem { flags_len, .. } => flags_len.is_some(),
-            // Items and references of a document always carry its flags,
-            // unless the index writing them carries none.
-            PricedElement::Serialized { .. } => !write.ephemeral,
-        };
-        if flagged && !write.ephemeral {
+        if write.flagged && !write.ephemeral && write.referring_type.is_none() {
             total.add(Scenarios {
                 new_values: element.bytes,
                 known_values: if *known { element.bytes } else { 0 },
@@ -597,6 +658,13 @@ fn processing_costs(
         new_values: credits,
         known_values: credits,
     };
+    // A known value's ranked row adds no storage, but it still moves in its
+    // secondary tree (a delete and an insert), which costs processing.
+    let known_with_row_moves: Vec<bool> = writes
+        .iter()
+        .zip(known)
+        .map(|(write, known)| *known || write.ranking.is_some())
+        .collect();
     let mut parts = vec![
         ProcessingCost {
             code: "signature",
@@ -643,7 +711,7 @@ fn processing_costs(
                 ),
                 known_values: write_processing(
                     writes,
-                    known,
+                    &known_with_row_moves,
                     type_entries,
                     assumptions,
                     platform_version,
@@ -875,39 +943,11 @@ fn contract_charges(
     Ok(charges)
 }
 
-fn text(value: &str) -> Value {
-    Value::Text(value.to_string())
-}
-
-/// A map of `entries`, leaving out a key whose value is absent (`Null`):
-/// JavaScript reads a null that crosses into it as undefined anyway.
-fn map(entries: Vec<(&str, Value)>) -> Value {
-    Value::Map(
-        entries
-            .into_iter()
-            .filter(|(_, value)| !value.is_null())
-            .map(|(key, value)| (text(key), value))
-            .collect::<ValueMap>(),
-    )
-}
-
-/// An amount as a value JavaScript reads as a number: a u32 when it fits,
-/// else a float (exact up to 2^53 credits, about 90,000 Dash).
-fn number(value: u64) -> Value {
-    u32::try_from(value)
-        .map(Value::U32)
-        .unwrap_or(Value::Float(value as f64))
-}
-
 fn scenarios(value: Scenarios) -> Value {
     map(vec![
         ("newValues", number(value.new_values)),
         ("knownValues", number(value.known_values)),
     ])
-}
-
-fn texts(values: &[String]) -> Value {
-    Value::Array(values.iter().map(|value| text(value)).collect())
 }
 
 fn action_fee(fee: DocumentActionFee) -> Value {
