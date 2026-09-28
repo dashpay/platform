@@ -6,7 +6,9 @@
 //! with its rules, and any change to them is an incompatible update. Protocol
 //! version 13 refuses the keyword when registering and ignores it when reading.
 
-use super::immutable_tests::{expect_structure_error, parse_dispatched};
+use super::immutable_tests::{
+    expect_structure_error, parse_dispatched, parse_dispatched_with_defs,
+};
 use super::*;
 use crate::block::block_info::BlockInfo;
 use crate::consensus::basic::basic_error::BasicError;
@@ -18,6 +20,8 @@ use crate::data_contract::document_type::property_constraints::{
 };
 use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
 use crate::data_contract::DataContract;
+use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use crate::document::{Document, DocumentV0, DocumentV0Getters};
 use crate::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
@@ -354,6 +358,92 @@ fn should_hold_string_comparisons_to_string_properties_and_their_enums() {
             ),
             "rule \"rule\" compares \"note\", which is transient or inside a transient object",
         );
+    }
+}
+
+/// A string property whose schema is a `$ref` to one of the contract's `$defs`
+/// is held to the definition's `enum`, as one declared inline is: a constant, a
+/// listed string, a prefix, a default and an element looked for that the enum
+/// admits register, and a misspelt one is refused. On both paths.
+#[test]
+fn should_hold_string_constants_to_the_enum_of_a_referenced_definition() {
+    let schema_defs = BTreeMap::from([
+        (
+            "state".to_string(),
+            schema_value(json!({
+                "type": "string",
+                "enum": ["open", "closed"],
+                "maxLength": 10
+            })),
+        ),
+        (
+            "labels".to_string(),
+            schema_value(json!({
+                "type": "array",
+                "maxItems": 5,
+                "items": { "type": "string", "maxLength": 10, "enum": ["sale", "new"] }
+            })),
+        ),
+    ]);
+    let referencing = |rules: serde_json::Value| {
+        let mut schema = order_schema(Some(rules), None);
+        schema["properties"]["state"] = json!({ "$ref": "#/$defs/state", "position": 10 });
+        schema["properties"]["labels"] = json!({ "$ref": "#/$defs/labels", "position": 13 });
+        schema_value(schema)
+    };
+    let parse = |rules: serde_json::Value, full_validation: bool| {
+        parse_dispatched_with_defs(
+            referencing(rules),
+            Some(&schema_defs),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+    };
+
+    let rules = json!({
+        "closedState": { "equal": ["state", { "const": "closed" }] },
+        "listedState": { "in": ["state", ["open", "closed"]] },
+        "closingState": { "startsWith": ["state", { "const": "clo" }] },
+        "stateDefaultsOpen": {
+            "equal": [{ "ifAbsent": ["state", "open"] }, { "const": "open" }]
+        },
+        "onSale": { "contains": ["labels", { "const": "sale" }] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        assert_eq!(document_type.property_constraints().len(), 5);
+    }
+
+    for (rules, needle) in [
+        (
+            json!({ "rule": { "equal": ["state", { "const": "closd" }] } }),
+            "rule \"rule\" compares \"state\" with \"closd\", which is not one of its enum values",
+        ),
+        (
+            json!({ "rule": { "in": ["state", ["open", "shut"]] } }),
+            "rule \"rule\" compares \"state\" with \"shut\", which is not one of its enum values",
+        ),
+        (
+            json!({ "rule": { "endsWith": ["state", { "const": "ed!" }] } }),
+            "rule \"rule\" tests whether \"state\" ends with \"ed!\", which none of its enum \
+             values does",
+        ),
+        (
+            json!({
+                "rule": { "equal": [{ "ifAbsent": ["state", "opne"] }, { "const": "open" }] }
+            }),
+            "rule \"rule\" gives \"state\" the default \"opne\", which is not one of its enum \
+             values",
+        ),
+        (
+            json!({ "rule": { "contains": ["labels", { "const": "old" }] } }),
+            "rule \"rule\" compares \"labels\" with \"old\", which is not one of its enum values",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(parse(rules.clone(), full_validation), needle);
+        }
     }
 }
 
@@ -1248,12 +1338,17 @@ fn should_refuse_property_constraints_before_protocol_version_14_and_ignore_them
 const CONTRACT_ID: [u8; 32] = [7; 32];
 
 fn order_contract(rules: Option<serde_json::Value>, version: u32) -> DataContract {
+    contract_with_order_type(order_schema(rules, None), version)
+}
+
+/// A contract whose `order` type is declared by `schema`.
+fn contract_with_order_type(schema: serde_json::Value, version: u32) -> DataContract {
     let contract = json!({
         "$formatVersion": "1",
         "id": Identifier::from(CONTRACT_ID).to_string(Encoding::Base58),
         "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
         "version": version,
-        "documentSchemas": { "order": order_schema(rules, None) }
+        "documentSchemas": { "order": schema }
     });
     DataContract::from_value(
         platform_value::to_value(contract).expect("the contract converts"),
@@ -1285,6 +1380,95 @@ fn should_round_trip_a_contract_with_its_rules_through_platform_serialization() 
     };
     assert_eq!(rules(&recovered), rules(&original));
     assert_eq!(rules(&recovered).len(), 1);
+}
+
+/// A stored document keeps no object none of whose members it holds: `{}`,
+/// and `{ "inner": {} }` around one, are read back as no object at all. So
+/// `present` and `absent` judge such an object absent in the data a create
+/// carries too, and every rule reaches the same verdict on a document's data
+/// as on the document read back from storage, which a transfer, a purchase
+/// and a price update are judged on.
+#[test]
+fn should_judge_presence_alike_on_the_data_and_on_the_stored_document() {
+    let platform_version = PlatformVersion::latest();
+    let mut schema = order_schema(
+        Some(json!({
+            "metaOrSeller": {
+                "anyOf": [{ "present": "meta" }, { "equal": ["sellerId", "$ownerId"] }]
+            },
+            "noMetaOrSeller": {
+                "anyOf": [{ "absent": "meta" }, { "equal": ["sellerId", "$ownerId"] }]
+            },
+            "noInner": { "absent": "meta.inner" }
+        })),
+        None,
+    );
+    schema["properties"]["meta"]["properties"]["inner"] = json!({
+        "type": "object",
+        "position": 2,
+        "properties": { "note": { "type": "string", "maxLength": 30, "position": 0 } },
+        "additionalProperties": false
+    });
+    let contract = contract_with_order_type(schema, 1);
+    let order_type = contract
+        .document_type_for_name("order")
+        .expect("the order type");
+
+    for (meta, kept) in [
+        (platform_value!({}), false),
+        (platform_value!({ "inner": {} }), false),
+        (platform_value!({ "tag": "x" }), true),
+    ] {
+        // Owned by someone other than its seller, so `meta` alone decides
+        let document: Document = DocumentV0 {
+            id: Identifier::new([5; 32]),
+            owner_id: Identifier::new([3; 32]),
+            properties: BTreeMap::from([
+                ("price".to_string(), Value::U64(100)),
+                ("fee".to_string(), Value::U64(10)),
+                ("quantity".to_string(), Value::U64(2)),
+                ("deposit".to_string(), Value::U64(220)),
+                ("sellerId".to_string(), Value::Identifier([4; 32])),
+                ("meta".to_string(), meta.clone()),
+            ]),
+            revision: Some(1),
+            ..Default::default()
+        }
+        .into();
+        let bytes = document
+            .serialize(order_type, &contract, platform_version)
+            .expect("the document serializes");
+        let stored = Document::from_bytes(&bytes, order_type, platform_version)
+            .expect("the document deserializes");
+        assert_eq!(
+            stored.properties().contains_key("meta"),
+            kept,
+            "{meta:?}: the stored document keeps meta"
+        );
+
+        let system = DocumentSystemValues::of_document(&document);
+        let data = Value::from(document.properties().clone());
+        let stored_data = Value::from(stored.properties().clone());
+        let rules = order_type.property_constraints();
+        for (name, rule) in rules {
+            assert_eq!(
+                rule.violation(&data, &system),
+                rule.violation(&stored_data, &system),
+                "{name} on {meta:?}"
+            );
+        }
+        assert_eq!(
+            rules["metaOrSeller"].violation(&data, &system).is_none(),
+            kept,
+            "{meta:?}"
+        );
+        assert_eq!(
+            rules["noMetaOrSeller"].violation(&data, &system).is_none(),
+            !kept,
+            "{meta:?}"
+        );
+        assert_eq!(rules["noInner"].violation(&data, &system), None, "{meta:?}");
+    }
 }
 
 /// Every stored document was judged against the rules, so none may be added,

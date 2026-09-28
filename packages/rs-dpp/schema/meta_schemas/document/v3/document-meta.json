@@ -112,11 +112,11 @@
           "minItems": 2
         },
         "present": {
-          "description": "Holds if the document holds the property at this path, of any type, an object included, with a value other than null. Unlike an operand, which reads a property the document leaves out as 0, it tells a property left out from one set to 0",
+          "description": "Holds if the document holds the property at this path, of any type, an object included, with a value other than null and, for an object, with a member that is present: a stored document does not keep an object without one. Unlike an operand, which reads a property the document leaves out as 0, it tells a property left out from one set to 0",
           "$ref": "#/$defs/propertyConstraintPath"
         },
         "absent": {
-          "description": "Holds if the document leaves the property at this path out, or sets it to null",
+          "description": "Holds if the document leaves the property at this path out, sets it to null, or gives an object there no member that is present",
           "$ref": "#/$defs/propertyConstraintPath"
         },
         "anyOf": {

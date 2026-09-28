@@ -2025,6 +2025,8 @@ fn should_tell_a_property_left_out_from_one_set_to_zero() {
         ("note", Value::Text("hi".to_string())),
         ("meta", platform_value!({ "count": 9 })),
         ("flat", Value::U8(1)),
+        ("hollow", platform_value!({})),
+        ("nested", platform_value!({ "inner": {}, "gone": null })),
     ]);
     for (path, present) in [
         ("zero", true),
@@ -2036,6 +2038,10 @@ fn should_tell_a_property_left_out_from_one_set_to_zero() {
         ("meta.missing", false),
         // An intermediate that is not an object reads as absent
         ("flat.count", false),
+        // An object with no member present is not kept in storage
+        ("hollow", false),
+        ("nested", false),
+        ("nested.inner", false),
     ] {
         let present_rule = parse_rule_value(platform_value!({ "present": path }));
         let absent_rule = parse_rule_value(platform_value!({ "absent": path }));

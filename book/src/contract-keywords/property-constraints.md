@@ -75,8 +75,8 @@ A rule is a condition: a JSON object with exactly one key.
 | `in` | `[expression, [v1, v2, ...]]` | The expression takes one of the listed values: two or more, no two alike, all integers or all strings. With strings, the expression is a string property, or an identifier property or `$ownerId` with the strings as base58 identifiers |
 | `startsWith`, `endsWith` | `[text, affix]` | The first string starts, or ends, with the second, byte for byte with no case folding. Each side is a string constant, a string property or an `ifAbsent` string default, at least one a property and never the same one twice. A string property left out without a default takes no string, and the condition does not hold for it |
 | `contains` | `["path", value]` | The typed array property at the path holds an element equal to the value: an integer expression among integers; a string constant, a string property or an `ifAbsent` string default among strings; an identifier constant, an identifier property or `$ownerId` among identifiers. An array the document leaves out holds nothing, and a string or identifier property it leaves out is among no elements |
-| `present` | `"path"` | The document holds the property, with a value other than null |
-| `absent` | `"path"` | The document leaves the property out, or sets it to null |
+| `present` | `"path"` | The document holds the property, with a value other than null and, for an object, with at least one member present |
+| `absent` | `"path"` | The document leaves the property out, sets it to null, or gives an object no member that is present |
 | `anyOf` | `[c1, c2, ...]` | At least one of two or more conditions holds |
 | `allOf` | `[c1, c2, ...]` | Every one of two or more conditions holds |
 | `not` | `condition` | Its one condition does not hold |
@@ -262,7 +262,7 @@ Six nodes: the comparison, `add`, three paths and `100`.
 }
 ```
 
-`present` and `absent` work on properties of any type, strings and objects included. On an integer they are also the only way to tell "not given" from "given as 0", since a missing integer reads as 0 in an expression.
+`present` and `absent` work on properties of any type, strings and objects included. On an integer they are also the only way to tell "not given" from "given as 0", since a missing integer reads as 0 in an expression. An object with no member present, `{}` or `{ "inner": {} }`, counts as absent: a stored document does not keep it, and a transfer, purchase or price update is judged on the stored document, so a create or replace is judged the same way.
 
 **A time window.** An event ends after it starts, and lasts at most a week (`startsAt` and `endsAt` are required integer timestamps in milliseconds):
 
