@@ -40,7 +40,7 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{
     index_admissible_for_skip_if_absent, BestIndexOutcome, DriveDocumentQuery, InternalClauses,
-    WhereClause,
+    WhereClause, WhereOperator,
 };
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -56,17 +56,16 @@ use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
 /// A resolved indexOnly terminal route: the matcher's winning index, the
-/// clause on its terminal, and — for mixed shapes — the *prefix pivot*: a
-/// range or `in` clause sitting on one of the index's prefix properties
-/// (by position), with every property above it equality-bound and every
-/// property below it unconstrained.
+/// clause on its terminal and, for mixed shapes, the *prefix pivot*: an
+/// `in` clause sitting on the index's last prefix property, with every
+/// property above it equality-bound.
 pub(crate) struct IndexOnlyTerminalRoute<'a> {
     /// The index the entries are addressed through.
     pub index: &'a Index,
     /// The clause on the index's terminal property; `None` only for the
     /// first keyset page (order-by on the terminal, no cursor clause yet).
     pub terminal_clause: Option<&'a WhereClause>,
-    /// `(position, clause)` of a range / `in` clause on a prefix
+    /// `(position, clause)` of an `in` clause on the index's last prefix
     /// property. When present the terminal clause is always an equality.
     pub prefix_pivot: Option<(usize, &'a WhereClause)>,
     /// COMPOSITE terminals only: the equality clauses on the terminal's
@@ -97,12 +96,15 @@ impl DriveDocumentQuery<'_> {
     /// nothing outside the index (a range or `in` on the terminal
     /// requires ordering by it, mirroring the stored-document rule).
     ///
-    /// Mixed shapes are served through a *prefix pivot*: one range or
-    /// `in` clause may sit on a prefix property instead of the terminal
-    /// (`hashtag == h AND postId > p AND $ownerId == me`), provided every
-    /// property above the pivot is equality-bound, properties below it
-    /// are unconstrained, the terminal clause is an equality, and the
-    /// pivot is ordered by (`MissingOrderByForRange` otherwise).
+    /// Mixed shapes are served through a *prefix pivot*: one `in` clause
+    /// may sit on the index's last prefix property instead of the
+    /// terminal (`hashtag == h AND postId IN [p, q] AND $ownerId == me`),
+    /// provided every property above it is equality-bound, the terminal
+    /// clause is an equality, the limit (if any) covers every `in` value,
+    /// and the pivot is ordered by (`MissingOrderByForRange` otherwise).
+    /// A range pivot, or an `in` pivot above the last prefix property, is
+    /// refused: its pages could hold fewer rows than exist (see
+    /// [`Self::refuse_incomplete_pivot_pages`]).
     ///
     /// Returns `Ok(None)` when the matcher finds no terminal-using index
     /// (the generic route's miss error stands), `Ok(Some(..))` with the
@@ -175,31 +177,43 @@ impl DriveDocumentQuery<'_> {
             }
         }
 
-        let Some((index, _difference, terminal_used)) = self
-            .document_type
-            .index_for_types_matching_including_terminal(
-                equal_fields.as_slice(),
-                range_field,
-                in_field,
-                order_by_keys.as_slice(),
-                // Bucketed indexes never serve the terminal route: only
-                // resolved time ranges may bind to bucket keys, and those
-                // opted out above — a raw query name-matching a bucketed
-                // index's properties must not walk its grid-keyed levels.
-                // A skipIfAbsent index additionally requires its trigger
-                // bound — it is a sparse projection, and while the
-                // contiguous matcher already forces position 0 to be bound
-                // whenever any deeper property is used, an all-unused match
-                // inside the difference budget could still slip through
-                // (see [`index_admissible_for_skip_if_absent`]).
-                |index| {
-                    index.time_range.is_none()
-                        && index_admissible_for_skip_if_absent(index, &bound_fields)
-                },
-                platform_version,
-            )
-            .map_err(|e| Error::Protocol(Box::new(e)))?
-        else {
+        // Bucketed indexes never serve the terminal route: only resolved
+        // time ranges may bind to bucket keys, and those opted out above,
+        // so a raw query name-matching a bucketed index's properties must
+        // not walk its grid-keyed levels. A skipIfAbsent index
+        // additionally requires its trigger bound: it is a sparse
+        // projection, and while the contiguous matcher already forces
+        // position 0 to be bound whenever any deeper property is used, an
+        // all-unused match inside the difference budget could still slip
+        // through (see [`index_admissible_for_skip_if_absent`]).
+        let admissible = |index: &Index| {
+            index.time_range.is_none() && index_admissible_for_skip_if_absent(index, &bound_fields)
+        };
+        let matching = |filter: &dyn Fn(&Index) -> bool| {
+            self.document_type
+                .index_for_types_matching_including_terminal(
+                    equal_fields.as_slice(),
+                    range_field,
+                    in_field,
+                    order_by_keys.as_slice(),
+                    filter,
+                    platform_version,
+                )
+                .map_err(|e| Error::Protocol(Box::new(e)))
+        };
+        // An index on which the query would form a pivot with incomplete
+        // pages must not win over an index that serves the query in full,
+        // so such indexes are skipped first. Only when no other index
+        // matches is the choice rerun without that filter, so the pivot
+        // arm below refuses the shape with its targeted error.
+        let complete_match = matching(&|index: &Index| {
+            admissible(index) && self.index_only_pivot_pages_are_complete(index, &bound_fields)
+        })?;
+        let matched = match complete_match {
+            Some(matched) => Some(matched),
+            None => matching(&admissible)?,
+        };
+        let Some((index, _difference, terminal_used)) = matched else {
             return Ok(None);
         };
         if !terminal_used {
@@ -389,43 +403,42 @@ impl DriveDocumentQuery<'_> {
                 }
             }
             Some((pivot_position, pivot_clause)) => {
-                // Mixed shape: everything above the pivot equality-bound,
-                // everything below it unconstrained, terminal clause an
-                // equality, pivot ordered by.
+                // Mixed shape: an `in` clause on the last prefix property
+                // with a limit covering every value, everything above it
+                // equality-bound, terminal clause an equality, pivot
+                // ordered by.
+                self.refuse_incomplete_pivot_pages(index, pivot_position, pivot_clause)?;
                 let terminal_is_equality = match index.single_terminal() {
                     Some(terminal) => self.internal_clauses.equal_clauses.contains_key(terminal),
                     None => terminal_equalities.len() == components.len(),
                 };
                 if !terminal_is_equality {
                     return Err(shape_error(
-                        "a range or `in` clause on an indexOnly prefix property requires \
-                         an EQUALITY clause on the terminal: two simultaneous non-equality \
+                        "an `in` clause on an indexOnly prefix property requires an \
+                         EQUALITY clause on the terminal: two simultaneous non-equality \
                          levels have no single pagination order",
                     ));
                 }
-                for (position, property) in index.properties.iter().enumerate() {
-                    let has_equality = self
-                        .internal_clauses
-                        .equal_clauses
-                        .contains_key(property.name.as_str());
-                    if position < pivot_position && !has_equality {
-                        return Err(shape_error(
-                            "every prefix property ABOVE a pivot range/`in` clause must \
-                             carry an equality clause",
-                        ));
-                    }
-                    if position > pivot_position && has_equality {
-                        return Err(shape_error(
-                            "prefix properties BELOW a pivot range/`in` clause must be \
-                             unconstrained: an equality below the pivot is not yet \
-                             supported",
-                        ));
-                    }
+                if index
+                    .properties
+                    .iter()
+                    .take(pivot_position)
+                    .any(|property| {
+                        !self
+                            .internal_clauses
+                            .equal_clauses
+                            .contains_key(property.name.as_str())
+                    })
+                {
+                    return Err(shape_error(
+                        "every prefix property ABOVE a pivot `in` clause must carry an \
+                         equality clause",
+                    ));
                 }
                 if !self.order_by.contains_key(pivot_clause.field.as_str()) {
                     return Err(Error::Query(QuerySyntaxError::MissingOrderByForRange(
-                        "a range or `in` clause on an indexOnly prefix property \
-                             requires an orderBy on that property",
+                        "an `in` clause on an indexOnly prefix property requires an \
+                         orderBy on that property",
                     )));
                 }
             }
@@ -440,16 +453,127 @@ impl DriveDocumentQuery<'_> {
         }))
     }
 
+    /// Refuses a prefix pivot whose pages could hold fewer rows than
+    /// exist.
+    ///
+    /// The pivot walk opens one branch per pivot value, and grovedb
+    /// charges a branch that yields no row one slot of the path query's
+    /// limit, on the unproved read and in the proof alike. A page of
+    /// `limit` therefore covers `limit` branches, not `limit` rows, and
+    /// the response carries no cursor or "more" flag to tell a short page
+    /// from the last one. The `in` pivot on the last prefix property is
+    /// the one shape whose pages are provably complete: each value opens
+    /// at most one branch (its `0` level and the terminal equality's
+    /// single member key) and an absent value opens none, so the walk
+    /// takes at most one slot per value, and a limit of at least the
+    /// number of values is never exhausted before the last branch. A
+    /// range pivot, and an `in` pivot with properties below it, can open
+    /// more branches than the limit has slots, so they are refused until
+    /// the storage layer can report where a page stopped.
+    fn refuse_incomplete_pivot_pages(
+        &self,
+        index: &Index,
+        pivot_position: usize,
+        pivot_clause: &WhereClause,
+    ) -> Result<(), Error> {
+        let components = index.terminal_components();
+        let terminal_names = components.join(", ");
+        let use_instead = || {
+            let mut equality_bound: Vec<&str> = index
+                .properties
+                .iter()
+                .take(pivot_position)
+                .map(|property| property.name.as_str())
+                .collect();
+            equality_bound.extend(components.iter().map(String::as_str));
+            format!(
+                "query through an index that lists the equality-bound properties ({}) \
+                 before `{}`, so the equalities fix the path and the clause on `{}` runs \
+                 below them",
+                equality_bound.join(", "),
+                pivot_clause.field,
+                pivot_clause.field,
+            )
+        };
+        if pivot_clause.operator != WhereOperator::In {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "a range clause on `{}`, a prefix property of indexOnly index \"{}\", is not \
+                 supported in a query that also names the index's terminal ({}): a page of \
+                 that query could hold fewer rows than exist, and the response cannot say \
+                 where it stopped; {}",
+                pivot_clause.field,
+                index.name,
+                terminal_names,
+                use_instead(),
+            ))));
+        }
+        if pivot_position + 1 != index.properties.len() {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "an `in` clause on `{}`, a prefix property of indexOnly index \"{}\", in a \
+                 query that also names the index's terminal ({}), must sit on the index's \
+                 last prefix property: the properties below it are walked value by value, \
+                 so a page could hold fewer rows than exist; {}",
+                pivot_clause.field,
+                index.name,
+                terminal_names,
+                use_instead(),
+            ))));
+        }
+        let in_value_count = pivot_clause.in_values().into_data_with_error()??.len();
+        if let Some(limit) = self.limit {
+            if usize::from(limit) < in_value_count {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "an `in` clause on `{}`, the last prefix property of indexOnly index \
+                     \"{}\", in a query that also names the index's terminal ({}), needs a \
+                     limit of at least its {} values, got {}: every value takes one place \
+                     in the limit whether or not it has a row",
+                    pivot_clause.field, index.name, terminal_names, in_value_count, limit,
+                ))));
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether every prefix pivot this query would form on `index` serves
+    /// complete pages (see [`Self::refuse_incomplete_pivot_pages`]). A
+    /// pivot forms only where the query names one of the index's terminal
+    /// components (`named_fields`: its clause and orderBy fields) and puts
+    /// a range or `in` clause on one of its prefix properties.
+    fn index_only_pivot_pages_are_complete(&self, index: &Index, named_fields: &[&str]) -> bool {
+        let components = index.terminal_components();
+        if !components
+            .iter()
+            .any(|component| named_fields.contains(&component.as_str()))
+        {
+            return true;
+        }
+        self.internal_clauses
+            .range_clause
+            .iter()
+            .chain(self.internal_clauses.in_clauses.iter())
+            .filter(|clause| !components.contains(&clause.field))
+            .filter_map(|clause| {
+                index
+                    .properties
+                    .iter()
+                    .position(|property| property.name == clause.field)
+                    .map(|position| (position, clause))
+            })
+            .all(|(position, clause)| {
+                self.refuse_incomplete_pivot_pages(index, position, clause)
+                    .is_ok()
+            })
+    }
+
     /// Build the path query for a terminal-clause indexOnly query. One
     /// builder for the server's execution, the prover and the verifier.
     ///
     /// Without a pivot: the fully determined prefix path down to the `0`
     /// entry level, with the terminal clause lowered over the member
-    /// keys. With a prefix pivot: the path stops at the pivot property,
-    /// the pivot clause ranges over its values, and a subquery chain
-    /// walks each selected value through the unconstrained properties
-    /// below it (`insert_all` per level) down to `0`, where the terminal
-    /// equality selects the member key.
+    /// keys. With a prefix pivot: the path stops at the pivot property
+    /// (the index's last prefix property), the pivot's `in` clause
+    /// selects its values, and a subquery under each one descends to
+    /// `0`, where the terminal equality selects the member key.
     pub(crate) fn index_only_terminal_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
@@ -511,50 +635,23 @@ impl DriveDocumentQuery<'_> {
                 (terminal_query, index.properties.len())
             }
             Some((pivot_position, pivot_clause)) => {
-                // The pivot clause ranges over its property's values;
-                // below it, one `insert_all` level per unconstrained
-                // property, then `0` and the terminal equality. Built
-                // innermost-out.
-                let mut chain = terminal_query;
-                let mut chain_is_terminal = true;
-                for position in ((pivot_position + 1)..index.properties.len()).rev() {
-                    let property = &index.properties[position];
-                    let mut values_query = grovedb::Query::new_with_direction(direction_for(
-                        &property.name,
-                        property.ascending,
-                    ));
-                    values_query.insert_all();
-                    if chain_is_terminal {
-                        values_query.set_subquery_key(vec![0]);
-                    } else {
-                        values_query.set_subquery_key(
-                            index.properties[position + 1].name.as_bytes().to_vec(),
-                        );
-                    }
-                    values_query.set_subquery(chain);
-                    chain = values_query;
-                    chain_is_terminal = false;
+                // Selection admits a pivot only on the last prefix
+                // property, so `0` sits directly under each of its
+                // values and the terminal equality runs there.
+                if pivot_position + 1 != index.properties.len() {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "terminal-route selection admits a pivot only on the last prefix \
+                         property",
+                    )));
                 }
-
                 let mut pivot_query = pivot_clause.to_path_query(
                     self.document_type,
                     &None,
                     direction_for(pivot_clause.field.as_str(), true),
                     platform_version,
                 )?;
-                if chain_is_terminal {
-                    // The pivot is the last property: `0` sits directly
-                    // under each of its values.
-                    pivot_query.set_subquery_key(vec![0]);
-                } else {
-                    pivot_query.set_subquery_key(
-                        index.properties[pivot_position + 1]
-                            .name
-                            .as_bytes()
-                            .to_vec(),
-                    );
-                }
-                pivot_query.set_subquery(chain);
+                pivot_query.set_subquery_key(vec![0]);
+                pivot_query.set_subquery(terminal_query);
                 (pivot_query, *pivot_position)
             }
         };
@@ -610,7 +707,6 @@ impl DriveDocumentQuery<'_> {
         terminal_tail: Option<&crate::query::WhereClause>,
         platform_version: &PlatformVersion,
     ) -> Result<grovedb::Query, Error> {
-        use crate::query::WhereOperator;
         use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
         const MAX_KEY_LENGTH: usize = u8::MAX as usize;
