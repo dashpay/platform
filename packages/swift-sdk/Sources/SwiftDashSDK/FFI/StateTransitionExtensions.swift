@@ -1009,8 +1009,7 @@ extension SDK {
                 let docFetchTime = Date().timeIntervalSince(docFetchStartTime)
                 print("📝 [DOCUMENT TRANSFER] Document fetch took \(docFetchTime) seconds")
 
-                guard fetchResult.error == nil,
-                      let documentHandle = fetchResult.data else {
+                guard fetchResult.error == nil else {
                     let error = fetchResult.error.pointee
                     let errorMsg = String(cString: error.message)
                     dash_sdk_error_free(fetchResult.error)
@@ -1019,47 +1018,22 @@ extension SDK {
                     return
                 }
 
+                guard let documentHandle = fetchResult.data else {
+                    print("❌ [DOCUMENT TRANSFER] Document not found")
+                    continuation.resume(throwing: SDKError.notFound("Document not found"))
+                    return
+                }
+
                 defer {
                     dash_sdk_document_free(OpaquePointer(documentHandle))
                 }
 
                 print("✅ [DOCUMENT TRANSFER] Document fetched successfully")
-                print("🔄 [DOCUMENT TRANSFER] Step 3: Creating transfer transition...")
+                print("🔄 [DOCUMENT TRANSFER] Step 3: Signing, broadcasting and waiting for confirmation...")
 
                 let transferStartTime = Date()
 
-                // First, try to create the state transition without waiting
-                print("🔄 [DOCUMENT TRANSFER] Creating state transition...")
-                let transitionResult = dash_sdk_document_transfer_to_identity(
-                    handle,
-                    OpaquePointer(documentHandle),
-                    toIdentityCString,
-                    contractIdCString,
-                    documentTypeCString,
-                    keyHandle,
-                    signerBox.p,
-                    nil,  // token_payment_info
-                    nil,  // put_settings
-                    nil   // state_transition_creation_options
-                )
-
-                guard transitionResult.error == nil else {
-                    let error = transitionResult.error.pointee
-                    let errorMsg = String(cString: error.message)
-                    dash_sdk_error_free(transitionResult.error)
-                    print("❌ [DOCUMENT TRANSFER] Failed to create transition: \(errorMsg)")
-                    continuation.resume(throwing: SDKError.stateTransitionFailure(
-                        errorMsg, ffiError: error, otherwise: SDKError.protocolError))
-                    return
-                }
-
-                // The serialized transition is not used; the _and_wait call below builds its own.
-                if transitionResult.data_type == DashSDKFFI.BinaryData, let bytes = transitionResult.data {
-                    dash_sdk_binary_data_free(bytes.assumingMemoryBound(to: DashSDKBinaryData.self))
-                }
-
-                // Now try the _and_wait version which handles broadcasting internally
-                print("🔄 [DOCUMENT TRANSFER] Broadcasting and waiting for confirmation...")
+                // Signs the transfer once, broadcasts it and waits for the result.
                 let result = dash_sdk_document_transfer_to_identity_and_wait(
                     handle,
                     OpaquePointer(documentHandle),
