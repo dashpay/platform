@@ -16,6 +16,11 @@ and again when rechecking mempool contents. It performs a lighter validation:
 signature verification, basic structure, and balance checks. The goal is to filter out
 obvious garbage cheaply, without doing expensive state lookups.
 
+A `MasternodeVote` is the exception. A block refuses a failed vote without charging anyone,
+and the proposer drops it from the block without a trace, so check_tx runs the vote's advanced
+structure and state validation as well. A vote that a block would refuse, such as a Lock vote
+on a contest without locking, is refused when it is broadcast, with its error.
+
 This is implemented in
 `packages/rs-drive-abci/src/execution/validation/state_transition/check_tx_verification/mod.rs`:
 

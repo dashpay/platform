@@ -265,7 +265,8 @@ Rules that fall out of the table:
 - Preserve mempool coverage. `Batch` runs advanced structure with state during
   `check_tx`, while full state validation is skipped there
   (`validates_full_state_on_check_tx` defaults to `false`; masternode votes
-  are the one transition that opts in, because they are unpaid). Moving a
+  are the one transition that opts in, because a block refuses them unpaid,
+  and they run advanced structure with state there too). Moving a
   contract-dependent structural check into state validation would remove that
   rejection from mempool admission.
 - Validation outcomes are `ConsensusValidationResult`, returned as `Ok`. A
