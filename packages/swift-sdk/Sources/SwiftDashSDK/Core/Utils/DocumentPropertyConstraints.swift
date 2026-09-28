@@ -24,24 +24,29 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
     /// sizes (`{ "length": path }`, `{ "byteLength": path }`,
     /// `{ "count": path }`), system times and heights as bare operands
     /// (`"$createdAt"`), `{ "contains": [arrayPath, value] }`,
-    /// `{ "startsWith": [a, b] }` and `{ "endsWith": [a, b] }`.
+    /// `{ "startsWith": [a, b] }`, `{ "endsWith": [a, b] }`,
+    /// `{ "notIn": [operand, [values]] }`, `{ "min": [a, b, ...] }`,
+    /// `{ "max": [a, b, ...] }`, `{ "abs": a }`, `{ "ifThen": [if, then] }`
+    /// and `{ "ifThenElse": [if, then, else] }`.
     public let ruleJSON: String
 
     /// Every property the rule reads, in declared order, a property read twice
-    /// listed twice. `$ownerId` is no property and is not listed: see
-    /// `readsOwner`; nor are the system times and heights: see `readsSystem`.
+    /// listed twice. The list describes the rule, not one document: it covers
+    /// every branch of an `ifThen` or `ifThenElse`, whichever one a document
+    /// takes. `$ownerId` is no property and is not listed: see `readsOwner`;
+    /// nor are the system times and heights: see `readsSystem`.
     public let reads: [PropertyConstraintRead]
 
-    /// Whether the rule compares the document's owner, `$ownerId`: then a
-    /// transfer or a purchase, which changes the owner, is judged against it
-    /// too.
+    /// Whether the rule compares the document's owner, `$ownerId`, in any
+    /// branch, as in `reads`: then a transfer or a purchase, which changes
+    /// the owner, is judged against it too.
     public let readsOwner: Bool
 
     /// The system times and heights the rule reads, by name, in declared
-    /// order, one read twice listed twice: `$createdAt`, `$updatedAt` and
-    /// `$transferredAt` (block times, in milliseconds), each also with
-    /// `BlockHeight` or `CoreBlockHeight` appended (the Platform and Core
-    /// block heights), the names of wasm-dpp2's
+    /// order, one read twice listed twice, every branch included as in
+    /// `reads`: `$createdAt`, `$updatedAt` and `$transferredAt` (block times,
+    /// in milliseconds), each also with `BlockHeight` or `CoreBlockHeight`
+    /// appended (the Platform and Core block heights), the names of wasm-dpp2's
     /// `PropertyConstraintSystemProperty`. Consensus judges a price update
     /// against the rules reading `$updatedAt…`, and a transfer or a purchase
     /// against the rules reading `$transferredAt…` (or `$ownerId`).
