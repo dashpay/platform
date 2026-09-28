@@ -32,9 +32,9 @@ are data encrypted under Keystore-wrapped AES keys).
   `extern "C"` entry points of the FFI crates **as rlib dependencies**, so
   `DashSDKResult` never crosses JNI by value. Errors throw
   `org.dashfoundation.dashsdk.ffi.DashSDKException(code, message)`, which
-  also carries the consensus code and kind when a platform-wallet result
-  reports a consensus rejection (`DashSdkError.consensusError`; branch on
-  that, never on the message); panics
+  also carries the consensus code and kind when a platform-wallet result or
+  an rs-sdk-ffi `DashSDKError` reports a consensus rejection
+  (`DashSdkError.consensusError`; branch on that, never on the message); panics
   are caught at every export (`support::guard`) — the JNI library must never
   abort the app process (workspace profiles `*-android` keep
   `panic = "unwind"`).
@@ -46,6 +46,11 @@ are data encrypted under Keystore-wrapped AES keys).
   `GlobalRef`s.
 - `PlatformWalletManager` is network-locked at construction. Network switch =
   destroy + new instance (`WalletManagerStore`), never reconfiguration.
+- Screens read Room `Flow`s or snapshot data copied at the JNI boundary. They
+  never hold a native handle wrapper in composition: `NativeCleaner` can free
+  it in the middle of a read.
+- Bridge an FFI function only when the reference Swift app has a caller for
+  it.
 
 ## Building
 
@@ -84,6 +89,13 @@ export DASH_GRADLE_BUILD_ROOT=/Volumes/DashBuild/gradle-build
 - Instrumented tests (`sdk/src/androidTest`): FFI smoke test
   (`FfiSmokeTest`) is the A-M1 gate — library loads, version resolves, SDK
   handle round-trips.
+- JVM and Robolectric tests never load `libdash_sdk_jni`. JNI symbol names,
+  the hand-written method descriptors in `rs-unified-sdk-jni` and argument
+  marshaling are exercised only by the instrumented tests, and a mismatch
+  fails at runtime, not at compile time. Change a Rust descriptor and its
+  Kotlin signature in the same commit, and extend `FfiSmokeTest`
+  (`persistenceBridgeDescriptorsAllResolve`) and `WalletManagerRoundTripTest`
+  when adding a persistence or callback slot.
 - Testnet integration tests are tagged and opt-in (`-Ptestnet=true`).
 
 ## Keeping parity with iOS
@@ -92,3 +104,17 @@ The reference implementation is `packages/swift-sdk` + its SwiftExampleApp.
 When porting behavior, cite the Swift source file in the KDoc. Reuse iOS
 accessibility identifier strings verbatim as Compose `testTag`s for
 cross-platform UAT parity.
+
+Parity status lives in `docs/sdk/sdk-parity-manifest.json`. After a
+capability changes, edit the manifest and run
+`python3 scripts/check_sdk_parity_manifest.py --write-summary`; CI rejects a
+stale `PARITY_SUMMARY.md`. Never hand-edit counts in `PARITY.md` or
+`PARITY_SUMMARY.md`. The rules the manifest encodes:
+
+- A capability is `supported` only when it names an automated test or a
+  recorded device or manual gate.
+- Recovery is part of parity: where durable state or on-chain value exists, a
+  flow is ported only when it resumes after process death, so its `restart`
+  must be `tested`.
+- Differences in visual layout are not parity failures when the capability,
+  accessibility identifiers and behavior match.

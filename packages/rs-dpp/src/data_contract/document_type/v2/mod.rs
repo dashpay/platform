@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::property::{DocumentProperty, GeneratedFrom};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
@@ -61,6 +61,11 @@ pub struct DocumentTypeV2 {
     /// (protocol version 14), in schema order, so a document write finds
     /// them without walking every property. Empty on every pre-PV14 contract.
     pub(in crate::data_contract) distinct_from_fields: Vec<String>,
+    /// The dotted path of every property that declares `generatedFrom`
+    /// (protocol version 14) with its declaration, in schema order, so a
+    /// document write finds them without walking every property. Empty on
+    /// every pre-PV14 contract.
+    pub(in crate::data_contract) generated_from_fields: Vec<(String, GeneratedFrom)>,
     /// On an indexOnly type, the top-level properties stored in every entry's
     /// value after the row commitment (the `entryPayload` keyword), in name
     /// order. Empty on every other type and on every pre-PV14 contract.
@@ -168,11 +173,27 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) creator_reference: Option<DocumentPropertyReferenceTarget>,
     /// The rules every created or replaced document must meet, by name, in the
     /// order they are checked (`propertyConstraints` keyword, protocol version
-    /// 14): each a comparison of two integer expressions over the document's
-    /// integer properties. Empty on document types that declare none. The
-    /// parser (`apply_property_constraints`) holds every property a rule reads
-    /// to be an integer that is neither transient nor inside a transient object.
+    /// 14): each a condition on the document's properties, a comparison of two
+    /// integer expressions (which may read a `countOf` or `sumOf` total of a
+    /// type of the contract), of a string or an identifier property with
+    /// constants or with another property of its kind, an `in` or `notIn` list
+    /// of values, a `startsWith` or `endsWith`, a `contains`, a `present` or
+    /// `absent` test, or an `anyOf`, `allOf`, `not`, `ifThen` or `ifThenElse` of
+    /// conditions. Empty on document types that declare none. The parser
+    /// (`apply_property_constraints`) holds every property an operand reads to
+    /// be an integer or a boolean, every property compared with strings or
+    /// identifiers to be of that kind, every property a size measures or a
+    /// `contains` looks in to be of the type it reads, every system time or
+    /// height a rule reads to be one the type records, and every property a
+    /// rule reads to be neither transient nor inside a transient object.
     pub(in crate::data_contract) property_constraints: BTreeMap<String, PropertyConstraint>,
+    /// How many seconds after its creation (`$createdAt`) the platform deletes each
+    /// document of the type (`ttl` keyword, protocol version 14), `None` when the
+    /// documents live until someone deletes them. The parser (`apply_documents_ttl`)
+    /// requires `$createdAt` and refuses it on a type that keeps history, is indexOnly or
+    /// has a contested index; the references that may point at such a type treat it as
+    /// deletable.
+    pub(in crate::data_contract) documents_ttl_seconds: Option<u32>,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -217,9 +238,21 @@ fn distinct_from_fields_of(
         .collect()
 }
 
+/// The properties that declare `generatedFrom`, with their declarations, in the
+/// flattened map's (schema) order.
+fn generated_from_fields_of(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+) -> Vec<(String, GeneratedFrom)> {
+    flattened_properties
+        .iter()
+        .filter_map(|(path, property)| Some((path.clone(), property.generated_from.clone()?)))
+        .collect()
+}
+
 impl From<DocumentTypeV0> for DocumentTypeV2 {
     fn from(value: DocumentTypeV0) -> Self {
         let distinct_from_fields = distinct_from_fields_of(&value.flattened_properties);
+        let generated_from_fields = generated_from_fields_of(&value.flattened_properties);
         DocumentTypeV2 {
             name: value.name,
             schema: value.schema,
@@ -234,6 +267,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
             distinct_from_fields,
+            generated_from_fields,
             entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
@@ -264,6 +298,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             owner_reference: None,
             creator_reference: None,
             property_constraints: BTreeMap::new(),
+            documents_ttl_seconds: None,
         }
     }
 }
@@ -271,6 +306,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
 impl From<DocumentTypeV1> for DocumentTypeV2 {
     fn from(value: DocumentTypeV1) -> Self {
         let distinct_from_fields = distinct_from_fields_of(&value.flattened_properties);
+        let generated_from_fields = generated_from_fields_of(&value.flattened_properties);
         DocumentTypeV2 {
             name: value.name,
             schema: value.schema,
@@ -285,6 +321,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
             distinct_from_fields,
+            generated_from_fields,
             entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
@@ -315,6 +352,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             owner_reference: None,
             creator_reference: None,
             property_constraints: BTreeMap::new(),
+            documents_ttl_seconds: None,
         }
     }
 }

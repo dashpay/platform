@@ -1,3 +1,7 @@
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -6168,46 +6172,46 @@ mod tests {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for OrderBy {}
+impl JsonConvertible for OrderBy {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for OrderBy {}
+impl ValueConvertible for OrderBy {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ContestedIndexResolution {}
+impl JsonConvertible for ContestedIndexResolution {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ContestedIndexResolution {}
+impl ValueConvertible for ContestedIndexResolution {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ContestedIndexFieldMatch {}
+impl JsonConvertible for ContestedIndexFieldMatch {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ContestedIndexFieldMatch {}
+impl ValueConvertible for ContestedIndexFieldMatch {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ContestedIndexInformation {}
+impl JsonConvertible for ContestedIndexInformation {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ContestedIndexInformation {}
+impl ValueConvertible for ContestedIndexInformation {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for Index {}
+impl JsonConvertible for Index {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for Index {}
+impl ValueConvertible for Index {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for IndexProperty {}
+impl JsonConvertible for IndexProperty {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for IndexProperty {}
+impl ValueConvertible for IndexProperty {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for IndexCountability {}
+impl JsonConvertible for IndexCountability {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for IndexCountability {}
+impl ValueConvertible for IndexCountability {}
 
 #[cfg(all(
     test,

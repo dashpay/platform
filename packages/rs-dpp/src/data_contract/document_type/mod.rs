@@ -82,6 +82,10 @@ pub(crate) mod property_names {
     /// v3+ (protocol version 14). See `parse_action_fees_keyword` in
     /// `try_from_schema::common`.
     pub const ACTION_FEES: &str = "actionFees";
+    /// Doctype-level object of token costs, one per document action (`create`,
+    /// `replace`, `delete`, `transfer`, `update_price`, `purchase`). Meta-schema
+    /// v0+ (protocol version 9). See `parse_token_costs` in `try_from_schema::common`.
+    pub const TOKEN_COST: &str = "tokenCost";
     /// Doctype-level array naming the [`IMMUTABLE`] properties a replace may
     /// still set when the stored document has no value for them. Once set
     /// they are frozen like the rest of the list. Every entry must also be in
@@ -99,6 +103,9 @@ pub(crate) mod property_names {
     pub const MAX_ITEMS: &str = "maxItems";
     pub const ITEMS: &str = "items";
     pub const UNIQUE_ITEMS: &str = "uniqueItems";
+    pub const MIN_PROPERTIES: &str = "minProperties";
+    pub const MAX_PROPERTIES: &str = "maxProperties";
+    pub const CONTAINS: &str = "contains";
     pub const MIN_LENGTH: &str = "minLength";
     pub const MAX_LENGTH: &str = "maxLength";
     pub const BYTE_ARRAY: &str = "byteArray";
@@ -116,9 +123,14 @@ pub(crate) mod property_names {
     /// transferable or tradeable one). Meta-schema v3+ (protocol version 14).
     /// See `parse_doctype_reference` in `try_from_schema`.
     pub const CREATOR_REFERS_TO: &str = "creatorRefersTo";
-    /// Doctype-level object of named rules, each a comparison of two integer
-    /// expressions over the document's integer properties that every created or
-    /// replaced document must meet. Meta-schema v3+ (protocol version 14). See
+    /// Doctype-level object of named rules, each a condition on the document's
+    /// properties (a comparison of two integer expressions, which may read a
+    /// `countOf` or `sumOf` total of a type of the contract, of a string or an
+    /// identifier property with constants or with another property of its
+    /// kind, an `in` or `notIn` list of values, a `startsWith` or `endsWith`,
+    /// a `contains`, a `present` or `absent` test, or an `anyOf`, `allOf`,
+    /// `not`, `ifThen` or `ifThenElse` of conditions) that every created or replaced
+    /// document must meet. Meta-schema v3+ (protocol version 14). See
     /// `parse_property_constraints` in `property_constraints`.
     pub const PROPERTY_CONSTRAINTS: &str = "propertyConstraints";
     pub const DISTINCT_FROM: &str = "distinctFrom";
@@ -169,6 +181,16 @@ pub(crate) mod property_names {
     /// Meta-schema v3+ (protocol version 14). See `apply_max_bytes` in
     /// `try_from_schema`.
     pub const MAX_BYTES: &str = "maxBytes";
+    /// Property-level object on a string property: the [`FUNCTION`] the platform
+    /// generates the value with and its [`PARAMS`], other properties of the same
+    /// document. Meta-schema v3+ (protocol version 14). See
+    /// `apply_generated_from` in `try_from_schema`.
+    pub const GENERATED_FROM: &str = "generatedFrom";
+    /// `generatedFrom`: the function name, one of `SystemFunction::ALL`.
+    pub const FUNCTION: &str = "function";
+    /// `generatedFrom`: the parameters, dotted paths of properties of the same
+    /// document type.
+    pub const PARAMS: &str = "params";
     pub const KEY_REQUIREMENTS: &str = "keyRequirements";
     pub const PURPOSE: &str = "purpose";
     pub const BOUND_TO: &str = "boundTo";
@@ -231,6 +253,15 @@ pub(crate) mod property_names {
     /// Absent means no limit. Meta-schema v3+ (protocol version 14). See
     /// `apply_can_be_deleted_by_moderators_for` in `try_from_schema::common`.
     pub const CAN_BE_DELETED_BY_MODERATORS_FOR: &str = "canBeDeletedByModeratorsFor";
+    /// Doctype-level time to live, in seconds: the platform deletes each document of the
+    /// type once `$createdAt` plus this many seconds has passed, whoever owns it and
+    /// whatever `canBeDeleted` says; from then on it can no longer be changed or restored by a
+    /// moderator. Its documents are stored without storage flags, pay
+    /// for the time they live instead of perpetual storage, and refund nothing. Requires
+    /// `$createdAt` in `required`; refused with `documentsKeepHistory`, `indexOnly` and a
+    /// contested index, and fixed when the document type is created. Meta-schema v3+
+    /// (protocol version 14). See `apply_documents_ttl` in `try_from_schema::common`.
+    pub const TTL: &str = "ttl";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

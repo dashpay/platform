@@ -4,6 +4,7 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
+use crate::data_contract::document_type::class_methods::try_from_schema::validate_property_constraint_aggregates;
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
     DocumentType,
@@ -207,8 +208,8 @@ impl DocumentType {
                     // exists from the same protocol version 14 as every other lookup, so
                     // this stays inert before it
                     let referenced = referenced_document_type.as_ref();
-                    let deletable = referenced.documents_can_be_deleted()
-                        || referenced.documents_can_be_deleted_by_moderators();
+                    // Deletable by anyone: owner, moderators, or the platform (`ttl`).
+                    let deletable = referenced.documents_can_disappear();
                     if permanent == deletable {
                         continue;
                     }
@@ -284,6 +285,12 @@ impl DocumentType {
                 }
             }
         }
+
+        // What a `countOf` or `sumOf` totals is another document type of the contract, so it
+        // is checked once all are parsed. Inert for every protocol version before 14: only
+        // the tables carrying `parse_property_constraints: Some(_)` parse a rule at all.
+        validate_property_constraint_aggregates(&contract_document_types, schema_defs)
+            .map_err(consensus_or_protocol_data_contract_error)?;
 
         Ok(contract_document_types)
     }

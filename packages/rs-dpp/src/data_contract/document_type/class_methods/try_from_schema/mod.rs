@@ -1,7 +1,13 @@
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
-use crate::data_contract::document_type::property_constraints::parse_property_constraints;
+use crate::data_contract::document_type::property_constraints::{
+    parse_property_constraints, AffixPosition, AggregateBinding, AggregateKind, ElementKind,
+    EqualityKind, PropertyConstraint, PropertyRead,
+};
 use crate::data_contract::document_type::reference_lookup::{
     MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
 };
@@ -14,19 +20,20 @@ use crate::data_contract::document_type::{
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
-    IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
-    ListElementReference, LookupKeySource, ReferenceCombinator, ReferenceOperands,
-    COMBINABLE_REFERENCE_TARGET_TYPES,
+    GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements, KeyIdReference,
+    KeyReferenceIdentityProperty, ListElementReference, LookupKeySource, ReferenceCombinator,
+    ReferenceOperands, SystemFunction, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
-use crate::document::property_names::ID;
+use crate::document::property_names::{ID, OWNER_ID};
 use crate::identity::Purpose;
 use crate::util::json_schema::resolve_uri;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use indexmap::IndexMap;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
@@ -38,6 +45,9 @@ mod v2;
 mod v3;
 
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
+
+/// How a `$ref` to one of the contract's `$defs` starts: `#/$defs/<name>`.
+const DEFINITIONS_REF_PREFIX: &str = "#/$defs/";
 
 /// The longest property path a keyword may name: `keyIdProperty`, the
 /// `propertyAgreement` pairs and the `encryptedFor` paths share it, and the
@@ -213,6 +223,8 @@ fn insert_values(
                     apply_distinct_from(&inner_properties, &property_type, platform_version)?;
                 let encrypted_for =
                     apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
+                let generated_from =
+                    apply_generated_from(&inner_properties, &property_type, platform_version)?;
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -222,6 +234,7 @@ fn insert_values(
                         required_since,
                         distinct_from,
                         encrypted_for,
+                        generated_from,
                     },
                 );
             }
@@ -291,26 +304,32 @@ fn insert_values_nested(
                 // reintroduce a nested-property sort — even a correct one — nor a panicking
                 // `position` read here.
 
-                // Create a new set with the prefix removed from the keys
+                // Create a new set with the prefix removed from the keys: an entry for
+                // a member of this object is the object's name, one separator byte, then
+                // the member's own entry.
+                //
+                // Every protocol version reaches this helper, so the match stays
+                // output-identical to the byte-offset slice it replaced: `str::get`
+                // returns that same slice wherever the slice was valid, and `None` (no
+                // member entry) elsewhere. Requiring the separator to be '.' would change
+                // how some schemas that parse today are read, so it needs a new
+                // generation.
                 let stripped_required: BTreeSet<String> = known_required
                     .iter()
                     .filter_map(|key| {
-                        if key.starts_with(&property_key) && key.len() > property_key.len() {
-                            Some(key[property_key.len() + 1..].to_string())
-                        } else {
-                            None
-                        }
+                        key.strip_prefix(property_key.as_str())
+                            .and_then(|rest| rest.get(1..))
+                            .map(str::to_string)
                     })
                     .collect();
 
+                // Matched exactly like `stripped_required` above
                 let stripped_transient: BTreeSet<String> = known_transient
                     .iter()
                     .filter_map(|key| {
-                        if key.starts_with(&property_key) && key.len() > property_key.len() {
-                            Some(key[property_key.len() + 1..].to_string())
-                        } else {
-                            None
-                        }
+                        key.strip_prefix(property_key.as_str())
+                            .and_then(|rest| rest.get(1..))
+                            .map(str::to_string)
                     })
                     .collect();
 
@@ -346,6 +365,7 @@ fn insert_values_nested(
     let property_type = apply_max_bytes(&inner_properties, property_type, platform_version)?;
     let distinct_from = apply_distinct_from(&inner_properties, &property_type, platform_version)?;
     let encrypted_for = apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
+    let generated_from = apply_generated_from(&inner_properties, &property_type, platform_version)?;
 
     document_properties.insert(
         property_key,
@@ -356,6 +376,7 @@ fn insert_values_nested(
             required_since,
             distinct_from,
             encrypted_for,
+            generated_from,
         },
     );
 
@@ -499,13 +520,7 @@ fn validate_distinct_from_targets_v0(
             )));
         }
         let Some(target_property) = flattened_properties.get(target) else {
-            // Objects are not in the flattened map, only their members are
-            let names_an_object = flattened_properties.keys().any(|key| {
-                key.len() > target.len()
-                    && key.starts_with(target)
-                    && key.as_bytes()[target.len()] == b'.'
-            });
-            if names_an_object {
+            if names_an_object(flattened_properties, target) {
                 return Err(DataContractError::InvalidContractStructure(format!(
                     "document type \"{document_type_name}\" property \"{path}\" declares distinctFrom \
                      \"{target}\", which is an object, not an identifier property: name one of \
@@ -528,6 +543,15 @@ fn validate_distinct_from_targets_v0(
         }
     }
     Ok(())
+}
+
+/// Whether `path`, missing from the flattened map, names an object of the
+/// document type: objects are not in the flattened map, only their members are.
+fn names_an_object(flattened_properties: &IndexMap<String, DocumentProperty>, path: &str) -> bool {
+    flattened_properties.keys().any(|key| {
+        key.strip_prefix(path)
+            .is_some_and(|rest| rest.starts_with('.'))
+    })
 }
 
 /// The value of an element keyword on the `items` of a typed array property,
@@ -1782,11 +1806,13 @@ fn apply_encrypted_for_v0(
 /// the stored ciphertext without its recipe), and the byte array's own
 /// `maxItems` must hold the scheme's shortest ciphertext. Paths are looked up
 /// among the flattened properties, so a nested property is named by its
-/// dotted path.
+/// dotted path. A key property's schema reached through a `$ref` is read from
+/// `schema_defs`, the contract's `$defs`, as the core parse reads it.
 ///
 /// Owned by parser generation 3: the only generation that admits the keyword.
 pub(super) fn validate_encrypted_for_declarations(
     document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
     document_type_name: &str,
 ) -> Result<(), DataContractError> {
     let flattened_properties = &document_type.flattened_properties;
@@ -1850,7 +1876,7 @@ pub(super) fn validate_encrypted_for_declarations(
                     "{key} \"{key_path}\" is not a property of the document type"
                 )));
             }
-            if !is_key_id_schema(&document_type.schema, key_path)? {
+            if !is_key_id_schema(&document_type.schema, schema_defs, key_path)? {
                 return Err(structure_error(format!(
                     "{key} \"{key_path}\" must be an integer property with minimum at least 0 \
                      and maximum at most {}, so that it carries a key id",
@@ -1869,15 +1895,266 @@ pub(super) fn validate_encrypted_for_declarations(
     Ok(())
 }
 
+/// Reads a `generatedFrom` declaration off a string property: the function
+/// the platform generates the property's value with, and its parameters,
+/// other properties of the same document type. Only a string property
+/// carries it, the one kind the functions return: a typed array has no
+/// parameters for its elements, so the keyword is refused on the array and on
+/// its items alike.
+///
+/// Versioned on `apply_generated_from` in the platform version's document
+/// type schema versions. `None` selects the behavior of the versions that
+/// predate the keyword: it is ignored entirely, so their parses stay
+/// byte-for-byte identical to what they always produced.
+///
+/// The parameters are checked against the rest of the document type once
+/// every property is parsed, by [`validate_generated_from_declarations`].
+fn apply_generated_from(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<Option<GeneratedFrom>, DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_generated_from
+    {
+        None => Ok(None),
+        Some(0) => apply_generated_from_v0(inner_properties, property_type),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_generated_from version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_generated_from_v0(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+) -> Result<Option<GeneratedFrom>, DataContractError> {
+    if let DocumentPropertyType::TypedArray(_) = property_type {
+        // On the array itself first: the shared items lookup would refuse it there as
+        // belonging on the items, and the keyword belongs on neither
+        if inner_properties.contains_key(property_names::GENERATED_FROM)
+            || typed_array_items_keyword(
+                inner_properties,
+                property_names::GENERATED_FROM,
+                "has no parameters",
+            )?
+            .is_some()
+        {
+            return Err(DataContractError::InvalidContractStructure(
+                "generatedFrom is only allowed on string properties, not on a typed array or \
+                 its items"
+                    .to_string(),
+            ));
+        }
+        return Ok(None);
+    }
+
+    let Some(generated_from_value) = inner_properties.get(property_names::GENERATED_FROM) else {
+        return Ok(None);
+    };
+
+    if !matches!(property_type, DocumentPropertyType::String(_)) {
+        return Err(DataContractError::InvalidContractStructure(
+            "generatedFrom is only allowed on string properties".to_string(),
+        ));
+    }
+
+    let shape_error = || {
+        DataContractError::InvalidContractStructure(
+            "generatedFrom must be an object with a function (its name) and params (the paths \
+             of the properties of the same document type it reads)"
+                .to_string(),
+        )
+    };
+    let generated_from_map = generated_from_value
+        .to_btree_ref_string_map()
+        .map_err(|_| shape_error())?;
+
+    for key in generated_from_map.keys() {
+        if !matches!(
+            key.as_str(),
+            property_names::FUNCTION | property_names::PARAMS
+        ) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "generatedFrom {key:?} is unknown, expected function and params"
+            )));
+        }
+    }
+
+    let function_name = generated_from_map
+        .get(property_names::FUNCTION)
+        .and_then(|value| value.as_text())
+        .ok_or_else(shape_error)?;
+    let function = SystemFunction::from_wire_name(function_name).ok_or_else(|| {
+        DataContractError::InvalidContractStructure(format!(
+            "generatedFrom function {function_name:?} is unknown, expected one of {}",
+            SystemFunction::ALL
+                .iter()
+                .map(|function| format!("{:?}", function.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    })?;
+
+    let params = generated_from_map
+        .get(property_names::PARAMS)
+        .and_then(|value| value.as_array())
+        .ok_or_else(shape_error)?;
+    if params.len() != function.parameter_count() {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "generatedFrom function {function} takes {} parameter(s), but params lists {}",
+            function.parameter_count(),
+            params.len()
+        )));
+    }
+    let params = params
+        .iter()
+        .map(|param| {
+            let path = param.as_text().ok_or_else(|| {
+                DataContractError::InvalidContractStructure(
+                    "generatedFrom params must be property paths (strings)".to_string(),
+                )
+            })?;
+            if path.is_empty() || path.len() > MAX_PROPERTY_PATH_LENGTH {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "generatedFrom params must be between 1 and {MAX_PROPERTY_PATH_LENGTH} \
+                     characters"
+                )));
+            }
+            if path.starts_with('$') {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "generatedFrom params must name properties of the document type, not \
+                     system property \"{path}\""
+                )));
+            }
+            Ok(GenerationParam::Property(path.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Some(GeneratedFrom { function, params }))
+}
+
+/// Checks every `generatedFrom` declaration of a document type against the
+/// properties its parameters name, once all of them are parsed. Each
+/// parameter:
+///
+/// * must be a string property of the type (the one kind the functions read)
+///   other than the declaring one, a nested one named by its dotted path, as
+///   the flattened map names it;
+/// * may not be generated itself, so the platform generates every left-out
+///   value from values the client sent, in any order;
+/// * may not be transient or sit inside a transient object, nor may the
+///   declaring property: a transient parameter is dropped before storage, so a
+///   replace would have to supply it again or lose the generated value, and a
+///   transient generated property is never stored at all;
+/// * must sit inside every object that holds the declaring property (a
+///   top-level property may take any parameter), so a document supplying the
+///   parameters always holds the object the platform writes the value into.
+///
+/// Owned by parser generation 3: the only generation that admits the keyword.
+pub(super) fn validate_generated_from_declarations(
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    let flattened_properties = &document_type.flattened_properties;
+    for (path, property) in flattened_properties {
+        let Some(generated_from) = &property.generated_from else {
+            continue;
+        };
+        let structure_error = |message: String| {
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" property \"{path}\" generatedFrom \
+                 {message}"
+            ))
+        };
+
+        if is_transient(DocumentTypeRef::V2(document_type), path) {
+            return Err(structure_error(
+                "is on a property that is transient or inside a transient object: a transient \
+                 value is never stored, so the generated value would be lost"
+                    .to_string(),
+            ));
+        }
+
+        for param in generated_from.property_params() {
+            if param == path {
+                return Err(structure_error(
+                    "reads the property itself: name other string properties of the document \
+                     type"
+                        .to_string(),
+                ));
+            }
+            let Some(param_property) = flattened_properties.get(param) else {
+                if names_an_object(flattened_properties, param) {
+                    return Err(structure_error(format!(
+                        "param \"{param}\" is an object, not a string property: name one of its \
+                         string members"
+                    )));
+                }
+                return Err(structure_error(format!(
+                    "param \"{param}\" is not a property of the document type"
+                )));
+            };
+            if !matches!(
+                param_property.property_type,
+                DocumentPropertyType::String(_)
+            ) {
+                return Err(structure_error(format!(
+                    "param \"{param}\" has type {}, not string",
+                    param_property.property_type.name()
+                )));
+            }
+            if param_property.generated_from.is_some() {
+                return Err(structure_error(format!(
+                    "param \"{param}\" is generated itself: name the properties it is generated \
+                     from instead"
+                )));
+            }
+            if is_transient(DocumentTypeRef::V2(document_type), param) {
+                return Err(structure_error(format!(
+                    "param \"{param}\" is transient or inside a transient object: a transient \
+                     value is never stored, so a replace could not keep the generated value \
+                     without sending it again"
+                )));
+            }
+            if let Some((target_object, _)) = path.rsplit_once('.') {
+                let inside_target_object = param
+                    .strip_prefix(target_object)
+                    .is_some_and(|rest| rest.starts_with('.'));
+                if !inside_target_object {
+                    return Err(structure_error(format!(
+                        "param \"{param}\" is outside \"{target_object}\": every param must sit \
+                         inside every object that holds the generated property, so a document \
+                         supplying the params always has the object the value is written into"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Reads the `propertyConstraints` keyword onto the document type and checks
-/// every property its rules read: an integer property of the type (a nested
-/// one named by its dotted path, as the flattened map names it) that is
-/// neither transient nor inside a transient object. A transient value is never
-/// stored, so a stored document could not be held to a rule reading one. The
-/// declaration's shape ([`parse_property_constraints`]) and these reads are
+/// every property its rules read: by its value, an integer or boolean
+/// property of the type (a nested one named by its dotted path, as the
+/// flattened map names it); by its `length` or `byteLength`, a string
+/// property; by its `count`, an array or byte array property; by its presence,
+/// a property of any type, an object included; any way one that is neither
+/// transient nor inside a transient object. A system time or height a rule
+/// reads (`$createdAt`, ...) must be one the type records, listed in
+/// `required`, and an indexOnly type reads none, nor `$ownerId`. A
+/// transient value is never stored, so a stored document could not be held to
+/// a rule reading one. The declaration's shape ([`parse_property_constraints`]) and these reads are
 /// checked on every parse; under full validation, the limits too: at most
 /// `SystemLimits::max_property_constraints` rules, each of at most
-/// `max_property_constraint_nodes` nodes.
+/// `max_property_constraint_nodes` nodes, and no `anyOf` or `allOf` listing
+/// the same condition twice. The `enum` a constant or a default is checked
+/// against is read from the property's schema, through a `$ref` into
+/// `schema_defs`, the contract's `$defs`, as the core parse reads it.
 ///
 /// Only parser generation 3 calls it, once the core parse has run the
 /// meta-schema, so under full validation a malformed declaration is the
@@ -1887,6 +2164,7 @@ pub(super) fn validate_encrypted_for_declarations(
 /// entirely.
 pub(super) fn apply_property_constraints(
     document_type: &mut DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
     document_type_name: &str,
     full_validation: bool,
     platform_version: &PlatformVersion,
@@ -1901,6 +2179,7 @@ pub(super) fn apply_property_constraints(
         None => Ok(()),
         Some(0) => apply_property_constraints_v0(
             document_type,
+            schema_defs,
             document_type_name,
             full_validation,
             platform_version,
@@ -1911,13 +2190,48 @@ pub(super) fn apply_property_constraints(
     }
 }
 
+/// The property at the dotted `path` of `properties`, an object or a member of
+/// one included, `None` when the path names none.
+fn property_at_path<'a>(
+    properties: &'a IndexMap<String, DocumentProperty>,
+    path: &str,
+) -> Option<&'a DocumentProperty> {
+    let mut segments = path.split('.');
+    let mut property = properties.get(segments.next()?)?;
+    for segment in segments {
+        let DocumentPropertyType::Object(members) = &property.property_type else {
+            return None;
+        };
+        property = members.get(segment)?;
+    }
+    Some(property)
+}
+
 fn apply_property_constraints_v0(
     document_type: &mut DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
     document_type_name: &str,
     full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
-    let constraints = parse_property_constraints(&document_type.schema, document_type_name)?;
+    let flattened_properties = &document_type.flattened_properties;
+    let equality_kind = |property_type: &DocumentPropertyType| match property_type {
+        DocumentPropertyType::String(_) => Some(EqualityKind::Text),
+        property_type if property_type.is_identifier() => Some(EqualityKind::Identifier),
+        _ => None,
+    };
+    // A typed array compares as its elements do, in a `contains`; anywhere else
+    // the reads below refuse an array where a string or an identifier belongs
+    let property_kind = |path: &str| match flattened_properties
+        .get(path)
+        .map(|property| &property.property_type)
+    {
+        Some(DocumentPropertyType::TypedArray(array)) => equality_kind(&array.item_type),
+        Some(property_type) => equality_kind(property_type),
+        None => None,
+    };
+    let constraints =
+        parse_property_constraints(&document_type.schema, document_type_name, &property_kind)?;
     let structure_error = |message: String| {
         DataContractError::InvalidContractStructure(format!(
             "document type \"{document_type_name}\" propertyConstraints {message}"
@@ -1925,38 +2239,315 @@ fn apply_property_constraints_v0(
     };
 
     for (name, constraint) in &constraints {
-        for path in constraint.property_paths() {
-            match document_type
-                .flattened_properties
-                .get(path)
-                .map(|property| &property.property_type)
-            {
-                // `is_integer` leaves out the 128-bit types, which the arithmetic holds too
-                Some(property_type)
-                    if property_type.is_integer()
-                        || matches!(
-                            property_type,
-                            DocumentPropertyType::U128 | DocumentPropertyType::I128
-                        ) => {}
-                Some(other) => {
-                    return Err(structure_error(format!(
-                        "rule \"{name}\" reads \"{path}\", which has type {}, not integer",
-                        other.name()
-                    )));
+        for (path, read) in constraint.property_reads() {
+            let reads = match read {
+                PropertyRead::Value => "reads",
+                PropertyRead::Presence => "tests the presence of",
+                PropertyRead::Text | PropertyRead::Identifier => "compares",
+                PropertyRead::Length => "measures",
+                PropertyRead::Count => "counts the items of",
+                PropertyRead::Elements(_) => "looks in",
+            };
+            match read {
+                PropertyRead::Value => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    // `is_integer` leaves out the 128-bit types, which the arithmetic holds
+                    // too; a boolean reads as 1 for true and 0 for false
+                    Some(property_type)
+                        if property_type.is_integer()
+                            || matches!(
+                                property_type,
+                                DocumentPropertyType::U128
+                                    | DocumentPropertyType::I128
+                                    | DocumentPropertyType::Boolean
+                            ) => {}
+                    // A string is compared with constants, never read as a number
+                    Some(DocumentPropertyType::String(_)) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" reads \"{path}\", which has type string, not integer \
+                             or boolean: a string property is compared, by equal or notEqual, \
+                             with a {{ \"const\": ... }} or another string property, or with the \
+                             strings an in lists"
+                        )));
+                    }
+                    // An identifier is compared with identifiers, never read as a number
+                    Some(property_type) if property_type.is_identifier() => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" reads \"{path}\", which has type identifier, not \
+                             integer or boolean: an identifier property is compared, by equal or \
+                             notEqual, with a {{ \"const\": base58 }} or another identifier \
+                             property, or with the identifiers an in lists"
+                        )));
+                    }
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" reads \"{path}\", which has type {}, not integer or \
+                             boolean",
+                            other.name()
+                        )));
+                    }
+                    // An object is not in the flattened map either: only its members hold values
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" reads \"{path}\", which is not an integer or boolean \
+                             property of the document type (a nested one is named by its dotted \
+                             path)"
+                        )));
+                    }
+                },
+                PropertyRead::Presence => {
+                    if property_at_path(&document_type.properties, path).is_none() {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" tests the presence of \"{path}\", which is not a \
+                             property of the document type (a nested one is named by its dotted \
+                             path)"
+                        )));
+                    }
                 }
-                // An object is not in the flattened map either: only its members hold values
-                None => {
-                    return Err(structure_error(format!(
-                        "rule \"{name}\" reads \"{path}\", which is not an integer property of \
-                         the document type (a nested one is named by its dotted path)"
-                    )));
-                }
+                PropertyRead::Text => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    Some(DocumentPropertyType::String(_)) => {}
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" compares \"{path}\" with a string, but it has type \
+                             {}, not string",
+                            other.name()
+                        )));
+                    }
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" compares \"{path}\" with a string, but it is not a \
+                             string property of the document type (a nested one is named by its \
+                             dotted path)"
+                        )));
+                    }
+                },
+                PropertyRead::Length => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    Some(DocumentPropertyType::String(_)) => {}
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" measures the length of \"{path}\", which has type {}, \
+                             not string: count gives the items of an array or byte array",
+                            other.name()
+                        )));
+                    }
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" measures the length of \"{path}\", which is not a \
+                             string property of the document type (a nested one is named by its \
+                             dotted path)"
+                        )));
+                    }
+                },
+                PropertyRead::Count => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    Some(
+                        DocumentPropertyType::TypedArray(_)
+                        | DocumentPropertyType::ByteArray(_)
+                        | DocumentPropertyType::Array(_)
+                        | DocumentPropertyType::VariableTypeArray(_),
+                    ) => {}
+                    Some(DocumentPropertyType::String(_)) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" counts the items of \"{path}\", which has type \
+                             string, not array: length or byteLength gives the size of a string"
+                        )));
+                    }
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" counts the items of \"{path}\", which has type {}, \
+                             not array or byteArray",
+                            other.name()
+                        )));
+                    }
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" counts the items of \"{path}\", which is not an array \
+                             or byte array property of the document type (a nested one is named \
+                             by its dotted path)"
+                        )));
+                    }
+                },
+                PropertyRead::Elements(kind) => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    Some(DocumentPropertyType::TypedArray(array)) => {
+                        let element_type = array.item_type.as_ref();
+                        let (holds, kind_name) = match kind {
+                            ElementKind::Integer => (
+                                element_type.is_integer()
+                                    || matches!(
+                                        element_type,
+                                        DocumentPropertyType::U128 | DocumentPropertyType::I128
+                                    ),
+                                "an integer",
+                            ),
+                            ElementKind::Text => (
+                                matches!(element_type, DocumentPropertyType::String(_)),
+                                "a string",
+                            ),
+                            ElementKind::Identifier => {
+                                (element_type.is_identifier(), "an identifier")
+                            }
+                        };
+                        if !holds {
+                            return Err(structure_error(format!(
+                                "rule \"{name}\" looks in \"{path}\" for {kind_name}, but its \
+                                 elements have type {}: contains looks for an integer, a string \
+                                 or an identifier among elements of that type",
+                                element_type.name()
+                            )));
+                        }
+                    }
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" looks in \"{path}\", which has type {}, not an \
+                             array with items",
+                            other.name()
+                        )));
+                    }
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" looks in \"{path}\", which is not an array property \
+                             of the document type (a nested one is named by its dotted path)"
+                        )));
+                    }
+                },
+                PropertyRead::Identifier => match document_type
+                    .flattened_properties
+                    .get(path)
+                    .map(|property| &property.property_type)
+                {
+                    Some(property_type) if property_type.is_identifier() => {}
+                    Some(other) => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" compares \"{path}\" with an identifier, but it has \
+                             type {}, not identifier",
+                            other.name()
+                        )));
+                    }
+                    None => {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" compares \"{path}\" with an identifier, but it is \
+                             not an identifier property of the document type (a nested one is \
+                             named by its dotted path)"
+                        )));
+                    }
+                },
             }
             if is_transient(DocumentTypeRef::V2(document_type), path) {
                 return Err(structure_error(format!(
-                    "rule \"{name}\" reads \"{path}\", which is transient or inside a transient \
-                     object: a transient value is never stored, so a stored document could not \
-                     be held to the rule"
+                    "rule \"{name}\" {reads} \"{path}\", which is transient or inside a \
+                     transient object: a transient value is never stored, so a stored document \
+                     could not be held to the rule"
+                )));
+            }
+        }
+        // An indexOnly type's delete carries its row's values but not its owner, so
+        // a rule reading the owner could not be judged there
+        if document_type.index_only && constraint.reads_owner() {
+            return Err(structure_error(format!(
+                "rule \"{name}\" compares $ownerId, which a delete of an indexOnly document \
+                 does not carry"
+            )));
+        }
+        for system_property in constraint.system_reads() {
+            let system_name = system_property.name();
+            // Nor its times and heights
+            if document_type.index_only {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" reads {system_name}, which a delete of an indexOnly \
+                     document does not carry"
+                )));
+            }
+            // A stored document holds only the times and heights its type requires
+            if !document_type.required_fields.contains(system_name) {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" reads {system_name}, which the document type does not \
+                     record: list it in required"
+                )));
+            }
+        }
+        // Which type an aggregate totals, and by which of its keys, is checked once
+        // every document type of the contract is parsed
+        for read in constraint.aggregate_reads() {
+            let operator = read.wire_name();
+            // Nor a total read from state, which its delete is not given
+            if document_type.index_only {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" reads a {operator}, which a delete of an indexOnly \
+                     document is not given"
+                )));
+            }
+            // The value a key is matched by is always there, so that every write reads
+            // the total of the documents matching it: a property the document could leave
+            // out, or whose enclosing object it could, would match nothing
+            for binding in read.filter.values() {
+                let AggregateBinding::Property { path, .. } = binding else {
+                    continue;
+                };
+                let mut prefix = String::new();
+                for segment in path.split('.') {
+                    if !prefix.is_empty() {
+                        prefix.push('.');
+                    }
+                    prefix.push_str(segment);
+                    if !document_type.required_fields.contains(&prefix) {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" matches a {operator} by \"{path}\", but the \
+                             document type does not require \"{prefix}\": a value a \
+                             {operator} matches by must always be there, so list it in required"
+                        )));
+                    }
+                }
+            }
+        }
+        // A constant or a default a string property's `enum` does not list is a
+        // typo: the property could never hold it
+        for (path, constant) in constraint.text_constants() {
+            if !enum_admits(&document_type.schema, schema_defs, path, constant)? {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" compares \"{path}\" with \"{constant}\", which is not one of \
+                     its enum values"
+                )));
+            }
+        }
+        // A constant a string property must start or end with, when the property
+        // declares an `enum`, must fit one of its values, or the test never holds
+        for (path, affix, position) in constraint.text_affixes() {
+            if !enum_any(&document_type.schema, schema_defs, path, |member| {
+                position.holds(member, affix)
+            })? {
+                let tests = match position {
+                    AffixPosition::Start => "starts with",
+                    AffixPosition::End => "ends with",
+                };
+                return Err(structure_error(format!(
+                    "rule \"{name}\" tests whether \"{path}\" {tests} \"{affix}\", which none \
+                     of its enum values does"
+                )));
+            }
+        }
+        for (path, default) in constraint.text_defaults() {
+            if !enum_admits(&document_type.schema, schema_defs, path, default)? {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" gives \"{path}\" the default \"{default}\", which is not \
+                     one of its enum values"
                 )));
             }
         }
@@ -1971,12 +2562,29 @@ fn apply_property_constraints_v0(
                 constraints.len()
             )));
         }
+        let max_aggregates = limits.max_property_constraint_aggregates;
+        let aggregates = constraints
+            .values()
+            .flat_map(PropertyConstraint::aggregate_reads)
+            .collect::<BTreeSet<_>>()
+            .len();
+        if aggregates > usize::from(max_aggregates) {
+            return Err(structure_error(format!(
+                "reads {aggregates} distinct countOf and sumOf totals, above the maximum of \
+                 {max_aggregates}"
+            )));
+        }
         let max_nodes = limits.max_property_constraint_nodes;
         for (name, constraint) in &constraints {
             let nodes = constraint.node_count();
             if nodes > usize::from(max_nodes) {
                 return Err(structure_error(format!(
                     "rule \"{name}\" has {nodes} nodes, above the maximum of {max_nodes}"
+                )));
+            }
+            if let Some((repeat, earlier)) = constraint.repeated_condition() {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" at {repeat} repeats the condition at {earlier}"
                 )));
             }
         }
@@ -1986,33 +2594,351 @@ fn apply_property_constraints_v0(
     Ok(())
 }
 
+/// How the key of an aggregate's filter, and the value it is matched against,
+/// compare.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AggregateKeyKind {
+    Integer,
+    Text,
+    Identifier,
+}
+
+impl AggregateKeyKind {
+    /// How a property of `property_type` compares as a key or a bound value:
+    /// `None` for one that cannot (a boolean, a byte array, an object, ...).
+    fn of(property_type: &DocumentPropertyType) -> Option<Self> {
+        match property_type {
+            DocumentPropertyType::String(_) => Some(AggregateKeyKind::Text),
+            property_type if property_type.is_identifier() => Some(AggregateKeyKind::Identifier),
+            property_type
+                if property_type.is_integer()
+                    || matches!(
+                        property_type,
+                        DocumentPropertyType::U128 | DocumentPropertyType::I128
+                    ) =>
+            {
+                Some(AggregateKeyKind::Integer)
+            }
+            _ => None,
+        }
+    }
+
+    fn describe(self) -> &'static str {
+        match self {
+            AggregateKeyKind::Integer => "an integer",
+            AggregateKeyKind::Text => "a string",
+            AggregateKeyKind::Identifier => "an identifier",
+        }
+    }
+}
+
+/// Checks every `countOf` and `sumOf` the `propertyConstraints` rules of
+/// `document_types`, one contract's, read, once all of them are parsed: the
+/// type it totals is one of them, and not an indexOnly one, nor the declaring
+/// type itself when it has a contested index; a key of its filter
+/// is `$ownerId` or an integer, string or identifier property of that type,
+/// and the value matched against it is of the same kind: a property of the
+/// declaring type, `$ownerId`, an integer, a string the key's `enum` lists, or
+/// a base58 identifier; and a tree of that type keeps the total
+/// ([`AggregateRead::whole_type_kept`], [`AggregateRead::answering_index`]),
+/// so that a rule never reads a total a count or sum tree does not keep.
+/// Registration only: the index and property settings it relies on do not
+/// change on a contract update. `schema_defs`, the contract's `$defs`, resolves
+/// a filter key declared through a `$ref`.
+pub(in crate::data_contract::document_type::class_methods) fn validate_property_constraint_aggregates(
+    document_types: &BTreeMap<String, DocumentType>,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+) -> Result<(), DataContractError> {
+    for (type_name, document_type) in document_types {
+        let declaring = document_type.as_ref();
+        for (rule, constraint) in declaring.property_constraints() {
+            let error = |message: String| {
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{type_name}\" propertyConstraints rule \"{rule}\" {message}"
+                ))
+            };
+            for read in constraint.aggregate_reads() {
+                let counted_name = &read.document_type;
+                let totals = match &read.kind {
+                    AggregateKind::Count => format!("counts \"{counted_name}\""),
+                    AggregateKind::Sum { property } => {
+                        format!("totals \"{property}\" of \"{counted_name}\"")
+                    }
+                };
+                let Some(counted) = document_types.get(counted_name) else {
+                    return Err(error(format!(
+                        "{totals}, which is no document type of this contract"
+                    )));
+                };
+                let counted = counted.as_ref();
+                if counted.index_only() {
+                    return Err(error(format!(
+                        "{totals}, an indexOnly type, whose rows a countOf or sumOf does not \
+                         total"
+                    )));
+                }
+                // A document of the type a contest is opened for waits in the contest's
+                // storage, outside the count and sum trees, and the one a contest awards
+                // is stored without any rule judged, so a total of the type's own
+                // documents could pass the rule
+                if read.of_own_type
+                    && counted
+                        .indexes()
+                        .values()
+                        .any(|index| index.contested_index.is_some())
+                {
+                    return Err(error(format!(
+                        "{totals}, its own type, which has a contested index: a document a \
+                         contest awards is stored without the rules being judged, so the total \
+                         could pass the rule"
+                    )));
+                }
+                if read.filter.is_empty() {
+                    if !read.whole_type_kept(counted) {
+                        return Err(error(match &read.kind {
+                            AggregateKind::Count => format!(
+                                "counts every \"{counted_name}\" document, which needs \
+                                 documentsCountable on \"{counted_name}\""
+                            ),
+                            AggregateKind::Sum { property } => format!(
+                                "totals \"{property}\" over every \"{counted_name}\" document, \
+                                 which needs documentsSummable: \"{property}\" on \
+                                 \"{counted_name}\""
+                            ),
+                        }));
+                    }
+                    continue;
+                }
+                for (key, binding) in &read.filter {
+                    let key_kind = if key == OWNER_ID {
+                        AggregateKeyKind::Identifier
+                    } else {
+                        let Some(property) = counted.flattened_properties().get(key) else {
+                            return Err(error(format!(
+                                "{totals} by \"{key}\", which is not a property of \
+                                 \"{counted_name}\" (a nested one is named by its dotted path)"
+                            )));
+                        };
+                        let Some(kind) = AggregateKeyKind::of(&property.property_type) else {
+                            return Err(error(format!(
+                                "{totals} by \"{key}\", which has type {}: a key is an integer, \
+                                 string or identifier property, or $ownerId",
+                                property.property_type.name()
+                            )));
+                        };
+                        kind
+                    };
+                    let (bound, bound_kind) = match binding {
+                        AggregateBinding::Owner => {
+                            (OWNER_ID.to_string(), AggregateKeyKind::Identifier)
+                        }
+                        AggregateBinding::Integer(integer) => {
+                            (integer.to_string(), AggregateKeyKind::Integer)
+                        }
+                        AggregateBinding::Constant(constant) => {
+                            let kind = match key_kind {
+                                AggregateKeyKind::Integer => {
+                                    return Err(error(format!(
+                                        "{totals} with \"{key}\" at the constant \
+                                         \"{constant}\", but \"{key}\" is an integer: write \
+                                         the integer bare"
+                                    )));
+                                }
+                                AggregateKeyKind::Identifier => {
+                                    if Identifier::from_string(constant, Encoding::Base58).is_err()
+                                    {
+                                        return Err(error(format!(
+                                            "{totals} with \"{key}\" at \"{constant}\", which is \
+                                             not a base58 identifier"
+                                        )));
+                                    }
+                                    AggregateKeyKind::Identifier
+                                }
+                                AggregateKeyKind::Text => {
+                                    // A constant the key's `enum` does not list is a typo:
+                                    // no document could match it
+                                    if !enum_admits(counted.schema(), schema_defs, key, constant)? {
+                                        return Err(error(format!(
+                                            "{totals} with \"{key}\" at \"{constant}\", which is \
+                                             not one of its enum values"
+                                        )));
+                                    }
+                                    AggregateKeyKind::Text
+                                }
+                            };
+                            (format!("the constant \"{constant}\""), kind)
+                        }
+                        AggregateBinding::Property { path, .. } => {
+                            let property_type = declaring
+                                .flattened_properties()
+                                .get(path)
+                                .map(|property| &property.property_type);
+                            let Some(kind) = property_type.and_then(AggregateKeyKind::of) else {
+                                return Err(error(format!(
+                                    "{totals} with \"{key}\" at \"{path}\", which has type {}: \
+                                     a value matched is an integer, string or identifier \
+                                     property, $ownerId, an integer or a {{ \"const\": ... }}",
+                                    property_type.map_or("none".to_string(), |property_type| {
+                                        property_type.name()
+                                    })
+                                )));
+                            };
+                            (format!("\"{path}\""), kind)
+                        }
+                    };
+                    if bound_kind != key_kind {
+                        return Err(error(format!(
+                            "{totals} with \"{key}\", {}, at {bound}, {}",
+                            key_kind.describe(),
+                            bound_kind.describe()
+                        )));
+                    }
+                }
+                if read.answering_index(&counted).is_none() {
+                    let keys = read
+                        .filter
+                        .keys()
+                        .map(|key| format!("\"{key}\""))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let keeping = match &read.kind {
+                        AggregateKind::Count => "countable index".to_string(),
+                        AggregateKind::Sum { property } => {
+                            format!("index with summable: \"{property}\"")
+                        }
+                    };
+                    return Err(error(format!(
+                        "{totals} by {keys}, which no {keeping} of \"{counted_name}\" whose \
+                         properties are exactly those keys answers (a unique, contested, ranked, \
+                         time-range or indexOnly-terminal index answers none)"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether the string property at the dotted `path` of `schema`, a document
+/// type's, may hold `value`: always, unless it declares an `enum` that does not
+/// list it. `$ref`s are followed into `schema_defs`, the contract's `$defs`.
+fn enum_admits(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    path: &str,
+    value: &str,
+) -> Result<bool, DataContractError> {
+    enum_any(schema, schema_defs, path, |member| member == value)
+}
+
+/// Whether the string property at the dotted `path` of `schema` (or the
+/// elements of the typed array there) may hold a value `admits`: always,
+/// unless it declares an `enum`, one of whose values must then pass. `$ref`s
+/// are followed into `schema_defs`, the contract's `$defs`.
+fn enum_any(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    path: &str,
+    admits: impl Fn(&str) -> bool,
+) -> Result<bool, DataContractError> {
+    let Some(property_schema) = schema_at_path(schema, schema_defs, path)? else {
+        return Ok(true);
+    };
+    // A value a `contains` looks for in an array is one of its elements
+    let property_schema = match property_schema.get(property_names::ITEMS) {
+        Some(items) => resolve_schema(schema, schema_defs, items)?,
+        None => property_schema,
+    };
+    let Some(Value::Array(members)) = property_schema.get(property_names::ENUM) else {
+        return Ok(true);
+    };
+    Ok(members
+        .iter()
+        .any(|member| member.as_text().is_some_and(&admits)))
+}
+
+/// The schema of the property at the dotted `path` of `schema`, a document
+/// type's, `None` when the path names none. `$ref`s are followed, into
+/// `schema_defs`, the contract's `$defs`, for `#/$defs/...`.
+fn schema_at_path<'a>(
+    schema: &'a Value,
+    schema_defs: Option<&'a BTreeMap<String, Value>>,
+    path: &str,
+) -> Result<Option<BTreeMap<String, &'a Value>>, DataContractError> {
+    let mut current = resolve_schema(schema, schema_defs, schema)?;
+    for segment in path.split('.') {
+        let Some(properties) = current.get(property_names::PROPERTIES) else {
+            return Ok(None);
+        };
+        let Some(next) = properties.to_btree_ref_string_map()?.get(segment).copied() else {
+            return Ok(None);
+        };
+        current = resolve_schema(schema, schema_defs, next)?;
+    }
+    Ok(Some(current))
+}
+
+/// The schema `value` is within the document type schema `schema`, its `$ref`
+/// followed ([`resolve_schema_ref`]).
+fn resolve_schema<'a>(
+    schema: &'a Value,
+    schema_defs: Option<&'a BTreeMap<String, Value>>,
+    value: &'a Value,
+) -> Result<BTreeMap<String, &'a Value>, DataContractError> {
+    let map = value.to_btree_ref_string_map()?;
+    match map.get_optional_str(property_names::REF)? {
+        Some(schema_ref) => {
+            Ok(resolve_schema_ref(schema, schema_defs, schema_ref)?.to_btree_ref_string_map()?)
+        }
+        None => Ok(map),
+    }
+}
+
+/// The value the `$ref` `uri` of the document type schema `schema` names,
+/// found where the core parse finds it, in the schema with the contract's
+/// `$defs` added ([`DocumentType::enrich_with_base_schema`]): a
+/// `#/$defs/<name>` reference, and a path below one, in `schema_defs`; any
+/// other in `schema`, which holds no `$defs` of its own. Every document
+/// meta-schema names a definition with letters, digits, `-` and `_` only, so
+/// the name ends at the next `/`.
+fn resolve_schema_ref<'a>(
+    schema: &'a Value,
+    schema_defs: Option<&'a BTreeMap<String, Value>>,
+    uri: &str,
+) -> Result<&'a Value, DataContractError> {
+    let Some(definition_path) = uri.strip_prefix(DEFINITIONS_REF_PREFIX) else {
+        return resolve_uri(schema, uri);
+    };
+    let (name, below) = match definition_path.split_once('/') {
+        Some((name, below)) => (name, Some(below)),
+        None => (definition_path, None),
+    };
+    let definition = schema_defs
+        .and_then(|definitions| definitions.get(name))
+        .ok_or_else(|| {
+            DataContractError::InvalidURI(format!(
+                "{uri} names no definition in the contract's $defs"
+            ))
+        })?;
+    match below {
+        Some(below) => resolve_uri(definition, &format!("#/{below}")),
+        None => Ok(definition),
+    }
+}
+
 /// Whether the property at the dotted `path` of `schema` is declared as an
 /// integer with `minimum` at least 0 and `maximum` at most `u32::MAX`, read
 /// from the schema rather than from the parsed type so that the answer does
-/// not depend on the contract's `sizedIntegerTypes`. `$ref`s are followed.
-fn is_key_id_schema(schema: &Value, path: &str) -> Result<bool, DataContractError> {
-    fn resolve<'a>(
-        root_schema: &'a Value,
-        value: &'a Value,
-    ) -> Result<BTreeMap<String, &'a Value>, DataContractError> {
-        let map = value.to_btree_ref_string_map()?;
-        match map.get_optional_str(property_names::REF)? {
-            Some(schema_ref) => {
-                Ok(resolve_uri(root_schema, schema_ref)?.to_btree_ref_string_map()?)
-            }
-            None => Ok(map),
-        }
-    }
-    let mut current = resolve(schema, schema)?;
-    for segment in path.split('.') {
-        let Some(properties) = current.get(property_names::PROPERTIES) else {
-            return Ok(false);
-        };
-        let Some(next) = properties.to_btree_ref_string_map()?.get(segment).copied() else {
-            return Ok(false);
-        };
-        current = resolve(schema, next)?;
-    }
+/// not depend on the contract's `sizedIntegerTypes`. `$ref`s are followed into
+/// `schema_defs`, the contract's `$defs`.
+fn is_key_id_schema(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    path: &str,
+) -> Result<bool, DataContractError> {
+    let Some(current) = schema_at_path(schema, schema_defs, path)? else {
+        return Ok(false);
+    };
     let is_integer = current.get_optional_str(property_names::TYPE)? == Some("integer");
     let minimum = current.get_optional_integer::<i64>(property_names::MINIMUM)?;
     let maximum = current.get_optional_integer::<i64>(property_names::MAXIMUM)?;
@@ -4697,6 +5623,160 @@ mod tests {
         }
     }
 
+    /// The document type of `schema` parsed at the latest platform version
+    /// with the contract's `$defs`, which a `$ref` in it resolves against.
+    fn try_document_type_from_schema_with_defs(
+        schema: serde_json::Value,
+        schema_defs: &BTreeMap<String, Value>,
+        full_validation: bool,
+    ) -> Result<DocumentType, ProtocolError> {
+        let platform_version = PlatformVersion::latest();
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+
+        let value = platform_value::to_value(schema).expect("schema should convert");
+
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            value,
+            Some(schema_defs),
+            &BTreeMap::new(),
+            &config,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )
+    }
+
+    /// A key id property whose schema is a `$ref` to one of the contract's
+    /// `$defs` is read from the definition, as the core parse reads it: a
+    /// bounded integer there registers, and an unbounded one is refused as
+    /// it is inline. On both paths. Each key has a definition of its own:
+    /// the schema depth check refuses two references to one definition.
+    #[test]
+    fn should_read_an_encrypted_for_key_id_through_a_ref() {
+        let key_id = || {
+            platform_value::to_value(json!({
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295_u64
+            }))
+            .expect("the definition converts")
+        };
+        let schema_defs = BTreeMap::from([
+            ("recipientKey".to_string(), key_id()),
+            ("senderKey".to_string(), key_id()),
+            (
+                "anyInteger".to_string(),
+                platform_value::to_value(json!({ "type": "integer", "minimum": 0 }))
+                    .expect("the definition converts"),
+            ),
+        ]);
+        let mut schema = encrypted_schema(encrypted_for_declaration());
+        schema["properties"]["recipientKeyId"] =
+            json!({ "$ref": "#/$defs/recipientKey", "position": 1 });
+        schema["properties"]["senderKeyId"] = json!({ "$ref": "#/$defs/senderKey", "position": 2 });
+        for full_validation in [true, false] {
+            let document_type = try_document_type_from_schema_with_defs(
+                schema.clone(),
+                &schema_defs,
+                full_validation,
+            )
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+            let encrypted_for =
+                encrypted_for_of(&document_type, "encryptedMessage").expect("should be declared");
+            assert_eq!(encrypted_for.recipient_key, "recipientKeyId");
+            assert_eq!(encrypted_for.sender_key, "senderKeyId");
+        }
+
+        schema["properties"]["senderKeyId"] =
+            json!({ "$ref": "#/$defs/anyInteger", "position": 2 });
+        for full_validation in [true, false] {
+            let err = try_document_type_from_schema_with_defs(
+                schema.clone(),
+                &schema_defs,
+                full_validation,
+            )
+            .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(
+                    "senderKey \"senderKeyId\" must be an integer property with minimum at least 0"
+                ),
+                "full_validation {full_validation}: got {err}"
+            );
+        }
+    }
+
+    /// A `$ref` may name a schema below one of the contract's `$defs`, as
+    /// `#/$defs/keys/properties/recipient` does, and a key id property is then
+    /// read from the schema found there, as the core parse reads it: a bounded
+    /// integer registers, and an unbounded one is refused as it is inline. On
+    /// both paths. Each key names a schema of its own: the schema depth check
+    /// refuses two references to one schema.
+    #[test]
+    fn should_read_an_encrypted_for_key_id_through_a_ref_below_a_definition() {
+        let schema_defs = BTreeMap::from([(
+            "keys".to_string(),
+            platform_value::to_value(json!({
+                "type": "object",
+                "properties": {
+                    "recipient": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295_u64,
+                        "position": 0
+                    },
+                    "sender": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295_u64,
+                        "position": 1
+                    },
+                    "unbounded": { "type": "integer", "minimum": 0, "position": 2 }
+                },
+                "additionalProperties": false
+            }))
+            .expect("the definition converts"),
+        )]);
+        let mut schema = encrypted_schema(encrypted_for_declaration());
+        schema["properties"]["recipientKeyId"] =
+            json!({ "$ref": "#/$defs/keys/properties/recipient", "position": 1 });
+        schema["properties"]["senderKeyId"] =
+            json!({ "$ref": "#/$defs/keys/properties/sender", "position": 2 });
+        for full_validation in [true, false] {
+            let document_type = try_document_type_from_schema_with_defs(
+                schema.clone(),
+                &schema_defs,
+                full_validation,
+            )
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+            let encrypted_for =
+                encrypted_for_of(&document_type, "encryptedMessage").expect("should be declared");
+            assert_eq!(encrypted_for.recipient_key, "recipientKeyId");
+            assert_eq!(encrypted_for.sender_key, "senderKeyId");
+        }
+
+        schema["properties"]["senderKeyId"] =
+            json!({ "$ref": "#/$defs/keys/properties/unbounded", "position": 2 });
+        for full_validation in [true, false] {
+            let err = try_document_type_from_schema_with_defs(
+                schema.clone(),
+                &schema_defs,
+                full_validation,
+            )
+            .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(
+                    "senderKey \"senderKeyId\" must be an integer property with minimum at least 0"
+                ),
+                "full_validation {full_validation}: got {err}"
+            );
+        }
+    }
+
     #[test]
     fn should_refuse_encrypted_for_below_platform_version_14_and_accept_it_at_14() {
         let schema = encrypted_schema(encrypted_for_declaration());
@@ -5188,6 +6268,119 @@ mod tests {
                 .expect("the transform should survive the schema parse")
                 .overlap_factor(),
             1
+        );
+    }
+
+    // ================================================================
+    //  required and transient entries of object members
+    // ================================================================
+
+    /// A document type with one object property, `profile`, whose own
+    /// `required` list names its `name` member; `required` and `transient`
+    /// are the document type's top-level lists.
+    fn object_members_schema(required: &[&str], transient: &[&str]) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "profile": {
+                    "type": "object",
+                    "position": 0,
+                    "properties": {
+                        "name": {"type": "string", "position": 0, "maxLength": 60},
+                        "bio": {"type": "string", "position": 1, "maxLength": 60},
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                },
+            },
+            "required": required,
+            "transient": transient,
+            "additionalProperties": false
+        })
+    }
+
+    /// The members of the `profile` object of [`object_members_schema`].
+    fn profile_members(document_type: &DocumentType) -> &IndexMap<String, DocumentProperty> {
+        let DocumentPropertyType::Object(members) =
+            &document_type.properties()["profile"].property_type
+        else {
+            panic!("profile should parse as an object");
+        };
+        members
+    }
+
+    #[test]
+    fn should_match_required_entries_to_object_members_by_prefix() {
+        for platform_version in [
+            PlatformVersion::latest(),
+            PlatformVersion::get(13).expect("platform version 13 should exist"),
+        ] {
+            let expected = try_document_type_from_schema_on_version(
+                object_members_schema(&["profile"], &[]),
+                platform_version,
+            )
+            .expect("should parse");
+            let document_type = try_document_type_from_schema_on_version(
+                object_members_schema(&["profile", "profileé"], &[]),
+                platform_version,
+            )
+            .expect("an entry naming no member should parse");
+
+            // Every member stays as the object's own list declares it
+            let members = profile_members(&document_type);
+            assert!(members["name"].required);
+            assert!(!members["bio"].required);
+            assert_eq!(document_type.properties(), expected.properties());
+            assert_eq!(
+                document_type.flattened_properties(),
+                expected.flattened_properties()
+            );
+        }
+
+        try_document_type_from_schema_full_validation(object_members_schema(
+            &["profile", "profileé"],
+            &[],
+        ))
+        .expect("an entry naming no member should pass full validation");
+    }
+
+    #[test]
+    fn should_match_transient_entries_to_object_members_by_prefix() {
+        for platform_version in [
+            PlatformVersion::latest(),
+            PlatformVersion::get(13).expect("platform version 13 should exist"),
+        ] {
+            let expected = try_document_type_from_schema_on_version(
+                object_members_schema(&["profile"], &[]),
+                platform_version,
+            )
+            .expect("should parse");
+            let document_type = try_document_type_from_schema_on_version(
+                object_members_schema(&["profile"], &["profileé"]),
+                platform_version,
+            )
+            .expect("an entry naming no member should parse");
+
+            let members = profile_members(&document_type);
+            assert!(!members["name"].transient);
+            assert!(!members["bio"].transient);
+            assert_eq!(document_type.properties(), expected.properties());
+            assert_eq!(
+                document_type.flattened_properties(),
+                expected.flattened_properties()
+            );
+        }
+
+        // From protocol version 14 the validating parse holds every transient
+        // entry to naming a top-level property
+        let err = try_document_type_from_schema_full_validation(object_members_schema(
+            &["profile"],
+            &["profileé"],
+        ))
+        .expect_err("a transient entry naming no top-level property should be refused");
+        assert!(
+            err.to_string().contains("not a top-level property"),
+            "expected the transient entry refusal, got: {err}"
         );
     }
 }

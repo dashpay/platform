@@ -145,7 +145,7 @@ impl WasmSdk {
 
         st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
 
         Ok(())
     }
@@ -207,14 +207,14 @@ impl WasmSdk {
 
         st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
         let (outcome, _metadata) = st
             .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
         let owner_balance = outcome.owner_balance();
         let result = require_execution_proved(outcome)
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
 
         with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
@@ -226,7 +226,9 @@ impl WasmSdk {
     /// whose proofs cannot be bound to the execution of one specific
     /// transition (balance top-ups, credit transfers and withdrawals,
     /// address funds movements, shields, no-history token operations, key
-    /// limits updates). This method accepts those outcomes instead. The result is a verified,
+    /// limits updates, contract updates, contract moderation and fee claims,
+    /// and creates and deletes of indexOnly documents). This method accepts
+    /// those outcomes instead. The result is a verified,
     /// height-pinned snapshot of the affected state — NOT evidence that this
     /// specific transition executed.
     ///
@@ -247,7 +249,7 @@ impl WasmSdk {
             .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
             .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
+                WasmSdkError::with_context("Failed to wait for state transition result", e)
             })?;
         let owner_balance = outcome.owner_balance();
         let result = outcome.into_result();
@@ -274,11 +276,11 @@ impl WasmSdk {
 
         st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
         let (outcome, _metadata) = st
             .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
         let owner_balance = outcome.owner_balance();
         let result = outcome.into_result();
 

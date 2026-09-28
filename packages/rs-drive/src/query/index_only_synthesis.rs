@@ -34,12 +34,18 @@
 //! the index the query resolved is an error, never a partial document.
 
 use crate::drive::document::{decode_index_only_entry_payload, INDEX_ONLY_ROW_COMMITMENT_SIZE};
+use crate::drive::RootTree;
 use crate::error::drive::DriveError;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::{index_admissible_for_skip_if_absent, DriveDocumentQuery};
+use crate::query::{
+    index_admissible_for_skip_if_absent, BestIndexOutcome, DriveDocumentQuery, InternalClauses,
+    WhereClause, WhereOperator,
+};
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef, Index};
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
@@ -51,26 +57,25 @@ use grovedb::GroveDb;
 use std::collections::BTreeMap;
 
 /// A resolved indexOnly terminal route: the matcher's winning index, the
-/// clause on its terminal, and — for mixed shapes — the *prefix pivot*: a
-/// range or `in` clause sitting on one of the index's prefix properties
-/// (by position), with every property above it equality-bound and every
-/// property below it unconstrained.
+/// clause on its terminal and, for mixed shapes, the *prefix pivot*: an
+/// `in` clause sitting on the index's last prefix property, with every
+/// property above it equality-bound.
 pub(crate) struct IndexOnlyTerminalRoute<'a> {
     /// The index the entries are addressed through.
     pub index: &'a Index,
     /// The clause on the index's terminal property; `None` only for the
     /// first keyset page (order-by on the terminal, no cursor clause yet).
-    pub terminal_clause: Option<&'a crate::query::WhereClause>,
-    /// `(position, clause)` of a range / `in` clause on a prefix
+    pub terminal_clause: Option<&'a WhereClause>,
+    /// `(position, clause)` of an `in` clause on the index's last prefix
     /// property. When present the terminal clause is always an equality.
-    pub prefix_pivot: Option<(usize, &'a crate::query::WhereClause)>,
+    pub prefix_pivot: Option<(usize, &'a WhereClause)>,
     /// COMPOSITE terminals only: the equality clauses on the terminal's
     /// leading components, in component order (`terminal_clause` is `None`
     /// on a composite terminal).
-    pub terminal_equalities: Vec<&'a crate::query::WhereClause>,
+    pub terminal_equalities: Vec<&'a WhereClause>,
     /// COMPOSITE terminals only: the one range / `in` clause on the first
     /// component after the equality-bound ones, if any.
-    pub terminal_tail: Option<&'a crate::query::WhereClause>,
+    pub terminal_tail: Option<&'a WhereClause>,
 }
 
 impl DriveDocumentQuery<'_> {
@@ -92,12 +97,15 @@ impl DriveDocumentQuery<'_> {
     /// nothing outside the index (a range or `in` on the terminal
     /// requires ordering by it, mirroring the stored-document rule).
     ///
-    /// Mixed shapes are served through a *prefix pivot*: one range or
-    /// `in` clause may sit on a prefix property instead of the terminal
-    /// (`hashtag == h AND postId > p AND $ownerId == me`), provided every
-    /// property above the pivot is equality-bound, properties below it
-    /// are unconstrained, the terminal clause is an equality, and the
-    /// pivot is ordered by (`MissingOrderByForRange` otherwise).
+    /// Mixed shapes are served through a *prefix pivot*: one `in` clause
+    /// may sit on the index's last prefix property instead of the
+    /// terminal (`hashtag == h AND postId IN [p, q] AND $ownerId == me`),
+    /// provided every property above it is equality-bound, the terminal
+    /// clause is an equality, the limit (if any) covers every `in` value,
+    /// and the pivot is ordered by (`MissingOrderByForRange` otherwise).
+    /// A range pivot, or an `in` pivot above the last prefix property, is
+    /// refused: its pages could hold fewer rows than exist (see
+    /// [`Self::refuse_incomplete_pivot_pages`]).
     ///
     /// Returns `Ok(None)` when the matcher finds no terminal-using index
     /// (the generic route's miss error stands), `Ok(Some(..))` with the
@@ -131,9 +139,10 @@ impl DriveDocumentQuery<'_> {
         // on an index prefix property".
         let clause_roles = self.internal_clauses.classify_fields(self.document_type);
         let names_a_terminal = clause_roles.values().any(|roles| roles.terminal)
-            || self.order_by.keys().any(|field| {
-                crate::query::InternalClauses::classify_field(self.document_type, field).terminal
-            });
+            || self
+                .order_by
+                .keys()
+                .any(|field| InternalClauses::classify_field(self.document_type, field).terminal);
         if !names_a_terminal {
             return Ok(None);
         }
@@ -169,31 +178,43 @@ impl DriveDocumentQuery<'_> {
             }
         }
 
-        let Some((index, _difference, terminal_used)) = self
-            .document_type
-            .index_for_types_matching_including_terminal(
-                equal_fields.as_slice(),
-                range_field,
-                in_field,
-                order_by_keys.as_slice(),
-                // Bucketed indexes never serve the terminal route: only
-                // resolved time ranges may bind to bucket keys, and those
-                // opted out above — a raw query name-matching a bucketed
-                // index's properties must not walk its grid-keyed levels.
-                // A skipIfAbsent index additionally requires its trigger
-                // bound — it is a sparse projection, and while the
-                // contiguous matcher already forces position 0 to be bound
-                // whenever any deeper property is used, an all-unused match
-                // inside the difference budget could still slip through
-                // (see [`index_admissible_for_skip_if_absent`]).
-                |index| {
-                    index.time_range.is_none()
-                        && index_admissible_for_skip_if_absent(index, &bound_fields)
-                },
-                platform_version,
-            )
-            .map_err(|e| Error::Protocol(Box::new(e)))?
-        else {
+        // Bucketed indexes never serve the terminal route: only resolved
+        // time ranges may bind to bucket keys, and those opted out above,
+        // so a raw query name-matching a bucketed index's properties must
+        // not walk its grid-keyed levels. A skipIfAbsent index
+        // additionally requires its trigger bound: it is a sparse
+        // projection, and while the contiguous matcher already forces
+        // position 0 to be bound whenever any deeper property is used, an
+        // all-unused match inside the difference budget could still slip
+        // through (see [`index_admissible_for_skip_if_absent`]).
+        let admissible = |index: &Index| {
+            index.time_range.is_none() && index_admissible_for_skip_if_absent(index, &bound_fields)
+        };
+        let matching = |filter: &dyn Fn(&Index) -> bool| {
+            self.document_type
+                .index_for_types_matching_including_terminal(
+                    equal_fields.as_slice(),
+                    range_field,
+                    in_field,
+                    order_by_keys.as_slice(),
+                    filter,
+                    platform_version,
+                )
+                .map_err(|e| Error::Protocol(Box::new(e)))
+        };
+        // An index on which the query would form a pivot with incomplete
+        // pages must not win over an index that serves the query in full,
+        // so such indexes are skipped first. Only when no other index
+        // matches is the choice rerun without that filter, so the pivot
+        // arm below refuses the shape with its targeted error.
+        let complete_match = matching(&|index: &Index| {
+            admissible(index) && self.index_only_pivot_pages_are_complete(index, &bound_fields)
+        })?;
+        let matched = match complete_match {
+            Some(matched) => Some(matched),
+            None => matching(&admissible)?,
+        };
+        let Some((index, _difference, terminal_used)) = matched else {
             return Ok(None);
         };
         if !terminal_used {
@@ -211,11 +232,8 @@ impl DriveDocumentQuery<'_> {
         }
         let is_component = |field: &str| components.iter().any(|component| component == field);
 
-        let shape_error = |message: &str| {
-            Error::Query(crate::error::query::QuerySyntaxError::Unsupported(
-                message.to_string(),
-            ))
-        };
+        let shape_error =
+            |message: &str| Error::Query(QuerySyntaxError::Unsupported(message.to_string()));
 
         // A single-component terminal carries at most one clause, on that
         // component. A composite terminal binds its components in order:
@@ -241,7 +259,7 @@ impl DriveDocumentQuery<'_> {
                 (terminal_clause, Vec::new(), None)
             }
             None => {
-                let mut equalities: Vec<&crate::query::WhereClause> = Vec::new();
+                let mut equalities: Vec<&WhereClause> = Vec::new();
                 for component in components {
                     match self.internal_clauses.equal_clauses.get(component.as_str()) {
                         Some(clause) => equalities.push(clause),
@@ -291,7 +309,7 @@ impl DriveDocumentQuery<'_> {
                     }
                     direction = Some(order.ascending);
                 }
-                let tail_candidates: Vec<&crate::query::WhereClause> = self
+                let tail_candidates: Vec<&WhereClause> = self
                     .internal_clauses
                     .range_clause
                     .iter()
@@ -330,7 +348,7 @@ impl DriveDocumentQuery<'_> {
                 .iter()
                 .position(|property| property.name == field)
         };
-        let mut prefix_pivot: Option<(usize, &crate::query::WhereClause)> = None;
+        let mut prefix_pivot: Option<(usize, &WhereClause)> = None;
         for clause in self
             .internal_clauses
             .range_clause
@@ -373,61 +391,56 @@ impl DriveDocumentQuery<'_> {
                          orderBy limited to the index",
                     ));
                 }
-                let ranged: Option<&crate::query::WhereClause> = terminal_clause
+                let ranged: Option<&WhereClause> = terminal_clause
                     .filter(|clause| clause.operator.is_range())
                     .or(terminal_tail.filter(|clause| clause.operator.is_range()));
                 if let Some(ranged) = ranged {
                     if !self.order_by.contains_key(ranged.field.as_str()) {
-                        return Err(Error::Query(
-                            crate::error::query::QuerySyntaxError::MissingOrderByForRange(
-                                "a range or `in` clause on an indexOnly terminal property \
+                        return Err(Error::Query(QuerySyntaxError::MissingOrderByForRange(
+                            "a range or `in` clause on an indexOnly terminal property \
                                  requires an orderBy on that property",
-                            ),
-                        ));
+                        )));
                     }
                 }
             }
             Some((pivot_position, pivot_clause)) => {
-                // Mixed shape: everything above the pivot equality-bound,
-                // everything below it unconstrained, terminal clause an
-                // equality, pivot ordered by.
+                // Mixed shape: an `in` clause on the last prefix property
+                // with a limit covering every value, everything above it
+                // equality-bound, terminal clause an equality, pivot
+                // ordered by.
+                self.refuse_incomplete_pivot_pages(index, pivot_position, pivot_clause)?;
                 let terminal_is_equality = match index.single_terminal() {
                     Some(terminal) => self.internal_clauses.equal_clauses.contains_key(terminal),
                     None => terminal_equalities.len() == components.len(),
                 };
                 if !terminal_is_equality {
                     return Err(shape_error(
-                        "a range or `in` clause on an indexOnly prefix property requires \
-                         an EQUALITY clause on the terminal: two simultaneous non-equality \
+                        "an `in` clause on an indexOnly prefix property requires an \
+                         EQUALITY clause on the terminal: two simultaneous non-equality \
                          levels have no single pagination order",
                     ));
                 }
-                for (position, property) in index.properties.iter().enumerate() {
-                    let has_equality = self
-                        .internal_clauses
-                        .equal_clauses
-                        .contains_key(property.name.as_str());
-                    if position < pivot_position && !has_equality {
-                        return Err(shape_error(
-                            "every prefix property ABOVE a pivot range/`in` clause must \
-                             carry an equality clause",
-                        ));
-                    }
-                    if position > pivot_position && has_equality {
-                        return Err(shape_error(
-                            "prefix properties BELOW a pivot range/`in` clause must be \
-                             unconstrained: an equality below the pivot is not yet \
-                             supported",
-                        ));
-                    }
+                if index
+                    .properties
+                    .iter()
+                    .take(pivot_position)
+                    .any(|property| {
+                        !self
+                            .internal_clauses
+                            .equal_clauses
+                            .contains_key(property.name.as_str())
+                    })
+                {
+                    return Err(shape_error(
+                        "every prefix property ABOVE a pivot `in` clause must carry an \
+                         equality clause",
+                    ));
                 }
                 if !self.order_by.contains_key(pivot_clause.field.as_str()) {
-                    return Err(Error::Query(
-                        crate::error::query::QuerySyntaxError::MissingOrderByForRange(
-                            "a range or `in` clause on an indexOnly prefix property \
-                             requires an orderBy on that property",
-                        ),
-                    ));
+                    return Err(Error::Query(QuerySyntaxError::MissingOrderByForRange(
+                        "an `in` clause on an indexOnly prefix property requires an \
+                         orderBy on that property",
+                    )));
                 }
             }
         }
@@ -441,16 +454,127 @@ impl DriveDocumentQuery<'_> {
         }))
     }
 
+    /// Refuses a prefix pivot whose pages could hold fewer rows than
+    /// exist.
+    ///
+    /// The pivot walk opens one branch per pivot value, and grovedb
+    /// charges a branch that yields no row one slot of the path query's
+    /// limit, on the unproved read and in the proof alike. A page of
+    /// `limit` therefore covers `limit` branches, not `limit` rows, and
+    /// the response carries no cursor or "more" flag to tell a short page
+    /// from the last one. The `in` pivot on the last prefix property is
+    /// the one shape whose pages are provably complete: each value opens
+    /// at most one branch (its `0` level and the terminal equality's
+    /// single member key) and an absent value opens none, so the walk
+    /// takes at most one slot per value, and a limit of at least the
+    /// number of values is never exhausted before the last branch. A
+    /// range pivot, and an `in` pivot with properties below it, can open
+    /// more branches than the limit has slots, so they are refused until
+    /// the storage layer can report where a page stopped.
+    fn refuse_incomplete_pivot_pages(
+        &self,
+        index: &Index,
+        pivot_position: usize,
+        pivot_clause: &WhereClause,
+    ) -> Result<(), Error> {
+        let components = index.terminal_components();
+        let terminal_names = components.join(", ");
+        let use_instead = || {
+            let mut equality_bound: Vec<&str> = index
+                .properties
+                .iter()
+                .take(pivot_position)
+                .map(|property| property.name.as_str())
+                .collect();
+            equality_bound.extend(components.iter().map(String::as_str));
+            format!(
+                "query through an index that lists the equality-bound properties ({}) \
+                 before `{}`, so the equalities fix the path and the clause on `{}` runs \
+                 below them",
+                equality_bound.join(", "),
+                pivot_clause.field,
+                pivot_clause.field,
+            )
+        };
+        if pivot_clause.operator != WhereOperator::In {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "a range clause on `{}`, a prefix property of indexOnly index \"{}\", is not \
+                 supported in a query that also names the index's terminal ({}): a page of \
+                 that query could hold fewer rows than exist, and the response cannot say \
+                 where it stopped; {}",
+                pivot_clause.field,
+                index.name,
+                terminal_names,
+                use_instead(),
+            ))));
+        }
+        if pivot_position + 1 != index.properties.len() {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "an `in` clause on `{}`, a prefix property of indexOnly index \"{}\", in a \
+                 query that also names the index's terminal ({}), must sit on the index's \
+                 last prefix property: the properties below it are walked value by value, \
+                 so a page could hold fewer rows than exist; {}",
+                pivot_clause.field,
+                index.name,
+                terminal_names,
+                use_instead(),
+            ))));
+        }
+        let in_value_count = pivot_clause.in_values().into_data_with_error()??.len();
+        if let Some(limit) = self.limit {
+            if usize::from(limit) < in_value_count {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "an `in` clause on `{}`, the last prefix property of indexOnly index \
+                     \"{}\", in a query that also names the index's terminal ({}), needs a \
+                     limit of at least its {} values, got {}: every value takes one place \
+                     in the limit whether or not it has a row",
+                    pivot_clause.field, index.name, terminal_names, in_value_count, limit,
+                ))));
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether every prefix pivot this query would form on `index` serves
+    /// complete pages (see [`Self::refuse_incomplete_pivot_pages`]). A
+    /// pivot forms only where the query names one of the index's terminal
+    /// components (`named_fields`: its clause and orderBy fields) and puts
+    /// a range or `in` clause on one of its prefix properties.
+    fn index_only_pivot_pages_are_complete(&self, index: &Index, named_fields: &[&str]) -> bool {
+        let components = index.terminal_components();
+        if !components
+            .iter()
+            .any(|component| named_fields.contains(&component.as_str()))
+        {
+            return true;
+        }
+        self.internal_clauses
+            .range_clause
+            .iter()
+            .chain(self.internal_clauses.in_clauses.iter())
+            .filter(|clause| !components.contains(&clause.field))
+            .filter_map(|clause| {
+                index
+                    .properties
+                    .iter()
+                    .position(|property| property.name == clause.field)
+                    .map(|position| (position, clause))
+            })
+            .all(|(position, clause)| {
+                self.refuse_incomplete_pivot_pages(index, position, clause)
+                    .is_ok()
+            })
+    }
+
     /// Build the path query for a terminal-clause indexOnly query. One
     /// builder for the server's execution, the prover and the verifier.
     ///
     /// Without a pivot: the fully determined prefix path down to the `0`
     /// entry level, with the terminal clause lowered over the member
-    /// keys. With a prefix pivot: the path stops at the pivot property,
-    /// the pivot clause ranges over its values, and a subquery chain
-    /// walks each selected value through the unconstrained properties
-    /// below it (`insert_all` per level) down to `0`, where the terminal
-    /// equality selects the member key.
+    /// keys. With a prefix pivot: the path stops at the pivot property
+    /// (the index's last prefix property), the pivot's `in` clause
+    /// selects its values, and a subquery under each one descends to
+    /// `0`, where the terminal equality selects the member key.
     pub(crate) fn index_only_terminal_path_query(
         &self,
         document_type_path: Vec<Vec<u8>>,
@@ -512,50 +636,23 @@ impl DriveDocumentQuery<'_> {
                 (terminal_query, index.properties.len())
             }
             Some((pivot_position, pivot_clause)) => {
-                // The pivot clause ranges over its property's values;
-                // below it, one `insert_all` level per unconstrained
-                // property, then `0` and the terminal equality. Built
-                // innermost-out.
-                let mut chain = terminal_query;
-                let mut chain_is_terminal = true;
-                for position in ((pivot_position + 1)..index.properties.len()).rev() {
-                    let property = &index.properties[position];
-                    let mut values_query = grovedb::Query::new_with_direction(direction_for(
-                        &property.name,
-                        property.ascending,
-                    ));
-                    values_query.insert_all();
-                    if chain_is_terminal {
-                        values_query.set_subquery_key(vec![0]);
-                    } else {
-                        values_query.set_subquery_key(
-                            index.properties[position + 1].name.as_bytes().to_vec(),
-                        );
-                    }
-                    values_query.set_subquery(chain);
-                    chain = values_query;
-                    chain_is_terminal = false;
+                // Selection admits a pivot only on the last prefix
+                // property, so `0` sits directly under each of its
+                // values and the terminal equality runs there.
+                if pivot_position + 1 != index.properties.len() {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "terminal-route selection admits a pivot only on the last prefix \
+                         property",
+                    )));
                 }
-
                 let mut pivot_query = pivot_clause.to_path_query(
                     self.document_type,
                     &None,
                     direction_for(pivot_clause.field.as_str(), true),
                     platform_version,
                 )?;
-                if chain_is_terminal {
-                    // The pivot is the last property: `0` sits directly
-                    // under each of its values.
-                    pivot_query.set_subquery_key(vec![0]);
-                } else {
-                    pivot_query.set_subquery_key(
-                        index.properties[pivot_position + 1]
-                            .name
-                            .as_bytes()
-                            .to_vec(),
-                    );
-                }
-                pivot_query.set_subquery(chain);
+                pivot_query.set_subquery_key(vec![0]);
+                pivot_query.set_subquery(terminal_query);
                 (pivot_query, *pivot_position)
             }
         };
@@ -611,7 +708,6 @@ impl DriveDocumentQuery<'_> {
         terminal_tail: Option<&crate::query::WhereClause>,
         platform_version: &PlatformVersion,
     ) -> Result<grovedb::Query, Error> {
-        use crate::query::WhereOperator;
         use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
         const MAX_KEY_LENGTH: usize = u8::MAX as usize;
@@ -682,11 +778,9 @@ impl DriveDocumentQuery<'_> {
                 Value::Array(values) if values.len() == 2 => {
                     Ok((values[0].clone(), values[1].clone()))
                 }
-                _ => Err(Error::Query(
-                    crate::error::query::QuerySyntaxError::InvalidBetweenClause(
-                        "when using between operator you must provide a tuple array of values",
-                    ),
-                )),
+                _ => Err(Error::Query(QuerySyntaxError::InvalidBetweenClause(
+                    "when using between operator you must provide a tuple array of values",
+                ))),
             }
         };
         match tail.operator {
@@ -748,13 +842,11 @@ impl DriveDocumentQuery<'_> {
                 }
             }
             WhereOperator::StartsWith => {
-                return Err(Error::Query(
-                    crate::error::query::QuerySyntaxError::Unsupported(
-                        "startsWith is not supported on a composite indexOnly terminal \
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "startsWith is not supported on a composite indexOnly terminal \
                          component"
-                            .to_string(),
-                    ),
-                ));
+                        .to_string(),
+                )));
             }
         }
         Ok(query)
@@ -785,11 +877,11 @@ impl DriveDocumentQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<&Index, Error> {
         match self.select_best_index(platform_version)? {
-            crate::query::BestIndexOutcome::Matched(index) => {
+            BestIndexOutcome::Matched(index) => {
                 Self::refuse_bucketed_index_only_synthesis(index)?;
                 Ok(index)
             }
-            crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
+            BestIndexOutcome::NoIndexMatches(no_index_error) => {
                 match self.index_only_terminal_clause_selection(platform_version)? {
                     Some(route) => Ok(route.index),
                     None => Err(no_index_error),
@@ -810,16 +902,14 @@ impl DriveDocumentQuery<'_> {
     /// fires exactly on "documents in this time bucket" requests.
     fn refuse_bucketed_index_only_synthesis(index: &Index) -> Result<(), Error> {
         if index.time_range.is_some() {
-            return Err(Error::Query(
-                crate::error::query::QuerySyntaxError::Unsupported(
-                    "IN_TIME_RANGE document queries are not supported on an indexOnly type: \
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "IN_TIME_RANGE document queries are not supported on an indexOnly type: \
                      the bucketed entries carry bucket-start time granularity, so documents \
                      cannot be synthesized from them; use the count aggregate surfaces over \
                      the bucketed index, or query the raw entries through a non-bucketed \
                      index"
-                        .to_string(),
-                ),
-            ));
+                    .to_string(),
+            )));
         }
         Ok(())
     }
@@ -835,7 +925,7 @@ impl DriveDocumentQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Option<grovedb::PathQuery>, Error> {
         match self.select_best_index(platform_version)? {
-            crate::query::BestIndexOutcome::Matched(index) => {
+            BestIndexOutcome::Matched(index) => {
                 // Refused here as well as in `index_only_query_index` so
                 // the prover and the no-proof executor fail before
                 // building a path query the synthesis side would refuse.
@@ -860,7 +950,7 @@ impl DriveDocumentQuery<'_> {
                 }
                 Ok(None)
             }
-            crate::query::BestIndexOutcome::NoIndexMatches(no_index_error) => {
+            BestIndexOutcome::NoIndexMatches(no_index_error) => {
                 match self.index_only_terminal_clause_selection(platform_version)? {
                     Some(route) => self
                         .index_only_terminal_path_query(
@@ -884,14 +974,12 @@ impl DriveDocumentQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<Document>), Error> {
         if self.start_at.is_some() {
-            return Err(Error::Query(
-                crate::error::query::QuerySyntaxError::Unsupported(
-                    "startAt/startAfter cannot address an indexOnly position (the synthesized \
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "startAt/startAfter cannot address an indexOnly position (the synthesized \
                      document id is a one-way hash of it); paginate with a range clause on \
                      the terminal property ordered by the terminal, with a limit"
-                        .to_string(),
-                ),
-            ));
+                    .to_string(),
+            )));
         }
 
         let path_query = self.construct_path_query(None, platform_version)?;
@@ -934,14 +1022,12 @@ impl DriveDocumentQuery<'_> {
         use grovedb::query_result_type::QueryResultType;
 
         if self.start_at.is_some() {
-            return Err(Error::Query(
-                crate::error::query::QuerySyntaxError::Unsupported(
-                    "startAt/startAfter cannot address an indexOnly position (the synthesized \
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "startAt/startAfter cannot address an indexOnly position (the synthesized \
                      document id is a one-way hash of it); paginate with a range clause on \
                      the terminal property ordered by the terminal, with a limit"
-                        .to_string(),
-                ),
-            ));
+                    .to_string(),
+            )));
         }
 
         let path_query = self.construct_path_query_operations(
@@ -1013,13 +1099,11 @@ pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<
                 || index.properties.iter().any(|p| p.name == CREATED_AT);
             carries_owner && !carries_created_at && !index.skip_if_absent
         })
-        .ok_or(Error::Query(
-            crate::error::query::QuerySyntaxError::Unsupported(
-                "executed-transition proofs for an indexOnly type need an \
+        .ok_or(Error::Query(QuerySyntaxError::Unsupported(
+            "executed-transition proofs for an indexOnly type need an \
                  $ownerId-bearing, non-skipIfAbsent index that does not involve $createdAt"
-                    .to_string(),
-            ),
-        ))
+                .to_string(),
+        )))
 }
 
 /// The grove path and member key of the entry a transition's values
@@ -1050,11 +1134,9 @@ pub fn index_only_entry_path_and_key_from_values(
             .get_optional_at_path(property_name)
             .ok()
             .flatten()
-            .ok_or(Error::Query(
-                crate::error::query::QuerySyntaxError::Unsupported(
-                    "the transition's values do not cover the index's properties".to_string(),
-                ),
-            ))?;
+            .ok_or(Error::Query(QuerySyntaxError::Unsupported(
+                "the transition's values do not cover the index's properties".to_string(),
+            )))?;
         document_type
             .serialize_value_for_key(property_name, value, platform_version)
             .map_err(|e| Error::Protocol(Box::new(e)))
@@ -1073,7 +1155,7 @@ pub fn index_only_entry_path_and_key_from_values(
     }
 
     let mut path: Vec<Vec<u8>> = Vec::with_capacity(5 + index.properties.len() * 2);
-    path.push(vec![crate::drive::RootTree::DataContractDocuments as u8]);
+    path.push(vec![RootTree::DataContractDocuments as u8]);
     path.push(contract_id.to_vec());
     path.push(vec![1]);
     path.push(document_type.name().as_bytes().to_vec());
@@ -1106,6 +1188,12 @@ pub fn index_only_entry_path_and_key_from_values(
 /// proven (and verified) against. Shared by `prove_state_transition` and
 /// `verify_state_transition_was_executed_with_proof` — one builder, both
 /// sides.
+///
+/// `data` is the transition's values. The entry holds every `generatedFrom`
+/// property the transition left out, as the node generated it on arrival, so
+/// the builder generates them here for both sides (the `fill_generated_properties`
+/// slot is `None` before protocol version 14, and indexOnly types only exist
+/// from it).
 pub fn index_only_transition_entry_path_query(
     contract_id: Identifier,
     document_type: DocumentTypeRef,
@@ -1113,12 +1201,13 @@ pub fn index_only_transition_entry_path_query(
     owner_id: Identifier,
     platform_version: &PlatformVersion,
 ) -> Result<grovedb::PathQuery, Error> {
+    let data = document_type.data_as_stored(data, platform_version)?;
     let index = index_only_proof_index(&document_type)?;
     let (path, member_key) = index_only_entry_path_and_key_from_values(
         contract_id,
         document_type,
         index,
-        data,
+        &data,
         owner_id,
         platform_version,
     )?;
@@ -1309,13 +1398,11 @@ pub fn synthesize_index_only_document(
         }
     }
 
-    let owner_id = owner_id.ok_or(Error::Query(
-        crate::error::query::QuerySyntaxError::Unsupported(
-            "documents cannot be synthesized from an index that carries no $ownerId; \
+    let owner_id = owner_id.ok_or(Error::Query(QuerySyntaxError::Unsupported(
+        "documents cannot be synthesized from an index that carries no $ownerId; \
              query through an owner-bearing index"
-                .to_string(),
-        ),
-    ))?;
+            .to_string(),
+    )))?;
 
     // Deterministic content-scoped id (see module docs). Every
     // variable-length component is length-framed (`u32_be(len) ‖ bytes`)

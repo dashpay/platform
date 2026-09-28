@@ -1,5 +1,7 @@
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
-use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
+use crate::data_contract::document_type::property::{
+    DocumentPropertyReferenceTarget, GeneratedFrom,
+};
 use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -53,6 +55,20 @@ pub trait DocumentTypeV2Getters {
     /// document type that predates the keyword answers.
     fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32>;
 
+    /// How many seconds after its creation (`$createdAt`) the platform deletes each
+    /// document of the type (the `ttl` keyword, protocol version 14). `None` means the
+    /// documents live until someone deletes them, and is what every document type that
+    /// predates the keyword answers.
+    fn documents_ttl_seconds(&self) -> Option<u32>;
+
+    /// Whether a document of the type can stop existing once written: its owner may delete
+    /// it (`canBeDeleted`), the contract's moderators may (`canBeDeletedByModerators`), or
+    /// the platform deletes it when its `ttl` passes. A `permanentDocument` reference and a
+    /// list element reference may only target a type for which this is false, and a
+    /// `deletableDocument` reference only one for which it is true; a lookup follows the
+    /// kind it declares.
+    fn documents_can_disappear(&self) -> bool;
+
     /// The top-level properties frozen at document creation on a mutable
     /// document type (the `immutable` keyword, protocol version 14). A
     /// replace that changes, adds or removes any of them is rejected with
@@ -65,6 +81,12 @@ pub trait DocumentTypeV2Getters {
     /// (protocol version 14), in schema order. Empty on generations that
     /// predate the keyword.
     fn distinct_from_fields(&self) -> &[String];
+
+    /// The dotted path of every property that declares `generatedFrom`
+    /// (protocol version 14) with its declaration, in schema order, so a
+    /// document write visits only them. Empty on generations that predate the
+    /// keyword.
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)];
 
     /// The subset of [`Self::immutable_fields`] a replace may still set while
     /// the stored document has no value for them (the

@@ -37,6 +37,7 @@ use crate::consensus::state::data_contract::data_contract_is_readonly_error::Dat
 use crate::consensus::state::data_trigger::DataTriggerError;
 use crate::consensus::state::document::document_action_fee_agreement_mismatch_error::DocumentActionFeeAgreementMismatchError;
 use crate::consensus::state::document::document_action_fee_moderators_share_mismatch_error::DocumentActionFeeModeratorsShareMismatchError;
+use crate::consensus::state::document::document_expired_error::DocumentExpiredError;
 use crate::consensus::state::document::document_action_fee_agreement_not_set_error::DocumentActionFeeAgreementNotSetError;
 use crate::consensus::state::document::document_action_fee_multiplier_not_tolerated_error::DocumentActionFeeMultiplierNotToleratedError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
@@ -63,6 +64,7 @@ use crate::consensus::state::data_contract::document_type_update_error::Document
 use crate::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use crate::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use crate::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use crate::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
 use crate::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
@@ -621,6 +623,16 @@ pub enum StateError {
     // 14).
     #[error(transparent)]
     ModerationReasonNotListedError(ModerationReasonNotListedError),
+
+    // A document whose type declares a `ttl` is changed or restored after it expired
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentExpiredError(DocumentExpiredError),
+
+    // A contest holding the most contenders a contest accepts refuses another (protocol version
+    // 14).
+    #[error(transparent)]
+    DocumentContestMaximumContendersReachedError(DocumentContestMaximumContendersReachedError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1290,12 +1302,35 @@ mod tests {
             149
         );
         // A seated moderation team's action names a reason its proposal lists (protocol
-        // version 14): the tail of the enum.
+        // version 14).
         assert_eq!(
             discriminant_of(StateError::ModerationReasonNotListedError(
                 ModerationReasonNotListedError::new(group_id, identity_id, None)
             )),
             150
+        );
+        // A document changed or restored after its time to live passed (protocol version
+        // 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentExpiredError(DocumentExpiredError::new(
+                group_id,
+                "note".to_string(),
+                identity_id,
+                1_000,
+                2_000,
+            ))),
+            151
+        );
+        // A contest holding the most contenders a contest accepts refuses another (protocol
+        // version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentContestMaximumContendersReachedError(
+                DocumentContestMaximumContendersReachedError::new(
+                    ContestedDocumentResourceVotePoll::default(),
+                    1_000,
+                )
+            )),
+            152
         );
     }
 }

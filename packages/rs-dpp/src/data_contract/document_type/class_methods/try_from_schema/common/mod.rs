@@ -22,16 +22,15 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
-use crate::data_contract::document_type::index::Index;
+use crate::data_contract::document_type::index::{Index, IndexGrammarAdmissions};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CAN_BE_DELETED_BY_MODERATORS_FOR,
-    CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY,
-    DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY, KEEPS_PRICING_HISTORY,
-    KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
-    RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE,
+    DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
+    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
+    RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
@@ -874,7 +873,7 @@ fn parse_indices(
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
                             .as_slice(),
-                        crate::data_contract::document_type::index::IndexGrammarAdmissions {
+                        IndexGrammarAdmissions {
                             ranked: ctx.generation.admit_ranked,
                             time_range: ctx.generation.admit_time_range,
                             terminal: ctx.generation.admit_index_terminal,
@@ -1197,6 +1196,11 @@ fn parse_indices(
     // storage level), so two indexes sharing a grid on one field share one
     // level's subtrees — and a level cannot have two lifecycles. Identical
     // grids must declare identical TTLs (including both declaring none).
+    //
+    // Document type generations 1-2 (protocol versions 9-13) run this loop too, but only the
+    // generation 3 index grammar admits `timeRange`, so every index they parse has
+    // `time_range: None` and the loop changes nothing for them. Generation 0 (protocol
+    // versions 1-8) parses its indices inline and never reaches this loop.
     for (name_a, index_a) in indices.iter() {
         let Some(transform_a) = &index_a.time_range else {
             continue;
@@ -1441,7 +1445,7 @@ fn parse_token_costs(
     ctx: &CoreParseContext<'_>,
     schema: &Value,
 ) -> Result<TokenCosts, ProtocolError> {
-    let token_costs_value = schema.get_optional_value("tokenCost")?;
+    let token_costs_value = schema.get_optional_value(property_names::TOKEN_COST)?;
 
     let extract_cost = |key: &str| -> Result<Option<DocumentActionTokenCost>, ProtocolError> {
         token_costs_value
@@ -1462,7 +1466,12 @@ fn parse_token_costs(
                         .transpose()?
                         .unwrap_or(DocumentActionTokenEffect::TransferTokenToContractOwner);
                     // Whether a transition may skip the token payment and have its signer pay
-                    // the gas in credits instead (the v3 meta-schema admits the flag)
+                    // the gas in credits instead. Only the v3 meta-schema admits the flag.
+                    // Document type generations 1-2 (protocol versions 9-13) also run this
+                    // parser, but their meta-schemas (v0-v2) set `additionalProperties: false`
+                    // on `documentActionTokenCost`, so no contract they accept carries the key
+                    // and this reads `false` for them, as before the flag existed. Generation 0
+                    // (protocol versions 1-8) never reaches this parser.
                     let optional = action_cost
                         .get_optional_bool("optional")?
                         .unwrap_or_default();
@@ -2119,12 +2128,13 @@ pub(super) fn apply_can_be_deleted_by_moderators(
     Ok(())
 }
 
-/// Reads the doctype-level `canBeDeletedByModeratorsFor` keyword, a number of
-/// seconds, before the core parse consumes `schema`. Its shape is enforced here
-/// and not left to the meta-schema: a stored contract is read without one, and
-/// no doctype-level keyword of this generation is read more leniently there.
-pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
+/// Reads a doctype-level keyword holding a number of seconds (`canBeDeletedByModeratorsFor`,
+/// `ttl`) before the core parse consumes `schema`. Its shape is enforced here and not left
+/// to the meta-schema: a stored contract is read without one, and no doctype-level keyword
+/// of this generation is read more leniently there.
+pub(super) fn parse_seconds_keyword(
     schema: &Value,
+    keyword: &str,
 ) -> Result<Option<u32>, ProtocolError> {
     // A schema that is not an object carries no keyword. Like every other
     // doctype-level keyword read before the core parser, this one must not be
@@ -2135,7 +2145,7 @@ pub(super) fn parse_can_be_deleted_by_moderators_for_keyword(
         return Ok(None);
     };
 
-    Value::inner_optional_integer_value::<u32>(schema_map, CAN_BE_DELETED_BY_MODERATORS_FOR)
+    Value::inner_optional_integer_value::<u32>(schema_map, keyword)
         .map_err(consensus_or_protocol_value_error)
 }
 
@@ -2206,6 +2216,113 @@ pub(super) fn apply_can_be_deleted_by_moderators_for(
     }
 
     document_type.documents_can_be_deleted_by_moderators_for = Some(seconds);
+    Ok(())
+}
+
+/// Applies the `ttl` keyword and checks what it requires.
+///
+/// The platform deletes every document of the type once `$createdAt` plus `ttl`
+/// seconds has passed, finding it through the expirations tree entry written when the
+/// document was created, so:
+/// - the type must require `$createdAt`: a document's expiry is computed from it when it
+///   is written, replaced and deleted, and it is set from block time, so nothing the
+///   writer sends moves it;
+/// - the type must not keep history: the storage layer refuses to delete a document whose
+///   type keeps history;
+/// - the type must not be indexOnly: such a document has no stored row to delete by id;
+/// - the type must not have a contested index: a contested document waits in its vote
+///   poll, outside the documents tree, until the poll awards it, keeping its `$createdAt`
+///   from the create, so it could expire before it exists;
+/// - the time to live is at least a second, and under full validation (a contract being
+///   registered or updated) at least `min_document_ttl_seconds` and at most
+///   `max_document_ttl_seconds`. The floor keeps a document in state well past the moment
+///   its writer fetches the proof of its create, which proves it present.
+///
+/// What may point at the type follows from `documents_can_disappear`: a `permanentDocument`
+/// or list element reference may not target it; a `deletableDocument` reference may, and so
+/// may a lookup, which names the kind of document it resolves to (`deletableDocument`).
+///
+/// The rules other than the bounds hold for every contract that could be stored (the keyword
+/// arrives with protocol version 14), so they are not skipped when a stored contract is
+/// read back. Runs after `apply_index_only`, whose flag it reads.
+pub(super) fn apply_documents_ttl(
+    document_type: &mut DocumentTypeV2,
+    ttl_seconds: Option<u32>,
+    name: &str,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(seconds) = ttl_seconds else {
+        return Ok(());
+    };
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    if seconds == 0 {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `ttl: 0`: a time to live lasts at least one second \
+             (leave `ttl` out for documents that live until someone deletes them)",
+            name,
+        )));
+    }
+    if full_validation {
+        if let Some(min_seconds) = platform_version.system_limits.min_document_ttl_seconds {
+            if seconds < min_seconds {
+                return Err(structure_error(format!(
+                    "document type \"{}\" sets `ttl: {}`, below the shortest time to live a \
+                     document type may declare, {} seconds",
+                    name, seconds, min_seconds,
+                )));
+            }
+        }
+        if let Some(max_seconds) = platform_version.system_limits.max_document_ttl_seconds {
+            if seconds > max_seconds {
+                return Err(structure_error(format!(
+                    "document type \"{}\" sets `ttl: {}`, above the longest time to live a \
+                     document type may declare, {} seconds",
+                    name, seconds, max_seconds,
+                )));
+            }
+        }
+    }
+    if !document_type.required_fields.contains(CREATED_AT) {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets `ttl`, which is counted from a document's creation: \
+             list `$createdAt` in `required`",
+            name,
+        )));
+    }
+    if document_type.documents_keep_history {
+        return Err(structure_error(format!(
+            "document type \"{}\" sets both `documentsKeepHistory: true` and `ttl`, but the \
+             storage layer refuses to delete a document whose type keeps history",
+            name,
+        )));
+    }
+    if document_type.index_only {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{}\" must not set `ttl`: there is no stored row the \
+             platform could delete by id",
+            name,
+        )));
+    }
+    if document_type
+        .indices
+        .values()
+        .any(|index| index.contested_index.is_some())
+    {
+        return Err(structure_error(format!(
+            "document type \"{}\" has a contested index and must not set `ttl`: a contested \
+             document waits in its vote poll until the poll awards it, and could expire \
+             before it is stored",
+            name,
+        )));
+    }
+
+    document_type.documents_ttl_seconds = Some(seconds);
     Ok(())
 }
 
@@ -2375,8 +2492,12 @@ pub(super) fn apply_index_only(
 ) -> Result<(), ProtocolError> {
     use crate::document::property_names::{CREATED_AT, OWNER_ID};
 
+    // Only generation 3 calls this, so no protocol version before 14 sees
+    // these rules or the class of error they are reported with.
     let structure_error = |message: String| {
-        ProtocolError::DataContractError(DataContractError::InvalidContractStructure(message))
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
     };
 
     if !index_only {
@@ -2560,10 +2681,22 @@ pub(super) fn apply_index_only(
                 payload_property, name,
             )));
         }
-        let max_width = property
-            .property_type
-            .max_byte_size(platform_version)?
-            .unwrap_or(u16::MAX);
+        // A string whose `maxLength` puts its worst case past `u16::MAX` bytes
+        // overflows the width computation; it could never fit an entry's value.
+        let max_width = match property.property_type.max_byte_size(platform_version) {
+            Ok(max_width) => max_width.unwrap_or(u16::MAX),
+            Err(ProtocolError::Overflow(_)) => {
+                return Err(structure_error(format!(
+                    "entryPayload property \"{}\" of indexOnly document type \"{}\" may \
+                     encode to more than {} bytes, over the {}-byte cap on an entry's value",
+                    payload_property,
+                    name,
+                    u16::MAX,
+                    platform_version.system_limits.max_field_value_size,
+                )))
+            }
+            Err(error) => return Err(error),
+        };
         if max_width == u16::MAX {
             return Err(structure_error(format!(
                 "entryPayload property \"{}\" of indexOnly document type \"{}\" must be \
@@ -2730,9 +2863,12 @@ pub(super) fn apply_index_only(
         // (canonical property, i64-safe integer type, `required`
         // membership) run for every doctype, indexOnly included.
 
+        // `parse_indices` gives every index of an indexOnly type a terminal,
+        // and the index parser refuses an empty one, so a contract cannot get
+        // here: this is the parser failing, not the contract.
         let components = index.terminal_components();
         if components.is_empty() {
-            return Err(structure_error(format!(
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
                 "index \"{}\" on indexOnly document type \"{}\" has no terminal after \
                  normalization: internal parser error",
                 index_name, name,

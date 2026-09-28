@@ -19,6 +19,8 @@ pub struct DriveVoteFetchMethodVersions {
     pub fetch_identities_voting_for_contenders: FeatureVersion,
     pub fetch_contested_document_vote_poll_stored_info: FeatureVersion,
     pub fetch_identity_contested_resource_vote: FeatureVersion,
+    /// Read by the contested document create state validation v2 (protocol version 14) only.
+    pub fetch_contested_document_vote_poll_contender_count: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

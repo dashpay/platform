@@ -5,8 +5,9 @@
 //! towards an identity must name a contender of the poll, on these contests and on DPNS ones.
 
 use crate::execution::validation::state_transition::state_transitions::tests::{
-    create_dpns_identity_name_contest, dpns_name_vote_poll, get_vote_states, perform_vote,
-    perform_votes_multi, setup_identity, setup_masternode_voting_identity,
+    create_dpns_identity_name_contest, dpns_name_vote_poll, first_time_check_tx_errors,
+    get_vote_states, perform_vote, perform_votes_multi, serialized_dpns_name_vote,
+    setup_identity, setup_masternode_voting_identity,
 };
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::MockCoreRPCLike;
@@ -386,6 +387,63 @@ fn winner(
                 .expect("expected an identifier")
         },
     )
+}
+
+/// A block refuses a Lock vote without charging anyone, and its proposer drops it, so check_tx
+/// refuses it when it is broadcast: the voter gets the error instead of a vote that never lands.
+#[tokio::test]
+async fn should_refuse_a_lock_vote_when_it_is_broadcast() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    join(
+        &platform,
+        &contract,
+        &bob,
+        2,
+        20_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+
+    let (pro_tx_hash, _, signer, voting_key) =
+        setup_masternode_voting_identity(&mut platform, 0x10c, platform_version);
+    let lock_vote = serialized_dpns_name_vote(
+        &contract,
+        ResourceVoteChoice::Lock,
+        NAME,
+        &signer,
+        pro_tx_hash,
+        &voting_key,
+        1,
+        platform_version,
+    )
+    .await;
+
+    assert_eq!(
+        first_time_check_tx_errors(
+            &platform,
+            &platform.state.load(),
+            &lock_vote,
+            platform_version
+        ),
+        vec![VoteChoiceNotAllowedForVotePollError::new(
+            vote_poll(&contract),
+            ResourceVoteChoice::Lock
+        )
+        .into()]
+    );
 }
 
 #[tokio::test]

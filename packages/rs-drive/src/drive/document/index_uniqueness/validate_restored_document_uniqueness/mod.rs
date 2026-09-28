@@ -16,6 +16,21 @@ impl Drive {
     /// back as it was, timestamps and heights included, so they are read off the document
     /// rather than off the block, and its own id is not allowed as the original: the
     /// document is absent while its removal record stands unrestored.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract`: The contract of the document.
+    /// * `document_type`: The document's type, whose unique indexes are checked.
+    /// * `document`: The document being restored, with its original properties and timestamps.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(SimpleConsensusValidationResult)`: valid when no other document holds a value of
+    ///   one of the document's unique indexes, otherwise carrying the duplicate unique index
+    ///   error.
+    /// * `Err(Error)` when the method version is unknown or a unique index query fails.
     pub fn validate_restored_document_uniqueness(
         &self,
         contract: &DataContract,

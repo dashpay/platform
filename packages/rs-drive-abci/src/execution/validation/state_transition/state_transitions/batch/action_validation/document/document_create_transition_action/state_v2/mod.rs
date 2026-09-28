@@ -1,11 +1,14 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
+use dpp::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
+use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::required_vote_resolution_fund_to_join;
 use drive::query::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{
@@ -25,7 +28,7 @@ use crate::platform_types::platform::PlatformStateRef;
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentCreateTransitionActionStateValidationV2
 {
     fn validate_state_v2(
-        &self,
+        &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
@@ -37,7 +40,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
 
 impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitionAction {
     fn validate_state_v2(
-        &self,
+        &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
@@ -55,6 +58,69 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
         )?;
         if !validation_result.is_valid() {
             return Ok(validation_result);
+        }
+
+        // A contest accepts at most `max_contenders_per_contest` contenders, so the end of the
+        // poll can tally and clean up every one in a block, and the fund a contender pays to
+        // join doubles once it holds `contested_document_contenders_before_fund_doubling`
+        // contenders and again for every `contested_document_contenders_per_fund_doubling` more,
+        // so filling it costs far more than the fund times the contenders. v1 has let the
+        // document join the contest when it exists; a new contest has no contenders to count.
+        if let Some((contested_document_resource_vote_poll, most_it_pays)) =
+            self.prefunded_voting_balance()
+        {
+            let contenders = if self.current_store_contest_info().is_some() {
+                let max_contenders = platform_version.system_limits.max_contenders_per_contest;
+                let (fee_result, contenders) = platform
+                    .drive
+                    .fetch_contested_document_vote_poll_contender_count(
+                        contested_document_resource_vote_poll,
+                        max_contenders,
+                        &block_info.epoch,
+                        transaction,
+                        platform_version,
+                    )?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                if contenders >= max_contenders {
+                    return Ok(ConsensusValidationResult::new_with_error(
+                        ConsensusError::StateError(
+                            StateError::DocumentContestMaximumContendersReachedError(
+                                DocumentContestMaximumContendersReachedError::new(
+                                    contested_document_resource_vote_poll.into(),
+                                    max_contenders,
+                                ),
+                            ),
+                        ),
+                    ));
+                }
+                contenders
+            } else {
+                0
+            };
+
+            // The contender states the most it pays and is charged the fund to join, what it
+            // stated beyond that staying with it
+            let fund_to_join = required_vote_resolution_fund_to_join(
+                &contested_document_resource_vote_poll.contract.id(),
+                &contested_document_resource_vote_poll.document_type_name,
+                contenders,
+                platform_version,
+            );
+            if *most_it_pays < fund_to_join {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::DocumentContestNotPaidForError(
+                        DocumentContestNotPaidForError::new(
+                            self.base().id(),
+                            fund_to_join,
+                            *most_it_pays,
+                        ),
+                    )),
+                ));
+            }
+            self.set_prefunded_voting_fund(fund_to_join);
         }
 
         // The creator of a document being created is its writer

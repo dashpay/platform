@@ -16,7 +16,7 @@ use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
-use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
+use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
@@ -181,7 +181,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   moderation election (an `electedCharter` contest) runs on its target
 ///   contract's join and vote windows, which the document create join check
 ///   and the contested insert read.
-/// * `DRIVE_ABCI_QUERY_VERSIONS_V3` bumps
+/// * `DRIVE_ABCI_QUERY_VERSIONS_V2` bumps
 ///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 2,
 ///   opening two routes on the v1 document-query handler: the ranked path
 ///   (a grouped aggregate whose single `order_by` names the selected
@@ -514,8 +514,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contract may declare, when it is created, that its moderators are a team
 ///     elected by masternodes and evonodes (`ContractModerators::Elected`, a third kind
 ///     beside the owner and an appointed set, in the same config V2). The
-///     declaration is frozen: the join and vote windows (one day to four weeks,
-///     one week by default), in seconds and bounded by `SYSTEM_LIMITS_V4`;
+///     declaration is frozen: the join and vote windows (at most four weeks, at
+///     least one day on mainnet and 0 elsewhere, one week by default), in
+///     seconds and bounded by `SYSTEM_LIMITS_V4`;
 ///     whether the seat can be contested again once a team is seated
 ///     (`seatContestable`, required with no default), and for a contestable
 ///     seat the challenge cool-down (`challengeCoolDown`, in seconds, two weeks
@@ -1044,30 +1045,116 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///
 /// 39. **Property constraints**: the doctype-level `propertyConstraints`
 ///     keyword (meta-schema v3, `parse_property_constraints` 0) names rules a
-///     document's integer properties must meet, each a comparison (`equal`,
-///     `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
+///     document's properties must meet, each a condition: a comparison
+///     (`equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
 ///     `greaterThanOrEqual`) of two integer expressions built from integer
-///     literals, property paths and `add`, `subtract`, `multiply`, `divide`,
-///     `modulo` and `power`. A property the document leaves out counts as 0,
-///     or as the value of an `ifAbsent` operand naming it. Arithmetic is exact
-///     `i128`: `divide` and `modulo` are Euclidean (the remainder is never
-///     negative), and an overflow, a zero divisor, a negative exponent or a
-///     value that is not an integer refuses the document rather than wrapping.
-///     The parser checks that every path names an integer property that is
-///     neither transient nor inside a transient object, and that no operand
-///     nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every
-///     parse, and under full validation the limits
-///     `SystemLimits::max_property_constraints` (16 rules) and
-///     `max_property_constraint_nodes` (32 per rule).
-///     `DataContract::validate_document_properties` 0 (extended in place, inert
-///     before this version) calls `validate_property_constraints`
+///     literals, paths of integer or boolean properties (a boolean reading as 1
+///     for true and 0 for false), `add`, `subtract`, `multiply`, `divide`,
+///     `modulo` and `power`, `min` and `max` over two or more operands and
+///     `abs` over one, and sizes: `length` and `byteLength`, the characters and
+///     UTF-8 bytes of a string property, and `count`, the items
+///     of an array or byte array property, each 0 for a property the document
+///     leaves out, and the system times and heights `$createdAt`, `$updatedAt`
+///     and `$transferredAt` (block times in milliseconds), each also with
+///     `BlockHeight` or `CoreBlockHeight` appended, of the document's creation,
+///     last update (create, replace, price update) and last transfer (create,
+///     transfer, purchase), which a rule may read only on a type listing them
+///     in `required`; `in`, whether an integer expression takes one of two or
+///     more distinct integer values; `equal` or `notEqual` of a string property
+///     and a `{ "const": string }` or of two bare paths naming string
+///     properties, or `in` of a string property and two or more distinct
+///     strings, a string the document leaves out equalling no constant and no
+///     other string unless an `ifAbsent` gives it a string default
+///     (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum` must list
+///     too); `equal`, `notEqual` or `in` of an identifier property (one
+///     declaring `refersTo` included) or of `$ownerId`, the document's owner,
+///     likewise, with base58 identifier constants or another identifier operand
+///     and no default, an identifier the document leaves out equalling none;
+///     `startsWith` or `endsWith`, whether a string (a constant or a string
+///     property, at least one a property) starts or ends with another, byte for
+///     byte; `contains`, whether a typed array property holds an element equal
+///     to an integer expression, a string or an identifier operand (a constant,
+///     a property, or `$ownerId`), as its elements are, an array the document
+///     leaves out holding nothing; `present` or `absent` naming a property of
+///     any type, whether the document holds it (the one way to tell a property
+///     left out from one set to 0); `anyOf` or `allOf` over two or more
+///     conditions; `not` over one; `ifThen` over two (the second holding
+///     whenever the first does, evaluated only then) or `ifThenElse` over three
+///     (the second when the first holds, the third when it does not, only the
+///     branch taken evaluated), no two alike; `notIn`, an `in` negated in as
+///     many nodes. In an operand, a property the document leaves out counts as
+///     0, or as the value of an `ifAbsent` operand naming it. `countOf` and
+///     `sumOf` operands read a total from state: how many documents of a type
+///     of the same contract match a filter (keys of that type or `$ownerId`,
+///     values read from the document written), or an integer property's total
+///     over them, as the count or sum tree will keep it once the write is done;
+///     the batch transformer reads them into the action
+///     (`Drive::fetch_property_constraint_aggregate`, billed; in place in
+///     transformer 0, reading nothing before this version), a transfer or
+///     purchase reads again those depending on the owner, a price update those
+///     of the rules it judges, and a rule reading one it is not given is not
+///     judged by an SDK pre-check and an error in consensus, which reads them
+///     all.
+///     Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
+///     remainder is never negative), and an overflow, a zero divisor, a
+///     negative exponent or a value that is not an integer refuses the document
+///     rather than wrapping. Conditions are checked in declared order and no
+///     further than the outcome needs (`anyOf` stops at the first that holds,
+///     `allOf` at the first that fails), a fault in one that is checked refuses
+///     the document whatever the others say, and `not` never turns a fault into
+///     a pass, so an earlier condition guards a later one. The parser checks
+///     that every path an operand reads names an integer or boolean property,
+///     every path a `length` or `byteLength` measures a string property, every
+///     path a `count` counts an array or byte array property, every string
+///     `startsWith` or `endsWith` tests a string property (a constant tested
+///     against one with an `enum` starting or ending one of its values), every
+///     array a `contains` looks in a typed array of the kind it looks for (a
+///     string constant in the elements' `enum` when they declare one), every
+///     system time or height a rule reads one the type lists in `required`
+///     (none on an indexOnly type), every path compared with identifiers an
+///     identifier property, every path compared with strings a string property
+///     (whose `enum`, if it declares one, lists every constant it is compared
+///     with), and every path `present` or `absent` tests a property of any
+///     type, none transient nor inside a transient object; that every
+///     comparison and `in` reads a property or the owner; that nothing is
+///     compared with itself; that strings and identifiers are only compared for
+///     equality, and never with each other; that no `in` lists a value twice;
+///     that an `anyOf` or `allOf` holds none directly of its own kind and a
+///     `not` no `not` or `notIn`; that an indexOnly type, whose deletes carry
+///     no owner, reads no `$ownerId`; and that no condition or operand nests
+///     deeper than
+///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse. Under full
+///     validation it holds the limits `SystemLimits::max_property_constraints`
+///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
+///     comparison, `in`, listed value, `const`, presence test and logical
+///     operator counting as one), and that no `anyOf` or `allOf` lists the same
+///     condition twice, and at most `max_property_constraint_aggregates` (4)
+///     distinct totals per type; once every type is parsed, that a tree keeps
+///     each total (`documentsCountable` or `documentsSummable`, or an index
+///     whose properties are exactly the filter's keys) and that no type with a
+///     contested index totals its own documents, in
+///     `create_document_types_from_document_schemas` 1, in place and inert
+///     before this version. `DataContract::validate_document_properties` 0
+///     (extended in place, inert before this version, and taking the document's
+///     owner for `$ownerId`) calls `validate_property_constraints`
 ///     (`validate_property_constraints` 0) after the schema validation, so
 ///     document create and replace, and any client validating a document,
 ///     refuse a broken rule with `DocumentPropertyConstraintViolatedError`
-///     (10422), naming the rule and why. The rules read no state and change
-///     nothing stored. They are fixed when the document type is created: a
-///     changed `propertyConstraints` is an incompatible schema change on
-///     update. The moderation charters contract declares its first one: a
+///     (10422), naming the rule and why. A transfer and a purchase, which give
+///     the document a new owner, are judged against the rules reading
+///     `$ownerId` or the transfer's time and heights, with the new values, and
+///     a price update, which sets the update's time and heights, against the
+///     rules reading those (`validate_property_constraints_for_system_change`,
+///     in their structure validation, in place and inert before this version;
+///     the price update's call is new there). `validate_document_properties`
+///     takes the document version's system values (`DocumentSystemValues`):
+///     consensus gives the writer and the block's time and heights on create,
+///     and on replace the stored creation and transfer values with the block's
+///     as the update. The rules change nothing stored and read no state but
+///     their totals. They
+///     are fixed when the document type is created: a changed
+///     `propertyConstraints` is an incompatible schema change on update. The
+///     moderation charters contract declares its first one: a
 ///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
 ///     charter-specific check, whose error 11001 keeps its place in
 ///     `BasicError` but is never produced.
@@ -1230,6 +1317,157 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `get_finalized_epoch_infos` now takes its limit from the caller; every other
 ///     caller passes the query bound it read before.
 ///
+/// 49. **Documents with a time to live**: the doctype-level `ttl` keyword (meta-schema v3,
+///     document type parser generation 3) makes the platform delete each document of the
+///     type `ttl` seconds after its `$createdAt`, at most
+///     `max_document_expirations_per_block` (128, `SYSTEM_LIMITS_V4`) weighing at most
+///     `max_document_expiration_weight_per_block` (1,024 in documents plus their index levels)
+///     per block after the block's state transitions (`expire_documents` 0 in
+///     `DRIVE_ABCI_METHOD_VERSIONS_V10`). The keyword requires `$createdAt`, is refused
+///     with `documentsKeepHistory`, `indexOnly` and a contested index, is at least
+///     `min_document_ttl_seconds` (one hour) and at most `max_document_ttl_seconds` (one
+///     year) at registration, and is fixed on update (`validate_update` 1). References treat such a type as deletable. Its
+///     documents are stored without storage flags, indexed in the documents expirations
+///     tree under `Misc` (created by `create_initial_state_structure` 4 and
+///     `transition_to_version_14`), and pay the `document_ttl` group of `FEE_VERSION3`: a
+///     price per byte for the time they live (tiers up to seven days, then per 9.125 days),
+///     paid out to the epochs they live in (at most one era) through the lifetime storage fee
+///     pools under `Pools` (`add_distribute_block_fees_into_pools_operations` 1),
+///     plus their deletion prepaid as processing (per index level and per document byte; a
+///     change that grows a document prepays its added bytes). From its expiry on, a
+///     document can no longer be replaced, transferred, bought, repriced or restored by a
+///     moderator (`DocumentExpiredError`, 40140), judged from its own `$createdAt`; its
+///     owner may still delete it where `canBeDeleted` allows. See
+///     `book/src/data-model/document-ttl.md`.
+///
+/// 50. **A contest accepts at most 1,000 contenders, and its end reaches every
+///     one**: document create state validation 2 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
+///     refuses, paid, a document that would add a contender to a contest holding
+///     `max_contenders_per_contest` (`SYSTEM_LIMITS_V4`, 1,000) already
+///     (`DocumentContestMaximumContendersReachedError`, 40141).
+///     `add_contested_indices_for_contract_operations` 1
+///     (`DRIVE_DOCUMENT_METHOD_VERSIONS_V4`) writes the last index value of a
+///     poll started from this version as a count tree, so the join reads the
+///     count in one element fetch; a poll started before keeps its plain tree
+///     and has its contenders counted by a keys query of at most 1,000.
+///     `maximum_contenders_to_consider` rises from 100 to 10,000, so the tally
+///     of an ended poll, and the cleanup built from it, cover every contender
+///     of a poll within the cap, and up to 10,000 of one that grew past it
+///     before this version. `check_for_ended_vote_polls` 1 compares every tied
+///     contender; version 0 compared at most 100.
+///
+/// 51. **The fund a contender pays doubles for every 50 contenders a contest
+///     holds past 250**: the fund to join a contest is its fund doubled once
+///     the contest holds `contested_document_contenders_before_fund_doubling`
+///     (`FEE_VERSION3`, 250) contenders and again for every
+///     `contested_document_contenders_per_fund_doubling` (50) more: 0.1 DASH
+///     for the first 250 DPNS contenders, 0.2 for the next 50, up to 3,276.8
+///     for the 951st to the 1,000th, so filling a contest costs 327,695 DASH
+///     where it cost 100. A contender's prefunded voting balance is the most it
+///     pays: document create state validation 2 refuses, paid, one stating less
+///     than the fund to join (`DocumentContestNotPaidForError`, carrying that
+///     fund), the first contender of a new contest included, and charges one
+///     stating more only the fund to join, the rest staying with it. Document
+///     create structure validation 1 leaves the amount to state validation;
+///     version 0 wants exactly the contest's fund.
+///
+/// 52. **Property constraints judge what is stored, and read `$defs`**: to
+///     `present` and `absent` (item 39), an object none of whose members is
+///     present (`{}`, or `{ "inner": {} }` around one) is absent, since a
+///     stored document reads it back as no object at all. A create or replace
+///     carrying `meta: {}` was judged with `meta` present, and a later
+///     transfer, purchase or price update, judged on the stored document, with
+///     it absent. The parser (generation 3) reads the schema of a property
+///     given as a `$ref` to the contract's `$defs` from the definition, as the
+///     core parse does, when it checks a rule's string constants and defaults
+///     against the property's `enum` and an `encryptedFor` key id's bounds; it
+///     refused every such contract with a decoding error before.
+///
+/// 53. **Properties the platform generates (`generatedFrom`)**: the property
+///     keyword (meta-schema v3, `apply_generated_from` 0, `GeneratedFrom` on
+///     `DocumentProperty`) names a built-in `function` and its `params`,
+///     properties of the same document type, as
+///     `{ "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] }`.
+///     System functions are named under `sys.`, leaving other names to
+///     functions a contract may bring later. The `sys.stringTransformations`
+///     functions take one string and change ASCII characters only, keeping
+///     every other character, without Unicode tables: `lowercase`,
+///     `uppercase`, `capitalize`, `camelCase`, `snakeCase`, and
+///     `homographSafeASCII`, which lowercases, then maps `o` to `0` and `i`
+///     and `l` to `1`, DPNS's label normalization over ASCII. The parser
+///     checks at registration and update that `params` holds as many
+///     properties as the function takes, each another string property that
+///     is not generated itself, that neither the property nor a param is
+///     transient or inside a transient object, and that every param sits
+///     inside every object holding the property; a changed declaration is an
+///     incompatible schema change, and `validate_update` 1 refuses a property
+///     an update adds over params that all already existed
+///     (`DocumentTypeUpdateError`, 40212); meta-schema v3 refuses the keyword
+///     beside `$ref`, whose definition would replace it.
+///     `fill_generated_properties` (0) writes a declared property a document
+///     leaves out, from its params, in the action transformers of document
+///     create, replace and index-only delete, before the contest resolution
+///     and every check read the data, in `Document::try_from_create_transition`
+///     and `try_from_replace_transition`, and in
+///     `index_only_transition_entry_path_query`, the builder the prover and
+///     the verifier share, with which proofs are built and checked. The client
+///     transition builders, the SDK's contest fund lookup and the JS and FFI
+///     property-constraint pre-checks call `regenerate_generated_properties`
+///     (same slot) instead, which replaces a value the document holds and
+///     removes it when a param is absent, so a transition built from a
+///     fetched and edited document carries the value of its new params and
+///     its contest is detected from it.
+///     `DataContract::validate_document_properties` 0 calls
+///     `validate_generated_from_properties` (`validate_generated_from` 0)
+///     after the schema and `maxBytes`, and refuses a supplied value that is
+///     not what the function generates, one without its params, or a document
+///     repeating a key on the way to the property or a param, with
+///     `DocumentPropertyNotGeneratedError` (10424). Every call site was
+///     extended in place and is inert before this version, where the three
+///     slots are `None` and the meta-schemas refuse the keyword.
+///
+/// 54. **An aggregate keyword names a top-level property**: `summable` and
+///     `averageable` on an index, and `documentsSummable` and
+///     `documentsAverageable` on a document type, name the integer property
+///     each document adds to the sum. Drive reads its value from the top level
+///     of the document, but the parser resolves the name among the flattened
+///     properties and required fields, which also hold the dotted path of a
+///     property nested in an object, and meta-schemas v1 and v2 bound only the
+///     name's length. A contract naming `payment.amount` registered, and every
+///     document create of the type then failed in Drive as an internal error.
+///     Meta-schema v3 (`CONTRACT_VERSIONS_V6`) gives the four keywords the
+///     property-name pattern `^[a-zA-Z0-9_]{1,64}$`, so a create or an update
+///     carrying a dotted name is refused under full validation
+///     (`JsonSchemaError`, 10101, paid in a block; `check_tx` does not fully
+///     validate a contract). A contract stored with one still loads, since a
+///     stored contract is parsed without full validation, but can no longer be
+///     updated; no contract on mainnet or testnet names one.
+/// 55. **A preallocated index's agreement source fits a tree key**: contract
+///     create and update state validation 1 refuse, paid, a
+///     `propertyAgreement` pair through which a preallocated index is keyed
+///     when its referenced property can hold a value over 255 bytes
+///     (`ReferencedDocumentPropertyAgreementInvalidError`, 40126): creating a
+///     referenced document writes that value as a tree key, which failed with
+///     an internal error for a value over 255 bytes, and for any value once
+///     the property's midway size, which sized the estimate, passed 255
+///     bytes. `add_document_for_contract_operations` 1 now estimates that
+///     layer from the referring property, as an entry insert does, and
+///     preallocates nothing for a referenced value wider than the referring
+///     property can hold, which no referring document can agree with.
+///
+/// 56. **A `propertyAgreement` pair compares values, not index keys**:
+///     document reference validation 0 judges each pair as two single values
+///     (`Value::same_scalar_data`): strings as text, byte arrays and
+///     identifiers as bytes, integers as numbers at any width, floats by
+///     their `f64` bits (an integer against a float read as the float it
+///     converts to, as a `number` carried as an integer is stored), booleans
+///     as booleans. An identifier or byte array carried as an array of
+///     `U8`s is the bytes it lists, as before; any other array agrees with
+///     nothing. It compared the two sides' index key encodings, under which
+///     `""` agreed with `"\0"`, and two equal values over 255 bytes, which
+///     an unindexed string of 64 characters or more can hold, were refused
+///     (`ReferencedDocumentPropertyMismatchError`, 40127).
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -1294,13 +1532,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read)
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
-        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
+        query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
@@ -1323,8 +1561,8 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
-    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week)
+    fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
@@ -1359,6 +1597,14 @@ mod tests {
                 fund_fees.contested_document_vote_resolution_fund_required_amount,
                 "protocol {protocol_version}"
             );
+            assert_eq!(
+                (
+                    fund_fees.contested_document_contenders_before_fund_doubling,
+                    fund_fees.contested_document_contenders_per_fund_doubling
+                ),
+                (0, 0),
+                "protocol {protocol_version}: every contender paid the same fund"
+            );
         }
 
         let mut expected_fees = PLATFORM_V13.fee_version.clone();
@@ -1373,6 +1619,14 @@ mod tests {
         expected_fees
             .vote_resolution_fund_fees
             .moderation_vote_resolution_fund_required_amount = 50_000_000_000;
+        // The fund a contender pays doubles once the contest holds 250 contenders, and again for
+        // every 50 more
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_contenders_before_fund_doubling = 250;
+        expected_fees
+            .vote_resolution_fund_fees
+            .contested_document_contenders_per_fund_doubling = 50;
         // The once-per-identity token distribution exists from protocol version 14 on, and a
         // token that uses it pays the surcharge of the other distribution kinds.
         assert_eq!(
@@ -1419,8 +1673,6 @@ mod tests {
         );
     }
 
-    /// The ranked index keywords are gated by the meta-schema version, so v14
-    /// must select meta-schema v3 while v13 stays on v2.
     /// Contested indexes without a Lock choice (item 23): the three method
     /// versions that read the resolution are selected by v14 only, so a v13
     /// replay keeps the shipped rules (a full poll for every contest, ties to
@@ -1481,6 +1733,8 @@ mod tests {
         );
     }
 
+    /// The ranked index keywords are gated by the meta-schema version, so v14
+    /// must select meta-schema v3 while v13 stays on v2.
     #[test]
     fn ranked_index_keywords_are_gated_by_meta_schema_v3() {
         assert_eq!(
@@ -1545,46 +1799,6 @@ mod tests {
                 .class_method_versions
                 .try_from_schema,
             3
-        );
-    }
-
-    /// v14 introduces the slots but activates none of them yet. If a later
-    /// change flips one of these, it must do so deliberately — and update this
-    /// test — rather than by inheriting a default.
-    #[test]
-    fn ranked_feature_slots_exist_but_are_dormant() {
-        assert_eq!(
-            PLATFORM_V14.drive.methods.document.query.detect_ranked_mode,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14.drive.methods.document.query.detect_having_mode,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14
-                .drive
-                .methods
-                .verify
-                .document_ranked
-                .verify_ranked_top_k_proof,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14
-                .drive
-                .methods
-                .verify
-                .document_ranked
-                .verify_having_range_proof,
-            0
-        );
-        let grove = &PLATFORM_V14.drive.grove_methods.batch;
-        assert_eq!(grove.batch_insert_empty_provable_count_indexed_tree, 0);
-        assert_eq!(grove.batch_insert_empty_provable_sum_indexed_tree, 0);
-        assert_eq!(
-            grove.batch_insert_empty_provable_count_provable_sum_indexed_tree,
-            0
         );
     }
 

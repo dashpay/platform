@@ -23,8 +23,10 @@
 // fields rather than rename this file.
 
 mod contract_moderation_gate;
+mod property_constraint_aggregates;
 
 use contract_moderation_gate::{BatchTransitionContractModerationGate, ContractModerationRefusal};
+use property_constraint_aggregates::attach_property_constraint_aggregates;
 use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -805,7 +807,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
         match transition {
             DocumentTransition::Create(document_create_transition) => {
-                let (document_create_action, fee_result) = DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(
+                let (mut document_create_action, fee_result) = DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(
                     drive, owner_id, transaction,
                     document_create_transition, block_info, user_fee_increase, |_identifier| {
                         Ok(data_contract_fetch_info.clone())
@@ -813,6 +815,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                // The `countOf` and `sumOf` totals the rules judging the write read
+                attach_property_constraint_aggregates(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_create_action,
+                    None,
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
                 Ok(document_create_action)
             }
             DocumentTransition::Replace(document_replace_transition) => {
@@ -872,7 +887,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
-                let (document_replace_action, fee_result) =
+                let (mut document_replace_action, fee_result) =
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
                         owner_id,
@@ -880,10 +895,24 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         block_info,
                         user_fee_increase,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
+                        platform_version,
                     )?;
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                // The `countOf` and `sumOf` totals the rules judging the write read
+                attach_property_constraint_aggregates(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_replace_action,
+                    Some(original_document),
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
 
                 Ok(document_replace_action)
             }
@@ -900,7 +929,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             DocumentTransition::IndexOnlyDelete(document_index_only_delete_transition) => {
                 let (batched_action, fee_result) = DocumentIndexOnlyDeleteTransitionAction::try_from_document_borrowed_index_only_delete_transition_with_contract_lookup(document_index_only_delete_transition, owner_id, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
-                })?;
+                }, platform_version)?;
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
@@ -976,7 +1005,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
                 }
 
-                let (document_transfer_action, fee_result) =
+                let (mut document_transfer_action, fee_result) =
                     DocumentTransferTransitionAction::try_from_borrowed_document_transfer_transition(
                         document_transfer_transition,
                         owner_id,
@@ -988,6 +1017,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                // The `countOf` and `sumOf` totals the rules judging the write read
+                attach_property_constraint_aggregates(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_transfer_action,
+                    Some(original_document),
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
 
                 Ok(document_transfer_action)
             }
@@ -1041,7 +1083,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     }
                 }
 
-                let (document_update_price_action, fee_result) =
+                let (mut document_update_price_action, fee_result) =
                     DocumentUpdatePriceTransitionAction::try_from_borrowed_document_update_price_transition(
                         document_update_price_transition,
                         owner_id,
@@ -1053,6 +1095,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                // The `countOf` and `sumOf` totals the rules judging the write read
+                attach_property_constraint_aggregates(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_update_price_action,
+                    Some(original_document),
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
 
                 Ok(document_update_price_action)
             }
@@ -1143,7 +1198,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
                 }
 
-                let (document_purchase_action, fee_result) =
+                let (mut document_purchase_action, fee_result) =
                     DocumentPurchaseTransitionAction::try_from_borrowed_document_purchase_transition(
                         document_purchase_transition,
                         owner_id,
@@ -1156,6 +1211,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                // The `countOf` and `sumOf` totals the rules judging the write read
+                attach_property_constraint_aggregates(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_purchase_action,
+                    Some(original_document),
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
 
                 Ok(document_purchase_action)
             }

@@ -7,6 +7,7 @@ use crate::execution::types::state_transition_execution_context::{
 use crate::execution::validation::state_transition::common::seated_moderation_charter::{
     fetch_seated_moderation_charter, SeatedModerationCharter,
 };
+use crate::execution::validation::state_transition::common::validate_document_not_expired::validate_document_not_expired;
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::state_transitions::batch::fetch_document_with_id;
 use crate::platform_types::platform::PlatformRef;
@@ -731,6 +732,24 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
             )
             .into(),
         );
+    }
+
+    // A document whose type declares a `ttl` and has expired stays deleted: the cleanup after
+    // this block's state transitions would delete it again, and the record would say restored
+    // for a document that no longer exists. Judged from its `$createdAt`, which the hash above
+    // pins to the document as it was.
+    if let Some(error) = validate_document_not_expired(
+        contract_id,
+        document_type,
+        document_id,
+        document.created_at(),
+        block_info,
+    )?
+    .errors
+    .into_iter()
+    .next()
+    {
+        return refuse(error);
     }
 
     // What the hash does not pin: another document may have taken a value of one of the

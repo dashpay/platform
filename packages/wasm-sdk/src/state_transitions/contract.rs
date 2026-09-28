@@ -232,7 +232,7 @@ impl WasmSdk {
             None,
         )
         .await
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
+        .map_err(|e| WasmSdkError::with_context("Failed to create update transition", e))?;
 
         // Broadcast the transition. A contract update proof authenticates
         // the current contract body — a height-pinned snapshot — and cannot

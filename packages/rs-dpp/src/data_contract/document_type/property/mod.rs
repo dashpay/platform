@@ -41,11 +41,13 @@ use serde::{Deserialize, Serialize};
 
 pub mod array;
 pub mod encrypted_for;
+pub mod generated_from;
 pub mod list_element_reference;
 pub mod reference_expression;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
+pub use generated_from::{GeneratedFrom, GenerationParam, StringTransformation, SystemFunction};
 pub use list_element_reference::ListElementReference;
 pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
@@ -80,6 +82,11 @@ pub struct DocumentProperty {
     /// and only on contracts parsed from protocol version 14 on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encrypted_for: Option<EncryptedFor>,
+    /// The function the platform generates this property's value with, and
+    /// the properties it reads (`generatedFrom`). Only ever `Some` on a string
+    /// property, and only on contracts parsed from protocol version 14 on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated_from: Option<GeneratedFrom>,
 }
 
 /// What a `distinctFrom` identifier property must differ from.
@@ -1571,6 +1578,21 @@ pub enum DocumentPropertyType {
     KeyIdWithReference(KeyIdReference),
 }
 
+/// Adds byte sizes the way summing `Option<u16>` does, `None` once any size is
+/// `None`, but saturating at `u16::MAX` instead of overflowing.
+fn saturating_sum(
+    sizes: impl Iterator<Item = Result<Option<u16>, ProtocolError>>,
+) -> Result<Option<u16>, ProtocolError> {
+    let mut total = 0u16;
+    for size in sizes {
+        let Some(size) = size? else {
+            return Ok(None);
+        };
+        total = total.saturating_add(size);
+    }
+    Ok(Some(total))
+}
+
 impl DocumentPropertyType {
     #[deprecated = "this method is missing required information to create a type. Use TryFrom<&Value> instead."]
     pub fn try_from_name(name: &str) -> Result<Self, DataContractError> {
@@ -1976,6 +1998,80 @@ impl DocumentPropertyType {
         } else {
             Ok(Some(min_size.wrapping_add(max_size).wrapping_add(1) / 2))
         }
+    }
+
+    /// [`Self::min_byte_size`], with a bound past `u16::MAX` held at
+    /// `u16::MAX` instead of refused with an overflow. A string counts four
+    /// bytes a character, so `minLength` 16384 or more does not fit. For size
+    /// estimates, which only need a bound.
+    pub fn saturating_min_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        match self {
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: Some(length),
+                ..
+            }) => Ok(Some(length.saturating_mul(4))),
+            DocumentPropertyType::Object(sub_fields) => {
+                saturating_sum(sub_fields.values().map(|sub_field| {
+                    sub_field
+                        .property_type
+                        .saturating_min_byte_size(platform_version)
+                }))
+            }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array
+                .saturating_min_encoded_size(platform_version)
+                .map(Some),
+            property_type => property_type.min_byte_size(platform_version),
+        }
+    }
+
+    /// [`Self::max_byte_size`], with a bound past `u16::MAX` held at
+    /// `u16::MAX` instead of refused with an overflow. A string without
+    /// `maxBytes` counts four bytes a character, so `maxLength` 16384 or more
+    /// does not fit; it then sizes like a string without `maxLength`. For size
+    /// estimates, which only need a bound.
+    pub fn saturating_max_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        match self {
+            DocumentPropertyType::String(StringPropertySizes {
+                max_length: Some(length),
+                max_bytes: None,
+                ..
+            }) => Ok(Some(length.saturating_mul(4))),
+            DocumentPropertyType::Object(sub_fields) => {
+                saturating_sum(sub_fields.values().map(|sub_field| {
+                    sub_field
+                        .property_type
+                        .saturating_max_byte_size(platform_version)
+                }))
+            }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array
+                .saturating_max_encoded_size(platform_version)
+                .map(Some),
+            property_type => property_type.max_byte_size(platform_version),
+        }
+    }
+
+    /// [`Self::middle_byte_size_ceil`] from [`Self::saturating_min_byte_size`]
+    /// and [`Self::saturating_max_byte_size`].
+    pub fn saturating_middle_byte_size_ceil(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        let Some(min_size) = self.saturating_min_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        let Some(max_size) = self.saturating_max_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        // The mean of two `u16` values fits in a `u16`
+        Ok(Some(
+            ((min_size as u32 + max_size as u32).div_ceil(2)) as u16,
+        ))
     }
 
     pub fn random_size(&self, rng: &mut StdRng) -> u16 {
@@ -3725,6 +3821,16 @@ impl DocumentPropertyType {
         )
     }
 
+    /// Whether the value is one identifier, whether or not the property
+    /// carries its own `refersTo` reference. A typed array of identifiers is
+    /// not one.
+    pub fn is_identifier(&self) -> bool {
+        matches!(
+            self,
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+        )
+    }
+
     pub fn sanitize_value_mut(&self, value: &mut Value) {
         match (self, value.clone()) {
             // Convert hex or base64 strings to byte arrays for ByteArray fields
@@ -4463,6 +4569,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         sub_fields.insert(
@@ -4474,6 +4581,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -4763,6 +4871,107 @@ mod tests {
         // min_byte_size = 1*4 = 4, max_byte_size = 10*4 = 40
         // ceil((4+40)/2) = 22
         assert_eq!(s.middle_byte_size_ceil(pv).unwrap(), Some(22));
+    }
+
+    // -----------------------------------------------------------------------
+    // saturating_min_byte_size() / saturating_max_byte_size() tests
+    // -----------------------------------------------------------------------
+
+    fn string_sizes(
+        min_length: Option<u16>,
+        max_length: Option<u16>,
+        max_bytes: Option<u16>,
+    ) -> DocumentPropertyType {
+        DocumentPropertyType::String(StringPropertySizes {
+            min_length,
+            max_length,
+            max_bytes,
+        })
+    }
+
+    #[test]
+    fn should_hold_string_byte_bounds_past_u16_max_at_u16_max() {
+        let pv = PlatformVersion::latest();
+        // 20000 characters of up to four bytes each is 80000 bytes
+        let long = string_sizes(Some(20000), Some(20000), None);
+        assert!(matches!(
+            long.min_byte_size(pv),
+            Err(ProtocolError::Overflow(_))
+        ));
+        assert!(matches!(
+            long.max_byte_size(pv),
+            Err(ProtocolError::Overflow(_))
+        ));
+        assert_eq!(long.saturating_min_byte_size(pv).unwrap(), Some(u16::MAX));
+        assert_eq!(long.saturating_max_byte_size(pv).unwrap(), Some(u16::MAX));
+        assert_eq!(
+            long.saturating_middle_byte_size_ceil(pv).unwrap(),
+            Some(u16::MAX)
+        );
+
+        // Past 16383 characters the bound is the one a string without
+        // `maxLength` has
+        assert_eq!(
+            string_sizes(None, Some(20000), None)
+                .saturating_middle_byte_size_ceil(pv)
+                .unwrap(),
+            string_sizes(None, None, None)
+                .middle_byte_size_ceil(pv)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn should_size_bounds_that_fit_as_the_non_saturating_methods_do() {
+        let pv = PlatformVersion::latest();
+        for property_type in [
+            string_sizes(Some(1), Some(10), None),
+            string_sizes(None, Some(16383), None),
+            string_sizes(None, None, None),
+            // `maxBytes` bounds a long string below u16::MAX
+            string_sizes(None, Some(20000), Some(100)),
+            DocumentPropertyType::U64,
+            DocumentPropertyType::Identifier,
+            DocumentPropertyType::Array(ArrayItemType::Integer),
+        ] {
+            assert_eq!(
+                property_type.saturating_min_byte_size(pv).unwrap(),
+                property_type.min_byte_size(pv).unwrap(),
+                "{property_type:?}"
+            );
+            assert_eq!(
+                property_type.saturating_max_byte_size(pv).unwrap(),
+                property_type.max_byte_size(pv).unwrap(),
+                "{property_type:?}"
+            );
+            assert_eq!(
+                property_type.saturating_middle_byte_size_ceil(pv).unwrap(),
+                property_type.middle_byte_size_ceil(pv).unwrap(),
+                "{property_type:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_saturate_the_byte_bounds_of_a_typed_array_of_long_strings() {
+        let pv = PlatformVersion::latest();
+        let typed_array = DocumentPropertyType::TypedArray(TypedArrayProperty {
+            item_type: Box::new(string_sizes(None, Some(20000), None)),
+            item_constraints: Default::default(),
+            min_items: None,
+            max_items: 2,
+            unique_items: false,
+        });
+        assert!(matches!(
+            typed_array.max_byte_size(pv),
+            Err(ProtocolError::Overflow(_))
+        ));
+        // No element at least: the one byte count
+        assert_eq!(typed_array.saturating_min_byte_size(pv).unwrap(), Some(1));
+        assert_eq!(
+            typed_array.saturating_max_byte_size(pv).unwrap(),
+            Some(u16::MAX)
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -7200,6 +7409,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         inner_fields.insert(
@@ -7211,6 +7421,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7265,6 +7476,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7287,6 +7499,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         inner_fields.insert(
@@ -7298,6 +7511,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7735,6 +7949,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7772,6 +7987,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         sub_fields.insert(
@@ -7783,6 +7999,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -7803,6 +8020,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         sub_fields.insert(
@@ -7814,6 +8032,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -8109,6 +8328,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         sub_fields.insert(
@@ -8120,6 +8340,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8183,6 +8404,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         sub_fields.insert(
@@ -8194,6 +8416,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8283,6 +8506,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         sub_fields.insert(
@@ -8294,6 +8518,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8565,6 +8790,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8596,6 +8822,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         // Second field is required
@@ -8608,6 +8835,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8728,6 +8956,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8748,6 +8977,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -9057,6 +9287,7 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -9323,6 +9554,7 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            generated_from: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
@@ -9346,6 +9578,7 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            generated_from: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");

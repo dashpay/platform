@@ -5,7 +5,8 @@
 //! included, keeps the generic windows and fund.
 
 use crate::execution::validation::state_transition::state_transitions::tests::{
-    create_dpns_identity_name_contest, setup_identity, setup_masternode_voting_identity,
+    create_dpns_identity_name_contest, fill_contest_with_bare_contenders, setup_identity,
+    setup_masternode_voting_identity,
 };
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -36,6 +37,7 @@ use dpp::platform_value::{Bytes32, Identifier, Value};
 use dpp::prelude::IdentityNonce;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
@@ -201,12 +203,14 @@ fn charter_poll(target: Identifier) -> ContestedDocumentResourceVotePoll {
 }
 
 /// A serialized create of a `document_type_name` document of the charter contract holding
-/// `properties`, signed by `applicant`, and the id of the document it creates.
+/// `properties`, signed by `applicant`, and the id of the document it creates. An application
+/// states `contest_fund` as the most it pays into its election, the moderation fund when `None`.
 async fn create_transition(
     charters: &DataContract,
     applicant: &mut Applicant,
     document_type_name: &str,
     properties: BTreeMap<String, Value>,
+    contest_fund: Option<Credits>,
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> (Vec<u8>, Identifier) {
@@ -237,7 +241,10 @@ async fn create_transition(
         None,
         signer,
         platform_version,
-        None,
+        Some(StateTransitionCreationOptions {
+            contest_fund,
+            ..Default::default()
+        }),
     )
     .await
     .expect("expected to create the batch transition");
@@ -347,6 +354,7 @@ async fn propose(
                 ]),
             ),
         ]),
+        None,
         rng,
         platform_version,
     )
@@ -386,6 +394,29 @@ async fn application_naming_the_target_as(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> Vec<u8> {
+    application_stating(
+        charters,
+        applicant,
+        target,
+        proposal_id,
+        None,
+        rng,
+        platform_version,
+    )
+    .await
+}
+
+/// [`application_naming_the_target_as`] stating `contest_fund` as the most it pays into the
+/// election, the moderation fund when `None`.
+async fn application_stating(
+    charters: &DataContract,
+    applicant: &mut Applicant,
+    target: Value,
+    proposal_id: Identifier,
+    contest_fund: Option<Credits>,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> Vec<u8> {
     create_transition(
         charters,
         applicant,
@@ -398,6 +429,7 @@ async fn application_naming_the_target_as(
             ),
             (property_names::MEMBERS.to_string(), Value::Array(vec![])),
         ]),
+        contest_fund,
         rng,
         platform_version,
     )
@@ -761,6 +793,93 @@ async fn should_move_the_end_to_the_join_and_vote_windows_when_a_second_applican
     assert!(end_dates(&platform, platform_version).is_empty());
 }
 
+/// Off mainnet a target may declare windows of 0: only the applicants of the block that opened
+/// the election get in, a second one moves no end, nobody has time to vote, and the next block
+/// awards the seat, the tie going to the earliest application (by document id within a block).
+#[tokio::test]
+async fn should_award_an_election_with_windows_of_zero_in_the_next_block() {
+    let (mut platform, platform_version, charters, mut rng) = setup();
+    let target = elected_target(&platform, 0xA9, 0, 0, platform_version);
+    let mut alice = applicant(&mut platform, &mut rng);
+    let mut bob = applicant(&mut platform, &mut rng);
+    let mut carol = applicant(&mut platform, &mut rng);
+    let poll = charter_poll(target);
+
+    let (start, _) = apply(
+        &platform,
+        &charters,
+        &mut alice,
+        target,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    // At the same block time, which a join window of 0 still admits
+    let (bob_start, _) = apply(
+        &platform,
+        &charters,
+        &mut bob,
+        target,
+        start - 1000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    assert_eq!(bob_start, start);
+    assert_eq!(
+        end_dates(&platform, platform_version),
+        vec![(
+            start,
+            VotePoll::ContestedDocumentResourceVotePoll(poll.clone())
+        )],
+        "the election ends at the time it opened, the second applicant moving nothing"
+    );
+
+    // A second later the join window is closed
+    let proposal_id = propose(
+        &platform,
+        &charters,
+        &mut carol,
+        target,
+        start,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let late = application(
+        &charters,
+        &mut carol,
+        target,
+        proposal_id,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let refusal = process_refused(&platform, late, start + 1000, platform_version);
+    let ConsensusError::StateError(StateError::DocumentContestNotJoinableError(error)) = refusal
+    else {
+        panic!("expected the contest not to be joinable, got {refusal:?}");
+    };
+    assert_eq!(
+        error.joinable_time(),
+        0,
+        "the refusal names the window of 0"
+    );
+
+    end_polls_at(&platform, start, 10, platform_version);
+    let ContestedDocumentVotePollStatus::Awarded(winner) =
+        status(&platform, &poll, platform_version)
+    else {
+        panic!("expected the seat to be awarded without a vote");
+    };
+    assert!(
+        winner == alice.id() || winner == bob.id(),
+        "the seat goes to an applicant of the first block"
+    );
+    assert!(end_dates(&platform, platform_version).is_empty());
+}
+
 #[tokio::test]
 async fn should_end_elections_of_targets_with_different_windows_at_different_heights() {
     let (mut platform, platform_version, charters, mut rng) = setup();
@@ -930,6 +1049,86 @@ async fn should_prefund_each_application_with_half_a_dash_and_release_the_remain
         processing_credits(&platform, platform_version) - processing_before,
         remainder,
         "what the votes left is released as processing fees"
+    );
+}
+
+/// A moderation election doubles its own fund once it holds 250 applicants: an application
+/// stating the moderation fund is refused, paid, with twice it, and one stating more joins,
+/// paying twice the moderation fund and keeping the rest
+#[tokio::test]
+async fn should_double_the_moderation_fund_once_an_election_holds_250_applicants() {
+    let (mut platform, platform_version, charters, mut rng) = setup();
+    let moderation_fund = platform_version
+        .fee_version
+        .vote_resolution_fund_fees
+        .moderation_vote_resolution_fund_required_amount;
+
+    let target = elected_target(&platform, 0xA6, ONE_DAY, ONE_DAY, platform_version);
+    let poll = charter_poll(target);
+    let mut alice = applicant(&mut platform, &mut rng);
+    let mut bob = applicant(&mut platform, &mut rng);
+
+    let (start, _) = apply(
+        &platform,
+        &charters,
+        &mut alice,
+        target,
+        10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    fill_contest_with_bare_contenders(&platform, &poll, 250, platform_version);
+    let election_fund = prefunded_balance(&platform, &poll, platform_version);
+
+    let proposal_id = propose(
+        &platform,
+        &charters,
+        &mut bob,
+        target,
+        start + 1000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let underpaid = application_stating(
+        &charters,
+        &mut bob,
+        Value::Identifier(target.to_buffer()),
+        proposal_id,
+        Some(moderation_fund),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let ConsensusError::StateError(StateError::DocumentContestNotPaidForError(error)) =
+        process_refused(&platform, underpaid, start + 2000, platform_version)
+    else {
+        panic!("expected the election not to be paid for");
+    };
+    assert_eq!(error.expected_amount(), 2 * moderation_fund);
+    assert_eq!(error.paid_amount(), moderation_fund);
+
+    let bob_before = balance_of(&platform, bob.id(), platform_version);
+    let application = application_stating(
+        &charters,
+        &mut bob,
+        Value::Identifier(target.to_buffer()),
+        proposal_id,
+        Some(3 * moderation_fund),
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    let fee = process_valid(&platform, application, start + 3000, platform_version);
+    assert_eq!(
+        bob_before - balance_of(&platform, bob.id(), platform_version),
+        2 * moderation_fund + fee.total_base_fee(),
+        "applying costs twice the moderation fund on top of the document fee"
+    );
+    assert_eq!(
+        prefunded_balance(&platform, &poll, platform_version),
+        election_fund + 2 * moderation_fund
     );
 }
 

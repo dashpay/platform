@@ -2,6 +2,10 @@ use crate::data_contract::group::{Group, GroupMemberPower};
 use crate::data_contract::GroupContractPosition;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::json_safe_fields;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::Display;
 use platform_value::Identifier;
@@ -53,10 +57,10 @@ pub struct GroupStateTransitionInfo {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for GroupStateTransitionInfo {}
+impl JsonConvertible for GroupStateTransitionInfo {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for GroupStateTransitionInfo {}
+impl ValueConvertible for GroupStateTransitionInfo {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupStateTransitionResolvedInfo {

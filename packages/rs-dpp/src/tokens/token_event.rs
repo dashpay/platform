@@ -10,6 +10,8 @@ use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
+#[cfg(feature = "serde-conversion")]
+use crate::serialization::json::safe_integer::{json_safe_option_encrypted_note, json_safe_u64};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
@@ -188,15 +190,13 @@ impl serde::Serialize for TokenEvent {
         struct SafeU64<'a>(&'a u64);
         impl<'a> serde::Serialize for SafeU64<'a> {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                crate::serialization::json::safe_integer::json_safe_u64::serialize(self.0, s)
+                json_safe_u64::serialize(self.0, s)
             }
         }
         struct SafeOptEncNote<'a>(&'a Option<(u32, u32, Vec<u8>)>);
         impl<'a> serde::Serialize for SafeOptEncNote<'a> {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                crate::serialization::json::safe_integer::json_safe_option_encrypted_note::serialize(
-                    self.0, s,
-                )
+                json_safe_option_encrypted_note::serialize(self.0, s)
             }
         }
 
