@@ -21,7 +21,15 @@ const DEFAULT_BAN_FAILED_ADDRESS: bool = true;
 pub struct RequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
-    /// Timeout for single request (soft limit).
+    /// Timeout for a single request attempt.
+    ///
+    /// It is sent to the server as the `grpc-timeout` header. On native targets
+    /// it also bounds the whole attempt on the client: an attempt still running
+    /// after `timeout + connect_timeout` fails with `DeadlineExceeded` and is
+    /// retried like any other retryable error. For unary RPCs the attempt runs
+    /// from dispatch through the response body and trailers; for streaming
+    /// RPCs it ends when the response headers arrive, so consuming the
+    /// returned stream is not bounded by it. Zero disables both limits.
     ///
     /// Note that the total maximum time of execution can exceed `(timeout + connect_timeout) * retries`
     /// as it accounts for internal processing time between retries.
@@ -88,7 +96,7 @@ impl RequestSettings {
 pub struct AppliedRequestSettings {
     /// Timeout for establishing a connection.
     pub connect_timeout: Option<Duration>,
-    /// Timeout for a request.
+    /// Timeout for a single request attempt; see [RequestSettings::timeout].
     pub timeout: Duration,
     /// Number of retries until returning the last error.
     pub retries: usize,
@@ -108,6 +116,22 @@ impl AppliedRequestSettings {
     pub fn with_ca_certificate(mut self, ca_cert: Option<Certificate>) -> Self {
         self.ca_certificate = ca_cert;
         self
+    }
+
+    /// Upper bound for one request attempt: `timeout` plus `connect_timeout`,
+    /// the bound documented on [RequestSettings::timeout]. A unary attempt
+    /// covers dispatch through the response body and trailers; a streaming
+    /// attempt ends when the response headers arrive. `None` when `timeout`
+    /// is zero, which means "no limit" (the transport then omits the
+    /// `grpc-timeout` header as well).
+    pub fn attempt_deadline(&self) -> Option<Duration> {
+        if self.timeout.is_zero() {
+            return None;
+        }
+        Some(
+            self.timeout
+                .saturating_add(self.connect_timeout.unwrap_or_default()),
+        )
     }
 
     /// Cache key fragment for the [ConnectionPool](crate::ConnectionPool),
@@ -252,6 +276,42 @@ mod tests {
         let cert = Certificate::from_pem("fake-pem-data");
         let result = applied.with_ca_certificate(Some(cert));
         assert!(result.ca_certificate.is_some());
+    }
+
+    #[test]
+    fn should_bound_attempt_by_timeout_plus_connect_timeout() {
+        let applied = RequestSettings {
+            timeout: Some(Duration::from_secs(10)),
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_eq!(applied.attempt_deadline(), Some(Duration::from_secs(13)));
+
+        let default = RequestSettings::default().finalize();
+        assert_eq!(default.attempt_deadline(), Some(Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn should_not_bound_attempt_when_timeout_is_zero() {
+        let applied = RequestSettings {
+            timeout: Some(Duration::ZERO),
+            connect_timeout: Some(Duration::from_secs(3)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_eq!(applied.attempt_deadline(), None);
+    }
+
+    #[test]
+    fn should_saturate_attempt_deadline_instead_of_overflowing() {
+        let applied = RequestSettings {
+            timeout: Some(Duration::MAX),
+            connect_timeout: Some(Duration::from_secs(1)),
+            ..RequestSettings::default()
+        }
+        .finalize();
+        assert_eq!(applied.attempt_deadline(), Some(Duration::MAX));
     }
 
     #[test]
