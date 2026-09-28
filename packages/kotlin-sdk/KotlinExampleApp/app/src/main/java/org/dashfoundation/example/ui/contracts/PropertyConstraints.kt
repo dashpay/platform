@@ -3,6 +3,7 @@ package org.dashfoundation.example.ui.contracts
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import org.dashfoundation.dashsdk.queries.DocumentPropertyConstraint
+import org.dashfoundation.dashsdk.queries.PropertyConstraintTotalRead
 import org.dashfoundation.dashsdk.queries.PropertyConstraintViolation
 
 // Screen-side glue for a document type's `propertyConstraints` rules
@@ -148,6 +149,38 @@ internal fun propertyConstraintSystemReadsText(rule: DocumentPropertyConstraint)
 internal const val PROPERTY_CONSTRAINT_SYSTEM_READS_NOTE =
     "A price update is judged against the rules reading \$updatedAt or its block heights, " +
         "and a transfer or purchase against those reading \$transferredAt or its block heights."
+
+/**
+ * The line naming the `countOf` and `sumOf` totals [rule] reads, each once:
+ * `Reads totals: countOf listing by $ownerId; sumOf price of listing by category`.
+ * `null` for a rule reading none. The SwiftExampleApp builds the same text.
+ */
+internal fun propertyConstraintTotalsText(rule: DocumentPropertyConstraint): String? =
+    rule.readsTotals
+        .map(::totalText)
+        .distinct()
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString("; ", prefix = "Reads totals: ")
+
+/**
+ * One total as [propertyConstraintTotalsText] names it: its kind, the property
+ * it sums (a `sumOf` only), its type, and the keys it filters by.
+ */
+private fun totalText(total: PropertyConstraintTotalRead): String = buildString {
+    append(total.kind.name)
+    total.property?.let { append(" $it of") }
+    append(" ${total.documentType}")
+    if (total.filter.isNotEmpty()) append(" by ${total.filter.joinToString(", ")}")
+}
+
+/**
+ * The note under a rule reading a total ([propertyConstraintTotalsText] not
+ * `null`): the check before sending reads no state, so it cannot catch the
+ * rule. The same text as the SwiftExampleApp's, for cross-platform UAT.
+ */
+internal const val PROPERTY_CONSTRAINT_TOTALS_NOTE =
+    "The platform reads these totals when the document is sent; the check before sending " +
+        "does not, so it cannot catch this rule."
 
 /** Title of the alert a broken rule raises instead of a broadcast. */
 internal const val PROPERTY_CONSTRAINT_BROKEN_TITLE = "Not sent: a property constraint is broken"

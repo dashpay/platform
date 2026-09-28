@@ -880,7 +880,8 @@ impl DataContractWasm {
     /// document's stored creation and transfer times when it has them). A
     /// rule reading a block height the write records is not judged, since the
     /// height is unknown until the block, and neither is a rule reading a
-    /// `countOf` or `sumOf` total, which only the platform reads from state.
+    /// `countOf` or `sumOf` total, which only the platform reads from state
+    /// (a rule's `readsTotals` lists them).
     /// `undefined` when it meets every rule of its document type.
     ///
     /// A pre-check, so an app can refuse a document before paying for a

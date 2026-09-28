@@ -8,6 +8,7 @@ import kotlinx.serialization.json.putJsonObject
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.queries.DocumentPropertyConstraint
 import org.dashfoundation.dashsdk.queries.PropertyConstraintRead
+import org.dashfoundation.dashsdk.queries.PropertyConstraintTotalRead
 import org.dashfoundation.dashsdk.queries.PropertyConstraintViolation
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -246,6 +247,61 @@ class PropertyConstraintsTest {
     @Test
     fun `should show no system line for a rule reading none`() {
         assertNull(propertyConstraintSystemReadsText(rule))
+    }
+
+    /** A rule reading a count by owner twice, a whole-type count and a sum by category. */
+    private val totalledRule = DocumentPropertyConstraint(
+        name = "withinLimits",
+        ruleJson = "{}",
+        reads = emptyList(),
+        readsOwner = true,
+        readsTotals = listOf(
+            PropertyConstraintTotalRead(
+                PropertyConstraintTotalRead.Kind.CountOf,
+                "listing",
+                null,
+                listOf("${'$'}ownerId"),
+            ),
+            PropertyConstraintTotalRead(
+                PropertyConstraintTotalRead.Kind.SumOf,
+                "listing",
+                "price",
+                listOf("category", "status"),
+            ),
+            PropertyConstraintTotalRead(
+                PropertyConstraintTotalRead.Kind.CountOf,
+                "listing",
+                null,
+                listOf("${'$'}ownerId"),
+            ),
+            PropertyConstraintTotalRead(
+                PropertyConstraintTotalRead.Kind.CountOf,
+                "listing",
+                null,
+                emptyList(),
+            ),
+        ),
+    )
+
+    /** Each total once, its filter keys after "by"; the SwiftExampleApp builds the same text. */
+    @Test
+    fun `should list each total a rule reads once`() {
+        assertEquals(
+            "Reads totals: countOf listing by ${'$'}ownerId; sumOf price of listing by " +
+                "category, status; countOf listing",
+            propertyConstraintTotalsText(totalledRule),
+        )
+        assertNull(propertyConstraintTotalsText(timedRule))
+    }
+
+    /** The note under a rule reading a total; the SwiftExampleApp shows the same text. */
+    @Test
+    fun `should say the check before sending cannot catch a rule reading a total`() {
+        assertEquals(
+            "The platform reads these totals when the document is sent; the check before " +
+                "sending does not, so it cannot catch this rule.",
+            PROPERTY_CONSTRAINT_TOTALS_NOTE,
+        )
     }
 
     /** The note under a rule reading a system value; the SwiftExampleApp shows the same text. */
