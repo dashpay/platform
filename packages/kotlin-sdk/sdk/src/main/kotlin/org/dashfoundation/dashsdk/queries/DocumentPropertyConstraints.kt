@@ -32,13 +32,22 @@ data class DocumentPropertyConstraint(
     /**
      * The rule exactly as the document type's schema declares it, as compact
      * JSON text with sorted keys (every operator object has a single key, so
-     * sorting changes nothing a reader would notice).
+     * sorting changes nothing a reader would notice). Among its operators:
+     * sizes (`{ "length": path }`, `{ "byteLength": path }`,
+     * `{ "count": path }`), system times and heights as bare operands
+     * (`"$createdAt"`), `{ "contains": [arrayPath, value] }`,
+     * `{ "startsWith": [a, b] }`, `{ "endsWith": [a, b] }`,
+     * `{ "notIn": [operand, [values]] }`, `{ "min": [a, b, ...] }`,
+     * `{ "max": [a, b, ...] }`, `{ "abs": a }`, `{ "ifThen": [if, then] }`
+     * and `{ "ifThenElse": [if, then, else] }`.
      */
     val ruleJson: String,
     /**
      * Every property the rule reads, in declared order, a property read twice
-     * listed twice. `$ownerId` and the system times and heights are no
-     * properties and are not listed: see [readsOwner] and [readsSystem].
+     * listed twice, every branch of an `ifThen` or `ifThenElse` included,
+     * whichever one a document takes. `$ownerId` and the system times and
+     * heights are no properties and are not listed: see [readsOwner] and
+     * [readsSystem], which cover every branch too.
      */
     val reads: List<PropertyConstraintRead>,
     /**

@@ -30,8 +30,8 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
               { "kind": "presence", "path": "closedAt" }
             ],
             "rule": {
-              "anyOf": [
-                { "notEqual": ["status", { "const": "closed" }] },
+              "ifThen": [
+                { "equal": ["status", { "const": "closed" }] },
                 { "present": "closedAt" }
               ]
             }
@@ -179,12 +179,57 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
 
         XCTAssertEqual(
             rules[0].ruleJSON,
-            #"{"anyOf":[{"notEqual":["status",{"const":"closed"}]},{"present":"closedAt"}]}"#
+            #"{"ifThen":[{"equal":["status",{"const":"closed"}]},{"present":"closedAt"}]}"#
         )
         XCTAssertEqual(rules[1].ruleJSON, #"{"greaterThanOrEqual":[{"divide":["price","fee"]},1]}"#)
         XCTAssertEqual(
             rules[2].ruleJSON,
             #"{"anyOf":[{"absent":"sellerId"},{"equal":["sellerId","$ownerId"]}]}"#
+        )
+    }
+
+    /// An `ifThenElse` lists what every branch reads, whichever one a document
+    /// takes, the owner and the system times included (rs-sdk-ffi's
+    /// `should_report_every_branch_of_an_if_then_else_and_judge_the_one_taken`).
+    func testIfThenElseReadsEveryBranch() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: """
+            [
+              {
+                "name": "openEndedSoldByOwner",
+                "rule": {
+                  "ifThenElse": [
+                    { "absent": "endsAt" },
+                    { "equal": ["sellerId", "$ownerId"] },
+                    { "greaterThan": ["endsAt", "$createdAt"] }
+                  ]
+                },
+                "reads": [
+                  { "path": "endsAt", "kind": "presence" },
+                  { "path": "sellerId", "kind": "identifier" },
+                  { "path": "endsAt", "kind": "value" }
+                ],
+                "readsOwner": true,
+                "readsSystem": ["$createdAt"]
+              }
+            ]
+            """)
+
+        XCTAssertEqual(rules.count, 1)
+        let rule = try XCTUnwrap(rules.first)
+        XCTAssertEqual(rule.name, "openEndedSoldByOwner")
+        XCTAssertEqual(
+            rule.reads,
+            [
+                PropertyConstraintRead(path: "endsAt", kind: .presence),
+                PropertyConstraintRead(path: "sellerId", kind: .identifier),
+                PropertyConstraintRead(path: "endsAt", kind: .value)
+            ]
+        )
+        XCTAssertTrue(rule.readsOwner)
+        XCTAssertEqual(rule.readsSystem, ["$createdAt"])
+        XCTAssertEqual(
+            rule.ruleJSON,
+            #"{"ifThenElse":[{"absent":"endsAt"},{"equal":["sellerId","$ownerId"]},{"greaterThan":["endsAt","$createdAt"]}]}"#
         )
     }
 

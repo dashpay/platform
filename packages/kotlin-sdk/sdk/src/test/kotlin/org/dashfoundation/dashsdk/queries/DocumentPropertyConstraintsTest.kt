@@ -38,8 +38,8 @@ class DocumentPropertyConstraintsTest {
             ],
             "readsSystem": [],
             "rule": {
-              "anyOf": [
-                { "notEqual": ["status", { "const": "closed" }] },
+              "ifThen": [
+                { "equal": ["status", { "const": "closed" }] },
                 { "present": "closedAt" }
               ]
             }
@@ -212,6 +212,57 @@ class DocumentPropertyConstraintsTest {
         assertEquals(listOf(false, false, false), rules.map { it.readsOwner })
     }
 
+    /**
+     * An `ifThenElse` reads what every branch reads, whichever a document
+     * takes: the descriptor rs-sdk-ffi's
+     * `should_report_every_branch_of_an_if_then_else_and_judge_the_one_taken`
+     * reports, the owner read in the then branch and the creation time in the
+     * else branch.
+     */
+    @Test
+    fun `should decode what every branch of an ifThenElse reads`() {
+        val rule = DocumentPropertyConstraint.listFromJson(
+            """
+            [
+              {
+                "name": "openEndedSoldByOwner",
+                "readsOwner": true,
+                "reads": [
+                  { "kind": "presence", "path": "endsAt" },
+                  { "kind": "identifier", "path": "sellerId" },
+                  { "kind": "value", "path": "endsAt" }
+                ],
+                "readsSystem": ["${'$'}createdAt"],
+                "rule": {
+                  "ifThenElse": [
+                    { "absent": "endsAt" },
+                    { "equal": ["sellerId", "${'$'}ownerId"] },
+                    { "greaterThan": ["endsAt", "${'$'}createdAt"] }
+                  ]
+                }
+              }
+            ]
+            """.trimIndent(),
+        ).single()
+
+        assertEquals("openEndedSoldByOwner", rule.name)
+        assertEquals(
+            listOf(
+                PropertyConstraintRead("endsAt", PropertyConstraintRead.Kind.Presence),
+                PropertyConstraintRead("sellerId", PropertyConstraintRead.Kind.Identifier),
+                PropertyConstraintRead("endsAt", PropertyConstraintRead.Kind.Value),
+            ),
+            rule.reads,
+        )
+        assertTrue(rule.readsOwner)
+        assertEquals(listOf("${'$'}createdAt"), rule.readsSystem)
+        assertEquals(
+            """{"ifThenElse":[{"absent":"endsAt"},{"equal":["sellerId","${'$'}ownerId"]},""" +
+                """{"greaterThan":["endsAt","${'$'}createdAt"]}]}""",
+            rule.ruleJson,
+        )
+    }
+
     /** A native library built before `readsSystem` leaves the key out. */
     @Test
     fun `should read a rule without readsSystem as reading no system value`() {
@@ -235,7 +286,7 @@ class DocumentPropertyConstraintsTest {
         val rules = DocumentPropertyConstraint.listFromJson(rulesJson)
 
         assertEquals(
-            """{"anyOf":[{"notEqual":["status",{"const":"closed"}]},{"present":"closedAt"}]}""",
+            """{"ifThen":[{"equal":["status",{"const":"closed"}]},{"present":"closedAt"}]}""",
             rules[0].ruleJson,
         )
         assertEquals("""{"greaterThanOrEqual":[{"divide":["price","fee"]},1]}""", rules[1].ruleJson)
