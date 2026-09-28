@@ -1,0 +1,28 @@
+name: Mac ARM64 full Rust proof with bounded doctests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/mac-arm64-doctest-proof-20260928]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  statuses: read
+
+jobs:
+  full-rust:
+    name: Full ARM64 Rust proof (${{ matrix.replica }})
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [one, two]
+    uses: ./.github/workflows/tests-rs-workspace.yml
+    with:
+      runner-architecture: ARM64
+      validate-arm64-image: true
+      doctests-changed: true
+      shielded-changed: true
+      coverage: false
+    secrets: inherit
