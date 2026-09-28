@@ -121,6 +121,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
         // stop, so a future change to the v1 arm doesn't need to
         // re-prove v0 ≡ v1 for every pre-v12 corner case.
         primary_key_tree_type: 0,
+        fetch_property_constraint_aggregate: 0,
         expiration: DriveDocumentExpirationMethodVersions {
             insert_document_ttl_trees: 0,
             add_document_expiration_operations: 0,

@@ -178,6 +178,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
         // Unchanged from V3 — see V3's comment for the v12-gated
         // count/sum composition rationale.
         primary_key_tree_type: 1,
+        fetch_property_constraint_aggregate: 0,
         expiration: DriveDocumentExpirationMethodVersions {
             insert_document_ttl_trees: 0,
             add_document_expiration_operations: 0,

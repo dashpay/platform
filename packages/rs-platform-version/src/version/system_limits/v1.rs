@@ -10,6 +10,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_reference_expression_depth: 4,
     max_property_constraints: 16,
     max_property_constraint_nodes: 32,
+    max_property_constraint_aggregates: 4,
     max_state_transition_size: 20480, //20 KiB
     // TODO: this is currently capped at 1 because the batch state-transition
     // pipeline has known correctness issues with multi-transition batches:

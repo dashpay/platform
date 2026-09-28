@@ -417,6 +417,67 @@ describe('DataContract: propertyConstraints (v14)', () => {
         .to.deep.include({ rule: 'termsPositive', violation: 'NotMet' });
     });
 
+    it('should report what a countOf or sumOf reads, and leave it to consensus', () => {
+      const rules = {
+        atMostTwoPerOwner: {
+          lessThanOrEqual: [{ countOf: ['listing', { $ownerId: '$ownerId' }] }, 2],
+        },
+        categoryBudget: {
+          lessThanOrEqual: [{ sumOf: ['listing', 'price', { category: 'category' }] }, 250],
+        },
+      };
+      const contract = buildContract({
+        listing: {
+          type: 'object',
+          properties: {
+            price: {
+              type: 'integer', minimum: 0, maximum: 1000000000, position: 0,
+            },
+            category: {
+              type: 'integer', minimum: 0, maximum: 100, position: 1,
+            },
+          },
+          required: ['price', 'category'],
+          indices: [
+            { name: 'byOwner', properties: [{ $ownerId: 'asc' }], countable: 'countable' },
+            { name: 'byCategory', properties: [{ category: 'asc' }], summable: 'price' },
+          ],
+          additionalProperties: false,
+          propertyConstraints: rules,
+        },
+      });
+
+      // The count by owner depends on the owner, the category total on a
+      // property of the document written
+      expect(contract.documentTypePropertyConstraints('listing')).to.deep.equal([
+        {
+          name: 'atMostTwoPerOwner',
+          rule: rules.atMostTwoPerOwner,
+          reads: [],
+          readsOwner: true,
+          readsSystem: [],
+        },
+        {
+          name: 'categoryBudget',
+          rule: rules.categoryBudget,
+          reads: [{ path: 'category', kind: 'value' }],
+          readsOwner: false,
+          readsSystem: [],
+        },
+      ]);
+
+      // A price far past the budget: the total is read from state, which the
+      // pre-check does not do, so neither rule is judged
+      const listing = new wasm.Document({
+        properties: { price: 999999999, category: 1 },
+        documentTypeName: 'listing',
+        dataContractId: contract.id,
+        ownerId,
+        revision: BigInt(1),
+      });
+      expect(contract.checkDocumentPropertyConstraints(listing)).to.equal(undefined);
+    });
+
     it('should report integer literals past Number.MAX_SAFE_INTEGER exactly, as bigint', () => {
       const big = 9007199254740993n; // 2 ** 53 + 1, which a number rounds
       const rules = {

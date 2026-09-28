@@ -47,8 +47,8 @@ pub struct SystemLimits {
     pub max_reference_expression_depth: u16,
     /// Maximum number of named rules one document type's `propertyConstraints` may
     /// declare. Every rule is evaluated on each create and replace of a document of the
-    /// type, and no rule reads state, so this and `max_property_constraint_nodes` are what
-    /// bound the arithmetic one document write causes. Refused under full validation only,
+    /// type, so this and `max_property_constraint_nodes` are what bound the arithmetic one
+    /// document write causes, and `max_property_constraint_aggregates` the state it reads. Refused under full validation only,
     /// like `max_typed_array_items`. Read by document type parser generation 3 (protocol
     /// version 14), the only generation that parses `propertyConstraints`, and never
     /// reached before.
@@ -63,6 +63,14 @@ pub struct SystemLimits {
     /// Refused under full validation only, like `max_property_constraints`. Read by document
     /// type parser generation 3 (protocol version 14) and never reached before.
     pub max_property_constraint_nodes: u16,
+    /// Maximum number of distinct `countOf` and `sumOf` totals the `propertyConstraints`
+    /// rules of one document type read. Each is a billed read of a count or sum tree on
+    /// every create or replace of a document of the type (and on a transfer or purchase
+    /// when it depends on the owner), so this bounds the state one document write reads for
+    /// its rules. A total two rules read alike counts once. Refused under full validation
+    /// only, like `max_property_constraints`. Read by document type parser generation 3
+    /// (protocol version 14) and never reached before.
+    pub max_property_constraint_aggregates: u16,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config

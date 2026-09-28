@@ -2197,7 +2197,7 @@ fn should_refuse_a_malformed_size_operand() {
         (
             platform_value!({ "size": "title" }),
             "names \"size\", which is not one of add, subtract, multiply, divide, modulo, \
-             power, min, max, abs, ifAbsent, length, byteLength or count",
+             power, min, max, abs, ifAbsent, length, byteLength, count, countOf or sumOf",
         ),
     ] {
         expect_refusal(
@@ -2432,6 +2432,7 @@ fn should_read_the_system_values_the_rule_is_judged_with() {
         created_at_core_block_height: Some(7),
         updated_at_core_block_height: Some(8),
         transferred_at_core_block_height: Some(9),
+        aggregates: BTreeMap::new(),
     };
     for (index, property) in SystemProperty::ALL.into_iter().enumerate() {
         let expected = i128::try_from(index + 1).expect("small");
@@ -3380,4 +3381,219 @@ fn should_negate_an_in_with_not_in() {
         platform_value!({ "rule": { "notIn": ["fee", [1, 1]] } }),
         "at notIn[1]",
     );
+}
+
+/// `countOf` and `sumOf` parse to an [`AggregateRead`]: the type they total,
+/// what a `sumOf` totals, and their filter, each key bound to a property of the
+/// document (read as its kind compares), `$ownerId`, an integer or a constant.
+/// The document's own type is marked, and a filter costs a node per key.
+#[test]
+fn should_parse_count_of_and_sum_of_with_their_filters() {
+    let per_owner = parse_rule_value(platform_value!({
+        "lessThanOrEqual": [{ "countOf": ["order", { "$ownerId": "$ownerId" }] }, 10]
+    }));
+    let owner_read = AggregateRead {
+        kind: AggregateKind::Count,
+        document_type: "order".to_string(),
+        filter: BTreeMap::from([(OWNER_ID.to_string(), AggregateBinding::Owner)]),
+        of_own_type: true,
+    };
+    assert_eq!(per_owner.aggregate_reads(), [&owner_read]);
+    assert_eq!(per_owner.node_count(), 1 + 2 + 1);
+    assert!(per_owner.property_reads().is_empty());
+    assert!(per_owner.reads_owner());
+    assert!(per_owner.reads_change(SystemChange::Transfer));
+    assert!(!per_owner.reads_change(SystemChange::PriceUpdate));
+
+    let pledged = parse_rule_value(platform_value!({
+        "lessThanOrEqual": [
+            {
+                "sumOf": [
+                    "pledge",
+                    "amount",
+                    { "campaignId": "sellerId", "status": { "const": "open" }, "tier": 2 }
+                ]
+            },
+            "deposit"
+        ]
+    }));
+    assert_eq!(
+        pledged.aggregate_reads(),
+        [&AggregateRead {
+            kind: AggregateKind::Sum {
+                property: "amount".to_string()
+            },
+            document_type: "pledge".to_string(),
+            filter: BTreeMap::from([
+                (
+                    "campaignId".to_string(),
+                    AggregateBinding::Property {
+                        path: "sellerId".to_string(),
+                        kind: Some(EqualityKind::Identifier),
+                    }
+                ),
+                (
+                    "status".to_string(),
+                    AggregateBinding::Constant("open".to_string())
+                ),
+                ("tier".to_string(), AggregateBinding::Integer(2)),
+            ]),
+            of_own_type: false,
+        }]
+    );
+    assert_eq!(pledged.node_count(), 1 + 4 + 1);
+    assert_eq!(
+        pledged.property_reads(),
+        [
+            ("sellerId", PropertyRead::Identifier),
+            ("deposit", PropertyRead::Value)
+        ]
+    );
+    assert!(!pledged.reads_owner());
+
+    // A total over a whole type reads no property, but is no constant either
+    let listed = parse_rule_value(platform_value!({
+        "greaterThan": [{ "countOf": ["listing"] }, 0]
+    }));
+    assert_eq!(listed.node_count(), 3);
+    assert_eq!(listed.aggregate_reads()[0].filter, BTreeMap::new());
+    assert!(!listed.reads_owner());
+
+    // The owner matters when a binding reads it, or when the type is the
+    // writer's own and the document counts by its owner
+    for (rule, reads_owner) in [
+        (
+            platform_value!({ "countOf": ["listing", { "sellerId": "$ownerId" }] }),
+            true,
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "$ownerId": "sellerId" }] }),
+            false,
+        ),
+        (
+            platform_value!({ "countOf": ["order", { "$ownerId": "sellerId" }] }),
+            true,
+        ),
+        (
+            platform_value!({ "countOf": ["order", { "status": "status" }] }),
+            false,
+        ),
+    ] {
+        let parsed = parse_rule_value(platform_value!({ "lessThan": [rule.clone(), 5] }));
+        assert_eq!(parsed.reads_owner(), reads_owner, "{rule:?}");
+    }
+}
+
+#[test]
+fn should_refuse_a_malformed_aggregate() {
+    for (operand, needle) in [
+        (
+            platform_value!({ "countOf": "listing" }),
+            "at lessThan[0].countOf must list the document type to count",
+        ),
+        (
+            platform_value!({ "countOf": [] }),
+            "must list the document type to count",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": 1 }, 2] }),
+            "must list the document type to count",
+        ),
+        (
+            platform_value!({ "sumOf": ["pledge"] }),
+            "at lessThan[0].sumOf must list the document type, the integer property of it to \
+             total",
+        ),
+        (
+            platform_value!({ "countOf": [7] }),
+            "at lessThan[0].countOf must name a document type first",
+        ),
+        (
+            platform_value!({ "countOf": [""] }),
+            "must name a document type first",
+        ),
+        (
+            platform_value!({ "sumOf": ["pledge", 3] }),
+            "at lessThan[0].sumOf must name the property to total second",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", {}] }),
+            "at lessThan[0].countOf[1] must match its documents by one or more keys",
+        ),
+        (
+            platform_value!({ "sumOf": ["pledge", "amount", [1]] }),
+            "at lessThan[0].sumOf[2] must match its documents by one or more keys",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "$createdAt": 1 }] }),
+            "matches by $createdAt, but the one system value a key names is $ownerId",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": "$createdAt" }] }),
+            "at lessThan[0].countOf[1].a takes $createdAt, but the one system value a key takes \
+             is $ownerId",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": true }] }),
+            "at lessThan[0].countOf[1].a must be a property path of the document, $ownerId, an \
+             integer or a { \"const\": ... }",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": { "const": 3 } }] }),
+            "must be a property path of the document",
+        ),
+        (
+            platform_value!({ "countOf": ["listing", { "a": 1.5 }] }),
+            "at lessThan[0].countOf[1].a holds 1.5, which is not an integer",
+        ),
+    ] {
+        expect_refusal(
+            platform_value!({ "rule": { "lessThan": [operand, 10] } }),
+            needle,
+        );
+    }
+}
+
+/// An aggregate takes its value in the system values: consensus gives each one
+/// a rule reads, and a rule reading one it is not given is not judged, as a
+/// client, which reads no state, gives none.
+#[test]
+fn should_read_an_aggregate_from_the_system_values_and_skip_a_rule_not_given_one() {
+    let rule = parse_rule_value(platform_value!({
+        "anyOf": [
+            { "greaterThan": ["price", 1000] },
+            { "lessThanOrEqual": [{ "countOf": ["order", { "$ownerId": "$ownerId" }] }, 10] }
+        ]
+    }));
+    let read = rule.aggregate_reads()[0].clone();
+    let cheap = data(&[("price", Value::U64(5))]);
+    let with_total = |total: i128| DocumentSystemValues {
+        aggregates: BTreeMap::from([(read.clone(), total)]),
+        ..DocumentSystemValues::default()
+    };
+
+    assert_eq!(
+        rule.violation(&cheap, &DocumentSystemValues::default()),
+        None
+    );
+    assert_eq!(rule.violation(&cheap, &with_total(10)), None);
+    assert_eq!(
+        rule.violation(&cheap, &with_total(11)),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    // The first condition holds, so the total is never compared
+    let dear = data(&[("price", Value::U64(5000))]);
+    assert_eq!(rule.violation(&dear, &with_total(11)), None);
+    // A total given for another read leaves this rule unjudged
+    let other = DocumentSystemValues {
+        aggregates: BTreeMap::from([(
+            AggregateRead {
+                document_type: "listing".to_string(),
+                ..read.clone()
+            },
+            99,
+        )]),
+        ..DocumentSystemValues::default()
+    };
+    assert_eq!(rule.violation(&cheap, &other), None);
 }

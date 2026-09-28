@@ -1,8 +1,12 @@
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraints, AffixPosition, ElementKind, EqualityKind, PropertyRead,
+    parse_property_constraints, AffixPosition, AggregateBinding, AggregateKind, ElementKind,
+    EqualityKind, PropertyConstraint, PropertyRead,
 };
 use crate::data_contract::document_type::reference_lookup::{
     MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
@@ -22,13 +26,14 @@ use crate::data_contract::document_type::{
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
-use crate::document::property_names::ID;
+use crate::document::property_names::{ID, OWNER_ID};
 use crate::identity::Purpose;
 use crate::util::json_schema::resolve_uri;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::ProtocolError;
 use indexmap::IndexMap;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
@@ -2217,6 +2222,40 @@ fn apply_property_constraints_v0(
                 )));
             }
         }
+        // Which type an aggregate totals, and by which of its keys, is checked once
+        // every document type of the contract is parsed
+        for read in constraint.aggregate_reads() {
+            let operator = read.wire_name();
+            // Nor a total read from state, which its delete is not given
+            if document_type.index_only {
+                return Err(structure_error(format!(
+                    "rule \"{name}\" reads a {operator}, which a delete of an indexOnly \
+                     document is not given"
+                )));
+            }
+            // The value a key is matched by is always there, so that every write reads
+            // the total of the documents matching it: a property the document could leave
+            // out, or whose enclosing object it could, would match nothing
+            for binding in read.filter.values() {
+                let AggregateBinding::Property { path, .. } = binding else {
+                    continue;
+                };
+                let mut prefix = String::new();
+                for segment in path.split('.') {
+                    if !prefix.is_empty() {
+                        prefix.push('.');
+                    }
+                    prefix.push_str(segment);
+                    if !document_type.required_fields.contains(&prefix) {
+                        return Err(structure_error(format!(
+                            "rule \"{name}\" matches a {operator} by \"{path}\", but the \
+                             document type does not require \"{prefix}\": a value a \
+                             {operator} matches by must always be there, so list it in required"
+                        )));
+                    }
+                }
+            }
+        }
         // A constant or a default a string property's `enum` does not list is a
         // typo: the property could never hold it
         for (path, constant) in constraint.text_constants() {
@@ -2262,6 +2301,18 @@ fn apply_property_constraints_v0(
                 constraints.len()
             )));
         }
+        let max_aggregates = limits.max_property_constraint_aggregates;
+        let aggregates = constraints
+            .values()
+            .flat_map(PropertyConstraint::aggregate_reads)
+            .collect::<BTreeSet<_>>()
+            .len();
+        if aggregates > usize::from(max_aggregates) {
+            return Err(structure_error(format!(
+                "reads {aggregates} distinct countOf and sumOf totals, above the maximum of \
+                 {max_aggregates}"
+            )));
+        }
         let max_nodes = limits.max_property_constraint_nodes;
         for (name, constraint) in &constraints {
             let nodes = constraint.node_count();
@@ -2279,6 +2330,212 @@ fn apply_property_constraints_v0(
     }
 
     document_type.property_constraints = constraints;
+    Ok(())
+}
+
+/// How the key of an aggregate's filter, and the value it is matched against,
+/// compare.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AggregateKeyKind {
+    Integer,
+    Text,
+    Identifier,
+}
+
+impl AggregateKeyKind {
+    /// How a property of `property_type` compares as a key or a bound value:
+    /// `None` for one that cannot (a boolean, a byte array, an object, ...).
+    fn of(property_type: &DocumentPropertyType) -> Option<Self> {
+        match property_type {
+            DocumentPropertyType::String(_) => Some(AggregateKeyKind::Text),
+            property_type if property_type.is_identifier() => Some(AggregateKeyKind::Identifier),
+            property_type
+                if property_type.is_integer()
+                    || matches!(
+                        property_type,
+                        DocumentPropertyType::U128 | DocumentPropertyType::I128
+                    ) =>
+            {
+                Some(AggregateKeyKind::Integer)
+            }
+            _ => None,
+        }
+    }
+
+    fn describe(self) -> &'static str {
+        match self {
+            AggregateKeyKind::Integer => "an integer",
+            AggregateKeyKind::Text => "a string",
+            AggregateKeyKind::Identifier => "an identifier",
+        }
+    }
+}
+
+/// Checks every `countOf` and `sumOf` the `propertyConstraints` rules of
+/// `document_types`, one contract's, read, once all of them are parsed: the
+/// type it totals is one of them, and not an indexOnly one; a key of its filter
+/// is `$ownerId` or an integer, string or identifier property of that type,
+/// and the value matched against it is of the same kind: a property of the
+/// declaring type, `$ownerId`, an integer, a string the key's `enum` lists, or
+/// a base58 identifier; and a tree of that type keeps the total
+/// ([`AggregateRead::whole_type_kept`], [`AggregateRead::answering_index`]),
+/// so that a rule never reads a total a count or sum tree does not keep.
+/// Registration only: the index and property settings it relies on do not
+/// change on a contract update.
+pub(in crate::data_contract::document_type::class_methods) fn validate_property_constraint_aggregates(
+    document_types: &BTreeMap<String, DocumentType>,
+) -> Result<(), DataContractError> {
+    for (type_name, document_type) in document_types {
+        let declaring = document_type.as_ref();
+        for (rule, constraint) in declaring.property_constraints() {
+            let error = |message: String| {
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{type_name}\" propertyConstraints rule \"{rule}\" {message}"
+                ))
+            };
+            for read in constraint.aggregate_reads() {
+                let counted_name = &read.document_type;
+                let totals = match &read.kind {
+                    AggregateKind::Count => format!("counts \"{counted_name}\""),
+                    AggregateKind::Sum { property } => {
+                        format!("totals \"{property}\" of \"{counted_name}\"")
+                    }
+                };
+                let Some(counted) = document_types.get(counted_name) else {
+                    return Err(error(format!(
+                        "{totals}, which is no document type of this contract"
+                    )));
+                };
+                let counted = counted.as_ref();
+                if counted.index_only() {
+                    return Err(error(format!(
+                        "{totals}, an indexOnly type, whose rows a countOf or sumOf does not \
+                         total"
+                    )));
+                }
+                if read.filter.is_empty() {
+                    if !read.whole_type_kept(counted) {
+                        return Err(error(match &read.kind {
+                            AggregateKind::Count => format!(
+                                "counts every \"{counted_name}\" document, which needs \
+                                 documentsCountable on \"{counted_name}\""
+                            ),
+                            AggregateKind::Sum { property } => format!(
+                                "totals \"{property}\" over every \"{counted_name}\" document, \
+                                 which needs documentsSummable: \"{property}\" on \
+                                 \"{counted_name}\""
+                            ),
+                        }));
+                    }
+                    continue;
+                }
+                for (key, binding) in &read.filter {
+                    let key_kind = if key == OWNER_ID {
+                        AggregateKeyKind::Identifier
+                    } else {
+                        let Some(property) = counted.flattened_properties().get(key) else {
+                            return Err(error(format!(
+                                "{totals} by \"{key}\", which is not a property of \
+                                 \"{counted_name}\" (a nested one is named by its dotted path)"
+                            )));
+                        };
+                        let Some(kind) = AggregateKeyKind::of(&property.property_type) else {
+                            return Err(error(format!(
+                                "{totals} by \"{key}\", which has type {}: a key is an integer, \
+                                 string or identifier property, or $ownerId",
+                                property.property_type.name()
+                            )));
+                        };
+                        kind
+                    };
+                    let (bound, bound_kind) = match binding {
+                        AggregateBinding::Owner => {
+                            (OWNER_ID.to_string(), AggregateKeyKind::Identifier)
+                        }
+                        AggregateBinding::Integer(integer) => {
+                            (integer.to_string(), AggregateKeyKind::Integer)
+                        }
+                        AggregateBinding::Constant(constant) => {
+                            let kind = match key_kind {
+                                AggregateKeyKind::Integer => {
+                                    return Err(error(format!(
+                                        "{totals} with \"{key}\" at the constant \
+                                         \"{constant}\", but \"{key}\" is an integer: write \
+                                         the integer bare"
+                                    )));
+                                }
+                                AggregateKeyKind::Identifier => {
+                                    if Identifier::from_string(constant, Encoding::Base58).is_err()
+                                    {
+                                        return Err(error(format!(
+                                            "{totals} with \"{key}\" at \"{constant}\", which is \
+                                             not a base58 identifier"
+                                        )));
+                                    }
+                                    AggregateKeyKind::Identifier
+                                }
+                                AggregateKeyKind::Text => {
+                                    // A constant the key's `enum` does not list is a typo:
+                                    // no document could match it
+                                    if !enum_admits(counted.schema(), key, constant)? {
+                                        return Err(error(format!(
+                                            "{totals} with \"{key}\" at \"{constant}\", which is \
+                                             not one of its enum values"
+                                        )));
+                                    }
+                                    AggregateKeyKind::Text
+                                }
+                            };
+                            (format!("the constant \"{constant}\""), kind)
+                        }
+                        AggregateBinding::Property { path, .. } => {
+                            let property_type = declaring
+                                .flattened_properties()
+                                .get(path)
+                                .map(|property| &property.property_type);
+                            let Some(kind) = property_type.and_then(AggregateKeyKind::of) else {
+                                return Err(error(format!(
+                                    "{totals} with \"{key}\" at \"{path}\", which has type {}: \
+                                     a value matched is an integer, string or identifier \
+                                     property, $ownerId, an integer or a {{ \"const\": ... }}",
+                                    property_type.map_or("none".to_string(), |property_type| {
+                                        property_type.name()
+                                    })
+                                )));
+                            };
+                            (format!("\"{path}\""), kind)
+                        }
+                    };
+                    if bound_kind != key_kind {
+                        return Err(error(format!(
+                            "{totals} with \"{key}\", {}, at {bound}, {}",
+                            key_kind.describe(),
+                            bound_kind.describe()
+                        )));
+                    }
+                }
+                if read.answering_index(&counted).is_none() {
+                    let keys = read
+                        .filter
+                        .keys()
+                        .map(|key| format!("\"{key}\""))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let keeping = match &read.kind {
+                        AggregateKind::Count => "countable index".to_string(),
+                        AggregateKind::Sum { property } => {
+                            format!("index with summable: \"{property}\"")
+                        }
+                    };
+                    return Err(error(format!(
+                        "{totals} by {keys}, which no {keeping} of \"{counted_name}\" whose \
+                         properties are exactly those keys answers (a unique, contested, ranked, \
+                         time-range or indexOnly-terminal index answers none)"
+                    )));
+                }
+            }
+        }
+    }
     Ok(())
 }
 
