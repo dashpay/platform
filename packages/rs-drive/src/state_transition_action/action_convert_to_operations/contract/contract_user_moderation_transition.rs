@@ -3,8 +3,8 @@ use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentChangeContext, ContractDocumentDeletionContext,
-    ContractDocumentRestorationContext, ContractUserModerationTransitionActionV0,
-    ContractWarningContext,
+    ContractDocumentRemovalRecordContext, ContractDocumentRestorationContext,
+    ContractUserModerationTransitionActionV0, ContractWarningContext,
 };
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use crate::util::batch::DriveOperation::{
@@ -156,9 +156,8 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         let ContractDocumentDeletionContext {
                             data_contract_fetch_info,
                             document_owner_id,
-                            removed_at,
-                            document_hash,
-                            replaces_restored_record,
+                            record,
+                            refunds_owner,
                         } =
                             document_deletion
                                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
@@ -166,8 +165,9 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             )))?;
                         // The deletion of the document, which keeps every index and aggregate
                         // of its type right and does not ask `canBeDeleted` (that is the
-                        // owner's rule, not the moderators'), then its record: a fresh one, or
-                        // in place of the restored one a document deleted before carries. The
+                        // owner's rule, not the moderators'), then its record when the type
+                        // keeps one: a fresh one, or in place of the restored one a document
+                        // deleted before carries. Unless the type refunds the owner, the
                         // marker makes the batch refund nobody: the document's owner forfeits
                         // the storage fee.
                         operations.push(DocumentOperation(
@@ -181,26 +181,35 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                                 ),
                             },
                         ));
-                        operations.push(ContractModerationOperation(
-                            ContractModerationOperationType::AddDocumentRemoval {
-                                contract_id,
-                                document_type_name,
-                                document_id,
-                                removal: ContractDocumentRemoval {
-                                    document_owner_id,
+                        if let Some(ContractDocumentRemovalRecordContext {
+                            removed_at,
+                            document_hash,
+                            replaces_restored_record,
+                        }) = record
+                        {
+                            operations.push(ContractModerationOperation(
+                                ContractModerationOperationType::AddDocumentRemoval {
+                                    contract_id,
+                                    document_type_name,
+                                    document_id,
+                                    removal: ContractDocumentRemoval {
+                                        document_owner_id,
+                                        moderator_id,
+                                        reason,
+                                        removed_at,
+                                        document_hash,
+                                        restoration: None,
+                                    },
+                                    replaces_existing: replaces_restored_record,
                                     moderator_id,
-                                    reason,
-                                    removed_at,
-                                    document_hash,
-                                    restoration: None,
                                 },
-                                replaces_existing: replaces_restored_record,
-                                moderator_id,
-                            },
-                        ));
-                        operations.push(ContractModerationOperation(
-                            ContractModerationOperationType::ForfeitStorageRefunds,
-                        ));
+                            ));
+                        }
+                        if !refunds_owner {
+                            operations.push(ContractModerationOperation(
+                                ContractModerationOperationType::ForfeitStorageRefunds,
+                            ));
+                        }
                     }
                     ContractUserModerationAction::RestoreDocument {
                         document_type_name, ..

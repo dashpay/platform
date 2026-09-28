@@ -101,14 +101,16 @@ impl<C> Platform<C> {
                 format!("contract {} not found", contract_id),
             )));
         };
-        let deletable_by_moderators = contract_fetch_info
+        // Only a type whose moderators' deletions keep records has a records tree to read.
+        let keeps_records = contract_fetch_info
             .contract
             .document_type_optional_for_name(&query.document_type_name)
-            .is_some_and(|document_type| document_type.documents_can_be_deleted_by_moderators());
-        if !deletable_by_moderators {
+            .is_some_and(|document_type| document_type.moderator_deletions_keep_records());
+        if !keeps_records {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(format!(
-                    "contract {} has no document type {} whose documents moderators can delete",
+                    "contract {} has no document type {} whose moderators' deletions keep \
+                     records",
                     contract_id, query.document_type_name
                 )),
             ));

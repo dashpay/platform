@@ -243,8 +243,9 @@ pub(crate) mod property_names {
     /// identities its moderation config appoints, or its seated team) may do to documents of
     /// this type with a `ContractUserModeration` transition, whatever `canBeDeleted` and
     /// `documentsMutable` say about the documents' own owners: delete them (`delete`, within
-    /// `deleteWithin` seconds of their last modification when given), and write the fields
-    /// `changeFields` lists, which nobody else writes. Meta-schema v3+ (protocol version
+    /// `deleteWithin` seconds of their last modification when given, leaving a removal record
+    /// unless `deleteKeepsRecord` is false, and refunding the owner when `deleteRefundsOwner`
+    /// is true), and write the fields `changeFields` lists, which nobody else writes. Meta-schema v3+ (protocol version
     /// 14). See [`moderator_abilities`] for its keys, and `apply_moderator_abilities` in
     /// `try_from_schema::common` for what each requires of the type and of the contract.
     pub const MODERATOR_ABILITIES: &str = "moderatorAbilities";
@@ -260,6 +261,13 @@ pub(crate) mod property_names {
         /// can remove it; a replace moves `$updatedAt` and opens the window again. Absent
         /// means no limit. Needs `delete: true`.
         pub const DELETE_WITHIN: &str = "deleteWithin";
+        /// Whether a moderator's deletion leaves a removal record under the contract, which is
+        /// what a restore brings the document back from. Default `true`. Needs `delete: true`.
+        pub const DELETE_KEEPS_RECORD: &str = "deleteKeepsRecord";
+        /// Whether the owner of a document a moderator deletes is refunded its storage, as an
+        /// owner deleting it themselves is. Default `false`: the owner forfeits it. Needs
+        /// `delete: true`.
+        pub const DELETE_REFUNDS_OWNER: &str = "deleteRefundsOwner";
         /// The top-level properties only the moderators write: a document's owner can
         /// neither set them when creating it nor change them when replacing it, unless the
         /// owner moderates the contract.

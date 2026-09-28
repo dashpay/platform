@@ -188,12 +188,13 @@ impl<'a> Moderators<'a> {
     }
 
     /// `action`, counted for its signer when a member of a seated team signs a ban, a
-    /// suspension, a warning, a document deletion or a field change: the signer's moderation action count since
+    /// suspension, a warning or a document deletion: the signer's moderation action count since
     /// the moderators pot was last settled is read (one point read, billed) and the action
     /// carries it one higher, for Drive to write. What a settle splits the pot's action share
-    /// by. A reversal (an unban, an unsuspension, a clearing, a restore) counts for nothing,
-    /// and neither does an action of the moderators a declaration names, who share the pot
-    /// equally.
+    /// by. A reversal (an unban, an unsuspension, a clearing, a restore) counts for nothing, and
+    /// neither does a field change: changes of one document have no bound, as deletions of the
+    /// content that exists do, so counting them would let a member farm the share. Neither does
+    /// an action of the moderators a declaration names, who share the pot equally.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn count_for_signer(
         &self,
@@ -213,7 +214,6 @@ impl<'a> Moderators<'a> {
                 | ContractUserModerationAction::Suspend { .. }
                 | ContractUserModerationAction::Warn { .. }
                 | ContractUserModerationAction::DeleteDocument { .. }
-                | ContractUserModerationAction::ChangeDocumentFields { .. }
         );
         if !counts {
             return Ok(action);

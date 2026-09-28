@@ -3,6 +3,8 @@
 //! creates and replaces of a document's own owner.
 
 use super::*;
+use dpp::data_contract::config::v0::{DataContractConfigGettersV0, DataContractConfigSettersV0};
+use dpp::data_contract::config::DataContractConfig;
 
 const REPORT: &str = "report";
 const TICKET: &str = "ticket";
@@ -12,6 +14,8 @@ const INVALID_CONTRACT_MODERATION_DOCUMENT_FIELDS: u32 = 10905;
 const DOCUMENT_NOT_FOUND: u32 = 40101;
 const INVALID_DOCUMENT_REVISION: u32 = 40106;
 const JSON_SCHEMA: u32 = 10101;
+const DOCUMENT_PROPERTY_CONSTRAINT_VIOLATED: u32 = 10422;
+const NOTICE: &str = "notice";
 
 /// A report of a post, which its author can not replace, which moderators may delete, and
 /// whose `status` and `resolution` only they write. Its `postId` refers to a post that may be
@@ -61,18 +65,60 @@ fn ticket_schema() -> Value {
     })
 }
 
-/// A contract whose owner and named moderator moderate posts, reports and tickets
+/// A notice that expires an hour after its creation, whose `status` only moderators write and
+/// may never set to 3
+fn notice_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "ttl": 3600,
+        "moderatorAbilities": { "changeFields": ["status"] },
+        "properties": {
+            "text": { "type": "string", "minLength": 1, "maxLength": 50, "position": 0 },
+            "status": { "type": "integer", "minimum": 1, "maximum": 3, "position": 1 },
+        },
+        "propertyConstraints": {
+            "neverThree": { "anyOf": [{ "absent": "status" }, { "notEqual": ["status", 3] }] },
+        },
+        "required": ["$createdAt", "text"],
+        "additionalProperties": false,
+    })
+}
+
+/// A contract whose owner and named moderator moderate posts, reports, tickets and notices
 async fn setup() -> Setup {
+    setup_where(|_| {}).await
+}
+
+/// The same contract, with `modify_config` applied to its config first
+async fn setup_where(modify_config: impl FnOnce(&mut DataContractConfig)) -> Setup {
     Setup::new_at_with(
         Some(moderators_without_lists()),
         PlatformVersion::latest(),
         |contract| {
+            let mut config = contract.config().clone();
+            modify_config(&mut config);
+            contract.set_config(config);
             add_document_type(contract, POST, post_schema(true));
             add_document_type(contract, REPORT, report_schema());
             add_document_type(contract, TICKET, ticket_schema());
+            add_document_type(contract, NOTICE, notice_schema());
         },
     )
     .await
+}
+
+/// A notice by `actor`, without the status only moderators write
+async fn create_notice(setup: &Setup, actor: &Actor) -> (Document, StateTransition) {
+    setup
+        .create_document_of_type_with(actor, NOTICE, |document| {
+            let properties = document.properties_mut();
+            properties.remove("status");
+            properties.insert(
+                "text".to_string(),
+                Value::Text("closed on monday".to_string()),
+            );
+        })
+        .await
 }
 
 fn change_action(
@@ -429,6 +475,11 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
         &setup.process(&preset, &transaction),
         DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE,
     );
+    // The mempool refuses it too: the transformer judges it, not the block's state validation.
+    assert!(setup
+        .check_tx(&preset)
+        .iter()
+        .any(|error| error.code() == DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE));
 
     // A moderator, and the contract owner, who moderates too, may.
     for actor in [&setup.moderator, &setup.owner] {
@@ -542,8 +593,11 @@ async fn should_keep_the_unique_indexes_over_fields_moderators_write() {
         &setup.process(&assign(second.id(), 1).await, &transaction),
         DUPLICATE_UNIQUE_INDEX,
     );
-    // The first can be given the slot it already holds: that changes nothing to clash with.
-    assert_success(&setup.process(&assign(first.id(), 1).await, &transaction));
+    // Giving the first the slot it already holds changes nothing: refused rather than written.
+    assert_paid_with_code(
+        &setup.process(&assign(first.id(), 1).await, &transaction),
+        INVALID_CONTRACT_MODERATION_DOCUMENT_FIELDS,
+    );
     // Once the first gives the slot up, the second can take it.
     let release = setup
         .moderate(
@@ -601,4 +655,131 @@ async fn should_tie_the_fields_to_the_moderation_declaration() {
     add_document_type(&mut added, "queue", ticket_schema());
     let update = setup.contract_update(added).await;
     assert_success(&setup.process(&update, &transaction));
+}
+
+#[tokio::test]
+async fn should_refuse_a_change_that_changes_nothing() {
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+    let (report, create_report) =
+        create_report(&setup, &setup.stranger, post.id(), platform_value!({})).await;
+    assert_success(&setup.process(&create_report, &transaction));
+
+    // Removing a field the report does not hold, and setting one to the value it holds.
+    let remove_absent = setup
+        .moderate(
+            &setup.moderator,
+            change_action(REPORT, report.id(), platform_value!({ "status": null })),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&remove_absent, &transaction),
+        INVALID_CONTRACT_MODERATION_DOCUMENT_FIELDS,
+    );
+    let set = setup
+        .moderate(
+            &setup.moderator,
+            change_action(REPORT, report.id(), platform_value!({ "status": 2u64 })),
+        )
+        .await;
+    assert_success(&setup.process(&set, &transaction));
+    let set_again = setup
+        .moderate(
+            &setup.moderator,
+            change_action(REPORT, report.id(), platform_value!({ "status": 2u64 })),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&set_again, &transaction),
+        INVALID_CONTRACT_MODERATION_DOCUMENT_FIELDS,
+    );
+    // Neither bumped the revision.
+    assert_eq!(
+        setup
+            .stored_document(REPORT, report.id(), Some(&transaction))
+            .and_then(|report| report.revision()),
+        Some(2)
+    );
+}
+
+#[tokio::test]
+async fn should_refuse_a_change_its_type_rules_or_its_expiry_forbid() {
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (notice, create) = create_notice(&setup, &setup.user).await;
+    assert_success(&setup.process(&create, &transaction));
+
+    // The type's `propertyConstraints` judge the changed document as they judge a replace.
+    let three = setup
+        .moderate(
+            &setup.moderator,
+            change_action(NOTICE, notice.id(), platform_value!({ "status": 3u64 })),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process(&three, &transaction),
+        DOCUMENT_PROPERTY_CONSTRAINT_VIOLATED,
+    );
+    let two = setup
+        .moderate(
+            &setup.moderator,
+            change_action(NOTICE, notice.id(), platform_value!({ "status": 2u64 })),
+        )
+        .await;
+    assert_success(&setup.process(&two, &transaction));
+
+    // Once its time to live has passed, nobody writes it any more.
+    let expired_at = BLOCK_TIME_MS + 3_600_000 + 1;
+    let after_expiry = setup
+        .moderate(
+            &setup.moderator,
+            change_action(NOTICE, notice.id(), platform_value!({ "status": 1u64 })),
+        )
+        .await;
+    assert_paid_with_code(
+        &setup.process_at(&after_expiry, expired_at, &transaction),
+        DOCUMENT_EXPIRED,
+    );
+}
+
+#[tokio::test]
+async fn should_change_and_delete_documents_of_a_contract_that_can_not_be_deleted() {
+    // Yappr's shape: the contract itself can not be deleted and its reports are immutable, so
+    // their index entries are stored without storage flags. A moderator's change moves the
+    // report's `byStatus` entry twice, and its deletion removes what the changes wrote.
+    let setup = setup_where(|config| config.set_can_be_deleted(false)).await;
+    assert!(!setup.contract.config().can_be_deleted());
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+    let (report, create_report) =
+        create_report(&setup, &setup.stranger, post.id(), platform_value!({})).await;
+    assert_success(&setup.process(&create_report, &transaction));
+    setup.commit(transaction);
+
+    for status in [2u64, 3] {
+        let transaction = setup.platform.drive.grove.start_transaction();
+        let change = setup
+            .moderate(
+                &setup.moderator,
+                change_action(REPORT, report.id(), platform_value!({ "status": status })),
+            )
+            .await;
+        assert_success(&setup.process(&change, &transaction));
+        setup.commit(transaction);
+        assert!(setup
+            .assert_change_proved(&change)
+            .get("status")
+            .is_some_and(|stored| stored.equal_underlying_data(&Value::U64(status))));
+    }
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(REPORT, report.id()))
+        .await;
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+    assert_eq!(setup.stored_document(REPORT, report.id(), None), None);
 }

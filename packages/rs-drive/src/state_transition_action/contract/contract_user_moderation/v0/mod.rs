@@ -56,13 +56,25 @@ pub struct ContractWarningContext {
 }
 
 /// What the validation of a document deletion read, so that Drive deletes the document and
-/// writes its removal record without reading again.
+/// writes its removal record, when its type keeps one, without reading again.
 #[derive(Debug, Clone)]
 pub struct ContractDocumentDeletionContext {
     /// the moderated contract, as fetched: the deletion resolves the document type from it
     pub data_contract_fetch_info: Arc<DataContractFetchInfo>,
     /// the owner of the document as stored
     pub document_owner_id: Identifier,
+    /// the removal record to write, `None` when the document's type keeps none
+    /// (`moderatorAbilities.deleteKeepsRecord: false`)
+    pub record: Option<ContractDocumentRemovalRecordContext>,
+    /// whether the document's owner is refunded its storage
+    /// (`moderatorAbilities.deleteRefundsOwner`); it forfeits it otherwise
+    pub refunds_owner: bool,
+}
+
+/// What the validation of a document deletion read and computed for the removal record it
+/// leaves.
+#[derive(Debug, Clone)]
+pub struct ContractDocumentRemovalRecordContext {
     /// the time of the block the deletion runs in, recorded as the removal time
     pub removed_at: TimestampMillis,
     /// a double SHA-256 of the document as serialized under its type, recorded so that a

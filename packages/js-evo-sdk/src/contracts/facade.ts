@@ -166,12 +166,13 @@ export class ContractsFacade {
    * that many seconds after the document's last modification, and is refused (41116) once
    * block time is later than that.
    * Signed like the other moderations. `options.reason` is optional here: left out, no code and
-   * an empty text are stored. Resolves with the record the deletion left under the contract;
-   * the document's owner gets no storage refund.
+   * an empty text are stored. Resolves with the record the deletion left under the contract, or
+   * undefined on a type whose `moderatorAbilities.deleteKeepsRecord` is false; the document's
+   * owner gets no storage refund unless the type sets `moderatorAbilities.deleteRefundsOwner`.
    */
   async moderatorDeleteDocument(
     options: wasm.ContractDeleteDocumentOptions,
-  ): Promise<wasm.ContractDocumentRemovalResult> {
+  ): Promise<wasm.ContractDocumentRemovalResult | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.contractDeleteDocument(options);
   }

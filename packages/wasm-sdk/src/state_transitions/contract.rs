@@ -25,11 +25,11 @@ use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::data_contract::{
-    moderation_action_from_parts, ContractModerationReasonInput, ContractUserModerationActionParts,
-    DataContractWasm,
+    fields_from_js, moderation_action_from_parts, ContractModerationReasonInput,
+    ContractUserModerationActionParts, DataContractWasm,
 };
 use wasm_dpp2::identity::{IdentityPublicKeyWasm, IdentityWasm};
-use wasm_dpp2::utils::{try_from_options_optional, try_from_options_with, ToSerdeJSONExt};
+use wasm_dpp2::utils::{try_from_options_optional, try_from_options_with};
 use wasm_dpp2::{IdentifierWasm, IdentitySignerWasm};
 
 // ============================================================================
@@ -331,9 +331,11 @@ export interface ContractModerationResult {
  * version 14), whoever owns it, except the contract owner and the moderators. The document
  * type must set `moderatorAbilities.delete`; when it also sets `moderatorAbilities.deleteWithin`,
  * the deletion passes up to and including that many seconds after the document's last
- * modification, and is refused (41116) once block time is later than that. As for the other
- * moderations, the signer must hold
- * a CRITICAL authentication key without contract bounds of the moderating identity.
+ * modification, and is refused (41116) once block time is later than that. The deletion
+ * leaves a removal record unless the type sets `moderatorAbilities.deleteKeepsRecord: false`,
+ * and refunds the document's owner only when it sets `moderatorAbilities.deleteRefundsOwner`.
+ * As for the other moderations, the signer must hold a CRITICAL authentication key without
+ * contract bounds of the moderating identity.
  */
 export interface ContractDeleteDocumentOptions {
   /** The moderating identity: the contract owner or a named moderator */
@@ -477,6 +479,9 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "ContractDocumentRemovalResult")]
     pub type ContractDocumentRemovalResultJs;
+
+    #[wasm_bindgen(typescript_type = "ContractDocumentRemovalResult | undefined")]
+    pub type ContractDocumentDeletionResultJs;
 
     #[wasm_bindgen(typescript_type = "ContractRestoreDocumentOptions")]
     pub type ContractRestoreDocumentOptionsJs;
@@ -671,16 +676,18 @@ impl WasmSdk {
 
     /// Deletes one document on a moderated contract as a moderator, whoever owns it, except
     /// the contract owner and the moderators. The document type must set
-    /// `moderatorAbilities.delete`. The document's owner gets no storage refund, and a record
-    /// of the deletion stays under the contract, which `getContractDocumentRemovals` reads.
+    /// `moderatorAbilities.delete`. The document's owner gets no storage refund unless the type
+    /// sets `moderatorAbilities.deleteRefundsOwner`, and a record of the deletion stays under
+    /// the contract, which `getContractDocumentRemovals` reads, unless the type sets
+    /// `moderatorAbilities.deleteKeepsRecord: false`.
     ///
     /// @param options - The moderating identity, the contract, the document type, the document, an optional `reason` and the signer
-    /// @returns The record the deletion left under the contract, proved
+    /// @returns The record the deletion left under the contract, proved, or undefined on a type that keeps none, whose proof shows the document gone
     #[wasm_bindgen(js_name = "contractDeleteDocument")]
     pub async fn contract_delete_document(
         &self,
         options: ContractDeleteDocumentOptionsJs,
-    ) -> Result<ContractDocumentRemovalResultJs, WasmSdkError> {
+    ) -> Result<ContractDocumentDeletionResultJs, WasmSdkError> {
         // Extract complex types first (borrows &options)
         let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
         let contract_id: Identifier =
@@ -698,8 +705,10 @@ impl WasmSdk {
             "contract document deletion options",
         )?;
 
-        // A deletion is proved by the removal record it wrote, which the verifier reads without
-        // the contract, so unlike a ban nothing is resolved before anything is paid for.
+        // A deletion is proved by the removal record it wrote, or on a type whose moderators'
+        // deletions keep none by the document's absence; which of the two the verifier reads
+        // from the contract, so the contract is resolved and cached before anything is paid for.
+        self.get_or_fetch_contract(contract_id).await?;
         let removal = identity
             .delete_contract_document(
                 self.inner_sdk(),
@@ -713,6 +722,10 @@ impl WasmSdk {
                 settings,
             )
             .await?;
+        // A type that keeps no record leaves nothing to report but the document's absence.
+        let Some(removal) = removal else {
+            return Ok(JsValue::UNDEFINED.into());
+        };
 
         let result = js_sys::Object::new();
         let set = |key: &str, value: JsValue| {
@@ -812,9 +825,8 @@ impl WasmSdk {
             IdentifierWasm::try_from_options(&options, "contractId")?.into();
         let document_id: Identifier =
             IdentifierWasm::try_from_options(&options, "documentId")?.into();
-        let mut fields = try_from_options_with(&options, "fields", |value| {
-            value.with_serde_to_platform_value_map()
-        })?;
+        // Value by value, so a bigint stays an integer; strings are read by the type below.
+        let mut fields = try_from_options_with(&options, "fields", fields_from_js)?;
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);

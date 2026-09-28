@@ -108,8 +108,8 @@ pub(crate) fn structure() -> StructureNode {
                     .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                     .describe(
                         "The records of the documents the contract's moderators \
-                             deleted. Created with the first document type that \
-                             sets moderatorAbilities.delete, by the contract's \
+                             deleted. Created with the first document type whose \
+                             moderators' deletions keep records, by the contract's \
                              creation or by an update. Read by clients, never by a \
                              document transition, so it sorts below the rest.",
                     )
@@ -124,9 +124,9 @@ pub(crate) fn structure() -> StructureNode {
                         .kind(ElementKind::Tree)
                         .flags(&[FlagsKind::EpochOwned, FlagsKind::None], CONTRACT_FLAGS)
                         .describe(
-                            "The removed documents of one document type that sets \
-                                 moderatorAbilities.delete. Created with the document \
-                                 type, by the contract's creation or by the update \
+                            "The removed documents of one document type whose \
+                                 moderators' deletions keep records. Created with the \
+                                 document type, by the contract's creation or by the update \
                                  that adds the type.",
                         )
                         .child(

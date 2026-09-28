@@ -155,6 +155,17 @@ pub struct DocumentTypeV2 {
     /// clock: `$updatedAt`, or `$createdAt` when its documents never change
     /// (`apply_moderator_abilities`).
     pub(in crate::data_contract) documents_can_be_deleted_by_moderators_for: Option<u32>,
+    /// Whether a moderator's deletion of a document of this type leaves a removal record under
+    /// the contract (`moderatorAbilities.deleteKeepsRecord`, protocol version 14, `true` when
+    /// left out). Only ever `true` beside `documents_can_be_deleted_by_moderators`: a type
+    /// whose documents moderators can not delete keeps no records. Without records a deletion
+    /// can not be restored, and the type has no removal records tree.
+    pub(in crate::data_contract) moderator_deletions_keep_records: bool,
+    /// Whether the owner of a document of this type a moderator deletes is refunded its
+    /// storage (`moderatorAbilities.deleteRefundsOwner`, protocol version 14, `false` when left
+    /// out, the owner then forfeiting it). Only ever `true` beside
+    /// `documents_can_be_deleted_by_moderators`.
+    pub(in crate::data_contract) moderator_deletions_refund_owner: bool,
     /// The top-level properties only the contract's moderators write
     /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator
     /// changes them with a `ContractUserModeration` transition, and a document's
@@ -312,6 +323,8 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
             documents_can_be_deleted_by_moderators_for: None,
+            moderator_deletions_keep_records: false,
+            moderator_deletions_refund_owner: false,
             moderator_changeable_fields: BTreeSet::new(),
             owner_reference: None,
             creator_reference: None,
@@ -367,6 +380,8 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             action_fees: None,
             documents_can_be_deleted_by_moderators: false,
             documents_can_be_deleted_by_moderators_for: None,
+            moderator_deletions_keep_records: false,
+            moderator_deletions_refund_owner: false,
             moderator_changeable_fields: BTreeSet::new(),
             owner_reference: None,
             creator_reference: None,

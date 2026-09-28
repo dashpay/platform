@@ -55,6 +55,18 @@ pub trait DocumentTypeV2Getters {
     /// type that predates the keyword answers.
     fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32>;
 
+    /// Whether a moderator's deletion of a document of this type leaves a removal record
+    /// under the contract (`moderatorAbilities.deleteKeepsRecord`, protocol version 14): the
+    /// type then has a removal records tree, and a deleted document can be restored. False on
+    /// a type whose documents moderators can not delete, and on those that predate the keyword.
+    fn moderator_deletions_keep_records(&self) -> bool;
+
+    /// Whether the owner of a document of this type a moderator deletes is refunded its
+    /// storage (`moderatorAbilities.deleteRefundsOwner`, protocol version 14). False, the owner
+    /// forfeiting it, when left out, on a type whose documents moderators can not delete, and
+    /// on those that predate the keyword.
+    fn moderator_deletions_refund_owner(&self) -> bool;
+
     /// The top-level properties only the contract's moderators write
     /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator
     /// changes them with a `ContractUserModeration` transition, and a document's

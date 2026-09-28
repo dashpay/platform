@@ -13,6 +13,7 @@ use crate::execution::validation::state_transition::state_transitions::batch::{
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::contract_moderation::InvalidContractModerationDocumentFieldsError;
 use dpp::consensus::basic::decode::DecodingError;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::overflow_error::OverflowError;
@@ -57,7 +58,7 @@ use drive::drive::contract::DataContractFetchInfo;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::contract_user_moderation::v0::{
     ContractDocumentChangeContext, ContractDocumentDeletionContext,
-    ContractDocumentRestorationContext,
+    ContractDocumentRemovalRecordContext, ContractDocumentRestorationContext,
 };
 use drive::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
@@ -355,9 +356,13 @@ impl ContractUserModerationStateTransitionStateValidationV0 for ContractUserMode
 /// Every refusal is paid for by bumping the signer's contract nonce.
 ///
 /// The action carries the contract and the document's owner, so Drive deletes the document
-/// and writes its record without reading again. Nothing the document type prices is charged, neither
-/// its deletion token cost nor its `actionFees` deletion fee: both are what a document's own
-/// owner pays for deleting it, and a moderator removes content on the contract's behalf.
+/// and writes its record without reading again; a type whose moderators' deletions keep no
+/// record (`moderatorAbilities.deleteKeepsRecord: false`) gets none, nothing is hashed and no
+/// record read. The owner forfeits its storage refund unless the type gives it back
+/// (`moderatorAbilities.deleteRefundsOwner`). Nothing the document type prices is charged,
+/// neither its deletion token cost nor its `actionFees` deletion fee: both are what a
+/// document's own owner pays for deleting it, and a moderator removes content on the
+/// contract's behalf.
 #[allow(clippy::too_many_arguments)]
 fn transform_document_deletion_v0<C: CoreRPCLike>(
     transition: &ContractUserModerationTransition,
@@ -513,38 +518,51 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
         }
     }
 
-    // What the record commits to: the document as serialized under its type, which a restore
-    // must bring back byte for byte. It is serialized here, from the document as read, rather
-    // than hashed as stored: a document stored under an earlier version of its type or of the
-    // serialization would never re-serialize to its stored bytes, and a client keeping the
-    // document (not the bytes) could never match them.
-    let serialized = document.serialize(document_type, contract, platform_version)?;
-    execution_context.add_operation(ValidationOperation::DoubleSha256(
-        serialized.len() as u16 / SHA256_BLOCK_SIZE,
-    ));
-    let document_hash = hash_double(serialized);
+    // The removal record, when the type keeps one. What it commits to: the document as
+    // serialized under its type, which a restore must bring back byte for byte. It is
+    // serialized here, from the document as read, rather than hashed as stored: a document
+    // stored under an earlier version of its type or of the serialization would never
+    // re-serialize to its stored bytes, and a client keeping the document (not the bytes)
+    // could never match them. A type that keeps no record has no records tree to read, and
+    // nothing to restore from.
+    let record = if document_type.moderator_deletions_keep_records() {
+        let serialized = document.serialize(document_type, contract, platform_version)?;
+        execution_context.add_operation(ValidationOperation::DoubleSha256(
+            serialized.len() as u16 / SHA256_BLOCK_SIZE,
+        ));
+        let document_hash = hash_double(serialized);
 
-    // A document id is produced at most once (it commits to the nonce of its create
-    // transition), so the only record this id can already have is of a deletion a moderator
-    // restored: the document is live again and this deletion writes a fresh record in its
-    // place. An unrestored record beside a live document is a state no transition produces.
-    let (removal_fee, existing_removal) = platform.drive.fetch_contract_document_removal_with_fee(
-        contract_id,
-        document_type_name,
-        document_id,
-        &block_info.epoch,
-        tx,
-        platform_version,
-    )?;
-    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(removal_fee));
-    let replaces_restored_record = match existing_removal {
-        None => false,
-        Some(removal) if removal.is_restored() => true,
-        Some(_) => {
-            return Err(Error::Execution(ExecutionError::DriveIncoherence(
-                "a document with an unrestored moderation removal record exists",
-            )))
-        }
+        // A document id is produced at most once (it commits to the nonce of its create
+        // transition), so the only record this id can already have is of a deletion a
+        // moderator restored: the document is live again and this deletion writes a fresh
+        // record in its place. An unrestored record beside a live document is a state no
+        // transition produces.
+        let (removal_fee, existing_removal) =
+            platform.drive.fetch_contract_document_removal_with_fee(
+                contract_id,
+                document_type_name,
+                document_id,
+                &block_info.epoch,
+                tx,
+                platform_version,
+            )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(removal_fee));
+        let replaces_restored_record = match existing_removal {
+            None => false,
+            Some(removal) if removal.is_restored() => true,
+            Some(_) => {
+                return Err(Error::Execution(ExecutionError::DriveIncoherence(
+                    "a document with an unrestored moderation removal record exists",
+                )))
+            }
+        };
+        Some(ContractDocumentRemovalRecordContext {
+            removed_at: block_info.time_ms,
+            document_hash,
+            replaces_restored_record,
+        })
+    } else {
+        None
     };
 
     let moderation_action =
@@ -553,9 +571,8 @@ fn transform_document_deletion_v0<C: CoreRPCLike>(
             ContractDocumentDeletionContext {
                 data_contract_fetch_info: Arc::clone(contract_fetch_info),
                 document_owner_id,
-                removed_at: block_info.time_ms,
-                document_hash,
-                replaces_restored_record,
+                record,
+                refunds_owner: document_type.moderator_deletions_refund_owner(),
             },
         );
     let moderation_action = moderators.count_for_signer(
@@ -769,6 +786,17 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
             }
         }
     }
+    // A change that changes nothing is refused rather than written: it would bump the revision,
+    // refusing a replace its owner built meanwhile, for no change at all.
+    if changed_fields.is_empty() {
+        return refuse(
+            InvalidContractModerationDocumentFieldsError::new(
+                "every field already holds the value the change names, so nothing would change"
+                    .to_string(),
+            )
+            .into(),
+        );
+    }
     changed.set_revision(Some(next_revision));
 
     // The changed document is judged as a replace judges one: the owner is the document's, the
@@ -798,28 +826,33 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
         transferred_at_core_block_height: changed.transferred_at_core_block_height(),
         aggregates: Some(aggregates),
     };
+    // Each check runs only on a document the previous ones passed, as a replace's do: the later
+    // two read values the schema check makes well formed.
     let properties = changed.properties();
-    for result in [
-        contract.validate_document_properties(
-            document_type_name,
-            properties.into(),
-            &system,
-            platform_version,
-        )?,
-        document_type.validate_distinct_from_properties(
-            properties,
-            changed.owner_id(),
-            platform_version,
-        )?,
-        document_type.validate_encrypted_property_shapes(properties, platform_version)?,
-    ] {
-        if !result.is_valid() {
-            return refuse_all(result.errors);
-        }
+    let result = contract.validate_document_properties(
+        document_type_name,
+        properties.into(),
+        &system,
+        platform_version,
+    )?;
+    if !result.is_valid() {
+        return refuse_all(result.errors);
+    }
+    let result = document_type.validate_distinct_from_properties(
+        properties,
+        changed.owner_id(),
+        platform_version,
+    )?;
+    if !result.is_valid() {
+        return refuse_all(result.errors);
+    }
+    let result = document_type.validate_encrypted_property_shapes(properties, platform_version)?;
+    if !result.is_valid() {
+        return refuse_all(result.errors);
     }
 
     // Another document may already hold the new value of one of the type's unique indexes.
-    if !changed_fields.is_empty() && document_type.indexes().values().any(|index| index.unique) {
+    if document_type.indexes().values().any(|index| index.unique) {
         let uniqueness = platform.drive.validate_moderated_document_uniqueness(
             contract,
             document_type,
@@ -857,7 +890,8 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
 /// A document restore: the document type exists and says moderators may delete its
 /// documents, the signer moderates the contract (see [`Moderators`]: a seated team must also
 /// hold `deleteDocuments` on the type, which is what a restore undoes), the bytes decode
-/// under the type, the document has a removal record that is not yet restored, block time is
+/// under the type, the type keeps removal records and the document has one that is not yet
+/// restored, block time is
 /// within the restore window after the removal, the bytes hash to what the record holds, and
 /// no other document holds a value of one of the type's unique indexes. Every refusal is paid
 /// for by bumping the signer's contract nonce.
@@ -973,6 +1007,19 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
     }
     let document = decoded.into_data()?;
     let document_id = document.id();
+
+    // A deletion leaves the record a restore brings the document back from only on a type that
+    // keeps them: on one that keeps none, there is no record, and no records tree to read.
+    if !document_type.moderator_deletions_keep_records() {
+        return refuse(
+            ContractDocumentRemovalNotFoundError::new(
+                contract_id,
+                document_type_name.to_string(),
+                document_id,
+            )
+            .into(),
+        );
+    }
 
     let (removal_fee, removal) = platform.drive.fetch_contract_document_removal_with_fee(
         contract_id,

@@ -534,6 +534,22 @@ impl ElectedModerators {
             }
         }
 
+        // Once a team is seated only it writes the fields a type keeps for moderators, so a
+        // type keeping any must give the team the ability: without it nobody could ever write
+        // them again, and the declaration can not change.
+        if let Some(document_type_name) = document_schemas
+            .iter()
+            .filter(|(_, schema)| document_schema_lets_moderators_change_fields(schema))
+            .map(|(name, _)| name)
+            .find(|name| !self.allows(name, ModerationAbility::ChangeDocumentFields))
+        {
+            return Some(format!(
+                "the document type \"{document_type_name}\" keeps fields only moderators write, \
+                 but the moderated set does not give the team `changeDocumentFields` on it, so \
+                 nobody could write them once a team is seated"
+            ));
+        }
+
         None
     }
 }
@@ -587,8 +603,7 @@ mod tests {
         ids.iter().map(|b| Identifier::from([*b; 32])).collect()
     }
 
-    /// `post`, which moderators may delete, `like`, which they may not, and `report`, whose
-    /// `status` only they write
+    /// `post`, which moderators may delete, and `like`, which they may not
     fn schemas() -> BTreeMap<DocumentName, Value> {
         BTreeMap::from([
             (
@@ -596,14 +611,20 @@ mod tests {
                 platform_value!({ "type": "object", "moderatorAbilities": { "delete": true } }),
             ),
             ("like".to_string(), platform_value!({ "type": "object" })),
-            (
-                "report".to_string(),
-                platform_value!({
-                    "type": "object",
-                    "moderatorAbilities": { "changeFields": ["status"] },
-                }),
-            ),
         ])
+    }
+
+    /// [`schemas`] and `report`, whose `status` only moderators write
+    fn schemas_with_a_report() -> BTreeMap<DocumentName, Value> {
+        let mut schemas = schemas();
+        schemas.insert(
+            "report".to_string(),
+            platform_value!({
+                "type": "object",
+                "moderatorAbilities": { "changeFields": ["status"] },
+            }),
+        );
+        schemas
     }
 
     /// A declaration within every bound: both lists, bans and suspensions allowed, `post`
@@ -835,17 +856,40 @@ mod tests {
 
         // Field changes on `report` are backed by the fields it keeps for moderators; on `post`,
         // which keeps none, they are not.
+        let with_a_report = |elected: ElectedModerators| {
+            let result = config(elected)
+                .validate(
+                    &schemas_with_a_report(),
+                    Network::Mainnet,
+                    PlatformVersion::latest(),
+                )
+                .expect("validate");
+            (!result.is_valid()).then(|| rendered(&result.errors))
+        };
         let mut changes = elected();
         changes.moderated_document_types.insert(
             "report".to_string(),
             moderated(&[ModerationAbility::ChangeDocumentFields]),
         );
-        assert_eq!(refusal(&config(changes)), None);
-        let mut changes_on_post = elected();
-        abilities_of(&mut changes_on_post, "post").insert(ModerationAbility::ChangeDocumentFields);
-        assert!(refusal(&config(changes_on_post))
+        assert_eq!(with_a_report(changes.clone()), None);
+        abilities_of(&mut changes, "post").insert(ModerationAbility::ChangeDocumentFields);
+        assert!(with_a_report(changes)
             .expect("refused")
             .contains("\"post\" allows document field changes, but the type lists no field"));
+
+        // A type keeping such fields must be moderated with the ability, or nobody could write
+        // them once a team is seated.
+        for without in [elected(), {
+            let mut deletions_only = elected();
+            deletions_only
+                .moderated_document_types
+                .insert("report".to_string(), moderated(&[ModerationAbility::Ban]));
+            deletions_only
+        }] {
+            assert!(with_a_report(without)
+                .expect("refused")
+                .contains("\"report\" keeps fields only moderators write"));
+        }
     }
 
     #[test]

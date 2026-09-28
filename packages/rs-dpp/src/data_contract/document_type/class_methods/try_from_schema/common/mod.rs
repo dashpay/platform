@@ -27,8 +27,11 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property::{
-    DocumentPropertyReferenceTarget, KeyIdReference, KeyReferenceIdentityProperty,
-    PropertyReference, ReferenceHolder,
+    top_level_property, DocumentPropertyReferenceTarget, KeyIdReference,
+    KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
+};
+use crate::data_contract::document_type::property_names::moderator_abilities::{
+    CHANGE_FIELDS, DELETE, DELETE_KEEPS_RECORD, DELETE_REFUNDS_OWNER, DELETE_WITHIN,
 };
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
@@ -2064,6 +2067,12 @@ pub(super) struct ModeratorAbilitiesKeyword {
     /// `deleteWithin`: for how many seconds after a document's last
     /// modification they may.
     pub(super) delete_within: Option<u32>,
+    /// `deleteKeepsRecord`: whether their deletion leaves a removal record,
+    /// `None` when left out.
+    pub(super) delete_keeps_record: Option<bool>,
+    /// `deleteRefundsOwner`: whether the owner of a document they delete is
+    /// refunded its storage, `None` when left out.
+    pub(super) delete_refunds_owner: Option<bool>,
     /// `changeFields`: the top-level properties only they write.
     pub(super) change_fields: BTreeSet<String>,
 }
@@ -2071,13 +2080,13 @@ pub(super) struct ModeratorAbilitiesKeyword {
 /// Reads the doctype-level `moderatorAbilities` object. Its shape is enforced
 /// here and not left to the meta-schema, as for every doctype-level keyword of
 /// this generation: a stored contract is read without one. An object, with
-/// only the keys `delete` (a boolean), `deleteWithin` (seconds, a u32) and
-/// `changeFields` (a non-empty list of property names), saying something.
+/// only the keys `delete`, `deleteKeepsRecord` and `deleteRefundsOwner`
+/// (booleans), `deleteWithin` (seconds, a u32) and `changeFields` (a non-empty
+/// list of property names), saying something.
 pub(super) fn parse_moderator_abilities_keyword(
     schema: &Value,
     name: &str,
 ) -> Result<ModeratorAbilitiesKeyword, ProtocolError> {
-    use property_names::moderator_abilities::{CHANGE_FIELDS, DELETE, DELETE_WITHIN};
     let structure_error = |message: String| {
         consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
             message,
@@ -2100,14 +2109,17 @@ pub(super) fn parse_moderator_abilities_keyword(
     if let Some(unknown) = abilities_map
         .iter()
         .find_map(|(key, _)| match key.as_text() {
-            Some(DELETE | DELETE_WITHIN | CHANGE_FIELDS) => None,
+            Some(
+                DELETE | DELETE_WITHIN | DELETE_KEEPS_RECORD | DELETE_REFUNDS_OWNER | CHANGE_FIELDS,
+            ) => None,
             Some(other) => Some(other.to_string()),
             None => Some(key.to_string()),
         })
     {
         return Err(structure_error(format!(
             "document type \"{name}\": `{MODERATOR_ABILITIES}` has no key \"{unknown}\", only \
-             `{DELETE}`, `{DELETE_WITHIN}` and `{CHANGE_FIELDS}`"
+             `{DELETE}`, `{DELETE_WITHIN}`, `{DELETE_KEEPS_RECORD}`, `{DELETE_REFUNDS_OWNER}` \
+             and `{CHANGE_FIELDS}`"
         )));
     }
 
@@ -2116,6 +2128,11 @@ pub(super) fn parse_moderator_abilities_keyword(
         .unwrap_or(false);
     let delete_within = Value::inner_optional_integer_value::<u32>(abilities_map, DELETE_WITHIN)
         .map_err(consensus_or_protocol_value_error)?;
+    let delete_keeps_record = Value::inner_optional_bool_value(abilities_map, DELETE_KEEPS_RECORD)
+        .map_err(consensus_or_protocol_value_error)?;
+    let delete_refunds_owner =
+        Value::inner_optional_bool_value(abilities_map, DELETE_REFUNDS_OWNER)
+            .map_err(consensus_or_protocol_value_error)?;
     let change_fields = match Value::get_optional_from_map(abilities_map, CHANGE_FIELDS) {
         None => BTreeSet::new(),
         Some(_) => {
@@ -2139,6 +2156,8 @@ pub(super) fn parse_moderator_abilities_keyword(
     Ok(ModeratorAbilitiesKeyword {
         delete,
         delete_within,
+        delete_keeps_record,
+        delete_refunds_owner,
         change_fields,
     })
 }
@@ -2172,6 +2191,12 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// - it lasts at least a second: a window of none would be a type moderators
 ///   can never delete from, which is said by leaving `delete` out.
 ///
+/// `deleteKeepsRecord` (default `true`) and `deleteRefundsOwner` (default
+/// `false`) say what a deletion leaves: a removal record under the contract,
+/// which is also what a restore brings the document back from, and the owner's
+/// storage refund, forfeited unless the type gives it back. Each describes the
+/// moderators' deletion, so each needs `delete: true`.
+///
 /// `changeFields` names the properties only the moderators write. A
 /// moderator's change is stored as an update that touches nothing else, and is
 /// not checked against the type's references, so each property must be:
@@ -2203,10 +2228,11 @@ pub(super) fn apply_moderator_abilities(
     data_contract_config: &DataContractConfig,
     name: &str,
 ) -> Result<(), ProtocolError> {
-    use property_names::moderator_abilities::{CHANGE_FIELDS, DELETE, DELETE_WITHIN};
     let ModeratorAbilitiesKeyword {
         delete,
         delete_within,
+        delete_keeps_record,
+        delete_refunds_owner,
         change_fields,
     } = abilities;
     let structure_error = |message: String| {
@@ -2214,7 +2240,12 @@ pub(super) fn apply_moderator_abilities(
             message,
         ))
     };
-    if !delete && delete_within.is_none() && change_fields.is_empty() {
+    if !delete
+        && delete_within.is_none()
+        && delete_keeps_record.is_none()
+        && delete_refunds_owner.is_none()
+        && change_fields.is_empty()
+    {
         return Ok(());
     }
 
@@ -2263,6 +2294,21 @@ pub(super) fn apply_moderator_abilities(
             )));
         }
         document_type.documents_can_be_deleted_by_moderators = true;
+        document_type.moderator_deletions_keep_records = delete_keeps_record.unwrap_or(true);
+        document_type.moderator_deletions_refund_owner = delete_refunds_owner.unwrap_or(false);
+    }
+
+    // What a deletion leaves is only said of a type moderators delete from
+    for (key, given) in [
+        (DELETE_KEEPS_RECORD, delete_keeps_record.is_some()),
+        (DELETE_REFUNDS_OWNER, delete_refunds_owner.is_some()),
+    ] {
+        if given && !delete {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{key}`, which says what a \
+                 moderator's deletion leaves and means nothing without `{DELETE}: true`",
+            )));
+        }
     }
 
     if let Some(seconds) = delete_within {
@@ -2314,7 +2360,7 @@ pub(super) fn apply_moderator_abilities(
         .flat_map(|(path, generated_from)| {
             std::iter::once(path.as_str()).chain(generated_from.property_params())
         })
-        .map(top_level_of)
+        .map(top_level_property)
         .collect::<BTreeSet<_>>();
     for field in &change_fields {
         let refusal = if !document_type.properties.contains_key(field) {
@@ -2353,7 +2399,7 @@ pub(super) fn apply_moderator_abilities(
                 && index
                     .properties
                     .iter()
-                    .any(|property| top_level_of(&property.name) == field)
+                    .any(|property| top_level_property(&property.name) == field)
         }) {
             Some("it is in a contested index, whose values are awarded by a vote".to_string())
         } else {
@@ -2370,11 +2416,6 @@ pub(super) fn apply_moderator_abilities(
     Ok(())
 }
 
-/// The top-level property a dotted property path is in.
-fn top_level_of(path: &str) -> &str {
-    path.split('.').next().unwrap_or(path)
-}
-
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
 /// the referring side of every `propertyAgreement`, lookup key and key id
@@ -2386,7 +2427,7 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
     let mut read = BTreeSet::new();
     for (holder, reference) in document_type.reference_declarations() {
         if let ReferenceHolder::Property(path) = holder {
-            read.insert(top_level_of(path));
+            read.insert(top_level_property(path));
         }
         // A key id property reads the identity property whose key it names
         if let PropertyReference::KeyId(KeyIdReference {
@@ -2394,7 +2435,7 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
             ..
         }) = reference
         {
-            read.insert(top_level_of(path));
+            read.insert(top_level_property(path));
         }
         let Some(target) = reference.target() else {
             continue;
@@ -2417,7 +2458,7 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                     lookup,
                     ..
                 } => {
-                    read.extend(lookup.referring_properties().map(top_level_of));
+                    read.extend(lookup.referring_properties().map(top_level_property));
                     Some(property_agreement)
                 }
                 DocumentPropertyReferenceTarget::ListElement(list_element) => {
@@ -2426,7 +2467,7 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                 DocumentPropertyReferenceTarget::IdentityPublicKey {
                     key_id_property, ..
                 } => {
-                    read.insert(top_level_of(key_id_property));
+                    read.insert(top_level_property(key_id_property));
                     None
                 }
                 DocumentPropertyReferenceTarget::Identity
@@ -2440,7 +2481,7 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                     agreement
                         .keys()
                         .filter(|property| !property.starts_with('$'))
-                        .map(|property| top_level_of(property)),
+                        .map(|property| top_level_property(property)),
                 );
             }
         }

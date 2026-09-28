@@ -451,6 +451,94 @@ fn should_refuse_a_schema_that_is_not_an_object_as_an_invalid_contract_structure
     }
 }
 
+// ---- deleteKeepsRecord and deleteRefundsOwner: what a deletion leaves -------------------
+
+#[test]
+fn should_keep_a_record_and_forfeit_the_refund_by_default() {
+    let document_type = parse_moderated(post_schema(platform_value!({}))).expect("parse");
+    assert!(document_type.moderator_deletions_keep_records());
+    assert!(!document_type.moderator_deletions_refund_owner());
+
+    // A type moderators can not delete from keeps no records and refunds nobody.
+    let document_type =
+        parse_moderated(without_abilities(post_schema(platform_value!({})))).expect("parse");
+    assert!(!document_type.moderator_deletions_keep_records());
+    assert!(!document_type.moderator_deletions_refund_owner());
+}
+
+#[test]
+fn should_parse_what_a_deletion_leaves() {
+    for (keeps_record, refunds_owner) in [(false, false), (false, true), (true, true)] {
+        let document_type = parse_moderated(post_schema(platform_value!({
+            "moderatorAbilities": {
+                "delete": true,
+                "deleteKeepsRecord": keeps_record,
+                "deleteRefundsOwner": refunds_owner,
+            },
+        })))
+        .expect("parse");
+        assert!(document_type.documents_can_be_deleted_by_moderators());
+        assert_eq!(
+            document_type.moderator_deletions_keep_records(),
+            keeps_record
+        );
+        assert_eq!(
+            document_type.moderator_deletions_refund_owner(),
+            refunds_owner
+        );
+    }
+}
+
+#[test]
+fn should_refuse_what_a_deletion_leaves_without_a_deletion() {
+    let platform_version = PlatformVersion::latest();
+    for (abilities, key) in [
+        (
+            platform_value!({ "deleteKeepsRecord": true, "changeFields": ["status"] }),
+            "moderatorAbilities.deleteKeepsRecord",
+        ),
+        (
+            platform_value!({ "delete": false, "deleteRefundsOwner": true }),
+            "moderatorAbilities.deleteRefundsOwner",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            assert_refused_naming(
+                parse_with_config(
+                    report_schema(abilities.clone()),
+                    &moderated_config(platform_version),
+                    platform_version.protocol_version,
+                    full_validation,
+                ),
+                &[key, "delete: true"],
+            );
+        }
+    }
+}
+
+#[test]
+fn should_refuse_what_a_deletion_leaves_when_it_is_not_a_boolean_on_the_stored_path_too() {
+    let platform_version = PlatformVersion::latest();
+    for key in ["deleteKeepsRecord", "deleteRefundsOwner"] {
+        let mut abilities = platform_value!({ "delete": true });
+        abilities
+            .insert(key.to_string(), platform_value!("yes"))
+            .expect("expected to set the key");
+        for full_validation in [true, false] {
+            assert!(
+                parse_with_config(
+                    post_schema(platform_value!({ "moderatorAbilities": abilities.clone() })),
+                    &moderated_config(platform_version),
+                    platform_version.protocol_version,
+                    full_validation,
+                )
+                .is_err(),
+                "`{key}: \"yes\"` must be refused (full validation: {full_validation})"
+            );
+        }
+    }
+}
+
 // ---- the shape of the object -------------------------------------------------------------
 
 #[test]

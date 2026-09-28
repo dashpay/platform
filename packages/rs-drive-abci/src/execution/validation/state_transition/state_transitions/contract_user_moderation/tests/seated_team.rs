@@ -85,8 +85,6 @@ const REPLY: &str = "reply";
 const NOTE: &str = "note";
 /// A document type whose `label` only moderators write, moderated with field changes only.
 const BADGE: &str = "badge";
-/// A document type whose `label` only moderators write, not moderated.
-const STICKER: &str = "sticker";
 const DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE: u32 = 41124;
 
 /// A document with a `title` and a `label` only the contract's moderators write
@@ -371,7 +369,6 @@ impl Team {
                     )
                 }
                 add_document_type(c, BADGE, labelled_schema());
-                add_document_type(c, STICKER, labelled_schema());
             },
         )
         .await;
@@ -1227,9 +1224,9 @@ async fn should_refuse_a_seated_team_an_ability_the_declaration_does_not_give_it
     }
 }
 
-/// A seated team writes the fields a type keeps for its moderators where the declaration gives
-/// it `changeDocumentFields`, with a moderation transition and in its members' own documents;
-/// the interim owner, once a team is seated, no longer does.
+/// A seated team writes the fields a type keeps for its moderators, which the declaration must
+/// give it `changeDocumentFields` on, with a moderation transition and in its members' own
+/// documents; the interim owner, once a team is seated, no longer does.
 #[tokio::test]
 async fn should_let_a_seated_team_write_the_fields_kept_for_its_moderators() {
     let team = Team::new(InterimModerators::ContractOwner).await;
@@ -1241,10 +1238,6 @@ async fn should_let_a_seated_team_write_the_fields_kept_for_its_moderators() {
         .create_document_of_type_with(&setup.user, BADGE, unlabelled)
         .await;
     team.process_and_commit(&create_badge);
-    let (sticker, create_sticker) = setup
-        .create_document_of_type_with(&setup.user, STICKER, unlabelled)
-        .await;
-    team.process_and_commit(&create_sticker);
     let label = |document_type_name: &str, document_id: Identifier| {
         ContractUserModerationAction::ChangeDocumentFields {
             document_type_name: document_type_name.to_string(),
@@ -1265,14 +1258,6 @@ async fn should_let_a_seated_team_write_the_fields_kept_for_its_moderators() {
     );
     let by_the_leader = setup.moderate(&team.leader, label(BADGE, badge.id())).await;
     assert_success(&setup.process(&by_the_leader, &transaction));
-    // A sticker keeps the same field, but the declaration gives the team no ability on it.
-    let on_a_sticker = setup
-        .moderate(&team.member, label(STICKER, sticker.id()))
-        .await;
-    assert_paid_with_code(
-        &setup.process(&on_a_sticker, &transaction),
-        CONTRACT_MODERATION_ABILITY_NOT_GRANTED,
-    );
 
     // A member labels its own badge as it creates it; the owner, off the team, can not.
     let (_, by_a_member) = setup

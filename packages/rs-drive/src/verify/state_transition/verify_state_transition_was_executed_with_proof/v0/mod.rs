@@ -10,7 +10,7 @@ use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -1255,6 +1255,7 @@ impl Drive {
                 verify_contract_document_deletion_execution(
                     proof,
                     transition,
+                    known_contracts_provider_fn,
                     carries_owner_balance,
                     platform_version,
                 )
@@ -2958,9 +2959,16 @@ impl Drive {
 /// named, saying that the transition's signer removed it for the transition's reason. When is
 /// the block's to say, and whose the document was only the record knows. A document id is
 /// produced at most once, so the record is of that document and of no other.
+///
+/// On a type whose moderators' deletions keep no record
+/// (`moderatorAbilities.deleteKeepsRecord: false`) it is proved by the document's absence,
+/// and verifies to `VerifiedDocuments` with the document named and none. That the type keeps
+/// none is read from the contract, when the provider holds it: a deletion of a type that keeps
+/// records is proved by its record without the contract, as it always was.
 fn verify_contract_document_deletion_execution(
     proof: &[u8],
     transition: &ContractUserModerationTransition,
+    known_contracts_provider_fn: &ContractLookupFn,
     verify_subset_of_proof: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(RootHash, StateTransitionProofResult), Error> {
@@ -2975,6 +2983,40 @@ fn verify_contract_document_deletion_execution(
             "only a document deletion is verified by its removal record".to_string(),
         )));
     };
+    // A provider that does not hold the contract, or holds a version without the type, leaves
+    // the record to prove the deletion.
+    let contract = known_contracts_provider_fn(&contract_id).ok().flatten();
+    let no_record_type = contract
+        .as_deref()
+        .and_then(|contract| contract.document_type_optional_for_name(document_type_name))
+        .filter(|document_type| !document_type.moderator_deletions_keep_records());
+    if let Some(document_type) = no_record_type {
+        let query = SingleDocumentDriveQuery::latest_not_contested(
+            contract_id.into_buffer(),
+            document_type_name.clone(),
+            document_type.documents_keep_history(),
+            document_id.into_buffer(),
+        );
+        let (root_hash, document) = query.verify_proof(
+            verify_subset_of_proof,
+            proof,
+            document_type,
+            platform_version,
+        )?;
+        if document.is_some() {
+            return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                "proof of state transition execution still contains the document after the {} \
+                 on contract {} by {}",
+                transition.action(),
+                contract_id,
+                transition.owner_id()
+            ))));
+        }
+        return Ok((
+            root_hash,
+            VerifiedDocuments(BTreeMap::from([(*document_id, None)])),
+        ));
+    }
     let (root_hash, mut entries) = Drive::verify_contract_document_removals(
         proof,
         contract_id,
@@ -3104,14 +3146,12 @@ fn verify_contract_document_change_execution(
         )),
     ))?;
     let document_type = contract.document_type_for_name(document_type_name)?;
-    let query = SingleDocumentDriveQuery {
-        contract_id: contract_id.into_buffer(),
-        document_type_name: document_type_name.to_string(),
-        document_type_keeps_history: document_type.documents_keep_history(),
-        document_id: document_id.into_buffer(),
-        block_time_ms: None,
-        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
-    };
+    let query = SingleDocumentDriveQuery::latest_not_contested(
+        contract_id.into_buffer(),
+        document_type_name.to_string(),
+        document_type.documents_keep_history(),
+        document_id.into_buffer(),
+    );
     let (root_hash, document) = query.verify_proof(
         verify_subset_of_proof,
         proof,

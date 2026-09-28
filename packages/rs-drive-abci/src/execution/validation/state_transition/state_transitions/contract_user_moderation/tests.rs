@@ -74,6 +74,7 @@ use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod deletion_options;
 mod moderator_fields;
 mod seated_team;
 
@@ -484,7 +485,7 @@ impl Setup {
     /// Proves the committed state for a document deletion or restore and checks the proof
     /// shows its record. A restore's verifier reads the document's id out of the bytes under
     /// the contract's document type, so it is given the contract, as a client holding it is;
-    /// a deletion's needs none.
+    /// a deletion's needs it only for a type that keeps no records.
     fn assert_removal_proved(&self, transition: &StateTransition) -> ContractDocumentRemoval {
         let platform_version = PlatformVersion::latest();
         let proof = self

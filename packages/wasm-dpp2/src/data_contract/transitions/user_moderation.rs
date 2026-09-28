@@ -2,11 +2,11 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
-use crate::serialization::platform_value_to_object_with_base58_identifiers;
+use crate::serialization::{js_value_to_platform_value, platform_value_to_object};
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    ToSerdeJSONExt, try_from_options, try_from_options_optional, try_from_options_optional_with,
-    try_to_bytes, try_to_u16, try_to_u32, try_to_u64,
+    try_from_options, try_from_options_optional, try_from_options_optional_with, try_to_bytes,
+    try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::data_contract::config::moderation::{
     ContractModerationDocument, ContractModerationReason, ContractWarning,
@@ -364,6 +364,15 @@ pub struct ContractUserModerationActionParts {
     pub reason: Option<ContractModerationReason>,
 }
 
+/// The fields of a changeDocumentFields as JavaScript gives them: an object of top-level
+/// property names to values, each converted as it is (a bigint to an integer, a Uint8Array to
+/// bytes, `null` to a removal) rather than through JSON, which turns a bigint into a string.
+pub fn fields_from_js(value: &JsValue) -> WasmDppResult<BTreeMap<String, Value>> {
+    js_value_to_platform_value(value)?
+        .into_btree_string_map()
+        .map_err(|error| WasmDppError::invalid_argument(format!("`fields`: {error}")))
+}
+
 /// The action for a name and its parts: an identity for the actions on an identity, with
 /// `until` for a suspend and `reason` for a ban, a suspend and a warn, a document type
 /// name and a document id for a deleteDocument, with or without a `reason`, a document
@@ -508,9 +517,9 @@ impl ContractUserModerationWasm {
                 Some(try_to_bytes(value, "document")?)
             }
         };
-        let fields = try_from_options_optional_with(&options, "fields", |value| {
-            value.with_serde_to_platform_value_map()
-        })?;
+        // Read value by value, not through JSON, so a bigint stays an integer and a Uint8Array
+        // bytes: the forms the `fields` getter gives back.
+        let fields = try_from_options_optional_with(&options, "fields", fields_from_js)?;
 
         // Deserialize primitive fields via serde last (consumes options)
         let input: ContractUserModerationOptionsInput =
@@ -705,8 +714,9 @@ impl ContractUserModerationWasm {
             .map(Into::into)
     }
 
-    /// For a changeDocumentFields, the fields it sets, read as a document's properties are
-    /// (identifiers as base58 strings, integers as bigints), and `null` for a field it removes
+    /// For a changeDocumentFields, the fields it sets, in the forms the constructor takes back:
+    /// integers as bigints, identifiers and bytes as Uint8Arrays, and `null` for a field it
+    /// removes
     #[wasm_bindgen(
         getter = "fields",
         unchecked_return_type = "Record<string, unknown> | undefined"
@@ -721,7 +731,7 @@ impl ContractUserModerationWasm {
             // `undefined`, which says nothing about the field.
             let value = match value {
                 Value::Null => JsValue::NULL,
-                value => platform_value_to_object_with_base58_identifiers(value)?,
+                value => platform_value_to_object(value)?,
             };
             js_sys::Reflect::set(&object, &JsValue::from_str(name), &value).map_err(|_| {
                 WasmDppError::serialization(format!("failed to set field `{name}`"))

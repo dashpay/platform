@@ -89,8 +89,8 @@ Authors cannot retract a post, but the contract's moderators can remove one for 
 
 - A moderator deletes a document with the contract user moderation transition, naming the document type, the document id and a reason. The moderators are the ones the contract's `moderation` config declares; see [Contract Moderation](../data-model/contract-moderation.md#the-model).
 - The transition is checked in this order, each refusal paid: the document type exists (`InvalidDocumentTypeError`, 10406); it sets `delete` (41115); the signer is the contract owner or a moderator (41101); the document exists (40101); its owner is neither the contract owner nor a moderator (41102); and, when the type sets `deleteWithin`, the window has not passed (41116).
-- The document and all its index entries are deleted as an owner's delete would delete them, without the `canBeDeleted` check. A removal record is written under the contract: whose document it was, which moderator removed it, the reason, the block time and a hash of the document. The record is never deleted.
-- The document's owner gets no storage refund, and the moderator pays neither the type's delete token cost nor its delete action fee.
+- The document and all its index entries are deleted as an owner's delete would delete them, without the `canBeDeleted` check. A removal record is written under the contract: whose document it was, which moderator removed it, the reason, the block time and a hash of the document. The record is never deleted. A type may leave no record: see [`deleteKeepsRecord`](#moderatorabilitiesdeletekeepsrecord).
+- The document's owner gets no storage refund unless the type says otherwise (see [`deleteRefundsOwner`](#moderatorabilitiesdeleterefundsowner)), and the moderator pays neither the type's delete token cost nor its delete action fee.
 - For a week after the deletion a moderator may restore the document exactly as it was. See [Restoring Documents](../data-model/contract-moderation.md#restoring-documents).
 
 ### Rules at registration
@@ -127,12 +127,56 @@ Limits the moderators' deletion to a window after a document's last change. Once
 - A type whose documents can be replaced must list `$updatedAt` in `required`: measured from creation alone, an author could wait the window out and then rewrite a post into something no moderator can remove. A type with `documentsMutable: false` must list `$updatedAt` or `$createdAt`. Both refusals are 10231.
 - A window of 0 is refused by the meta-schema (`JsonSchemaError`, 10101). A type that moderators may never delete from simply leaves `delete` out.
 
+## `moderatorAbilities.deleteKeepsRecord`
+
+Whether a moderator's deletion leaves a removal record under the contract. The record is what explains a missing document (who removed it, whose it was, why, when) and what a restore brings it back from. A contract that wants its moderators' deletions final and unrecorded, or does not want to pay for the records, turns it off.
+
+| | |
+|---|---|
+| **Where** | `moderatorAbilities` of a document type, with `delete: true` |
+| **Value** | boolean |
+| **Default** | `true` |
+| **Since** | protocol version 14 |
+| **On update** | Fixed (`DocumentTypeUpdateError`, 40212) |
+| **Errors** | `ContractDocumentRemovalNotFoundError` (41119) for a restore when `false` |
+
+### How it works
+
+- With `false`, the deletion writes no record, and the type gets no removal records tree: `getContractDocumentRemovals` refuses it as a type that keeps none. The document is gone for good: a restore is refused (41119), and a document id is never produced twice, so it cannot come back another way.
+- The proof of such a deletion is the document's absence, which the SDKs report as no record (`delete_contract_document` resolves with `None`, `contractDeleteDocument` with `undefined`). The verifier reads the type's setting from the contract, so for such a type it needs the contract, as a restore's does; a deletion that leaves a record is proved by the record alone.
+- The moderator pays less: no record is written and no hash computed.
+
+### Rules at registration
+
+- Needs `delete: true` (`InvalidContractStructure`, 10231).
+
+## `moderatorAbilities.deleteRefundsOwner`
+
+Whether the owner of a document a moderator deletes is refunded its storage. By default the owner forfeits it: removed content costs its author what they paid to store it. A contract whose moderation is housekeeping rather than sanction (clearing handled reports, expired listings) gives it back.
+
+| | |
+|---|---|
+| **Where** | `moderatorAbilities` of a document type, with `delete: true` |
+| **Value** | boolean |
+| **Default** | `false` |
+| **Since** | protocol version 14 |
+| **On update** | Fixed (`DocumentTypeUpdateError`, 40212) |
+
+### How it works
+
+- With `true`, the owner is refunded as for their own deletion: the part of the storage fee not yet paid out to past epochs. The refund goes to the owner, not to the moderator, who still pays for the transition and the record. A document of a type with a `ttl` refunds nothing either way.
+- With `false`, the credits stay in the storage pools they were paid into.
+
+### Rules at registration
+
+- Needs `delete: true` (`InvalidContractStructure`, 10231).
+
 ## How they combine
 
 | Who deletes | Allowed by | Refund to the owner |
 |---|---|---|
 | The document's owner | `canBeDeleted: true`, on a type that does not keep history | Yes, except on a type with a `ttl` |
-| The contract's moderators | `moderatorAbilities.delete: true`, within `moderatorAbilities.deleteWithin` when set | No |
+| The contract's moderators | `moderatorAbilities.delete: true`, within `moderatorAbilities.deleteWithin` when set | Only with `moderatorAbilities.deleteRefundsOwner: true`, except on a type with a `ttl` |
 | The platform | `ttl`, once it has passed | No |
 
 A type that allows any of the three counts as deletable for references. Only a type that allows none of them can be the target of a `permanentDocument` or `listElement` reference.

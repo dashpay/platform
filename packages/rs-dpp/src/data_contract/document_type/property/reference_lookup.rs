@@ -26,7 +26,13 @@
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::document_type::property::{is_transient, DocumentPropertyType};
+use crate::data_contract::document_type::property::{
+    is_transient, top_level_property, DocumentPropertyType,
+};
+
+/// Why a key part moves when it is a field only the contract's moderators write
+/// (`moderatorAbilities.changeFields`): no replace is needed to change it.
+const MODERATORS_CHANGE: &str = "the contract's moderators change";
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -332,11 +338,16 @@ impl DocumentReferenceLookup {
             }
         }
         if let Some((index_property, why)) = self.moving_key_part(referenced) {
+            // A field only moderators write is never fixed, whatever the type says
+            let hint = if why == MODERATORS_CHANGE {
+                "key the lookup on a property only its owner writes"
+            } else {
+                "make the type immutable or list the property under `immutable`"
+            };
             return Some(format!(
                 "index \"{}\" of \"{}\" keys documents by \"{index_property}\", which {why}: a \
                  lookup must keep finding the document it found, so every part of its key must \
-                 be fixed once the document is written (make the type immutable or list the \
-                 property under `immutable`)",
+                 be fixed once the document is written ({hint})",
                 self.index,
                 referenced.name()
             ));
@@ -375,8 +386,17 @@ impl DocumentReferenceLookup {
                 TRANSFERRED_AT | TRANSFERRED_AT_BLOCK_HEIGHT | TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
                     changes_owner.then_some("a transfer or a purchase changes")
                 }
-                property => (!schema_property_is_fixed_once_written(referenced, property))
-                    .then_some("a replace can change"),
+                property => {
+                    if referenced
+                        .moderator_changeable_fields()
+                        .contains(top_level_property(property))
+                    {
+                        Some(MODERATORS_CHANGE)
+                    } else {
+                        (!schema_property_is_fixed_once_written(referenced, property))
+                            .then_some("a replace can change")
+                    }
+                }
             };
             why.map(|why| (index_property.as_str(), why))
         })
@@ -439,7 +459,7 @@ pub(crate) fn schema_property_is_fixed_once_written(
     document_type: DocumentTypeRef,
     path: &str,
 ) -> bool {
-    let top_level = path.split('.').next().unwrap_or(path);
+    let top_level = top_level_property(path);
     (!document_type.documents_mutable() || document_type.immutable_fields().contains(top_level))
         && !document_type
             .moderator_changeable_fields()

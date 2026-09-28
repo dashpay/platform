@@ -1020,6 +1020,22 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn moderator_deletions_keep_records(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.moderator_deletions_keep_records(),
+        }
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.moderator_deletions_refund_owner(),
+        }
+    }
+
     fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentType::V0(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
@@ -1209,6 +1225,22 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn moderator_deletions_keep_records(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.moderator_deletions_keep_records(),
+        }
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.moderator_deletions_refund_owner(),
+        }
+    }
+
     fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeRef::V0(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
@@ -1361,6 +1393,22 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => None,
             DocumentTypeMutRef::V1(_) => None,
             DocumentTypeMutRef::V2(v2) => v2.documents_can_be_deleted_by_moderators_for(),
+        }
+    }
+
+    fn moderator_deletions_keep_records(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_deletions_keep_records(),
+        }
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_deletions_refund_owner(),
         }
     }
 

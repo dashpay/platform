@@ -1474,7 +1474,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `canBeDeletedByModerators`, `deleteWithin` for
 ///     `canBeDeletedByModeratorsFor`, and `changeFields`, the top-level
 ///     properties only the contract's moderators write. The whole object is
-///     fixed with the type (40212). A listed property must be declared,
+///     fixed with the type (40212). `deleteKeepsRecord` (default true) says
+///     whether a moderator's deletion leaves its removal record: without one the
+///     type has no records tree, the query refuses it, a restore is refused
+///     (41119) and the deletion is proved by the document's absence, which the
+///     verifier learns from the contract. `deleteRefundsOwner` (default false)
+///     says whether the owner is refunded its storage instead of forfeiting it
+///     (the batch then carries no `ForfeitStorageRefunds`). A listed property must be declared,
 ///     optional, stored, not immutable, neither a reference nor read by one,
 ///     neither generated nor a generation parameter, and in no contested index,
 ///     on a type that is not indexOnly; a type listing any keeps `$revision` even
@@ -1491,10 +1497,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     generalized and renamed), its references are not checked again, and it
 ///     is stored with the replace's update, `$revision` one higher and
 ///     `$updatedAt` untouched; the moderator pays, refunds of what the change
-///     frees stay the owner's, and a seated team counts the action. The proof
-///     is the document as it now stands. Batch create state validation 2 and
-///     replace state validation 1 refuse a document's owner who sets, changes
-///     or removes such a field without moderating the contract. New errors:
+///     frees stay the owner's. A change that changes nothing is refused (10905),
+///     and a seated team's change does not count toward its action share. An
+///     elected declaration must give its team `changeDocumentFields` on every
+///     type that lists fields. The proof
+///     is the document as it now stands. The batch transformer (in place,
+///     inert before 14) refuses a document's owner who sets, changes or removes
+///     such a field without moderating the contract, in the mempool too. New errors:
 ///     `InvalidContractModerationDocumentFieldsError` (10905),
 ///     `DocumentFieldNotChangeableByModeratorsError` (41123) and
 ///     `DocumentModeratorFieldNotWritableError` (41124), appended.
