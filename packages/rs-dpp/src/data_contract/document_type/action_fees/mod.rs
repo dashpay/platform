@@ -22,6 +22,7 @@ use crate::prelude::TimestampMillis;
 use crate::serialization::json_safe_fields;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -432,6 +433,7 @@ impl DocumentActionFees {
 
     /// The fee of `action`, `None` when the document type charges nothing for it. Deleting an
     /// index-only document is a deletion.
+    #[cfg(feature = "state-transitions")]
     pub fn action_fee(&self, action: DocumentTransitionActionType) -> Option<DocumentActionFee> {
         match action {
             DocumentTransitionActionType::Create => self.document_creation_action_fee(),

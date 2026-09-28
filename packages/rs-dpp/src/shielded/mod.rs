@@ -28,12 +28,15 @@ use crate::serialization::JsonConvertible;
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 use crate::serialization::ValueConvertible;
 pub use sighash::{
-    compute_platform_sighash, identity_create_from_shielded_extra_sighash_data,
-    identity_create_from_shielded_extra_sighash_data_v0,
-    identity_top_up_from_shielded_extra_sighash_data,
+    compute_platform_sighash, identity_top_up_from_shielded_extra_sighash_data,
     identity_top_up_from_shielded_extra_sighash_data_v0, shielded_withdrawal_extra_sighash_data,
     shielded_withdrawal_extra_sighash_data_v0, unshield_extra_sighash_data,
     unshield_extra_sighash_data_v0,
+};
+#[cfg(feature = "state-transitions")]
+pub use sighash::{
+    identity_create_from_shielded_extra_sighash_data,
+    identity_create_from_shielded_extra_sighash_data_v0,
 };
 
 /// Calibrated effective storage-byte cost of the Core withdrawal document a

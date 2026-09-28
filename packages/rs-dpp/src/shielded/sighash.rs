@@ -6,9 +6,13 @@
 //! signing (client/builder) and verifying (consensus) sides commit to identical bytes. The byte
 //! layouts are consensus-critical and versioned via `dpp.methods.shielded_extra_sighash_data`.
 
+#[cfg(feature = "state-transitions")]
 use crate::address_funds::PlatformAddress;
+#[cfg(feature = "state-transitions")]
 use crate::identity::identity_public_key::contract_bounds::ContractBounds;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+#[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::withdrawal::Pooling;
 use crate::ProtocolError;
@@ -211,6 +215,7 @@ pub fn identity_top_up_from_shielded_extra_sighash_data_v0(
 /// both call this single function. Unlike the fixed-length withdrawal/unshield helpers, the
 /// variable-length key list is fully length-prefixed (both the key count and each key's data) so
 /// the preimage is unambiguous for any key set.
+#[cfg(feature = "state-transitions")]
 pub fn identity_create_from_shielded_extra_sighash_data(
     identity_id: &[u8; 32],
     denomination: u64,
@@ -236,6 +241,7 @@ pub fn identity_create_from_shielded_extra_sighash_data(
 /// v0 byte layout of [`identity_create_from_shielded_extra_sighash_data`] (see that function's doc
 /// comment for the layout and rationale). Frozen: never mutate; a layout change requires a new `_v1`
 /// + version bump.
+#[cfg(feature = "state-transitions")]
 pub fn identity_create_from_shielded_extra_sighash_data_v0(
     identity_id: &[u8; 32],
     denomination: u64,
@@ -355,6 +361,7 @@ mod tests {
         assert_eq!(&d[3..11], &5u64.to_le_bytes());
     }
 
+    #[cfg(feature = "state-transitions")]
     mod identity_create_sighash {
         use super::*;
         // Pin the v0 preimage directly (see the note in the parent test module).
