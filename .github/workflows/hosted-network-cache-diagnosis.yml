@@ -1,0 +1,67 @@
+name: Hosted network cache diagnosis
+
+on:
+  push:
+    branches: [ci/hosted-network-cache-diagnosis-20260928]
+    paths: [.github/workflows/hosted-network-cache-diagnosis.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Match the original cache paths
+        run: echo "HOME=$HOME" >> "$GITHUB_ENV"
+      - name: Restore the exact cache from the three failed browser jobs
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ${{ env.HOME }}/.dashmate
+            **/.env
+            dashmate_volumes_dump
+          key: local-network-volumes/5c79d12dfc/273ebfe4e2563de32c0ad9fb11d304b1d9ea52b3b99553bafed51d060e3e07df
+          fail-on-cache-miss: true
+      - name: Report only nonsecret network and port fields
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import socket
+
+          root = Path(os.environ['HOME']) / '.dashmate'
+          config = json.loads((root / 'config.json').read_text())
+          def get(value, *keys):
+              for key in keys:
+                  value = value.get(key, {}) if isinstance(value, dict) else {}
+              return value if value != {} else None
+          for name, value in config.get('configs', {}).items():
+              print(json.dumps({
+                  'config': name,
+                  'group': value.get('group'),
+                  'platform_enabled': get(value, 'platform', 'enable'),
+                  'core_p2p_port': get(value, 'core', 'p2p', 'port'),
+                  'tenderdash_p2p_port': get(value, 'platform', 'drive', 'tenderdash', 'p2p', 'port'),
+                  'tenderdash_rpc_port': get(value, 'platform', 'drive', 'tenderdash', 'rpc', 'port'),
+              }))
+          # Never print the cached config, environment, keys or volume contents.
+          metadata = Path('dashmate_volumes_dump/metadata.json')
+          if metadata.exists():
+              print(json.dumps({'cached_volume_count': len(json.loads(metadata.read_text()))}))
+          sock = socket.socket()
+          try:
+              sock.bind(('0.0.0.0', 46656))
+              print('clean_host_port_46656_bind=success')
+          except OSError as error:
+              print('clean_host_port_46656_bind=' + error.strerror)
+          finally:
+              sock.close()
+      - name: Show only existing container names and port mappings
+        run: docker ps --format '{{.Names}} {{.Ports}}'
