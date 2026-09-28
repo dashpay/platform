@@ -1606,8 +1606,9 @@ extension SDK {
             let errorMessage = error.pointee.message != nil
                 ? String(cString: error.pointee.message!)
                 : "Unknown error"
+            let failure = SDKError.stateTransitionFailure(errorMessage, ffiError: error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw failure
         }
     }
 
