@@ -1,3 +1,7 @@
+#[cfg(feature = "validation")]
+use crate::block::BlockInfoWasm;
+#[cfg(feature = "validation")]
+use crate::consensus_error::ConsensusErrorWasm;
 use crate::data_contract::DocumentWasm;
 use crate::data_contract::document_type_distinct_from::{
     DocumentPropertyDistinctFromArrayJs, DocumentPropertyDistinctFromMapJs,
@@ -36,6 +40,8 @@ use crate::utils::{
     try_from_options_optional_with, try_from_options_with, try_to_object, try_to_u16, try_to_u32,
 };
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
+#[cfg(feature = "validation")]
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
 use dpp::data_contract::config::DataContractConfig;
@@ -47,6 +53,8 @@ use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+#[cfg(feature = "validation")]
+use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 use dpp::data_contract::{
     DataContract, GroupContractPosition, TokenConfiguration, TokenContractPosition,
 };
@@ -912,6 +920,58 @@ impl DataContractWasm {
             })?;
 
         Ok(check_property_constraints(document_type, &document.document)?.into())
+    }
+
+    /// Whether `newContract` is an update of this contract the platform
+    /// accepts, judged with the code consensus runs on a data contract update
+    /// transition (`DataContract::validate_update`): the owner may not change,
+    /// the version must rise by exactly one, the config and every existing
+    /// document type follow their update rules, `schemaDefs` stay compatible,
+    /// groups and tokens are kept, and an added token's pre-programmed
+    /// distributions may not start before the block time.
+    ///
+    /// Returns the consensus errors a refused update would carry, each with
+    /// the `code` a rejected transition reaches JS with, or an empty array
+    /// when the update is valid. Most checks stop at the first failure, so a
+    /// refused update usually reports one error.
+    ///
+    /// The two contracts are compared whatever their ids; the platform judges
+    /// an update against the stored contract with the new contract's id.
+    /// Build `newContract` with full validation
+    /// (`DataContract.fromJSON(json, true, platformVersion)`): the transition's
+    /// structural checks run there, not here. No state is read, so what the
+    /// platform checks against state on top is not covered: that the contract
+    /// exists, that group members, identities named by token configurations
+    /// and appointed moderators exist, that references into other contracts
+    /// resolve, and the signature, nonce and fees.
+    ///
+    /// `blockInfo` is the block the update would be executed in; only its
+    /// time is read. `undefined` lets the device clock stand in for it.
+    #[cfg(feature = "validation")]
+    #[wasm_bindgen(js_name = "validateUpdate")]
+    pub fn validate_update(
+        &self,
+        #[wasm_bindgen(js_name = "newContract")] new_contract: &DataContractWasm,
+        #[wasm_bindgen(js_name = "blockInfo", unchecked_param_type = "BlockInfo | undefined")]
+        block_info: JsValue,
+        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<Vec<ConsensusErrorWasm>> {
+        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
+        let block_info = if block_info.is_undefined() || block_info.is_null() {
+            BlockInfo::default_with_time(js_sys::Date::now() as u64)
+        } else {
+            BlockInfo::from(&*block_info.to_wasm::<BlockInfoWasm>("BlockInfo")?)
+        };
+
+        let result =
+            self.0
+                .validate_update(&new_contract.0, &block_info, &platform_version.into())?;
+
+        Ok(result
+            .errors
+            .into_iter()
+            .map(ConsensusErrorWasm::from)
+            .collect())
     }
 
     /// All `encryptedFor` declarations of one document type, in schema
