@@ -206,10 +206,56 @@ jobs:
       # target/ before and after each slice, and this job empties the
       # workspace anyway. Releases keep their own release-ios cache outside
       # it instead.
+      #
+      # Inline copy of .github/actions/release-cargo-target-cache; keep the
+      # two in sync. It cannot be a `uses: ./` step: GitHub loads a local
+      # action from the checked-out tree, and a dispatch from the dev branch
+      # for a tag older than v4.2.0-beta.5 checks out a tree that lacks it.
+      # The job's default shell already quotes the script path.
       - name: Prepare release Cargo target cache
-        uses: ./.github/actions/release-cargo-target-cache
-        with:
-          name: release-swift-sdk-target
+        env:
+          CACHE_NAME: release-swift-sdk-target
+          MAX_GIB: "60"
+          MIN_FREE_GIB: "40"
+        run: |
+          set -euo pipefail
+          case "$CACHE_NAME" in
+            ''|*/*|.*)
+              echo "::error::Invalid release target cache name '$CACHE_NAME'."
+              exit 1
+              ;;
+          esac
+          RELEASE_TARGET_DIR="$HOME/.cache/dash-platform/$CACHE_NAME"
+          MAX_CACHE_KIB=$((MAX_GIB * 1024 * 1024))
+          MIN_FREE_KIB=$((MIN_FREE_GIB * 1024 * 1024))
+          mkdir -p "$RELEASE_TARGET_DIR"
+          USED_KIB=$(du -sk "$RELEASE_TARGET_DIR" | cut -f1)
+          FREE_KIB=$(df -Pk "$RELEASE_TARGET_DIR" | awk 'NR == 2 { print $4 }')
+          if [ "$USED_KIB" -gt "$MAX_CACHE_KIB" ] || [ "$FREE_KIB" -lt "$MIN_FREE_KIB" ]; then
+            echo "::notice::Resetting the release target cache (${USED_KIB} KiB used, ${FREE_KIB} KiB free on the volume)."
+            rm -rf "${RELEASE_TARGET_DIR:?}"
+            mkdir -p "$RELEASE_TARGET_DIR"
+          fi
+          du -sh "$RELEASE_TARGET_DIR"
+          df -h "$RELEASE_TARGET_DIR"
+          echo "CARGO_TARGET_DIR=$RELEASE_TARGET_DIR" >> "$GITHUB_ENV"
+
+      # build_ios.sh before v4.2.0-beta.5 ignores CARGO_TARGET_DIR and looks
+      # for its libraries and headers under the workspace target/. Cargo
+      # still builds into CARGO_TARGET_DIR, so point that path at the release
+      # cache for such a tag; newer scripts read CARGO_TARGET_DIR and never
+      # use the link. target/ is not tracked and the workspace was emptied
+      # before checkout, so anything already there is unexpected. A real
+      # directory would also make ln place the link inside it.
+      - name: Link workspace target/ to the release Cargo target cache
+        run: |
+          set -euo pipefail
+          if [ -e "$GITHUB_WORKSPACE/target" ] && [ ! -L "$GITHUB_WORKSPACE/target" ]; then
+            echo "::error::$GITHUB_WORKSPACE/target already exists after a fresh checkout."
+            exit 1
+          fi
+          ln -sfn "$CARGO_TARGET_DIR" "$GITHUB_WORKSPACE/target"
+          ls -ld "$GITHUB_WORKSPACE/target"
 
       - name: Build DashSDKFFI.xcframework and install into Swift package
         env:
@@ -243,6 +289,16 @@ jobs:
             packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.commit.txt
           if-no-files-found: error
           retention-days: 7
+
+      # PR jobs reuse this workspace, and some build into target/ after a
+      # `clean: false` checkout. Never leave them a link into the release
+      # cache. Removing the link leaves the cache itself untouched.
+      - name: Remove the workspace target/ link
+        if: always()
+        run: |
+          if [ -L "$GITHUB_WORKSPACE/target" ]; then
+            rm "$GITHUB_WORKSPACE/target"
+          fi
 
   attach-release:
     name: Attach XCFramework to platform release
