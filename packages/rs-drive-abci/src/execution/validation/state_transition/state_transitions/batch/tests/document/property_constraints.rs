@@ -14,6 +14,7 @@ use super::*;
 mod property_constraints_tests {
     use super::*;
     use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
+    use crate::execution::validation::state_transition::tests::setup_identity_without_adding_it;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::consensus::basic::document::PropertyConstraintViolation;
@@ -217,6 +218,263 @@ mod property_constraints_tests {
         })
     }
 
+    /// An `offer` type with the integers [`set_valid_offer`] fills, a `title`, a
+    /// typed array of `tags` and a byte array `signature`, and four rules on
+    /// their sizes: `shortTitle` (at most 10 characters), `titleBytes` (at most
+    /// 12 UTF-8 bytes), `tagsPerUnit` (no more tags than the quantity) and
+    /// `signatureLength` (left out, or 64 or 65 bytes).
+    fn sized_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "title": { "type": "string", "maxLength": 40, "position": 4 },
+                "tags": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": { "type": "string", "maxLength": 16 },
+                    "position": 5
+                },
+                "signature": {
+                    "type": "array",
+                    "byteArray": true,
+                    "maxItems": 65,
+                    "position": 6
+                }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "shortTitle": { "lessThanOrEqual": [{ "length": "title" }, 10] },
+                "titleBytes": { "lessThanOrEqual": [{ "byteLength": "title" }, 12] },
+                "tagsPerUnit": { "lessThanOrEqual": [{ "count": "tags" }, "quantity"] },
+                "signatureLength": { "in": [{ "count": "signature" }, [0, 64, 65]] }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    /// A mutable, transferable and purchasable `offer` type with the integers
+    /// [`set_valid_offer`] fills and an `endsAt` time, recording the time of its
+    /// creation, last update and last transfer and the block height of its
+    /// creation, and five rules on them: `endsAfterCreation`
+    /// (`endsAt > $createdAt`), `endsWithinAWeek` (`endsAt - $createdAt` at most
+    /// a week), `listedAfterHeight10` (`$createdAtBlockHeight >= 10`),
+    /// `updatedBeforeEnd` (`$updatedAt <= endsAt`) and `transferredBeforeEnd`
+    /// (`$transferredAt <= endsAt`).
+    fn timed_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "transferable": 1,
+            "tradeMode": 1,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "endsAt": { "type": "integer", "minimum": 0, "position": 4 }
+            },
+            "required": [
+                "price",
+                "fee",
+                "quantity",
+                "deposit",
+                "endsAt",
+                "$createdAt",
+                "$updatedAt",
+                "$transferredAt",
+                "$createdAtBlockHeight"
+            ],
+            "propertyConstraints": {
+                "endsAfterCreation": { "greaterThan": ["endsAt", "$createdAt"] },
+                "endsWithinAWeek": {
+                    "lessThanOrEqual": [{ "subtract": ["endsAt", "$createdAt"] }, WEEK_MS]
+                },
+                "listedAfterHeight10": { "greaterThanOrEqual": ["$createdAtBlockHeight", 10] },
+                "updatedBeforeEnd": { "lessThanOrEqual": ["$updatedAt", "endsAt"] },
+                "transferredBeforeEnd": { "lessThanOrEqual": ["$transferredAt", "endsAt"] }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    const DAY_MS: u64 = 86_400_000;
+    const WEEK_MS: u64 = 7 * DAY_MS;
+    /// The block time the timed tests start at.
+    const NOW: u64 = 1_700_000_000_000;
+
+    /// A block at `time_ms` and Platform `height`.
+    fn at_block(time_ms: u64, height: u64) -> BlockInfo {
+        BlockInfo {
+            time_ms,
+            height,
+            core_height: 1000,
+            ..Default::default()
+        }
+    }
+
+    /// The fixture over [`timed_offer_schema`] with an offer created at [`NOW`],
+    /// block 20, ending a day later.
+    async fn timed_offer() -> OfferFixture {
+        let mut fixture = OfferFixture::with_schema(timed_offer_schema());
+        fixture.block_info = at_block(NOW, 20);
+        assert_matches!(
+            fixture
+                .create(|document| document.set("endsAt", Value::U64(NOW + DAY_MS)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        fixture
+    }
+
+    /// A mutable, transferable `offer` type with the integers
+    /// [`set_valid_offer`] fills and three typed arrays, of `labels`, of
+    /// `members` and of `tiers`, with three rules looking among them:
+    /// `notUsed` (no `"used"` label), `ownerIsMember` (the owner is a member,
+    /// when members are listed) and `quantityListed` (the quantity is one of the
+    /// tiers, when tiers are listed).
+    fn listed_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "transferable": 1,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "labels": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": { "type": "string", "maxLength": 10, "enum": ["new", "used", "sale"] },
+                    "position": 4
+                },
+                "members": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier"
+                    },
+                    "position": 5
+                },
+                "tiers": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": { "type": "integer", "minimum": 0 },
+                    "position": 6
+                }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "notUsed": { "not": { "contains": ["labels", { "const": "used" }] } },
+                "ownerIsMember": {
+                    "anyOf": [{ "absent": "members" }, { "contains": ["members", "$ownerId"] }]
+                },
+                "quantityListed": {
+                    "anyOf": [{ "absent": "tiers" }, { "contains": ["tiers", "quantity"] }]
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    /// An `offer` type with the integers [`set_valid_offer`] fills, a `url`, a
+    /// `path` and a `parentPath`, with three rules on prefixes and suffixes:
+    /// `dashDomain` (a url ends with `.dash`), `secureUrl` (a url starts with
+    /// `https://`) and `underParent` (a path starts with its parent's).
+    fn linked_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "url": { "type": "string", "maxLength": 100, "position": 4 },
+                "path": { "type": "string", "maxLength": 100, "position": 5 },
+                "parentPath": { "type": "string", "maxLength": 100, "position": 6 }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "dashDomain": {
+                    "anyOf": [{ "absent": "url" }, { "endsWith": ["url", { "const": ".dash" }] }]
+                },
+                "secureUrl": {
+                    "anyOf": [{ "absent": "url" }, { "startsWith": ["url", { "const": "https://" }] }]
+                },
+                "underParent": {
+                    "anyOf": [{ "absent": "parentPath" }, { "startsWith": ["path", "parentPath"] }]
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
+    /// An `offer` type with the integers [`set_valid_offer`] fills and a
+    /// `discount`, with one rule per shorthand operator: `depositNearTotal`
+    /// (`abs`: the deposit is within 5 of the order total), `discountNeedsPrice`
+    /// (`ifThen`: a discount needs a price of 100 or more), `feeCapped` (`max`:
+    /// the fee is at most 10 or a tenth of the price), `feeNotBanned` (`notIn`),
+    /// `noZeroTerms` (`min`: price, fee and quantity are all above 0) and
+    /// `quantityTiers` (`ifThenElse`: at most 10 at a price of 100 or more, at
+    /// most 100 below it).
+    fn shorthand_offer_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "discount": { "type": "integer", "minimum": 0, "position": 4 }
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "depositNearTotal": {
+                    "lessThanOrEqual": [
+                        {
+                            "abs": {
+                                "subtract": [
+                                    "deposit",
+                                    { "multiply": [{ "add": ["price", "fee"] }, "quantity"] }
+                                ]
+                            }
+                        },
+                        5
+                    ]
+                },
+                "discountNeedsPrice": {
+                    "ifThen": [
+                        { "greaterThan": ["discount", 0] },
+                        { "greaterThanOrEqual": ["price", 100] }
+                    ]
+                },
+                "feeCapped": {
+                    "lessThanOrEqual": ["fee", { "max": [10, { "divide": ["price", 10] }] }]
+                },
+                "feeNotBanned": { "notIn": ["fee", [7, 13]] },
+                "noZeroTerms": {
+                    "greaterThan": [{ "min": ["price", "fee", "quantity"] }, 0]
+                },
+                "quantityTiers": {
+                    "ifThenElse": [
+                        { "greaterThanOrEqual": ["price", 100] },
+                        { "lessThanOrEqual": ["quantity", 10] },
+                        { "lessThanOrEqual": ["quantity", 100] }
+                    ]
+                }
+            },
+            "additionalProperties": false
+        })
+    }
+
     /// An offer that meets every rule: (100 + 10) * 2 = 220.
     fn set_valid_offer(document: &mut Document) {
         document.set("price", Value::U64(100));
@@ -240,6 +498,9 @@ mod property_constraints_tests {
         /// processed transition consumes one, including the ones that fail
         /// with a paid consensus error.
         next_nonce: IdentityNonce,
+        /// The block every transition is processed in: its time and heights are
+        /// the ones a write records.
+        block_info: BlockInfo,
     }
 
     impl OfferFixture {
@@ -285,6 +546,7 @@ mod property_constraints_tests {
                 contract,
                 document: None,
                 next_nonce: 1,
+                block_info: BlockInfo::default(),
             }
         }
 
@@ -301,7 +563,7 @@ mod property_constraints_tests {
                 .process_raw_state_transitions(
                     &[serialized],
                     &platform_state,
-                    &BlockInfo::default(),
+                    &self.block_info,
                     &transaction,
                     platform_version,
                     false,
@@ -466,8 +728,18 @@ mod property_constraints_tests {
             result
         }
 
-        /// Puts the stored offer up for sale at `price`.
+        /// Puts the stored offer up for sale at `price`, which must succeed.
         async fn set_price(&mut self, price: Credits) {
+            assert_matches!(
+                self.try_set_price(price).await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "setting the price must succeed"
+            );
+        }
+
+        /// Puts the stored offer up for sale at `price`. On success the fixture's
+        /// document becomes the priced version.
+        async fn try_set_price(&mut self, price: Credits) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let mut priced = self
                 .document
@@ -499,12 +771,14 @@ mod property_constraints_tests {
             };
             self.next_nonce += 1;
 
-            assert_matches!(
-                self.process(&transition),
-                StateTransitionExecutionResult::SuccessfulExecution { .. },
-                "setting the price must succeed"
-            );
-            self.document = Some(priced);
+            let result = self.process(&transition);
+            if matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            ) {
+                self.document = Some(priced);
+            }
+            result
         }
 
         /// A second funded identity on the fixture's platform.
@@ -1069,6 +1343,141 @@ mod property_constraints_tests {
         assert_eq!(fixture.stored_offers()[0].owner_id(), recipient.id());
     }
 
+    /// A `sellerId` that declares `refersTo` an identity is compared with
+    /// `$ownerId` as any identifier property is: the contract registers, a
+    /// create naming another existing identity as seller is refused, one naming
+    /// the owner is accepted, and a transfer is refused.
+    #[tokio::test]
+    async fn should_compare_an_identifier_property_that_declares_refers_to() {
+        let mut schema = owned_offer_schema();
+        schema["properties"]["sellerId"]["refersTo"] = platform_value!({ "type": "identity" });
+        let mut fixture = OfferFixture::with_schema(schema);
+        let owner = fixture.identity.id();
+        let (other, _, _) = fixture.other_identity(964);
+
+        let result = fixture
+            .create(|document| document.set("sellerId", Value::Identifier(other.id().to_buffer())))
+            .await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| document.set("sellerId", Value::Identifier(owner.to_buffer())))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture.transfer(other.id()).await;
+        expect_violated(result, "sellerIsOwner", PropertyConstraintViolation::NotMet);
+        let stored = fixture.stored_offers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].owner_id(), owner);
+    }
+
+    /// Identifier properties that declare `refersTo` an identity are compared
+    /// with a const, with the identifiers an `in` lists and with each other on
+    /// a create, as plain ones are. Every identity the rules name exists, so
+    /// only a rule refuses a create and the accepted one meets its references.
+    #[tokio::test]
+    async fn should_judge_const_in_and_pair_rules_over_refers_to_identifiers() {
+        let seeds = [965, 966, 967, 968];
+        let [payer, token_a, token_b, banned] =
+            seeds.map(|seed| setup_identity_without_adding_it(seed, 0).0.id());
+        let base58 = |id: Identifier| Value::Text(id.to_string(Encoding::Base58));
+        let referring = |position: u32| {
+            platform_value!({
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "refersTo": { "type": "identity" },
+                "position": position
+            })
+        };
+        let schema = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "payerId": referring(4),
+                "refundTo": referring(5),
+                "paymentToken": referring(6)
+            },
+            "required": ["price", "fee", "quantity", "deposit"],
+            "propertyConstraints": {
+                "paidInAcceptedToken": {
+                    "anyOf": [
+                        { "absent": "paymentToken" },
+                        { "in": ["paymentToken", [base58(token_a), base58(token_b)]] }
+                    ]
+                },
+                "payerNotBanned": {
+                    "anyOf": [
+                        { "absent": "payerId" },
+                        { "notEqual": ["payerId", { "const": base58(banned) }] }
+                    ]
+                },
+                "refundGoesToPayer": {
+                    "anyOf": [{ "absent": "refundTo" }, { "equal": ["refundTo", "payerId"] }]
+                }
+            },
+            "additionalProperties": false
+        });
+        let mut fixture = OfferFixture::with_schema(schema);
+        for seed in seeds {
+            fixture.other_identity(seed);
+        }
+        let identifier = |id: Identifier| Value::Identifier(id.to_buffer());
+
+        let result = fixture
+            .create(|document| document.set("paymentToken", identifier(banned)))
+            .await;
+        expect_violated(
+            result,
+            "paidInAcceptedToken",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| document.set("payerId", identifier(banned)))
+            .await;
+        expect_violated(
+            result,
+            "payerNotBanned",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| {
+                document.set("payerId", identifier(payer));
+                document.set("refundTo", identifier(token_a));
+            })
+            .await;
+        expect_violated(
+            result,
+            "refundGoesToPayer",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("paymentToken", identifier(token_b));
+                    document.set("payerId", identifier(payer));
+                    document.set("refundTo", identifier(payer));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
     #[tokio::test]
     async fn should_judge_a_replace_against_the_rules() {
         let mut fixture = OfferFixture::new();
@@ -1238,5 +1647,382 @@ mod property_constraints_tests {
                 if e.constraint() == "depositCoversOrder"
                     && e.violation() == PropertyConstraintViolation::NotMet
         );
+    }
+
+    /// Sizes read by real creates: a title too long in characters, one short
+    /// enough in characters but too long in bytes, more tags than the quantity
+    /// and a signature of the wrong length are each refused with the rule they
+    /// break, and an offer meeting all four is stored.
+    #[tokio::test]
+    async fn should_judge_the_sizes_of_strings_arrays_and_byte_arrays() {
+        let mut fixture = OfferFixture::with_schema(sized_offer_schema());
+        let tags = |count: usize| Value::Array(vec![Value::Text("tag".to_string()); count]);
+
+        // 12 characters
+        let result = fixture
+            .create(|document| document.set("title", Value::from("a long title")))
+            .await;
+        expect_violated(result, "shortTitle", PropertyConstraintViolation::NotMet);
+
+        // 8 characters, 16 bytes
+        let result = fixture
+            .create(|document| document.set("title", Value::from("éééééééé")))
+            .await;
+        expect_violated(result, "titleBytes", PropertyConstraintViolation::NotMet);
+
+        // 3 tags for a quantity of 2
+        let result = fixture
+            .create(|document| document.set("tags", tags(3)))
+            .await;
+        expect_violated(result, "tagsPerUnit", PropertyConstraintViolation::NotMet);
+
+        // 10 bytes
+        let result = fixture
+            .create(|document| document.set("signature", Value::Bytes(vec![7; 10])))
+            .await;
+        expect_violated(
+            result,
+            "signatureLength",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        // 4 characters in 5 bytes, 2 tags, a 64-byte signature
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("title", Value::from("Café"));
+                    document.set("tags", tags(2));
+                    document.set("signature", Value::Bytes(vec![7; 64]));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// The times and heights a create records are its block's: an offer must end
+    /// after its creation and within a week of it, and be listed from block 10 on.
+    #[tokio::test]
+    async fn should_judge_a_create_by_the_time_and_height_of_its_block() {
+        let mut fixture = OfferFixture::with_schema(timed_offer_schema());
+        fixture.block_info = at_block(NOW, 20);
+
+        let result = fixture
+            .create(|document| document.set("endsAt", Value::U64(NOW)))
+            .await;
+        expect_violated(
+            result,
+            "endsAfterCreation",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        let result = fixture
+            .create(|document| document.set("endsAt", Value::U64(NOW + 8 * DAY_MS)))
+            .await;
+        expect_violated(
+            result,
+            "endsWithinAWeek",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        fixture.block_info = at_block(NOW, 5);
+        let result = fixture
+            .create(|document| document.set("endsAt", Value::U64(NOW + DAY_MS)))
+            .await;
+        expect_violated(
+            result,
+            "listedAfterHeight10",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        fixture.block_info = at_block(NOW, 20);
+        assert_matches!(
+            fixture
+                .create(|document| document.set("endsAt", Value::U64(NOW + DAY_MS)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let stored = fixture.stored_offers();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].created_at(), Some(NOW));
+    }
+
+    /// A replace keeps the creation time and records its own update time: moving
+    /// the end is measured from the stored `$createdAt`, and a replace after the
+    /// end breaks `updatedBeforeEnd`. A price update, which records an update
+    /// time too, is judged the same way.
+    #[tokio::test]
+    async fn should_judge_a_replace_and_a_price_update_by_the_update_time() {
+        let mut fixture = timed_offer().await;
+
+        // Three days on, the end moves to six days after creation
+        fixture.block_info = at_block(NOW + 3 * DAY_MS, 30);
+        assert_matches!(
+            fixture
+                .replace(|document| document.set("endsAt", Value::U64(NOW + 6 * DAY_MS)))
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // Nine days after creation is more than a week, whenever the replace happens
+        let result = fixture
+            .replace(|document| document.set("endsAt", Value::U64(NOW + 9 * DAY_MS)))
+            .await;
+        expect_violated(
+            result,
+            "endsWithinAWeek",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        // After the end, neither a replace nor a price update is accepted
+        fixture.block_info = at_block(NOW + 7 * DAY_MS, 40);
+        let result = fixture
+            .replace(|document| document.set("fee", Value::U64(20)))
+            .await;
+        expect_violated(
+            result,
+            "updatedBeforeEnd",
+            PropertyConstraintViolation::NotMet,
+        );
+        let result = fixture.try_set_price(1000).await;
+        expect_violated(
+            result,
+            "updatedBeforeEnd",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        // Before it, the price update is accepted
+        fixture.block_info = at_block(NOW + 5 * DAY_MS, 40);
+        fixture.set_price(1000).await;
+    }
+
+    /// A transfer and a purchase record the transfer's time: after the end each
+    /// breaks `transferredBeforeEnd`, while the rules reading the creation and
+    /// update times are not judged again.
+    #[tokio::test]
+    async fn should_judge_a_transfer_and_a_purchase_by_the_transfer_time() {
+        let mut fixture = timed_offer().await;
+        let (recipient, _, _) = fixture.other_identity(7);
+
+        fixture.block_info = at_block(NOW + 2 * DAY_MS, 30);
+        let result = fixture.transfer(recipient.id()).await;
+        expect_violated(
+            result,
+            "transferredBeforeEnd",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        fixture.block_info = at_block(NOW + DAY_MS / 2, 30);
+        fixture.set_price(1000).await;
+        let buyer = fixture.other_identity(8);
+        fixture.block_info = at_block(NOW + 2 * DAY_MS, 40);
+        let result = fixture.purchase_by(&buyer, 1000).await;
+        expect_violated(
+            result,
+            "transferredBeforeEnd",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        fixture.block_info = at_block(NOW + DAY_MS / 2, 40);
+        assert_matches!(
+            fixture.transfer(recipient.id()).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// `contains` read by real writes: a `"used"` label, an owner missing from
+    /// the members and a quantity missing from the tiers are each refused with
+    /// the rule they break; a transfer, which changes the owner, is judged
+    /// against `ownerIsMember` and refused to a non-member, accepted to a member.
+    #[tokio::test]
+    async fn should_judge_contains_on_create_and_transfer() {
+        let mut fixture = OfferFixture::with_schema(listed_offer_schema());
+        let (member, _, _) = fixture.other_identity(7);
+        let (outsider, _, _) = fixture.other_identity(8);
+        let owner = fixture.identity.id();
+        let labels = |values: &[&str]| {
+            Value::Array(values.iter().map(|value| Value::from(*value)).collect())
+        };
+        let members = |ids: &[Identifier]| {
+            Value::Array(
+                ids.iter()
+                    .map(|id| Value::Identifier(id.to_buffer()))
+                    .collect(),
+            )
+        };
+
+        let result = fixture
+            .create(|document| document.set("labels", labels(&["new", "used"])))
+            .await;
+        expect_violated(result, "notUsed", PropertyConstraintViolation::NotMet);
+
+        let result = fixture
+            .create(|document| document.set("members", members(&[member.id()])))
+            .await;
+        expect_violated(result, "ownerIsMember", PropertyConstraintViolation::NotMet);
+
+        // The quantity is 2
+        let result = fixture
+            .create(|document| {
+                document.set("tiers", Value::Array(vec![Value::U64(1), Value::U64(5)]))
+            })
+            .await;
+        expect_violated(
+            result,
+            "quantityListed",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("labels", labels(&["new", "sale"]));
+                    document.set("members", members(&[owner, member.id()]));
+                    document.set("tiers", Value::Array(vec![Value::U64(2), Value::U64(10)]));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let result = fixture.transfer(outsider.id()).await;
+        expect_violated(result, "ownerIsMember", PropertyConstraintViolation::NotMet);
+        assert_matches!(
+            fixture.transfer(member.id()).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+    }
+
+    /// `startsWith` and `endsWith` read by real creates: a url on another domain,
+    /// one without https and a path outside its parent's are each refused with
+    /// the rule they break, and an offer meeting all three is stored.
+    #[tokio::test]
+    async fn should_judge_prefixes_and_suffixes_on_create() {
+        let mut fixture = OfferFixture::with_schema(linked_offer_schema());
+
+        let result = fixture
+            .create(|document| document.set("url", Value::from("https://shop.com")))
+            .await;
+        expect_violated(result, "dashDomain", PropertyConstraintViolation::NotMet);
+
+        let result = fixture
+            .create(|document| document.set("url", Value::from("http://shop.dash")))
+            .await;
+        expect_violated(result, "secureUrl", PropertyConstraintViolation::NotMet);
+
+        let result = fixture
+            .create(|document| {
+                document.set("path", Value::from("a/c"));
+                document.set("parentPath", Value::from("a/b"));
+            })
+            .await;
+        expect_violated(result, "underParent", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("url", Value::from("https://shop.dash"));
+                    document.set("path", Value::from("a/b/c"));
+                    document.set("parentPath", Value::from("a/b"));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// The shorthand operators read by real creates: each of seven offers breaks
+    /// exactly one rule and is refused with it, and the valid offers, one down
+    /// each branch of the `ifThenElse`, are stored.
+    #[tokio::test]
+    async fn should_judge_min_max_abs_if_then_and_not_in_on_create() {
+        let mut fixture = OfferFixture::with_schema(shorthand_offer_schema());
+        let set = |document: &mut Document, entries: &[(&str, u64)]| {
+            for (property, value) in entries {
+                document.set(property, Value::U64(*value));
+            }
+        };
+
+        // The total is 220: a deposit of 230 is 10 away
+        let result = fixture
+            .create(|document| set(document, &[("deposit", 230)]))
+            .await;
+        expect_violated(
+            result,
+            "depositNearTotal",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        // A discount on a price of 50 (total and deposit 120)
+        let result = fixture
+            .create(|document| {
+                set(
+                    document,
+                    &[("price", 50), ("deposit", 120), ("discount", 5)],
+                )
+            })
+            .await;
+        expect_violated(
+            result,
+            "discountNeedsPrice",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        // A fee of 11 on a price of 100, above max(10, 10) (total 222)
+        let result = fixture
+            .create(|document| set(document, &[("fee", 11), ("deposit", 222)]))
+            .await;
+        expect_violated(result, "feeCapped", PropertyConstraintViolation::NotMet);
+
+        // A banned fee of 7 (total and deposit 214)
+        let result = fixture
+            .create(|document| set(document, &[("fee", 7), ("deposit", 214)]))
+            .await;
+        expect_violated(result, "feeNotBanned", PropertyConstraintViolation::NotMet);
+
+        // A quantity of 0 (total and deposit 0)
+        let result = fixture
+            .create(|document| set(document, &[("quantity", 0), ("deposit", 0)]))
+            .await;
+        expect_violated(result, "noZeroTerms", PropertyConstraintViolation::NotMet);
+
+        // 11 at a price of 100, above the then branch's 10 (total and deposit 1210)
+        let result = fixture
+            .create(|document| set(document, &[("quantity", 11), ("deposit", 1210)]))
+            .await;
+        expect_violated(result, "quantityTiers", PropertyConstraintViolation::NotMet);
+
+        // 101 at a price of 50, above the else branch's 100 (total and deposit 6060)
+        let result = fixture
+            .create(|document| {
+                set(
+                    document,
+                    &[("price", 50), ("quantity", 101), ("deposit", 6060)],
+                )
+            })
+            .await;
+        expect_violated(result, "quantityTiers", PropertyConstraintViolation::NotMet);
+        assert!(fixture.stored_offers().is_empty());
+
+        // (100 + 10) * 2 = 220, no discount, a fee of 10
+        assert_matches!(
+            fixture.create(|_| {}).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // 50 at a price of 50, within the else branch's 100 (total and deposit 3000)
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    set(
+                        document,
+                        &[("price", 50), ("quantity", 50), ("deposit", 3000)],
+                    )
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
     }
 }

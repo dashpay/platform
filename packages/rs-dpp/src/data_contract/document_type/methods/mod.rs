@@ -21,6 +21,9 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::methods::versioned_methods::DocumentTypeV0MethodsVersioned;
+use crate::data_contract::document_type::property_constraints::{
+    DocumentSystemValues, SystemChange,
+};
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::{DocumentPropertyType, StringPropertySizes};
 use crate::fee::Credits;
@@ -686,9 +689,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// `DocumentPropertyConstraintViolatedError` (10422), naming the rule and why (the rule
     /// does not hold, or evaluating it overflowed, divided by zero, raised to a negative
     /// power or read a value that is not an integer). A property the document
-    /// leaves out counts as 0, or as its `ifAbsent` value, and `$ownerId` reads
-    /// `owner_id`, the document's owner (`None` when the caller does not know it, which
-    /// `$ownerId` then equals no identifier for). Reads the properties and the owner alone:
+    /// leaves out counts as 0, or as its `ifAbsent` value; `$ownerId` and the system
+    /// times and heights read `system`, the values of the document version being written
+    /// (an owner the caller does not know equals no identifier, and a rule reading a time
+    /// or height it does not know is not judged). Reads the properties and `system` alone:
     /// `DataContract::validate_document_properties` runs it after the schema validation,
     /// so document create and replace, and every client validating a document, apply it.
     ///
@@ -698,7 +702,7 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     fn validate_property_constraints(
         &self,
         data: &Value,
-        owner_id: Option<Identifier>,
+        system: &DocumentSystemValues,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>
     where
@@ -712,7 +716,7 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .validate_property_constraints
         {
             None => Ok(SimpleConsensusValidationResult::default()),
-            Some(0) => Ok(self.validate_property_constraints_v0(data, owner_id)),
+            Some(0) => Ok(self.validate_property_constraints_v0(data, system)),
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_property_constraints".to_string(),
                 known_versions: vec![0],
@@ -722,19 +726,24 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     }
 
     /// Judges a stored document's properties, `data`, against the rules of the document
-    /// type's `propertyConstraints` that read `$ownerId`, with `new_owner_id` as the owner,
-    /// in name order: a transfer or a purchase gives the document a new owner and changes
-    /// nothing else, so these are the only rules it can break, and the first broken fails
-    /// with `DocumentPropertyConstraintViolatedError` (10422) as it would on a write. The
-    /// document type's other rules held when the document was written and still do. A type
-    /// with no rule reading `$ownerId` costs nothing, and its data is not copied.
+    /// type's `propertyConstraints` that `change` can break, with `system` the document's
+    /// system values after it, in name order. A transfer or a purchase gives the document a
+    /// new owner and a new transfer time and heights, and a price update a new update time
+    /// and heights; neither changes a property, so the rules reading what it changes are
+    /// the only ones it can break ([`PropertyConstraint::reads_change`]), and the first
+    /// broken fails with `DocumentPropertyConstraintViolatedError` (10422) as it would on a
+    /// write. The document type's other rules held when the document was written and still
+    /// do. A type with no such rule costs nothing, and its data is not copied.
     ///
     /// Versioned with [`Self::validate_property_constraints`]: `None` before protocol
     /// version 14, where no parsed document type carries a rule.
-    fn validate_property_constraints_for_new_owner(
+    ///
+    /// [`PropertyConstraint::reads_change`]: crate::data_contract::document_type::property_constraints::PropertyConstraint::reads_change
+    fn validate_property_constraints_for_system_change(
         &self,
         data: &BTreeMap<String, Value>,
-        new_owner_id: Identifier,
+        system: &DocumentSystemValues,
+        change: SystemChange,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>
     where
@@ -748,9 +757,11 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .validate_property_constraints
         {
             None => Ok(SimpleConsensusValidationResult::default()),
-            Some(0) => Ok(self.validate_property_constraints_for_new_owner_v0(data, new_owner_id)),
+            Some(0) => {
+                Ok(self.validate_property_constraints_for_system_change_v0(data, system, change))
+            }
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
-                method: "validate_property_constraints_for_new_owner".to_string(),
+                method: "validate_property_constraints_for_system_change".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
@@ -775,12 +786,19 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
 mod tests {
     use super::*;
     use crate::data_contract::config::DataContractConfig;
-    use crate::data_contract::document_type::DocumentType;
+    use crate::data_contract::document_type::{DocumentType, CONTRACT_VERSION_STAMP_MAX_SIZE};
     use platform_value::{platform_value, Identifier};
 
     /// Build a document type from a schema using latest platform version.
     fn build_doc_type(name: &str, schema: Value) -> DocumentType {
-        let platform_version = PlatformVersion::latest();
+        build_doc_type_at(name, schema, PlatformVersion::latest())
+    }
+
+    fn build_doc_type_at(
+        name: &str,
+        schema: Value,
+        platform_version: &PlatformVersion,
+    ) -> DocumentType {
         let config = DataContractConfig::default_for_version(platform_version)
             .expect("should create default config");
         DocumentType::try_from_schema(
@@ -797,6 +815,129 @@ mod tests {
             platform_version,
         )
         .expect("should build doc type")
+    }
+
+    // --------------------------------------------------------------
+    // DocumentTypeV0Methods::estimated_size
+    // --------------------------------------------------------------
+
+    /// A note type with one `text` property.
+    fn note_schema(text: Value) -> Value {
+        platform_value!({
+            "type": "object",
+            "properties": {"text": text},
+            "additionalProperties": false,
+        })
+    }
+
+    /// A string of up to 20000 characters without `maxBytes`: up to 80000
+    /// bytes, past `u16::MAX`.
+    fn long_text() -> Value {
+        platform_value!({"type": "string", "maxLength": 20000, "position": 0})
+    }
+
+    #[test]
+    fn should_estimate_a_string_past_16383_characters_as_a_string_without_max_length() {
+        let platform_version = PlatformVersion::latest();
+        let long = build_doc_type("note", note_schema(long_text()));
+        let unbounded = build_doc_type(
+            "note",
+            note_schema(platform_value!({"type": "string", "position": 0})),
+        );
+
+        let estimated_size = long
+            .as_ref()
+            .estimated_size(platform_version)
+            .expect("the long string is estimated");
+        assert_eq!(
+            estimated_size,
+            unbounded
+                .as_ref()
+                .estimated_size(platform_version)
+                .expect("the unbounded string is estimated")
+        );
+        // Half of u16::MAX, rounded up, and the contract-version stamp
+        assert_eq!(estimated_size, 32768 + CONTRACT_VERSION_STAMP_MAX_SIZE);
+    }
+
+    #[test]
+    fn should_estimate_a_typed_array_of_strings_past_16383_characters() {
+        let platform_version = PlatformVersion::latest();
+        let list = build_doc_type(
+            "list",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "string", "maxLength": 20000},
+                        "maxItems": 2,
+                        "position": 0
+                    }
+                },
+                "additionalProperties": false,
+            }),
+        );
+
+        // Between the one-byte count of an empty list and u16::MAX
+        assert_eq!(
+            list.as_ref()
+                .estimated_size(platform_version)
+                .expect("the typed array is estimated"),
+            32768 + CONTRACT_VERSION_STAMP_MAX_SIZE
+        );
+    }
+
+    /// Generation 0, which protocol version 13 selects, still fails on the
+    /// overflow.
+    #[test]
+    fn should_fail_the_estimate_of_a_string_past_16383_characters_at_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("expected version 13");
+        let long = build_doc_type_at("note", note_schema(long_text()), platform_version);
+
+        assert!(matches!(
+            long.as_ref().estimated_size(platform_version),
+            Err(ProtocolError::Overflow(_))
+        ));
+    }
+
+    /// Below 16384 characters both generations size every property alike;
+    /// generation 1 adds only the contract-version stamp.
+    #[test]
+    fn should_estimate_bounded_properties_as_protocol_version_13_does_plus_the_stamp() {
+        let platform_version = PlatformVersion::latest();
+        let platform_version_13 = PlatformVersion::get(13).expect("expected version 13");
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "minLength": 3, "maxLength": 16383, "position": 0},
+                "count": {"type": "integer", "minimum": 0, "maximum": 1000, "position": 1},
+                "data": {"type": "array", "byteArray": true, "maxItems": 64, "position": 2},
+                "owner": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 3
+                }
+            },
+            "additionalProperties": false,
+        });
+        let at_latest = build_doc_type("doc", schema.clone());
+        let at_13 = build_doc_type_at("doc", schema, platform_version_13);
+
+        assert_eq!(
+            at_latest
+                .as_ref()
+                .estimated_size(platform_version)
+                .expect("estimated"),
+            at_13
+                .as_ref()
+                .estimated_size(platform_version_13)
+                .expect("estimated")
+                + CONTRACT_VERSION_STAMP_MAX_SIZE
+        );
     }
 
     // --------------------------------------------------------------

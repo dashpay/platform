@@ -3,6 +3,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
+use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::data_contract::document_type::DocumentType;
 
 use crate::consensus::basic::document::{
@@ -16,7 +17,7 @@ use crate::data_contract::DataContract;
 use crate::document::{Document, DocumentV0Getters};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
-use platform_value::{Identifier, Value};
+use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::ops::Deref;
 
@@ -29,15 +30,17 @@ pub trait DataContractDocumentValidationMethodsV0 {
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 
     /// Validates a document's properties, `value`, against its document type: the
-    /// schema, the string byte caps and the `propertyConstraints` rules. `owner_id` is
-    /// the document's owner, what a rule's `$ownerId` reads; `None` when the caller does
-    /// not know it, which `$ownerId` then equals no identifier for. Consensus passes the
-    /// writer on create and replace.
+    /// schema, the string byte caps and the `propertyConstraints` rules. `system` holds
+    /// the system values of the document version being written, what a rule's `$ownerId`
+    /// and system times and heights read: an owner the caller does not know equals no
+    /// identifier, and a rule reading a time or height it does not know is not judged.
+    /// Consensus passes the writer and the block's time and heights on create, and the
+    /// stored ones where a replace keeps them.
     fn validate_document_properties(
         &self,
         name: &str,
         value: Value,
-        owner_id: Option<Identifier>,
+        system: &DocumentSystemValues,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
@@ -48,7 +51,7 @@ impl DataContract {
         &self,
         name: &str,
         value: Value,
-        owner_id: Option<Identifier>,
+        system: &DocumentSystemValues,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let Some(document_type) = self.document_type_optional_for_name(name) else {
@@ -117,7 +120,7 @@ impl DataContract {
         // schema error keeps precedence and every value a rule reads is known to be an
         // integer.
         let property_constraints_result =
-            document_type.validate_property_constraints(&value, owner_id, platform_version)?;
+            document_type.validate_property_constraints(&value, system, platform_version)?;
 
         let json_value = match value.try_into_validating_json() {
             Ok(json_value) => json_value,
@@ -169,7 +172,7 @@ impl DataContract {
         self.validate_document_properties_v0(
             name,
             document.properties().into(),
-            Some(document.owner_id()),
+            &DocumentSystemValues::of_document(document),
             platform_version,
         )
     }
@@ -182,6 +185,7 @@ mod tests {
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
     use crate::data_contract::created_data_contract::CreatedDataContract;
+    use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
     use crate::tests::fixtures::get_data_contract_fixture;
     use platform_value::Value;
     use platform_version::version::PlatformVersion;
@@ -219,7 +223,12 @@ mod tests {
         );
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, None, platform_version)
+            .validate_document_properties(
+                "noTimeDocument",
+                value,
+                &DocumentSystemValues::default(),
+                platform_version,
+            )
             .expect("validation should return a consensus result");
 
         let Some(ConsensusError::BasicError(BasicError::ValueError(ValueError { .. }))) =
@@ -252,7 +261,12 @@ mod tests {
         );
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, None, platform_version)
+            .validate_document_properties(
+                "noTimeDocument",
+                value,
+                &DocumentSystemValues::default(),
+                platform_version,
+            )
             .expect("validation should return a consensus result");
 
         assert!(matches!(
@@ -273,7 +287,12 @@ mod tests {
         )]);
 
         let result = data_contract
-            .validate_document_properties("noTimeDocument", value, None, platform_version)
+            .validate_document_properties(
+                "noTimeDocument",
+                value,
+                &DocumentSystemValues::default(),
+                platform_version,
+            )
             .expect("validation should return a consensus result");
 
         assert!(

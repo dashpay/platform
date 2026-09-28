@@ -4,8 +4,11 @@
 //! expressions, a test of whether an integer expression takes one of listed
 //! values (`in`), a comparison of a string or an identifier property with
 //! constants (`equal`, `notEqual`, `in`) or with another property of its kind
-//! (`equal`, `notEqual`), a test of whether the document holds a property
-//! (`present`, `absent`), or `anyOf`, `allOf` or `not` over conditions.
+//! (`equal`, `notEqual`), a test of whether a string starts or ends with
+//! another (`startsWith`, `endsWith`), a test of whether an array property
+//! holds a value (`contains`), a test of whether the document holds a property
+//! (`present`, `absent`), or `anyOf`, `allOf`, `not`, `ifThen` or
+//! `ifThenElse` over conditions; `notIn` is an `in` negated.
 //!
 //! ```json
 //! "propertyConstraints": {
@@ -34,9 +37,14 @@
 //!
 //! An operand is an integer value, the dotted path of an integer or boolean
 //! property (a boolean reads as 1 for true and 0 for false), or an object with
-//! one key: an arithmetic operator over its operands, or `ifAbsent`, a
-//! property with the value it takes when the document leaves it out. A
-//! property named on its own takes 0 when absent. A string constant is written
+//! one key: an arithmetic operator over its operands (`min`, `max` and `abs`
+//! included), `ifAbsent`, a property
+//! with the value it takes when the document leaves it out, or a size:
+//! `length` and `byteLength`, the characters and the UTF-8 bytes of a string
+//! property, and `count`, the items of an array or byte array property. A
+//! property named on its own takes 0 when absent, and so does the size of one
+//! (`{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }`). A string
+//! constant is written
 //! `{ "const": "closed" }`, since a string on its own is a path; `equal` and
 //! `notEqual` compare one with a string property, or two bare paths naming
 //! string properties with each other, and an `in` whose values are strings
@@ -44,6 +52,11 @@
 //! property compared with strings a default. An identifier property compares
 //! the same ways, its constants written base58, without defaults, and so does
 //! `$ownerId`, the document's owner, which a transfer or a purchase changes.
+//! The block time and heights of the document's creation, last update and last
+//! transfer are integer operands too (`"$createdAt"`, `"$updatedAtBlockHeight"`,
+//! [`SystemProperty`]), on a document type that records them, so a price update
+//! and a transfer or a purchase, which change some of them, are judged against
+//! the rules reading those.
 //! How the arithmetic treats overflow, division and powers is set out on
 //! [`ConstraintExpression::evaluate`], and how conditions combine on
 //! [`PropertyConstraint::holds`].
@@ -59,10 +72,17 @@
 #[cfg(test)]
 mod tests;
 
+use crate::block::block_info::BlockInfo;
 use crate::consensus::basic::document::PropertyConstraintViolation;
 use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
-use crate::document::property_names::OWNER_ID;
+use crate::document::property_names::{
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, OWNER_ID, TRANSFERRED_AT,
+    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
+};
+use crate::document::{Document, DocumentV0Getters};
+use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value, ValueMapHelper};
 use std::collections::{BTreeMap, BTreeSet};
@@ -80,14 +100,27 @@ const POWER: &str = "power";
 const ANY_OF: &str = "anyOf";
 const ALL_OF: &str = "allOf";
 const NOT: &str = "not";
+const IF_THEN: &str = "ifThen";
+const IF_THEN_ELSE: &str = "ifThenElse";
+const NOT_IN: &str = "notIn";
+const MIN: &str = "min";
+const MAX: &str = "max";
+const ABS: &str = "abs";
 const PRESENT: &str = "present";
 const ABSENT: &str = "absent";
 const IN: &str = "in";
+const CONTAINS: &str = "contains";
+const STARTS_WITH: &str = "startsWith";
+const ENDS_WITH: &str = "endsWith";
+const LENGTH: &str = "length";
+const BYTE_LENGTH: &str = "byteLength";
+const COUNT: &str = "count";
 /// The operand key of a string constant: `{ "const": "closed" }`.
 const CONST: &str = "const";
 
 /// Every key an operand object may hold, for the errors.
-const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power or ifAbsent";
+const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power, min, max, abs, \
+                            ifAbsent, length, byteLength or count";
 
 /// The deepest a condition or an operand may sit in its rule: the rule's own
 /// condition at depth 0, and each operand of a comparison, and each condition
@@ -155,6 +188,221 @@ impl ConstraintComparison {
     }
 }
 
+/// A system property of a document a rule may read as an integer operand, by
+/// its name (`"$createdAt"`): the block time, in milliseconds, the Platform
+/// block height or the Core chain block height of the document's creation, of
+/// its last update (a create, a replace or a price update) or of its last
+/// transfer (a create, a transfer or a purchase). A rule may read one only on a
+/// document type that records it, by listing it in `required`, so every stored
+/// document of the type holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SystemProperty {
+    /// `$createdAt`
+    CreatedAt,
+    /// `$updatedAt`
+    UpdatedAt,
+    /// `$transferredAt`
+    TransferredAt,
+    /// `$createdAtBlockHeight`
+    CreatedAtBlockHeight,
+    /// `$updatedAtBlockHeight`
+    UpdatedAtBlockHeight,
+    /// `$transferredAtBlockHeight`
+    TransferredAtBlockHeight,
+    /// `$createdAtCoreBlockHeight`
+    CreatedAtCoreBlockHeight,
+    /// `$updatedAtCoreBlockHeight`
+    UpdatedAtCoreBlockHeight,
+    /// `$transferredAtCoreBlockHeight`
+    TransferredAtCoreBlockHeight,
+}
+
+impl SystemProperty {
+    /// Every system property a rule may read.
+    pub const ALL: [SystemProperty; 9] = [
+        SystemProperty::CreatedAt,
+        SystemProperty::UpdatedAt,
+        SystemProperty::TransferredAt,
+        SystemProperty::CreatedAtBlockHeight,
+        SystemProperty::UpdatedAtBlockHeight,
+        SystemProperty::TransferredAtBlockHeight,
+        SystemProperty::CreatedAtCoreBlockHeight,
+        SystemProperty::UpdatedAtCoreBlockHeight,
+        SystemProperty::TransferredAtCoreBlockHeight,
+    ];
+
+    /// Its name, as a rule and `required` write it.
+    pub fn name(self) -> &'static str {
+        match self {
+            SystemProperty::CreatedAt => CREATED_AT,
+            SystemProperty::UpdatedAt => UPDATED_AT,
+            SystemProperty::TransferredAt => TRANSFERRED_AT,
+            SystemProperty::CreatedAtBlockHeight => CREATED_AT_BLOCK_HEIGHT,
+            SystemProperty::UpdatedAtBlockHeight => UPDATED_AT_BLOCK_HEIGHT,
+            SystemProperty::TransferredAtBlockHeight => TRANSFERRED_AT_BLOCK_HEIGHT,
+            SystemProperty::CreatedAtCoreBlockHeight => CREATED_AT_CORE_BLOCK_HEIGHT,
+            SystemProperty::UpdatedAtCoreBlockHeight => UPDATED_AT_CORE_BLOCK_HEIGHT,
+            SystemProperty::TransferredAtCoreBlockHeight => TRANSFERRED_AT_CORE_BLOCK_HEIGHT,
+        }
+    }
+
+    /// The system property a rule names `name`, if any.
+    pub fn from_name(name: &str) -> Option<SystemProperty> {
+        SystemProperty::ALL
+            .into_iter()
+            .find(|property| property.name() == name)
+    }
+
+    /// Whether `change` sets it.
+    pub fn changed_by(self, change: SystemChange) -> bool {
+        match change {
+            SystemChange::Transfer => matches!(
+                self,
+                SystemProperty::TransferredAt
+                    | SystemProperty::TransferredAtBlockHeight
+                    | SystemProperty::TransferredAtCoreBlockHeight
+            ),
+            SystemChange::PriceUpdate => matches!(
+                self,
+                SystemProperty::UpdatedAt
+                    | SystemProperty::UpdatedAtBlockHeight
+                    | SystemProperty::UpdatedAtCoreBlockHeight
+            ),
+        }
+    }
+}
+
+/// A write that changes a stored document's system values and none of its
+/// properties, so only the rules reading what it changes can break.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemChange {
+    /// A transfer or a purchase: a new owner, and the time and heights of the
+    /// last transfer.
+    Transfer,
+    /// A price update: the time and heights of the last update.
+    PriceUpdate,
+}
+
+/// The system values of the document version a rule is judged against: its
+/// owner, which `$ownerId` reads, and the times and heights [`SystemProperty`]
+/// names. Consensus passes every one the document type records; a client
+/// passes those it knows. `$ownerId` equals no identifier when the owner is
+/// unknown, and [`PropertyConstraint::violation`] does not judge a rule reading
+/// a time or a height it is not given.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DocumentSystemValues {
+    pub owner_id: Option<Identifier>,
+    pub created_at: Option<TimestampMillis>,
+    pub updated_at: Option<TimestampMillis>,
+    pub transferred_at: Option<TimestampMillis>,
+    pub created_at_block_height: Option<BlockHeight>,
+    pub updated_at_block_height: Option<BlockHeight>,
+    pub transferred_at_block_height: Option<BlockHeight>,
+    pub created_at_core_block_height: Option<CoreBlockHeight>,
+    pub updated_at_core_block_height: Option<CoreBlockHeight>,
+    pub transferred_at_core_block_height: Option<CoreBlockHeight>,
+}
+
+impl DocumentSystemValues {
+    /// The owner alone, no time or height.
+    pub fn owned_by(owner_id: Identifier) -> Self {
+        DocumentSystemValues {
+            owner_id: Some(owner_id),
+            ..Default::default()
+        }
+    }
+
+    /// A document created by `owner_id` in the block `block_info` describes:
+    /// its creation, last update and last transfer all at that block, as a
+    /// create records every one its type requires.
+    pub fn created_in_block(owner_id: Identifier, block_info: &BlockInfo) -> Self {
+        DocumentSystemValues {
+            owner_id: Some(owner_id),
+            created_at: Some(block_info.time_ms),
+            updated_at: Some(block_info.time_ms),
+            transferred_at: Some(block_info.time_ms),
+            created_at_block_height: Some(block_info.height),
+            updated_at_block_height: Some(block_info.height),
+            transferred_at_block_height: Some(block_info.height),
+            created_at_core_block_height: Some(block_info.core_height),
+            updated_at_core_block_height: Some(block_info.core_height),
+            transferred_at_core_block_height: Some(block_info.core_height),
+        }
+    }
+
+    /// The values `document` holds.
+    pub fn of_document(document: &Document) -> Self {
+        DocumentSystemValues {
+            owner_id: Some(document.owner_id()),
+            created_at: document.created_at(),
+            updated_at: document.updated_at(),
+            transferred_at: document.transferred_at(),
+            created_at_block_height: document.created_at_block_height(),
+            updated_at_block_height: document.updated_at_block_height(),
+            transferred_at_block_height: document.transferred_at_block_height(),
+            created_at_core_block_height: document.created_at_core_block_height(),
+            updated_at_core_block_height: document.updated_at_core_block_height(),
+            transferred_at_core_block_height: document.transferred_at_core_block_height(),
+        }
+    }
+
+    /// The value of `property`, `None` when not given.
+    pub fn value(&self, property: SystemProperty) -> Option<i128> {
+        match property {
+            SystemProperty::CreatedAt => self.created_at.map(i128::from),
+            SystemProperty::UpdatedAt => self.updated_at.map(i128::from),
+            SystemProperty::TransferredAt => self.transferred_at.map(i128::from),
+            SystemProperty::CreatedAtBlockHeight => self.created_at_block_height.map(i128::from),
+            SystemProperty::UpdatedAtBlockHeight => self.updated_at_block_height.map(i128::from),
+            SystemProperty::TransferredAtBlockHeight => {
+                self.transferred_at_block_height.map(i128::from)
+            }
+            SystemProperty::CreatedAtCoreBlockHeight => {
+                self.created_at_core_block_height.map(i128::from)
+            }
+            SystemProperty::UpdatedAtCoreBlockHeight => {
+                self.updated_at_core_block_height.map(i128::from)
+            }
+            SystemProperty::TransferredAtCoreBlockHeight => {
+                self.transferred_at_core_block_height.map(i128::from)
+            }
+        }
+    }
+}
+
+/// What a size operand measures of the property it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SizeMeasure {
+    /// `length`: the characters of a string property, as `maxLength` counts
+    /// them.
+    Length,
+    /// `byteLength`: the UTF-8 bytes of a string property, as `maxBytes`
+    /// counts them.
+    ByteLength,
+    /// `count`: the items of an array property, or the bytes of a byte array
+    /// property, as `maxItems` counts them.
+    Count,
+}
+
+impl SizeMeasure {
+    /// The operand key declaring it.
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            SizeMeasure::Length => LENGTH,
+            SizeMeasure::ByteLength => BYTE_LENGTH,
+            SizeMeasure::Count => COUNT,
+        }
+    }
+
+    /// How an operand of this measure reads the property it names.
+    fn read(self) -> PropertyRead {
+        match self {
+            SizeMeasure::Length | SizeMeasure::ByteLength => PropertyRead::Length,
+            SizeMeasure::Count => PropertyRead::Count,
+        }
+    }
+}
+
 /// An integer expression, one side of a rule or an operand inside one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstraintExpression {
@@ -164,6 +412,13 @@ pub enum ConstraintExpression {
     /// for true, 0 for false), or `if_absent` when the document leaves it out:
     /// 0 for a path on its own, the declared value for an `ifAbsent` operand.
     Property { path: String, if_absent: i128 },
+    /// `length`, `byteLength` or `count`: the size of the property at the
+    /// dotted `path`, as `measure` counts it, or 0 when the document leaves it
+    /// out.
+    Size { measure: SizeMeasure, path: String },
+    /// A system property, `"$createdAt"` say: its value in the
+    /// [`DocumentSystemValues`] the rule is judged with.
+    System(SystemProperty),
     /// `add`: the sum of two or more operands.
     Add(Vec<ConstraintExpression>),
     /// `multiply`: the product of two or more operands.
@@ -177,6 +432,12 @@ pub enum ConstraintExpression {
     Modulo(Box<ConstraintExpression>, Box<ConstraintExpression>),
     /// `power`: the left operand raised to the right one.
     Power(Box<ConstraintExpression>, Box<ConstraintExpression>),
+    /// `min`: the least of two or more operands.
+    Min(Vec<ConstraintExpression>),
+    /// `max`: the greatest of two or more operands.
+    Max(Vec<ConstraintExpression>),
+    /// `abs`: the absolute value of its one operand.
+    Abs(Box<ConstraintExpression>),
 }
 
 impl ConstraintExpression {
@@ -192,6 +453,12 @@ impl ConstraintExpression {
     ///   fractional part as an integer, which the document could not be stored
     ///   with anyway) that fits an `i128`
     ///   ([`PropertyConstraintViolation::Overflow`] otherwise);
+    /// * a size is never a fault: a property the document leaves out, or sets
+    ///   to null, has size 0, and so does a value of another type than the
+    ///   one measured, which the schema validation reported first refuses;
+    /// * a system property takes its value in `system`, 0 when not given
+    ///   ([`PropertyConstraint::violation`] does not judge a rule reading one it
+    ///   is not given);
     /// * `add` and `multiply` fold their operands from the left, so an overflow
     ///   on the way is a fault even when a later operand would bring the result
     ///   back in range;
@@ -200,35 +467,49 @@ impl ConstraintExpression {
     ///   remainder `1`), which for operands that are not negative is ordinary
     ///   integer division. A divisor of 0 is a
     ///   [`PropertyConstraintViolation::DivisionByZero`];
+    /// * `min` and `max` evaluate every operand, so a fault in any breaks the
+    ///   rule; `abs` of `i128::MIN` does not fit
+    ///   ([`PropertyConstraintViolation::Overflow`]);
     /// * `power` refuses a negative exponent
     ///   ([`PropertyConstraintViolation::NegativeExponent`]), which has no
     ///   integer result, and takes `0` to the power `0` as `1`.
-    pub fn evaluate(&self, data: &Value) -> Result<i128, PropertyConstraintViolation> {
+    pub fn evaluate(
+        &self,
+        data: &Value,
+        system: &DocumentSystemValues,
+    ) -> Result<i128, PropertyConstraintViolation> {
         match self {
             ConstraintExpression::Value(value) => Ok(*value),
+            ConstraintExpression::System(property) => Ok(system.value(*property).unwrap_or(0)),
             ConstraintExpression::Property { path, if_absent } => {
                 property_value(data, path, *if_absent)
             }
+            ConstraintExpression::Size { measure, path } => {
+                // A size fits a `usize`, which always fits an `i128`
+                i128::try_from(property_size(data, path, *measure))
+                    .map_err(|_| PropertyConstraintViolation::Overflow)
+            }
             ConstraintExpression::Add(operands) => {
                 operands.iter().try_fold(0i128, |sum, operand| {
-                    sum.checked_add(operand.evaluate(data)?)
+                    sum.checked_add(operand.evaluate(data, system)?)
                         .ok_or(PropertyConstraintViolation::Overflow)
                 })
             }
             ConstraintExpression::Multiply(operands) => {
                 operands.iter().try_fold(1i128, |product, operand| {
                     product
-                        .checked_mul(operand.evaluate(data)?)
+                        .checked_mul(operand.evaluate(data, system)?)
                         .ok_or(PropertyConstraintViolation::Overflow)
                 })
             }
             ConstraintExpression::Subtract(left, right) => {
-                let (left, right) = (left.evaluate(data)?, right.evaluate(data)?);
+                let (left, right) = (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 left.checked_sub(right)
                     .ok_or(PropertyConstraintViolation::Overflow)
             }
             ConstraintExpression::Divide(left, right) => {
-                let (dividend, divisor) = (left.evaluate(data)?, right.evaluate(data)?);
+                let (dividend, divisor) =
+                    (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 if divisor == 0 {
                     return Err(PropertyConstraintViolation::DivisionByZero);
                 }
@@ -238,7 +519,8 @@ impl ConstraintExpression {
                     .ok_or(PropertyConstraintViolation::Overflow)
             }
             ConstraintExpression::Modulo(left, right) => {
-                let (dividend, divisor) = (left.evaluate(data)?, right.evaluate(data)?);
+                let (dividend, divisor) =
+                    (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 match divisor {
                     0 => Err(PropertyConstraintViolation::DivisionByZero),
                     // Every integer is a multiple of -1. `checked_rem_euclid` refuses
@@ -251,19 +533,42 @@ impl ConstraintExpression {
                 }
             }
             ConstraintExpression::Power(left, right) => {
-                let (base, exponent) = (left.evaluate(data)?, right.evaluate(data)?);
+                let (base, exponent) =
+                    (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 power(base, exponent)
             }
+            // Folded from their identities, as add and multiply are
+            ConstraintExpression::Min(operands) => {
+                operands.iter().try_fold(i128::MAX, |least, operand| {
+                    Ok(least.min(operand.evaluate(data, system)?))
+                })
+            }
+            ConstraintExpression::Max(operands) => {
+                operands.iter().try_fold(i128::MIN, |greatest, operand| {
+                    Ok(greatest.max(operand.evaluate(data, system)?))
+                })
+            }
+            ConstraintExpression::Abs(operand) => operand
+                .evaluate(data, system)?
+                .checked_abs()
+                .ok_or(PropertyConstraintViolation::Overflow),
         }
     }
 
     /// The nodes of the expression: this one, and those of its operands.
     pub fn node_count(&self) -> usize {
         1 + match self {
-            ConstraintExpression::Value(_) | ConstraintExpression::Property { .. } => 0,
-            ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
+            ConstraintExpression::Value(_)
+            | ConstraintExpression::Property { .. }
+            | ConstraintExpression::Size { .. }
+            | ConstraintExpression::System(_) => 0,
+            ConstraintExpression::Add(operands)
+            | ConstraintExpression::Multiply(operands)
+            | ConstraintExpression::Min(operands)
+            | ConstraintExpression::Max(operands) => {
                 operands.iter().map(ConstraintExpression::node_count).sum()
             }
+            ConstraintExpression::Abs(operand) => operand.node_count(),
             ConstraintExpression::Subtract(left, right)
             | ConstraintExpression::Divide(left, right)
             | ConstraintExpression::Modulo(left, right)
@@ -275,10 +580,16 @@ impl ConstraintExpression {
     fn reads_property(&self) -> bool {
         match self {
             ConstraintExpression::Value(_) => false,
-            ConstraintExpression::Property { .. } => true,
-            ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
+            ConstraintExpression::Property { .. }
+            | ConstraintExpression::Size { .. }
+            | ConstraintExpression::System(_) => true,
+            ConstraintExpression::Add(operands)
+            | ConstraintExpression::Multiply(operands)
+            | ConstraintExpression::Min(operands)
+            | ConstraintExpression::Max(operands) => {
                 operands.iter().any(ConstraintExpression::reads_property)
             }
+            ConstraintExpression::Abs(operand) => operand.reads_property(),
             ConstraintExpression::Subtract(left, right)
             | ConstraintExpression::Divide(left, right)
             | ConstraintExpression::Modulo(left, right)
@@ -288,23 +599,55 @@ impl ConstraintExpression {
         }
     }
 
-    /// Appends the properties the expression reads, each by its value, to
-    /// `reads`, in the order it reads them.
+    /// Appends the properties the expression reads, each by its value or its
+    /// size, to `reads`, in the order it reads them.
     fn collect_property_reads<'a>(&'a self, reads: &mut Vec<(&'a str, PropertyRead)>) {
         match self {
-            ConstraintExpression::Value(_) => {}
+            ConstraintExpression::Value(_) | ConstraintExpression::System(_) => {}
             ConstraintExpression::Property { path, .. } => reads.push((path, PropertyRead::Value)),
-            ConstraintExpression::Add(operands) | ConstraintExpression::Multiply(operands) => {
+            ConstraintExpression::Size { measure, path } => reads.push((path, measure.read())),
+            ConstraintExpression::Add(operands)
+            | ConstraintExpression::Multiply(operands)
+            | ConstraintExpression::Min(operands)
+            | ConstraintExpression::Max(operands) => {
                 for operand in operands {
                     operand.collect_property_reads(reads);
                 }
             }
+            ConstraintExpression::Abs(operand) => operand.collect_property_reads(reads),
             ConstraintExpression::Subtract(left, right)
             | ConstraintExpression::Divide(left, right)
             | ConstraintExpression::Modulo(left, right)
             | ConstraintExpression::Power(left, right) => {
                 left.collect_property_reads(reads);
                 right.collect_property_reads(reads);
+            }
+        }
+    }
+
+    /// Appends the system properties the expression reads to `reads`, in the
+    /// order it reads them.
+    fn collect_system_reads(&self, reads: &mut Vec<SystemProperty>) {
+        match self {
+            ConstraintExpression::System(property) => reads.push(*property),
+            ConstraintExpression::Value(_)
+            | ConstraintExpression::Property { .. }
+            | ConstraintExpression::Size { .. } => {}
+            ConstraintExpression::Add(operands)
+            | ConstraintExpression::Multiply(operands)
+            | ConstraintExpression::Min(operands)
+            | ConstraintExpression::Max(operands) => {
+                for operand in operands {
+                    operand.collect_system_reads(reads);
+                }
+            }
+            ConstraintExpression::Abs(operand) => operand.collect_system_reads(reads),
+            ConstraintExpression::Subtract(left, right)
+            | ConstraintExpression::Divide(left, right)
+            | ConstraintExpression::Modulo(left, right)
+            | ConstraintExpression::Power(left, right) => {
+                left.collect_system_reads(reads);
+                right.collect_system_reads(reads);
             }
         }
     }
@@ -323,13 +666,33 @@ pub enum PropertyRead {
     /// By its value, compared with identifier constants: an identifier
     /// property.
     Identifier,
+    /// By its size, in a `length` or `byteLength` operand: a string property.
+    Length,
+    /// By its size, in a `count` operand: an array or byte array property.
+    Count,
+    /// By its elements, which a `contains` looks among for a value of the
+    /// kind given: a typed array property with elements of that kind.
+    Elements(ElementKind),
+}
+
+/// What a `contains` looks for among an array's elements, which decides the
+/// elements the array must have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ElementKind {
+    /// An integer, the value of an integer expression.
+    Integer,
+    /// A string.
+    Text,
+    /// An identifier.
+    Identifier,
 }
 
 /// What a comparison of equality compares when it is not integers: strings or
 /// identifiers. [`parse_property_constraints`] asks it of every bare path on
-/// either side of an `equal` or `notEqual`, and of an `in`'s operand, since
-/// the declaration alone does not tell a string property, an identifier
-/// property or an integer one apart.
+/// either side of an `equal` or `notEqual`, of an `in`'s operand, and of the
+/// array a `contains` looks in (the kind of its elements), since the
+/// declaration alone does not tell a string property, an identifier property
+/// or an integer one apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EqualityKind {
     /// A string property.
@@ -363,6 +726,75 @@ impl TextProperty {
             Ok(Some(_)) => None,
         }
     }
+}
+
+/// Where `startsWith` and `endsWith` look for their second string in their
+/// first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AffixPosition {
+    /// `startsWith`: at the start.
+    Start,
+    /// `endsWith`: at the end.
+    End,
+}
+
+impl AffixPosition {
+    /// The condition key declaring it.
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            AffixPosition::Start => STARTS_WITH,
+            AffixPosition::End => ENDS_WITH,
+        }
+    }
+
+    /// Whether `text` starts or ends with `affix`, byte for byte: no case
+    /// folding or normalization, and every string starts and ends with the
+    /// empty one.
+    pub fn holds(self, text: &str, affix: &str) -> bool {
+        match self {
+            AffixPosition::Start => text.starts_with(affix),
+            AffixPosition::End => text.ends_with(affix),
+        }
+    }
+}
+
+/// A side of a `startsWith` or `endsWith`: a string constant, or a string
+/// property with or without an `ifAbsent` default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextOperand {
+    /// A `{ "const": string }`.
+    Constant(String),
+    /// A string property.
+    Property(TextProperty),
+}
+
+impl TextOperand {
+    /// The string it takes for a document whose properties are `data`, `None`
+    /// for a property left out without a default.
+    fn value<'a>(&'a self, data: &'a Value) -> Option<&'a str> {
+        match self {
+            TextOperand::Constant(value) => Some(value),
+            TextOperand::Property(property) => property.value(data),
+        }
+    }
+}
+
+/// What a `contains` looks for among an array property's elements, of the
+/// kind of its elements.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContainsNeedle {
+    /// The value of an integer expression, among integers.
+    Integer(ConstraintExpression),
+    /// A string constant, among strings.
+    TextConstant(String),
+    /// The string a string property holds, or its `ifAbsent` default, among
+    /// strings; one the document leaves out without a default is among none.
+    TextProperty(TextProperty),
+    /// An identifier constant, among identifiers.
+    IdentifierConstant(Identifier),
+    /// The identifier at the dotted path, or `$ownerId`, among identifiers;
+    /// one the document leaves out is among none.
+    IdentifierProperty(String),
 }
 
 /// A rule of `propertyConstraints`, or a condition inside one: a comparison of
@@ -431,6 +863,23 @@ pub enum PropertyConstraint {
         path: String,
         values: BTreeSet<Identifier>,
     },
+    /// `startsWith` or `endsWith`: the string `text` takes starts or ends, as
+    /// `position` says, with the one `affix` takes,
+    /// `{ "startsWith": ["url", { "const": "https://" }] }`. A string property
+    /// the document leaves out without a default takes no string, and the
+    /// condition does not hold for it.
+    TextAffix {
+        position: AffixPosition,
+        text: TextOperand,
+        affix: TextOperand,
+    },
+    /// `contains`: the typed array property at the dotted path `array` holds
+    /// an element equal to `needle`, `{ "contains": ["tags", { "const": "sale" }] }`.
+    /// An array the document leaves out holds nothing.
+    Contains {
+        array: String,
+        needle: ContainsNeedle,
+    },
     /// `present`: the document holds the property at the dotted path. One it
     /// leaves out, or sets to null, is absent, as it is for an operand. Unlike
     /// an operand, it tells a property left out from one set to 0, and it may
@@ -444,18 +893,33 @@ pub enum PropertyConstraint {
     AllOf(Vec<PropertyConstraint>),
     /// `not`: the condition does not hold.
     Not(Box<PropertyConstraint>),
+    /// `ifThen`: `then` holds whenever `condition` does,
+    /// `{ "ifThen": [{ "equal": ["status", { "const": "closed" }] }, { "present": "closedAt" }] }`;
+    /// or `ifThenElse`, with `otherwise` given: `then` when `condition` holds,
+    /// `otherwise` when it does not. Only the branch taken is evaluated.
+    IfThen {
+        condition: Box<PropertyConstraint>,
+        then: Box<PropertyConstraint>,
+        otherwise: Option<Box<PropertyConstraint>>,
+    },
+    /// `notIn`: an `in` ([`Self::In`], [`Self::TextIn`] or
+    /// [`Self::IdentifierIn`]) that does not hold, the operand taking none of
+    /// the listed values. It costs what the `in` costs.
+    NotIn(Box<PropertyConstraint>),
 }
 
 impl PropertyConstraint {
-    /// Whether a document whose properties are `data`, owned by `owner_id`,
-    /// meets the condition. `owner_id` is what `$ownerId` reads; `None` for a
-    /// document whose owner the caller does not know, which `$ownerId` then
-    /// equals no identifier for.
+    /// Whether a document whose properties are `data` and whose system values
+    /// are `system` meets the condition. `$ownerId` reads `system.owner_id`,
+    /// equalling no identifier when it is `None`, and a system property reads
+    /// its value there, 0 when not given.
     ///
     /// Evaluated left to right, and no further than the outcome needs: a
     /// comparison evaluates its left side, then its right one; `anyOf` checks
     /// its conditions in declared order and holds at the first that holds;
-    /// `allOf` fails at the first that fails; `not` inverts its condition; a
+    /// `allOf` fails at the first that fails; `not` inverts its condition;
+    /// `ifThen` and `ifThenElse` evaluate their condition, then only the
+    /// branch it selects (an `ifThen` holding when the condition does not); a
     /// string comparison, `present` or `absent` never faults. The first fault
     /// an evaluated expression meets ([`ConstraintExpression::evaluate`]) is
     /// returned whatever the conditions left unevaluated would say, and `not`
@@ -466,19 +930,20 @@ impl PropertyConstraint {
     pub fn holds(
         &self,
         data: &Value,
-        owner_id: Option<Identifier>,
+        system: &DocumentSystemValues,
     ) -> Result<bool, PropertyConstraintViolation> {
+        let owner_id = system.owner_id;
         match self {
             PropertyConstraint::Compare {
                 comparison,
                 left,
                 right,
             } => {
-                let (left, right) = (left.evaluate(data)?, right.evaluate(data)?);
+                let (left, right) = (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 Ok(comparison.holds(left, right))
             }
             PropertyConstraint::In { operand, values } => {
-                Ok(values.contains(&operand.evaluate(data)?))
+                Ok(values.contains(&operand.evaluate(data, system)?))
             }
             PropertyConstraint::TextCompare {
                 comparison,
@@ -528,11 +993,53 @@ impl PropertyConstraint {
                 Ok(identifier_value(data, owner_id, path)
                     .is_some_and(|value| values.contains(&value)))
             }
+            PropertyConstraint::TextAffix {
+                position,
+                text,
+                affix,
+            } => Ok(matches!(
+                (text.value(data), affix.value(data)),
+                (Some(text), Some(affix)) if position.holds(text, affix)
+            )),
+            PropertyConstraint::Contains { array, needle } => {
+                let elements = match data.get_optional_value_at_path(array) {
+                    Ok(Some(Value::Array(elements))) => elements.as_slice(),
+                    _ => &[],
+                };
+                Ok(match needle {
+                    ContainsNeedle::Integer(expression) => {
+                        let value = expression.evaluate(data, system)?;
+                        elements.iter().any(|element| {
+                            element.is_integer() && element.to_integer::<i128>().ok() == Some(value)
+                        })
+                    }
+                    ContainsNeedle::TextConstant(value) => elements
+                        .iter()
+                        .any(|element| element.as_text() == Some(value.as_str())),
+                    ContainsNeedle::TextProperty(property) => {
+                        property.value(data).is_some_and(|value| {
+                            elements
+                                .iter()
+                                .any(|element| element.as_text() == Some(value))
+                        })
+                    }
+                    ContainsNeedle::IdentifierConstant(value) => elements
+                        .iter()
+                        .any(|element| element.to_identifier().ok() == Some(*value)),
+                    ContainsNeedle::IdentifierProperty(path) => {
+                        identifier_value(data, owner_id, path).is_some_and(|value| {
+                            elements
+                                .iter()
+                                .any(|element| element.to_identifier().ok() == Some(value))
+                        })
+                    }
+                })
+            }
             PropertyConstraint::Present(path) => Ok(is_present(data, path)),
             PropertyConstraint::Absent(path) => Ok(!is_present(data, path)),
             PropertyConstraint::AnyOf(conditions) => {
                 for condition in conditions {
-                    if condition.holds(data, owner_id)? {
+                    if condition.holds(data, system)? {
                         return Ok(true);
                     }
                 }
@@ -540,26 +1047,50 @@ impl PropertyConstraint {
             }
             PropertyConstraint::AllOf(conditions) => {
                 for condition in conditions {
-                    if !condition.holds(data, owner_id)? {
+                    if !condition.holds(data, system)? {
                         return Ok(false);
                     }
                 }
                 Ok(true)
             }
-            PropertyConstraint::Not(condition) => Ok(!condition.holds(data, owner_id)?),
+            PropertyConstraint::Not(condition) => Ok(!condition.holds(data, system)?),
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                if condition.holds(data, system)? {
+                    then.holds(data, system)
+                } else {
+                    otherwise
+                        .as_ref()
+                        .map_or(Ok(true), |otherwise| otherwise.holds(data, system))
+                }
+            }
+            PropertyConstraint::NotIn(condition) => Ok(!condition.holds(data, system)?),
         }
     }
 
-    /// Why a document whose properties are `data`, owned by `owner_id`, breaks
-    /// the rule, `None` when it meets it: the first fault met on the way
-    /// ([`Self::holds`]), or [`PropertyConstraintViolation::NotMet`] when the
-    /// rule evaluates to false.
+    /// Why a document whose properties are `data` and whose system values are
+    /// `system` breaks the rule, `None` when it meets it: the first fault met
+    /// on the way ([`Self::holds`]), or [`PropertyConstraintViolation::NotMet`]
+    /// when the rule evaluates to false. A rule reading a system property
+    /// `system` does not give is not judged: consensus gives every one the
+    /// document type records, the only ones a rule may read, so only a client
+    /// that does not know one skips the rule.
     pub fn violation(
         &self,
         data: &Value,
-        owner_id: Option<Identifier>,
+        system: &DocumentSystemValues,
     ) -> Option<PropertyConstraintViolation> {
-        match self.holds(data, owner_id) {
+        if self
+            .system_reads()
+            .into_iter()
+            .any(|property| system.value(property).is_none())
+        {
+            return None;
+        }
+        match self.holds(data, system) {
             Ok(true) => None,
             Ok(false) => Some(PropertyConstraintViolation::NotMet),
             Err(violation) => Some(violation),
@@ -569,9 +1100,10 @@ impl PropertyConstraint {
     /// The nodes of the rule, counted against
     /// `SystemLimits::max_property_constraint_nodes`: every comparison and
     /// logical operator, every `in` and each value it lists, every string
-    /// constant, every `present` or `absent` with the property it names, every
-    /// arithmetic operator and every operand (an integer value, or a property
-    /// with or without `ifAbsent`).
+    /// constant, every `contains` with its array and what it looks for, every
+    /// `present` or `absent` with the property it names, every
+    /// arithmetic operator and every operand (an integer value, a property with
+    /// or without `ifAbsent`, a size or a system property).
     pub fn node_count(&self) -> usize {
         1 + match self {
             PropertyConstraint::Compare { left, right, .. } => {
@@ -581,15 +1113,39 @@ impl PropertyConstraint {
             // The property and the constant, as a comparison of a path with a value
             PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::TextAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. } => 2,
             PropertyConstraint::TextIn { values, .. } => 1 + values.len(),
             PropertyConstraint::IdentifierIn { values, .. } => 1 + values.len(),
+            // The array, and what is looked for among its elements
+            PropertyConstraint::Contains { needle, .. } => {
+                1 + match needle {
+                    ContainsNeedle::Integer(expression) => expression.node_count(),
+                    ContainsNeedle::TextConstant(_)
+                    | ContainsNeedle::TextProperty(_)
+                    | ContainsNeedle::IdentifierConstant(_)
+                    | ContainsNeedle::IdentifierProperty(_) => 1,
+                }
+            }
             PropertyConstraint::Present(_) | PropertyConstraint::Absent(_) => 0,
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
                 conditions.iter().map(PropertyConstraint::node_count).sum()
             }
             PropertyConstraint::Not(condition) => condition.node_count(),
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                condition.node_count()
+                    + then.node_count()
+                    + otherwise
+                        .as_ref()
+                        .map_or(0, |otherwise| otherwise.node_count())
+            }
+            // The `in`'s own nodes, the negation adding none
+            PropertyConstraint::NotIn(condition) => condition.node_count() - 1,
         }
     }
 
@@ -615,6 +1171,10 @@ impl PropertyConstraint {
     /// judged against it too.
     pub fn reads_owner(&self) -> bool {
         match self {
+            PropertyConstraint::Contains {
+                needle: ContainsNeedle::IdentifierProperty(path),
+                ..
+            } => path == OWNER_ID,
             PropertyConstraint::IdentifierCompare { path, .. }
             | PropertyConstraint::IdentifierIn { path, .. } => path == OWNER_ID,
             PropertyConstraint::IdentifierCompareProperties { left, right, .. } => {
@@ -623,14 +1183,92 @@ impl PropertyConstraint {
             PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
                 conditions.iter().any(PropertyConstraint::reads_owner)
             }
-            PropertyConstraint::Not(condition) => condition.reads_owner(),
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.reads_owner()
+            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => [Some(condition), Some(then), otherwise.as_ref()]
+                .into_iter()
+                .flatten()
+                .any(|part| part.reads_owner()),
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
             | PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => false,
+        }
+    }
+
+    /// The system properties the rule reads (`"$createdAt"`, ...), in
+    /// declared order, one read twice listed twice. `$ownerId` is
+    /// [`Self::reads_owner`]'s.
+    pub fn system_reads(&self) -> Vec<SystemProperty> {
+        let mut reads = Vec::new();
+        self.collect_system_reads(&mut reads);
+        reads
+    }
+
+    /// Whether `change` can break the rule: it reads the owner, or the time
+    /// and heights of the last transfer, for a transfer or a purchase; the
+    /// time and heights of the last update for a price update. Such a write
+    /// changes those and no property, so a rule reading neither held when the
+    /// document was written and still does.
+    pub fn reads_change(&self, change: SystemChange) -> bool {
+        (change == SystemChange::Transfer && self.reads_owner())
+            || self
+                .system_reads()
+                .into_iter()
+                .any(|property| property.changed_by(change))
+    }
+
+    fn collect_system_reads(&self, reads: &mut Vec<SystemProperty>) {
+        match self {
+            PropertyConstraint::Compare { left, right, .. } => {
+                left.collect_system_reads(reads);
+                right.collect_system_reads(reads);
+            }
+            PropertyConstraint::In { operand, .. } => operand.collect_system_reads(reads),
+            PropertyConstraint::Contains {
+                needle: ContainsNeedle::Integer(expression),
+                ..
+            } => expression.collect_system_reads(reads),
+            PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
+                for condition in conditions {
+                    condition.collect_system_reads(reads);
+                }
+            }
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_system_reads(reads)
+            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_system_reads(reads);
+                }
+            }
+            PropertyConstraint::TextCompare { .. }
+            | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::IdentifierCompare { .. }
+            | PropertyConstraint::IdentifierCompareProperties { .. }
+            | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Contains { .. }
+            | PropertyConstraint::Present(_)
+            | PropertyConstraint::Absent(_) => {}
         }
     }
 
@@ -656,6 +1294,47 @@ impl PropertyConstraint {
             .collect()
     }
 
+    /// Every string constant a `startsWith` or `endsWith` looks for in a string
+    /// property, with the property's path and where it is looked for, in
+    /// declared order: a property that declares an `enum` must have a value
+    /// the constant could start or end, or the condition would never hold.
+    pub fn text_affixes(&self) -> Vec<(&str, &str, AffixPosition)> {
+        let mut affixes = Vec::new();
+        self.collect_text_affixes(&mut affixes);
+        affixes
+    }
+
+    fn collect_text_affixes<'a>(&'a self, affixes: &mut Vec<(&'a str, &'a str, AffixPosition)>) {
+        match self {
+            PropertyConstraint::TextAffix {
+                position,
+                text: TextOperand::Property(property),
+                affix: TextOperand::Constant(value),
+            } => affixes.push((&property.path, value, *position)),
+            PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
+                for condition in conditions {
+                    condition.collect_text_affixes(affixes);
+                }
+            }
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_text_affixes(affixes)
+            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_text_affixes(affixes);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Every string property the rule's string comparisons read, in declared
     /// order.
     fn text_properties(&self) -> Vec<&TextProperty> {
@@ -677,12 +1356,38 @@ impl PropertyConstraint {
                     condition.collect_text_properties(properties);
                 }
             }
-            PropertyConstraint::Not(condition) => condition.collect_text_properties(properties),
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_text_properties(properties)
+            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_text_properties(properties);
+                }
+            }
+            PropertyConstraint::TextAffix { text, affix, .. } => {
+                for side in [text, affix] {
+                    if let TextOperand::Property(property) = side {
+                        properties.push(property);
+                    }
+                }
+            }
+            PropertyConstraint::Contains {
+                needle: ContainsNeedle::TextProperty(property),
+                ..
+            } => properties.push(property),
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => {}
         }
@@ -703,19 +1408,42 @@ impl PropertyConstraint {
                     condition.collect_text_constants(constants);
                 }
             }
-            PropertyConstraint::Not(condition) => condition.collect_text_constants(constants),
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_text_constants(constants)
+            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_text_constants(constants);
+                }
+            }
+            // Checked against the enum of the array's elements
+            PropertyConstraint::Contains {
+                array,
+                needle: ContainsNeedle::TextConstant(value),
+            } => constants.push((array, value)),
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
             | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::TextAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => {}
         }
     }
 
-    /// Where an `anyOf` or `allOf` of the rule lists the same condition twice:
+    /// Where an `anyOf` or `allOf` of the rule lists the same condition twice,
+    /// or an `ifThen` or `ifThenElse` holds two alike (a then-branch equal to
+    /// the condition, or two equal branches, says what a simpler rule says):
     /// the repeat's place and the earlier one's (`anyOf[2]` and `anyOf[0]`),
     /// the first found in declared order, `None` when no list does. Conditions
     /// are alike when they parse alike, so `1` and `1.0` are the same value,
@@ -737,11 +1465,14 @@ impl PropertyConstraint {
             | PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::TextAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
-            | PropertyConstraint::Absent(_) => return None,
+            | PropertyConstraint::Absent(_)
+            | PropertyConstraint::NotIn(_) => return None,
             PropertyConstraint::AnyOf(conditions) => (ANY_OF, conditions),
             PropertyConstraint::AllOf(conditions) => (ALL_OF, conditions),
             PropertyConstraint::Not(condition) => {
@@ -749,6 +1480,39 @@ impl PropertyConstraint {
                 let found = condition.find_repeated_condition(at);
                 at.truncate(parent);
                 return found;
+            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                let key = if otherwise.is_some() {
+                    IF_THEN_ELSE
+                } else {
+                    IF_THEN
+                };
+                let parent = enter(at, key);
+                let parts: Vec<&PropertyConstraint> =
+                    [Some(condition), Some(then), otherwise.as_ref()]
+                        .into_iter()
+                        .flatten()
+                        .map(|part| part.as_ref())
+                        .collect();
+                let base = at.len();
+                for (index, part) in parts.iter().enumerate() {
+                    if let Some(earlier) = parts[..index].iter().position(|earlier| earlier == part)
+                    {
+                        return Some((format!("{at}[{index}]"), format!("{at}[{earlier}]")));
+                    }
+                    // Writing to a `String` cannot fail
+                    let _ = write!(at, "[{index}]");
+                    if let Some(found) = part.find_repeated_condition(at) {
+                        return Some(found);
+                    }
+                    at.truncate(base);
+                }
+                at.truncate(parent);
+                return None;
             }
         };
         let parent = enter(at, key);
@@ -800,6 +1564,36 @@ impl PropertyConstraint {
                     }
                 }
             }
+            PropertyConstraint::TextAffix { text, affix, .. } => {
+                for side in [text, affix] {
+                    if let TextOperand::Property(property) = side {
+                        reads.push((&property.path, PropertyRead::Text));
+                    }
+                }
+            }
+            PropertyConstraint::Contains { array, needle } => match needle {
+                ContainsNeedle::Integer(expression) => {
+                    reads.push((array, PropertyRead::Elements(ElementKind::Integer)));
+                    expression.collect_property_reads(reads);
+                }
+                ContainsNeedle::TextConstant(_) => {
+                    reads.push((array, PropertyRead::Elements(ElementKind::Text)))
+                }
+                ContainsNeedle::TextProperty(property) => {
+                    reads.push((array, PropertyRead::Elements(ElementKind::Text)));
+                    reads.push((&property.path, PropertyRead::Text));
+                }
+                ContainsNeedle::IdentifierConstant(_) => {
+                    reads.push((array, PropertyRead::Elements(ElementKind::Identifier)))
+                }
+                ContainsNeedle::IdentifierProperty(path) => {
+                    reads.push((array, PropertyRead::Elements(ElementKind::Identifier)));
+                    // `$ownerId` is the document's owner, no property of it
+                    if path != OWNER_ID {
+                        reads.push((path, PropertyRead::Identifier));
+                    }
+                }
+            },
             PropertyConstraint::Present(path) | PropertyConstraint::Absent(path) => {
                 reads.push((path, PropertyRead::Presence))
             }
@@ -808,7 +1602,21 @@ impl PropertyConstraint {
                     condition.collect_property_reads(reads);
                 }
             }
-            PropertyConstraint::Not(condition) => condition.collect_property_reads(reads),
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_property_reads(reads)
+            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_property_reads(reads);
+                }
+            }
         }
     }
 }
@@ -918,7 +1726,8 @@ fn single_entry(value: &Value) -> Option<(&str, &Value)> {
 /// Every key a condition object may hold, for the errors.
 fn condition_keys() -> String {
     format!(
-        "a comparison ({}), in, present, absent, anyOf, allOf or not",
+        "a comparison ({}), in, notIn, startsWith, endsWith, contains, present, absent, \
+         anyOf, allOf, not, ifThen or ifThenElse",
         ConstraintComparison::ALL
             .map(ConstraintComparison::wire_name)
             .join(", ")
@@ -994,6 +1803,12 @@ fn parse_condition(
                      condition inside it says: declare that condition"
                 ));
             }
+            if single_entry(body).is_some_and(|(inner, _)| inner == NOT_IN) {
+                return Err(format!(
+                    "at {at}.{NOT_IN} is a notIn directly inside a not, which says what an in \
+                     of the same values says: declare that in"
+                ));
+            }
             PropertyConstraint::Not(Box::new(parse_condition(
                 body,
                 at,
@@ -1001,10 +1816,45 @@ fn parse_condition(
                 property_kind,
             )?))
         }
-        IN => {
+        IF_THEN | IF_THEN_ELSE => {
+            let base = at.len();
+            let mut part = |index: usize, value: &Value| {
+                // Writing to a `String` cannot fail
+                let _ = write!(at, "[{index}]");
+                let parsed = parse_condition(value, at, depth + 1, property_kind);
+                at.truncate(base);
+                parsed.map(Box::new)
+            };
+            match (key, body.as_array().map(Vec::as_slice)) {
+                (IF_THEN, Some([condition, then])) => PropertyConstraint::IfThen {
+                    condition: part(0, condition)?,
+                    then: part(1, then)?,
+                    otherwise: None,
+                },
+                (IF_THEN_ELSE, Some([condition, then, otherwise])) => PropertyConstraint::IfThen {
+                    condition: part(0, condition)?,
+                    then: part(1, then)?,
+                    otherwise: Some(part(2, otherwise)?),
+                },
+                (IF_THEN, _) => {
+                    return Err(format!(
+                        "at {at} must list two conditions: the condition, then the one that \
+                         must hold when it does"
+                    ));
+                }
+                _ => {
+                    return Err(format!(
+                        "at {at} must list three conditions: the condition, the one that must \
+                         hold when it does, and the one that must hold when it does not"
+                    ));
+                }
+            }
+        }
+        IN | NOT_IN => {
             let Some([operand, values]) = body.as_array().map(Vec::as_slice) else {
                 return Err(format!(
-                    "at {at} must list an integer expression and the values it may take"
+                    "at {at} must list an integer expression and the values it may {}take",
+                    if key == NOT_IN { "not " } else { "" }
                 ));
             };
             let base = at.len();
@@ -1018,7 +1868,7 @@ fn parse_condition(
             let identifier_path = operand
                 .as_text()
                 .filter(|path| over_strings && kind_of(path) == Some(EqualityKind::Identifier));
-            if let Some(path) = identifier_path {
+            let listed = if let Some(path) = identifier_path {
                 at.push_str("[1]");
                 let values = in_identifier_values(values, at)?;
                 at.truncate(base);
@@ -1031,7 +1881,8 @@ fn parse_condition(
                 else {
                     return Err(format!(
                         "at {at}[0] must be the path of a string property or an ifAbsent giving \
-                         one a string default: an in over strings reads a string property"
+                         one a string default: {} over strings reads a string property",
+                        if key == NOT_IN { "a notIn" } else { "an in" }
                     ));
                 };
                 at.push_str("[1]");
@@ -1053,6 +1904,88 @@ fn parse_condition(
                 let values = in_values(values, at)?;
                 at.truncate(base);
                 PropertyConstraint::In { operand, values }
+            };
+            if key == NOT_IN {
+                PropertyConstraint::NotIn(Box::new(listed))
+            } else {
+                listed
+            }
+        }
+        STARTS_WITH | ENDS_WITH => {
+            let Some([text, affix]) = body.as_array().map(Vec::as_slice) else {
+                return Err(format!(
+                    "at {at} must list two strings: the one tested, then the one it must {} with",
+                    if key == STARTS_WITH { "start" } else { "end" }
+                ));
+            };
+            let text = text_operand(text, &format!("{at}[0]"))?;
+            let affix = text_operand(affix, &format!("{at}[1]"))?;
+            match (&text, &affix) {
+                (TextOperand::Constant(_), TextOperand::Constant(_)) => {
+                    at.truncate(parent);
+                    return Err(format!(
+                        "{}reads no property, so it would hold for every document or for none",
+                        located(at)
+                    ));
+                }
+                (TextOperand::Property(text), TextOperand::Property(affix))
+                    if text.path == affix.path =>
+                {
+                    return Err(format!(
+                        "at {at} tests \"{}\" against itself, so it would hold for every \
+                         document or for none",
+                        text.path
+                    ));
+                }
+                _ => {}
+            }
+            let position = if key == STARTS_WITH {
+                AffixPosition::Start
+            } else {
+                AffixPosition::End
+            };
+            PropertyConstraint::TextAffix {
+                position,
+                text,
+                affix,
+            }
+        }
+        CONTAINS => {
+            let Some([array, needle]) = body.as_array().map(Vec::as_slice) else {
+                return Err(format!(
+                    "at {at} must list an array property path and the value looked for among \
+                     its elements"
+                ));
+            };
+            // `$ownerId` and the system times are values, never arrays
+            let Some(array) = array.as_text().filter(|path| !path.starts_with('$')) else {
+                return Err(format!("at {at}[0] must name an array property path"));
+            };
+            let base = at.len();
+            at.push_str("[1]");
+            // The kind of the array's elements decides what a const spells, and
+            // what is checked against the parsed document type
+            let needle = match property_kind(array) {
+                Some(EqualityKind::Text) => match text_side(needle, at)? {
+                    TextSide::Constant(value) => ContainsNeedle::TextConstant(value),
+                    TextSide::Property(property) => ContainsNeedle::TextProperty(property),
+                },
+                Some(EqualityKind::Identifier) => match identifier_side(needle, at)? {
+                    IdentifierSide::Constant(value) => ContainsNeedle::IdentifierConstant(value),
+                    IdentifierSide::Property(path) => ContainsNeedle::IdentifierProperty(path),
+                },
+                None if is_const(needle) => {
+                    return Err(format!(
+                        "at {at} is a const, but {array} holds no strings or identifiers: an \
+                         integer is written as itself"
+                    ));
+                }
+                None => ContainsNeedle::Integer(parse_expression(needle, at, depth + 1)?),
+            };
+            at.truncate(base);
+            PropertyConstraint::Contains {
+                array: array.to_string(),
+                needle,
             }
         }
         // What the path names is checked against the parsed document type
@@ -1392,6 +2325,15 @@ fn text_side(value: &Value, at: &str) -> Result<TextSide, String> {
     ))
 }
 
+/// A side at `at` (`startsWith[1]`) of a `startsWith` or `endsWith`: a `const`
+/// string or a string property, as [`text_side`] reads them.
+fn text_operand(value: &Value, at: &str) -> Result<TextOperand, String> {
+    Ok(match text_side(value, at)? {
+        TextSide::Constant(value) => TextOperand::Constant(value),
+        TextSide::Property(property) => TextOperand::Property(property),
+    })
+}
+
 /// The comparison at `at` (`equal`) of `left` and `right`, a comparison of
 /// strings: only `equal` and `notEqual` compare them, and each side is a
 /// `const` string or a string property ([`text_side`]). `None` when both are
@@ -1453,6 +2395,9 @@ fn parse_expression(
         ));
     }
     if let Some(path) = value.as_text() {
+        if let Some(property) = SystemProperty::from_name(path) {
+            return Ok(ConstraintExpression::System(property));
+        }
         return Ok(ConstraintExpression::Property {
             path: path.to_string(),
             if_absent: 0,
@@ -1481,6 +2426,12 @@ fn parse_expression(
             let Some(path) = path.as_text() else {
                 return Err(format!("at {at} must name a property path first"));
             };
+            if SystemProperty::from_name(path).is_some() {
+                return Err(format!(
+                    "at {at} gives {path} a default, but a system property a rule reads is \
+                     always set: name it on its own"
+                ));
+            }
             if if_absent.as_text().is_some() {
                 return Err(format!(
                     "at {at} gives a string default, which only a comparison of strings \
@@ -1497,6 +2448,16 @@ fn parse_expression(
             }
         }
         ADD => ConstraintExpression::Add(operand_list(operands, at, depth + 1)?),
+        MIN => ConstraintExpression::Min(operand_list(operands, at, depth + 1)?),
+        MAX => ConstraintExpression::Max(operand_list(operands, at, depth + 1)?),
+        ABS => {
+            if operands.as_array().is_some() {
+                return Err(format!(
+                    "at {at} must be one operand, not a list: abs takes a single operand"
+                ));
+            }
+            ConstraintExpression::Abs(Box::new(parse_expression(operands, at, depth + 1)?))
+        }
         MULTIPLY => ConstraintExpression::Multiply(operand_list(operands, at, depth + 1)?),
         SUBTRACT => {
             let (left, right) = operand_pair(operands, at, depth + 1)?;
@@ -1524,6 +2485,21 @@ fn parse_expression(
                 }
             }
             ConstraintExpression::Power(Box::new(base), Box::new(exponent))
+        }
+        // What the path names is checked against the parsed document type
+        LENGTH | BYTE_LENGTH | COUNT => {
+            let Some(path) = operands.as_text() else {
+                return Err(format!("at {at} must name a property path"));
+            };
+            let measure = match key {
+                LENGTH => SizeMeasure::Length,
+                BYTE_LENGTH => SizeMeasure::ByteLength,
+                _ => SizeMeasure::Count,
+            };
+            ConstraintExpression::Size {
+                measure,
+                path: path.to_string(),
+            }
         }
         CONST => {
             at.truncate(parent);
@@ -1650,6 +2626,27 @@ fn property_value(
             .to_integer::<i128>()
             .map_err(|_| PropertyConstraintViolation::Overflow),
         Ok(Some(_)) => Err(PropertyConstraintViolation::NotAnInteger),
+    }
+}
+
+/// The size of the property at `path` in `data`, as `measure` counts it: 0
+/// when the document leaves it out or sets it to null, and for a value of
+/// another type than `measure` reads, which the schema validation reported
+/// before the rules refuses. A byte array counts its bytes, whichever form the
+/// document gives them in.
+fn property_size(data: &Value, path: &str, measure: SizeMeasure) -> usize {
+    let Ok(Some(value)) = data.get_optional_value_at_path(path) else {
+        return 0;
+    };
+    match (measure, value) {
+        (SizeMeasure::Length, Value::Text(text)) => text.chars().count(),
+        (SizeMeasure::ByteLength, Value::Text(text)) => text.len(),
+        (SizeMeasure::Count, Value::Array(items)) => items.len(),
+        (SizeMeasure::Count, Value::Bytes(bytes)) => bytes.len(),
+        (SizeMeasure::Count, Value::Bytes20(_)) => 20,
+        (SizeMeasure::Count, Value::Bytes32(_) | Value::Identifier(_)) => 32,
+        (SizeMeasure::Count, Value::Bytes36(_)) => 36,
+        _ => 0,
     }
 }
 

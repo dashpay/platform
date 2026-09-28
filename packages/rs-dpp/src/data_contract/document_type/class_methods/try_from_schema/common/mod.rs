@@ -1445,7 +1445,7 @@ fn parse_token_costs(
     ctx: &CoreParseContext<'_>,
     schema: &Value,
 ) -> Result<TokenCosts, ProtocolError> {
-    let token_costs_value = schema.get_optional_value("tokenCost")?;
+    let token_costs_value = schema.get_optional_value(property_names::TOKEN_COST)?;
 
     let extract_cost = |key: &str| -> Result<Option<DocumentActionTokenCost>, ProtocolError> {
         token_costs_value
@@ -2492,8 +2492,12 @@ pub(super) fn apply_index_only(
 ) -> Result<(), ProtocolError> {
     use crate::document::property_names::{CREATED_AT, OWNER_ID};
 
+    // Only generation 3 calls this, so no protocol version before 14 sees
+    // these rules or the class of error they are reported with.
     let structure_error = |message: String| {
-        ProtocolError::DataContractError(DataContractError::InvalidContractStructure(message))
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
     };
 
     if !index_only {
@@ -2677,10 +2681,22 @@ pub(super) fn apply_index_only(
                 payload_property, name,
             )));
         }
-        let max_width = property
-            .property_type
-            .max_byte_size(platform_version)?
-            .unwrap_or(u16::MAX);
+        // A string whose `maxLength` puts its worst case past `u16::MAX` bytes
+        // overflows the width computation; it could never fit an entry's value.
+        let max_width = match property.property_type.max_byte_size(platform_version) {
+            Ok(max_width) => max_width.unwrap_or(u16::MAX),
+            Err(ProtocolError::Overflow(_)) => {
+                return Err(structure_error(format!(
+                    "entryPayload property \"{}\" of indexOnly document type \"{}\" may \
+                     encode to more than {} bytes, over the {}-byte cap on an entry's value",
+                    payload_property,
+                    name,
+                    u16::MAX,
+                    platform_version.system_limits.max_field_value_size,
+                )))
+            }
+            Err(error) => return Err(error),
+        };
         if max_width == u16::MAX {
             return Err(structure_error(format!(
                 "entryPayload property \"{}\" of indexOnly document type \"{}\" must be \
@@ -2847,9 +2863,12 @@ pub(super) fn apply_index_only(
         // (canonical property, i64-safe integer type, `required`
         // membership) run for every doctype, indexOnly included.
 
+        // `parse_indices` gives every index of an indexOnly type a terminal,
+        // and the index parser refuses an empty one, so a contract cannot get
+        // here: this is the parser failing, not the contract.
         let components = index.terminal_components();
         if components.is_empty() {
-            return Err(structure_error(format!(
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
                 "index \"{}\" on indexOnly document type \"{}\" has no terminal after \
                  normalization: internal parser error",
                 index_name, name,

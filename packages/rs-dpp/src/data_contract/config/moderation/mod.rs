@@ -27,6 +27,7 @@ use crate::serialization::JsonSafeFields;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use bincode::{Decode, DecodeUntrusted, Encode};
+use dashcore::Network;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
@@ -576,10 +577,12 @@ impl ContractModerationConfig {
     /// ([`ElectedModerators::validation_error`] has its rules).
     /// Whether the named identities exist is state validation, done by the contract create
     /// and update transitions: a moderator that does not exist can never sign, so naming one
-    /// is a mistake, caught where it is cheapest.
+    /// is a mistake, caught where it is cheapest. The `network` is the one the node runs: an
+    /// elected declaration's windows have a floor on mainnet only.
     pub fn validate(
         &self,
         document_schemas: &BTreeMap<DocumentName, Value>,
+        network: Network,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -588,7 +591,7 @@ impl ContractModerationConfig {
             .methods
             .validate_moderation_config
         {
-            0 => Ok(self.validate_v0(document_schemas, platform_version)),
+            0 => Ok(self.validate_v0(document_schemas, network, platform_version)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ContractModerationConfig::validate".to_string(),
                 known_versions: vec![0],
@@ -601,6 +604,7 @@ impl ContractModerationConfig {
     fn validate_v0(
         &self,
         document_schemas: &BTreeMap<DocumentName, Value>,
+        network: Network,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
         let has_document_type_deletable_by_moderators = document_schemas
@@ -641,11 +645,9 @@ impl ContractModerationConfig {
                 );
             }
         }
-        if let Some(reason) = self
-            .moderators
-            .elected()
-            .and_then(|elected| elected.validation_error(self, document_schemas, platform_version))
-        {
+        if let Some(reason) = self.moderators.elected().and_then(|elected| {
+            elected.validation_error(self, document_schemas, network, platform_version)
+        }) {
             return SimpleConsensusValidationResult::new_with_error(
                 InvalidContractModerationConfigError::new(format!("elected moderation: {reason}"))
                     .into(),
@@ -941,7 +943,11 @@ mod tests {
             moderators: ContractModerators::ContractOwner,
         };
         let result = config
-            .validate(&BTreeMap::new(), PlatformVersion::latest())
+            .validate(
+                &BTreeMap::new(),
+                Network::Mainnet,
+                PlatformVersion::latest(),
+            )
             .expect("validate");
         assert!(!result.is_valid());
     }
@@ -955,7 +961,11 @@ mod tests {
             moderators: ContractModerators::ContractOwner,
         };
         let result = config
-            .validate(&schemas_with_a_deletable_type(), PlatformVersion::latest())
+            .validate(
+                &schemas_with_a_deletable_type(),
+                Network::Mainnet,
+                PlatformVersion::latest(),
+            )
             .expect("validate");
         assert!(result.is_valid(), "{:?}", result.errors);
         assert_eq!(config.lists().count(), 0);
@@ -971,7 +981,11 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(set(&[9, 1])),
         };
         let result = config
-            .validate(&BTreeMap::new(), PlatformVersion::latest())
+            .validate(
+                &BTreeMap::new(),
+                Network::Mainnet,
+                PlatformVersion::latest(),
+            )
             .expect("validate");
         assert!(result.is_valid(), "{:?}", result.errors);
         // Naming the owner changes nothing about who may moderate or who is protected.
@@ -992,11 +1006,11 @@ mod tests {
             )),
         };
         assert!(config(max)
-            .validate(&BTreeMap::new(), platform_version)
+            .validate(&BTreeMap::new(), Network::Mainnet, platform_version)
             .expect("validate")
             .is_valid());
         assert!(!config(max + 1)
-            .validate(&BTreeMap::new(), platform_version)
+            .validate(&BTreeMap::new(), Network::Mainnet, platform_version)
             .expect("validate")
             .is_valid());
     }
@@ -1011,7 +1025,7 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(BTreeSet::new()),
         };
         assert!(!empty
-            .validate(&BTreeMap::new(), platform_version)
+            .validate(&BTreeMap::new(), Network::Mainnet, platform_version)
             .expect("validate")
             .is_valid());
         let too_many: Vec<u8> =
@@ -1023,7 +1037,7 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(set(&too_many)),
         };
         assert!(!oversized
-            .validate(&BTreeMap::new(), platform_version)
+            .validate(&BTreeMap::new(), Network::Mainnet, platform_version)
             .expect("validate")
             .is_valid());
     }
@@ -1038,7 +1052,11 @@ mod tests {
             moderators: ContractModerators::AppointedModerators(set(&[1, 2, 3])),
         };
         assert!(config
-            .validate(&BTreeMap::new(), PlatformVersion::latest())
+            .validate(
+                &BTreeMap::new(),
+                Network::Mainnet,
+                PlatformVersion::latest()
+            )
             .expect("validate")
             .is_valid());
         assert!(config.may_moderate(&owner, &owner));
@@ -1073,7 +1091,11 @@ mod tests {
             moderators: ContractModerators::ContractOwner,
         };
         let result = config
-            .validate(&BTreeMap::new(), PlatformVersion::latest())
+            .validate(
+                &BTreeMap::new(),
+                Network::Mainnet,
+                PlatformVersion::latest(),
+            )
             .expect("validate");
         assert!(result.is_valid(), "{:?}", result.errors);
         assert_eq!(

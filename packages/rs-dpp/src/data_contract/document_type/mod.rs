@@ -82,6 +82,10 @@ pub(crate) mod property_names {
     /// v3+ (protocol version 14). See `parse_action_fees_keyword` in
     /// `try_from_schema::common`.
     pub const ACTION_FEES: &str = "actionFees";
+    /// Doctype-level object of token costs, one per document action (`create`,
+    /// `replace`, `delete`, `transfer`, `update_price`, `purchase`). Meta-schema
+    /// v0+ (protocol version 9). See `parse_token_costs` in `try_from_schema::common`.
+    pub const TOKEN_COST: &str = "tokenCost";
     /// Doctype-level array naming the [`IMMUTABLE`] properties a replace may
     /// still set when the stored document has no value for them. Once set
     /// they are frozen like the rest of the list. Every entry must also be in
@@ -99,6 +103,9 @@ pub(crate) mod property_names {
     pub const MAX_ITEMS: &str = "maxItems";
     pub const ITEMS: &str = "items";
     pub const UNIQUE_ITEMS: &str = "uniqueItems";
+    pub const MIN_PROPERTIES: &str = "minProperties";
+    pub const MAX_PROPERTIES: &str = "maxProperties";
+    pub const CONTAINS: &str = "contains";
     pub const MIN_LENGTH: &str = "minLength";
     pub const MAX_LENGTH: &str = "maxLength";
     pub const BYTE_ARRAY: &str = "byteArray";
@@ -119,8 +126,9 @@ pub(crate) mod property_names {
     /// Doctype-level object of named rules, each a condition on the document's
     /// properties (a comparison of two integer expressions, of a string or an
     /// identifier property with constants or with another property of its
-    /// kind, an `in` list of values, a `present` or `absent` test, or an
-    /// `anyOf`, `allOf` or `not` of conditions) that every created or replaced
+    /// kind, an `in` or `notIn` list of values, a `startsWith` or `endsWith`,
+    /// a `contains`, a `present` or `absent` test, or an `anyOf`, `allOf`,
+    /// `not`, `ifThen` or `ifThenElse` of conditions) that every created or replaced
     /// document must meet. Meta-schema v3+ (protocol version 14). See
     /// `parse_property_constraints` in `property_constraints`.
     pub const PROPERTY_CONSTRAINTS: &str = "propertyConstraints";

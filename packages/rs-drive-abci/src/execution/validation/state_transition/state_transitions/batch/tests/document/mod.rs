@@ -13,6 +13,7 @@ mod immutable;
 mod index_only;
 mod keep_history;
 mod list_element_reference;
+mod long_string_sizing;
 mod lookup_reference;
 mod max_bytes;
 mod nft;

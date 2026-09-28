@@ -542,6 +542,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// are themselves managed identities are skipped (their own
     /// `dashpay_profile` is authoritative). Display-only: a failure never
     /// aborts the sweep. Returns the number of cache entries changed.
+    ///
+    /// Fetching pending senders' profiles is an accepted privacy cost: an
+    /// observer could link the `$ownerId In [...]` query to our inbound set,
+    /// but the DAPI node that serves our `toUserId == me` query already sees
+    /// that whole set, so the profile fetch adds little.
+    ///
+    /// Profiles are refetched after `CONTACT_PROFILE_REFRESH_MS` rather than by
+    /// `$updatedAt`: `$ownerId In [...] AND $updatedAt > marker` cannot be
+    /// proven in one query (an `In` on the first index field plus a range on
+    /// the second is not a contiguous index range). A per-owner `$updatedAt`
+    /// query would lose the batching.
     pub async fn sync_contact_profiles(&self) -> Result<u32, PlatformWalletError> {
         let now_ms = crate::util::now_ms();
         let dashpay_contract = super::dashpay_contract()?;

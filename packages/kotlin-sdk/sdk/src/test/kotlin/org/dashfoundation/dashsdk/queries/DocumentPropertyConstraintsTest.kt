@@ -36,9 +36,10 @@ class DocumentPropertyConstraintsTest {
               { "kind": "text", "path": "status" },
               { "kind": "presence", "path": "closedAt" }
             ],
+            "readsSystem": [],
             "rule": {
-              "anyOf": [
-                { "notEqual": ["status", { "const": "closed" }] },
+              "ifThen": [
+                { "equal": ["status", { "const": "closed" }] },
                 { "present": "closedAt" }
               ]
             }
@@ -50,6 +51,7 @@ class DocumentPropertyConstraintsTest {
               { "kind": "value", "path": "price" },
               { "kind": "value", "path": "fee" }
             ],
+            "readsSystem": [],
             "rule": { "greaterThanOrEqual": [{ "divide": ["price", "fee"] }, 1] }
           },
           {
@@ -59,8 +61,85 @@ class DocumentPropertyConstraintsTest {
               { "kind": "presence", "path": "sellerId" },
               { "kind": "identifier", "path": "sellerId" }
             ],
+            "readsSystem": [],
             "rule": {
               "anyOf": [{ "absent": "sellerId" }, { "equal": ["sellerId", "${'$'}ownerId"] }]
+            }
+          }
+        ]
+    """.trimIndent()
+
+    /**
+     * Rules reading sizes and the elements of an array, as the FFI reports
+     * them (wasm-dpp2's `DocumentPropertyConstraints.spec.ts` holds the same
+     * rules): a `byteLength` operand reads a string's size, a `count` operand
+     * an array's items, and a `contains` the array it looks in.
+     */
+    private val sizeAndElementRulesJson = """
+        [
+          {
+            "name": "notUsed",
+            "readsOwner": false,
+            "reads": [{ "kind": "elements", "path": "labels" }],
+            "readsSystem": [],
+            "rule": { "not": { "contains": ["labels", { "const": "used" }] } }
+          },
+          {
+            "name": "tagsWithinLimit",
+            "readsOwner": false,
+            "reads": [
+              { "kind": "count", "path": "tags" },
+              { "kind": "value", "path": "maxTags" }
+            ],
+            "readsSystem": [],
+            "rule": { "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }
+          },
+          {
+            "name": "titleBytes",
+            "readsOwner": false,
+            "reads": [{ "kind": "length", "path": "title" }],
+            "readsSystem": [],
+            "rule": { "lessThanOrEqual": [{ "byteLength": "title" }, 12] }
+          }
+        ]
+    """.trimIndent()
+
+    /**
+     * Rules reading system times and heights (rs-sdk-ffi's
+     * `should_read_the_clock_for_system_times_and_skip_block_heights`), plus
+     * one reading an update time twice and a Core height, in declared order.
+     */
+    private val systemRulesJson = """
+        [
+          {
+            "name": "endsAfterCreation",
+            "readsOwner": false,
+            "reads": [{ "kind": "value", "path": "endsAt" }],
+            "readsSystem": ["${'$'}createdAt"],
+            "rule": { "greaterThan": ["endsAt", "${'$'}createdAt"] }
+          },
+          {
+            "name": "listedAfterHeight10",
+            "readsOwner": false,
+            "reads": [],
+            "readsSystem": ["${'$'}createdAtBlockHeight"],
+            "rule": { "greaterThanOrEqual": ["${'$'}createdAtBlockHeight", 10] }
+          },
+          {
+            "name": "settledAfterTransfer",
+            "readsOwner": false,
+            "reads": [],
+            "readsSystem": [
+              "${'$'}updatedAt",
+              "${'$'}transferredAtCoreBlockHeight",
+              "${'$'}updatedAt"
+            ],
+            "rule": {
+              "allOf": [
+                { "greaterThan": ["${'$'}updatedAt", 0] },
+                { "greaterThan": ["${'$'}transferredAtCoreBlockHeight", 0] },
+                { "lessThan": ["${'$'}updatedAt", 4102444800000] }
+              ]
             }
           }
         ]
@@ -89,6 +168,113 @@ class DocumentPropertyConstraintsTest {
             rules[2].reads.map { it.kind },
         )
         assertEquals(listOf(false, false, true), rules.map { it.readsOwner })
+        assertEquals(List(3) { emptyList<String>() }, rules.map { it.readsSystem })
+    }
+
+    @Test
+    fun `should decode size and element reads as length count and elements`() {
+        val rules = DocumentPropertyConstraint.listFromJson(sizeAndElementRulesJson)
+
+        assertEquals(listOf("notUsed", "tagsWithinLimit", "titleBytes"), rules.map { it.name })
+        assertEquals(
+            listOf(PropertyConstraintRead("labels", PropertyConstraintRead.Kind.Elements)),
+            rules[0].reads,
+        )
+        assertEquals(
+            listOf(
+                PropertyConstraintRead("tags", PropertyConstraintRead.Kind.Count),
+                PropertyConstraintRead("maxTags", PropertyConstraintRead.Kind.Value),
+            ),
+            rules[1].reads,
+        )
+        assertEquals(
+            listOf(PropertyConstraintRead("title", PropertyConstraintRead.Kind.Length)),
+            rules[2].reads,
+        )
+        assertEquals("""{"lessThanOrEqual":[{"byteLength":"title"},12]}""", rules[2].ruleJson)
+    }
+
+    /** The names come through as Rust reports them, in declared order, a repeat kept. */
+    @Test
+    fun `should decode the system times and heights each rule reads`() {
+        val rules = DocumentPropertyConstraint.listFromJson(systemRulesJson)
+
+        assertEquals(
+            listOf(
+                listOf("${'$'}createdAt"),
+                listOf("${'$'}createdAtBlockHeight"),
+                listOf("${'$'}updatedAt", "${'$'}transferredAtCoreBlockHeight", "${'$'}updatedAt"),
+            ),
+            rules.map { it.readsSystem },
+        )
+        assertEquals(listOf(PropertyConstraintRead("endsAt", PropertyConstraintRead.Kind.Value)), rules[0].reads)
+        assertEquals(emptyList<PropertyConstraintRead>(), rules[1].reads)
+        assertEquals(listOf(false, false, false), rules.map { it.readsOwner })
+    }
+
+    /**
+     * An `ifThenElse` reads what every branch reads, whichever a document
+     * takes: the descriptor rs-sdk-ffi's
+     * `should_report_every_branch_of_an_if_then_else_and_judge_the_one_taken`
+     * reports, the owner read in the then branch and the creation time in the
+     * else branch.
+     */
+    @Test
+    fun `should decode what every branch of an ifThenElse reads`() {
+        val rule = DocumentPropertyConstraint.listFromJson(
+            """
+            [
+              {
+                "name": "openEndedSoldByOwner",
+                "readsOwner": true,
+                "reads": [
+                  { "kind": "presence", "path": "endsAt" },
+                  { "kind": "identifier", "path": "sellerId" },
+                  { "kind": "value", "path": "endsAt" }
+                ],
+                "readsSystem": ["${'$'}createdAt"],
+                "rule": {
+                  "ifThenElse": [
+                    { "absent": "endsAt" },
+                    { "equal": ["sellerId", "${'$'}ownerId"] },
+                    { "greaterThan": ["endsAt", "${'$'}createdAt"] }
+                  ]
+                }
+              }
+            ]
+            """.trimIndent(),
+        ).single()
+
+        assertEquals("openEndedSoldByOwner", rule.name)
+        assertEquals(
+            listOf(
+                PropertyConstraintRead("endsAt", PropertyConstraintRead.Kind.Presence),
+                PropertyConstraintRead("sellerId", PropertyConstraintRead.Kind.Identifier),
+                PropertyConstraintRead("endsAt", PropertyConstraintRead.Kind.Value),
+            ),
+            rule.reads,
+        )
+        assertTrue(rule.readsOwner)
+        assertEquals(listOf("${'$'}createdAt"), rule.readsSystem)
+        assertEquals(
+            """{"ifThenElse":[{"absent":"endsAt"},{"equal":["sellerId","${'$'}ownerId"]},""" +
+                """{"greaterThan":["endsAt","${'$'}createdAt"]}]}""",
+            rule.ruleJson,
+        )
+    }
+
+    /** A native library built before `readsSystem` leaves the key out. */
+    @Test
+    fun `should read a rule without readsSystem as reading no system value`() {
+        val rules = DocumentPropertyConstraint.listFromJson(
+            """[{"name":"r","readsOwner":false,"reads":[],"rule":{"present":"a"}}]""",
+        )
+
+        assertEquals(emptyList<String>(), rules.single().readsSystem)
+        assertEquals(
+            DocumentPropertyConstraint("r", """{"present":"a"}""", emptyList(), readsOwner = false),
+            rules.single(),
+        )
     }
 
     /**
@@ -100,7 +286,7 @@ class DocumentPropertyConstraintsTest {
         val rules = DocumentPropertyConstraint.listFromJson(rulesJson)
 
         assertEquals(
-            """{"anyOf":[{"notEqual":["status",{"const":"closed"}]},{"present":"closedAt"}]}""",
+            """{"ifThen":[{"equal":["status",{"const":"closed"}]},{"present":"closedAt"}]}""",
             rules[0].ruleJson,
         )
         assertEquals("""{"greaterThanOrEqual":[{"divide":["price","fee"]},1]}""", rules[1].ruleJson)
@@ -157,12 +343,15 @@ class DocumentPropertyConstraintsTest {
 
     @Test
     fun `should round trip every read kind name`() {
-        val names = listOf("value", "presence", "text", "identifier")
+        val names = listOf("value", "presence", "text", "identifier", "length", "count", "elements")
         val kinds = listOf(
             PropertyConstraintRead.Kind.Value,
             PropertyConstraintRead.Kind.Presence,
             PropertyConstraintRead.Kind.Text,
             PropertyConstraintRead.Kind.Identifier,
+            PropertyConstraintRead.Kind.Length,
+            PropertyConstraintRead.Kind.Count,
+            PropertyConstraintRead.Kind.Elements,
         )
 
         assertEquals(kinds, names.map(PropertyConstraintRead.Kind::fromName))
@@ -185,6 +374,30 @@ class DocumentPropertyConstraintsTest {
             """[7]""",
         )
         for (json in malformed) {
+            assertThrows(json, DashSdkError.SerializationError::class.java) {
+                DocumentPropertyConstraint.listFromJson(json)
+            }
+        }
+    }
+
+    /** Present, `readsSystem` must be an array of strings; only a missing key means none. */
+    @Test
+    fun `should refuse a malformed readsSystem`() {
+        val malformed = listOf(
+            // A single name is not an array
+            "\"\$createdAt\"",
+            "null",
+            "true",
+            """{"${'$'}createdAt": true}""",
+            // Each entry must be a string
+            "[1]",
+            "[null]",
+            """["${'$'}createdAt", 7]""",
+            """[["${'$'}createdAt"]]""",
+        )
+        for (readsSystem in malformed) {
+            val json =
+                """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":$readsSystem,"rule":{"present":"a"}}]"""
             assertThrows(json, DashSdkError.SerializationError::class.java) {
                 DocumentPropertyConstraint.listFromJson(json)
             }

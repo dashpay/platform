@@ -20,6 +20,7 @@ use crate::prelude::TimestampMillis;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
 use bincode::{Decode, DecodeUntrusted, Encode};
+use dashcore::Network;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
@@ -311,9 +312,11 @@ impl fmt::Display for InterimModerators {
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
 pub struct ElectedModerators {
     /// How long, in seconds, applicants may join an election once the first one applied.
-    /// `SystemLimits::min_contract_moderation_election_window_seconds` to
-    /// `SystemLimits::max_contract_moderation_election_window_seconds` (one day to four
-    /// weeks); [`DEFAULT_ELECTION_WINDOW_SECONDS`] when the declaration leaves it out.
+    /// At most `SystemLimits::max_contract_moderation_election_window_seconds` (four weeks),
+    /// and on mainnet at least
+    /// `SystemLimits::min_mainnet_contract_moderation_election_window_seconds` (one day);
+    /// any other network takes 0. [`DEFAULT_ELECTION_WINDOW_SECONDS`] when the declaration
+    /// leaves it out.
     pub join_window: u32,
     /// How long, in seconds, masternodes vote once the join window closed. The same bounds
     /// and default.
@@ -429,10 +432,14 @@ impl ElectedModerators {
     /// the windows, and the cool-down of a contestable seat, within the limits, the moderated
     /// set non-empty, each of its types a document type of the contract with a non-empty
     /// ability set the contract backs. The first rule broken is the reason returned.
+    ///
+    /// The windows have a floor on mainnet only: any other network takes a window of 0, so
+    /// an election there can be run through in a block or two.
     pub(super) fn validation_error(
         &self,
         config: &ContractModerationConfig,
         document_schemas: &BTreeMap<DocumentName, Value>,
+        network: Network,
         platform_version: &PlatformVersion,
     ) -> Option<String> {
         let limits = &platform_version.system_limits;
@@ -441,7 +448,10 @@ impl ElectedModerators {
                 format!("the {what} of {seconds} seconds is outside {min} to {max} seconds")
             })
         };
-        let window_min = limits.min_contract_moderation_election_window_seconds;
+        let window_min = match network {
+            Network::Mainnet => limits.min_mainnet_contract_moderation_election_window_seconds,
+            _ => 0,
+        };
         let window_max = limits.max_contract_moderation_election_window_seconds;
         if let Some(reason) = within("join window", self.join_window, window_min, window_max)
             .or_else(|| within("vote window", self.vote_window, window_min, window_max))
@@ -616,10 +626,16 @@ mod tests {
         }
     }
 
-    /// The reason the declaration is refused for, `None` when it is accepted
+    /// The reason the declaration is refused for on mainnet, whose bounds are the strictest,
+    /// `None` when it is accepted
     fn refusal(config: &ContractModerationConfig) -> Option<String> {
+        refusal_on(Network::Mainnet, config)
+    }
+
+    /// The reason the declaration is refused for on `network`, `None` when it is accepted
+    fn refusal_on(network: Network, config: &ContractModerationConfig) -> Option<String> {
         let result = config
-            .validate(&schemas(), PlatformVersion::latest())
+            .validate(&schemas(), network, PlatformVersion::latest())
             .expect("validate");
         (!result.is_valid()).then(|| rendered(&result.errors))
     }
@@ -642,7 +658,7 @@ mod tests {
     #[test]
     fn should_accept_every_bound_and_refuse_one_second_outside_each() {
         let limits = &PlatformVersion::latest().system_limits;
-        let window_min = limits.min_contract_moderation_election_window_seconds;
+        let window_min = limits.min_mainnet_contract_moderation_election_window_seconds;
         let window_max = limits.max_contract_moderation_election_window_seconds;
         let cool_down_min = limits.min_contract_moderation_challenge_cool_down_seconds;
         let cool_down_max = limits.max_contract_moderation_challenge_cool_down_seconds;
@@ -680,6 +696,38 @@ mod tests {
             assert!(below.contains(name), "{below}");
             let above = refusal(&with(field, max + 1)).expect("refused above the maximum");
             assert!(above.contains(name), "{above}");
+        }
+    }
+
+    /// The windows have a floor on mainnet only, one day: every other network takes 0, and
+    /// its elections resolve in a block or two. The four-week ceiling holds everywhere.
+    #[test]
+    fn should_floor_the_windows_on_mainnet_only() {
+        let with_windows = |seconds: u32| {
+            let mut declaration = elected();
+            declaration.join_window = seconds;
+            declaration.vote_window = seconds;
+            config(declaration)
+        };
+
+        let on_mainnet = refusal_on(Network::Mainnet, &with_windows(0)).expect("refused");
+        assert!(
+            on_mainnet.contains("the join window of 0 seconds is outside 86400 to 2419200 seconds"),
+            "{on_mainnet}"
+        );
+        assert_eq!(refusal_on(Network::Mainnet, &with_windows(86_400)), None);
+
+        for network in [Network::Testnet, Network::Devnet, Network::Regtest] {
+            assert_eq!(
+                refusal_on(network, &with_windows(0)),
+                None,
+                "0 on {network:?}"
+            );
+            let above = refusal_on(network, &with_windows(2_419_201)).expect("refused");
+            assert!(
+                above.contains("the join window of 2419201 seconds is outside 0 to 2419200"),
+                "{above}"
+            );
         }
     }
 

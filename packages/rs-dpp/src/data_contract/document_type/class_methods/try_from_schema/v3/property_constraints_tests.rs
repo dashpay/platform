@@ -13,7 +13,9 @@ use crate::consensus::basic::basic_error::BasicError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::document_type::property_constraints::{PropertyConstraint, PropertyRead};
+use crate::data_contract::document_type::property_constraints::{
+    DocumentSystemValues, ElementKind, PropertyConstraint, PropertyRead, SystemProperty,
+};
 use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
 use crate::data_contract::DataContract;
 use crate::serialization::{
@@ -600,8 +602,138 @@ fn should_compare_the_owner_and_refuse_it_on_an_index_only_type() {
     }
 }
 
-/// `$ownerId` is the document's owner, which every document has, not a
-/// property of the type: a presence test of it is refused on both paths, and
+/// An identifier property that declares `refersTo` is an identifier property
+/// all the same: on both paths it compares with a const, with another
+/// identifier property whether or not that one declares `refersTo`, with
+/// `$ownerId` and in an `in`, and the rules judge its value as they judge any
+/// identifier's; read as a number, it is refused as any identifier is.
+#[test]
+fn should_compare_identifier_properties_that_declare_refers_to() {
+    let token = Identifier::new([7; 32]);
+    let other = Identifier::new([8; 32]);
+    let rules = json!({
+        "boughtWithToken": { "equal": ["buyerId", { "const": token.to_string(Encoding::Base58) }] },
+        "buyerIsNotSeller": { "notEqual": ["buyerId", "sellerId"] },
+        "buyerOwns": { "equal": ["buyerId", "$ownerId"] },
+        "knownBuyer": {
+            "in": [
+                "buyerId",
+                [token.to_string(Encoding::Base58), other.to_string(Encoding::Base58)]
+            ]
+        }
+    });
+    let referring_schema = |rules: serde_json::Value, referring: &[&str]| {
+        let mut schema = order_schema(Some(rules), None);
+        for path in referring {
+            schema["properties"][*path]["refersTo"] = json!({ "type": "identity" });
+        }
+        schema_value(schema)
+    };
+
+    for referring in [&["buyerId"][..], &["sellerId"], &["buyerId", "sellerId"]] {
+        for full_validation in [true, false] {
+            let document_type = parse_dispatched(
+                referring_schema(rules.clone(), referring),
+                PlatformVersion::latest(),
+                full_validation,
+            )
+            .unwrap_or_else(|e| {
+                panic!("{referring:?}, full_validation {full_validation}: should parse: {e}")
+            });
+            for path in referring {
+                assert!(matches!(
+                    document_type.flattened_properties()[*path].property_type,
+                    DocumentPropertyType::IdentifierWithReference(_)
+                ));
+            }
+            let constraints = document_type.property_constraints();
+            assert_eq!(
+                constraints["buyerIsNotSeller"].property_reads(),
+                [
+                    ("buyerId", PropertyRead::Identifier),
+                    ("sellerId", PropertyRead::Identifier)
+                ]
+            );
+            for name in ["boughtWithToken", "buyerOwns", "knownBuyer"] {
+                assert_eq!(
+                    constraints[name].property_reads(),
+                    [("buyerId", PropertyRead::Identifier)],
+                    "{name}"
+                );
+            }
+            assert!(constraints["buyerOwns"].reads_owner());
+
+            let order = |buyer: Identifier| {
+                platform_value!({
+                    "buyerId": buyer,
+                    "sellerId": Identifier::new([9; 32]),
+                })
+            };
+            // The system values of an order owned by `owner`, no time or height
+            let owned = |owner: Option<Identifier>| DocumentSystemValues {
+                owner_id: owner,
+                ..Default::default()
+            };
+            for (name, owner, holds_for_token, holds_for_other) in [
+                ("boughtWithToken", None, true, false),
+                ("buyerIsNotSeller", None, true, true),
+                ("buyerOwns", Some(token), true, false),
+                ("knownBuyer", None, true, true),
+            ] {
+                assert_eq!(
+                    constraints[name].holds(&order(token), &owned(owner)),
+                    Ok(holds_for_token),
+                    "{name}"
+                );
+                assert_eq!(
+                    constraints[name].holds(&order(other), &owned(owner)),
+                    Ok(holds_for_other),
+                    "{name}"
+                );
+            }
+            // The seller's id as the buyer's: listed nowhere, and equal to the seller
+            for name in ["knownBuyer", "buyerIsNotSeller"] {
+                assert_eq!(
+                    constraints[name].holds(&order(Identifier::new([9; 32])), &owned(None)),
+                    Ok(false),
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    for (rules, needle) in [
+        (
+            json!({ "rule": { "equal": ["buyerId", "price"] } }),
+            "rule \"rule\" reads \"buyerId\", which has type identifier, not integer or boolean: \
+             an identifier property is compared",
+        ),
+        (
+            json!({ "rule": { "equal": ["note", "buyerId"] } }),
+            "rule \"rule\" at equal compares a string property with an identifier property",
+        ),
+        (
+            json!({ "rule": { "lessThan": ["buyerId", "sellerId"] } }),
+            "rule \"rule\" at lessThan compares identifiers, which only equal and notEqual do",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_dispatched(
+                    referring_schema(rules.clone(), &["buyerId"]),
+                    PlatformVersion::latest(),
+                    full_validation,
+                ),
+                needle,
+            );
+        }
+    }
+}
+
+/// `$ownerId` and the system times and heights are no properties of the type:
+/// every document has an owner, and a type that records a time holds it on
+/// every document. A presence test of one is refused on both paths (the
+/// meta-schema admits them as paths, for comparisons and operands), and one of
 /// any other system property the meta-schema refuses when registering.
 #[test]
 fn should_refuse_a_presence_test_of_a_system_property() {
@@ -614,7 +746,18 @@ fn should_refuse_a_presence_test_of_a_system_property() {
             "tests the presence of \"$ownerId\", which is not a property of the document type",
         );
     }
-    let rules = json!({ "rule": { "present": "$createdAt" } });
+    // The meta-schema admits a system time or height as a path, for an operand to
+    // read, and the parser refuses a presence test of one on both paths
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_order(
+                json!({ "rule": { "absent": "$createdAt" } }),
+                full_validation,
+            ),
+            "tests the presence of \"$createdAt\", which is not a property of the document type",
+        );
+    }
+    let rules = json!({ "rule": { "present": "$revision" } });
     let registered = parse_order(rules.clone(), true);
     assert!(
         registered.as_ref().is_err_and(is_json_schema_error),
@@ -622,7 +765,7 @@ fn should_refuse_a_presence_test_of_a_system_property() {
     );
     expect_structure_error(
         parse_order(rules, false),
-        "tests the presence of \"$createdAt\", which is not a property of the document type",
+        "tests the presence of \"$revision\", which is not a property of the document type",
     );
 }
 
@@ -727,7 +870,11 @@ fn should_refuse_a_rule_reading_anything_but_an_integer_property() {
         ),
         (
             "$createdAt",
-            "reads \"$createdAt\", which is not an integer or boolean property",
+            "reads $createdAt, which the document type does not record: list it in required",
+        ),
+        (
+            "$revision",
+            "reads \"$revision\", which is not an integer or boolean property",
         ),
     ] {
         for full_validation in [true, false] {
@@ -736,8 +883,13 @@ fn should_refuse_a_rule_reading_anything_but_an_integer_property() {
                 full_validation,
             );
             // The meta-schema refuses a `$` in a path when registering, but for
-            // `$ownerId`, which only a comparison of identifiers may read
-            if full_validation && operand.starts_with('$') && operand != "$ownerId" {
+            // `$ownerId`, which only a comparison of identifiers may read, and the
+            // system times and heights an operand may read
+            if full_validation
+                && operand.starts_with('$')
+                && operand != "$ownerId"
+                && SystemProperty::from_name(operand).is_none()
+            {
                 assert!(
                     result.as_ref().is_err_and(is_json_schema_error),
                     "{operand}: {result:?}"
@@ -1003,6 +1155,7 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
             }
         }),
         json!({ "rule": { "not": { "not": { "equal": ["price", 1] } } } }),
+        json!({ "rule": { "not": { "notIn": ["price", [1, 2]] } } }),
         json!({ "rule": { "anyOf": [{ "equal": ["price", 1] }, { "equal": ["price"] }] } }),
         json!({ "rule": { "present": 1 } }),
         json!({ "rule": { "absent": ["note"] } }),
@@ -1019,6 +1172,10 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
         json!({ "rule": { "in": ["state", ["open", 2]] } }),
         json!({ "rule": { "in": ["state", ["open"]] } }),
         json!({ "rule": { "in": ["state", ["open", "open"]] } }),
+        json!({ "rule": { "lessThan": [{ "length": 5 }, 10] } }),
+        json!({ "rule": { "lessThan": [{ "count": ["counts"] }, 10] } }),
+        json!({ "rule": { "lessThan": [{ "size": "note" }, 10] } }),
+        json!({ "rule": { "lessThan": [{ "length": "note", "count": "counts" }, 10] } }),
     ] {
         let registered = parse_order(rules.clone(), true);
         assert!(
@@ -1171,4 +1328,658 @@ fn should_refuse_adding_removing_or_changing_rules_on_update() {
         .validate_update(&new, &BlockInfo::default(), platform_version)
         .expect("the update is judged");
     assert!(result.is_valid(), "{:?}", result.errors);
+}
+
+/// `length` and `byteLength` measure a string property and `count` counts the
+/// items of an array property, nested ones included, on both paths.
+#[test]
+fn should_measure_strings_and_count_arrays_on_both_paths() {
+    let rules = json!({
+        "noteFitsQuantity": {
+            "lessThanOrEqual": [{ "length": "note" }, { "multiply": ["quantity", 10] }]
+        },
+        "tagWithinBytes": { "lessThanOrEqual": [{ "byteLength": "meta.tag" }, 20] },
+        "countsPerUnit": { "lessThanOrEqual": [{ "count": "counts" }, "quantity"] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["noteFitsQuantity"].property_reads(),
+            [
+                ("note", PropertyRead::Length),
+                ("quantity", PropertyRead::Value)
+            ]
+        );
+        assert_eq!(
+            constraints["tagWithinBytes"].property_reads(),
+            [("meta.tag", PropertyRead::Length)]
+        );
+        assert_eq!(
+            constraints["countsPerUnit"].property_reads(),
+            [
+                ("counts", PropertyRead::Count),
+                ("quantity", PropertyRead::Value)
+            ]
+        );
+    }
+
+    // A byte array counts its bytes: here a signature is left out or 64 or 65
+    // bytes long
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "signature": {
+                "type": "array",
+                "byteArray": true,
+                "maxItems": 65,
+                "position": 0
+            }
+        },
+        "propertyConstraints": {
+            "signatureLength": { "in": [{ "count": "signature" }, [0, 64, 65]] }
+        },
+        "additionalProperties": false
+    });
+    for full_validation in [true, false] {
+        let document_type =
+            parse_dispatched(schema.clone(), PlatformVersion::latest(), full_validation)
+                .expect("a rule may count the bytes of a byte array");
+        assert_eq!(
+            document_type.property_constraints()["signatureLength"].property_reads(),
+            [("signature", PropertyRead::Count)]
+        );
+    }
+}
+
+/// A size reads a property of the type of its measure, stored: `length` and
+/// `byteLength` a string, `count` an array or a byte array.
+#[test]
+fn should_hold_a_size_to_the_property_it_measures() {
+    for (operand, needle) in [
+        (
+            json!({ "length": "counts" }),
+            "measures the length of \"counts\", which has type array, not string: count gives \
+             the items of an array or byte array",
+        ),
+        (
+            json!({ "byteLength": "buyerId" }),
+            "measures the length of \"buyerId\", which has type identifier, not string",
+        ),
+        (
+            json!({ "length": "meta" }),
+            "measures the length of \"meta\", which is not a string property of the document type",
+        ),
+        (
+            json!({ "byteLength": "$ownerId" }),
+            "measures the length of \"$ownerId\", which is not a string property",
+        ),
+        (
+            json!({ "count": "note" }),
+            "counts the items of \"note\", which has type string, not array: length or \
+             byteLength gives the size of a string",
+        ),
+        (
+            json!({ "count": "buyerId" }),
+            "counts the items of \"buyerId\", which has type identifier, not array or byteArray",
+        ),
+        (
+            json!({ "count": "rush" }),
+            "counts the items of \"rush\", which has type boolean, not array or byteArray",
+        ),
+        (
+            json!({ "count": "meta.missing" }),
+            "counts the items of \"meta.missing\", which is not an array or byte array property",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(
+                    json!({ "rule": { "lessThan": [operand.clone(), "price"] } }),
+                    full_validation,
+                ),
+                needle,
+            );
+        }
+    }
+
+    // A transient value is never stored, so no rule may measure one
+    for (transient, operand, path) in [
+        ("note", json!({ "length": "note" }), "note"),
+        ("meta", json!({ "byteLength": "meta.tag" }), "meta.tag"),
+        ("counts", json!({ "count": "counts" }), "counts"),
+    ] {
+        let verb = if operand.get("count").is_some() {
+            "counts the items of"
+        } else {
+            "measures"
+        };
+        let schema = order_schema(
+            Some(json!({ "rule": { "lessThan": [operand, "price"] } })),
+            Some(transient),
+        );
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_dispatched(
+                    schema_value(schema.clone()),
+                    PlatformVersion::latest(),
+                    full_validation,
+                ),
+                &format!("{verb} \"{path}\", which is transient or inside a transient object"),
+            );
+        }
+    }
+}
+
+/// A rule reads a system time or height the type records, by listing it in
+/// `required`, on both paths; one the type does not record is refused, and so
+/// is any on an indexOnly type, whose deletes carry none.
+#[test]
+fn should_read_the_system_times_and_heights_the_type_records() {
+    let rules = json!({
+        "depositAfterCreation": { "greaterThan": ["deposit", "$createdAt"] },
+        "pricedAboveHeight": { "lessThan": ["$updatedAtBlockHeight", "price"] },
+        "transferredOnCore": { "notEqual": ["$transferredAtCoreBlockHeight", 0] }
+    });
+    let recording = |required: &[&str]| {
+        let mut schema = order_schema(Some(rules.clone()), None);
+        let mut names = vec!["price", "fee", "quantity", "deposit"];
+        names.extend_from_slice(required);
+        schema["required"] = json!(names);
+        schema_value(schema)
+    };
+    for full_validation in [true, false] {
+        let document_type = parse_dispatched(
+            recording(&[
+                "$createdAt",
+                "$updatedAtBlockHeight",
+                "$transferredAtCoreBlockHeight",
+            ]),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["depositAfterCreation"].system_reads(),
+            [SystemProperty::CreatedAt]
+        );
+        assert_eq!(
+            constraints["depositAfterCreation"].property_paths(),
+            ["deposit"]
+        );
+        assert_eq!(
+            constraints["pricedAboveHeight"].system_reads(),
+            [SystemProperty::UpdatedAtBlockHeight]
+        );
+        assert_eq!(
+            constraints["transferredOnCore"].system_reads(),
+            [SystemProperty::TransferredAtCoreBlockHeight]
+        );
+
+        // Not recording `$updatedAtBlockHeight`, the type may not read it
+        expect_structure_error(
+            parse_dispatched(
+                recording(&["$createdAt", "$transferredAtCoreBlockHeight"]),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "rule \"pricedAboveHeight\" reads $updatedAtBlockHeight, which the document type \
+             does not record: list it in required",
+        );
+    }
+
+    let index_only = schema_value(json!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "indices": [{
+            "name": "byTopic",
+            "properties": [{ "topic": "asc" }, { "until": "asc" }]
+        }],
+        "properties": {
+            "topic": { "type": "string", "maxLength": 50, "position": 0 },
+            "until": { "type": "integer", "minimum": 0, "position": 1 }
+        },
+        "required": ["topic", "until", "$createdAt"],
+        "additionalProperties": false,
+        "propertyConstraints": { "rule": { "lessThan": ["$createdAt", "until"] } }
+    }));
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                index_only.clone(),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "rule \"rule\" reads $createdAt, which a delete of an indexOnly document does not \
+             carry",
+        );
+    }
+
+    // The meta-schema admits exactly the nine names
+    for name in ["$createdAtHeight", "$deletedAt", "$updatedAtCoreHeight"] {
+        let registered = parse_order(json!({ "rule": { "lessThan": [name, "price"] } }), true);
+        assert!(
+            registered.as_ref().is_err_and(is_json_schema_error),
+            "{name}: the meta-schema should refuse it, got {registered:?}"
+        );
+    }
+}
+
+/// A `listing` type with typed arrays of strings (with an `enum`), of
+/// identifiers, of integers and of booleans, a byte array, a string, an
+/// integer and an identifier, declaring `rules`, `transient` listed transient.
+fn listing_schema(rules: serde_json::Value, transient: Option<&str>) -> Value {
+    let mut schema = json!({
+        "type": "object",
+        "properties": {
+            "labels": {
+                "type": "array",
+                "maxItems": 5,
+                "items": { "type": "string", "maxLength": 10, "enum": ["sale", "new", "used"] },
+                "position": 0
+            },
+            "members": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier"
+                },
+                "position": 1
+            },
+            "scores": {
+                "type": "array",
+                "maxItems": 5,
+                "items": { "type": "integer", "minimum": 0, "maximum": 100 },
+                "position": 2
+            },
+            "flags": {
+                "type": "array",
+                "maxItems": 2,
+                "items": { "type": "boolean" },
+                "position": 3
+            },
+            "signature": { "type": "array", "byteArray": true, "maxItems": 65, "position": 4 },
+            "status": { "type": "string", "maxLength": 10, "position": 5 },
+            "pick": { "type": "integer", "minimum": 0, "maximum": 100, "position": 6 },
+            "buyerId": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+                "position": 7
+            }
+        },
+        "additionalProperties": false,
+        "propertyConstraints": rules
+    });
+    if let Some(transient) = transient {
+        schema["transient"] = json!([transient]);
+    }
+    schema_value(schema)
+}
+
+/// `contains` looks among the elements of a typed array of integers, strings
+/// or identifiers, on both paths, for what the array's elements are.
+#[test]
+fn should_look_among_the_elements_of_typed_arrays() {
+    let rules = json!({
+        "onSale": { "contains": ["labels", { "const": "sale" }] },
+        "labelledAsStatus": { "contains": ["labels", "status"] },
+        "ownerIsMember": { "contains": ["members", "$ownerId"] },
+        "buyerIsMember": { "contains": ["members", "buyerId"] },
+        "pickScored": { "not": { "contains": ["scores", "pick"] } }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_dispatched(
+            listing_schema(rules.clone(), None),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["onSale"].property_reads(),
+            [("labels", PropertyRead::Elements(ElementKind::Text))]
+        );
+        assert_eq!(
+            constraints["labelledAsStatus"].property_reads(),
+            [
+                ("labels", PropertyRead::Elements(ElementKind::Text)),
+                ("status", PropertyRead::Text)
+            ]
+        );
+        assert!(constraints["ownerIsMember"].reads_owner());
+        assert_eq!(
+            constraints["buyerIsMember"].property_reads(),
+            [
+                ("members", PropertyRead::Elements(ElementKind::Identifier)),
+                ("buyerId", PropertyRead::Identifier)
+            ]
+        );
+        assert_eq!(
+            constraints["pickScored"].property_reads(),
+            [
+                ("scores", PropertyRead::Elements(ElementKind::Integer)),
+                ("pick", PropertyRead::Value)
+            ]
+        );
+    }
+}
+
+/// The array must be a typed array whose elements are of the kind looked for,
+/// stored, and a constant one of the elements' enum values; what is looked
+/// for is held to its own kind's checks.
+#[test]
+fn should_hold_contains_to_arrays_of_the_kind_looked_for() {
+    for (rule, needle) in [
+        (
+            json!({ "contains": ["labels", { "const": "old" }] }),
+            "rule \"rule\" compares \"labels\" with \"old\", which is not one of its enum values",
+        ),
+        (
+            json!({ "contains": ["flags", 1] }),
+            "rule \"rule\" looks in \"flags\" for an integer, but its elements have type boolean",
+        ),
+        (
+            json!({ "contains": ["status", { "const": "sale" }] }),
+            "rule \"rule\" looks in \"status\", which has type string, not an array with items",
+        ),
+        (
+            json!({ "contains": ["signature", 64] }),
+            "rule \"rule\" looks in \"signature\", which has type byteArray, not an array with \
+             items",
+        ),
+        (
+            json!({ "contains": ["missing", 1] }),
+            "rule \"rule\" looks in \"missing\", which is not an array property of the document \
+             type",
+        ),
+        (
+            json!({ "contains": ["scores", "status"] }),
+            "reads \"status\", which has type string, not integer or boolean",
+        ),
+        (
+            json!({ "contains": ["labels", "buyerId"] }),
+            "compares \"buyerId\" with a string, but it has type identifier, not string",
+        ),
+        (
+            json!({ "contains": ["members", "status"] }),
+            "compares \"status\" with an identifier, but it has type string, not identifier",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_dispatched(
+                    listing_schema(json!({ "rule": rule.clone() }), None),
+                    PlatformVersion::latest(),
+                    full_validation,
+                ),
+                needle,
+            );
+        }
+    }
+
+    // A transient array is never stored, so no rule may look in one
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                listing_schema(
+                    json!({ "rule": { "contains": ["labels", { "const": "sale" }] } }),
+                    Some("labels"),
+                ),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "looks in \"labels\", which is transient or inside a transient object",
+        );
+    }
+
+    // The meta-schema checks the shape when registering
+    for rules in [
+        json!({ "rule": { "contains": ["labels"] } }),
+        json!({ "rule": { "contains": ["labels", "status", "pick"] } }),
+        json!({ "rule": { "contains": "labels" } }),
+    ] {
+        let registered = parse_dispatched(
+            listing_schema(rules.clone(), None),
+            PlatformVersion::latest(),
+            true,
+        );
+        assert!(
+            registered.as_ref().is_err_and(is_json_schema_error),
+            "{rules}: the meta-schema should refuse it, got {registered:?}"
+        );
+    }
+}
+
+/// `startsWith` and `endsWith` test string properties, on both paths; a
+/// constant tested against a property with an `enum` must start or end one of
+/// its values; a side that is no stored string property is refused.
+#[test]
+fn should_test_string_properties_for_prefixes_and_suffixes() {
+    let rules = json!({
+        "refNote": { "startsWith": ["note", { "const": "ref:" }] },
+        "tagSuffix": { "endsWith": ["note", "meta.tag"] },
+        "openish": { "startsWith": ["state", { "const": "op" }] },
+        "closedish": { "endsWith": ["state", { "const": "sed" }] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["tagSuffix"].property_reads(),
+            [
+                ("note", PropertyRead::Text),
+                ("meta.tag", PropertyRead::Text)
+            ]
+        );
+        assert_eq!(
+            constraints["refNote"].property_reads(),
+            [("note", PropertyRead::Text)]
+        );
+    }
+
+    for (rule, needle) in [
+        (
+            json!({ "startsWith": ["state", { "const": "x" }] }),
+            "rule \"rule\" tests whether \"state\" starts with \"x\", which none of its enum \
+             values does",
+        ),
+        (
+            json!({ "not": { "endsWith": ["state", { "const": "xyz" }] } }),
+            "rule \"rule\" tests whether \"state\" ends with \"xyz\", which none of its enum \
+             values does",
+        ),
+        (
+            json!({ "startsWith": ["price", { "const": "1" }] }),
+            "compares \"price\" with a string, but it has type",
+        ),
+        (
+            json!({ "endsWith": ["buyerId", { "const": "a" }] }),
+            "compares \"buyerId\" with a string, but it has type identifier, not string",
+        ),
+        (
+            json!({ "startsWith": ["note", "missing"] }),
+            "compares \"missing\" with a string, but it is not a string property",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(json!({ "rule": rule.clone() }), full_validation),
+                needle,
+            );
+        }
+    }
+
+    // A transient string is never stored, so no rule may test one
+    let schema = order_schema(
+        Some(json!({ "rule": { "startsWith": ["note", { "const": "ref:" }] } })),
+        Some("note"),
+    );
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                schema_value(schema.clone()),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "compares \"note\", which is transient or inside a transient object",
+        );
+    }
+
+    // The meta-schema checks the shape when registering
+    for rules in [
+        json!({ "rule": { "startsWith": ["note"] } }),
+        json!({ "rule": { "endsWith": "note" } }),
+        json!({ "rule": { "startsWith": ["note", { "const": "a" }, "meta.tag"] } }),
+    ] {
+        let registered = parse_order(rules.clone(), true);
+        assert!(
+            registered.as_ref().is_err_and(is_json_schema_error),
+            "{rules}: the meta-schema should refuse it, got {registered:?}"
+        );
+    }
+}
+
+/// `min`, `max`, `abs`, `ifThen`, `ifThenElse` and `notIn` register on both
+/// paths, their reads held to the same checks as any; a `notIn` string is
+/// checked against the property's enum, and an `ifThen` or `ifThenElse`
+/// holding two alike conditions is refused under full validation only, like
+/// any repeated condition.
+#[test]
+fn should_register_min_max_abs_if_then_and_not_in() {
+    let seller = Identifier::new([5; 32]).to_string(Encoding::Base58);
+    let other = Identifier::new([6; 32]).to_string(Encoding::Base58);
+    let rules = json!({
+        "feeCapped": { "lessThanOrEqual": ["fee", { "max": [10, { "divide": ["price", 10] }] }] },
+        "cheapSide": { "greaterThanOrEqual": [{ "min": ["price", "fee"] }, 1] },
+        "depositNearOrder": {
+            "lessThanOrEqual": [{ "abs": { "subtract": ["deposit", "price"] } }, 1000]
+        },
+        "closedHasNote": {
+            "ifThen": [{ "equal": ["state", { "const": "closed" }] }, { "present": "note" }]
+        },
+        "feeByState": {
+            "ifThenElse": [
+                { "equal": ["state", { "const": "open" }] },
+                { "lessThanOrEqual": ["fee", 50] },
+                { "lessThanOrEqual": ["fee", 10] }
+            ]
+        },
+        "feeNotBanned": { "notIn": ["fee", [13, 666]] },
+        "notSpam": { "notIn": ["note", ["spam", "scam"]] },
+        "notTheseSellers": { "notIn": ["sellerId", [seller.clone(), other.clone()]] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(constraints.len(), 8);
+        assert_eq!(
+            constraints["closedHasNote"].property_reads(),
+            [
+                ("state", PropertyRead::Text),
+                ("note", PropertyRead::Presence)
+            ]
+        );
+        assert_eq!(
+            constraints["feeByState"].property_paths(),
+            ["state", "fee", "fee"]
+        );
+        assert_eq!(
+            constraints["depositNearOrder"].property_paths(),
+            ["deposit", "price"]
+        );
+    }
+
+    // The reads inside are held to the usual checks
+    for (rule, needle) in [
+        (
+            json!({ "notIn": ["state", ["open", "x"]] }),
+            "rule \"rule\" compares \"state\" with \"x\", which is not one of its enum values",
+        ),
+        (
+            json!({ "equal": [{ "abs": "note" }, 1] }),
+            "reads \"note\", which has type string, not integer or boolean",
+        ),
+        (
+            json!({ "ifThen": [{ "present": "note" }, { "lessThan": ["missing", 1] }] }),
+            "reads \"missing\", which is not an integer or boolean property",
+        ),
+        (
+            json!({
+                "ifThenElse": [
+                    { "present": "note" },
+                    { "present": "fee" },
+                    { "equal": ["state", { "const": "x" }] }
+                ]
+            }),
+            "rule \"rule\" compares \"state\" with \"x\", which is not one of its enum values",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(json!({ "rule": rule.clone() }), full_validation),
+                needle,
+            );
+        }
+    }
+
+    // Two alike conditions say what a simpler rule says
+    for (same, needle) in [
+        (
+            json!({ "ifThen": [{ "present": "note" }, { "present": "note" }] }),
+            "rule \"rule\" at ifThen[1] repeats the condition at ifThen[0]",
+        ),
+        (
+            json!({
+                "ifThenElse": [{ "present": "note" }, { "present": "fee" }, { "present": "fee" }]
+            }),
+            "rule \"rule\" at ifThenElse[2] repeats the condition at ifThenElse[1]",
+        ),
+    ] {
+        let same = json!({ "rule": same });
+        expect_structure_error(parse_order(same.clone(), true), needle);
+        parse_order(same, false).expect("a stored rule is not re-judged for repeats");
+    }
+
+    // The meta-schema checks the shapes when registering
+    for rules in [
+        json!({ "rule": { "ifThen": [{ "present": "note" }] } }),
+        json!({ "rule": { "ifThen": { "present": "note" } } }),
+        json!({
+            "rule": { "ifThen": [{ "present": "note" }, { "present": "fee" }, { "present": "id" }] }
+        }),
+        json!({ "rule": { "ifThenElse": [{ "present": "note" }, { "present": "fee" }] } }),
+        json!({
+            "rule": {
+                "ifThenElse": [
+                    { "present": "note" },
+                    { "present": "fee" },
+                    { "present": "id" },
+                    { "present": "x" }
+                ]
+            }
+        }),
+        json!({ "rule": { "notIn": ["price"] } }),
+        json!({ "rule": { "notIn": ["price", [1, 1]] } }),
+        json!({ "rule": { "equal": [{ "min": ["price"] }, 1] } }),
+        json!({ "rule": { "equal": [{ "abs": ["price", "fee"] }, 1] } }),
+    ] {
+        let registered = parse_order(rules.clone(), true);
+        assert!(
+            registered.as_ref().is_err_and(is_json_schema_error),
+            "{rules}: the meta-schema should refuse it, got {registered:?}"
+        );
+        expect_structure_error(parse_order(rules, false), "propertyConstraints");
+    }
 }
