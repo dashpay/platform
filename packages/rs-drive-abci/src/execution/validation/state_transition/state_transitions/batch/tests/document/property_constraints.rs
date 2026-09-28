@@ -218,6 +218,35 @@ mod property_constraints_tests {
         })
     }
 
+    /// [`owned_offer_schema`] with a `meta` object holding a `tag` and an
+    /// `inner` object, and one rule instead, `metaOrSeller`: the offer carries
+    /// `meta`, or its owner is its seller.
+    fn described_offer_schema() -> Value {
+        let mut schema = owned_offer_schema();
+        schema["properties"]["meta"] = platform_value!({
+            "type": "object",
+            "position": 5,
+            "properties": {
+                "tag": { "type": "string", "maxLength": 30, "position": 0 },
+                "inner": {
+                    "type": "object",
+                    "position": 1,
+                    "properties": {
+                        "note": { "type": "string", "maxLength": 30, "position": 0 }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "additionalProperties": false
+        });
+        schema["propertyConstraints"] = platform_value!({
+            "metaOrSeller": {
+                "anyOf": [{ "present": "meta" }, { "equal": ["sellerId", "$ownerId"] }]
+            }
+        });
+        schema
+    }
+
     /// An `offer` type with the integers [`set_valid_offer`] fills, a `title`, a
     /// typed array of `tags` and a byte array `signature`, and four rules on
     /// their sizes: `shortTitle` (at most 10 characters), `titleBytes` (at most
@@ -1341,6 +1370,62 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers()[0].owner_id(), recipient.id());
+    }
+
+    /// A stored offer does not keep an object none of whose members it holds,
+    /// so `present` reads `meta: {}` (or `{ "inner": {} }`) as absent on a
+    /// create, as a transfer later reads the stored offer: a create by an owner
+    /// who is not the seller is refused, and so is the transfer of an offer
+    /// stored with `meta: {}` to a recipient who is not the seller. A `meta`
+    /// holding a member is present on both.
+    #[tokio::test]
+    async fn should_judge_an_object_without_members_absent_on_create_and_transfer() {
+        let mut fixture = OfferFixture::with_schema(described_offer_schema());
+        let owner = fixture.identity.id();
+        let seller = Value::Identifier([4; 32]);
+
+        for meta in [platform_value!({}), platform_value!({ "inner": {} })] {
+            let result = fixture
+                .create(|document| {
+                    document.set("sellerId", seller.clone());
+                    document.set("meta", meta.clone());
+                })
+                .await;
+            expect_violated(result, "metaOrSeller", PropertyConstraintViolation::NotMet);
+        }
+        assert!(fixture.stored_offers().is_empty());
+
+        // Its owner is its seller, so the offer is stored, without `meta`
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("sellerId", Value::Identifier(owner.to_buffer()));
+                    document.set("meta", platform_value!({}));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers()[0].get("meta"), None);
+
+        // Transferred, it is the offer the creates above were refused for
+        let (recipient, _, _) = fixture.other_identity(965);
+        let result = fixture.transfer(recipient.id()).await;
+        expect_violated(result, "metaOrSeller", PropertyConstraintViolation::NotMet);
+        assert_eq!(fixture.stored_offers()[0].owner_id(), owner);
+
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    document.set("sellerId", seller.clone());
+                    document.set("meta", platform_value!({ "tag": "x" }));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture.transfer(recipient.id()).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
     }
 
     /// A `sellerId` that declares `refersTo` an identity is compared with

@@ -1353,6 +1353,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     create structure validation 1 leaves the amount to state validation;
 ///     version 0 wants exactly the contest's fund.
 ///
+/// 52. **Property constraints judge what is stored, and read `$defs`**: to
+///     `present` and `absent` (item 39), an object none of whose members is
+///     present (`{}`, or `{ "inner": {} }` around one) is absent, since a
+///     stored document reads it back as no object at all. A create or replace
+///     carrying `meta: {}` was judged with `meta` present, and a later
+///     transfer, purchase or price update, judged on the stored document, with
+///     it absent. The parser (generation 3) reads the schema of a property
+///     given as a `$ref` to the contract's `$defs` from the definition, as the
+///     core parse does, when it checks a rule's string constants and defaults
+///     against the property's `enum` and an `encryptedFor` key id's bounds; it
+///     refused every such contract with a decoding error before.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

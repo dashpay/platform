@@ -881,9 +881,10 @@ pub enum PropertyConstraint {
         needle: ContainsNeedle,
     },
     /// `present`: the document holds the property at the dotted path. One it
-    /// leaves out, or sets to null, is absent, as it is for an operand. Unlike
-    /// an operand, it tells a property left out from one set to 0, and it may
-    /// name a property of any type.
+    /// leaves out, or sets to null, is absent, as it is for an operand, and so
+    /// is an object none of whose members is present (`{}`), which a stored
+    /// document does not keep. Unlike an operand, it tells a property left out
+    /// from one set to 0, and it may name a property of any type.
     Present(String),
     /// `absent`: the document leaves the property at the dotted path out.
     Absent(String),
@@ -2602,13 +2603,39 @@ fn identifier_value(data: &Value, owner_id: Option<Identifier>, path: &str) -> O
     }
 }
 
-/// Whether `data` holds the property at `path`: absent exactly where
-/// [`property_value`] would take the `if_absent` value.
+/// Whether `data` holds the property at `path`: absent where
+/// [`property_value`] would take the `if_absent` value, and where it holds an
+/// object a stored document does not keep ([`is_kept_in_storage`]).
 fn is_present(data: &Value, path: &str) -> bool {
     matches!(
         data.get_optional_value_at_path(path),
-        Ok(Some(value)) if !matches!(value, Value::Null)
+        Ok(Some(value)) if is_kept_in_storage(value)
     )
+}
+
+/// Whether a stored document keeps `value`: anything but null, and an object
+/// only when it holds a member it keeps. A document's encoding reads an object
+/// with no member back as no object at all, so `{}`, and `{ "inner": {} }`
+/// around it, are absent from the stored document. A create or a replace
+/// judges the data it carries, and a transfer, a purchase or a price update
+/// the stored document, so all of them must see such an object as absent.
+/// Null and every value but an object answer at once; only an object's members
+/// are walked. A create's data is walked before its schema validation is
+/// reported, so the walk is iterative, like the other walks over a document's
+/// values, and takes no stack however deep the object nests.
+fn is_kept_in_storage(value: &Value) -> bool {
+    let Value::Map(members) = value else {
+        return !value.is_null();
+    };
+    let mut pending: Vec<&Value> = members.iter().map(|(_, member)| member).collect();
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Null => {}
+            Value::Map(members) => pending.extend(members.iter().map(|(_, member)| member)),
+            _ => return true,
+        }
+    }
+    false
 }
 
 /// The value of the property at `path` in `data`, 1 or 0 for a boolean, or
