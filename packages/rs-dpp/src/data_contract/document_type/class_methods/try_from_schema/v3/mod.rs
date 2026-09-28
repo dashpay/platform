@@ -1085,6 +1085,8 @@ impl DocumentType {
 
 #[cfg(test)]
 mod documents_ttl_tests;
+#[cfg(all(test, feature = "validation"))]
+mod dotted_aggregate_name_tests;
 #[cfg(test)]
 mod immutable_tests;
 #[cfg(test)]
