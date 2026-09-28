@@ -142,11 +142,6 @@ struct OptionsView: View {
                                 walletManagerStore.invalidatePendingSpvStarts()
                                 isSwitchingNetwork = true
                                 Task {
-                                    // Auto-disable Docker when leaving Local
-                                    if newNetwork != .regtest && appState.useDockerSetup {
-                                        appState.useDockerSetup = false
-                                    }
-
                                     // Devnet's SPV peers come from
                                     // `{platformQuorumURL}/masternodes`
                                     // — no UserDefaults state to seed
@@ -164,9 +159,29 @@ struct OptionsView: View {
                                     // TODO(platform-wallet): Once
                                     // PlatformWalletManager supports network
                                     // switching cleanly, call into it here.
-                                    try? await walletManager.stopSpv()
+                                    do {
+                                        try await walletManager.stopSpv()
+                                    } catch {
+                                        // An incomplete stop can leave the old
+                                        // run loop parked; stay on this network
+                                        // so picking again retries the stop.
+                                        appState.showError(
+                                            message: "Failed to stop SPV, staying on \(appState.currentNetwork.displayName): \(error.localizedDescription)")
+                                        isSwitchingNetwork = false
+                                        return
+                                    }
                                     platformBalanceSyncService.reset()
                                     shieldedService.reset()
+
+                                    // Auto-disable Docker when leaving Local, in
+                                    // the same main-actor turn as the network
+                                    // change: the Docker toggle is only on screen
+                                    // on regtest, and flipped while it still is,
+                                    // its `onChange` would start a second SDK
+                                    // switch.
+                                    if newNetwork != .regtest && appState.useDockerSetup {
+                                        appState.useDockerSetup = false
+                                    }
 
                                     // Update platform state (which will trigger SDK switch)
                                     appState.currentNetwork = newNetwork
@@ -322,7 +337,13 @@ struct OptionsView: View {
                             // start resuming anywhere in it bails.
                             walletManagerStore.invalidatePendingSpvStarts()
                             Task {
-                                try? await walletManager.stopSpv()
+                                do {
+                                    try await walletManager.stopSpv()
+                                } catch {
+                                    appState.showError(
+                                        message: "Failed to stop SPV, so the devnet settings were not applied: \(error.localizedDescription)")
+                                    return
+                                }
                                 await appState.switchNetwork(to: .devnet)
                                 // `switchNetwork` rebuilds `appState.sdk` but
                                 // doesn't refresh per-network managers (the
@@ -369,7 +390,14 @@ struct OptionsView: View {
                                 walletManagerStore.invalidatePendingSpvStarts()
                                 // Stop SPV so the next start picks up the
                                 // new peer config in CoreContentView.
-                                Task { try? await walletManager.stopSpv() }
+                                Task {
+                                    do {
+                                        try await walletManager.stopSpv()
+                                    } catch {
+                                        appState.showError(
+                                            message: "Failed to stop SPV, so the new peer setting is not applied yet: \(error.localizedDescription)")
+                                    }
+                                }
                             }
                             .help("Connect Core SPV to specific peers (e.g. a local rust-dashcore) instead of the public seed nodes. Restart SPV from the Wallet tab to apply.")
 
