@@ -75,10 +75,10 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
-        // Validate that a property the update adds is normalized only from a source the
-        // update adds too (the keyword arrives with protocol version 14, the only version
-        // selecting this generation)
-        let result = self.validate_normalized_from_additions(new_document_type);
+        // Validate that a property the update adds is generated only when one of its
+        // params is new too (the keyword arrives with protocol version 14, the only
+        // version selecting this generation)
+        let result = self.validate_generated_from_additions(new_document_type);
 
         if !result.is_valid() {
             return Ok(result);
@@ -405,44 +405,40 @@ impl DocumentTypeRef<'_> {
         )
     }
 
-    /// A document type's time to live is fixed when the type is created. Every document
-    /// already stored has its expiry indexed from the time to live it was written with, and
-    /// paid for that lifetime: adding a `ttl` would leave the stored documents without an
-    /// entry the cleanup could find, removing it would leave entries deleting documents
-    /// the type says live forever, and changing it would move expiries nobody paid for.
-    /// It runs before the schema compatibility differ, which only freezes the key's text,
-    /// so a real change gets this error. A document type added by an update declares `ttl`
-    /// freely.
-    /// A property this update adds may declare `normalizedFrom` only over a source the
-    /// update adds too. Documents stored before the update never had the property
-    /// computed, so a new normalized property over an existing source would be missing
-    /// from every stored document that holds the source, for good on a type whose
-    /// documents are never replaced. A property that already existed keeps its
-    /// declaration unchanged: the schema compatibility differ freezes the keyword.
-    fn validate_normalized_from_additions(
+    /// A property this update adds may declare `generatedFrom` only when a param is new
+    /// too. Documents stored before the update were never generated, so a new generated
+    /// property whose params all existed would be missing from every stored document
+    /// holding them, for good on a type whose documents are never replaced; with a new
+    /// param, those documents lack it, and the generated property is rightly absent. A
+    /// property that already existed keeps its declaration unchanged: the schema
+    /// compatibility differ freezes the keyword.
+    fn validate_generated_from_additions(
         &self,
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {
         let old_properties = self.flattened_properties();
-        for path in new_document_type.normalized_from_fields() {
+        for path in new_document_type.generated_from_fields() {
             if old_properties.contains_key(path) {
                 continue;
             }
-            let Some(source) = new_document_type
+            let Some(generated_from) = new_document_type
                 .flattened_properties()
                 .get(path)
-                .and_then(|property| property.normalized_from.as_ref())
-                .map(|normalized_from| normalized_from.property.as_str())
+                .and_then(|property| property.generated_from.as_ref())
             else {
                 continue;
             };
-            if old_properties.contains_key(source) {
+            if generated_from
+                .property_params()
+                .all(|param| old_properties.contains_key(param))
+            {
+                let params = generated_from.params_description();
                 return SimpleConsensusValidationResult::new_with_error(
                     DocumentTypeUpdateError::new(
                         self.data_contract_id(),
                         self.name(),
                         format!(
-                            "document type can not add property \"{path}\" normalized from existing property \"{source}\": documents stored before the update hold \"{source}\" without it"
+                            "document type can not add property \"{path}\" generated from existing properties ({params}): documents stored before the update hold them without it"
                         ),
                     )
                     .into(),
@@ -452,6 +448,14 @@ impl DocumentTypeRef<'_> {
         SimpleConsensusValidationResult::new()
     }
 
+    /// A document type's time to live is fixed when the type is created. Every document
+    /// already stored has its expiry indexed from the time to live it was written with, and
+    /// paid for that lifetime: adding a `ttl` would leave the stored documents without an
+    /// entry the cleanup could find, removing it would leave entries deleting documents
+    /// the type says live forever, and changing it would move expiries nobody paid for.
+    /// It runs before the schema compatibility differ, which only freezes the key's text,
+    /// so a real change gets this error. A document type added by an update declares `ttl`
+    /// freely.
     fn validate_documents_ttl_unchanged(
         &self,
         new_document_type: DocumentTypeRef,
@@ -988,7 +992,7 @@ mod tests {
     }
 
     #[test]
-    fn should_refuse_adding_a_normalized_property_over_an_existing_source() {
+    fn should_refuse_adding_a_generated_property_over_existing_params() {
         let platform_version = PlatformVersion::latest();
         let data_contract_id = Identifier::random();
         let config = DataContractConfig::default_for_version(platform_version)
@@ -1015,21 +1019,24 @@ mod tests {
             .expect("document type should parse")
         };
         let string = |position: u64| platform_value!({ "type": "string", "maxLength": 32, "position": position });
-        let normalized = |position: u64, source: &str| {
+        let generated = |position: u64, source: &str| {
             platform_value!({
                 "type": "string", "maxLength": 32, "position": position,
-                "normalizedFrom": { "property": source, "transform": "homographSafeASCII" }
+                "generatedFrom": {
+                    "function": "sys.stringTransformations.homographSafeASCII",
+                    "params": [source]
+                }
             })
         };
         let old = make_document_type(platform_value!({ "label": string(0) }));
 
-        // Stored handles hold a label but would never hold its normalized form
+        // Stored handles hold a label but would never hold the generated value
         let result = old
             .as_ref()
             .validate_update(
                 make_document_type(platform_value!({
                     "label": string(0),
-                    "normalizedLabel": normalized(1, "label")
+                    "normalizedLabel": generated(1, "label")
                 }))
                 .as_ref(),
                 2,
@@ -1040,11 +1047,11 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
                 if e.additional_message().contains(
-                    "can not add property \"normalizedLabel\" normalized from existing property \"label\""
+                    "can not add property \"normalizedLabel\" generated from existing properties (label)"
                 )
         );
 
-        // A new property normalized from a new source holds for every stored document:
+        // A new property generated from a new param holds for every stored document:
         // neither is there
         let result = old
             .as_ref()
@@ -1052,7 +1059,7 @@ mod tests {
                 make_document_type(platform_value!({
                     "label": string(0),
                     "nickname": string(1),
-                    "normalizedNickname": normalized(2, "nickname")
+                    "normalizedNickname": generated(2, "nickname")
                 }))
                 .as_ref(),
                 2,

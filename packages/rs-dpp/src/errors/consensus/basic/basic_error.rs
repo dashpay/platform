@@ -55,7 +55,7 @@ use crate::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
     DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError,
-    DocumentPropertyNotDistinctError, DocumentPropertyNotNormalizedError,
+    DocumentPropertyNotDistinctError, DocumentPropertyNotGeneratedError,
     DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
     DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
     InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
@@ -837,10 +837,10 @@ pub enum BasicError {
         InvalidTokenDistributionEpochIntervalTooShortError,
     ),
 
-    // A `normalizedFrom` string property that is not the normalized form of its source
+    // A `generatedFrom` string property that is not what its function generates from its params
     // (protocol version 14).
     #[error(transparent)]
-    DocumentPropertyNotNormalizedError(DocumentPropertyNotNormalizedError),
+    DocumentPropertyNotGeneratedError(DocumentPropertyNotGeneratedError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -994,15 +994,15 @@ mod tests {
             ),
             199
         );
-        // A `normalizedFrom` property that is not its source's normalized form (protocol
+        // A `generatedFrom` property that is not what its function generates (protocol
         // version 14).
         assert_eq!(
-            discriminant_of(BasicError::DocumentPropertyNotNormalizedError(
-                DocumentPropertyNotNormalizedError::new(
+            discriminant_of(BasicError::DocumentPropertyNotGeneratedError(
+                DocumentPropertyNotGeneratedError::new(
                     "domain".to_string(),
                     "normalizedLabel".to_string(),
-                    "label".to_string(),
-                    "homographSafeASCII".to_string(),
+                    "sys.stringTransformations.homographSafeASCII".to_string(),
+                    vec!["label".to_string()],
                 )
             )),
             200

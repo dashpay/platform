@@ -1512,13 +1512,13 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                 ],
             },
         ),
-        // `normalizedFrom` (a string property holding a normalized form of
-        // another string property of the same document type) is frozen like
-        // `distinctFrom`: adding, removing or changing its source or transform
-        // changes which documents the type accepts, and what the platform
-        // writes into those that leave the property out.
+        // `generatedFrom` (a string property whose value a built-in function
+        // generates from other properties of the same document type) is frozen
+        // like `distinctFrom`: adding, removing or changing its function or
+        // params changes which documents the type accepts, and what the
+        // platform writes into those that leave the property out.
         (
-            "normalizedFrom",
+            "generatedFrom",
             CompatibilityRules {
                 allow_addition: false,
                 allow_removal: false,
@@ -1529,26 +1529,26 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                 examples: vec![
                     (
                         json!({}),
-                        json!({ "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" } }),
+                        json!({ "generatedFrom": { "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] } }),
                         Some(JsonSchemaChange::Add(AddOperation {
-                            path: "/normalizedFrom".to_string(),
-                            value: json!({ "property": "label", "transform": "homographSafeASCII" }),
+                            path: "/generatedFrom".to_string(),
+                            value: json!({ "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] }),
                         })),
                     )
                         .into(),
                     (
-                        json!({ "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" } }),
+                        json!({ "generatedFrom": { "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] } }),
                         json!({}),
                         Some(JsonSchemaChange::Remove(RemoveOperation {
-                            path: "/normalizedFrom".to_string(),
+                            path: "/generatedFrom".to_string(),
                         })),
                     )
                         .into(),
                     (
-                        json!({ "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" } }),
-                        json!({ "normalizedFrom": { "property": "displayName", "transform": "homographSafeASCII" } }),
+                        json!({ "generatedFrom": { "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] } }),
+                        json!({ "generatedFrom": { "function": "sys.stringTransformations.homographSafeASCII", "params": ["displayName"] } }),
                         Some(JsonSchemaChange::Replace(ReplaceOperation {
-                            path: "/normalizedFrom/property".to_string(),
+                            path: "/generatedFrom/params/0".to_string(),
                             value: json!("displayName"),
                         })),
                     )

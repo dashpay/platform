@@ -80,8 +80,8 @@ pub struct DocumentTypeV1 {
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV1 {
-    /// Generation 1 predates `normalizedFrom`: no property declares it.
-    fn normalized_from_fields(&self) -> &[String] {
+    /// Generation 1 predates `generatedFrom`: no property declares it.
+    fn generated_from_fields(&self) -> &[String] {
         &[]
     }
 }

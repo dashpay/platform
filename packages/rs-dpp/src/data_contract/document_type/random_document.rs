@@ -249,16 +249,16 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
             })
             .collect();
 
-        // A random value is not its source's normalized form: drop the one generated for
-        // each `normalizedFrom` property and compute it from the source, as the platform
+        // A random value is not what a function generates: drop the one drawn for each
+        // `generatedFrom` property and generate it from its params, as the platform
         // does for a document that leaves it out
-        if !self.normalized_from_fields().is_empty() {
+        if !self.generated_from_fields().is_empty() {
             let mut value = Value::from(properties);
-            for path in self.normalized_from_fields() {
+            for path in self.generated_from_fields() {
                 value.remove_optional_value_at_path(path)?;
             }
             properties = value.into_btree_string_map()?;
-            self.fill_normalized_properties(&mut properties, platform_version)?;
+            self.fill_generated_properties(&mut properties, platform_version)?;
         }
 
         let revision = if self.requires_revision() {

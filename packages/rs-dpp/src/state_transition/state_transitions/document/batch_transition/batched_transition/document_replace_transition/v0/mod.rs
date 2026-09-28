@@ -198,10 +198,10 @@ impl DocumentFromReplaceTransitionV0 for Document {
             data,
         } = value;
 
-        // The document the platform stores holds every normalized property the transition
-        // left out, computed on arrival (inert before protocol version 14)
+        // The document the platform stores holds every generated property the transition
+        // left out, generated on arrival (inert before protocol version 14)
         let mut data = data.clone();
-        document_type.fill_normalized_properties(&mut data, platform_version)?;
+        document_type.fill_generated_properties(&mut data, platform_version)?;
 
         let id = base.id();
 
@@ -286,9 +286,9 @@ impl DocumentFromReplaceTransitionV0 for Document {
             mut data,
         } = value;
 
-        // The document the platform stores holds every normalized property the transition
-        // left out, computed on arrival (inert before protocol version 14)
-        document_type.fill_normalized_properties(&mut data, platform_version)?;
+        // The document the platform stores holds every generated property the transition
+        // left out, generated on arrival (inert before protocol version 14)
+        document_type.fill_generated_properties(&mut data, platform_version)?;
 
         let id = base.id();
 

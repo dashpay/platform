@@ -1,13 +1,14 @@
-//! `normalizedFrom`: the property keyword saying a string property holds a
-//! normalized form of another string property of the same document.
+//! `generatedFrom`: the property keyword saying the platform generates a
+//! string property with a built-in function of other properties of the same
+//! document.
 //!
 //! The grammar is the v3 document meta-schema's (protocol version 14), the
-//! parse is `apply_normalized_from` 0 and the checks against the rest of the
-//! type are `validate_normalized_from_declarations`, both reached from
-//! protocol version 14 only. At write time the platform fills a left-out
-//! property from its source (`fill_normalized_properties`), and
+//! parse is `apply_generated_from` 0 and the checks against the rest of the
+//! type are `validate_generated_from_declarations`, both reached from
+//! protocol version 14 only. At write time the platform generates a
+//! left-out property from its params (`fill_generated_properties`), and
 //! `DataContract::validate_document_properties` checks it after the JSON
-//! schema (`validate_normalized_from_properties`).
+//! schema (`validate_generated_from_properties`).
 
 use super::typed_array_test_helpers::{
     expect_json_schema_error, expect_structure_error, parse_dispatched,
@@ -20,7 +21,7 @@ use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
-use crate::data_contract::document_type::{NormalizationTransform, NormalizedFrom};
+use crate::data_contract::document_type::{GeneratedFrom, GenerationFunction, GenerationParam};
 use crate::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use crate::data_contract::DataContract;
 use crate::validation::SimpleConsensusValidationResult;
@@ -28,43 +29,43 @@ use platform_value::platform_value;
 use platform_value::string_encoding::Encoding;
 use serde_json::json;
 
-const HOMOGRAPH_SAFE_ASCII: &str = "homographSafeASCII";
+const HOMOGRAPH_SAFE_ASCII: &str = "sys.stringTransformations.homographSafeASCII";
 
-fn normalized_from(source: &str) -> Value {
-    platform_value!({ "property": source, "transform": HOMOGRAPH_SAFE_ASCII })
+fn generated_from(source: &str) -> Value {
+    platform_value!({ "function": HOMOGRAPH_SAFE_ASCII, "params": [source] })
 }
 
 fn string_property(position: u64) -> Value {
     platform_value!({ "type": "string", "maxLength": 32, "position": position })
 }
 
-fn normalized_property(position: u64, source: &str) -> Value {
+fn generated_property(position: u64, source: &str) -> Value {
     let mut property = string_property(position);
     property
-        .insert("normalizedFrom".to_string(), normalized_from(source))
+        .insert("generatedFrom".to_string(), generated_from(source))
         .expect("the property is a map");
     property
 }
 
 /// A `handle` type: a top-level `label` and its `normalizedLabel`, an object
 /// `profile` holding `display` and its `normalizedDisplay`, and a top-level
-/// `slug` normalized from the nested `profile.display`.
+/// `slug` generated from the nested `profile.display`.
 fn schema() -> Value {
     platform_value!({
         "type": "object",
         "properties": {
             "label": string_property(0),
-            "normalizedLabel": normalized_property(1, "label"),
+            "normalizedLabel": generated_property(1, "label"),
             "profile": {
                 "type": "object",
                 "position": 2,
                 "properties": {
                     "display": string_property(0),
-                    "normalizedDisplay": normalized_property(1, "profile.display")
+                    "normalizedDisplay": generated_property(1, "profile.display")
                 },
                 "additionalProperties": false
             },
-            "slug": normalized_property(3, "profile.display")
+            "slug": generated_property(3, "profile.display")
         },
         "additionalProperties": false
     })
@@ -83,13 +84,13 @@ fn parse(schema: Value) -> DocumentType {
     parse_dispatched(schema, PlatformVersion::latest(), true).expect("the schema parses")
 }
 
-fn normalized_from_of(document_type: &DocumentType, path: &str) -> Option<NormalizedFrom> {
+fn generated_from_of(document_type: &DocumentType, path: &str) -> Option<GeneratedFrom> {
     document_type
         .as_ref()
         .flattened_properties()
         .get(path)
         .unwrap_or_else(|| panic!("{path} is parsed"))
-        .normalized_from
+        .generated_from
         .clone()
 }
 
@@ -119,37 +120,37 @@ fn first_basic_error(result: SimpleConsensusValidationResult) -> BasicError {
 // ================================================================
 
 #[test]
-fn should_parse_normalized_from_onto_string_properties_at_any_depth() {
+fn should_parse_generated_from_onto_string_properties_at_any_depth() {
     let document_type = parse(schema());
     let expected = |source: &str| {
-        Some(NormalizedFrom {
-            property: source.to_string(),
-            transform: NormalizationTransform::HomographSafeAscii,
+        Some(GeneratedFrom {
+            function: GenerationFunction::HomographSafeAscii,
+            params: vec![GenerationParam::Property(source.to_string())],
         })
     };
 
     assert_eq!(
-        normalized_from_of(&document_type, "normalizedLabel"),
+        generated_from_of(&document_type, "normalizedLabel"),
         expected("label")
     );
     assert_eq!(
-        normalized_from_of(&document_type, "profile.normalizedDisplay"),
+        generated_from_of(&document_type, "profile.normalizedDisplay"),
         expected("profile.display")
     );
     assert_eq!(
-        normalized_from_of(&document_type, "slug"),
+        generated_from_of(&document_type, "slug"),
         expected("profile.display")
     );
-    assert_eq!(normalized_from_of(&document_type, "label"), None);
+    assert_eq!(generated_from_of(&document_type, "label"), None);
 }
 
 #[test]
-fn should_refuse_normalized_from_on_a_property_that_is_not_a_string() {
+fn should_refuse_generated_from_on_a_property_that_is_not_a_string() {
     let schema = schema_with(platform_value!({
         "type": "integer",
         "minimum": 0,
         "maximum": 100,
-        "normalizedFrom": normalized_from("label"),
+        "generatedFrom": generated_from("label"),
         "position": 1
     }));
     let error = expect_json_schema_error(parse_dispatched(
@@ -160,17 +161,17 @@ fn should_refuse_normalized_from_on_a_property_that_is_not_a_string() {
     assert_eq!(error.keyword(), "const", "{error:?}");
     expect_structure_error(
         parse_dispatched(schema, PlatformVersion::latest(), false),
-        "normalizedFrom is only allowed on string properties",
+        "generatedFrom is only allowed on string properties",
     );
 }
 
 #[test]
-fn should_refuse_normalized_from_on_a_typed_array_or_its_items() {
+fn should_refuse_generated_from_on_a_typed_array_or_its_items() {
     for value in [
         platform_value!({
             "type": "array",
             "maxItems": 4,
-            "normalizedFrom": normalized_from("label"),
+            "generatedFrom": generated_from("label"),
             "items": { "type": "string", "maxLength": 16 },
             "position": 1
         }),
@@ -180,7 +181,7 @@ fn should_refuse_normalized_from_on_a_typed_array_or_its_items() {
             "items": {
                 "type": "string",
                 "maxLength": 16,
-                "normalizedFrom": normalized_from("label")
+                "generatedFrom": generated_from("label")
             },
             "position": 1
         }),
@@ -198,44 +199,69 @@ fn should_refuse_normalized_from_on_a_typed_array_or_its_items() {
 }
 
 #[test]
-fn should_refuse_a_malformed_normalized_from() {
-    let with = |normalized_from: Value| {
+fn should_refuse_a_malformed_generated_from() {
+    let with = |generated_from: Value| {
         schema_with(platform_value!({
             "type": "string",
             "maxLength": 32,
-            "normalizedFrom": normalized_from,
+            "generatedFrom": generated_from,
             "position": 1
         }))
     };
 
     for (declaration, needle) in [
         (
-            platform_value!({ "property": "label", "transform": "homographSafe" }),
-            "transform \"homographSafe\" is unknown, expected one of \"homographSafeASCII\"",
+            platform_value!({
+                "function": "sys.stringTransformations.homographSafe",
+                "params": ["label"]
+            }),
+            "function \"sys.stringTransformations.homographSafe\" is unknown, expected one of \
+             \"sys.stringTransformations.homographSafeASCII\"",
+        ),
+        // Built-ins are named under sys.: the bare name is no function
+        (
+            platform_value!({ "function": "homographSafeASCII", "params": ["label"] }),
+            "function \"homographSafeASCII\" is unknown",
         ),
         (
-            platform_value!({ "transform": HOMOGRAPH_SAFE_ASCII }),
-            "normalizedFrom must be an object with a property",
+            platform_value!({ "params": ["label"] }),
+            "generatedFrom must be an object with a function",
         ),
         (
-            platform_value!({ "property": "label" }),
-            "normalizedFrom must be an object with a property",
+            platform_value!({ "function": HOMOGRAPH_SAFE_ASCII }),
+            "generatedFrom must be an object with a function",
         ),
         (
-            platform_value!({ "property": "label", "transform": HOMOGRAPH_SAFE_ASCII, "extra": 1 }),
-            "normalizedFrom \"extra\" is unknown, expected property and transform",
+            platform_value!({ "function": HOMOGRAPH_SAFE_ASCII, "params": "label" }),
+            "generatedFrom must be an object with a function",
         ),
         (
-            platform_value!({ "property": "", "transform": HOMOGRAPH_SAFE_ASCII }),
-            "normalizedFrom property must be between 1 and 256 characters",
+            platform_value!({ "function": HOMOGRAPH_SAFE_ASCII, "params": ["label"], "extra": 1 }),
+            "generatedFrom \"extra\" is unknown, expected function and params",
         ),
         (
-            platform_value!({ "property": "$ownerId", "transform": HOMOGRAPH_SAFE_ASCII }),
+            platform_value!({ "function": HOMOGRAPH_SAFE_ASCII, "params": [] }),
+            "takes 1 parameter(s), but params lists 0",
+        ),
+        (
+            platform_value!({ "function": HOMOGRAPH_SAFE_ASCII, "params": ["label", "label"] }),
+            "takes 1 parameter(s), but params lists 2",
+        ),
+        (
+            platform_value!({ "function": HOMOGRAPH_SAFE_ASCII, "params": [7] }),
+            "generatedFrom params must be property paths (strings)",
+        ),
+        (
+            platform_value!({ "function": HOMOGRAPH_SAFE_ASCII, "params": [""] }),
+            "generatedFrom params must be between 1 and 256 characters",
+        ),
+        (
+            platform_value!({ "function": HOMOGRAPH_SAFE_ASCII, "params": ["$ownerId"] }),
             "not system property \"$ownerId\"",
         ),
         (
             platform_value!("label"),
-            "normalizedFrom must be an object with a property",
+            "generatedFrom must be an object with a function",
         ),
     ] {
         expect_refused(with(declaration), needle);
@@ -243,15 +269,15 @@ fn should_refuse_a_malformed_normalized_from() {
 }
 
 #[test]
-fn should_refuse_a_source_that_is_not_another_string_property() {
+fn should_refuse_a_param_that_is_not_another_string_property() {
     for (value, needle) in [
         (
-            normalized_property(1, "missing"),
-            "normalizedFrom property \"missing\" is not a property of the document type",
+            generated_property(1, "missing"),
+            "generatedFrom param \"missing\" is not a property of the document type",
         ),
         (
-            normalized_property(1, "value"),
-            "normalizedFrom names the property itself",
+            generated_property(1, "value"),
+            "generatedFrom reads the property itself",
         ),
     ] {
         expect_refused(schema_with(value), needle);
@@ -263,7 +289,7 @@ fn should_refuse_a_source_that_is_not_another_string_property() {
             "properties": {
                 "label": string_property(0),
                 "extra": extra,
-                "value": normalized_property(2, source)
+                "value": generated_property(2, source)
             },
             "additionalProperties": false
         })
@@ -273,7 +299,7 @@ fn should_refuse_a_source_that_is_not_another_string_property() {
             platform_value!({ "type": "integer", "minimum": 0, "maximum": 9, "position": 1 }),
             "extra",
         ),
-        "normalizedFrom property \"extra\" has type",
+        "generatedFrom param \"extra\" has type",
     );
     expect_refused(
         with_extra(
@@ -285,7 +311,7 @@ fn should_refuse_a_source_that_is_not_another_string_property() {
             }),
             "extra",
         ),
-        "normalizedFrom property \"extra\" is an object, not a string property",
+        "generatedFrom param \"extra\" is an object, not a string property",
     );
     // A nested member is named by its dotted path
     parse(with_extra(
@@ -300,26 +326,26 @@ fn should_refuse_a_source_that_is_not_another_string_property() {
 }
 
 /// The platform fills every left-out property from a value the client sent,
-/// so a source is never itself a normalized property.
+/// so a param is never itself a generated property.
 #[test]
-fn should_refuse_a_source_that_is_normalized_itself() {
+fn should_refuse_a_param_that_is_generated_itself() {
     let schema = platform_value!({
         "type": "object",
         "properties": {
             "label": string_property(0),
-            "normalizedLabel": normalized_property(1, "label"),
-            "twiceNormalized": normalized_property(2, "normalizedLabel")
+            "normalizedLabel": generated_property(1, "label"),
+            "twiceNormalized": generated_property(2, "normalizedLabel")
         },
         "additionalProperties": false
     });
     expect_refused(
         schema,
-        "normalizedFrom property \"normalizedLabel\" declares normalizedFrom itself",
+        "generatedFrom param \"normalizedLabel\" is generated itself",
     );
 }
 
 #[test]
-fn should_refuse_a_transient_property_or_source() {
+fn should_refuse_a_transient_property_or_param() {
     for (transient, needle) in [
         (
             "value",
@@ -327,10 +353,10 @@ fn should_refuse_a_transient_property_or_source() {
         ),
         (
             "label",
-            "property \"label\" is transient or inside a transient object",
+            "param \"label\" is transient or inside a transient object",
         ),
     ] {
-        let mut schema = schema_with(normalized_property(1, "label"));
+        let mut schema = schema_with(generated_property(1, "label"));
         schema
             .insert("transient".to_string(), platform_value!([transient]))
             .expect("the schema is a map");
@@ -338,7 +364,7 @@ fn should_refuse_a_transient_property_or_source() {
     }
 
     // Inside a transient object, on either side
-    let with_transient_profile = |normalized: Value| {
+    let with_transient_profile = |slug: Value| {
         platform_value!({
             "type": "object",
             "properties": {
@@ -347,26 +373,26 @@ fn should_refuse_a_transient_property_or_source() {
                     "position": 0,
                     "properties": {
                         "display": string_property(0),
-                        "normalizedDisplay": normalized_property(1, "profile.display")
+                        "normalizedDisplay": generated_property(1, "profile.display")
                     },
                     "additionalProperties": false
                 },
                 "plain": string_property(1),
-                "slug": normalized
+                "slug": slug
             },
             "transient": ["profile"],
             "additionalProperties": false
         })
     };
     let error = parse_dispatched(
-        with_transient_profile(normalized_property(2, "plain")),
+        with_transient_profile(generated_property(2, "plain")),
         PlatformVersion::latest(),
         false,
     )
-    .expect_err("a normalized property inside a transient object is refused");
+    .expect_err("a generated property inside a transient object is refused");
     assert!(
         error.to_string().contains(
-            "\"profile.normalizedDisplay\" normalizedFrom is on a property that is transient"
+            "\"profile.normalizedDisplay\" generatedFrom is on a property that is transient"
         ),
         "{error}"
     );
@@ -380,21 +406,21 @@ fn should_refuse_a_transient_property_or_source() {
                 "properties": { "display": string_property(0) },
                 "additionalProperties": false
             },
-            "slug": normalized_property(1, "profile.display")
+            "slug": generated_property(1, "profile.display")
         },
         "transient": ["profile"],
         "additionalProperties": false
     });
     expect_refused(
         schema,
-        "normalizedFrom property \"profile.display\" is transient or inside a transient object",
+        "generatedFrom param \"profile.display\" is transient or inside a transient object",
     );
 }
 
 /// The platform writes a left-out property into the objects around it, which a
-/// document supplying the source must hold: the source sits inside every one.
+/// document supplying the params must hold: every param sits inside every one.
 #[test]
-fn should_refuse_a_source_outside_the_object_that_holds_the_property() {
+fn should_refuse_a_param_outside_the_object_that_holds_the_property() {
     let with_profile = |source: &str| {
         platform_value!({
             "type": "object",
@@ -411,7 +437,7 @@ fn should_refuse_a_source_outside_the_object_that_holds_the_property() {
                             "properties": { "deep": string_property(0) },
                             "additionalProperties": false
                         },
-                        "normalized": normalized_property(2, source)
+                        "normalized": generated_property(2, source)
                     },
                     "additionalProperties": false
                 }
@@ -422,7 +448,7 @@ fn should_refuse_a_source_outside_the_object_that_holds_the_property() {
 
     expect_refused(
         with_profile("label"),
-        "normalizedFrom property \"label\" is outside \"profile\"",
+        "generatedFrom param \"label\" is outside \"profile\"",
     );
     // Inside the object, at its level or deeper, is fine
     parse(with_profile("profile.display"));
@@ -430,7 +456,7 @@ fn should_refuse_a_source_outside_the_object_that_holds_the_property() {
 }
 
 #[test]
-fn should_ignore_normalized_from_before_protocol_version_14() {
+fn should_ignore_generated_from_before_protocol_version_14() {
     let platform_version = PlatformVersion::get(13).expect("protocol version 13");
 
     // Protocol version 13's meta-schema refuses the keyword
@@ -438,9 +464,9 @@ fn should_ignore_normalized_from_before_protocol_version_14() {
 
     // A parse that skips it (a contract read back from state) ignores it, as it always did
     let document_type = parse_dispatched(schema(), platform_version, false)
-        .expect("a parse predating normalizedFrom ignores it");
-    assert_eq!(normalized_from_of(&document_type, "normalizedLabel"), None);
-    assert_eq!(normalized_from_of(&document_type, "slug"), None);
+        .expect("a parse predating generatedFrom ignores it");
+    assert_eq!(generated_from_of(&document_type, "normalizedLabel"), None);
+    assert_eq!(generated_from_of(&document_type, "slug"), None);
 }
 
 // ================================================================
@@ -452,14 +478,14 @@ fn data(value: Value) -> BTreeMap<String, Value> {
 }
 
 #[test]
-fn should_fill_every_left_out_property_from_its_source() {
+fn should_fill_every_left_out_property_from_its_params() {
     let document_type = parse(schema());
     let mut properties = data(platform_value!({
         "label": "Bob",
         "profile": { "display": "Lil-Olive" }
     }));
     document_type
-        .fill_normalized_properties(&mut properties, PlatformVersion::latest())
+        .fill_generated_properties(&mut properties, PlatformVersion::latest())
         .expect("the fill runs");
 
     assert_eq!(
@@ -475,7 +501,7 @@ fn should_fill_every_left_out_property_from_its_source() {
 
 /// What a client sends is left as it is, right or wrong: the check judges it.
 #[test]
-fn should_leave_a_supplied_property_and_an_absent_source_alone() {
+fn should_leave_a_supplied_property_and_an_absent_param_alone() {
     let document_type = parse(schema());
     for sent in [
         platform_value!({ "label": "Bob", "normalizedLabel": "wrong" }),
@@ -483,12 +509,12 @@ fn should_leave_a_supplied_property_and_an_absent_source_alone() {
         platform_value!({ "normalizedLabel": "b0b" }),
         platform_value!({ "profile": {} }),
         platform_value!({}),
-        // A source that is not a string is the schema's to refuse
+        // A param that is not a string is the schema's to refuse
         platform_value!({ "label": 7 }),
     ] {
         let mut properties = data(sent.clone());
         document_type
-            .fill_normalized_properties(&mut properties, PlatformVersion::latest())
+            .fill_generated_properties(&mut properties, PlatformVersion::latest())
             .expect("the fill runs");
         assert_eq!(properties, data(sent.clone()), "{sent:?}");
     }
@@ -500,7 +526,7 @@ fn should_fill_nothing_before_protocol_version_14() {
     let document_type = parse(schema());
     let mut properties = data(platform_value!({ "label": "Bob" }));
     document_type
-        .fill_normalized_properties(
+        .fill_generated_properties(
             &mut properties,
             PlatformVersion::get(13).expect("protocol version 13"),
         )
@@ -513,7 +539,7 @@ fn should_fill_nothing_before_protocol_version_14() {
 // ================================================================
 
 #[test]
-fn should_accept_the_normalized_form_of_the_source_and_both_absent() {
+fn should_accept_the_generated_value_and_both_absent() {
     let document_type = parse(schema());
     for properties in [
         platform_value!({ "label": "Bob", "normalizedLabel": "b0b" }),
@@ -528,29 +554,29 @@ fn should_accept_the_normalized_form_of_the_source_and_both_absent() {
         platform_value!({ "profile": {} }),
     ] {
         let result = document_type
-            .validate_normalized_from_properties(&properties, PlatformVersion::latest())
+            .validate_generated_from_properties(&properties, PlatformVersion::latest())
             .expect("validation executes");
         assert!(result.is_valid(), "{properties:?}: {:?}", result.errors);
     }
 }
 
 #[test]
-fn should_refuse_a_property_that_is_not_its_source_normalized_form() {
+fn should_refuse_a_property_that_is_not_the_generated_value() {
     let document_type = parse(schema());
     for (properties, property, source) in [
-        // Not the normalized form
+        // Not the generated value
         (
             platform_value!({ "label": "Bob", "normalizedLabel": "bob" }),
             "normalizedLabel",
             "label",
         ),
-        // Present without its source
+        // Present without its param
         (
             platform_value!({ "normalizedLabel": "b0b" }),
             "normalizedLabel",
             "label",
         ),
-        // Absent while its source is present: a document that skipped the fill
+        // Absent while its param is present: a document that skipped the fill
         (
             platform_value!({ "label": "Bob" }),
             "normalizedLabel",
@@ -567,17 +593,17 @@ fn should_refuse_a_property_that_is_not_its_source_normalized_form() {
         ),
     ] {
         let result = document_type
-            .validate_normalized_from_properties(&properties, PlatformVersion::latest())
+            .validate_generated_from_properties(&properties, PlatformVersion::latest())
             .expect("validation executes");
         match first_basic_error(result) {
-            BasicError::DocumentPropertyNotNormalizedError(e) => {
+            BasicError::DocumentPropertyNotGeneratedError(e) => {
                 assert_eq!(e.document_type_name(), "charter", "{properties:?}");
                 assert_eq!(e.property(), property, "{properties:?}");
-                assert_eq!(e.source_property(), source, "{properties:?}");
-                assert_eq!(e.transform(), HOMOGRAPH_SAFE_ASCII, "{properties:?}");
+                assert_eq!(e.params(), [source.to_string()], "{properties:?}");
+                assert_eq!(e.function(), HOMOGRAPH_SAFE_ASCII, "{properties:?}");
             }
             other => {
-                panic!("{properties:?}: expected DocumentPropertyNotNormalizedError, got {other:?}")
+                panic!("{properties:?}: expected DocumentPropertyNotGeneratedError, got {other:?}")
             }
         }
     }
@@ -588,7 +614,7 @@ fn should_check_nothing_before_protocol_version_14() {
     // A type parsed with the keyword, judged under protocol version 13's method table
     let document_type = parse(schema());
     assert!(document_type
-        .validate_normalized_from_properties(
+        .validate_generated_from_properties(
             &platform_value!({ "label": "Bob", "normalizedLabel": "wrong" }),
             PlatformVersion::get(13).expect("protocol version 13"),
         )
@@ -618,10 +644,10 @@ fn handle_contract() -> DataContract {
 }
 
 /// `validate_document_properties` runs the check after the JSON schema: a
-/// schema error keeps precedence, then a property that is not its source's
-/// normalized form is refused.
+/// schema error keeps precedence, then a property that is not the generated
+/// value is refused.
 #[test]
-fn should_refuse_a_wrong_normalized_property_in_document_validation() {
+fn should_refuse_a_wrong_generated_property_in_document_validation() {
     let platform_version = PlatformVersion::latest();
     let contract = handle_contract();
     let validate = |properties: Value| {
@@ -639,7 +665,7 @@ fn should_refuse_a_wrong_normalized_property_in_document_validation() {
 
     assert!(matches!(
         validate(platform_value!({ "label": "Bob", "normalizedLabel": "bob" })).first_error(),
-        Some(ConsensusError::BasicError(BasicError::DocumentPropertyNotNormalizedError(e)))
+        Some(ConsensusError::BasicError(BasicError::DocumentPropertyNotGeneratedError(e)))
             if e.property() == "normalizedLabel"
     ));
 
@@ -675,7 +701,7 @@ fn contested_name_schema() -> Value {
         ],
         "properties": {
             "label": string_property(0),
-            "normalizedLabel": normalized_property(1, "label")
+            "normalizedLabel": generated_property(1, "label")
         },
         "required": ["label", "normalizedLabel"],
         "additionalProperties": false
@@ -698,7 +724,7 @@ fn index_only_entry_schema() -> Value {
         ],
         "properties": {
             "name": string_property(0),
-            "normalizedName": normalized_property(1, "name")
+            "normalizedName": generated_property(1, "name")
         },
         "required": ["name", "normalizedName"],
         "additionalProperties": false
@@ -720,10 +746,10 @@ fn document_of(document_type: &DocumentType, properties: Value) -> crate::docume
 }
 
 /// The contest is resolved on the document the platform will store: the create
-/// builder computes the normalized property a document leaves out before it
-/// resolves the contest, so the transition carries both.
+/// builder generates the property a document leaves out before it resolves the
+/// contest, so the transition carries both.
 #[test]
-fn should_build_a_create_transition_carrying_the_normalized_property_and_its_contest() {
+fn should_build_a_create_transition_carrying_the_generated_property_and_its_contest() {
     use crate::state_transition::batch_transition::batched_transition::DocumentCreateTransition;
     use crate::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 
@@ -754,7 +780,7 @@ fn should_build_a_create_transition_carrying_the_normalized_property_and_its_con
 }
 
 #[test]
-fn should_build_replace_and_index_only_delete_transitions_carrying_the_normalized_property() {
+fn should_build_replace_and_index_only_delete_transitions_carrying_the_generated_property() {
     use crate::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
     use crate::state_transition::batch_transition::batched_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
     use crate::state_transition::batch_transition::batched_transition::{
@@ -795,11 +821,12 @@ fn should_build_replace_and_index_only_delete_transitions_carrying_the_normalize
     );
 }
 
-/// Random documents hold each normalized property as its source's normalized
-/// form, so fixtures and strategy tests produce documents consensus accepts.
+/// Random documents hold each generated property as its function returns it for
+/// their random params, so fixtures and strategy tests produce documents
+/// consensus accepts.
 #[cfg(feature = "random-documents")]
 #[test]
-fn should_generate_random_documents_holding_the_normalized_form_of_their_source() {
+fn should_generate_random_documents_holding_their_generated_values() {
     use crate::data_contract::document_type::random_document::{
         CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
     };
@@ -829,7 +856,7 @@ fn should_generate_random_documents_holding_the_normalized_form_of_their_source(
                 .expect("a random document");
             let properties: Value = document.properties().into();
             let result = document_type
-                .validate_normalized_from_properties(&properties, platform_version)
+                .validate_generated_from_properties(&properties, platform_version)
                 .expect("validation executes");
             assert!(result.is_valid(), "{properties:?}: {:?}", result.errors);
         }

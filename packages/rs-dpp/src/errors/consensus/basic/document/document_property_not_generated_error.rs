@@ -7,10 +7,10 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
-/// A `normalizedFrom` string property of the written document is not the normalized form of
-/// the property it names: its value differs from the source's normalized form, or it is
-/// present while the source is absent (or absent while the source is present, which the
-/// platform only sees when a document skipped the fill it runs on arrival).
+/// A `generatedFrom` property of the written document is not what its function generates
+/// from its parameters: its value differs, or it is present while a parameter is absent (or
+/// absent while every parameter is present, which the platform only sees when a document
+/// skipped the generation it runs on arrival).
 ///
 /// A pure structure check on document create and replace (protocol version 14): it reads
 /// the document alone, so it is a basic error, not a state one.
@@ -28,11 +28,12 @@ use thiserror::Error;
     DecodeUntrusted,
 )]
 #[error(
-    "Document type \"{document_type_name}\" property \"{property}\" must be the \
-     {transform} form of property \"{source_property}\", and absent when it is"
+    "Document type \"{document_type_name}\" property \"{property}\" must be what {function} \
+     generates from {}, and absent when any of them is",
+    .params.join(", ")
 )]
 #[platform_serialize(unversioned)]
-pub struct DocumentPropertyNotNormalizedError {
+pub struct DocumentPropertyNotGeneratedError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
@@ -41,24 +42,24 @@ pub struct DocumentPropertyNotNormalizedError {
     document_type_name: String,
     /// Dotted path of the declaring property within the document type.
     property: String,
-    /// Dotted path of the property it is normalized from.
-    source_property: String,
-    /// The transform's wire name, such as `homographSafeASCII`.
-    transform: String,
+    /// The function's wire name, such as `sys.stringTransformations.homographSafeASCII`.
+    function: String,
+    /// Dotted paths of the properties the function reads, in order.
+    params: Vec<String>,
 }
 
-impl DocumentPropertyNotNormalizedError {
+impl DocumentPropertyNotGeneratedError {
     pub fn new(
         document_type_name: String,
         property: String,
-        source_property: String,
-        transform: String,
+        function: String,
+        params: Vec<String>,
     ) -> Self {
         Self {
             document_type_name,
             property,
-            source_property,
-            transform,
+            function,
+            params,
         }
     }
 
@@ -70,17 +71,17 @@ impl DocumentPropertyNotNormalizedError {
         &self.property
     }
 
-    pub fn source_property(&self) -> &str {
-        &self.source_property
+    pub fn function(&self) -> &str {
+        &self.function
     }
 
-    pub fn transform(&self) -> &str {
-        &self.transform
+    pub fn params(&self) -> &[String] {
+        &self.params
     }
 }
 
-impl From<DocumentPropertyNotNormalizedError> for ConsensusError {
-    fn from(err: DocumentPropertyNotNormalizedError) -> Self {
-        Self::BasicError(BasicError::DocumentPropertyNotNormalizedError(err))
+impl From<DocumentPropertyNotGeneratedError> for ConsensusError {
+    fn from(err: DocumentPropertyNotGeneratedError) -> Self {
+        Self::BasicError(BasicError::DocumentPropertyNotGeneratedError(err))
     }
 }

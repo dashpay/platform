@@ -230,11 +230,11 @@ impl Drive {
                                         )));
                                     }
                                 };
-                                // The entry holds every normalized property the
-                                // transition left out, as the node computed it on
+                                // The entry holds every generated property the
+                                // transition left out, as the node generated it on
                                 // arrival (inert before protocol version 14)
                                 document_type
-                                    .fill_normalized_properties(&mut values, platform_version)?;
+                                    .fill_generated_properties(&mut values, platform_version)?;
                                 let path_query = crate::query::index_only_synthesis::index_only_transition_entry_path_query(
                                     contract.id(),
                                     document_type,

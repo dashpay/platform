@@ -1346,32 +1346,37 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     create structure validation 1 leaves the amount to state validation;
 ///     version 0 wants exactly the contest's fund.
 ///
-/// 52. **A string property may hold a normalized form of another
-///     (`normalizedFrom`)**: the property keyword (meta-schema v3,
-///     `apply_normalized_from` 0, `NormalizedFrom` on `DocumentProperty`)
-///     names a string property of the same document type, the source, and a
-///     transform, `homographSafeASCII`: ASCII `A` to `Z` lowercased, then `o`
-///     to `0` and `i` and `l` to `1`, every other character kept, which is
-///     DPNS's label normalization over ASCII computed without Unicode tables.
-///     The parser checks at registration and update that the source is another
-///     string property that declares no `normalizedFrom` itself, that neither
-///     side is transient or inside a transient object, and that the source
-///     sits inside every object holding the declaring property; a changed
-///     declaration is an incompatible schema change, and `validate_update` 1
-///     refuses a property an update adds over a source that already existed
-///     (`DocumentTypeUpdateError`, 40212). `fill_normalized_properties`
-///     (0) writes a declared property a document leaves out, from its source,
-///     in the action transformers of document create, replace and index-only
+/// 52. **Properties the platform generates (`generatedFrom`)**: the property
+///     keyword (meta-schema v3, `apply_generated_from` 0, `GeneratedFrom` on
+///     `DocumentProperty`) names a built-in `function` and its `params`,
+///     properties of the same document type, as
+///     `{ "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] }`.
+///     Built-ins are named under `sys.`, leaving other names to functions a
+///     contract may bring later; the one built-in takes one string and
+///     lowercases ASCII `A` to `Z`, then maps `o` to `0` and `i` and `l` to
+///     `1`, keeping every other character, which is DPNS's label
+///     normalization over ASCII computed without Unicode tables. The parser
+///     checks at registration and update that `params` holds as many
+///     properties as the function takes, each another string property that
+///     is not generated itself, that neither the property nor a param is
+///     transient or inside a transient object, and that every param sits
+///     inside every object holding the property; a changed declaration is an
+///     incompatible schema change, and `validate_update` 1 refuses a property
+///     an update adds over params that all already existed
+///     (`DocumentTypeUpdateError`, 40212). `fill_generated_properties` (0)
+///     writes a declared property a document leaves out, from its params, in
+///     the action transformers of document create, replace and index-only
 ///     delete, before the contest resolution and every check read the data,
-///     and in `Document::try_from_create_transition` and
-///     `try_from_replace_transition`, with which proof verification rebuilds
-///     the written document, and in the client transition builders, so a
-///     transition built from a document carries the value and its contest is
-///     detected from it. `DataContract::validate_document_properties` 0
-///     calls `validate_normalized_from_properties` (`validate_normalized_from`
-///     0) after the schema and `maxBytes`, and refuses a supplied value that is
-///     not the source's normalized form, or one without its source, with
-///     `DocumentPropertyNotNormalizedError` (10424). Every call site was
+///     in `Document::try_from_create_transition` and
+///     `try_from_replace_transition` and the index-only branches of the prover
+///     and the verifier, with which proofs are built and checked, and in the
+///     client transition builders, so a transition built from a document
+///     carries the value and its contest is detected from it.
+///     `DataContract::validate_document_properties` 0 calls
+///     `validate_generated_from_properties` (`validate_generated_from` 0)
+///     after the schema and `maxBytes`, and refuses a supplied value that is
+///     not what the function generates, or one without its params, with
+///     `DocumentPropertyNotGeneratedError` (10424). Every call site was
 ///     extended in place and is inert before this version, where the three
 ///     slots are `None` and the meta-schemas refuse the keyword.
 ///

@@ -1,14 +1,16 @@
-//! End-to-end coverage for the `normalizedFrom` property keyword (protocol
-//! version 14): a string property holding a normalized form of another string
-//! property of the same document. When a created or replaced document leaves
-//! it out, the action transformer computes it from its source before anything
-//! reads the document; when the document supplies it, the document validation
-//! checks it after the JSON schema, and a wrong value, or one without its
-//! source, is consensus-rejected and leaves the stored document untouched.
+//! End-to-end coverage for the `generatedFrom` property keyword (protocol
+//! version 14): a string property the platform generates with a built-in
+//! function of other properties of the same document, here
+//! `sys.stringTransformations.homographSafeASCII`. When a created or replaced
+//! document leaves it out, the action transformer generates it from its params
+//! before anything reads the document; when the document supplies it, the
+//! document validation checks it after the JSON schema, and a wrong value, or
+//! one without its params, is consensus-rejected and leaves the stored document
+//! untouched.
 
 use super::*;
 
-mod normalized_from_tests {
+mod generated_from_tests {
     use super::*;
     use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
     use crate::rpc::core::MockCoreRPCLike;
@@ -44,9 +46,10 @@ mod normalized_from_tests {
 
     /// A mutable `handle` type shaped like DPNS's domain: a `label` and its
     /// required `normalizedLabel`, unique across handles, and an optional
-    /// `parent` with its optional `normalizedParent`. The sources' patterns
-    /// hold them to ASCII, as DPNS's do; the normalized properties need none of
-    /// their own, since each can only hold its source's normalized form.
+    /// `parent` with its optional `normalizedParent`, each generated from its
+    /// counterpart. The params' patterns hold them to ASCII, as DPNS's do; the
+    /// generated properties need none of their own, since each can only hold
+    /// what its function generates.
     fn handle_schema() -> Value {
         platform_value!({
             "type": "object",
@@ -68,7 +71,10 @@ mod normalized_from_tests {
                 "normalizedLabel": {
                     "type": "string",
                     "maxLength": 32,
-                    "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" },
+                    "generatedFrom": {
+                        "function": "sys.stringTransformations.homographSafeASCII",
+                        "params": ["label"]
+                    },
                     "position": 1
                 },
                 "parent": {
@@ -80,7 +86,10 @@ mod normalized_from_tests {
                 "normalizedParent": {
                     "type": "string",
                     "maxLength": 32,
-                    "normalizedFrom": { "property": "parent", "transform": "homographSafeASCII" },
+                    "generatedFrom": {
+                        "function": "sys.stringTransformations.homographSafeASCII",
+                        "params": ["parent"]
+                    },
                     "position": 3
                 }
             },
@@ -108,7 +117,10 @@ mod normalized_from_tests {
                 "normalizedName": {
                     "type": "string",
                     "maxLength": 32,
-                    "normalizedFrom": { "property": "name", "transform": "homographSafeASCII" },
+                    "generatedFrom": {
+                        "function": "sys.stringTransformations.homographSafeASCII",
+                        "params": ["name"]
+                    },
                     "position": 1
                 }
             },
@@ -142,7 +154,10 @@ mod normalized_from_tests {
                 "normalizedLabel": {
                     "type": "string",
                     "maxLength": 32,
-                    "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" },
+                    "generatedFrom": {
+                        "function": "sys.stringTransformations.homographSafeASCII",
+                        "params": ["label"]
+                    },
                     "position": 1
                 }
             },
@@ -216,7 +231,7 @@ mod normalized_from_tests {
         }
 
         /// A create transition for a document of `type_name` holding `properties`,
-        /// and the document. The builder computes a normalized property the
+        /// and the document. The builder generates a property the
         /// document leaves out, as the platform would; `as_given` sends the
         /// document exactly as `properties` says instead, so what the test sees is
         /// the platform's own computation.
@@ -461,25 +476,25 @@ mod normalized_from_tests {
         );
     }
 
-    fn expect_not_normalized_error(
+    fn expect_not_generated_error(
         result: StateTransitionExecutionResult,
         property: &str,
-        source: &str,
+        param: &str,
     ) {
         let StateTransitionExecutionResult::PaidConsensusError { error, .. } = result else {
             panic!("expected a paid consensus error, got {result:?}");
         };
         assert_matches!(
             error,
-            ConsensusError::BasicError(BasicError::DocumentPropertyNotNormalizedError(e))
+            ConsensusError::BasicError(BasicError::DocumentPropertyNotGeneratedError(e))
                 if e.property() == property
-                    && e.source_property() == source
-                    && e.transform() == "homographSafeASCII"
+                    && e.params() == [param.to_string()]
+                    && e.function() == "sys.stringTransformations.homographSafeASCII"
         );
     }
 
     #[tokio::test]
-    async fn should_compute_a_left_out_normalized_property_on_arrival() {
+    async fn should_generate_a_left_out_property_on_arrival() {
         let mut fixture = HandleFixture::new();
 
         let result = fixture
@@ -494,7 +509,7 @@ mod normalized_from_tests {
     }
 
     #[tokio::test]
-    async fn should_accept_a_supplied_normalized_property_equal_to_the_computed_one() {
+    async fn should_accept_a_supplied_property_equal_to_the_generated_one() {
         let mut fixture = HandleFixture::new();
 
         let result = fixture
@@ -515,7 +530,7 @@ mod normalized_from_tests {
     /// "bob" is "Bob" lowercased without the homograph mapping. The normalized
     /// property declares no pattern, so the keyword is what refuses it.
     #[tokio::test]
-    async fn should_refuse_a_supplied_normalized_property_that_differs() {
+    async fn should_refuse_a_supplied_property_that_differs_from_the_generated_one() {
         let mut fixture = HandleFixture::new();
 
         let result = fixture
@@ -525,12 +540,12 @@ mod normalized_from_tests {
             )
             .await;
 
-        expect_not_normalized_error(result, "normalizedLabel", "label");
+        expect_not_generated_error(result, "normalizedLabel", "label");
         assert!(fixture.stored_handles().is_empty());
     }
 
     #[tokio::test]
-    async fn should_refuse_a_normalized_property_without_its_source() {
+    async fn should_refuse_a_generated_property_without_its_param() {
         let mut fixture = HandleFixture::new();
 
         let result = fixture
@@ -540,7 +555,7 @@ mod normalized_from_tests {
             )
             .await;
 
-        expect_not_normalized_error(result, "normalizedParent", "parent");
+        expect_not_generated_error(result, "normalizedParent", "parent");
         assert!(fixture.stored_handles().is_empty());
     }
 
@@ -565,7 +580,7 @@ mod normalized_from_tests {
     }
 
     #[tokio::test]
-    async fn should_recompute_a_left_out_normalized_property_on_replace() {
+    async fn should_regenerate_a_left_out_property_on_replace() {
         let mut fixture = HandleFixture::new();
         assert_success(&fixture.create(platform_value!({ "label": "Bob" }), 7).await);
         let stored = fixture.stored_handles().remove(0);
@@ -587,7 +602,7 @@ mod normalized_from_tests {
                 handle.set("label", text("Robin"));
             })
             .await;
-        expect_not_normalized_error(result, "normalizedLabel", "label");
+        expect_not_generated_error(result, "normalizedLabel", "label");
         let after = fixture.stored_handles().remove(0);
         assert_eq!(after.get("label"), Some(&text("Bobby-Lee")));
         assert_eq!(after.get("normalizedLabel"), Some(&text("b0bby-1ee")));
@@ -596,7 +611,7 @@ mod normalized_from_tests {
     /// A client reading the create back with a proof rebuilds the document the
     /// transition wrote, computed property included, and the proof verifies.
     #[tokio::test]
-    async fn should_verify_the_proof_of_a_create_that_left_the_normalized_property_out() {
+    async fn should_verify_the_proof_of_a_create_that_left_the_generated_property_out() {
         let mut fixture = HandleFixture::new();
         let transition = fixture
             .create_transition(platform_value!({ "label": "Olive" }), 8)
@@ -619,7 +634,7 @@ mod normalized_from_tests {
     /// The replace a client proves is rebuilt from the transition with the
     /// property it left out computed from the new source.
     #[tokio::test]
-    async fn should_verify_the_proof_of_a_replace_that_left_the_normalized_property_out() {
+    async fn should_verify_the_proof_of_a_replace_that_left_the_generated_property_out() {
         let mut fixture = HandleFixture::new();
         assert_success(
             &fixture
@@ -655,7 +670,7 @@ mod normalized_from_tests {
     /// the verifier. The delete names the entry without the normalized value and
     /// still finds it (a delete of a missing entry is refused).
     #[tokio::test]
-    async fn should_create_prove_and_delete_an_index_only_entry_that_leaves_the_normalized_property_out(
+    async fn should_create_prove_and_delete_an_index_only_entry_that_leaves_the_generated_property_out(
     ) {
         let platform_version = PlatformVersion::latest();
         let mut fixture = HandleFixture::new();
@@ -707,13 +722,13 @@ mod normalized_from_tests {
         assert_eq!(documents.into_values().next(), Some(None));
     }
 
-    /// A contested index over the normalized property: a document built by the
+    /// A contested index over the generated property: a document built by the
     /// SDK without the property carries its contest, because the builder
     /// computes the property before it resolves the contest; and a transition
     /// sent without the property, with its contest named, is resolved by the
     /// node against the value it computes.
     #[tokio::test]
-    async fn should_resolve_the_contest_of_a_document_that_leaves_the_normalized_property_out() {
+    async fn should_resolve_the_contest_of_a_document_that_leaves_the_generated_property_out() {
         let mut fixture = HandleFixture::new();
 
         let (_, built) = fixture
@@ -746,7 +761,7 @@ mod normalized_from_tests {
     /// The create transformer computes the property only from protocol version
     /// 14: before it, the data goes on as sent.
     #[tokio::test]
-    async fn should_not_compute_the_normalized_property_before_protocol_version_14() {
+    async fn should_not_generate_the_property_before_protocol_version_14() {
         let mut fixture = HandleFixture::new();
         let transition = fixture
             .create_transition(platform_value!({ "label": "Bob" }), 9)
@@ -794,7 +809,7 @@ mod normalized_from_tests {
     /// 14 refuse it. The action is built by hand the way the transformer would
     /// build it, against the contract as Drive hands it back.
     #[test]
-    fn should_not_check_the_normalized_property_before_protocol_version_14() {
+    fn should_not_check_the_generated_property_before_protocol_version_14() {
         let fixture = HandleFixture::new();
         let owner_id = fixture.identity.id();
         let contract_fetch_info = fixture.contract_fetch_info();
@@ -841,7 +856,7 @@ mod normalized_from_tests {
             .expect("structure validation should run");
         assert!(
             before.is_valid(),
-            "the document validation must not check normalizedFrom before 14: {:?}",
+            "the document validation must not check generatedFrom before 14: {:?}",
             before.errors
         );
 
@@ -850,7 +865,7 @@ mod normalized_from_tests {
             .expect("structure validation should run");
         assert_matches!(
             at.errors.as_slice(),
-            [ConsensusError::BasicError(BasicError::DocumentPropertyNotNormalizedError(e))]
+            [ConsensusError::BasicError(BasicError::DocumentPropertyNotGeneratedError(e))]
                 if e.property() == "normalizedLabel"
         );
     }

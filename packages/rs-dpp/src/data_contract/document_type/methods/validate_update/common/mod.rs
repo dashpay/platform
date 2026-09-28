@@ -2649,9 +2649,9 @@ mod tests {
             assert!(result.is_valid(), "{:?}", result.errors);
         }
 
-        /// A `handle` type whose `normalizedName` declares `normalized_from` when given.
-        fn normalized_from_document_type(
-            normalized_from: Option<&str>,
+        /// A `handle` type whose `normalizedName` is generated from `generated_from` when given.
+        fn generated_from_document_type(
+            generated_from: Option<&str>,
             platform_version: &PlatformVersion,
         ) -> DocumentType {
             let mut normalized_name = platform_value!({
@@ -2659,13 +2659,16 @@ mod tests {
                 "maxLength": 32,
                 "position": 2
             });
-            if let Some(source) = normalized_from {
+            if let Some(source) = generated_from {
                 normalized_name
                     .insert(
-                        "normalizedFrom".to_string(),
-                        platform_value!({ "property": source, "transform": "homographSafeASCII" }),
+                        "generatedFrom".to_string(),
+                        platform_value!({
+                            "function": "sys.stringTransformations.homographSafeASCII",
+                            "params": [source]
+                        }),
                     )
-                    .expect("should insert normalizedFrom");
+                    .expect("should insert generatedFrom");
             }
 
             let schema = platform_value!({
@@ -2699,30 +2702,30 @@ mod tests {
         }
 
         #[test]
-        fn should_return_invalid_result_when_normalized_from_is_added_changed_or_removed() {
+        fn should_return_invalid_result_when_generated_from_is_added_changed_or_removed() {
             let platform_version = PlatformVersion::latest();
 
-            for (old_normalized_from, new_normalized_from, path) in [
+            for (old_generated_from, new_generated_from, path) in [
                 (
                     None,
                     Some("name"),
-                    "/properties/normalizedName/normalizedFrom",
+                    "/properties/normalizedName/generatedFrom",
                 ),
                 (
                     Some("name"),
                     Some("displayName"),
-                    "/properties/normalizedName/normalizedFrom/property",
+                    "/properties/normalizedName/generatedFrom/params/0",
                 ),
                 (
                     Some("name"),
                     None,
-                    "/properties/normalizedName/normalizedFrom",
+                    "/properties/normalizedName/generatedFrom",
                 ),
             ] {
                 let old_document_type =
-                    normalized_from_document_type(old_normalized_from, platform_version);
+                    generated_from_document_type(old_generated_from, platform_version);
                 let new_document_type =
-                    normalized_from_document_type(new_normalized_from, platform_version);
+                    generated_from_document_type(new_generated_from, platform_version);
 
                 let result = old_document_type
                     .as_ref()
@@ -2734,18 +2737,18 @@ mod tests {
                     [ConsensusError::BasicError(
                         BasicError::IncompatibleDocumentTypeSchemaError(e)
                     )] if e.property_path() == path,
-                    "{old_normalized_from:?} -> {new_normalized_from:?}: {:?}",
+                    "{old_generated_from:?} -> {new_generated_from:?}: {:?}",
                     result.errors
                 );
             }
         }
 
         #[test]
-        fn should_return_valid_result_when_normalized_from_is_unchanged() {
+        fn should_return_valid_result_when_generated_from_is_unchanged() {
             let platform_version = PlatformVersion::latest();
 
-            let old_document_type = normalized_from_document_type(Some("name"), platform_version);
-            let new_document_type = normalized_from_document_type(Some("name"), platform_version);
+            let old_document_type = generated_from_document_type(Some("name"), platform_version);
+            let new_document_type = generated_from_document_type(Some("name"), platform_version);
 
             let result = old_document_type
                 .as_ref()

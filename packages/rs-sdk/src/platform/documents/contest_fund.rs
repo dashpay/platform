@@ -36,9 +36,9 @@ impl Sdk {
         document: &Document,
     ) -> Result<Option<Credits>, Error> {
         // The contest is resolved on the document the platform will store, with every
-        // `normalizedFrom` property it leaves out computed as the platform computes it
+        // `generatedFrom` property it leaves out computed as the platform computes it
         let mut document = document.clone();
-        document_type.fill_normalized_properties(document.properties_mut(), self.version())?;
+        document_type.fill_generated_properties(document.properties_mut(), self.version())?;
         let Some(VotePoll::ContestedDocumentResourceVotePoll(vote_poll)) =
             document_type.contested_vote_poll_for_document(&document, self.version())?
         else {

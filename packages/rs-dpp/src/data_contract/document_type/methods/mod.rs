@@ -15,7 +15,7 @@ use crate::ProtocolError;
 
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::{
-    DocumentPropertyMaxBytesExceededError, DocumentPropertyNotNormalizedError,
+    DocumentPropertyMaxBytesExceededError, DocumentPropertyNotGeneratedError,
     InvalidEncryptedPropertyShapeError,
 };
 use crate::data_contract::document_type::accessors::{
@@ -35,10 +35,10 @@ use platform_value::btreemap_extensions::{
 use platform_value::{Identifier, Value};
 
 pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
-    /// The dotted paths of the properties that declare `normalizedFrom` (protocol
+    /// The dotted paths of the properties that declare `generatedFrom` (protocol
     /// version 14), in schema order, so a document write visits only them. Empty on
     /// generations that predate the keyword.
-    fn normalized_from_fields(&self) -> &[String];
+    fn generated_from_fields(&self) -> &[String];
 
     fn unique_id_for_storage(&self) -> [u8; 32] {
         rand::random::<[u8; 32]>()
@@ -235,21 +235,21 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         SimpleConsensusValidationResult::new()
     }
 
-    /// Writes every `normalizedFrom` property `data` (a created or replaced document's
-    /// properties, as they arrive) leaves out, computed from its source: the platform
-    /// computes a normalized property a client does not send, and checks one it does send
-    /// (`validate_normalized_from_properties`). A property the document supplies is left as
-    /// it is, whatever it holds, and nothing is written when the source is absent or is not
-    /// a string (the schema validation refuses a source that is not a string on its own).
+    /// Writes every `generatedFrom` property `data` (a created or replaced document's
+    /// properties, as they arrive) leaves out, generated from its parameters: the platform
+    /// generates a property a client does not send, and checks one it does send
+    /// (`validate_generated_from_properties`). A property the document supplies is left as
+    /// it is, whatever it holds, and nothing is written when a parameter is absent or is not
+    /// a string (the schema validation refuses a parameter that is not a string on its own).
     ///
     /// Runs wherever a document arrives, before anything reads its data: the action
     /// transformers of document create, replace and indexOnly delete, and the proof
     /// verification that rebuilds the document a transition wrote.
     ///
-    /// Versioned on `fill_normalized_properties` in the document type method versions:
+    /// Versioned on `fill_generated_properties` in the document type method versions:
     /// `None` before protocol version 14 leaves `data` untouched, which keeps the shipped
     /// transformers and proof verification that call it inert.
-    fn fill_normalized_properties(
+    fn fill_generated_properties(
         &self,
         data: &mut BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
@@ -259,27 +259,27 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
             .contract_versions
             .document_type_versions
             .methods
-            .fill_normalized_properties
+            .fill_generated_properties
         {
             None => Ok(()),
             Some(0) => {
-                self.fill_normalized_properties_v0(data);
+                self.fill_generated_properties_v0(data);
                 Ok(())
             }
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
-                method: "fill_normalized_properties".to_string(),
+                method: "fill_generated_properties".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
         }
     }
 
-    fn fill_normalized_properties_v0(&self, data: &mut BTreeMap<String, Value>) {
-        for path in self.normalized_from_fields() {
-            let Some(normalized_from) = self
+    fn fill_generated_properties_v0(&self, data: &mut BTreeMap<String, Value>) {
+        for path in self.generated_from_fields() {
+            let Some(generated_from) = self
                 .flattened_properties()
                 .get(path)
-                .and_then(|property| property.normalized_from.as_ref())
+                .and_then(|property| property.generated_from.as_ref())
             else {
                 continue;
             };
@@ -288,36 +288,44 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
             if !matches!(data.get_optional_at_path(path), Ok(None)) {
                 continue;
             }
-            let normalized = match data.get_optional_at_path(&normalized_from.property) {
-                Ok(Some(Value::Text(source))) => normalized_from.normalize(source),
-                _ => continue,
+            let arguments: Option<Vec<&str>> = generated_from
+                .property_params()
+                .map(|param| match data.get_optional_at_path(param) {
+                    Ok(Some(Value::Text(value))) => Some(value.as_str()),
+                    _ => None,
+                })
+                .collect();
+            let Some(generated) =
+                arguments.and_then(|arguments| generated_from.generate(&arguments))
+            else {
+                continue;
             };
-            // Registration puts the source inside every object that holds the property, so
-            // the objects on the way are present and are maps: the source was read through
-            // them. The insert cannot fail; if it ever did, the property would stay absent
-            // and the normalizedFrom check would refuse the document.
-            let _ = data.insert_at_path(path, Value::Text(normalized));
+            // Registration puts every parameter inside every object that holds the
+            // property, so the objects on the way are present and are maps: the parameters
+            // were read through them. The insert cannot fail; if it ever did, the property
+            // would stay absent and the generatedFrom check would refuse the document.
+            let _ = data.insert_at_path(path, Value::Text(generated));
         }
     }
 
-    /// Checks every `normalizedFrom` property of `properties` (the document's properties
-    /// map) against its source: when the source is present the property must hold the
-    /// source's normalized form, and when the source is absent the property must be absent
-    /// too. The first property that does not is refused with
-    /// `DocumentPropertyNotNormalizedError`. A value on either side that is not a string is
-    /// not compared: the JSON schema validation that `DataContract::validate_document_properties`
-    /// runs alongside refuses it, and its result is reported first.
+    /// Checks every `generatedFrom` property of `properties` (the document's properties
+    /// map) against its parameters: when every parameter is present the property must hold
+    /// what the function generates from them, and when a parameter is absent the property
+    /// must be absent too. The first property that does not is refused with
+    /// `DocumentPropertyNotGeneratedError`. A value that is not a string is not compared:
+    /// the JSON schema validation that `DataContract::validate_document_properties` runs
+    /// alongside refuses it, and its result is reported first.
     ///
     /// A document that arrived at the platform has been through
-    /// `fill_normalized_properties`, so a left-out property whose source is present is
+    /// `fill_generated_properties`, so a left-out property whose parameters are present is
     /// already written; one that has not (a client validating a document before sending
     /// it) is refused for the missing property.
     ///
-    /// Versioned on `validate_normalized_from` in the document type method versions: `None`
+    /// Versioned on `validate_generated_from` in the document type method versions: `None`
     /// before protocol version 14 returns an empty result, which keeps the shipped document
     /// validation that calls it inert.
     #[cfg(feature = "validation")]
-    fn validate_normalized_from_properties(
+    fn validate_generated_from_properties(
         &self,
         properties: &Value,
         platform_version: &PlatformVersion,
@@ -327,12 +335,12 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
             .contract_versions
             .document_type_versions
             .methods
-            .validate_normalized_from
+            .validate_generated_from
         {
             None => Ok(SimpleConsensusValidationResult::default()),
-            Some(0) => Ok(self.validate_normalized_from_properties_v0(properties)),
+            Some(0) => Ok(self.validate_generated_from_properties_v0(properties)),
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
-                method: "validate_normalized_from_properties".to_string(),
+                method: "validate_generated_from_properties".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
@@ -340,42 +348,50 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     }
 
     #[cfg(feature = "validation")]
-    fn validate_normalized_from_properties_v0(
+    fn validate_generated_from_properties_v0(
         &self,
         properties: &Value,
     ) -> SimpleConsensusValidationResult {
-        for path in self.normalized_from_fields() {
-            let Some(normalized_from) = self
+        for path in self.generated_from_fields() {
+            let Some(generated_from) = self
                 .flattened_properties()
                 .get(path)
-                .and_then(|property| property.normalized_from.as_ref())
+                .and_then(|property| property.generated_from.as_ref())
             else {
                 continue;
             };
-            // A lookup error (an intermediate that is not a map) reads as absent: the schema
-            // validation refuses that shape on its own
-            let value = properties.get_optional_value_at_path(path).ok().flatten();
-            let source = properties
-                .get_optional_value_at_path(&normalized_from.property)
-                .ok()
-                .flatten();
-            let normalized = match (value, source) {
-                (None, None) => true,
-                (Some(value), Some(source)) => match (value.as_text(), source.as_text()) {
-                    (Some(value), Some(source)) => {
-                        normalized_from.is_normalized_form(source, value)
+            let value = read_at_path(properties, path);
+            let arguments: Vec<Option<&Value>> = generated_from
+                .property_params()
+                .map(|param| read_at_path(properties, param))
+                .collect();
+            let generated = if arguments.iter().any(Option::is_none) {
+                // Nothing to generate from: the property must be left out too
+                value.is_none()
+            } else {
+                let texts: Option<Vec<&str>> = arguments
+                    .iter()
+                    .map(|argument| argument.and_then(|argument| argument.as_text()))
+                    .collect();
+                match (value.map(|value| value.as_text()), texts) {
+                    (None, _) => false,
+                    (Some(Some(value)), Some(arguments)) => {
+                        generated_from.is_generated_value(&arguments, value)
                     }
+                    // A value that is not a string: the schema validation refuses it
                     _ => true,
-                },
-                (Some(_), None) | (None, Some(_)) => false,
+                }
             };
-            if !normalized {
+            if !generated {
                 return SimpleConsensusValidationResult::new_with_error(
-                    DocumentPropertyNotNormalizedError::new(
+                    DocumentPropertyNotGeneratedError::new(
                         self.name().clone(),
                         path.clone(),
-                        normalized_from.property.clone(),
-                        normalized_from.transform.as_str().to_string(),
+                        generated_from.function.as_str().to_string(),
+                        generated_from
+                            .property_params()
+                            .map(str::to_string)
+                            .collect(),
                     )
                     .into(),
                 );
@@ -405,6 +421,14 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
             })
             .collect()
     }
+}
+
+/// The value at a dotted `path` of a document's properties, `None` when it is absent or
+/// the path runs through a value that is not a map (the schema validation refuses that
+/// shape on its own).
+#[cfg(feature = "validation")]
+fn read_at_path<'a>(properties: &'a Value, path: &'a str) -> Option<&'a Value> {
+    properties.get_optional_value_at_path(path).ok().flatten()
 }
 
 /// The flat field list the v0 (protocol versions <= 13, frozen on chain)

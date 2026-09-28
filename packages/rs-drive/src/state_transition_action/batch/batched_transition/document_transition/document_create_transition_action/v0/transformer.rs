@@ -80,12 +80,12 @@ impl DocumentCreateTransitionActionV0 {
 
         let document_type = base.document_type()?;
 
-        // Added in place at protocol version 14, inert before it: `fill_normalized_properties`
-        // is `None` there and leaves the data as sent. From 14 on, every `normalizedFrom`
-        // property the transition leaves out is computed from its source here, before the
+        // Added in place at protocol version 14, inert before it: `fill_generated_properties`
+        // is `None` there and leaves the data as sent. From 14 on, every `generatedFrom`
+        // property the transition leaves out is generated from its params here, before the
         // contest resolution below and every later check read the data.
         let mut data = data.clone();
-        document_type.fill_normalized_properties(&mut data, platform_version)?;
+        document_type.fill_generated_properties(&mut data, platform_version)?;
 
         let document_type_indexes = document_type.indexes();
 

@@ -179,15 +179,16 @@ pub(crate) mod property_names {
     /// Meta-schema v3+ (protocol version 14). See `apply_max_bytes` in
     /// `try_from_schema`.
     pub const MAX_BYTES: &str = "maxBytes";
-    /// Property-level object on a string property: the string property of the
-    /// same document the value is a normalized form of ([`PROPERTY`]) and the
-    /// [`TRANSFORM`] that normalizes it. Meta-schema v3+ (protocol version 14).
-    /// See `apply_normalized_from` in `try_from_schema`.
-    pub const NORMALIZED_FROM: &str = "normalizedFrom";
-    /// `normalizedFrom`: the dotted path of the source string property.
-    pub const PROPERTY: &str = "property";
-    /// `normalizedFrom`: the transform name, one of `NormalizationTransform::ALL`.
-    pub const TRANSFORM: &str = "transform";
+    /// Property-level object on a string property: the [`FUNCTION`] the platform
+    /// generates the value with and its [`PARAMS`], other properties of the same
+    /// document. Meta-schema v3+ (protocol version 14). See
+    /// `apply_generated_from` in `try_from_schema`.
+    pub const GENERATED_FROM: &str = "generatedFrom";
+    /// `generatedFrom`: the function name, one of `GenerationFunction::ALL`.
+    pub const FUNCTION: &str = "function";
+    /// `generatedFrom`: the parameters, dotted paths of properties of the same
+    /// document type.
+    pub const PARAMS: &str = "params";
     pub const KEY_REQUIREMENTS: &str = "keyRequirements";
     pub const PURPOSE: &str = "purpose";
     pub const BOUND_TO: &str = "boundTo";
@@ -330,21 +331,21 @@ impl DocumentTypeRef<'_> {
 }
 
 impl DocumentTypeBasicMethods for DocumentType {
-    fn normalized_from_fields(&self) -> &[String] {
+    fn generated_from_fields(&self) -> &[String] {
         match self {
-            DocumentType::V0(v0) => v0.normalized_from_fields(),
-            DocumentType::V1(v1) => v1.normalized_from_fields(),
-            DocumentType::V2(v2) => v2.normalized_from_fields(),
+            DocumentType::V0(v0) => v0.generated_from_fields(),
+            DocumentType::V1(v1) => v1.generated_from_fields(),
+            DocumentType::V2(v2) => v2.generated_from_fields(),
         }
     }
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {
-    fn normalized_from_fields(&self) -> &[String] {
+    fn generated_from_fields(&self) -> &[String] {
         match self {
-            DocumentTypeRef::V0(v0) => v0.normalized_from_fields(),
-            DocumentTypeRef::V1(v1) => v1.normalized_from_fields(),
-            DocumentTypeRef::V2(v2) => v2.normalized_from_fields(),
+            DocumentTypeRef::V0(v0) => v0.generated_from_fields(),
+            DocumentTypeRef::V1(v1) => v1.generated_from_fields(),
+            DocumentTypeRef::V2(v2) => v2.generated_from_fields(),
         }
     }
 }

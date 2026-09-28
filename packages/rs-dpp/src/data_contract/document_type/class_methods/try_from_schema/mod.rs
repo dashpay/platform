@@ -16,8 +16,8 @@ use crate::data_contract::document_type::{
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
-    IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
-    ListElementReference, LookupKeySource, NormalizationTransform, NormalizedFrom,
+    GeneratedFrom, GenerationFunction, GenerationParam, IdentityKeyReferenceRequirements,
+    KeyIdReference, KeyReferenceIdentityProperty, ListElementReference, LookupKeySource,
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
@@ -215,8 +215,8 @@ fn insert_values(
                     apply_distinct_from(&inner_properties, &property_type, platform_version)?;
                 let encrypted_for =
                     apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
-                let normalized_from =
-                    apply_normalized_from(&inner_properties, &property_type, platform_version)?;
+                let generated_from =
+                    apply_generated_from(&inner_properties, &property_type, platform_version)?;
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -226,7 +226,7 @@ fn insert_values(
                         required_since,
                         distinct_from,
                         encrypted_for,
-                        normalized_from,
+                        generated_from,
                     },
                 );
             }
@@ -357,8 +357,7 @@ fn insert_values_nested(
     let property_type = apply_max_bytes(&inner_properties, property_type, platform_version)?;
     let distinct_from = apply_distinct_from(&inner_properties, &property_type, platform_version)?;
     let encrypted_for = apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
-    let normalized_from =
-        apply_normalized_from(&inner_properties, &property_type, platform_version)?;
+    let generated_from = apply_generated_from(&inner_properties, &property_type, platform_version)?;
 
     document_properties.insert(
         property_key,
@@ -369,7 +368,7 @@ fn insert_values_nested(
             required_since,
             distinct_from,
             encrypted_for,
-            normalized_from,
+            generated_from,
         },
     );
 
@@ -1886,56 +1885,57 @@ pub(super) fn validate_encrypted_for_declarations(
     Ok(())
 }
 
-/// Reads a `normalizedFrom` declaration off a string property: the string
-/// property of the same document type whose value this one holds a normalized
-/// form of, and the transform that normalizes it. Only a string property
-/// carries it: a typed array has no source for its elements, so the keyword is
-/// refused on the array and on its items alike.
+/// Reads a `generatedFrom` declaration off a string property: the function
+/// the platform generates the property's value with, and its parameters,
+/// other properties of the same document type. Only a string property
+/// carries it, the one kind the functions return: a typed array has no
+/// parameters for its elements, so the keyword is refused on the array and on
+/// its items alike.
 ///
-/// Versioned on `apply_normalized_from` in the platform version's document
+/// Versioned on `apply_generated_from` in the platform version's document
 /// type schema versions. `None` selects the behavior of the versions that
 /// predate the keyword: it is ignored entirely, so their parses stay
 /// byte-for-byte identical to what they always produced.
 ///
-/// The source is checked against the rest of the document type once every
-/// property is parsed, by [`validate_normalized_from_declarations`].
-fn apply_normalized_from(
+/// The parameters are checked against the rest of the document type once
+/// every property is parsed, by [`validate_generated_from_declarations`].
+fn apply_generated_from(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
-) -> Result<Option<NormalizedFrom>, DataContractError> {
+) -> Result<Option<GeneratedFrom>, DataContractError> {
     match platform_version
         .dpp
         .contract_versions
         .document_type_versions
         .schema
-        .apply_normalized_from
+        .apply_generated_from
     {
         None => Ok(None),
-        Some(0) => apply_normalized_from_v0(inner_properties, property_type),
+        Some(0) => apply_generated_from_v0(inner_properties, property_type),
         Some(version) => Err(DataContractError::Unsupported(format!(
-            "apply_normalized_from version {version} is not supported"
+            "apply_generated_from version {version} is not supported"
         ))),
     }
 }
 
-fn apply_normalized_from_v0(
+fn apply_generated_from_v0(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: &DocumentPropertyType,
-) -> Result<Option<NormalizedFrom>, DataContractError> {
+) -> Result<Option<GeneratedFrom>, DataContractError> {
     if let DocumentPropertyType::TypedArray(_) = property_type {
         // On the array itself first: the shared items lookup would refuse it there as
         // belonging on the items, and the keyword belongs on neither
-        if inner_properties.contains_key(property_names::NORMALIZED_FROM)
+        if inner_properties.contains_key(property_names::GENERATED_FROM)
             || typed_array_items_keyword(
                 inner_properties,
-                property_names::NORMALIZED_FROM,
-                "has no source",
+                property_names::GENERATED_FROM,
+                "has no parameters",
             )?
             .is_some()
         {
             return Err(DataContractError::InvalidContractStructure(
-                "normalizedFrom is only allowed on string properties, not on a typed array or \
+                "generatedFrom is only allowed on string properties, not on a typed array or \
                  its items"
                     .to_string(),
             ));
@@ -1943,165 +1943,185 @@ fn apply_normalized_from_v0(
         return Ok(None);
     }
 
-    let Some(normalized_from_value) = inner_properties.get(property_names::NORMALIZED_FROM) else {
+    let Some(generated_from_value) = inner_properties.get(property_names::GENERATED_FROM) else {
         return Ok(None);
     };
 
     if !matches!(property_type, DocumentPropertyType::String(_)) {
         return Err(DataContractError::InvalidContractStructure(
-            "normalizedFrom is only allowed on string properties".to_string(),
+            "generatedFrom is only allowed on string properties".to_string(),
         ));
     }
 
     let shape_error = || {
         DataContractError::InvalidContractStructure(
-            "normalizedFrom must be an object with a property (the path of a string property \
-             of the same document type) and a transform"
+            "generatedFrom must be an object with a function (its name) and params (the paths \
+             of the properties of the same document type it reads)"
                 .to_string(),
         )
     };
-    let normalized_from_map = normalized_from_value
+    let generated_from_map = generated_from_value
         .to_btree_ref_string_map()
         .map_err(|_| shape_error())?;
 
-    for key in normalized_from_map.keys() {
+    for key in generated_from_map.keys() {
         if !matches!(
             key.as_str(),
-            property_names::PROPERTY | property_names::TRANSFORM
+            property_names::FUNCTION | property_names::PARAMS
         ) {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "normalizedFrom {key:?} is unknown, expected property and transform"
+                "generatedFrom {key:?} is unknown, expected function and params"
             )));
         }
     }
 
-    let property = normalized_from_map
-        .get(property_names::PROPERTY)
+    let function_name = generated_from_map
+        .get(property_names::FUNCTION)
         .and_then(|value| value.as_text())
         .ok_or_else(shape_error)?;
-    if property.is_empty() || property.len() > MAX_PROPERTY_PATH_LENGTH {
-        return Err(DataContractError::InvalidContractStructure(format!(
-            "normalizedFrom property must be between 1 and {MAX_PROPERTY_PATH_LENGTH} characters"
-        )));
-    }
-    if property.starts_with('$') {
-        return Err(DataContractError::InvalidContractStructure(format!(
-            "normalizedFrom property must name a string property of the document type, not \
-             system property \"{property}\""
-        )));
-    }
-
-    let transform_name = normalized_from_map
-        .get(property_names::TRANSFORM)
-        .and_then(|value| value.as_text())
-        .ok_or_else(shape_error)?;
-    let transform = NormalizationTransform::from_wire_name(transform_name).ok_or_else(|| {
+    let function = GenerationFunction::from_wire_name(function_name).ok_or_else(|| {
         DataContractError::InvalidContractStructure(format!(
-            "normalizedFrom transform {transform_name:?} is unknown, expected one of {}",
-            NormalizationTransform::ALL
+            "generatedFrom function {function_name:?} is unknown, expected one of {}",
+            GenerationFunction::ALL
                 .iter()
-                .map(|transform| format!("{:?}", transform.as_str()))
+                .map(|function| format!("{:?}", function.as_str()))
                 .collect::<Vec<_>>()
                 .join(", ")
         ))
     })?;
 
-    Ok(Some(NormalizedFrom {
-        property: property.to_string(),
-        transform,
-    }))
+    let params = generated_from_map
+        .get(property_names::PARAMS)
+        .and_then(|value| value.as_array())
+        .ok_or_else(shape_error)?;
+    if params.len() != function.parameter_count() {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "generatedFrom function {function} takes {} parameter(s), but params lists {}",
+            function.parameter_count(),
+            params.len()
+        )));
+    }
+    let params = params
+        .iter()
+        .map(|param| {
+            let path = param.as_text().ok_or_else(|| {
+                DataContractError::InvalidContractStructure(
+                    "generatedFrom params must be property paths (strings)".to_string(),
+                )
+            })?;
+            if path.is_empty() || path.len() > MAX_PROPERTY_PATH_LENGTH {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "generatedFrom params must be between 1 and {MAX_PROPERTY_PATH_LENGTH} \
+                     characters"
+                )));
+            }
+            if path.starts_with('$') {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "generatedFrom params must name properties of the document type, not \
+                     system property \"{path}\""
+                )));
+            }
+            Ok(GenerationParam::Property(path.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Some(GeneratedFrom { function, params }))
 }
 
-/// Checks every `normalizedFrom` declaration of a document type against the
-/// property it names, once all of them are parsed:
+/// Checks every `generatedFrom` declaration of a document type against the
+/// properties its parameters name, once all of them are parsed. Each
+/// parameter:
 ///
-/// * the source must be a string property of the type other than the declaring
-///   one (a nested one named by its dotted path, as the flattened map names it);
-/// * neither side may be transient or sit inside a transient object: a
-///   transient source is dropped before storage, so a replace would have to
-///   supply it again or lose the target, and a transient target is never
-///   stored at all;
-/// * the source may not declare `normalizedFrom` itself, so the platform fills
-///   every left-out target from a value the client sent, in any order;
-/// * the source must sit inside every object that holds the target (a
-///   top-level target may take any source), so a document supplying the
-///   source always holds the object the platform writes the target into.
+/// * must be a string property of the type (the one kind the functions read)
+///   other than the declaring one, a nested one named by its dotted path, as
+///   the flattened map names it;
+/// * may not be generated itself, so the platform generates every left-out
+///   value from values the client sent, in any order;
+/// * may not be transient or sit inside a transient object, nor may the
+///   declaring property: a transient parameter is dropped before storage, so a
+///   replace would have to supply it again or lose the generated value, and a
+///   transient generated property is never stored at all;
+/// * must sit inside every object that holds the declaring property (a
+///   top-level property may take any parameter), so a document supplying the
+///   parameters always holds the object the platform writes the value into.
 ///
 /// Owned by parser generation 3: the only generation that admits the keyword.
-pub(super) fn validate_normalized_from_declarations(
+pub(super) fn validate_generated_from_declarations(
     document_type: &DocumentTypeV2,
     document_type_name: &str,
 ) -> Result<(), DataContractError> {
     let flattened_properties = &document_type.flattened_properties;
     for (path, property) in flattened_properties {
-        let Some(normalized_from) = &property.normalized_from else {
+        let Some(generated_from) = &property.generated_from else {
             continue;
         };
-        let source = normalized_from.property.as_str();
         let structure_error = |message: String| {
             DataContractError::InvalidContractStructure(format!(
-                "document type \"{document_type_name}\" property \"{path}\" normalizedFrom \
+                "document type \"{document_type_name}\" property \"{path}\" generatedFrom \
                  {message}"
             ))
         };
 
-        if source == path {
-            return Err(structure_error(
-                "names the property itself: name another string property of the document type"
-                    .to_string(),
-            ));
-        }
-        let Some(source_property) = flattened_properties.get(source) else {
-            if names_an_object(flattened_properties, source) {
-                return Err(structure_error(format!(
-                    "property \"{source}\" is an object, not a string property: name one of \
-                     its string members"
-                )));
-            }
-            return Err(structure_error(format!(
-                "property \"{source}\" is not a property of the document type"
-            )));
-        };
-        if !matches!(
-            source_property.property_type,
-            DocumentPropertyType::String(_)
-        ) {
-            return Err(structure_error(format!(
-                "property \"{source}\" has type {}, not string",
-                source_property.property_type.name()
-            )));
-        }
-        if source_property.normalized_from.is_some() {
-            return Err(structure_error(format!(
-                "property \"{source}\" declares normalizedFrom itself: name the string property \
-                 it is normalized from instead"
-            )));
-        }
         if is_transient(DocumentTypeRef::V2(document_type), path) {
             return Err(structure_error(
                 "is on a property that is transient or inside a transient object: a transient \
-                 value is never stored, so the normalized form would be lost"
+                 value is never stored, so the generated value would be lost"
                     .to_string(),
             ));
         }
-        if is_transient(DocumentTypeRef::V2(document_type), source) {
-            return Err(structure_error(format!(
-                "property \"{source}\" is transient or inside a transient object: a transient \
-                 value is never stored, so a replace could not keep the normalized form without \
-                 sending it again"
-            )));
-        }
-        if let Some((target_object, _)) = path.rsplit_once('.') {
-            let inside_target_object = source
-                .strip_prefix(target_object)
-                .is_some_and(|rest| rest.starts_with('.'));
-            if !inside_target_object {
+
+        for param in generated_from.property_params() {
+            if param == path {
+                return Err(structure_error(
+                    "reads the property itself: name other string properties of the document \
+                     type"
+                        .to_string(),
+                ));
+            }
+            let Some(param_property) = flattened_properties.get(param) else {
+                if names_an_object(flattened_properties, param) {
+                    return Err(structure_error(format!(
+                        "param \"{param}\" is an object, not a string property: name one of its \
+                         string members"
+                    )));
+                }
                 return Err(structure_error(format!(
-                    "property \"{source}\" is outside \"{target_object}\": the source must sit \
-                     inside every object that holds the normalized property, so a document \
-                     supplying the source always has the object the normalized property is \
-                     written into"
+                    "param \"{param}\" is not a property of the document type"
                 )));
+            };
+            if !matches!(
+                param_property.property_type,
+                DocumentPropertyType::String(_)
+            ) {
+                return Err(structure_error(format!(
+                    "param \"{param}\" has type {}, not string",
+                    param_property.property_type.name()
+                )));
+            }
+            if param_property.generated_from.is_some() {
+                return Err(structure_error(format!(
+                    "param \"{param}\" is generated itself: name the properties it is generated \
+                     from instead"
+                )));
+            }
+            if is_transient(DocumentTypeRef::V2(document_type), param) {
+                return Err(structure_error(format!(
+                    "param \"{param}\" is transient or inside a transient object: a transient \
+                     value is never stored, so a replace could not keep the generated value \
+                     without sending it again"
+                )));
+            }
+            if let Some((target_object, _)) = path.rsplit_once('.') {
+                let inside_target_object = param
+                    .strip_prefix(target_object)
+                    .is_some_and(|rest| rest.starts_with('.'));
+                if !inside_target_object {
+                    return Err(structure_error(format!(
+                        "param \"{param}\" is outside \"{target_object}\": every param must sit \
+                         inside every object that holds the generated property, so a document \
+                         supplying the params always has the object the value is written into"
+                    )));
+                }
             }
         }
     }

@@ -170,7 +170,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidEncryptedPropertyShapeError(_) => 10420,
             Self::DocumentPropertyMaxBytesExceededError(_) => 10421,
             Self::DocumentPropertyConstraintViolatedError(_) => 10422,
-            Self::DocumentPropertyNotNormalizedError(_) => 10424,
+            Self::DocumentPropertyNotGeneratedError(_) => 10424,
 
             // Token Errors: 10450-10499
             Self::InvalidTokenIdError(_) => 10450,
