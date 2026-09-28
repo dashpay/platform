@@ -229,9 +229,10 @@ jobs:
 
       - name: Build native library (both ABIs, release profile)
         working-directory: packages/kotlin-sdk
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.1.13356709
-        run: ./build_android.sh --abi all --profile release --verify
+        # Image-provided variables exist in the shell, not the Actions env context.
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_SDK_ROOT:?}/ndk/28.1.13356709"
+          ./build_android.sh --abi all --profile release --verify
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
