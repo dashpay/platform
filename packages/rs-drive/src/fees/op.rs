@@ -15,6 +15,9 @@ use grovedb::element::MaxReferenceHop;
 use grovedb::{batch::QualifiedGroveDbOp, Element, ElementFlags, TreeType};
 use grovedb_costs::OperationCost;
 
+use crate::drive::document::index_level_tree_types::{
+    zero_contribution_wrapper, ZeroContributionRefusal, ZeroContributionWrapper,
+};
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -1110,73 +1113,48 @@ impl LowLevelDriveOperation {
         inner_tree_type: TreeType,
         storage_flags: Option<&StorageFlags>,
     ) -> Result<Self, Error> {
-        // An indexed inner is rejected under every aggregating parent,
-        // including the sum-only ones whose non-sum fallback below is
-        // unwrapped: a ranked index's terminal property-name tree must
-        // not live inside an aggregating value tree at all (see
-        // `INDEXED_INNER_UNWRAPPABLE`), and letting the unwrapped
-        // fallback quietly accept one would create the exact shape
-        // rs-dpp's single-property ranked rule and the ranked query
-        // picker both refuse to serve.
-        if matches!(
-            inner_tree_type,
-            TreeType::ProvableSumIndexedTree
-                | TreeType::ProvableCountIndexedTree
-                | TreeType::ProvableCountProvableSumIndexedTree
-        ) {
-            return Err(Error::Drive(DriveError::NotSupported(
-                INDEXED_INNER_UNWRAPPABLE,
-            )));
-        }
-        let inner_is_sum_bearing = matches!(
-            inner_tree_type,
-            TreeType::SumTree
-                | TreeType::BigSumTree
-                | TreeType::ProvableSumTree
-                | TreeType::CountSumTree
-                | TreeType::ProvableCountSumTree
-                | TreeType::ProvableCountProvableSumTree
-        );
-        match aggregating_parent_tree_type {
-            TreeType::CountTree => Self::for_known_path_key_empty_non_counted_any_tree(
-                path,
-                key,
-                inner_tree_type,
-                storage_flags,
-            ),
-            TreeType::CountSumTree => {
-                if inner_is_sum_bearing {
-                    Self::for_known_path_key_empty_not_counted_or_summed_tree(
-                        path,
-                        key,
-                        inner_tree_type,
-                        storage_flags,
-                    )
-                } else {
-                    Self::for_known_path_key_empty_non_counted_any_tree(
-                        path,
-                        key,
-                        inner_tree_type,
-                        storage_flags,
-                    )
-                }
+        // The decision is shared with the index walkers and
+        // `drive::document::layout` (`zero_contribution_wrapper`); the
+        // errors below keep their wording.
+        match zero_contribution_wrapper(aggregating_parent_tree_type, inner_tree_type) {
+            Ok(Some(ZeroContributionWrapper::NonCounted)) => {
+                Self::for_known_path_key_empty_non_counted_any_tree(
+                    path,
+                    key,
+                    inner_tree_type,
+                    storage_flags,
+                )
             }
-            TreeType::SumTree | TreeType::BigSumTree | TreeType::ProvableSumTree => {
-                if inner_is_sum_bearing {
-                    Self::for_known_path_key_empty_not_summed_tree(
-                        path,
-                        key,
-                        inner_tree_type,
-                        storage_flags,
-                    )
-                } else {
-                    inner_tree_type.empty_tree_operation_for_known_path_key(
-                        path,
-                        key,
-                        storage_flags,
-                    )
-                }
+            Ok(Some(ZeroContributionWrapper::NotCountedOrSummed)) => {
+                Self::for_known_path_key_empty_not_counted_or_summed_tree(
+                    path,
+                    key,
+                    inner_tree_type,
+                    storage_flags,
+                )
             }
+            Ok(Some(ZeroContributionWrapper::NotSummed)) => {
+                Self::for_known_path_key_empty_not_summed_tree(
+                    path,
+                    key,
+                    inner_tree_type,
+                    storage_flags,
+                )
+            }
+            Ok(None) => {
+                inner_tree_type.empty_tree_operation_for_known_path_key(path, key, storage_flags)
+            }
+            // An indexed inner is rejected under every aggregating parent,
+            // including the sum-only ones whose non-sum fallback above is
+            // unwrapped: a ranked index's terminal property-name tree must
+            // not live inside an aggregating value tree at all (see
+            // `INDEXED_INNER_UNWRAPPABLE`), and letting the unwrapped
+            // fallback quietly accept one would create the exact shape
+            // rs-dpp's single-property ranked rule and the ranked query
+            // picker both refuse to serve.
+            Err(ZeroContributionRefusal::IndexedInner) => Err(Error::Drive(
+                DriveError::NotSupported(INDEXED_INNER_UNWRAPPABLE),
+            )),
             // Indexed parents are structurally impossible here: the
             // ranked upgrade applies to *property-name* trees, and this
             // dispatcher is only ever called with a **value** tree as the
@@ -1186,18 +1164,14 @@ impl LowLevelDriveOperation {
             // reason (the indexed primary's secondaries are keyed by its
             // children's aggregates, which a zero-contributing child would
             // silently fall out of).
-            TreeType::ProvableCountIndexedTree
-            | TreeType::ProvableSumIndexedTree
-            | TreeType::ProvableCountProvableSumIndexedTree => {
+            Err(ZeroContributionRefusal::IndexedParent) => {
                 Err(Error::Drive(DriveError::NotSupported(
                     "indexed trees are property-name trees, never value trees, so they cannot \
                      host zero-contributing continuation children — see \
                      crate::drive::document::ranked_index_tree_type.",
                 )))
             }
-            TreeType::ProvableCountTree
-            | TreeType::ProvableCountSumTree
-            | TreeType::ProvableCountProvableSumTree => {
+            Err(ZeroContributionRefusal::ProvableCountParent) => {
                 Err(Error::Drive(DriveError::NotSupported(
                     "provable count-bearing parents cannot host zero-contributing children — \
                  grovedb commits their count into every node hash and rejects NonCounted / \
@@ -1206,11 +1180,13 @@ impl LowLevelDriveOperation {
                  index_level_tree_types_with_continuation_demotion).",
                 )))
             }
-            _ => Err(Error::Drive(DriveError::NotSupported(
-                "for_known_path_key_empty_tree_contributing_zero_to_parent called with a \
+            Err(ZeroContributionRefusal::NonAggregatingParent) => {
+                Err(Error::Drive(DriveError::NotSupported(
+                    "for_known_path_key_empty_tree_contributing_zero_to_parent called with a \
                  non-aggregating parent tree type — caller should use the unwrapped \
                  `empty_tree_operation_for_known_path_key` path instead.",
-            ))),
+                )))
+            }
         }
     }
 
