@@ -1382,15 +1382,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     core parse does, when it checks a rule's string constants and defaults
 ///     against the property's `enum` and an `encryptedFor` key id's bounds; it
 ///     refused every such contract with a decoding error before.
-/// 56. **A `propertyAgreement` pair compares values, not index keys**:
-///     document reference validation 0 judges each pair as two values of the
-///     referring property's type (`DocumentPropertyType::values_are_equal`):
-///     strings as text, byte arrays and identifiers as bytes, integers as
-///     numbers, floats as `f64` bits, booleans as booleans. It compared the
-///     two sides' index key encodings, under which `""` agreed with `"\0"`
-///     and two equal values over 255 bytes, which an unindexed string of 64
-///     characters or more can hold, were refused
-///     (`ReferencedDocumentPropertyMismatchError`, 40127).
 ///
 /// 53. **Properties the platform generates (`generatedFrom`)**: the property
 ///     keyword (meta-schema v3, `apply_generated_from` 0, `GeneratedFrom` on
@@ -1447,6 +1438,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     layer from the referring property, as an entry insert does, and
 ///     preallocates nothing for a referenced value wider than the referring
 ///     property can hold, which no referring document can agree with.
+///
+/// 56. **A `propertyAgreement` pair compares values, not index keys**:
+///     document reference validation 0 judges each pair as two single values
+///     (`Value::same_scalar_data`): strings as text, byte arrays and
+///     identifiers as bytes, integers as numbers at any width, floats by
+///     their `f64` bits (an integer against a float read as the float it
+///     converts to, as a `number` carried as an integer is stored), booleans
+///     as booleans. A side carried as an array, even of byte values, is no
+///     single value and agrees with nothing. It compared the two sides'
+///     index key encodings, under which `""` agreed with `"\0"`, an
+///     identifier or byte array carried as an array of byte values agreed
+///     with the same bytes, and two equal values over 255 bytes, which an
+///     unindexed string of 64 characters or more can hold, were refused
+///     (`ReferencedDocumentPropertyMismatchError`, 40127).
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

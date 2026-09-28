@@ -1072,11 +1072,12 @@ fn validate_reference_target_v0(
 
             // Property agreement: the referenced document is already in
             // hand for the existence check, so comparing the declared
-            // pairs adds no reads. The two sides are compared as values
-            // of the referring side's type, which registration made the
-            // referenced side's kind too, so an identifier stored as bytes
+            // pairs adds no reads. The two sides, which registration made
+            // one value kind, are compared as single values
+            // (`Value::same_scalar_data`), so an identifier stored as bytes
             // and one carried as an identifier compare equal, as do an
-            // integer carried at one width and stored at another. Not as
+            // integer carried at one width and stored at another, and a
+            // `number` carried as an integer and stored as a float. Not as
             // tree keys: those map the empty string to `"\0"`'s key and
             // hold no value past 255 bytes, which no agreement bounds.
             //
@@ -1091,8 +1092,6 @@ fn validate_reference_target_v0(
             // agreement key triggers a skipIfAbsent index stay
             // consistently absent for untagged targets.
             if let Some(referenced_document) = referenced_document {
-                // The type the writer's `$ownerId` is compared as
-                let writer_identifier_type = DocumentPropertyType::Identifier;
                 for (referring_property, referenced_property) in property_agreement {
                     // A list element's document is the one its `$id` pair
                     // names, fetched by that very id: the pair holds
@@ -1175,17 +1174,7 @@ fn validate_reference_target_v0(
                     // `propertyAgreement` only parses from protocol version
                     // 14 (`apply_property_reference` 0), so before it no
                     // document type carries a pair to reach this comparison
-                    let referring_type = if referring_property == OWNER_ID {
-                        &writer_identifier_type
-                    } else {
-                        let Some(referring) =
-                            document_type.flattened_properties().get(referring_property)
-                        else {
-                            return Ok(mismatch());
-                        };
-                        &referring.property_type
-                    };
-                    if !referring_type.values_are_equal(&referring_value, &referenced_value) {
+                    if !referring_value.same_scalar_data(&referenced_value) {
                         return Ok(mismatch());
                     }
                 }

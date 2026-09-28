@@ -245,6 +245,11 @@ impl Value {
     ///
     /// A value of any size compares: two equal strings or byte arrays longer
     /// than the 255 bytes a tree key holds are equal.
+    ///
+    /// From protocol version 14, document reference validation 0 judges each
+    /// `propertyAgreement` pair of a `refersTo` reference with it. A change to
+    /// its result for some pair of values changes which documents are
+    /// accepted; make such a change a new method instead of editing this one.
     pub fn same_scalar_data(&self, other: &Value) -> bool {
         match (self, other) {
             // 1) a container is no single value
