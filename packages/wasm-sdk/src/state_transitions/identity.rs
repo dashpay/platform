@@ -125,7 +125,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to create identity: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to create identity", e))?;
 
         Ok(())
     }
@@ -213,7 +213,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to top up identity: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to top up identity", e))?;
 
         Ok(BigInt::from(new_balance))
     }
@@ -496,7 +496,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Withdrawal failed: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Withdrawal failed", e))?;
 
         Ok(BigInt::from(remaining_balance))
     }
@@ -689,14 +689,14 @@ impl WasmSdk {
             None,
         )
         .await
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
+        .map_err(|e| WasmSdkError::with_context("Failed to create update transition", e))?;
 
         // Broadcast the transition
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
         state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast update: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast update", e))?;
 
         Ok(())
     }
