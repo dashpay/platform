@@ -1399,19 +1399,26 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     inside every object holding the property; a changed declaration is an
 ///     incompatible schema change, and `validate_update` 1 refuses a property
 ///     an update adds over params that all already existed
-///     (`DocumentTypeUpdateError`, 40212). `fill_generated_properties` (0)
-///     writes a declared property a document leaves out, from its params, in
-///     the action transformers of document create, replace and index-only
-///     delete, before the contest resolution and every check read the data,
-///     in `Document::try_from_create_transition` and
-///     `try_from_replace_transition` and the index-only branches of the prover
-///     and the verifier, with which proofs are built and checked, and in the
-///     client transition builders, so a transition built from a document
-///     carries the value and its contest is detected from it.
+///     (`DocumentTypeUpdateError`, 40212); meta-schema v3 refuses the keyword
+///     beside `$ref`, whose definition would replace it.
+///     `fill_generated_properties` (0) writes a declared property a document
+///     leaves out, from its params, in the action transformers of document
+///     create, replace and index-only delete, before the contest resolution
+///     and every check read the data, in `Document::try_from_create_transition`
+///     and `try_from_replace_transition`, and in
+///     `index_only_transition_entry_path_query`, the builder the prover and
+///     the verifier share, with which proofs are built and checked. The client
+///     transition builders, the SDK's contest fund lookup and the JS and FFI
+///     property-constraint pre-checks call `regenerate_generated_properties`
+///     (same slot) instead, which replaces a value the document holds and
+///     removes it when a param is absent, so a transition built from a
+///     fetched and edited document carries the value of its new params and
+///     its contest is detected from it.
 ///     `DataContract::validate_document_properties` 0 calls
 ///     `validate_generated_from_properties` (`validate_generated_from` 0)
 ///     after the schema and `maxBytes`, and refuses a supplied value that is
-///     not what the function generates, or one without its params, with
+///     not what the function generates, one without its params, or a document
+///     repeating a key on the way to the property or a param, with
 ///     `DocumentPropertyNotGeneratedError` (10424). Every call site was
 ///     extended in place and is inert before this version, where the three
 ///     slots are `None` and the meta-schemas refuse the keyword.

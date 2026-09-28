@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Where** | A string property, at the top level or inside an object. Not on a typed array or its `items`, and not beside `$ref` |
-| **Value** | `{ "function": <name>, "params": [<path>, ...] }`: a system function, and as many params as it takes, each the dotted path of a property of the same document type (`"profile.display"` for a nested one), 1 to 256 characters |
+| **Value** | `{ "function": <name>, "params": [<path>, ...] }`: a system function, and as many params as it takes, each the dotted path of a property of the same document type (`"profile.display"` for a nested one), 1 to 256 characters (ASCII, as property names are, so as many bytes) |
 | **Default** | Absent: no rule |
 | **Since** | protocol version 14 |
 | **On update** | Fixed: adding, removing or changing it is refused (`IncompatibleDocumentTypeSchemaError`, 10246); a property an update adds may declare it only when one of its params is new too (`DocumentTypeUpdateError`, 40212) |
