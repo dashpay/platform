@@ -111,6 +111,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'discountBelowPrice',
@@ -121,6 +122,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'perUnitFee',
@@ -131,6 +133,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'sellerIsOwner',
@@ -141,6 +144,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: true,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'tieredFee',
@@ -148,6 +152,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'fee', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
       ]);
     });
@@ -202,6 +207,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'tags', kind: 'count' }, { path: 'maxTags', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'titleBytes',
@@ -209,6 +215,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'title', kind: 'length' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
       ]);
 
@@ -255,6 +262,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'endsAt', kind: 'value' }],
           readsOwner: false,
           readsSystem: ['$createdAt'],
+          readsTotals: [],
         },
         {
           name: 'listedAfterHeight10',
@@ -262,6 +270,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [],
           readsOwner: false,
           readsSystem: ['$createdAtBlockHeight'],
+          readsTotals: [],
         },
       ]);
 
@@ -308,6 +317,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'labels', kind: 'elements' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
       ]);
 
@@ -419,6 +429,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
 
     it('should report what a countOf or sumOf reads, and leave it to consensus', () => {
       const rules = {
+        allListings: { lessThan: [{ countOf: ['listing'] }, 1000] },
         atMostTwoPerOwner: {
           lessThanOrEqual: [{ countOf: ['listing', { $ownerId: '$ownerId' }] }, 2],
         },
@@ -438,6 +449,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
             },
           },
           required: ['price', 'category'],
+          documentsCountable: true,
           indices: [
             { name: 'byOwner', properties: [{ $ownerId: 'asc' }], countable: 'countable' },
             { name: 'byCategory', properties: [{ category: 'asc' }], summable: 'price' },
@@ -448,14 +460,23 @@ describe('DataContract: propertyConstraints (v14)', () => {
       });
 
       // The count by owner depends on the owner, the category total on a
-      // property of the document written
+      // property of the document written; a whole-type count has no filter
       expect(contract.documentTypePropertyConstraints('listing')).to.deep.equal([
+        {
+          name: 'allListings',
+          rule: rules.allListings,
+          reads: [],
+          readsOwner: false,
+          readsSystem: [],
+          readsTotals: [{ kind: 'countOf', documentType: 'listing', filter: [] }],
+        },
         {
           name: 'atMostTwoPerOwner',
           rule: rules.atMostTwoPerOwner,
           reads: [],
           readsOwner: true,
           readsSystem: [],
+          readsTotals: [{ kind: 'countOf', documentType: 'listing', filter: ['$ownerId'] }],
         },
         {
           name: 'categoryBudget',
@@ -463,6 +484,9 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'category', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [{
+            kind: 'sumOf', documentType: 'listing', property: 'price', filter: ['category'],
+          }],
         },
       ]);
 
@@ -502,6 +526,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'balance', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'knownTier',
@@ -509,6 +534,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'tier', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
       ];
 

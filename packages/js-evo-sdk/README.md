@@ -441,13 +441,13 @@ try {
 }
 ```
 
-To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the document's owner for `$ownerId`, and the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state:
+To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the document's owner for `$ownerId`, and the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state (`readsTotals` lists the ones a rule reads, each with its `kind`, `documentType`, the summed `property` of a `sumOf` and the `filter` keys):
 
 ```ts
 contract.documentTypePropertyConstraints('offer');
 // [{ name: 'discountBelowPrice', rule: { lessThan: ['discount', 'price'] },
 //    reads: [{ path: 'discount', kind: 'value' }, { path: 'price', kind: 'value' }],
-//    readsOwner: false }, ...]
+//    readsOwner: false, readsSystem: [], readsTotals: [] }, ...]
 
 const broken = contract.checkDocumentPropertyConstraints(document);
 if (broken) {
