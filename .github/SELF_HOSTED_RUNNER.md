@@ -146,6 +146,9 @@ ARM64 requirements currently use explicit operator deployment, not that publishe
    this manifest changes. Exact lock/recipe mismatch fails before compilation.
    Its selector compares the PR-head manifest with the checked-out merge tree;
    an AMD64 candidate status cannot satisfy ARM64 validation.
+   That PR's ordinary Rust job stays on AMD64 so it cannot land on ARM64
+   production capacity still running the old image; unrelated PRs use both
+   architectures as usual.
 4. Require successful real ARM64 validation before merging the requirements and
    rolling out other Mac-backed capacity. If AMD64 requirements also change,
    their separate Rust/Kotlin candidate gates still apply.

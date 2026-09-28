@@ -103,6 +103,23 @@ class SelectorTests(unittest.TestCase):
         output = self.select(arch="ARM64")
         self.assertEqual(json.loads(output["labels"]), ["self-hosted", "Linux", "ARM64", "rust-ci"])
 
+    def test_arm64_manifest_change_does_not_use_stale_ordinary_arm64_runners(self):
+        self.responses["pulls/4702/files?per_page=100&page=1"] = [{"filename": runner.ARM64_MANIFEST}]
+        output = self.select()
+        self.assertEqual(json.loads(output["labels"]), ["self-hosted", "Linux", "X64", "rust-ci"])
+        self.assertEqual(output["image_changed"], "false")
+        # Mac-backed ARM64 capacity remains available to ordinary, unrelated PRs.
+        self.responses["pulls/4702/files?per_page=100&page=1"] = [{"filename": "Cargo.lock"}]
+        self.assertEqual(json.loads(self.select()["labels"]), ["self-hosted", "Linux", "rust-ci"])
+
+    def test_both_manifest_changes_still_require_exact_amd64_candidate(self):
+        self.responses["pulls/4702/files?per_page=100&page=1"] = [
+            {"filename": runner.MANIFEST}, {"filename": runner.ARM64_MANIFEST}]
+        output = self.select()
+        self.assertEqual(json.loads(output["labels"]), ["self-hosted", "Linux", "X64",
+                         f"platform-image-pr-4702-{HEAD}-{DIGEST[7:]}-rust"])
+        self.assertEqual(output["image_changed"], "true")
+
     def test_arm64_validation_rejects_merge_tree_drift(self):
         arm = runner.read_manifest(ROOT / runner.ARM64_MANIFEST)
         self.responses["pulls/4702/files?per_page=100&page=1"] = [{"filename": runner.ARM64_MANIFEST}]

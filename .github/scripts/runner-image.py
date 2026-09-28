@@ -111,6 +111,11 @@ def select(manifest, kind, output, wait_seconds, arch=None, validation=False):
         head = requested["head"]["sha"]
         require(pr["state"] == "open" and pr["head"]["sha"] == head, "This PR run has been superseded")
         changed = changed_requirements(pr, ARM64_MANIFEST if arch == "ARM64" else MANIFEST)
+        if not arch and kind == "rust" and changed_requirements(pr, ARM64_MANIFEST):
+            # Only validation capacity has the new ARM64 image before rollout.
+            # Keep this PR's ordinary job on unchanged AMD64 capacity while its
+            # separate ARM64 job proves the new manifest on the validation pool.
+            labels = fallback = ["self-hosted", "Linux", "X64", "rust-ci"]
         if arch == "ARM64":
             # ARM64 is explicitly provisioned from a published immutable image.
             # The AMD64/KVM candidate publisher is not ARM64 validation. The
