@@ -639,3 +639,68 @@ fn should_match_a_document_by_the_values_its_filter_takes() {
         0
     );
 }
+
+/// A filter key whose schema is a `$ref` to one of the contract's `$defs` is
+/// held to the definition's `enum`, as one declared inline is: a constant the
+/// enum lists registers, and a misspelt one is refused.
+#[test]
+fn should_hold_a_constant_to_the_enum_of_a_key_declared_by_reference() {
+    let counting = |status: &str| {
+        let contract = json!({
+            "$formatVersion": "1",
+            "id": Identifier::from([7; 32]).to_string(Encoding::Base58),
+            "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+            "version": 1,
+            "schemaDefs": {
+                "status": { "type": "string", "enum": ["open", "closed"], "maxLength": 10 }
+            },
+            "documentSchemas": {
+                "listing": {
+                    "type": "object",
+                    "documentsCountable": true,
+                    "properties": {
+                        "status": { "$ref": "#/$defs/status", "position": 0 }
+                    },
+                    "required": ["status"],
+                    "indices": [{
+                        "name": "byOwnerStatus",
+                        "properties": [{ "$ownerId": "asc" }, { "status": "asc" }],
+                        "countable": "countable"
+                    }],
+                    "additionalProperties": false
+                },
+                "seller": {
+                    "type": "object",
+                    "properties": {
+                        "note": { "type": "string", "maxLength": 20, "position": 0 }
+                    },
+                    "additionalProperties": false,
+                    "propertyConstraints": {
+                        "rule": {
+                            "lessThanOrEqual": [
+                                {
+                                    "countOf": [
+                                        "listing",
+                                        { "$ownerId": "$ownerId", "status": { "const": status } }
+                                    ]
+                                },
+                                10
+                            ]
+                        }
+                    }
+                }
+            }
+        });
+        DataContract::from_value(
+            platform_value::to_value(contract).expect("the contract converts"),
+            true,
+            PlatformVersion::latest(),
+        )
+    };
+
+    counting("open").expect("a constant the referenced enum lists registers");
+    expect_structure_error(
+        counting("opne"),
+        "with \"status\" at \"opne\", which is not one of its enum values",
+    );
+}
