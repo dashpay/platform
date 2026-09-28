@@ -1445,12 +1445,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     identifiers as bytes, integers as numbers at any width, floats by
 ///     their `f64` bits (an integer against a float read as the float it
 ///     converts to, as a `number` carried as an integer is stored), booleans
-///     as booleans. A side carried as an array, even of byte values, is no
-///     single value and agrees with nothing. It compared the two sides'
-///     index key encodings, under which `""` agreed with `"\0"`, an
-///     identifier or byte array carried as an array of byte values agreed
-///     with the same bytes, and two equal values over 255 bytes, which an
-///     unindexed string of 64 characters or more can hold, were refused
+///     as booleans. An identifier or byte array carried as an array of
+///     `U8`s is the bytes it lists, as before; any other array agrees with
+///     nothing. It compared the two sides' index key encodings, under which
+///     `""` agreed with `"\0"`, and two equal values over 255 bytes, which
+///     an unindexed string of 64 characters or more can hold, were refused
 ///     (`ReferencedDocumentPropertyMismatchError`, 40127).
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)

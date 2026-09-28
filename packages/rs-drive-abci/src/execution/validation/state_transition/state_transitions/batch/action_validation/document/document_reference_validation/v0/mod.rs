@@ -1075,8 +1075,9 @@ fn validate_reference_target_v0(
             // pairs adds no reads. The two sides, which registration made
             // one value kind, are compared as single values
             // (`Value::same_scalar_data`), so an identifier stored as bytes
-            // and one carried as an identifier compare equal, as do an
-            // integer carried at one width and stored at another, and a
+            // and one carried as an identifier or as an array of `U8`s
+            // compare equal, as do an integer carried at one width and
+            // stored at another, and a
             // `number` carried as an integer and stored as a float. Not as
             // tree keys: those map the empty string to `"\0"`'s key and
             // hold no value past 255 bytes, which no agreement bounds.
