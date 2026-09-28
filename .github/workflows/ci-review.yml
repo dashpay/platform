@@ -1,8 +1,8 @@
-name: Assign CI owner
+name: Request CI review
 
-# Assignment gives the CI maintainer early responsibility and notifications,
-# including on drafts. Review invitations and approvals remain with PR Hygiene;
-# the centrally generated, intentionally empty CODEOWNERS file is unchanged.
+# Request CI oversight as soon as a PR is ready for review; never assign the
+# implementation work to the reviewer. PR Hygiene keeps its approval gates,
+# and the centrally generated, intentionally empty CODEOWNERS stays unchanged.
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review, edited]
@@ -11,23 +11,26 @@ permissions:
   pull-requests: write
 
 jobs:
-  assign:
+  request-review:
     if: github.repository == 'dashpay/platform'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       # Never check out or execute pull-request code with this write token.
-      - name: Assign ktechmidas when CI infrastructure changes
+      - name: Request ktechmidas review when CI infrastructure changes
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
-            const owner = 'ktechmidas';
+            const reviewer = 'ktechmidas';
             const params = { ...context.repo, pull_number: context.issue.number };
             const { data: pr } = await github.rest.pulls.get(params);
-            const assigned = (assignees) => assignees.some(
-              (user) => user.login.toLowerCase() === owner
+            const requested = (reviewers) => reviewers.some(
+              (user) => user.login.toLowerCase() === reviewer
             );
-            if (pr.state !== 'open' || assigned(pr.assignees)) {
+            // GitHub does not request reviews on drafts or from the PR author.
+            if (pr.state !== 'open' || pr.draft ||
+                pr.user.login.toLowerCase() === reviewer ||
+                requested(pr.requested_reviewers)) {
               return;
             }
 
@@ -61,7 +64,7 @@ jobs:
             if (incomplete) {
               // GitHub caps this endpoint at 3,000 files. Route conservatively
               // rather than silently overlooking CI in an incomplete diff.
-              core.warning('Incomplete PR file list; assigning the CI owner.');
+              core.warning('Incomplete PR file list; requesting CI review.');
             }
             if (!incomplete && !files.some(
               (file) => isCI(file.filename) || isCI(file.previous_filename)
@@ -70,14 +73,28 @@ jobs:
               return;
             }
 
-            // Adding an assignee preserves everyone already assigned. Do not
-            // remove this owner if a later push drops CI files from the diff.
-            const { data: updated } = await github.rest.issues.addAssignees({
-              ...context.repo,
-              issue_number: pr.number,
-              assignees: [owner],
+            // Do not re-request a completed review of this same revision on
+            // routine metadata edits. A new head or base retarget needs review.
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              ...params, per_page: 100,
             });
-            if (!assigned(updated.assignees)) {
-              throw new Error('GitHub did not assign ' + owner + '; check repository access.');
+            const baseChanged = Boolean(context.payload.changes?.base);
+            if (!baseChanged && reviews.some((review) =>
+              review.user?.login?.toLowerCase() === reviewer &&
+              review.commit_id === pr.head.sha &&
+              ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED'].includes(review.state)
+            )) {
+              core.info('CI reviewer has already reviewed this revision.');
+              return;
             }
-            core.info('Assigned CI responsibility to ' + owner + '.');
+
+            // This adds a review request, preserving other reviewers and all
+            // assignees. Never use the issue-assignment API for CI oversight.
+            const { data: updated } = await github.rest.pulls.requestReviewers({
+              ...params,
+              reviewers: [reviewer],
+            });
+            if (!requested(updated.requested_reviewers)) {
+              throw new Error('GitHub did not request review from ' + reviewer + '; check repository access.');
+            }
+            core.info('Requested CI review from ' + reviewer + '.');
