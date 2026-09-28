@@ -216,7 +216,16 @@ struct OptionsView: View {
 
                     if appState.currentNetwork == .regtest {
                         Toggle("Use Docker Setup", isOn: $appState.useDockerSetup)
+                            // A network switch away from regtest keeps this
+                            // section on screen while its stop runs; the
+                            // toggle stays off-limits until the switch ends.
+                            .disabled(isSwitchingNetwork)
                             .onChange(of: appState.useDockerSetup) { _, _ in
+                                // A switch in progress owns `isSwitchingNetwork`
+                                // and rebuilds the SDK itself; taking and
+                                // releasing the flag here would re-enable the
+                                // picker while that switch still runs.
+                                guard !isSwitchingNetwork else { return }
                                 // Toggling Docker rebuilds the SDK and flips
                                 // the peer override; cancel any in-flight
                                 // start so it can't proceed with stale peer
@@ -330,14 +339,22 @@ struct OptionsView: View {
                             devnetNameSnapshot = nil
                             guard quorumChanged || nameChanged else { return }
                             guard appState.currentNetwork == .devnet else { return }
+                            // A network switch in progress replaces the SDK
+                            // anyway; the edited settings apply the next time
+                            // a devnet SDK is built.
+                            guard !isSwitchingNetwork else { return }
                             // Widest supersession gap (stop → await SDK
                             // rebuild → activate). Invalidate first so a
                             // start resuming anywhere in it bails.
                             walletManagerStore.invalidatePendingSpvStarts()
+                            isSwitchingNetwork = true
                             Task {
+                                defer { isSwitchingNetwork = false }
                                 guard await stopSpvForReconfiguration(
                                     failurePrefix: "Failed to stop SPV, so the devnet settings were not applied"
                                 ) else { return }
+                                // Re-checked after the stop's suspension.
+                                guard appState.currentNetwork == .devnet else { return }
                                 await appState.switchNetwork(to: .devnet)
                                 // `switchNetwork` rebuilds `appState.sdk` but
                                 // doesn't refresh per-network managers (the
