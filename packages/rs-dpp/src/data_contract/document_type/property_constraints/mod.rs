@@ -2356,11 +2356,15 @@ fn is_present(data: &Value, path: &str) -> bool {
 /// around it, are absent from the stored document. A create or a replace
 /// judges the data it carries, and a transfer, a purchase or a price update
 /// the stored document, so all of them must see such an object as absent.
-/// A create's data is walked before its schema validation is reported, so the
-/// walk is iterative, like the other walks over a document's values, and takes
-/// no stack however deep the value nests.
+/// Null and every value but an object answer at once; only an object's members
+/// are walked. A create's data is walked before its schema validation is
+/// reported, so the walk is iterative, like the other walks over a document's
+/// values, and takes no stack however deep the object nests.
 fn is_kept_in_storage(value: &Value) -> bool {
-    let mut pending = vec![value];
+    let Value::Map(members) = value else {
+        return !value.is_null();
+    };
+    let mut pending: Vec<&Value> = members.iter().map(|(_, member)| member).collect();
     while let Some(value) = pending.pop() {
         match value {
             Value::Null => {}

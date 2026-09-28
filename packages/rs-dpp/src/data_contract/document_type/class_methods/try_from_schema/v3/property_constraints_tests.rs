@@ -447,6 +447,57 @@ fn should_hold_string_constants_to_the_enum_of_a_referenced_definition() {
     }
 }
 
+/// A `$ref` may name a schema below one of the contract's `$defs`, as
+/// `#/$defs/wrapper/properties/inner` does, and the property is then held to
+/// the `enum` found there, as the core parse reads it: a constant the enum
+/// lists registers, and one it does not is refused. On both paths.
+#[test]
+fn should_hold_string_constants_to_the_enum_below_a_referenced_definition() {
+    let schema_defs = BTreeMap::from([(
+        "wrapper".to_string(),
+        schema_value(json!({
+            "type": "object",
+            "properties": {
+                "inner": {
+                    "type": "string",
+                    "enum": ["open", "closed"],
+                    "maxLength": 10,
+                    "position": 0
+                }
+            },
+            "additionalProperties": false
+        })),
+    )]);
+    let parse = |rules: serde_json::Value, full_validation: bool| {
+        let mut schema = order_schema(Some(rules), None);
+        schema["properties"]["state"] =
+            json!({ "$ref": "#/$defs/wrapper/properties/inner", "position": 10 });
+        parse_dispatched_with_defs(
+            schema_value(schema),
+            Some(&schema_defs),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+    };
+
+    for full_validation in [true, false] {
+        let document_type = parse(
+            json!({ "closedState": { "equal": ["state", { "const": "closed" }] } }),
+            full_validation,
+        )
+        .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        assert_eq!(document_type.property_constraints().len(), 1);
+
+        expect_structure_error(
+            parse(
+                json!({ "rule": { "equal": ["state", { "const": "closd" }] } }),
+                full_validation,
+            ),
+            "rule \"rule\" compares \"state\" with \"closd\", which is not one of its enum values",
+        );
+    }
+}
+
 /// Two bare paths naming string properties compare the strings, by `equal` or
 /// `notEqual` only, on both paths; one string and one integer property stay an
 /// integer comparison, refused for its string.

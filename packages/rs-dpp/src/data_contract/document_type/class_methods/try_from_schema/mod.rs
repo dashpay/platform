@@ -5183,6 +5183,73 @@ mod tests {
         }
     }
 
+    /// A `$ref` may name a schema below one of the contract's `$defs`, as
+    /// `#/$defs/keys/properties/recipient` does, and a key id property is then
+    /// read from the schema found there, as the core parse reads it: a bounded
+    /// integer registers, and an unbounded one is refused as it is inline. On
+    /// both paths. Each key names a schema of its own: the schema depth check
+    /// refuses two references to one schema.
+    #[test]
+    fn should_read_an_encrypted_for_key_id_through_a_ref_below_a_definition() {
+        let schema_defs = BTreeMap::from([(
+            "keys".to_string(),
+            platform_value::to_value(json!({
+                "type": "object",
+                "properties": {
+                    "recipient": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295_u64,
+                        "position": 0
+                    },
+                    "sender": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295_u64,
+                        "position": 1
+                    },
+                    "unbounded": { "type": "integer", "minimum": 0, "position": 2 }
+                },
+                "additionalProperties": false
+            }))
+            .expect("the definition converts"),
+        )]);
+        let mut schema = encrypted_schema(encrypted_for_declaration());
+        schema["properties"]["recipientKeyId"] =
+            json!({ "$ref": "#/$defs/keys/properties/recipient", "position": 1 });
+        schema["properties"]["senderKeyId"] =
+            json!({ "$ref": "#/$defs/keys/properties/sender", "position": 2 });
+        for full_validation in [true, false] {
+            let document_type = try_document_type_from_schema_with_defs(
+                schema.clone(),
+                &schema_defs,
+                full_validation,
+            )
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+            let encrypted_for =
+                encrypted_for_of(&document_type, "encryptedMessage").expect("should be declared");
+            assert_eq!(encrypted_for.recipient_key, "recipientKeyId");
+            assert_eq!(encrypted_for.sender_key, "senderKeyId");
+        }
+
+        schema["properties"]["senderKeyId"] =
+            json!({ "$ref": "#/$defs/keys/properties/unbounded", "position": 2 });
+        for full_validation in [true, false] {
+            let err = try_document_type_from_schema_with_defs(
+                schema.clone(),
+                &schema_defs,
+                full_validation,
+            )
+            .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(
+                    "senderKey \"senderKeyId\" must be an integer property with minimum at least 0"
+                ),
+                "full_validation {full_validation}: got {err}"
+            );
+        }
+    }
+
     #[test]
     fn should_refuse_encrypted_for_below_platform_version_14_and_accept_it_at_14() {
         let schema = encrypted_schema(encrypted_for_declaration());
