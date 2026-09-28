@@ -2,6 +2,7 @@
 mod validate_update;
 mod versioned_methods;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::data_contract::document_type::index::{Index, IndexProperty};
@@ -273,6 +274,29 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         Self: DocumentTypeV2Getters,
     {
         self.generate_properties(data, true, platform_version)
+    }
+
+    /// `data` (a created or replaced document's properties, or an indexOnly delete's
+    /// values, as a transition carries them) as the platform reads it on arrival: with
+    /// every `generatedFrom` property it leaves out generated (`fill_generated_properties`).
+    /// Borrowed as it is when the document type declares none, which covers every type
+    /// parsed before protocol version 14; copied otherwise. For a reader of a transition
+    /// outside its execution, such as a subscription filter, that must see what the
+    /// platform stores.
+    fn data_as_stored<'a>(
+        &self,
+        data: &'a BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Cow<'a, BTreeMap<String, Value>>, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        if self.generated_from_fields().is_empty() {
+            return Ok(Cow::Borrowed(data));
+        }
+        let mut stored = data.clone();
+        self.fill_generated_properties(&mut stored, platform_version)?;
+        Ok(Cow::Owned(stored))
     }
 
     /// `fill_generated_properties` (`replace_present` false) and
