@@ -1,0 +1,153 @@
+name: CI recovery proof - Pasta native Swift
+
+on:
+  workflow_dispatch:
+
+jobs:
+  swift-sdk-build:
+    name: Swift SDK build + tests (warnings as errors)
+    # Keep fork PRs off the persistent self-hosted runner.
+    # thepastaclaw-owned forks are trusted, matching tests-rs-wallet.yml and
+    # tests-rs-workspace.yml. This guard is defense in depth: for pull_request
+    # events GitHub evaluates this YAML from the PR merge commit, so the
+    # authoritative boundary is the repository Actions setting requiring
+    # approval before outside-collaborator workflow runs. The guard covers
+    # approved runs and accidental regressions, enforced by
+    # .github/scripts/check-swift-self-hosted-runner.py.
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name == github.repository
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
+    runs-on: [self-hosted, macOS, ARM64, swift-keychain-proof-pasta]
+    timeout-minutes: 90
+    defaults:
+      run:
+        # The runner's work/temp directory can be on a volume with spaces.
+        shell: bash --noprofile --norc -e -o pipefail "{0}"
+
+    steps:
+      - name: Snapshot service-account keychain preferences
+        run: |
+          set -euo pipefail
+          test "$(id -un)" = githubrunner
+          snapshot="$RUNNER_TEMP/keychain-recovery-$GITHUB_RUN_ID"
+          mkdir -p "$snapshot"
+          rc=0
+          LC_ALL=C security default-keychain -d user > "$snapshot/default-before" 2>&1 || rc=$?
+          printf '%s\n' "$rc" > "$snapshot/status-before"
+          security list-keychains -d user > "$snapshot/list-before"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Clean working directory while preserving Rust build cache
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx \
+            -e target/ \
+            -e target/**
+
+      # Rust + Cargo cache to speed up FFI build
+      - name: Set up Rust toolchain (stable)
+        # Composite actions choose their own shell and do not inherit the
+        # quoted script path above. Keep setup here for space-safe execution.
+        env:
+          RUSTUP_PERMIT_COPY_RENAME: "1"
+        run: |
+          export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+          export PATH="$CARGO_HOME/bin:$PATH"
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused \
+              --location --silent --show-error --fail https://sh.rustup.rs \
+              | sh -s -- --default-toolchain none --no-modify-path -y
+          fi
+          rustup toolchain install stable --profile minimal --no-self-update \
+            --target aarch64-apple-ios --target aarch64-apple-ios-sim
+          {
+            echo "CARGO_HOME=$CARGO_HOME"
+            echo "RUSTUP_TOOLCHAIN=stable"
+            echo "CARGO_INCREMENTAL=${CARGO_INCREMENTAL-0}"
+            echo "CARGO_TERM_COLOR=${CARGO_TERM_COLOR-always}"
+          } >> "$GITHUB_ENV"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          rustc +stable --version --verbose
+
+      - name: Restore cargo registry cache
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
+      - name: Restore cached Protobuf (protoc)
+        id: cache-protoc
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+
+      - name: Install Protobuf (protoc) if cache miss
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          VERSION=32.0
+          OS=osx-universal_binary
+          PROTOC_DIR="$HOME/.local/protoc-${VERSION}"
+          mkdir -p "$PROTOC_DIR"
+          curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
+            -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${VERSION}/protoc-${VERSION}-${OS}.zip"
+          unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
+
+      - name: Save cached Protobuf (protoc)
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+
+      - name: Verify protoc and export env
+        run: |
+          set -euxo pipefail
+          echo "$HOME/.local/protoc-32.0/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=$HOME/.local/protoc-32.0/bin/protoc" >> "$GITHUB_ENV"
+          "$HOME/.local/protoc-32.0/bin/protoc" --version
+
+      - name: Clean Xcode derived data and Swift package caches
+        run: |
+          rm -rf ~/Library/Developer/Xcode/DerivedData/* || true
+          rm -rf packages/swift-sdk/.build || true
+          rm -rf packages/swift-sdk/SwiftExampleApp/.build || true
+
+      - name: Build and test Swift SDK
+        env:
+          # The self-hosted runner persists Cargo's target cache between jobs.
+          # Keep only one Apple architecture's intermediates at a time.
+          PRUNE_CARGO_TARGETS: "1"
+        run: |
+          bash packages/swift-sdk/run_tests.sh
+
+      - name: Verify original keychain preferences restored
+        if: always()
+        run: |
+          set -euo pipefail
+          snapshot="$RUNNER_TEMP/keychain-recovery-$GITHUB_RUN_ID"
+          rc=0
+          LC_ALL=C security default-keychain -d user > "$snapshot/default-after" 2>&1 || rc=$?
+          printf '%s\n' "$rc" > "$snapshot/status-after"
+          security list-keychains -d user > "$snapshot/list-after"
+          cmp "$snapshot/status-before" "$snapshot/status-after"
+          cmp "$snapshot/default-before" "$snapshot/default-after"
+          cmp "$snapshot/list-before" "$snapshot/list-after"
+          echo 'Original default-keychain and search-list state restored.'
