@@ -129,7 +129,11 @@ struct OptionsView: View {
                     Picker("Current Network", selection: Binding(
                         get: { appState.currentNetwork },
                         set: { newNetwork in
-                            if newNetwork != appState.currentNetwork {
+                            // One switch at a time: the stop below can take
+                            // tens of seconds, and a second pick meanwhile
+                            // would publish its network in whichever order
+                            // the two stops finish.
+                            if newNetwork != appState.currentNetwork && !isSwitchingNetwork {
                                 // Earliest synchronous point of the switch:
                                 // cancel any in-flight SPV start before the
                                 // async body stops the old manager, so a
@@ -149,15 +153,23 @@ struct OptionsView: View {
                                     // here. See `CoreSpvLauncher.peerOverride`
                                     // for the devnet branch.
 
-                                    // Update platform state (which will trigger SDK switch)
-                                    appState.currentNetwork = newNetwork
-
-                                    // Reset per-network services. TODO(platform-wallet):
-                                    // Once PlatformWalletManager supports network
+                                    // Stop the old network's SPV and reset its
+                                    // per-network services before publishing the
+                                    // new network. The stop can take tens of
+                                    // seconds with the main actor free; published
+                                    // first, the network change would let the
+                                    // `currentNetwork` observer configure the new
+                                    // manager and bind these services meanwhile,
+                                    // and the resets would then wipe that binding.
+                                    // TODO(platform-wallet): Once
+                                    // PlatformWalletManager supports network
                                     // switching cleanly, call into it here.
                                     try? await walletManager.stopSpv()
                                     platformBalanceSyncService.reset()
                                     shieldedService.reset()
+
+                                    // Update platform state (which will trigger SDK switch)
+                                    appState.currentNetwork = newNetwork
 
                                     await MainActor.run {
                                         isSwitchingNetwork = false
