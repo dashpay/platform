@@ -226,7 +226,9 @@ impl WasmSdk {
     /// whose proofs cannot be bound to the execution of one specific
     /// transition (balance top-ups, credit transfers and withdrawals,
     /// address funds movements, shields, no-history token operations, key
-    /// limits updates). This method accepts those outcomes instead. The result is a verified,
+    /// limits updates, contract updates, contract moderation and fee claims,
+    /// and creates and deletes of indexOnly documents). This method accepts
+    /// those outcomes instead. The result is a verified,
     /// height-pinned snapshot of the affected state — NOT evidence that this
     /// specific transition executed.
     ///
