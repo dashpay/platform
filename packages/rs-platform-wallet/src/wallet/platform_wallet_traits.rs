@@ -42,6 +42,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
+            pending_outpoint_locks: Default::default(),
         }
     }
 
@@ -56,6 +57,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
+            pending_outpoint_locks: Default::default(),
         }
     }
 
@@ -218,10 +220,15 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         update_state: bool,
         update_balance: bool,
     ) -> TransactionCheckResult {
-        // TODO: some logic must here - restore
-        self.core_wallet
+        let result = self
+            .core_wallet
             .check_core_transaction(tx, context, wallet, update_state, update_balance)
-            .await
+            .await;
+        // A ProRegTx locks its collateral, relevant or not, and no
+        // `WalletEvent` carries the lock: queue it for the wallet-event
+        // adapter to persist with this wallet's next changeset.
+        self.queue_outpoint_locks(result.locked_outpoints.iter().copied());
+        result
     }
 }
 

@@ -193,6 +193,25 @@ pub fn apply(
             ])?;
         }
     }
+    if !cs.outpoint_locks.is_empty() {
+        // A lock is a row of its own, never a `core_utxos` column: it can
+        // name a coin that has not arrived yet and outlives the coin's spend.
+        let mut lock_stmt = tx.prepare_cached(
+            "INSERT INTO core_locked_outpoints (wallet_id, outpoint) VALUES (?1, ?2) \
+             ON CONFLICT(wallet_id, outpoint) DO NOTHING",
+        )?;
+        let mut unlock_stmt = tx.prepare_cached(
+            "DELETE FROM core_locked_outpoints WHERE wallet_id = ?1 AND outpoint = ?2",
+        )?;
+        for (outpoint, locked) in &cs.outpoint_locks {
+            let key = blob::encode_outpoint(outpoint)?;
+            if *locked {
+                lock_stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
+            } else {
+                unlock_stmt.execute(params![wallet_id.as_slice(), &key[..]])?;
+            }
+        }
+    }
     let chainlock_height = cs
         .last_applied_chain_lock
         .as_ref()
@@ -898,6 +917,11 @@ fn upsert_sync_state(
 ///   and checked against their typed txid and height columns.
 /// - **IS-locks** / **sync watermarks**: decoded bit-exact, fail-hard on a
 ///   corrupt blob.
+/// - **Locked outpoints** (`outpoint_locks`): every `core_locked_outpoints`
+///   row, as a lock, whether or not the wallet holds the coin. Each restored
+///   UTXO's `is_locked` follows it. Fail-hard on a malformed outpoint, like
+///   the UTXO reader: a dropped lock would hand a masternode collateral back
+///   to coin selection.
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
@@ -962,6 +986,24 @@ pub fn load_state(
         }
     }
 
+    // Locked outpoints, read before the coins so each restored coin carries
+    // its lock. The wallet re-derives every coin's flag from the lock set it
+    // is handed (`ManagedWalletInfo::lock_outpoint`), so these flags only
+    // keep this changeset consistent with itself. Same pre-read length gate
+    // as the `core_utxos.outpoint` read below.
+    {
+        let mut stmt = conn.prepare(
+            "SELECT length(outpoint), outpoint FROM core_locked_outpoints WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            blob::check_size(row.get::<_, i64>(0)?)?;
+            let op_bytes: Vec<u8> = row.get(1)?;
+            cs.outpoint_locks
+                .insert(blob::decode_outpoint(&op_bytes)?, true);
+        }
+    }
+
     // Unspent UTXOs → new_utxos (the balance source).
     // Pre-read `length()` gates on `outpoint` and `script` before materializing
     // the Vec so tampered oversize values are caught before heap allocation.
@@ -1011,7 +1053,7 @@ pub fn load_state(
                 is_coinbase: false,
                 is_confirmed: height.is_some(),
                 is_instantlocked: false,
-                is_locked: false,
+                is_locked: cs.outpoint_locks.get(&outpoint).copied().unwrap_or(false),
                 is_trusted: false,
             };
             cs.new_utxos.push(utxo);

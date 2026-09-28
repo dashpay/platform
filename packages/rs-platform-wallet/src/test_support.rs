@@ -122,6 +122,14 @@ pub struct WalletSigner {
     wallet: Wallet,
 }
 
+#[cfg(test)]
+impl WalletSigner {
+    /// A signer over `wallet`'s seed.
+    pub(crate) fn for_wallet(wallet: Wallet) -> Self {
+        Self { wallet }
+    }
+}
+
 #[async_trait]
 impl Signer for WalletSigner {
     type Error = String;
@@ -251,12 +259,133 @@ pub async fn funded_wallet_manager_with_outputs(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        pending_outpoint_locks: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
     (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
+}
+
+/// 1,000 DASH in duffs: the collateral of a regular masternode.
+#[cfg(test)]
+pub(crate) const MASTERNODE_COLLATERAL_DUFFS: u64 = 100_000_000_000;
+
+/// A masternode registration (ProRegTx) naming `collateral`, with no inputs
+/// or outputs of its own and keys that belong to no test wallet: the shape
+/// of a registration funded and signed elsewhere, which touches a wallet
+/// only through the collateral it names.
+#[cfg(test)]
+pub(crate) fn masternode_registration(collateral: dashcore::OutPoint) -> Transaction {
+    use dashcore::blockdata::transaction::special_transaction::provider_registration::{
+        ProviderMasternodeType, ProviderRegistrationPayload,
+    };
+    use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
+    use dashcore::bls_sig_utils::BLSPublicKey;
+    use dashcore::hash_types::InputsHash;
+    use dashcore::{PubkeyHash, ScriptBuf};
+
+    Transaction {
+        version: 3,
+        lock_time: 0,
+        input: vec![],
+        output: vec![],
+        special_transaction_payload: Some(TransactionPayload::ProviderRegistrationPayloadType(
+            ProviderRegistrationPayload {
+                version: ProviderRegistrationPayload::CURRENT_VERSION,
+                masternode_type: ProviderMasternodeType::Regular,
+                masternode_mode: 0,
+                collateral_outpoint: collateral,
+                service_address: "10.0.0.1:9999".parse().expect("socket address"),
+                owner_key_hash: PubkeyHash::from_byte_array([0x71; 20]),
+                operator_public_key: BLSPublicKey::from([0x72; 48]),
+                voting_key_hash: PubkeyHash::from_byte_array([0x73; 20]),
+                operator_reward: 0,
+                script_payout: ScriptBuf::new(),
+                inputs_hash: InputsHash::all_zeros(),
+                signature: vec![],
+                platform_node_id: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
+            },
+        )),
+    }
+}
+
+/// The outpoint of the coin worth `value` in the wallet's `account_type`
+/// index-0 account.
+#[cfg(test)]
+pub(crate) async fn coin_worth(
+    manager: &RwLock<WalletManager<PlatformWalletInfo>>,
+    wallet_id: &WalletId,
+    account_type: StandardAccountType,
+    value: u64,
+) -> dashcore::OutPoint {
+    let wm = manager.read().await;
+    let info = wm.get_wallet_info(wallet_id).expect("wallet present");
+    let account = match account_type {
+        StandardAccountType::BIP44Account => info.core_wallet.first_bip44_managed_account(),
+        StandardAccountType::BIP32Account => info.core_wallet.first_bip32_managed_account(),
+    }
+    .expect("funded account");
+    account
+        .utxos
+        .values()
+        .find(|utxo| utxo.value() == value)
+        .map(|utxo| utxo.outpoint)
+        .expect("a coin of that value")
+}
+
+/// Like [`funded_wallet_manager_with_outputs`], with the account holding a
+/// 1,000 DASH masternode collateral and one `spare` coin, and the wallet
+/// having processed the ProRegTx that registers the collateral, through the
+/// same `check_transaction_in_all_wallets` path block processing takes. The
+/// ProRegTx is otherwise irrelevant to the wallet. Returns the manager
+/// fixture plus the collateral and spare outpoints.
+#[cfg(test)]
+pub(crate) async fn wallet_manager_with_registered_collateral(
+    account_type: StandardAccountType,
+    spare: u64,
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletGeneration>,
+    WalletSigner,
+    dashcore::OutPoint,
+    dashcore::OutPoint,
+) {
+    let (manager, wallet_id, generation, signer) =
+        funded_wallet_manager_with_outputs(account_type, &[MASTERNODE_COLLATERAL_DUFFS, spare])
+            .await;
+    let collateral = coin_worth(
+        &manager,
+        &wallet_id,
+        account_type,
+        MASTERNODE_COLLATERAL_DUFFS,
+    )
+    .await;
+    let spare = coin_worth(&manager, &wallet_id, account_type, spare).await;
+    {
+        let mut wm = manager.write().await;
+        wm.check_transaction_in_all_wallets(
+            &masternode_registration(collateral),
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                2,
+                BlockHash::all_zeros(),
+                1_700_000_100,
+            )),
+            true,
+            true,
+        )
+        .await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet present");
+        assert!(
+            info.core_wallet.is_outpoint_locked(&collateral),
+            "processing the registration locks its collateral"
+        );
+    }
+    (manager, wallet_id, generation, signer, collateral, spare)
 }
 
 /// The `WalletEvent` the wallet emits when it first observes `tx` spending
@@ -380,6 +509,7 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        pending_outpoint_locks: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -483,6 +613,7 @@ pub(crate) async fn funded_wallet_manager_with_contact(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        pending_outpoint_locks: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -560,6 +691,7 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        pending_outpoint_locks: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -765,6 +897,7 @@ pub(crate) async fn mnemonic_wallet_manager(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        pending_outpoint_locks: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);

@@ -741,4 +741,61 @@ mod tests {
             .verify(&public_key, payload.base_payload_hash().as_byte_array())
             .expect("operator BLS signature verifies over base_payload_hash");
     }
+
+    /// The fee of a ProUpServTx is funded like any send, so it never spends
+    /// the masternode's collateral: with a 5 DASH coin beside the 1,000 DASH
+    /// collateral the fee comes from the 5 DASH coin, and with that coin also
+    /// locked there is nothing left to pay it with.
+    #[tokio::test]
+    async fn should_fund_an_update_service_fee_without_the_masternode_collateral() {
+        const DASH: u64 = 100_000_000;
+        let (wallet_manager, wallet_id, generation, signer, _collateral, spare) =
+            crate::test_support::wallet_manager_with_registered_collateral(
+                StandardAccountType::BIP44Account,
+                5 * DASH,
+            )
+            .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(RecordingBroadcaster::default()),
+            generation,
+        );
+        let entry = operator_entry(0x45, false);
+
+        let placeholder = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
+            .expect("placeholder");
+        let prepared =
+            build_sign_update_service(&core, placeholder, Zeroizing::new(OPERATOR_SECRET), &signer)
+                .await
+                .expect("the spare coin pays the fee");
+        let inputs: Vec<_> = prepared
+            .transaction()
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect();
+        assert_eq!(inputs, vec![spare], "only the spare coin may pay the fee");
+        core.abandon_transaction(&prepared).await;
+
+        {
+            let mut wm = core.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&core.wallet_id())
+                .expect("wallet present in manager");
+            assert!(info.core_wallet.lock_outpoint(spare));
+        }
+        let placeholder = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
+            .expect("placeholder");
+        let err =
+            build_sign_update_service(&core, placeholder, Zeroizing::new(OPERATOR_SECRET), &signer)
+                .await
+                .expect_err("only the collateral is left to pay the fee");
+        assert!(
+            matches!(err, PlatformWalletError::CorePooledInsufficientFunds { .. }),
+            "expected a funding shortfall, got {err:?}"
+        );
+    }
 }

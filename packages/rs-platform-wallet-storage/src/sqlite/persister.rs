@@ -1306,8 +1306,9 @@ impl PlatformWalletPersistence for SqlitePersister {
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         // Every `flush_inner` applies the complete changeset in one SQLite
         // transaction. The current schema also has lossless token balances,
-        // invitations, account pools, tracked asset locks, and
-        // deferred-contact-crypto queue rows.
+        // invitations, account pools, tracked asset locks,
+        // deferred-contact-crypto queue rows, and locked outpoints (applied
+        // by `core_state::apply`, handed back by `load_state`).
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // token balances and the DashPay overlay have no load readers, so a
         // full restore remains lossy. Shielded viewing keys are native when
@@ -1321,7 +1322,8 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
-            .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
+            .union(PersistenceCapabilities::OUTPOINT_LOCKS);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
@@ -2387,6 +2389,7 @@ mod tests {
             "contacts",
             "core_address_pool",
             "core_instant_locks",
+            "core_locked_outpoints",
             "core_sync_state",
             "core_transactions",
             "core_utxos",

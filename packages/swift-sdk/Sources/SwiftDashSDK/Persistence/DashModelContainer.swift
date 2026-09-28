@@ -94,7 +94,8 @@ public enum DashModelContainer {
             PersistentInvitation.self,
             PersistentMasternode.self,
             PersistentTrackedMasternode.self,
-            PersistentIdentityBalanceMetadata.self
+            PersistentIdentityBalanceMetadata.self,
+            PersistentLockedOutpoint.self
         ]
     }
 

@@ -4,6 +4,7 @@ pub mod core;
 pub mod core_address_key;
 pub mod identity;
 pub mod masternode_withdrawal;
+pub(crate) mod outpoint_locks;
 pub mod persister;
 pub mod platform_addresses;
 pub mod platform_wallet;
