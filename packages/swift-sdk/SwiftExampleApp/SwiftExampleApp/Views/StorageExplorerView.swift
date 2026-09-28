@@ -142,6 +142,9 @@ struct StorageExplorerView: View {
             modelRow("TXOs", icon: "bitcoinsign.circle", type: PersistentTxo.self) {
                 TxoStorageListView(network: network)
             }
+            modelRow("Locked Outpoints", icon: "lock", type: PersistentLockedOutpoint.self) {
+                LockedOutpointStorageListView(network: network)
+            }
             modelRow("Pending Inputs", icon: "hourglass", type: PersistentPendingInput.self) {
                 PendingInputStorageListView(network: network)
             }
@@ -296,6 +299,7 @@ struct StorageExplorerView: View {
         directCount(PersistentTokenBalance.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentPlatformAddressesSyncState.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentWallet.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentLockedOutpoint.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentWalletManagerMetadata.self, predicate: #Predicate { $0.networkRaw == raw })
 
         // Models that derive their network through a relationship —

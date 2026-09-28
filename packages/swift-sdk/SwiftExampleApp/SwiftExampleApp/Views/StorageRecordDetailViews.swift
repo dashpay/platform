@@ -2180,6 +2180,29 @@ struct TxoStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentLockedOutpoint
+
+struct LockedOutpointStorageDetailView: View {
+    let record: PersistentLockedOutpoint
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? "raw \(record.networkRaw)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Outpoint (wire)", value: hexString(record.outpoint))
+            }
+            Section {
+                Text("This output is excluded from coin selection, either as masternode collateral or because it was locked manually. The lock can remain even when its transaction output is not stored locally.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .navigationTitle("Locked Outpoint")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 // MARK: - PersistentPendingInput
 
 struct PendingInputStorageDetailView: View {

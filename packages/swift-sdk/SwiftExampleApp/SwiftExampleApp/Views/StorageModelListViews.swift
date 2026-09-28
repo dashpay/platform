@@ -1757,6 +1757,42 @@ struct TxoStorageListView: View {
     }
 }
 
+// MARK: - PersistentLockedOutpoint
+
+/// Locks can exist before their TXO or wallet row, so scope them by their
+/// own network column rather than requiring either relationship to exist.
+struct LockedOutpointStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentLockedOutpoint]
+
+    private var scopedRecords: [PersistentLockedOutpoint] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: LockedOutpointStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.outpoint.map { String(format: "%02x", $0) }.joined())
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    Text("Wallet: \(record.walletId.map { String(format: "%02x", $0) }.joined())")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Locked Outpoints (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Locked Outpoints", systemImage: "lock")
+            }
+        }
+    }
+}
+
 // MARK: - PersistentPendingInput
 
 /// Diagnostic list of every `PersistentPendingInput` row — one per
