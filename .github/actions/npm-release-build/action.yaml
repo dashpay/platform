@@ -95,9 +95,20 @@ runs:
         tar -xzf "$ARCHIVE" -C "$RUNNER_TEMP"
         echo "$RUNNER_TEMP/binaryen-version_121/bin" >> "$GITHUB_PATH"
 
+    # Binaryen sizes its thread pool from the host CPU count; inside a Docker
+    # CPU quota that oversubscribes and spins on futexes. Cap it at the quota
+    # (nproc in Ubuntu 24.04's coreutils honors affinity but not cpu.max).
+    # A runner-provided BINARYEN_CORES still wins.
     - name: Build packages
       shell: bash
-      run: python3 .github/scripts/run-npm-build.py
+      run: |
+        cores=$(nproc)
+        if read -r quota period 2>/dev/null < /sys/fs/cgroup/cpu.max && [ "$quota" != max ]; then
+          cores=$(( quota / period < cores ? quota / period : cores ))
+        fi
+        export BINARYEN_CORES="${BINARYEN_CORES:-$(( cores > 0 ? cores : 1 ))}"
+        echo "::notice::Binaryen threads: $BINARYEN_CORES"
+        time yarn build
       env:
         CARGO_BUILD_PROFILE: release
 
