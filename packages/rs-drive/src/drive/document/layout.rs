@@ -533,7 +533,13 @@ fn top_index_node(
         Some(transform) => transform.source.clone(),
         None => level_key.to_string(),
     };
-    if document_type.index_only() && !document_type.required_fields().contains(&property) {
+    // As the top-level walker: only an absent value skips, and a system
+    // property is never absent where it is indexed ($id and $ownerId always
+    // exist; an indexed time or height must be required).
+    if document_type.index_only()
+        && !property.starts_with('$')
+        && !document_type.required_fields().contains(&property)
+    {
         notes.push(LayoutNote::SkipIfAbsent {
             property: property.clone(),
         });
@@ -1193,6 +1199,38 @@ mod tests {
                 role.structure_node()
             );
         }
+    }
+
+    #[test]
+    fn only_an_optional_property_of_an_index_only_type_is_skipped_when_absent() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = apply(&drive, 0, CONTRACTS[9]);
+        let mark = contract.document_type_for_name("mark").expect("mark");
+        let layout = document_type_layout(mark, platform_version).expect("layout");
+        let skipped = |label: &str| {
+            layout
+                .root
+                .children
+                .iter()
+                .find(|c| matches!(&c.key, LayoutKey::Fixed { label: l, .. } if l == label))
+                .map(|c| {
+                    c.notes
+                        .iter()
+                        .any(|n| matches!(n, LayoutNote::SkipIfAbsent { .. }))
+                })
+                .expect("level")
+        };
+        // `a` is required, `b` is not
+        assert!(!skipped("a"));
+        assert!(skipped("b"));
+
+        let tip = contract.document_type_for_name("tip").expect("tip");
+        let layout = document_type_layout(tip, platform_version).expect("layout");
+        assert!(layout.root.children.iter().all(|c| c
+            .notes
+            .iter()
+            .all(|n| !matches!(n, LayoutNote::SkipIfAbsent { .. }))));
     }
 
     #[test]
