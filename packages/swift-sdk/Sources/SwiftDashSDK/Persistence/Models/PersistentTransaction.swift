@@ -84,7 +84,7 @@ public final class PersistentTransaction {
     /// replaces it with the real discriminant on touch. Accessors
     /// treat the sentinel as unknown (no branch fires).
     public var transactionTypeKind: UInt8 = 0xFF
-    /// Net amount in duffs (signed: positive=received, negative=sent).
+    /// Net Core amount in duffs across locally owned TXOs (positive=received, negative=sent).
     public var netAmount: Int64
     /// Fee in duffs (nil if unknown).
     public var fee: UInt64?
@@ -226,6 +226,66 @@ public final class PersistentTransaction {
         case 3: return "Chain Locked"
         default: return "Unknown"
         }
+    }
+
+    /// Core value movement for one wallet; the stored scalar spans all locally owned TXOs.
+    public func netAmount(for walletId: Data) -> Int64? {
+        func owned(_ rows: [PersistentTxo]) -> [PersistentTxo] {
+            var seen = Set<Data>()
+            return rows.filter {
+                PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId
+                    && seen.insert($0.outpoint).inserted
+            }
+        }
+        let wallets = Set((inputs + outputs).compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
+        if wallets.count == 1, wallets.contains(walletId) { return netAmount }
+        guard pendingInputs.isEmpty else { return nil }
+        let walletInputs = owned(inputs)
+        let walletOutputs = owned(outputs)
+        guard !walletInputs.isEmpty || !walletOutputs.isEmpty else { return nil }
+        return Self.reconciledAccounting(
+            inputs: walletInputs, ownedOutputAmounts: walletOutputs.map(\.amount),
+            allOutputsOwned: false, previousDirection: direction, isAssetLock: isAssetLock
+        )?.netAmount
+    }
+
+    /// Direction relative to one wallet for transactions shared by multiple local wallets.
+    public func direction(for walletId: Data) -> UInt32 {
+        let wallets = Set((inputs + outputs).compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
+        guard wallets.count > 1, direction != 3, transactionTypeKind != 1, !isAssetLock else { return direction }
+        let spendsOurs = inputs.contains { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId }
+        return spendsOurs ? 1 : 0
+    }
+
+    /// Format the wallet's Core value movement in DASH.
+    public func formattedAmount(for walletId: Data) -> String {
+        guard let amount = netAmount(for: walletId) else { return "Amount unavailable" }
+        return String(format: "%@%.8f DASH", amount >= 0 ? "+" : "-", Double(amount.magnitude) / 100_000_000)
+    }
+
+    static func reconciledAccounting(
+        inputs: [PersistentTxo], ownedOutputAmounts: [UInt64],
+        allOutputsOwned: Bool, previousDirection: UInt32, isAssetLock: Bool
+    ) -> (netAmount: Int64, direction: UInt32)? {
+        func total(_ amounts: [UInt64]) -> Int64? {
+            var sum: Int64 = 0
+            for amount in amounts {
+                guard let value = Int64(exactly: amount) else { return nil }
+                let addition = sum.addingReportingOverflow(value)
+                guard !addition.overflow else { return nil }
+                sum = addition.partialValue
+            }
+            return sum
+        }
+        guard let received = total(ownedOutputAmounts), let spent = total(inputs.map(\.amount)) else {
+            return nil
+        }
+        let direction: UInt32
+        if previousDirection == 3 { direction = 3 }
+        else if inputs.isEmpty { direction = 0 }
+        else if isAssetLock || allOutputsOwned { direction = 2 }
+        else { direction = 1 }
+        return (received - spent, direction)
     }
 
     public var directionName: String {

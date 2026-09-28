@@ -3,24 +3,15 @@ import SwiftDashSDK
 
 struct TransactionDetailView: View {
     let transaction: PersistentTransaction
-    /// Override amount for asset-lock txs. The wallet's `netAmount`
-    /// shows ~0 for these (credit output is structurally self-owned),
-    /// so the list view passes the linked
-    /// `PersistentAssetLock.amountDuffs`. `nil` for non-asset-lock
-    /// rows OR consumed asset locks whose tracking row was cleaned
-    /// up after successful identity registration.
+    var walletId: Data? = nil
+    private var netAmount: Int64 { walletId.flatMap { transaction.netAmount(for: $0) } ?? transaction.netAmount }
+    private var direction: UInt32 { walletId.map { transaction.direction(for: $0) } ?? transaction.direction }
+    /// Asset-lock payload funding amount, excluding the Core transaction fee.
     var assetLockAmountDuffs: Int64? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showCopiedAlert = false
 
-    /// Amount label rendered prominently at the top of the sheet.
-    /// Same precedence rule as the row: asset-lock duffs when we
-    /// have them, else an explicit "amount unknown" label for the
-    /// historical-asset-lock case (rather than the misleading
-    /// `+0.00000000 DASH` from `transaction.formattedAmount`).
-    /// `nil` for a payload-only provider special tx — a ProRegTx
-    /// observed via the owner/voting keys moves no wallet balance,
-    /// and `+0.00000000 DASH` reads as a broken zero-value receive.
+    /// Show the lock's funding amount, or the wallet's Core value movement for ordinary transactions.
     private var displayAmount: String? {
         if transaction.isAssetLock {
             if let duffs = assetLockAmountDuffs {
@@ -29,10 +20,10 @@ struct TransactionDetailView: View {
             }
             return "Asset Lock (amount unknown)"
         }
-        if transaction.isProviderSpecial && transaction.netAmount == 0 {
+        if transaction.isProviderSpecial && netAmount == 0 {
             return nil
         }
-        return transaction.formattedAmount
+        return walletId.map { transaction.formattedAmount(for: $0) } ?? transaction.formattedAmount
     }
 
     private var typeDescription: String {
@@ -42,11 +33,13 @@ struct TransactionDetailView: View {
             || transaction.isProviderSpecial {
             return transaction.displayDirection
         }
-        switch transaction.netAmount {
-        case let amount where amount > 0:
+        switch direction {
+        case 0:
             return "Received"
-        case let amount where amount < 0:
+        case 1:
             return "Sent"
+        case 3:
+            return "CoinJoin"
         default:
             return "Self-Transfer"
         }
@@ -56,10 +49,10 @@ struct TransactionDetailView: View {
         if transaction.isAssetLock { return "lock.fill" }
         if transaction.isAssetUnlock { return "lock.open.fill" }
         if transaction.isProviderSpecial { return "server.rack" }
-        switch transaction.netAmount {
-        case let amount where amount > 0:
+        switch direction {
+        case 0:
             return "arrow.down.circle.fill"
-        case let amount where amount < 0:
+        case 1:
             return "arrow.up.circle.fill"
         default:
             return "arrow.triangle.2.circlepath"
@@ -73,10 +66,10 @@ struct TransactionDetailView: View {
         if transaction.isProviderSpecial {
             return .orange
         }
-        switch transaction.netAmount {
-        case let amount where amount > 0:
+        switch direction {
+        case 0:
             return .green
-        case let amount where amount < 0:
+        case 1:
             return .red
         default:
             return .blue
@@ -208,7 +201,7 @@ struct TransactionDetailView: View {
                             )
                         }
 
-                        if let fee = formattedFee, transaction.netAmount < 0 {
+                        if let fee = formattedFee, netAmount < 0 {
                             TransactionDetailRow(
                                 label: "Network Fee",
                                 value: fee
