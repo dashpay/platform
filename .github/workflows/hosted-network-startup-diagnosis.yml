@@ -1,0 +1,128 @@
+name: Hosted network startup diagnosis
+
+on:
+  push:
+    branches: [ci/hosted-network-startup-diagnosis-20260928]
+    paths: [.github/workflows/hosted-network-startup-diagnosis.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      REPLAY_SHA: a1d4d85f0b0b2c2e64656c09bb2c5a79c65e4d18
+      ECR_HOST: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+    steps:
+      - name: Check out the exact trusted base-branch source from the failed run
+        uses: actions/checkout@v4
+        with:
+          ref: a1d4d85f0b0b2c2e64656c09bb2c5a79c65e4d18
+          persist-credentials: false
+      - name: Setup Node.JS without writing shared build caches
+        uses: ./.github/actions/nodejs
+        with:
+          cache: 'false'
+      - name: Restore the exact original build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: js-build-a1d4d85f0b0b2c2e64656c09bb2c5a79c65e4d18
+          run-id: 36374280968
+          github-token: ${{ github.token }}
+          path: packages
+      - name: Match original cache path identity
+        run: echo "HOME=$HOME" >> "$GITHUB_ENV"
+      - name: Restore the original network cache without changing it
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            ${{ env.HOME }}/.dashmate
+            **/.env
+            dashmate_volumes_dump
+          key: local-network-volumes/5c79d12dfc/273ebfe4e2563de32c0ad9fb11d304b1d9ea52b3b99553bafed51d060e3e07df
+          fail-on-cache-miss: true
+      - name: Restore isolated Docker volumes
+        run: ./scripts/dashmate/volumes/restore.sh
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Login to the existing CI image registry
+        uses: ./.github/actions/aws_ecr_login
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ${{ vars.AWS_REGION }}
+          aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+      - name: Observe port ownership throughout image pulls and network startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          cat > "$RUNNER_TEMP/observe-port.py" <<'PY'
+          import datetime
+          import subprocess
+          import time
+
+          previous = None
+          for _ in range(4800):
+              current = subprocess.run(
+                  ['ss', '-Htanp', '( sport = :46656 )'],
+                  text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                  timeout=5, check=False).stdout
+              if current != previous:
+                  print(datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        current.strip() or 'port46656:no-sockets', flush=True)
+                  previous = current
+              time.sleep(0.25)
+          PY
+          sysctl net.ipv4.ip_local_port_range net.ipv4.ip_local_reserved_ports
+          sudo -n python3 -u "$RUNNER_TEMP/observe-port.py" > "$RUNNER_TEMP/port46656.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/port46656.pid"
+      - name: Select only the images from the original failed commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version package.json)
+          docker pull "$ECR_HOST/dashmate-helper:sha-$REPLAY_SHA"
+          docker tag "$ECR_HOST/dashmate-helper:sha-$REPLAY_SHA" "dashpay/dashmate-helper:$version"
+          while IFS= read -r config_name; do
+            yarn dashmate config set --config="$config_name" platform.drive.abci.docker.image "$ECR_HOST/drive:sha-$REPLAY_SHA"
+            yarn dashmate config set --config="$config_name" platform.dapi.rsDapi.docker.image "$ECR_HOST/rs-dapi:sha-$REPLAY_SHA"
+          done < <(jq -r '.configs | to_entries[] | select(.value.group == "local") | .key' "$HOME/.dashmate/config.json")
+      - name: Replay network startup without running or changing application tests
+        run: yarn start
+        env:
+          DEBUG: '1'
+      - name: Capture socket owners and Docker port mappings only
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/port46656.pid" ]; then
+            sudo -n kill "$(cat "$RUNNER_TEMP/port46656.pid")" || true
+          fi
+          if [ -f "$RUNNER_TEMP/port46656.log" ]; then
+            cat "$RUNNER_TEMP/port46656.log"
+          fi
+          sudo -n ss -Htanp '( sport = :46656 )'
+          docker ps -a --format '{{.Names}} {{.Status}} {{.Ports}}'
+          python3 - <<'PY'
+          import json
+          import subprocess
+
+          ids = subprocess.check_output(['docker', 'ps', '-aq'], text=True).split()
+          if ids:
+              values = json.loads(subprocess.check_output(['docker', 'inspect', *ids]))
+              for value in values:
+                  print(json.dumps({
+                      'container': value['Name'],
+                      'state': value['State']['Status'],
+                      'port_bindings': value['HostConfig'].get('PortBindings'),
+                  }, sort_keys=True))
+          PY
+          # Do not upload cached config, .env files, credentials or full inspect output.
