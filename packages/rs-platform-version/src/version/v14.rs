@@ -1439,6 +1439,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     preallocates nothing for a referenced value wider than the referring
 ///     property can hold, which no referring document can agree with.
 ///
+/// 56. **A `propertyAgreement` pair compares values, not index keys**:
+///     document reference validation 0 judges each pair as two single values
+///     (`Value::same_scalar_data`): strings as text, byte arrays and
+///     identifiers as bytes, integers as numbers at any width, floats by
+///     their `f64` bits (an integer against a float read as the float it
+///     converts to, as a `number` carried as an integer is stored), booleans
+///     as booleans. An identifier or byte array carried as an array of
+///     `U8`s is the bytes it lists, as before; any other array agrees with
+///     nothing. It compared the two sides' index key encodings, under which
+///     `""` agreed with `"\0"`, and two equal values over 255 bytes, which
+///     an unindexed string of 64 characters or more can hold, were refused
+///     (`ReferencedDocumentPropertyMismatchError`, 40127).
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
