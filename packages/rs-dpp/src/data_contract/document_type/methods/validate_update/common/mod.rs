@@ -2649,6 +2649,112 @@ mod tests {
             assert!(result.is_valid(), "{:?}", result.errors);
         }
 
+        /// A `handle` type whose `normalizedName` declares `normalized_from` when given.
+        fn normalized_from_document_type(
+            normalized_from: Option<&str>,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let mut normalized_name = platform_value!({
+                "type": "string",
+                "maxLength": 32,
+                "position": 2
+            });
+            if let Some(source) = normalized_from {
+                normalized_name
+                    .insert(
+                        "normalizedFrom".to_string(),
+                        platform_value!({ "property": source, "transform": "homographSafeASCII" }),
+                    )
+                    .expect("should insert normalizedFrom");
+            }
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "maxLength": 32, "position": 0 },
+                    "displayName": { "type": "string", "maxLength": 32, "position": 1 },
+                    "normalizedName": normalized_name
+                },
+                "signatureSecurityLevelRequirement": 0,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "handle",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_normalized_from_is_added_changed_or_removed() {
+            let platform_version = PlatformVersion::latest();
+
+            for (old_normalized_from, new_normalized_from, path) in [
+                (
+                    None,
+                    Some("name"),
+                    "/properties/normalizedName/normalizedFrom",
+                ),
+                (
+                    Some("name"),
+                    Some("displayName"),
+                    "/properties/normalizedName/normalizedFrom/property",
+                ),
+                (
+                    Some("name"),
+                    None,
+                    "/properties/normalizedName/normalizedFrom",
+                ),
+            ] {
+                let old_document_type =
+                    normalized_from_document_type(old_normalized_from, platform_version);
+                let new_document_type =
+                    normalized_from_document_type(new_normalized_from, platform_version);
+
+                let result = old_document_type
+                    .as_ref()
+                    .validate_schema(new_document_type.as_ref(), platform_version)
+                    .expect("failed to validate schema compatibility");
+
+                assert_matches!(
+                    result.errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::IncompatibleDocumentTypeSchemaError(e)
+                    )] if e.property_path() == path,
+                    "{old_normalized_from:?} -> {new_normalized_from:?}: {:?}",
+                    result.errors
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_valid_result_when_normalized_from_is_unchanged() {
+            let platform_version = PlatformVersion::latest();
+
+            let old_document_type = normalized_from_document_type(Some("name"), platform_version);
+            let new_document_type = normalized_from_document_type(Some("name"), platform_version);
+
+            let result = old_document_type
+                .as_ref()
+                .validate_schema(new_document_type.as_ref(), platform_version)
+                .expect("failed to validate schema compatibility");
+
+            assert!(result.is_valid(), "{:?}", result.errors);
+        }
+
         /// A `message` type whose `senderKeyId` is a `u32` key id, carrying
         /// `refers_to` when given.
         fn key_id_document_type(

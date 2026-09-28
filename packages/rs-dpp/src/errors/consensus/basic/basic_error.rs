@@ -55,10 +55,11 @@ use crate::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
     DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError,
-    DocumentPropertyNotDistinctError, DocumentTransitionsAreAbsentError,
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    DocumentPropertyNotDistinctError, DocumentPropertyNotNormalizedError,
+    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
+    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
+    InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
     MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
     MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
@@ -835,6 +836,11 @@ pub enum BasicError {
     InvalidTokenDistributionEpochIntervalTooShortError(
         InvalidTokenDistributionEpochIntervalTooShortError,
     ),
+
+    // A `normalizedFrom` string property that is not the normalized form of its source
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyNotNormalizedError(DocumentPropertyNotNormalizedError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -987,6 +993,19 @@ mod tests {
                 )
             ),
             199
+        );
+        // A `normalizedFrom` property that is not its source's normalized form (protocol
+        // version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyNotNormalizedError(
+                DocumentPropertyNotNormalizedError::new(
+                    "domain".to_string(),
+                    "normalizedLabel".to_string(),
+                    "label".to_string(),
+                    "homographSafeASCII".to_string(),
+                )
+            )),
+            200
         );
     }
 

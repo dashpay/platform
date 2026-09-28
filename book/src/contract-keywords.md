@@ -171,6 +171,9 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `encryptedFor.recipient` | identifier property path or `"$ownerId"` | The identity the value is encrypted to. | 14 | [encryptedFor](contract-keywords/encrypted-for.md#example) |
 | `encryptedFor.recipientKey`, `.senderKey` | integer property paths | The properties holding the recipient's and the sender's key ids. | 14 | [encryptedFor](contract-keywords/encrypted-for.md#example) |
 | `encryptedFor.scheme` | `"ecdh-secp256k1-aes256-cbc"` | How the ciphertext is made. | 14 | [The scheme](contract-keywords/encrypted-for.md#the-scheme) |
+| `normalizedFrom` | `{ "property", "transform" }` | A string holds a normalized form of another string of the document; computed on arrival when a document leaves it out. | 14 | [normalizedFrom](contract-keywords/normalized-from.md) · [internals](data-model/documents.md#normalized-string-properties-normalizedfrom) |
+| `normalizedFrom.property` | string property path | The source the value is normalized from. | 14 | [normalizedFrom](contract-keywords/normalized-from.md#example) |
+| `normalizedFrom.transform` | `"homographSafeASCII"` | How the source is normalized. | 14 | [The transform](contract-keywords/normalized-from.md#the-transform) |
 | `refersTo` | a declaration | What an identifier points at, checked when a document is written. See the [keys](#refersto). | 14 | [References](contract-keywords/refers-to.md) · [internals](data-model/documents.md#document-references-refersto) |
 
 A typed array's element (`items`) takes `type`, `enum`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems` and `maxItems` (bytes of a byte array element), `byteArray`, `contentMediaType`, `maxBytes`, `distinctFrom`, `refersTo`, `$comment` and `description`. It takes no `position`, `const`, `uniqueItems` or `examples`.

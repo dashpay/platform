@@ -55,6 +55,7 @@ From protocol version 14, a document type is refused (`InvalidContractStructure`
 - an index reads a transient property, or a property inside a transient object. Every stored document would lack the value, so the index could find nothing and a unique index would enforce nothing;
 - a reference reads one where the value would have to be stored: a `refersTo` lookup may not read one on either side, a `propertyAgreement` may not name one on its referenced side, a key reference may not store its key id with a transient identity, and a `listElement` reference may not find its list's document through one. The referring side of a `propertyAgreement` may be transient: it is checked on the transition;
 - `encryptedFor` names one as its recipient or key id;
+- `normalizedFrom` sits on one or names one as its source;
 - `immutable` lists one. A transient property is always absent from the stored document, so every replace that carries it would count as changing it;
 - a `propertyConstraints` rule reads one;
 - the type is `indexOnly` and declares any transient property.
@@ -68,4 +69,4 @@ On a contract update the list is fixed. It decides which values stored documents
 - [Transient Properties](../data-model/documents.md#transient-properties) in the Documents chapter
 - [Document Serialization](../serialization/document-serialization.md#user-defined-properties), for the presence byte a transient property always takes
 - [Document Shape](document-shape.md#required), for `required`
-- [References (refersTo)](refers-to.md), [encryptedFor](encrypted-for.md), [Mutability](mutability.md), [propertyConstraints](property-constraints.md) and [Index-Only Types](index-only.md), whose rules refuse transient properties
+- [References (refersTo)](refers-to.md), [encryptedFor](encrypted-for.md), [normalizedFrom](normalized-from.md), [Mutability](mutability.md), [propertyConstraints](property-constraints.md) and [Index-Only Types](index-only.md), whose rules refuse transient properties

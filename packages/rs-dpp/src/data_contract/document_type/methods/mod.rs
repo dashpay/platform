@@ -15,7 +15,8 @@ use crate::ProtocolError;
 
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::{
-    DocumentPropertyMaxBytesExceededError, InvalidEncryptedPropertyShapeError,
+    DocumentPropertyMaxBytesExceededError, DocumentPropertyNotNormalizedError,
+    InvalidEncryptedPropertyShapeError,
 };
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
@@ -28,8 +29,9 @@ use crate::data_contract::document_type::property_constraints::{
 use crate::data_contract::document_type::{DocumentPropertyType, StringPropertySizes};
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
-#[cfg(feature = "validation")]
-use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use platform_value::btreemap_extensions::{
+    BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
+};
 use platform_value::{Identifier, Value};
 
 pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
@@ -223,6 +225,145 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
             };
             if let Some(error) = error {
                 return SimpleConsensusValidationResult::new_with_error(error.into());
+            }
+        }
+        SimpleConsensusValidationResult::new()
+    }
+
+    /// Writes every `normalizedFrom` property `data` (a created or replaced document's
+    /// properties, as they arrive) leaves out, computed from its source: the platform
+    /// computes a normalized property a client does not send, and checks one it does send
+    /// (`validate_normalized_from_properties`). A property the document supplies is left as
+    /// it is, whatever it holds, and nothing is written when the source is absent or is not
+    /// a string (the schema validation refuses a source that is not a string on its own).
+    ///
+    /// Runs wherever a document arrives, before anything reads its data: the action
+    /// transformers of document create, replace and indexOnly delete, and the proof
+    /// verification that rebuilds the document a transition wrote.
+    ///
+    /// Versioned on `fill_normalized_properties` in the document type method versions:
+    /// `None` before protocol version 14 leaves `data` untouched, which keeps the shipped
+    /// transformers and proof verification that call it inert.
+    fn fill_normalized_properties(
+        &self,
+        data: &mut BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .fill_normalized_properties
+        {
+            None => Ok(()),
+            Some(0) => {
+                self.fill_normalized_properties_v0(data);
+                Ok(())
+            }
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "fill_normalized_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    fn fill_normalized_properties_v0(&self, data: &mut BTreeMap<String, Value>) {
+        for (path, property) in self.flattened_properties() {
+            let Some(normalized_from) = &property.normalized_from else {
+                continue;
+            };
+            // Supplied, or unreadable (an intermediate that is not a map, which the schema
+            // validation refuses on its own): either way not the platform's to write
+            if !matches!(data.get_optional_at_path(path), Ok(None)) {
+                continue;
+            }
+            let normalized = match data.get_optional_at_path(&normalized_from.property) {
+                Ok(Some(Value::Text(source))) => normalized_from.normalize(source),
+                _ => continue,
+            };
+            // Registration puts the source inside every object that holds the property, so
+            // the objects on the way are present and are maps: the source was read through
+            // them. The insert cannot fail; if it ever did, the property would stay absent
+            // and the normalizedFrom check would refuse the document.
+            let _ = data.insert_at_path(path, Value::Text(normalized));
+        }
+    }
+
+    /// Checks every `normalizedFrom` property of `properties` (the document's properties
+    /// map) against its source: when the source is present the property must hold the
+    /// source's normalized form, and when the source is absent the property must be absent
+    /// too. The first property that does not is refused with
+    /// `DocumentPropertyNotNormalizedError`. A value on either side that is not a string is
+    /// not compared: the JSON schema validation that `DataContract::validate_document_properties`
+    /// runs alongside refuses it, and its result is reported first.
+    ///
+    /// A document that arrived at the platform has been through
+    /// `fill_normalized_properties`, so a left-out property whose source is present is
+    /// already written; one that has not (a client validating a document before sending
+    /// it) is refused for the missing property.
+    ///
+    /// Versioned on `validate_normalized_from` in the document type method versions: `None`
+    /// before protocol version 14 returns an empty result, which keeps the shipped document
+    /// validation that calls it inert.
+    #[cfg(feature = "validation")]
+    fn validate_normalized_from_properties(
+        &self,
+        properties: &Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_normalized_from
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => Ok(self.validate_normalized_from_properties_v0(properties)),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_normalized_from_properties".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "validation")]
+    fn validate_normalized_from_properties_v0(
+        &self,
+        properties: &Value,
+    ) -> SimpleConsensusValidationResult {
+        for (path, property) in self.flattened_properties() {
+            let Some(normalized_from) = &property.normalized_from else {
+                continue;
+            };
+            // A lookup error (an intermediate that is not a map) reads as absent: the schema
+            // validation refuses that shape on its own
+            let value = properties.get_optional_value_at_path(path).ok().flatten();
+            let source = properties
+                .get_optional_value_at_path(&normalized_from.property)
+                .ok()
+                .flatten();
+            let normalized = match (value, source) {
+                (None, None) => true,
+                (Some(value), Some(source)) => match (value.as_text(), source.as_text()) {
+                    (Some(value), Some(source)) => value == normalized_from.normalize(source),
+                    _ => true,
+                },
+                (Some(_), None) | (None, Some(_)) => false,
+            };
+            if !normalized {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentPropertyNotNormalizedError::new(
+                        self.name().clone(),
+                        path.clone(),
+                        normalized_from.property.clone(),
+                        normalized_from.transform.as_str().to_string(),
+                    )
+                    .into(),
+                );
             }
         }
         SimpleConsensusValidationResult::new()

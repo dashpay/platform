@@ -17,8 +17,8 @@ use crate::data_contract::document_type::{
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
-    ListElementReference, LookupKeySource, ReferenceCombinator, ReferenceOperands,
-    COMBINABLE_REFERENCE_TARGET_TYPES,
+    ListElementReference, LookupKeySource, NormalizationTransform, NormalizedFrom,
+    ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -215,6 +215,8 @@ fn insert_values(
                     apply_distinct_from(&inner_properties, &property_type, platform_version)?;
                 let encrypted_for =
                     apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
+                let normalized_from =
+                    apply_normalized_from(&inner_properties, &property_type, platform_version)?;
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
@@ -224,6 +226,7 @@ fn insert_values(
                         required_since,
                         distinct_from,
                         encrypted_for,
+                        normalized_from,
                     },
                 );
             }
@@ -354,6 +357,8 @@ fn insert_values_nested(
     let property_type = apply_max_bytes(&inner_properties, property_type, platform_version)?;
     let distinct_from = apply_distinct_from(&inner_properties, &property_type, platform_version)?;
     let encrypted_for = apply_encrypted_for(&inner_properties, &property_type, platform_version)?;
+    let normalized_from =
+        apply_normalized_from(&inner_properties, &property_type, platform_version)?;
 
     document_properties.insert(
         property_key,
@@ -364,6 +369,7 @@ fn insert_values_nested(
             required_since,
             distinct_from,
             encrypted_for,
+            normalized_from,
         },
     );
 
@@ -1870,6 +1876,230 @@ pub(super) fn validate_encrypted_for_declarations(
                     "{key} \"{key_path}\" is transient or inside a transient object: a \
                      transient value is never stored, so a reader could not tell which key \
                      decrypts the bytes"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Reads a `normalizedFrom` declaration off a string property: the string
+/// property of the same document type whose value this one holds a normalized
+/// form of, and the transform that normalizes it. Only a string property
+/// carries it: a typed array has no source for its elements, so the keyword is
+/// refused on the array and on its items alike.
+///
+/// Versioned on `apply_normalized_from` in the platform version's document
+/// type schema versions. `None` selects the behavior of the versions that
+/// predate the keyword: it is ignored entirely, so their parses stay
+/// byte-for-byte identical to what they always produced.
+///
+/// The source is checked against the rest of the document type once every
+/// property is parsed, by [`validate_normalized_from_declarations`].
+fn apply_normalized_from(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<Option<NormalizedFrom>, DataContractError> {
+    match platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .apply_normalized_from
+    {
+        None => Ok(None),
+        Some(0) => apply_normalized_from_v0(inner_properties, property_type),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_normalized_from version {version} is not supported"
+        ))),
+    }
+}
+
+fn apply_normalized_from_v0(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+) -> Result<Option<NormalizedFrom>, DataContractError> {
+    if let DocumentPropertyType::TypedArray(_) = property_type {
+        let on_items = match inner_properties.get(property_names::ITEMS) {
+            Some(items) => items
+                .to_btree_ref_string_map()?
+                .contains_key(property_names::NORMALIZED_FROM),
+            None => false,
+        };
+        if on_items || inner_properties.contains_key(property_names::NORMALIZED_FROM) {
+            return Err(DataContractError::InvalidContractStructure(
+                "normalizedFrom is only allowed on string properties, not on a typed array or \
+                 its items"
+                    .to_string(),
+            ));
+        }
+        return Ok(None);
+    }
+
+    let Some(normalized_from_value) = inner_properties.get(property_names::NORMALIZED_FROM) else {
+        return Ok(None);
+    };
+
+    if !matches!(property_type, DocumentPropertyType::String(_)) {
+        return Err(DataContractError::InvalidContractStructure(
+            "normalizedFrom is only allowed on string properties".to_string(),
+        ));
+    }
+
+    let shape_error = || {
+        DataContractError::InvalidContractStructure(
+            "normalizedFrom must be an object with a property (the path of a string property \
+             of the same document type) and a transform"
+                .to_string(),
+        )
+    };
+    let normalized_from_map = normalized_from_value
+        .to_btree_ref_string_map()
+        .map_err(|_| shape_error())?;
+
+    for key in normalized_from_map.keys() {
+        if !matches!(
+            key.as_str(),
+            property_names::PROPERTY | property_names::TRANSFORM
+        ) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "normalizedFrom {key:?} is unknown, expected property and transform"
+            )));
+        }
+    }
+
+    let property = normalized_from_map
+        .get(property_names::PROPERTY)
+        .and_then(|value| value.as_text())
+        .ok_or_else(shape_error)?;
+    if property.is_empty() || property.len() > MAX_PROPERTY_PATH_LENGTH {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "normalizedFrom property must be between 1 and {MAX_PROPERTY_PATH_LENGTH} characters"
+        )));
+    }
+    if property.starts_with('$') {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "normalizedFrom property must name a string property of the document type, not \
+             system property \"{property}\""
+        )));
+    }
+
+    let transform_name = normalized_from_map
+        .get(property_names::TRANSFORM)
+        .and_then(|value| value.as_text())
+        .ok_or_else(shape_error)?;
+    let transform = NormalizationTransform::from_wire_name(transform_name).ok_or_else(|| {
+        DataContractError::InvalidContractStructure(format!(
+            "normalizedFrom transform {transform_name:?} is unknown, expected one of {}",
+            NormalizationTransform::ALL
+                .iter()
+                .map(|transform| format!("{:?}", transform.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    })?;
+
+    Ok(Some(NormalizedFrom {
+        property: property.to_string(),
+        transform,
+    }))
+}
+
+/// Checks every `normalizedFrom` declaration of a document type against the
+/// property it names, once all of them are parsed:
+///
+/// * the source must be a string property of the type other than the declaring
+///   one (a nested one named by its dotted path, as the flattened map names it);
+/// * neither side may be transient or sit inside a transient object: a
+///   transient source is dropped before storage, so a replace would have to
+///   supply it again or lose the target, and a transient target is never
+///   stored at all;
+/// * the source may not declare `normalizedFrom` itself, so the platform fills
+///   every left-out target from a value the client sent, in any order;
+/// * the source must sit inside every object that holds the target (a
+///   top-level target may take any source), so a document supplying the
+///   source always holds the object the platform writes the target into.
+///
+/// Owned by parser generation 3: the only generation that admits the keyword.
+pub(super) fn validate_normalized_from_declarations(
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Result<(), DataContractError> {
+    let flattened_properties = &document_type.flattened_properties;
+    for (path, property) in flattened_properties {
+        let Some(normalized_from) = &property.normalized_from else {
+            continue;
+        };
+        let source = normalized_from.property.as_str();
+        let structure_error = |message: String| {
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{document_type_name}\" property \"{path}\" normalizedFrom \
+                 {message}"
+            ))
+        };
+
+        if source == path {
+            return Err(structure_error(
+                "names the property itself: name another string property of the document type"
+                    .to_string(),
+            ));
+        }
+        let Some(source_property) = flattened_properties.get(source) else {
+            // Objects are not in the flattened map, only their members are
+            let names_an_object = flattened_properties.keys().any(|key| {
+                key.strip_prefix(source)
+                    .is_some_and(|rest| rest.starts_with('.'))
+            });
+            if names_an_object {
+                return Err(structure_error(format!(
+                    "property \"{source}\" is an object, not a string property: name one of \
+                     its string members"
+                )));
+            }
+            return Err(structure_error(format!(
+                "property \"{source}\" is not a property of the document type"
+            )));
+        };
+        if !matches!(
+            source_property.property_type,
+            DocumentPropertyType::String(_)
+        ) {
+            return Err(structure_error(format!(
+                "property \"{source}\" has type {}, not string",
+                source_property.property_type.name()
+            )));
+        }
+        if source_property.normalized_from.is_some() {
+            return Err(structure_error(format!(
+                "property \"{source}\" declares normalizedFrom itself: name the string property \
+                 it is normalized from instead"
+            )));
+        }
+        if is_transient(DocumentTypeRef::V2(document_type), path) {
+            return Err(structure_error(
+                "is on a property that is transient or inside a transient object: a transient \
+                 value is never stored, so the normalized form would be lost"
+                    .to_string(),
+            ));
+        }
+        if is_transient(DocumentTypeRef::V2(document_type), source) {
+            return Err(structure_error(format!(
+                "property \"{source}\" is transient or inside a transient object: a transient \
+                 value is never stored, so a replace could not keep the normalized form without \
+                 sending it again"
+            )));
+        }
+        if let Some((target_object, _)) = path.rsplit_once('.') {
+            let inside_target_object = source
+                .strip_prefix(target_object)
+                .is_some_and(|rest| rest.starts_with('.'));
+            if !inside_target_object {
+                return Err(structure_error(format!(
+                    "property \"{source}\" is outside \"{target_object}\": the source must sit \
+                     inside every object that holds the normalized property, so a document \
+                     supplying the source always has the object the normalized property is \
+                     written into"
                 )));
             }
         }

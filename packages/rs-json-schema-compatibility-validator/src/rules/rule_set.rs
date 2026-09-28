@@ -1512,6 +1512,50 @@ pub static KEYWORD_COMPATIBILITY_RULES: Lazy<CompatibilityRulesCollection> = Laz
                 ],
             },
         ),
+        // `normalizedFrom` (a string property holding a normalized form of
+        // another string property of the same document type) is frozen like
+        // `distinctFrom`: adding, removing or changing its source or transform
+        // changes which documents the type accepts, and what the platform
+        // writes into those that leave the property out.
+        (
+            "normalizedFrom",
+            CompatibilityRules {
+                allow_addition: false,
+                allow_removal: false,
+                allow_replacement_callback: FALSE_CALLBACK.clone(),
+                subschema_levels_depth: None,
+                inner: None,
+                #[cfg(any(test, feature = "examples"))]
+                examples: vec![
+                    (
+                        json!({}),
+                        json!({ "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" } }),
+                        Some(JsonSchemaChange::Add(AddOperation {
+                            path: "/normalizedFrom".to_string(),
+                            value: json!({ "property": "label", "transform": "homographSafeASCII" }),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" } }),
+                        json!({}),
+                        Some(JsonSchemaChange::Remove(RemoveOperation {
+                            path: "/normalizedFrom".to_string(),
+                        })),
+                    )
+                        .into(),
+                    (
+                        json!({ "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" } }),
+                        json!({ "normalizedFrom": { "property": "displayName", "transform": "homographSafeASCII" } }),
+                        Some(JsonSchemaChange::Replace(ReplaceOperation {
+                            path: "/normalizedFrom/property".to_string(),
+                            value: json!("displayName"),
+                        })),
+                    )
+                        .into(),
+                ],
+            },
+        ),
         // `maxBytes` (the most UTF-8 bytes a string may take) moves like
         // `maxLength`: raising or dropping the bound keeps every stored document
         // valid, adding or lowering it would not.

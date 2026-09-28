@@ -16,6 +16,7 @@ mod list_element_reference;
 mod lookup_reference;
 mod max_bytes;
 mod nft;
+mod normalized_from;
 mod owner_balance_proof;
 mod owner_reference;
 mod property_constraints;

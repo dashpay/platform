@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::{document, ProtocolError};
@@ -197,6 +198,11 @@ impl DocumentFromReplaceTransitionV0 for Document {
             data,
         } = value;
 
+        // The document the platform stores holds every normalized property the transition
+        // left out, computed on arrival (inert before protocol version 14)
+        let mut data = data.clone();
+        document_type.fill_normalized_properties(&mut data, platform_version)?;
+
         let id = base.id();
 
         let requires_updated_at = document_type
@@ -238,7 +244,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 contract_version: None,
                 id,
                 owner_id,
-                properties: data.clone(),
+                properties: data,
                 revision: Some(*revision),
                 created_at,
                 updated_at,
@@ -277,8 +283,12 @@ impl DocumentFromReplaceTransitionV0 for Document {
         let DocumentReplaceTransitionV0 {
             base,
             revision,
-            data,
+            mut data,
         } = value;
+
+        // The document the platform stores holds every normalized property the transition
+        // left out, computed on arrival (inert before protocol version 14)
+        document_type.fill_normalized_properties(&mut data, platform_version)?;
 
         let id = base.id();
 

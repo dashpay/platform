@@ -50,6 +50,7 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
             apply_max_bytes: None,
             parse_typed_array: None,
             parse_property_constraints: None,
+            apply_normalized_from: None,
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
@@ -72,6 +73,8 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
             validate_max_bytes: None,
             validate_property_constraints: None,
             canonical_contested_index_values: None,
+            fill_normalized_properties: None,
+            validate_normalized_from: None,
         },
     },
     token_versions: TokenVersions {

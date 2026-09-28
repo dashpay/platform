@@ -111,6 +111,15 @@ impl DataContract {
         let max_bytes_result =
             document_type.validate_max_bytes_properties(&value, platform_version)?;
 
+        // Added in place at protocol version 14, inert before it: the meta-schemas there
+        // refuse `normalizedFrom`, their parser ignores it (`apply_normalized_from` is
+        // `None`, so no property carries a declaration) and `validate_normalized_from` is
+        // `None`, so the check returns an empty result without reading `value`. Computed and
+        // reported like `maxBytes`, after it, so a schema error keeps precedence and every
+        // value it compares is known to be a string.
+        let normalized_from_result =
+            document_type.validate_normalized_from_properties(&value, platform_version)?;
+
         // Added in place at protocol version 14, inert for every earlier version that
         // selects this generation: `validate_property_constraints` is `None` in all of their
         // tables, so the call returns an empty result without reading `value`. (Only parser
@@ -156,6 +165,9 @@ impl DataContract {
         }
         if !max_bytes_result.is_valid() {
             return Ok(max_bytes_result);
+        }
+        if !normalized_from_result.is_valid() {
+            return Ok(normalized_from_result);
         }
 
         Ok(property_constraints_result)

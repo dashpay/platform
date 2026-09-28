@@ -1342,6 +1342,31 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     create structure validation 1 leaves the amount to state validation;
 ///     version 0 wants exactly the contest's fund.
 ///
+/// 52. **A string property may hold a normalized form of another
+///     (`normalizedFrom`)**: the property keyword (meta-schema v3,
+///     `apply_normalized_from` 0, `NormalizedFrom` on `DocumentProperty`)
+///     names a string property of the same document type, the source, and a
+///     transform, `homographSafeASCII`: ASCII `A` to `Z` lowercased, then `o`
+///     to `0` and `i` and `l` to `1`, every other character kept, which is
+///     DPNS's label normalization over ASCII computed without Unicode tables.
+///     The parser checks at registration and update that the source is another
+///     string property that declares no `normalizedFrom` itself, that neither
+///     side is transient or inside a transient object, and that the source
+///     sits inside every object holding the declaring property; a changed
+///     declaration is an incompatible schema change. `fill_normalized_properties`
+///     (0) writes a declared property a document leaves out, from its source,
+///     in the action transformers of document create, replace and index-only
+///     delete, before the contest resolution and every check read the data,
+///     and in `Document::try_from_create_transition` and
+///     `try_from_replace_transition`, with which proof verification rebuilds
+///     the written document. `DataContract::validate_document_properties` 0
+///     calls `validate_normalized_from_properties` (`validate_normalized_from`
+///     0) after the schema and `maxBytes`, and refuses a supplied value that is
+///     not the source's normalized form, or one without its source, with
+///     `DocumentPropertyNotNormalizedError` (10424). Every call site was
+///     extended in place and is inert before this version, where the three
+///     slots are `None` and the meta-schemas refuse the keyword.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

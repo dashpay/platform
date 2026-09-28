@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a permanentDocument lookup, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the propertyConstraints doctype keyword (named conditions over the document's properties, comparisons between integer expressions, of a string or identifier property with constants or with another property of its kind, in (value membership) and present or absent tests combined with anyOf, allOf and not, which every created or replaced document must meet), the maxBytes property keyword (the most UTF-8 bytes a string, or each string element of a typed array, may take), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a permanentDocument lookup, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the propertyConstraints doctype keyword (named conditions over the document's properties, comparisons between integer expressions, of a string or identifier property with constants or with another property of its kind, in (value membership) and present or absent tests combined with anyOf, allOf and not, which every created or replaced document must meet), the maxBytes property keyword (the most UTF-8 bytes a string, or each string element of a typed array, may take), the normalizedFrom property keyword (a string property holding a normalized form of another string property of the same document, computed on arrival when a document leaves it out), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "referenceOperands": {
@@ -774,6 +774,28 @@
           "minimum": 1,
           "maximum": 65535
         },
+        "normalizedFrom": {
+          "description": "Only on string properties: the property holds a normalized form of another string property of the same document, its source. property names the source (a dotted path for a nested one) and transform how it is normalized. homographSafeASCII lowercases A to Z, then turns o into 0 and i and l into 1, and keeps every other character, ASCII or not, as it is: the DPNS label normalization over ASCII, so it only resists homographs where the properties' pattern admits ASCII alone (which characters a value may hold is the pattern's job, never the transform's). When a created or replaced document (or the values of an indexOnly delete) leaves the property out and supplies the source, the platform computes the property from the source on arrival, before anything reads the document; a value the document supplies must equal the source's normalized form, and the property must be absent when the source is. Checked wherever a document's properties are validated, every create and replace included, after the JSON schema (DocumentPropertyNotNormalizedError, 10424). At contract registration the source must be another string property of the document type that declares no normalizedFrom itself, neither property may be transient or inside a transient object, and the source must sit inside every object that holds this property (a top-level property may take any source), so a document supplying the source always holds the object the property is written into. Not allowed on the items of a typed array. Adding, removing or changing it is an incompatible schema change on update. Available from protocol version 14.",
+          "type": "object",
+          "properties": {
+            "property": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "transform": {
+              "type": "string",
+              "enum": [
+                "homographSafeASCII"
+              ]
+            }
+          },
+          "required": [
+            "property",
+            "transform"
+          ],
+          "additionalProperties": false
+        },
         "requiredSince": {
           "type": "integer",
           "minimum": 1,
@@ -873,6 +895,17 @@
         },
         "maxBytes": {
           "description": "maxBytes is only allowed on string properties; on a typed array it goes on the items",
+          "properties": {
+            "type": {
+              "const": "string"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        "normalizedFrom": {
+          "description": "normalizedFrom is only allowed on string properties",
           "properties": {
             "type": {
               "const": "string"
@@ -2015,7 +2048,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Names of top-level properties whose values are validated on the transition but never stored: a create, and from protocol version 14 a replace, drops them before the document is written. From protocol version 14 every entry must name a top-level property (list the object around a nested one); no index may read a transient property or one inside a transient object; a refersTo lookup may not read one on either side, a propertyAgreement may not name one on its referenced side, and a stored key id may not pair with a transient identity; encryptedFor may not name one. Adding, removing or changing an entry on contract update is an incompatible schema change."
+      "description": "Names of top-level properties whose values are validated on the transition but never stored: a create, and from protocol version 14 a replace, drops them before the document is written. From protocol version 14 every entry must name a top-level property (list the object around a nested one); no index may read a transient property or one inside a transient object; a refersTo lookup may not read one on either side, a propertyAgreement may not name one on its referenced side, and a stored key id may not pair with a transient identity; encryptedFor may not name one; normalizedFrom may neither name one nor sit on one. Adding, removing or changing an entry on contract update is an incompatible schema change."
     },
     "immutable": {
       "type": "array",

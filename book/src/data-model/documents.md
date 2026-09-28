@@ -678,6 +678,29 @@ The parser (generation 3, meta-schema v3, `apply_max_bytes`) folds the bound int
 
 The check runs where the JSON schema validation of a document's properties runs, `DataContract::validate_document_properties`, right after it: on every document create and replace, and in every client that validates a document before sending it. A longer string is refused with `DocumentPropertyMaxBytesExceededError` (basic code 10421), which names the property (`tags[2]` for an element) and both lengths. The document validation (version 0, extended in place) is inert before protocol version 14, where no string carries a byte cap and the `validate_max_bytes` method slot is `None`. In Rust the check is `DocumentTypeBasicMethods::validate_max_bytes_properties()`; in JavaScript the error reaches an app as `DocumentMaxBytesErrorCode.MaxBytesExceeded`.
 
+## Normalized String Properties (`normalizedFrom`)
+
+Protocol version 14 adds the property keyword `normalizedFrom`: a string property holds a normalized form of another string property of the same document, its source. It is the DPNS `domain` rule (`normalizedLabel` is `label` lowercased, with `o`, `i` and `l` replaced by `0`, `1` and `1`) as a schema keyword, so any contract can build a unique index that treats look-alike names as one.
+
+```json
+"normalizedLabel": {
+  "type": "string", "pattern": "^[a-hj-km-np-z0-9-]{3,63}$", "maxLength": 63,
+  "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" },
+  "position": 1
+}
+```
+
+The transform list is closed and has one value. `homographSafeASCII` maps `A` to `Z` to lowercase, then `o` to `0` and `i` and `l` to `1`, and keeps every other character. It is defined character by character with no Unicode table, because Unicode case mappings differ between releases of the standard library, and two nodes must never compute different forms of one value. On ASCII it equals `convert_to_homograph_safe_chars`, the function the DPNS trigger uses; a test pins that over every ASCII character and over strings from the DPNS alphabets. It refuses nothing: the characters a value may hold are the `pattern`'s to decide.
+
+The parser (generation 3, meta-schema v3, `apply_normalized_from`) reads the declaration onto `DocumentProperty::normalized_from` (`Option<NormalizedFrom>`, absent on every property parsed before protocol version 14) and `validate_normalized_from_declarations` checks it against the other properties on every parse: the source is another string property, not transient nor inside a transient object (and neither is the declaring property), declares no `normalizedFrom` itself, and sits inside every object that holds the declaring property. On contract update a changed, added or removed `normalizedFrom` is an incompatible schema change.
+
+Two methods do the work at write time:
+
+- `DocumentTypeBasicMethods::fill_normalized_properties` writes every declared property the document leaves out while supplying its source. The action transformers of document create, replace and index-only delete call it first, before the contest resolution and every check read the data, so the stored document, its indexes and its contest all hold the computed value. `Document::try_from_create_transition` and `try_from_replace_transition` call it too, so the proof verification of a create or replace rebuilds the document the platform stored. The source-inside-the-object rule means the objects on the way are always there to write into.
+- `DocumentTypeBasicMethods::validate_normalized_from_properties` runs in `DataContract::validate_document_properties`, after the JSON schema and `maxBytes`: a declared property must equal its source's normalized form, and be absent exactly when the source is. A property that does not refuses the write with `DocumentPropertyNotNormalizedError` (basic code 10424). A document that arrived has been filled, so on the platform the check only refuses a value the client sent, or a value sent without its source.
+
+Every call site was extended in place and is inert before protocol version 14: the `apply_normalized_from`, `fill_normalized_properties` and `validate_normalized_from` slots are `None` there, and the meta-schemas refuse the keyword. In JavaScript the error reaches an app as `DocumentNormalizedFromErrorCode.DocumentPropertyNotNormalized`.
+
 ## Property Constraints (`propertyConstraints`)
 
 Protocol version 14 adds the doctype-level `propertyConstraints` keyword: named rules the properties of every created or replaced document must meet, where JSON Schema can only bound one property at a time. Each rule is a condition: a comparison of two integer expressions, a test of whether an integer expression takes one of listed values, a comparison of a string property with string constants, a test of whether the document holds a property, or `anyOf`, `allOf` or `not` over conditions.

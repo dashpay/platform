@@ -11,6 +11,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -212,7 +213,7 @@ impl Drive {
                             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
                             use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
                             if document_type.index_only() {
-                                let values = match document_transition {
+                                let mut values = match document_transition {
                                     DocumentTransition::Create(create_transition) => {
                                         create_transition.data().clone()
                                     }
@@ -229,6 +230,11 @@ impl Drive {
                                         )));
                                     }
                                 };
+                                // The entry holds every normalized property the
+                                // transition left out, as the node computed it on
+                                // arrival (inert before protocol version 14)
+                                document_type
+                                    .fill_normalized_properties(&mut values, platform_version)?;
                                 let path_query = crate::query::index_only_synthesis::index_only_transition_entry_path_query(
                                     contract.id(),
                                     document_type,

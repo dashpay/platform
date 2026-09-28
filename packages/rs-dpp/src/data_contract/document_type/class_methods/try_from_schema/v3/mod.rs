@@ -57,7 +57,8 @@ use crate::consensus::ConsensusError;
 use super::common;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
-    validate_list_element_sources, validate_reference_lookup_sources,
+    validate_list_element_sources, validate_normalized_from_declarations,
+    validate_reference_lookup_sources,
 };
 
 mod ranked_prefix_overlap;
@@ -540,6 +541,9 @@ fn parse_generation_3(
     // are known, so each `encryptedFor` declaration can be checked against the
     // properties it names. Generation 3 is the only one admitting the keyword.
     validate_encrypted_for_declarations(&v2, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // The same for the string property each `normalizedFrom` declaration names.
+    validate_normalized_from_declarations(&v2, name)
         .map_err(consensus_or_protocol_data_contract_error)?;
     // The same for the properties a `refersTo` lookup reads to assemble its key,
     // the lookup of the `ownerRefersTo` declaration included.
@@ -1088,6 +1092,8 @@ mod meta_schema_v0_stray_keyword_tests;
 mod moderators_delete_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
+#[cfg(all(test, feature = "validation"))]
+mod normalized_from_tests;
 #[cfg(all(test, feature = "validation"))]
 mod owner_reference_tests;
 #[cfg(all(test, feature = "validation"))]

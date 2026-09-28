@@ -4,6 +4,8 @@ use dpp::platform_value::{Identifier, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use platform_version::version::PlatformVersion;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
@@ -26,6 +28,7 @@ impl DocumentReplaceTransitionActionV0 {
         block_info: &BlockInfo,
         user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
     ) -> Result<
         (
             ConsensusValidationResult<BatchedTransitionAction>,
@@ -69,6 +72,14 @@ impl DocumentReplaceTransitionActionV0 {
                 ));
             }
         };
+        // Added in place at protocol version 14, inert before it: `fill_normalized_properties`
+        // is `None` there and leaves the data as sent. From 14 on, every `normalizedFrom`
+        // property the transition leaves out is computed from its source here, before the
+        // changed fields below and every later check read the data.
+        let mut data = data.clone();
+        base.document_type()?
+            .fill_normalized_properties(&mut data, platform_version)?;
+
         let updated_at = if base.document_type_field_is_required(property_names::UPDATED_AT)? {
             Some(block_info.time_ms)
         } else {
@@ -191,7 +202,7 @@ impl DocumentReplaceTransitionActionV0 {
                     updated_at_core_block_height,
                     transferred_at_core_block_height:
                         original_document_transferred_at_core_block_height,
-                    data: data.clone(),
+                    data,
                     changed_data_fields: changed_fields,
                     added_data_fields: added_fields,
                     removed_identifier_fields,

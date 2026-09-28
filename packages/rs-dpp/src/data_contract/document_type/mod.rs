@@ -179,6 +179,15 @@ pub(crate) mod property_names {
     /// Meta-schema v3+ (protocol version 14). See `apply_max_bytes` in
     /// `try_from_schema`.
     pub const MAX_BYTES: &str = "maxBytes";
+    /// Property-level object on a string property: the string property of the
+    /// same document the value is a normalized form of ([`PROPERTY`]) and the
+    /// [`TRANSFORM`] that normalizes it. Meta-schema v3+ (protocol version 14).
+    /// See `apply_normalized_from` in `try_from_schema`.
+    pub const NORMALIZED_FROM: &str = "normalizedFrom";
+    /// `normalizedFrom`: the dotted path of the source string property.
+    pub const PROPERTY: &str = "property";
+    /// `normalizedFrom`: the transform name, one of `NormalizationTransform::ALL`.
+    pub const TRANSFORM: &str = "transform";
     pub const KEY_REQUIREMENTS: &str = "keyRequirements";
     pub const PURPOSE: &str = "purpose";
     pub const BOUND_TO: &str = "boundTo";

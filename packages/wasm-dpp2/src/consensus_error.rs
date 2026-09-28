@@ -271,6 +271,42 @@ impl DocumentPropertyConstraintErrorCodeWasm {
     }
 }
 
+/// Consensus error codes emitted by the `normalizedFrom` check, which runs
+/// from protocol version 14 onward wherever a document is validated, on every
+/// create and replace included.
+///
+/// Branch on an error's `code` against this instead of matching its message:
+///
+/// ```js
+/// try {
+///   await sdk.documents.create({ document, identityKey, signer });
+/// } catch (e) {
+///   if (e.code === DocumentNormalizedFromErrorCode.DocumentPropertyNotNormalized) {
+///     // a normalized property was sent with a value other than its source's
+///     // normalized form, or without its source; leaving it out lets the
+///     // platform compute it
+///   }
+/// }
+/// ```
+#[wasm_bindgen(js_name = "DocumentNormalizedFromErrorCode")]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DocumentNormalizedFromErrorCodeWasm {
+    /// A `normalizedFrom` string property holds a value other than the
+    /// normalized form of the property it names, or is present while that
+    /// property is absent.
+    DocumentPropertyNotNormalized = 10424,
+}
+
+impl DocumentNormalizedFromErrorCodeWasm {
+    /// The normalizedFrom error a code names, or `None` for any other code.
+    fn from_code(code: u32) -> Option<Self> {
+        match code {
+            10424 => Some(Self::DocumentPropertyNotNormalized),
+            _ => None,
+        }
+    }
+}
+
 #[wasm_bindgen(js_name = "ConsensusError")]
 pub struct ConsensusErrorWasm(ConsensusError);
 
@@ -337,6 +373,15 @@ impl ConsensusErrorWasm {
         &self,
     ) -> Option<DocumentPropertyConstraintErrorCodeWasm> {
         DocumentPropertyConstraintErrorCodeWasm::from_code(self.0.code())
+    }
+
+    /// The normalizedFrom error this is, or `undefined` when it is not code
+    /// 10424.
+    #[wasm_bindgen(getter = "documentNormalizedFromErrorCode")]
+    pub fn document_normalized_from_error_code(
+        &self,
+    ) -> Option<DocumentNormalizedFromErrorCodeWasm> {
+        DocumentNormalizedFromErrorCodeWasm::from_code(self.0.code())
     }
 }
 
@@ -517,6 +562,39 @@ mod tests {
             DocumentPropertyConstraintErrorCodeWasm::from_code(10420),
             None
         );
+    }
+
+    /// Built from the real DPP error rather than a code literal, like the
+    /// encryption test above.
+    #[test]
+    fn should_mirror_the_dpp_normalized_from_error_code() {
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::basic::document::DocumentPropertyNotNormalizedError;
+
+        let error: ConsensusError = BasicError::DocumentPropertyNotNormalizedError(
+            DocumentPropertyNotNormalizedError::new(
+                "domain".to_string(),
+                "normalizedLabel".to_string(),
+                "label".to_string(),
+                "homographSafeASCII".to_string(),
+            ),
+        )
+        .into();
+
+        assert_eq!(
+            DocumentNormalizedFromErrorCodeWasm::from_code(error.code()),
+            Some(DocumentNormalizedFromErrorCodeWasm::DocumentPropertyNotNormalized)
+        );
+        assert_eq!(
+            DocumentNormalizedFromErrorCodeWasm::DocumentPropertyNotNormalized as u32,
+            error.code()
+        );
+        assert_eq!(
+            ConsensusErrorWasm(error).document_normalized_from_error_code(),
+            Some(DocumentNormalizedFromErrorCodeWasm::DocumentPropertyNotNormalized)
+        );
+        // A neighbouring code is not claimed.
+        assert_eq!(DocumentNormalizedFromErrorCodeWasm::from_code(10423), None);
     }
 
     /// The six reference-validation errors, paired with the JS enum variant

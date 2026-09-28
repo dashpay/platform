@@ -84,6 +84,7 @@
   - [Writer and Creator References](contract-keywords/owner-refers-to.md)
 - [distinctFrom](contract-keywords/distinct-from.md)
 - [maxBytes](contract-keywords/max-bytes.md)
+- [normalizedFrom](contract-keywords/normalized-from.md)
 - [encryptedFor](contract-keywords/encrypted-for.md)
 - [propertyConstraints](contract-keywords/property-constraints.md)
 - [Token Costs (tokenCost)](contract-keywords/token-cost.md)

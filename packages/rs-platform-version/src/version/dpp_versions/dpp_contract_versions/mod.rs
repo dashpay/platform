@@ -99,6 +99,18 @@ pub struct DocumentTypeMethodVersions {
     /// contender names one contest with one poll. `None` on versions that predate it, where
     /// the values are taken as given.
     pub canonical_contested_index_values: OptionalFeatureVersion,
+    /// `fill_normalized_properties`: writes each `normalizedFrom` property a
+    /// created or replaced document leaves out, computed from its source, before
+    /// anything reads the document's data. `None` on versions that predate the
+    /// keyword: the method leaves the data untouched there, so the shipped action
+    /// transformers and proof verification that call it are inert.
+    pub fill_normalized_properties: OptionalFeatureVersion,
+    /// `validate_normalized_from_properties`: refuses a document whose
+    /// `normalizedFrom` property is not the normalized form of its source, or is
+    /// present while its source is absent. `None` on versions that predate the
+    /// keyword: the method returns an empty result there, so the shipped
+    /// `DataContract::validate_document_properties` 0 that calls it is inert.
+    pub validate_normalized_from: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -145,6 +157,12 @@ pub struct DocumentTypeSchemaVersions {
     /// read. `None` on versions that predate the keyword: they ignore it
     /// entirely, exactly as they parsed before it existed.
     pub parse_property_constraints: OptionalFeatureVersion,
+    /// Parses the `normalizedFrom` property keyword (a string property holding
+    /// a normalized form of another string property of the same document)
+    /// onto the property, and checks the property it names at contract
+    /// registration. `None` on versions that predate the keyword: they ignore
+    /// it entirely, exactly as they parsed before it existed.
+    pub apply_normalized_from: OptionalFeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub max_depth: u16,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
