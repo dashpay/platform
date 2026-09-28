@@ -211,6 +211,7 @@ impl DocumentReplaceTransitionActionV0 {
                     removed_identifier_fields,
                     stored_changed_values,
                     creator_id: original_creator_id,
+                    property_constraint_aggregates: Default::default(),
                 }
                 .into(),
             ))

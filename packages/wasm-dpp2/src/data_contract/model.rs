@@ -148,8 +148,9 @@ export interface DataContractConfig {
  * team is seated (no election exists yet) the contract is moderated by its `interim`
  * moderators, or by nobody: with the moderated document types not yet usable (every
  * document transition of one is refused) or used unmoderated meanwhile. Windows and the
- * cool-down are in seconds: the windows one day to four weeks (one week when left out), the
- * cool-down of a contestable seat two weeks to three years.
+ * cool-down are in seconds: the windows at most four weeks, at least one day on mainnet and
+ * 0 on any other network (one week when left out), the cool-down of a contestable seat two
+ * weeks to three years.
  */
 export type ContractModerators =
   | { $type: "contractOwner" }
@@ -878,8 +879,9 @@ impl DataContractWasm {
     /// device clock in place of the block time the write will record (the
     /// document's stored creation and transfer times when it has them). A
     /// rule reading a block height the write records is not judged, since the
-    /// height is unknown until the block. `undefined` when it meets every rule
-    /// of its document type.
+    /// height is unknown until the block, and neither is a rule reading a
+    /// `countOf` or `sumOf` total, which only the platform reads from state.
+    /// `undefined` when it meets every rule of its document type.
     ///
     /// A pre-check, so an app can refuse a document before paying for a
     /// transition consensus would refuse with

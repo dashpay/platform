@@ -52,10 +52,15 @@ impl DocumentUpdatePriceTransitionActionStructureValidationV0
             // time and heights, and is judged against the rules of `propertyConstraints`
             // reading them: the stored properties met every rule when they were written,
             // and those times and heights are all this action changes that a rule reads.
+            // Such a rule reading a `countOf` or `sumOf` too reads the total the action
+            // read from state.
             document_type
                 .validate_property_constraints_for_system_change(
                     self.document().properties(),
-                    &DocumentSystemValues::of_document(self.document()),
+                    &DocumentSystemValues {
+                        aggregates: self.property_constraint_aggregates().clone(),
+                        ..DocumentSystemValues::of_document(self.document())
+                    },
                     SystemChange::PriceUpdate,
                     platform_version,
                 )

@@ -124,7 +124,8 @@ pub(crate) mod property_names {
     /// See `parse_doctype_reference` in `try_from_schema`.
     pub const CREATOR_REFERS_TO: &str = "creatorRefersTo";
     /// Doctype-level object of named rules, each a condition on the document's
-    /// properties (a comparison of two integer expressions, of a string or an
+    /// properties (a comparison of two integer expressions, which may read a
+    /// `countOf` or `sumOf` total of a type of the contract, of a string or an
     /// identifier property with constants or with another property of its
     /// kind, an `in` or `notIn` list of values, a `startsWith` or `endsWith`,
     /// a `contains`, a `present` or `absent` test, or an `anyOf`, `allOf`,

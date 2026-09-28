@@ -29,6 +29,8 @@ mod estimation_costs;
 /// pricing, and the cleanup that deletes them once expired
 #[cfg(feature = "server")]
 pub mod expiration;
+#[cfg(feature = "server")]
+mod fetch_property_constraint_aggregate;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod get_fetch;
 #[cfg(feature = "server")]

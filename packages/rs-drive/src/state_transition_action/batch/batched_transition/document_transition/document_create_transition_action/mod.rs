@@ -4,6 +4,7 @@ mod v0;
 mod v1;
 
 use derive_more::From;
+use dpp::data_contract::document_type::property_constraints::AggregateRead;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::{Identifier, Value};
@@ -27,6 +28,9 @@ pub enum DocumentCreateTransitionAction {
     /// v0
     V0(DocumentCreateTransitionActionV0),
 }
+
+/// What `property_constraint_aggregates` returns for an action holding none.
+static NO_PROPERTY_CONSTRAINT_AGGREGATES: BTreeMap<AggregateRead, i128> = BTreeMap::new();
 
 impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionAction {
     fn base(&self) -> &DocumentBaseTransitionAction {
@@ -112,6 +116,24 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
     fn take_current_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0.current_store_contest_info.take(),
+        }
+    }
+
+    fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => v0
+                .property_constraint_aggregates
+                .as_deref()
+                .unwrap_or(&NO_PROPERTY_CONSTRAINT_AGGREGATES),
+        }
+    }
+
+    fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>) {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => {
+                v0.property_constraint_aggregates =
+                    (!aggregates.is_empty()).then(|| Box::new(aggregates))
+            }
         }
     }
 }

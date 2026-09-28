@@ -140,11 +140,11 @@
           "minItems": 2
         },
         "present": {
-          "description": "Holds if the document holds the property at this path, of any type, an object included, with a value other than null. Unlike an operand, which reads a property the document leaves out as 0, it tells a property left out from one set to 0",
+          "description": "Holds if the document holds the property at this path, of any type, an object included, with a value other than null and, for an object, with a member that is present: a stored document does not keep an object without one. Unlike an operand, which reads a property the document leaves out as 0, it tells a property left out from one set to 0",
           "$ref": "#/$defs/propertyConstraintPath"
         },
         "absent": {
-          "description": "Holds if the document leaves the property at this path out, or sets it to null",
+          "description": "Holds if the document leaves the property at this path out, sets it to null, or gives an object there no member that is present",
           "$ref": "#/$defs/propertyConstraintPath"
         },
         "anyOf": {
@@ -218,7 +218,7 @@
       "uniqueItems": true
     },
     "propertyConstraintExpression": {
-      "description": "An expression of a propertyConstraints rule: an integer value; the dotted path of a property of the document type, whose value it takes: an integer or boolean one (1 for true, 0 for false), 0 when the document leaves it out, or a string one compared with a const or another string property; a system time or height the document type records ($createdAt, $updatedAtBlockHeight, ...); or an object with one key: ifAbsent, a property path and the value it takes when the document leaves it out, an integer, or a string for a string property compared with strings; add, multiply, min or max, two or more operands; subtract, divide, modulo or power, exactly two; abs, one; length or byteLength, the characters or UTF-8 bytes of a string property, or count, the items of an array or byte array property, each 0 when the document leaves the property out; const, a string constant compared with a string property",
+      "description": "An expression of a propertyConstraints rule: an integer value; the dotted path of a property of the document type, whose value it takes: an integer or boolean one (1 for true, 0 for false), 0 when the document leaves it out, or a string one compared with a const or another string property; a system time or height the document type records ($createdAt, $updatedAtBlockHeight, ...); or an object with one key: ifAbsent, a property path and the value it takes when the document leaves it out, an integer, or a string for a string property compared with strings; add, multiply, min or max, two or more operands; subtract, divide, modulo or power, exactly two; abs, one; length or byteLength, the characters or UTF-8 bytes of a string property, or count, the items of an array or byte array property, each 0 when the document leaves the property out; countOf or sumOf, how many documents of a document type of this contract match a filter or the total of an integer property over them, as its count or sum trees keep it; const, a string constant compared with a string property",
       "type": [
         "integer",
         "string",
@@ -295,6 +295,39 @@
               "description": "The number of items of the array property at this path, or of bytes of the byte array property, as maxItems counts them, or 0 when the document leaves it out",
               "$ref": "#/$defs/propertyConstraintPath"
             },
+            "countOf": {
+              "description": "How many documents of a document type of this contract there are, as its count trees will keep it once the write is done: every one, which needs documentsCountable on that type, or those matching a filter, which needs a countable index of that type whose properties are exactly the filter's keys",
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/propertyConstraintAggregateType"
+                },
+                {
+                  "$ref": "#/$defs/propertyConstraintAggregateFilter"
+                }
+              ],
+              "items": false,
+              "minItems": 1
+            },
+            "sumOf": {
+              "description": "The total of an integer property over the documents of a document type of this contract, as its sum trees will keep it once the write is done: over every one, which needs documentsSummable naming the property on that type, or over those matching a filter, which needs an index of that type summable by the property whose properties are exactly the filter's keys",
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/propertyConstraintAggregateType"
+                },
+                {
+                  "description": "The integer property of that type to total",
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
+                },
+                {
+                  "$ref": "#/$defs/propertyConstraintAggregateFilter"
+                }
+              ],
+              "items": false,
+              "minItems": 2
+            },
             "const": {
               "description": "A constant, only as one side of an equal or notEqual whose other side is the path of a string property (a string), or of an identifier property or $ownerId (a base58 identifier): a string on its own is a path, and an integer is written as itself",
               "type": "string"
@@ -303,6 +336,49 @@
           "minProperties": 1,
           "maxProperties": 1,
           "additionalProperties": false
+        }
+      }
+    },
+    "propertyConstraintAggregateType": {
+      "description": "The name of the document type of this contract a countOf or sumOf totals, the declaring type included",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "propertyConstraintAggregateFilter": {
+      "description": "Which documents a countOf or sumOf totals: those whose value at each key, a property path of the totalled type or $ownerId, equals the value given for it, read from the document being written: a property path of it, $ownerId, an integer, or a { const } string or base58 identifier",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^(\\$ownerId|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$"
+      },
+      "additionalProperties": {
+        "type": [
+          "integer",
+          "string",
+          "object"
+        ],
+        "if": {
+          "type": "string"
+        },
+        "then": {
+          "pattern": "^(\\$ownerId|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$"
+        },
+        "else": {
+          "if": {
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "const": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "const"
+            ],
+            "additionalProperties": false
+          }
         }
       }
     },

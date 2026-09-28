@@ -144,6 +144,7 @@ mod tests {
             prefunded_voting_balance: None,
             current_store_contest_info: None,
             should_store_contest_info: None,
+            property_constraint_aggregates: Default::default(),
         })
     }
 

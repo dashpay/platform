@@ -540,7 +540,9 @@ fn parse_generation_3(
     // After the core parse: every property, its transient flag and its schema
     // are known, so each `encryptedFor` declaration can be checked against the
     // properties it names. Generation 3 is the only one admitting the keyword.
-    validate_encrypted_for_declarations(&v2, name)
+    // A schema reached through a `$ref` is read from the contract's `$defs`, as
+    // the core parse read it.
+    validate_encrypted_for_declarations(&v2, schema_defs, name)
         .map_err(consensus_or_protocol_data_contract_error)?;
     // The same for the string property each `generatedFrom` declaration names.
     validate_generated_from_declarations(&v2, name)
@@ -551,9 +553,17 @@ fn parse_generation_3(
         .map_err(consensus_or_protocol_data_contract_error)?;
     // The `propertyConstraints` rules are parsed onto the type here, where the
     // integer properties they read and their transient flags are known; their
-    // limits are checked under full validation only.
-    apply_property_constraints(&mut v2, name, full_validation, platform_version)
-        .map_err(consensus_or_protocol_data_contract_error)?;
+    // limits are checked under full validation only. The `enum`s their string
+    // constants are checked against are read through `$ref`s into the
+    // contract's `$defs` too.
+    apply_property_constraints(
+        &mut v2,
+        schema_defs,
+        name,
+        full_validation,
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
 
     // After `apply_index_only`: the flag is refused on an indexOnly type, so it
     // has to see that one already applied.
@@ -1096,6 +1106,8 @@ mod moderators_delete_tests;
 mod name_rules_tests;
 #[cfg(all(test, feature = "validation"))]
 mod owner_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod property_constraint_aggregates_tests;
 #[cfg(all(test, feature = "validation"))]
 mod property_constraints_tests;
 #[cfg(all(test, feature = "validation"))]
