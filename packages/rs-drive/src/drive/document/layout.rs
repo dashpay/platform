@@ -422,7 +422,7 @@ pub fn document_type_layout(
 
 /// Each index's name and the level keys its path takes through the index
 /// structure, as `IndexLevel::try_from_indices` keys them.
-fn index_paths(document_type: DocumentTypeRef) -> Vec<(String, Vec<String>)> {
+pub(crate) fn index_paths(document_type: DocumentTypeRef) -> Vec<(String, Vec<String>)> {
     document_type
         .indexes()
         .values()
@@ -442,7 +442,10 @@ fn index_paths(document_type: DocumentTypeRef) -> Vec<(String, Vec<String>)> {
 }
 
 /// The indexes whose path passes through `path`.
-fn indexes_through(index_paths: &[(String, Vec<String>)], path: &[String]) -> Vec<String> {
+pub(crate) fn indexes_through(
+    index_paths: &[(String, Vec<String>)],
+    path: &[String],
+) -> Vec<String> {
     index_paths
         .iter()
         .filter(|(_, index_path)| index_path.starts_with(path))
@@ -451,7 +454,10 @@ fn indexes_through(index_paths: &[(String, Vec<String>)], path: &[String]) -> Ve
 }
 
 /// The index whose path ends at `path`.
-fn index_ending_at(index_paths: &[(String, Vec<String>)], path: &[String]) -> Vec<String> {
+pub(crate) fn index_ending_at(
+    index_paths: &[(String, Vec<String>)],
+    path: &[String],
+) -> Vec<String> {
     index_paths
         .iter()
         .filter(|(_, index_path)| index_path.as_slice() == path)
