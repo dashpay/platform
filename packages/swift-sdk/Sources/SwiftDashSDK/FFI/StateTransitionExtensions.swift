@@ -319,6 +319,7 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
+                    dash_sdk_error_free(result.error)
                     continuation.resume(throwing: SDKError.internalError(errorString))
                 }
             }
@@ -371,8 +372,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
-                    continuation.resume(throwing: SDKError.stateTransitionFailure(
-                        errorString, ffiError: result.error?.pointee))
+                    let failure = SDKError.stateTransitionFailure(
+                        errorString, ffiError: result.error?.pointee)
+                    dash_sdk_error_free(result.error)
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -429,8 +432,10 @@ extension SDK {
                 } else {
                     let errorString = result.error?.pointee.message != nil ?
                         String(cString: result.error!.pointee.message) : "Unknown error"
-                    continuation.resume(throwing: SDKError.stateTransitionFailure(
-                        errorString, ffiError: result.error?.pointee))
+                    let failure = SDKError.stateTransitionFailure(
+                        errorString, ffiError: result.error?.pointee)
+                    dash_sdk_error_free(result.error)
+                    continuation.resume(throwing: failure)
                 }
             }
         }
@@ -679,6 +684,7 @@ extension SDK {
                       let contractHandle = contractResult.data else {
                     if let error = contractResult.error {
                         let errorMsg = String(cString: error.pointee.message)
+                        dash_sdk_error_free(error)
                         print("❌ [DOCUMENT REPLACE] Failed to fetch contract: \(errorMsg)")
                         continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     } else {
@@ -968,6 +974,7 @@ extension SDK {
                       let contractHandle = contractResult.data else {
                     if let error = contractResult.error {
                         let errorMsg = String(cString: error.pointee.message)
+                        dash_sdk_error_free(error)
                         print("❌ [DOCUMENT TRANSFER] Failed to fetch contract: \(errorMsg)")
                         continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     } else {
@@ -1002,6 +1009,7 @@ extension SDK {
                       let documentHandle = fetchResult.data else {
                     let error = fetchResult.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(fetchResult.error)
                     print("❌ [DOCUMENT TRANSFER] Failed to fetch document: \(errorMsg)")
                     continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     return
@@ -1034,6 +1042,7 @@ extension SDK {
                 guard transitionResult.error == nil else {
                     let error = transitionResult.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(transitionResult.error)
                     print("❌ [DOCUMENT TRANSFER] Failed to create transition: \(errorMsg)")
                     continuation.resume(throwing: SDKError.stateTransitionFailure(
                         errorMsg, ffiError: error, otherwise: SDKError.protocolError))
@@ -1062,6 +1071,7 @@ extension SDK {
                 if result.error != nil {
                     let error = result.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(result.error)
 
                     // Check if it's the "already in chain" error
                     if errorMsg.contains("already in chain") || errorMsg.contains("AlreadyExists") {
@@ -1136,6 +1146,7 @@ extension SDK {
                 guard contractResult.error == nil else {
                     let error = contractResult.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(contractResult.error)
                     print("❌ [DOCUMENT UPDATE PRICE] Failed to fetch contract: \(errorMsg)")
                     continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     return
@@ -1168,6 +1179,7 @@ extension SDK {
                 guard fetchResult.error == nil else {
                     let error = fetchResult.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(fetchResult.error)
                     print("❌ [DOCUMENT UPDATE PRICE] Failed to fetch document: \(errorMsg)")
                     continuation.resume(throwing: SDKError.protocolError(errorMsg))
                     return
@@ -1219,6 +1231,7 @@ extension SDK {
                 if updateResult.error != nil {
                     let error = updateResult.error.pointee
                     let errorMsg = String(cString: error.message)
+                    dash_sdk_error_free(updateResult.error)
                     print("❌ [DOCUMENT UPDATE PRICE] Failed: \(errorMsg)")
                     continuation.resume(throwing: SDKError.stateTransitionFailure(
                         errorMsg, ffiError: error, otherwise: SDKError.protocolError))
