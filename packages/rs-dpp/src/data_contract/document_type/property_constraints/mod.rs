@@ -800,27 +800,38 @@ impl ConstraintExpression {
         }
     }
 
-    /// Whether an aggregate the expression reads depends on the document's
-    /// owner ([`AggregateRead::reads_owner`]).
-    fn reads_owner(&self) -> bool {
+    /// The first aggregate the expression reads, in the order it reads them,
+    /// that `matches`, the walk stopping there.
+    fn find_aggregate<'a>(
+        &'a self,
+        matches: &dyn Fn(&AggregateRead) -> bool,
+    ) -> Option<&'a AggregateRead> {
         match self {
-            ConstraintExpression::Aggregate(read) => read.reads_owner(),
+            ConstraintExpression::Aggregate(read) => matches(read).then_some(read),
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
-            | ConstraintExpression::System(_) => false,
+            | ConstraintExpression::System(_) => None,
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
             | ConstraintExpression::Min(operands)
-            | ConstraintExpression::Max(operands) => {
-                operands.iter().any(ConstraintExpression::reads_owner)
-            }
-            ConstraintExpression::Abs(operand) => operand.reads_owner(),
+            | ConstraintExpression::Max(operands) => operands
+                .iter()
+                .find_map(|operand| operand.find_aggregate(matches)),
+            ConstraintExpression::Abs(operand) => operand.find_aggregate(matches),
             ConstraintExpression::Subtract(left, right)
             | ConstraintExpression::Divide(left, right)
             | ConstraintExpression::Modulo(left, right)
-            | ConstraintExpression::Power(left, right) => left.reads_owner() || right.reads_owner(),
+            | ConstraintExpression::Power(left, right) => left
+                .find_aggregate(matches)
+                .or_else(|| right.find_aggregate(matches)),
         }
+    }
+
+    /// Whether an aggregate the expression reads depends on the document's
+    /// owner ([`AggregateRead::reads_owner`]).
+    fn reads_owner(&self) -> bool {
+        self.find_aggregate(&AggregateRead::reads_owner).is_some()
     }
 }
 
@@ -1261,12 +1272,14 @@ impl PropertyConstraint {
             .system_reads()
             .into_iter()
             .any(|property| system.value(property).is_none())
-            || self.aggregate_reads().into_iter().any(|read| {
-                !system
-                    .aggregates
-                    .as_ref()
-                    .is_some_and(|aggregates| aggregates.contains_key(read))
-            })
+            || self
+                .find_aggregate(&|read| {
+                    !system
+                        .aggregates
+                        .as_ref()
+                        .is_some_and(|aggregates| aggregates.contains_key(read))
+                })
+                .is_some()
         {
             return None;
         }
@@ -1403,9 +1416,51 @@ impl PropertyConstraint {
         system: &DocumentSystemValues,
     ) -> Option<&'a AggregateRead> {
         let aggregates = system.aggregates.as_ref()?;
-        self.aggregate_reads()
-            .into_iter()
-            .find(|read| !aggregates.contains_key(*read))
+        self.find_aggregate(&|read| !aggregates.contains_key(read))
+    }
+
+    /// The first aggregate the rule reads, in declared order, that `matches`,
+    /// the walk stopping there rather than collecting every one.
+    fn find_aggregate<'a>(
+        &'a self,
+        matches: &dyn Fn(&AggregateRead) -> bool,
+    ) -> Option<&'a AggregateRead> {
+        match self {
+            PropertyConstraint::Compare { left, right, .. } => left
+                .find_aggregate(matches)
+                .or_else(|| right.find_aggregate(matches)),
+            PropertyConstraint::In { operand, .. } => operand.find_aggregate(matches),
+            PropertyConstraint::Contains {
+                needle: ContainsNeedle::Integer(expression),
+                ..
+            } => expression.find_aggregate(matches),
+            PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
+                conditions
+                    .iter()
+                    .find_map(|condition| condition.find_aggregate(matches))
+            }
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.find_aggregate(matches)
+            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => [Some(condition), Some(then), otherwise.as_ref()]
+                .into_iter()
+                .flatten()
+                .find_map(|part| part.find_aggregate(matches)),
+            PropertyConstraint::TextCompare { .. }
+            | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::IdentifierCompare { .. }
+            | PropertyConstraint::IdentifierCompareProperties { .. }
+            | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Contains { .. }
+            | PropertyConstraint::Present(_)
+            | PropertyConstraint::Absent(_) => None,
+        }
     }
 
     /// The aggregates the rule reads (`countOf`, `sumOf`), in declared order,

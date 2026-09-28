@@ -12,7 +12,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::property_constraints::{
     AggregateBinding, AggregateKind, AggregateRead, DocumentSystemValues, EqualityKind,
-    PropertyRead,
+    PropertyRead, SystemChange,
 };
 use crate::data_contract::DataContract;
 use platform_value::string_encoding::Encoding;
@@ -838,4 +838,131 @@ fn should_refuse_to_skip_a_rule_whose_total_consensus_did_not_read() {
         ),
         "{missing:?}"
     );
+}
+
+/// A transfer, a purchase or a price update judges only the rules it can
+/// break, so consensus reads only their totals: a missing total of a rule it
+/// judges is an error, one of a rule it does not judge is not, and a client
+/// skips both.
+#[test]
+fn should_refuse_to_skip_a_rule_a_system_change_judges_without_its_total() {
+    let platform_version = PlatformVersion::latest();
+    let contract = json!({
+        "$formatVersion": "1",
+        "id": Identifier::from([7; 32]).to_string(Encoding::Base58),
+        "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+        "version": 1,
+        "documentSchemas": {
+            "offer": {
+                "type": "object",
+                "documentsMutable": true,
+                "transferable": 1,
+                "tradeMode": 1,
+                "documentsCountable": true,
+                "properties": {
+                    "category": { "type": "integer", "minimum": 0, "maximum": 100, "position": 0 },
+                    "price": { "type": "integer", "minimum": 0, "maximum": 1000000000, "position": 1 },
+                    "endsAt": { "type": "integer", "minimum": 0, "position": 2 }
+                },
+                "required": ["category", "price", "endsAt", "$updatedAt"],
+                "indices": [
+                    {
+                        "name": "byOwner",
+                        "properties": [{ "$ownerId": "asc" }],
+                        "countable": "countable"
+                    },
+                    {
+                        "name": "byCategory",
+                        "properties": [{ "category": "asc" }],
+                        "summable": "price"
+                    }
+                ],
+                "propertyConstraints": {
+                    "ownerCap": {
+                        "lessThanOrEqual": [{ "countOf": ["offer", { "$ownerId": "$ownerId" }] }, 10]
+                    },
+                    "openWindow": {
+                        "allOf": [
+                            { "lessThanOrEqual": ["$updatedAt", "endsAt"] },
+                            { "lessThanOrEqual": [{ "countOf": ["offer"] }, 100] }
+                        ]
+                    },
+                    "categoryCap": {
+                        "lessThanOrEqual": [
+                            { "sumOf": ["offer", "price", { "category": "category" }] },
+                            1000
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            }
+        }
+    });
+    let contract = DataContract::from_value(
+        platform_value::to_value(contract).expect("the contract converts"),
+        true,
+        platform_version,
+    )
+    .expect("the contract registers");
+    let offer = contract.document_type_for_name("offer").expect("offer");
+    let rules = offer.property_constraints();
+    let owner_cap = rules["ownerCap"].aggregate_reads()[0].clone();
+    let open_window = rules["openWindow"].aggregate_reads()[0].clone();
+    let data = BTreeMap::from([
+        ("category".to_string(), Value::U64(1)),
+        ("price".to_string(), Value::U64(40)),
+        ("endsAt".to_string(), Value::U64(1000)),
+    ]);
+    let judge = |change: SystemChange, aggregates: Option<Vec<(AggregateRead, i128)>>| {
+        let system = DocumentSystemValues {
+            updated_at: Some(500),
+            aggregates: aggregates.map(|aggregates| aggregates.into_iter().collect()),
+            ..DocumentSystemValues::owned_by(Identifier::from([3; 32]))
+        };
+        offer.validate_property_constraints_for_system_change(
+            &data,
+            &system,
+            change,
+            platform_version,
+        )
+    };
+    let is_unread = |result: &Result<_, ProtocolError>, rule: &str| {
+        matches!(
+            result,
+            Err(ProtocolError::CorruptedCodeExecution(message))
+                if message.starts_with(&format!("rule {rule} of document type offer reads a countOf"))
+        )
+    };
+
+    // A transfer judges the owner's cap alone
+    let transfer_without = judge(SystemChange::Transfer, Some(vec![]));
+    assert!(
+        is_unread(&transfer_without, "ownerCap"),
+        "{transfer_without:?}"
+    );
+    let transfer = judge(SystemChange::Transfer, Some(vec![(owner_cap.clone(), 3)]))
+        .expect("the transfer's rules are judged");
+    assert!(
+        transfer.is_valid(),
+        "openWindow and categoryCap are not judged"
+    );
+
+    // A price update judges the window alone
+    let price_update_without = judge(SystemChange::PriceUpdate, Some(vec![]));
+    assert!(
+        is_unread(&price_update_without, "openWindow"),
+        "{price_update_without:?}"
+    );
+    let price_update = judge(SystemChange::PriceUpdate, Some(vec![(open_window, 101)]))
+        .expect("the price update's rules are judged");
+    assert!(
+        !price_update.is_valid(),
+        "101 offers is above the window's 100"
+    );
+
+    // A client skips the rules reading totals
+    for change in [SystemChange::Transfer, SystemChange::PriceUpdate] {
+        let skipped = judge(change, None).expect("a client's check runs");
+        assert!(skipped.is_valid());
+    }
 }

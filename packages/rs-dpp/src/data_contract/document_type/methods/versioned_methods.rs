@@ -902,7 +902,8 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         match constraint.unread_aggregate(system) {
             None => Ok(()),
             Some(read) => Err(ProtocolError::CorruptedCodeExecution(format!(
-                "rule {name} of document type {} reads a {} of {} that consensus did not read",
+                "rule {name} of document type {} reads a {} of {} that consensus did not read: \
+                 {read:?}",
                 self.name(),
                 read.wire_name(),
                 read.document_type
