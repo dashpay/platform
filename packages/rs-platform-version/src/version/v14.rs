@@ -1426,7 +1426,49 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     extended in place and is inert before this version, where the three
 ///     slots are `None` and the meta-schemas refuse the keyword.
 ///
-/// 54. **A `refersTo` lookup key may be a hash the document reveals**: a
+/// 54. **An aggregate keyword names a top-level property**: `summable` and
+///     `averageable` on an index, and `documentsSummable` and
+///     `documentsAverageable` on a document type, name the integer property
+///     each document adds to the sum. Drive reads its value from the top level
+///     of the document, but the parser resolves the name among the flattened
+///     properties and required fields, which also hold the dotted path of a
+///     property nested in an object, and meta-schemas v1 and v2 bound only the
+///     name's length. A contract naming `payment.amount` registered, and every
+///     document create of the type then failed in Drive as an internal error.
+///     Meta-schema v3 (`CONTRACT_VERSIONS_V6`) gives the four keywords the
+///     property-name pattern `^[a-zA-Z0-9_]{1,64}$`, so a create or an update
+///     carrying a dotted name is refused under full validation
+///     (`JsonSchemaError`, 10101, paid in a block; `check_tx` does not fully
+///     validate a contract). A contract stored with one still loads, since a
+///     stored contract is parsed without full validation, but can no longer be
+///     updated; no contract on mainnet or testnet names one.
+/// 55. **A preallocated index's agreement source fits a tree key**: contract
+///     create and update state validation 1 refuse, paid, a
+///     `propertyAgreement` pair through which a preallocated index is keyed
+///     when its referenced property can hold a value over 255 bytes
+///     (`ReferencedDocumentPropertyAgreementInvalidError`, 40126): creating a
+///     referenced document writes that value as a tree key, which failed with
+///     an internal error for a value over 255 bytes, and for any value once
+///     the property's midway size, which sized the estimate, passed 255
+///     bytes. `add_document_for_contract_operations` 1 now estimates that
+///     layer from the referring property, as an entry insert does, and
+///     preallocates nothing for a referenced value wider than the referring
+///     property can hold, which no referring document can agree with.
+///
+/// 56. **A `propertyAgreement` pair compares values, not index keys**:
+///     document reference validation 0 judges each pair as two single values
+///     (`Value::same_scalar_data`): strings as text, byte arrays and
+///     identifiers as bytes, integers as numbers at any width, floats by
+///     their `f64` bits (an integer against a float read as the float it
+///     converts to, as a `number` carried as an integer is stored), booleans
+///     as booleans. An identifier or byte array carried as an array of
+///     `U8`s is the bytes it lists, as before; any other array agrees with
+///     nothing. It compared the two sides' index key encodings, under which
+///     `""` agreed with `"\0"`, and two equal values over 255 bytes, which
+///     an unindexed string of 64 characters or more can hold, were refused
+///     (`ReferencedDocumentPropertyMismatchError`, 40127).
+///
+/// 57. **A `refersTo` lookup key may be a hash the document reveals**: a
 ///     lookup key may be `{ "function": "sys.hash.sha256d", "params": [...] }`
 ///     (meta-schema v3 `lookupHashKey`, parser generation 3,
 ///     `apply_property_reference` 0), the SHA-256 of the SHA-256 of its params'
@@ -1459,19 +1501,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     preorder hash of a name under a parent byte for byte; the DPNS contract
 ///     and its create trigger are unchanged. See
 ///     `book/src/data-model/documents.md`.
-///
-/// 55. **A preallocated index's agreement source fits a tree key**: contract
-///     create and update state validation 1 refuse, paid, a
-///     `propertyAgreement` pair through which a preallocated index is keyed
-///     when its referenced property can hold a value over 255 bytes
-///     (`ReferencedDocumentPropertyAgreementInvalidError`, 40126): creating a
-///     referenced document writes that value as a tree key, which failed with
-///     an internal error for a value over 255 bytes, and for any value once
-///     the property's midway size, which sized the estimate, passed 255
-///     bytes. `add_document_for_contract_operations` 1 now estimates that
-///     layer from the referring property, as an entry insert does, and
-///     preallocates nothing for a referenced value wider than the referring
-///     property can hold, which no referring document can agree with.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

@@ -84,13 +84,15 @@ const schemas = {
   },
 };
 
-function buildContract(contractSchemas: Record<string, unknown>, platformVersion = 14) {
+// Full validation runs the document meta-schema first in this build (it has
+// dpp's `validation` feature); a parser rule is reached with it off.
+function buildContract(contractSchemas: Record<string, unknown>, platformVersion = 14, fullValidation = true) {
   return new wasm.DataContract({
     ownerId,
     identityNonce: BigInt(2),
     schemas: contractSchemas,
     definitions: null,
-    fullValidation: true,
+    fullValidation,
     platformVersion: new PlatformVersion(platformVersion),
   });
 }
@@ -253,9 +255,10 @@ describe('DataContract: typed arrays (v14)', () => {
         },
       };
 
-      expect(() => buildContract(schemasWithKeyReference)).to.throw(
+      expect(() => buildContract(schemasWithKeyReference, 14, false)).to.throw(
         /identityPublicKey refersTo is not allowed on the elements of a typed array/,
       );
+      expect(() => buildContract(schemasWithKeyReference)).to.throw(/JsonSchemaError/);
     });
   });
 

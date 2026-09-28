@@ -53,7 +53,7 @@ export class VotingFacade {
     return w.getVotePollsByEndDateWithProofInfo(query);
   }
 
-  async masternodeVote(options: wasm.MasternodeVoteOptions): Promise<void> {
+  async masternodeVote(options: wasm.MasternodeVoteOptions): Promise<wasm.Vote> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.masternodeVote(options);
   }

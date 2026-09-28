@@ -451,7 +451,8 @@ mod tests {
     /// index (allow_original remains true).
     #[test]
     fn validate_uniqueness_of_data_v1_changed_document_allows_original() {
-        let platform_version = PlatformVersion::latest();
+        // The last protocol version selecting uniqueness generation 1
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let (drive, dpns) = setup_drive_with_dpns(platform_version);
 
         let document_type = dpns
@@ -591,7 +592,8 @@ mod tests {
     /// check is skipped, yielding a valid result.
     #[test]
     fn validate_uniqueness_of_data_v1_exits_early_when_required_timestamp_missing() {
-        let platform_version = PlatformVersion::latest();
+        // The last protocol version selecting uniqueness generation 1
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let (drive, dpns) = setup_drive_with_dpns(platform_version);
 
         // Use the domain document type because it has required timestamps

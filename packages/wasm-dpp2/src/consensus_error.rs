@@ -394,6 +394,12 @@ impl ConsensusErrorWasm {
     }
 }
 
+impl From<ConsensusError> for ConsensusErrorWasm {
+    fn from(error: ConsensusError) -> Self {
+        ConsensusErrorWasm(error)
+    }
+}
+
 impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
 
 #[cfg(test)]

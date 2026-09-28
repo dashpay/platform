@@ -168,7 +168,10 @@ impl WasmSdk {
     ///
     /// @returns Promise resolving to the confirmed Document as Platform
     ///          committed it — its final `id` and the consensus-populated system fields
-    ///          (`$createdAt` and friends) included. Keep THIS instance
+    ///          (`$createdAt` and friends) included. For an indexOnly document type
+    ///          the proof shows the document's entry at the proof's block, not that
+    ///          this create wrote it: no stronger proof exists for such a document.
+    ///          Keep THIS instance
     ///          when you later intend to delete an indexOnly document
     ///          whose type requires `$createdAt`: the delete carries the
     ///          document's values, and the pre-broadcast wrapper never
@@ -447,7 +450,10 @@ impl WasmSdk {
     /// 3. Broadcasts and waits for confirmation
     ///
     /// @param options - Delete options including document (or document identifiers), identity key, and signer
-    /// @returns Promise that resolves when the document is deleted
+    /// @returns Promise that resolves when the document is deleted. For an indexOnly
+    ///          document type the proof shows the document's entry gone at the proof's
+    ///          block, not that this delete removed it: no stronger proof exists for
+    ///          such a document.
     #[wasm_bindgen(js_name = "documentDelete")]
     pub async fn document_delete(
         &self,

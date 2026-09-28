@@ -1,3 +1,123 @@
+## [4.2.0-beta.6](https://github.com/dashpay/platform/compare/v4.2.0-beta.5...v4.2.0-beta.6) (2026-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** a preallocated agreement source must fit a tree key (PV14) (#5123)
+* **sdk:** countOf and sumOf totals in the rule descriptors of the JS, Swift and Kotlin SDKs (#5121)
+* **platform:** refuse own-type totals on contested types and fail loudly on unread totals (PV14) (#5115)
+* **drive:** subscription filters match generated properties a transition leaves out (#5114)
+* **platform:** generatedFrom, string properties the platform generates with a system function (PV14) (#5099)
+* **platform:** countOf and sumOf totals from count and sum trees in propertyConstraints rules (PV14) (#5109)
+* **dpp:** propertyConstraints read empty objects as absent and follow $defs refs (PV14) (#5101)
+* **platform:** elected moderation windows may be 0 off mainnet, mainnet keeps one day (PV14) (#5108)
+* **platform:** ifThen, ifThenElse, notIn, min, max and abs in propertyConstraints rules (PV14) (#5100)
+* **swift-sdk:** new propertyConstraints read kinds and system reads in the Swift SDK and iOS example app (#5098)
+* **kotlin-sdk:** new propertyConstraints read kinds and system reads in the Kotlin SDK and Android example app (#5097)
+* **dpp:** size estimates of strings of 16384 or more characters no longer overflow (PV14) (#5086)
+* **platform:** startsWith and endsWith in propertyConstraints rules (PV14) (#5085)
+* **platform:** contains in propertyConstraints rules (PV14) (#5083)
+* **dpp:** report contracts refused by parser generation 3 as consensus errors (PV14) (#5076)
+* **platform:** creation, update and transfer times and heights in propertyConstraints rules (PV14) (#5078)
+* **platform:** string length, byte length and array count operands in propertyConstraints rules (PV14) (#5071)
+* **dpp:** propertyConstraints compare identifier properties that declare refersTo (PV14) (#5073)
+* **dpp:** accept a reordered entryPayload and refuse unruled keywords as incompatible (PV14) (#5074)
+* **dpp:** refuse token cost and unruled keyword changes on update with a consensus error (PV14) (#5069)
+* **platform:** $ownerId comparisons in propertyConstraints rules (PV14) (#5048)
+* **platform:** identifier comparisons in propertyConstraints rules (PV14) (#5047)
+* **platform:** string ifAbsent defaults in propertyConstraints rules (PV14) (#5046)
+* **platform:** compare two string properties in propertyConstraints rules (PV14) (#5045)
+
+### Features
+
+* **kotlin-sdk:** new propertyConstraints read kinds and system reads in the Kotlin SDK and Android example app ([#5097](https://github.com/dashpay/platform/issues/5097))
+* **platform:** $ownerId comparisons in propertyConstraints rules (PV14) ([#5048](https://github.com/dashpay/platform/issues/5048))
+* **platform:** compare two string properties in propertyConstraints rules (PV14) ([#5045](https://github.com/dashpay/platform/issues/5045))
+* **platform:** contains in propertyConstraints rules (PV14) ([#5083](https://github.com/dashpay/platform/issues/5083))
+* **platform:** countOf and sumOf totals from count and sum trees in propertyConstraints rules (PV14) ([#5109](https://github.com/dashpay/platform/issues/5109))
+* **platform:** creation, update and transfer times and heights in propertyConstraints rules (PV14) ([#5078](https://github.com/dashpay/platform/issues/5078))
+* **platform:** elected moderation windows may be 0 off mainnet, mainnet keeps one day (PV14) ([#5108](https://github.com/dashpay/platform/issues/5108))
+* **platform:** generatedFrom, string properties the platform generates with a system function (PV14) ([#5099](https://github.com/dashpay/platform/issues/5099))
+* **platform:** identifier comparisons in propertyConstraints rules (PV14) ([#5047](https://github.com/dashpay/platform/issues/5047))
+* **platform:** ifThen, ifThenElse, notIn, min, max and abs in propertyConstraints rules (PV14) ([#5100](https://github.com/dashpay/platform/issues/5100))
+* **platform:** startsWith and endsWith in propertyConstraints rules (PV14) ([#5085](https://github.com/dashpay/platform/issues/5085))
+* **platform:** string ifAbsent defaults in propertyConstraints rules (PV14) ([#5046](https://github.com/dashpay/platform/issues/5046))
+* **platform:** string length, byte length and array count operands in propertyConstraints rules (PV14) ([#5071](https://github.com/dashpay/platform/issues/5071))
+* **sdk:** countOf and sumOf totals in the rule descriptors of the JS, Swift and Kotlin SDKs ([#5121](https://github.com/dashpay/platform/issues/5121))
+* **sdk:** propertyConstraints discovery and pre-check in the JS SDK ([#5051](https://github.com/dashpay/platform/issues/5051))
+* **sdk:** propertyConstraints rules and pre-check in the Kotlin SDK and Android example app ([#5066](https://github.com/dashpay/platform/issues/5066))
+* **sdk:** propertyConstraints rules and pre-check in the Swift SDK and iOS example app ([#5064](https://github.com/dashpay/platform/issues/5064))
+* **swift-sdk:** new propertyConstraints read kinds and system reads in the Swift SDK and iOS example app ([#5098](https://github.com/dashpay/platform/issues/5098))
+
+
+### Bug Fixes
+
+* **ci:** build release clients natively on unprivileged runners
+* **ci:** isolate release runners from PR build state
+* **dpp:** accept a reordered entryPayload and refuse unruled keywords as incompatible (PV14) ([#5074](https://github.com/dashpay/platform/issues/5074))
+* **dpp:** parse nested required and transient entries by prefix ([#5050](https://github.com/dashpay/platform/issues/5050))
+* **dpp:** pass the contract's $defs to the countOf and sumOf key enum check ([#5110](https://github.com/dashpay/platform/issues/5110))
+* **dpp:** propertyConstraints compare identifier properties that declare refersTo (PV14) ([#5073](https://github.com/dashpay/platform/issues/5073))
+* **dpp:** propertyConstraints read empty objects as absent and follow $defs refs (PV14) ([#5101](https://github.com/dashpay/platform/issues/5101))
+* **dpp:** refuse token cost and unruled keyword changes on update with a consensus error (PV14) ([#5069](https://github.com/dashpay/platform/issues/5069))
+* **dpp:** report contracts refused by parser generation 3 as consensus errors (PV14) ([#5076](https://github.com/dashpay/platform/issues/5076))
+* **dpp:** restore the shipped order of basic consensus errors ([#5053](https://github.com/dashpay/platform/issues/5053))
+* **dpp:** size estimates of strings of 16384 or more characters no longer overflow (PV14) ([#5086](https://github.com/dashpay/platform/issues/5086))
+* **drive-abci:** finalize a block accepted in an earlier round after a later proposal was refused ([#5081](https://github.com/dashpay/platform/issues/5081))
+* **drive-abci:** sign a locked block when a later proposal left no execution context ([#5079](https://github.com/dashpay/platform/issues/5079))
+* **drive-abci:** sign vote extensions only for blocks this node accepted ([#5084](https://github.com/dashpay/platform/issues/5084))
+* **drive:** subscription filters match generated properties a transition leaves out ([#5114](https://github.com/dashpay/platform/issues/5114))
+* **platform:** a preallocated agreement source must fit a tree key (PV14) ([#5123](https://github.com/dashpay/platform/issues/5123))
+* **platform:** refuse own-type totals on contested types and fail loudly on unread totals (PV14) ([#5115](https://github.com/dashpay/platform/issues/5115))
+* **release:** require all generated clients in packed archives
+* **sdk:** bound each DAPI request attempt, including the response body ([#4973](https://github.com/dashpay/platform/issues/4973))
+* **sdk:** consensus errors reach JS with their code ([#5112](https://github.com/dashpay/platform/issues/5112))
+* **sdk:** consensus errors reach Swift and Kotlin apps with their code ([#5116](https://github.com/dashpay/platform/issues/5116))
+* **swift-sdk:** documentTransfer handles a missing document and signs once ([#5120](https://github.com/dashpay/platform/issues/5120))
+* **swift-sdk:** free FFI errors in state-transition wrappers ([#5117](https://github.com/dashpay/platform/issues/5117))
+* **swift-sdk:** take migration copies out of WAL mode
+* **wasm-sdk:** keep StateTransitionResult.ownerBalance exact in JSON ([#5059](https://github.com/dashpay/platform/issues/5059))
+* **wasm-sdk:** leave price tier validation to rs-dpp ([#5058](https://github.com/dashpay/platform/issues/5058))
+
+
+### Miscellaneous Chores
+
+* **swift-sdk:** freeze App Store schema 3.0.0
+
+
+### Continuous Integration
+
+* bootstrap PR-first runner images on v4.2-dev
+* reconcile rootless runner workflows with v4.2-dev, closes [#4702](https://github.com/dashpay/platform/issues/4702)
+
+
+### Code Refactoring
+
+* **dpp:** restore shipped registration_cost v1 index parsing ([#5055](https://github.com/dashpay/platform/issues/5055))
+* **drive:** create once-per-identity claim trees in insert_contract v2 ([#5056](https://github.com/dashpay/platform/issues/5056))
+* **platform:** fold DRIVE_ABCI_QUERY_VERSIONS_V3 into V2 ([#5057](https://github.com/dashpay/platform/issues/5057))
+* **platform:** import instead of inline crate paths in 4.1 and 4.2 code ([#5065](https://github.com/dashpay/platform/issues/5065))
+
+
+### Documentation
+
+* add a contract keywords reference page to the book ([#5067](https://github.com/dashpay/platform/issues/5067))
+* encrypt the 69-byte compact xpub in the contact-request guide ([#5087](https://github.com/dashpay/platform/issues/5087))
+* give every contract keyword its own chapter in the book ([#5075](https://github.com/dashpay/platform/issues/5075))
+* list the complete contract language in the keywords overview ([#5082](https://github.com/dashpay/platform/issues/5082))
+* **platform:** add Parameters and Returns sections to 4.1 and 4.2 dispatchers ([#5063](https://github.com/dashpay/platform/issues/5063))
+* **platform:** document the genesis protocol version exception and Swift/Kotlin indentation ([#5061](https://github.com/dashpay/platform/issues/5061))
+* **platform:** say why in-place edits to shipped generations are inert ([#5054](https://github.com/dashpay/platform/issues/5054))
+* remove committed working specs and plans ([#5060](https://github.com/dashpay/platform/issues/5060))
+* **swift-sdk:** say the migration copy is switched out of WAL mode
+
+
+### Tests
+
+* **drive:** pin that a cached contract read after an in-block update bills like a cold read ([#5052](https://github.com/dashpay/platform/issues/5052))
+* follow the test conventions in tests added in 4.1 and 4.2 ([#5062](https://github.com/dashpay/platform/issues/5062))
+* **sdk:** ifThen and ifThenElse rules through rs-sdk-ffi and the Swift and Kotlin SDKs ([#5106](https://github.com/dashpay/platform/issues/5106))
+
 ## [4.2.0-beta.5](https://github.com/dashpay/platform/compare/v4.2.0-beta.4...v4.2.0-beta.5) (2026-09-27)
 
 

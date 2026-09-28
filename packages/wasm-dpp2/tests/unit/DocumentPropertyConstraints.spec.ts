@@ -71,13 +71,22 @@ const schemas = {
   },
 };
 
-function buildContract(contractSchemas: Record<string, unknown>, platformVersion = 14) {
+/**
+ * This package is built with dpp's `validation` feature (for
+ * `DataContract.validateUpdate`), so full validation runs the document
+ * meta-schema first, as nodes do, and refuses a malformed keyword with
+ * `JsonSchemaError` (10101) before the parser sees it. The parser's own
+ * checks are reached with full validation off.
+ */
+const JSON_SCHEMA_ERROR = 10101;
+
+function buildContract(contractSchemas: Record<string, unknown>, platformVersion = 14, fullValidation = true) {
   return new wasm.DataContract({
     ownerId,
     identityNonce: BigInt(2),
     schemas: contractSchemas,
     definitions: null,
-    fullValidation: true,
+    fullValidation,
     platformVersion: new PlatformVersion(platformVersion),
   });
 }
@@ -548,7 +557,12 @@ describe('DataContract: propertyConstraints (v14)', () => {
      * enforced there.
      */
     it('should report no rules on a pre-v14 contract', () => {
-      const contract = buildContract(schemas, 13);
+      // Full validation at protocol version 13 refuses the keyword outright:
+      // the version 2 meta-schema does not know it.
+      expect(() => buildContract(schemas, 13)).to.throw(/propertyConstraints/);
+
+      // A contract read back without full validation parses no rules.
+      const contract = buildContract(schemas, 13, false);
 
       expect(contract.documentTypePropertyConstraints('offer')).to.deep.equal([]);
       expect(contract.checkDocumentPropertyConstraints(offer(contract, { discount: 200 })))
@@ -640,8 +654,18 @@ describe('DataContract: propertyConstraints (v14)', () => {
         offer: { ...schemas.offer, propertyConstraints: { rule: { equal: ['price'] } } },
       };
 
+      // Nodes refuse it at the meta-schema.
       try {
         buildContract(malformed);
+        expect.fail('expected to throw');
+      } catch (e) {
+        expect(e).to.be.instanceOf(wasm.WasmDppError);
+        expect(e.code).to.equal(JSON_SCHEMA_ERROR);
+      }
+
+      // The parser refuses it too, where the meta-schema does not run.
+      try {
+        buildContract(malformed, 14, false);
         expect.fail('expected to throw');
       } catch (e) {
         expect(e).to.be.instanceOf(wasm.WasmDppError);

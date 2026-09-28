@@ -5979,10 +5979,10 @@ mod tests {
             );
         }
 
-        /// An agreement is checked at write time by comparing index key
-        /// encodings, which a typed array does not have, so one between two
-        /// typed arrays of the same element type is refused at registration
-        /// rather than refusing every write that carries them.
+        /// An agreement is checked at write time by comparing single values,
+        /// which a typed array is not, so one between two typed arrays of the
+        /// same element type is refused at registration rather than refusing
+        /// every write that carries them.
         #[tokio::test]
         async fn should_reject_agreement_on_typed_array_properties() {
             let result = run_contract_create(
@@ -5998,6 +5998,21 @@ mod tests {
                     ),
                     ..
                 } if error.reason().contains("not typed arrays")
+            );
+        }
+
+        /// No index bounds these agreement properties, so their values may be
+        /// longer than a tree key: the pair compares values, not keys.
+        #[tokio::test]
+        async fn should_register_an_agreement_on_strings_longer_than_a_tree_key() {
+            let result = run_contract_create(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-long-values.json",
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
         }
 

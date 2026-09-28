@@ -106,6 +106,8 @@ export class DocumentsFacade {
    * instance when you later intend to delete an indexOnly document whose
    * type requires `$createdAt`. A document of a contested index joins a
    * contest: `options.contestFund` is the most, in credits, it pays into it.
+   * For an indexOnly type the proof shows the document's entry at the proof's
+   * block, not that this create wrote it: no stronger proof exists for one.
    */
   async create(options: wasm.DocumentCreateOptions): Promise<wasm.Document> {
     const w = await this.sdk.getWasmSdkConnected();
@@ -117,6 +119,11 @@ export class DocumentsFacade {
     return w.documentReplace(options);
   }
 
+  /**
+   * Deletes a document and resolves once the proof shows it gone. For an
+   * indexOnly type the proof shows the document's entry gone at the proof's
+   * block, not that this delete removed it: no stronger proof exists for one.
+   */
   async delete(options: wasm.DocumentDeleteOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentDelete(options);
