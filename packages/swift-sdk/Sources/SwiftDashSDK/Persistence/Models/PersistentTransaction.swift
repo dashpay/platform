@@ -233,12 +233,15 @@ public final class PersistentTransaction {
         func owned(_ rows: [PersistentTxo]) -> [PersistentTxo] {
             var seen = Set<Data>()
             return rows.filter {
-                PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId
+                PlatformWalletPersistenceHandler.isWalletOwnedTxo($0)
+                    && PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId
                     && seen.insert($0.outpoint).inserted
             }
         }
-        let wallets = Set((inputs + outputs).compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
-        if wallets.count == 1, wallets.contains(walletId) { return netAmount }
+        let wallets = Set((inputs + outputs).filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
+            .compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
+        let hasUnownedTxos = (inputs + outputs).contains { !PlatformWalletPersistenceHandler.isWalletOwnedTxo($0) }
+        if wallets.count == 1, wallets.contains(walletId), !hasUnownedTxos { return netAmount }
         guard pendingInputs.isEmpty else { return nil }
         let walletInputs = owned(inputs)
         let walletOutputs = owned(outputs)
@@ -251,9 +254,13 @@ public final class PersistentTransaction {
 
     /// Direction relative to one wallet for transactions shared by multiple local wallets.
     public func direction(for walletId: Data) -> UInt32 {
-        let wallets = Set((inputs + outputs).compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
+        let wallets = Set((inputs + outputs).filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
+            .compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
         guard wallets.count > 1, direction != 3, transactionTypeKind != 1, !isAssetLock else { return direction }
-        let spendsOurs = inputs.contains { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId }
+        let spendsOurs = inputs.contains {
+            PlatformWalletPersistenceHandler.isWalletOwnedTxo($0)
+                && PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId
+        }
         return spendsOurs ? 1 : 0
     }
 

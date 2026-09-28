@@ -105,6 +105,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return wallet?.walletId
     }
 
+    /// Contact watch-only TXOs do not belong to the wallet tracking their addresses.
+    static func isWalletOwnedTxo(_ txo: PersistentTxo) -> Bool {
+        resolvedWalletId(of: txo) != nil
+            && txo.account?.accountType != dashpayExternalAccountTypeTag
+            && txo.coreAddress?.account?.accountType != dashpayExternalAccountTypeTag
+    }
+
     static func walletOwnsTransaction(
         walletId: Data,
         transaction: PersistentTransaction
@@ -2541,7 +2548,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         record.blockHash = blockHashBytes.allSatisfy { $0 == 0 } ? nil : blockHashBytes
         // A context-only recovery record has zero accounting; a funded asset lock burns Core value.
         let preserveLockAccounting = tx.transaction_type_kind == 6 && tx.net_amount == 0 && !tx.has_fee
-            && record.netAmount != 0 && !record.inputs.isEmpty
+            && record.netAmount != 0 && record.inputs.contains(where: Self.isWalletOwnedTxo)
         if !preserveLockAccounting { record.direction = tx.direction }
         if let typeName = tx.transaction_type {
             record.transactionType = String(cString: typeName)
@@ -6820,7 +6827,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 let row: PersistentTxo?
                 if let txos { row = txos[key] }
                 else { row = try fetchTxoRowChecked(outpoint: key) }
-                guard let row, !row.isDeleted, Self.resolvedWalletId(of: row) != nil else {
+                guard let row, !row.isDeleted, Self.isWalletOwnedTxo(row) else {
                     complete = false
                     break
                 }
@@ -6829,7 +6836,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             guard complete else { continue }
             var amounts: [UInt64] = []
             var allOutputsOwned = true
-            let ownedVouts = Set(transaction.outputs.filter { !$0.isDeleted }.map(\.vout))
+            let ownedVouts = Set(transaction.outputs.filter { !$0.isDeleted && Self.isWalletOwnedTxo($0) }.map(\.vout))
             for (index, output) in decoded.outputs.enumerated() {
                 // OP_RETURN burns (including asset locks) are not spendable Core outputs.
                 if output.scriptPubkey.first == 0x6a { continue }
@@ -6839,7 +6846,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     let owner: PersistentCoreAddress?
                     if let cached = roundIndex?.coreAddressesByAddress[address] { owner = cached }
                     else { owner = try modelFetcher.fetch(descriptor, in: backgroundContext).first }
-                    if let account = owner?.account, account.accountType != 13 {
+                    if let account = owner?.account, account.accountType != Self.dashpayExternalAccountTypeTag {
                         belongs = true
                     }
                 }

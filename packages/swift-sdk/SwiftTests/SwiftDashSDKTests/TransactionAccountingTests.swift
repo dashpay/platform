@@ -229,4 +229,69 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertTrue(row.isAssetLock)
     }
 
+    func testShouldExcludePersistedContactOutputsFromOwnedAccounting() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let walletId = Data(repeating: 1, count: 32)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        let contactAccount = PersistentAccount(
+            wallet: wallet, accountType: PlatformWalletPersistenceHandler.dashpayExternalAccountTypeTag,
+            accountIndex: 0, accountTypeName: "DashPay External Account"
+        )
+        context.insert(wallet)
+        context.insert(contactAccount)
+        let coin = input(100)
+        let spender = PersistentTransaction(
+            txid: Data(repeating: 3, count: 32), transactionData: serializedSpend(inputs: [walletId]),
+            direction: 2, netAmount: -60
+        )
+        coin.spendingTransaction = spender
+        let contactOutput = PersistentTxo(transaction: spender, vout: 0, amount: 40, address: "", height: 1)
+        contactOutput.walletId = walletId
+        contactOutput.account = contactAccount
+        context.insert(coin)
+        context.insert(spender)
+        context.insert(contactOutput)
+        try context.save()
+        XCTAssertEqual(spender.netAmount(for: walletId), -100)
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        XCTAssertFalse(handler.loadWalletList().errored)
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>()).first { $0.txid == spender.txid })
+        XCTAssertEqual(row.netAmount, -100)
+        XCTAssertEqual(row.direction, 1)
+        XCTAssertEqual(row.netAmount(for: walletId), -100)
+    }
+
+    func testShouldNotTreatPersistedContactInputAsOurFunding() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let walletId = Data(repeating: 1, count: 32)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        let contactAccount = PersistentAccount(
+            wallet: wallet, accountType: PlatformWalletPersistenceHandler.dashpayExternalAccountTypeTag,
+            accountIndex: 0, accountTypeName: "DashPay External Account"
+        )
+        context.insert(wallet)
+        context.insert(contactAccount)
+        let coin = input(100)
+        coin.account = contactAccount
+        let spender = PersistentTransaction(
+            txid: Data(repeating: 3, count: 32), transactionData: serializedSpend(inputs: [walletId]),
+            direction: 0, netAmount: 40
+        )
+        coin.spendingTransaction = spender
+        let received = PersistentTxo(transaction: spender, vout: 0, amount: 40, address: "", height: 1)
+        received.walletId = walletId
+        context.insert(coin)
+        context.insert(spender)
+        context.insert(received)
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        XCTAssertFalse(handler.loadWalletList().errored)
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>()).first { $0.txid == spender.txid })
+        XCTAssertEqual(row.netAmount, 40)
+        XCTAssertEqual(row.direction, 0)
+        XCTAssertEqual(row.netAmount(for: walletId), 40)
+    }
+
 }
