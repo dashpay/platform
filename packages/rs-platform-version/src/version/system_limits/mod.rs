@@ -65,9 +65,9 @@ pub struct SystemLimits {
     pub max_property_constraint_nodes: u16,
     /// Maximum number of distinct `countOf` and `sumOf` totals the `propertyConstraints`
     /// rules of one document type read. Each is a billed read of a count or sum tree on
-    /// every create or replace of a document of the type (and on a transfer or purchase
-    /// when it depends on the owner), so this bounds the state one document write reads for
-    /// its rules. A total two rules read alike counts once. Refused under full validation
+    /// every create or replace of a document of the type, and on a transfer, a purchase or
+    /// a price update judged against a rule reading it, so this bounds the state one
+    /// document write reads for its rules. A total two rules read alike counts once. Refused under full validation
     /// only, like `max_property_constraints`. Read by document type parser generation 3
     /// (protocol version 14) and never reached before.
     pub max_property_constraint_aggregates: u16,

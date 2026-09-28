@@ -2634,7 +2634,8 @@ impl AggregateKeyKind {
 
 /// Checks every `countOf` and `sumOf` the `propertyConstraints` rules of
 /// `document_types`, one contract's, read, once all of them are parsed: the
-/// type it totals is one of them, and not an indexOnly one; a key of its filter
+/// type it totals is one of them, and not an indexOnly one, nor the declaring
+/// type itself when it has a contested index; a key of its filter
 /// is `$ownerId` or an integer, string or identifier property of that type,
 /// and the value matched against it is of the same kind: a property of the
 /// declaring type, `$ownerId`, an integer, a string the key's `enum` lists, or
@@ -2674,6 +2675,22 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                     return Err(error(format!(
                         "{totals}, an indexOnly type, whose rows a countOf or sumOf does not \
                          total"
+                    )));
+                }
+                // A document of the type a contest is opened for waits in the contest's
+                // storage, outside the count and sum trees, and the one a contest awards
+                // is stored without any rule judged, so a total of the type's own
+                // documents could pass the rule
+                if read.of_own_type
+                    && counted
+                        .indexes()
+                        .values()
+                        .any(|index| index.contested_index.is_some())
+                {
+                    return Err(error(format!(
+                        "{totals}, its own type, which has a contested index: a document a \
+                         contest awards is stored without the rules being judged, so the total \
+                         could pass the rule"
                     )));
                 }
                 if read.filter.is_empty() {
