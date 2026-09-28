@@ -263,6 +263,12 @@ impl From<DataContractWasm> for DataContract {
     }
 }
 
+impl AsRef<DataContract> for DataContractWasm {
+    fn as_ref(&self) -> &DataContract {
+        &self.0
+    }
+}
+
 pub fn tokens_configuration_from_js_value(
     configuration: &JsValue,
 ) -> WasmDppResult<BTreeMap<TokenContractPosition, TokenConfiguration>> {

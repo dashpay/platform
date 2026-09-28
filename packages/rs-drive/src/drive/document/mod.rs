@@ -59,17 +59,24 @@ mod verify_fetch_document_history_query;
 pub mod paths;
 
 /// Primary key tree type resolution
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod primary_key_tree_type;
 #[cfg(feature = "server")]
 pub(crate) mod prove;
 /// Terminal property-name tree resolution for ranked (indexed-tree) indexes
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub(crate) mod ranked_index_tree_type;
 
 /// Shared index-walker tree-type derivation for the v2 walkers
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub(crate) mod index_level_tree_types;
+
+/// The GroveDB layout of one document type, computed from the type with the
+/// index walkers' own tree-type rules
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod layout;
 
 /// Shared TTL semantics for time-range indexes — see
 /// `book/src/drive/time-range-ttl.md`.
