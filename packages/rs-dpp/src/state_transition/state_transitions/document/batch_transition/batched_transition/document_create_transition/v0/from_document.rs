@@ -32,11 +32,13 @@ impl DocumentCreateTransitionV0 {
                 platform_version,
             )?;
         }
-        // The platform computes every `generatedFrom` property a document leaves out when
-        // the document arrives; computing it here too lets the contest resolution below, and
-        // the transition, see the value the platform will store (inert before protocol
-        // version 14)
-        document_type.fill_generated_properties(document.properties_mut(), platform_version)?;
+        // Every `generatedFrom` property is set to what the platform generates from the
+        // document's params, replacing a value the document holds, so the contest resolution
+        // below and the transition see the value the platform will store. Inert before
+        // protocol version 14: the `fill_generated_properties` slot is `None` there and
+        // leaves the document as it is.
+        document_type
+            .regenerate_generated_properties(document.properties_mut(), platform_version)?;
         let prefunded_voting_balance =
             document_type.prefunded_voting_balance_for_document(&document, platform_version)?;
         Ok(DocumentCreateTransitionV0 {

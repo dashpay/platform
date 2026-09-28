@@ -35,11 +35,6 @@ use platform_value::btreemap_extensions::{
 use platform_value::{Identifier, Value};
 
 pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
-    /// The dotted paths of the properties that declare `generatedFrom` (protocol
-    /// version 14), in schema order, so a document write visits only them. Empty on
-    /// generations that predate the keyword.
-    fn generated_from_fields(&self) -> &[String];
-
     fn unique_id_for_storage(&self) -> [u8; 32] {
         rand::random::<[u8; 32]>()
     }
@@ -253,7 +248,44 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         &self,
         data: &mut BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError> {
+    ) -> Result<(), ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        self.generate_properties(data, false, platform_version)
+    }
+
+    /// Sets every `generatedFrom` property of `data` (a document a client is about to
+    /// send) to what the platform generates from its current parameters, replacing a value
+    /// it holds and removing it when a parameter is absent. A document fetched, edited and
+    /// sent back keeps the generated values of its old parameters, which the platform
+    /// refuses; the transition builders call this instead of `fill_generated_properties`
+    /// so the transition carries the values the platform would generate.
+    ///
+    /// Versioned on `fill_generated_properties` like it: `None` before protocol version 14
+    /// leaves `data` untouched.
+    fn regenerate_generated_properties(
+        &self,
+        data: &mut BTreeMap<String, Value>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        self.generate_properties(data, true, platform_version)
+    }
+
+    /// `fill_generated_properties` (`replace_present` false) and
+    /// `regenerate_generated_properties` (`replace_present` true).
+    fn generate_properties(
+        &self,
+        data: &mut BTreeMap<String, Value>,
+        replace_present: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
         match platform_version
             .dpp
             .contract_versions
@@ -263,7 +295,7 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         {
             None => Ok(()),
             Some(0) => {
-                self.fill_generated_properties_v0(data);
+                self.generate_properties_v0(data, replace_present);
                 Ok(())
             }
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
@@ -274,18 +306,17 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         }
     }
 
-    fn fill_generated_properties_v0(&self, data: &mut BTreeMap<String, Value>) {
-        for path in self.generated_from_fields() {
-            let Some(generated_from) = self
-                .flattened_properties()
-                .get(path)
-                .and_then(|property| property.generated_from.as_ref())
-            else {
-                continue;
-            };
-            // Supplied, or unreadable (an intermediate that is not a map, which the schema
-            // validation refuses on its own): either way not the platform's to write
-            if !matches!(data.get_optional_at_path(path), Ok(None)) {
+    fn generate_properties_v0(&self, data: &mut BTreeMap<String, Value>, replace_present: bool)
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for (path, generated_from) in self.generated_from_fields() {
+            if replace_present {
+                remove_at_path(data, path);
+            } else if !matches!(data.get_optional_at_path(path), Ok(None)) {
+                // Supplied, or unreadable (an intermediate that is not a map, which the
+                // schema validation refuses on its own): either way not the platform's to
+                // write
                 continue;
             }
             let arguments: Option<Vec<&str>> = generated_from
@@ -296,7 +327,7 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
                 })
                 .collect();
             let Some(generated) =
-                arguments.and_then(|arguments| generated_from.generate(&arguments))
+                arguments.and_then(|arguments| generated_from.function.apply(&arguments))
             else {
                 continue;
             };
@@ -311,10 +342,13 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     /// Checks every `generatedFrom` property of `properties` (the document's properties
     /// map) against its parameters: when every parameter is present the property must hold
     /// what the function generates from them, and when a parameter is absent the property
-    /// must be absent too. The first property that does not is refused with
-    /// `DocumentPropertyNotGeneratedError`. A value that is not a string is not compared:
-    /// the JSON schema validation that `DataContract::validate_document_properties` runs
-    /// alongside refuses it, and its result is reported first.
+    /// must be absent too. A document that repeats a key on the way to the property or to
+    /// a parameter is refused as well: the schema validation and the stored document keep
+    /// the last of repeated keys, where the platform generated from the first. The first
+    /// property that does not pass is refused with `DocumentPropertyNotGeneratedError`. A
+    /// value that is not a string is not compared: the JSON schema validation that
+    /// `DataContract::validate_document_properties` runs alongside refuses it, and its
+    /// result is reported first.
     ///
     /// A document that arrived at the platform has been through
     /// `fill_generated_properties`, so a left-out property whose parameters are present is
@@ -329,7 +363,10 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         &self,
         properties: &Value,
         platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
         match platform_version
             .dpp
             .contract_versions
@@ -351,35 +388,37 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     fn validate_generated_from_properties_v0(
         &self,
         properties: &Value,
-    ) -> SimpleConsensusValidationResult {
-        for path in self.generated_from_fields() {
-            let Some(generated_from) = self
-                .flattened_properties()
-                .get(path)
-                .and_then(|property| property.generated_from.as_ref())
-            else {
-                continue;
-            };
-            let value = read_at_path(properties, path);
-            let arguments: Vec<Option<&Value>> = generated_from
-                .property_params()
-                .map(|param| read_at_path(properties, param))
-                .collect();
-            let generated = if arguments.iter().any(Option::is_none) {
-                // Nothing to generate from: the property must be left out too
-                value.is_none()
-            } else {
-                let texts: Option<Vec<&str>> = arguments
-                    .iter()
-                    .map(|argument| argument.and_then(|argument| argument.as_text()))
-                    .collect();
-                match (value.map(|value| value.as_text()), texts) {
-                    (None, _) => false,
-                    (Some(Some(value)), Some(arguments)) => {
-                        generated_from.is_generated_value(&arguments, value)
+    ) -> SimpleConsensusValidationResult
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for (path, generated_from) in self.generated_from_fields() {
+            let generated = match (
+                read_at_path(properties, path),
+                generated_from
+                    .property_params()
+                    .map(|param| read_at_path(properties, param))
+                    .collect::<Result<Vec<_>, RepeatedKey>>(),
+            ) {
+                (Err(RepeatedKey), _) | (_, Err(RepeatedKey)) => false,
+                (Ok(value), Ok(arguments)) => {
+                    if arguments.iter().any(Option::is_none) {
+                        // Nothing to generate from: the property must be left out too
+                        value.is_none()
+                    } else {
+                        let texts: Option<Vec<&str>> = arguments
+                            .iter()
+                            .map(|argument| argument.and_then(|argument| argument.as_text()))
+                            .collect();
+                        match (value.map(|value| value.as_text()), texts) {
+                            (None, _) => false,
+                            (Some(Some(value)), Some(arguments)) => {
+                                generated_from.function.apply(&arguments).as_deref() == Some(value)
+                            }
+                            // A value that is not a string: the schema validation refuses it
+                            _ => true,
+                        }
                     }
-                    // A value that is not a string: the schema validation refuses it
-                    _ => true,
                 }
             };
             if !generated {
@@ -423,12 +462,48 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     }
 }
 
-/// The value at a dotted `path` of a document's properties, `None` when it is absent or
-/// the path runs through a value that is not a map (the schema validation refuses that
-/// shape on its own).
+/// A map on the way to a path holds the path's key more than once.
 #[cfg(feature = "validation")]
-fn read_at_path<'a>(properties: &'a Value, path: &'a str) -> Option<&'a Value> {
-    properties.get_optional_value_at_path(path).ok().flatten()
+struct RepeatedKey;
+
+/// The value at a dotted `path` of a document's properties: `Ok(None)` when it is absent or
+/// the path runs through a value that is not a map (the schema validation refuses that
+/// shape on its own), `Err` when a map on the way holds the path's key more than once.
+#[cfg(feature = "validation")]
+fn read_at_path<'a>(properties: &'a Value, path: &str) -> Result<Option<&'a Value>, RepeatedKey> {
+    let mut current = properties;
+    for segment in path.split('.') {
+        let Value::Map(map) = current else {
+            return Ok(None);
+        };
+        let mut matches = map
+            .iter()
+            .filter(|(key, _)| key.as_text() == Some(segment))
+            .map(|(_, value)| value);
+        let Some(value) = matches.next() else {
+            return Ok(None);
+        };
+        if matches.next().is_some() {
+            return Err(RepeatedKey);
+        }
+        current = value;
+    }
+    Ok(Some(current))
+}
+
+/// Removes the value at a dotted `path` of a document's properties, if there is one.
+fn remove_at_path(data: &mut BTreeMap<String, Value>, path: &str) {
+    match path.split_once('.') {
+        None => {
+            data.remove(path);
+        }
+        Some((head, rest)) => {
+            if let Some(value) = data.get_mut(head) {
+                // A value on the way that is not a map holds nothing to remove
+                let _ = value.remove_optional_value_at_path(rest);
+            }
+        }
+    }
 }
 
 /// The flat field list the v0 (protocol versions <= 13, frozen on chain)

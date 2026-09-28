@@ -35,10 +35,10 @@ impl Sdk {
         document_type: DocumentTypeRef<'_>,
         document: &Document,
     ) -> Result<Option<Credits>, Error> {
-        // The contest is resolved on the document the platform will store, with every
-        // `generatedFrom` property it leaves out computed as the platform computes it
+        // The contest is resolved on the document the transition builder sends, with every
+        // `generatedFrom` property generated from its params as the platform generates it
         let mut document = document.clone();
-        document_type.fill_generated_properties(document.properties_mut(), self.version())?;
+        document_type.regenerate_generated_properties(document.properties_mut(), self.version())?;
         let Some(VotePoll::ContestedDocumentResourceVotePoll(vote_poll)) =
             document_type.contested_vote_poll_for_document(&document, self.version())?
         else {

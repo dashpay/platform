@@ -27,7 +27,6 @@ use crate::consensus::state::data_contract::document_type_update_error::Document
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV1Getters, DocumentTypeV2Getters,
 };
-use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -417,17 +416,10 @@ impl DocumentTypeRef<'_> {
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {
         let old_properties = self.flattened_properties();
-        for path in new_document_type.generated_from_fields() {
+        for (path, generated_from) in new_document_type.generated_from_fields() {
             if old_properties.contains_key(path) {
                 continue;
             }
-            let Some(generated_from) = new_document_type
-                .flattened_properties()
-                .get(path)
-                .and_then(|property| property.generated_from.as_ref())
-            else {
-                continue;
-            };
             if generated_from
                 .property_params()
                 .all(|param| old_properties.contains_key(param))

@@ -199,7 +199,8 @@ impl DocumentFromReplaceTransitionV0 for Document {
         } = value;
 
         // The document the platform stores holds every generated property the transition
-        // left out, generated on arrival (inert before protocol version 14)
+        // left out, generated on arrival. Inert before protocol version 14: the
+        // `fill_generated_properties` slot is `None` there and leaves the data as it is.
         let mut data = data.clone();
         document_type.fill_generated_properties(&mut data, platform_version)?;
 
@@ -287,7 +288,8 @@ impl DocumentFromReplaceTransitionV0 for Document {
         } = value;
 
         // The document the platform stores holds every generated property the transition
-        // left out, generated on arrival (inert before protocol version 14)
+        // left out, generated on arrival. Inert before protocol version 14: the
+        // `fill_generated_properties` slot is `None` there and leaves the data as it is.
         document_type.fill_generated_properties(&mut data, platform_version)?;
 
         let id = base.id();

@@ -16,7 +16,6 @@ use dpp::data_contract::config::moderation::ContractModerationList;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identifier::Identifier;
@@ -164,7 +163,7 @@ impl Drive {
                             use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
                             use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
                             if document_type.index_only() {
-                                let mut values = match document_transition {
+                                let values = match document_transition {
                                     DocumentTransition::Create(create_transition) => {
                                         create_transition.data().clone()
                                     }
@@ -183,11 +182,6 @@ impl Drive {
                                         ));
                                     }
                                 };
-                                // The entry holds every generated property the
-                                // transition left out, as the node generated it on
-                                // arrival (inert before protocol version 14)
-                                document_type
-                                    .fill_generated_properties(&mut values, platform_version)?;
                                 crate::query::index_only_synthesis::index_only_transition_entry_path_query(
                                     contract.id(),
                                     document_type,

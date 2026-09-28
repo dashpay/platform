@@ -330,25 +330,9 @@ impl DocumentTypeRef<'_> {
     }
 }
 
-impl DocumentTypeBasicMethods for DocumentType {
-    fn generated_from_fields(&self) -> &[String] {
-        match self {
-            DocumentType::V0(v0) => v0.generated_from_fields(),
-            DocumentType::V1(v1) => v1.generated_from_fields(),
-            DocumentType::V2(v2) => v2.generated_from_fields(),
-        }
-    }
-}
+impl DocumentTypeBasicMethods for DocumentType {}
 
-impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {
-    fn generated_from_fields(&self) -> &[String] {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.generated_from_fields(),
-            DocumentTypeRef::V1(v1) => v1.generated_from_fields(),
-            DocumentTypeRef::V2(v2) => v2.generated_from_fields(),
-        }
-    }
-}
+impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {}
 
 impl DocumentTypeV0Methods for DocumentType {}
 

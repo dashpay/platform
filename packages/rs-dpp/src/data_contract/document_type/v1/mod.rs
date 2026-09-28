@@ -79,12 +79,7 @@ pub struct DocumentTypeV1 {
     pub(in crate::data_contract) token_costs: TokenCosts,
 }
 
-impl DocumentTypeBasicMethods for DocumentTypeV1 {
-    /// Generation 1 predates `generatedFrom`: no property declares it.
-    fn generated_from_fields(&self) -> &[String] {
-        &[]
-    }
-}
+impl DocumentTypeBasicMethods for DocumentTypeV1 {}
 
 impl DocumentTypeV0Methods for DocumentTypeV1 {}
 

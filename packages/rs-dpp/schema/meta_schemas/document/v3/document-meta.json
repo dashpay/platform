@@ -783,7 +783,7 @@
           "maximum": 65535
         },
         "generatedFrom": {
-          "description": "Only on string properties: the platform generates the property's value with function from params, other properties of the same document. function names a built-in, under sys.: sys.stringTransformations.homographSafeASCII takes one string and lowercases A to Z, then turns o into 0 and i and l into 1, keeping every other character, ASCII or not, as it is (the DPNS label normalization over ASCII, so it only resists homographs where the param's pattern admits ASCII alone). params lists, in order, as many properties as the function takes, each the dotted path of a property of the same document type. A function never refuses a value: which characters a param may hold is the param's pattern's job, and the generated property needs no pattern of its own. When a created or replaced document (or the values of an indexOnly delete) leaves the property out and supplies every param, the platform generates the value on arrival, before anything reads the document; a value the document supplies must equal the generated one, and the property must be absent when a param is. Checked wherever a document's properties are validated, every create and replace included, after the JSON schema (DocumentPropertyNotGeneratedError, 10424). At contract registration every param must be another string property of the document type that is not generated itself, neither the property nor a param may be transient or inside a transient object, and every param must sit inside every object that holds this property (a top-level property may take any param), so a document supplying the params always holds the object the value is written into. Not allowed on the items of a typed array. Adding, removing or changing it is an incompatible schema change on update, and a property an update adds may declare it only over params the update adds too (documents stored before the update were never generated). Available from protocol version 14.",
+          "description": "Only on string properties: the platform generates the property's value with function from params, other properties of the same document. function names a built-in, under sys.: sys.stringTransformations.homographSafeASCII takes one string and lowercases A to Z, then turns o into 0 and i and l into 1, keeping every other character, ASCII or not, as it is (the DPNS label normalization over ASCII, so it only resists homographs where the param's pattern admits ASCII alone). params lists, in order, as many properties as the function takes, each the dotted path of a property of the same document type. A function never refuses a value: which characters a param may hold is the param's pattern's job, and the generated property needs no pattern of its own. When a created or replaced document (or the values of an indexOnly delete) leaves the property out and supplies every param, the platform generates the value on arrival, before anything reads the document; a value the document supplies must equal the generated one, and the property must be absent when a param is. Checked wherever a document's properties are validated, every create and replace included, after the JSON schema (DocumentPropertyNotGeneratedError, 10424). At contract registration every param must be another string property of the document type that is not generated itself, neither the property nor a param may be transient or inside a transient object, and every param must sit inside every object that holds this property (a top-level property may take any param), so a document supplying the params always holds the object the value is written into. Not allowed on the items of a typed array, nor beside $ref, whose definition replaces every keyword written next to it: declare it in the definition. Adding, removing or changing it is an incompatible schema change on update, and a property an update adds may declare it only when one of its params is new too (documents stored before the update were never generated). Available from protocol version 14.",
           "type": "object",
           "properties": {
             "function": {
@@ -918,7 +918,7 @@
           ]
         },
         "generatedFrom": {
-          "description": "generatedFrom is only allowed on string properties",
+          "description": "generatedFrom is only allowed on string properties, and not beside $ref, whose definition replaces every keyword written next to it",
           "properties": {
             "type": {
               "const": "string"
@@ -926,7 +926,12 @@
           },
           "required": [
             "type"
-          ]
+          ],
+          "not": {
+            "required": [
+              "$ref"
+            ]
+          }
         },
         "refersTo": {
           "description": "refersTo is only allowed on identifier properties, except an identityPublicKey reference with identityProperty, which sits on the key id property: an integer with minimum 0 and maximum 4294967295, the range of a key id",

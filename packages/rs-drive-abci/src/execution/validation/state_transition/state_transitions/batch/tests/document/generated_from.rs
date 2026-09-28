@@ -34,15 +34,17 @@ mod generated_from_tests {
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
+    use drive::drive::contract::DataContractFetchInfo;
     use drive::drive::Drive;
     use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
     use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
-    use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionV0};
+    use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionAccessorsV0, DocumentReplaceTransitionActionV0};
     use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
     use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
     use drive::util::storage_flags::StorageFlags;
     use simple_signer::signer::SimpleSigner;
     use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
 
     /// A mutable `handle` type shaped like DPNS's domain: a `label` and its
     /// required `normalizedLabel`, unique across handles, and an optional
@@ -395,7 +397,7 @@ mod generated_from_tests {
                 transition,
                 &BlockInfo::default(),
                 &proof,
-                &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
+                &|id| Ok(known_contracts.get(id).cloned().map(Arc::new)),
                 platform_version,
             )
             .expect("expected the proof to verify");
@@ -450,9 +452,7 @@ mod generated_from_tests {
         }
 
         /// The contract as Drive hands it to the transformers and validators.
-        fn contract_fetch_info(
-            &self,
-        ) -> std::sync::Arc<drive::drive::contract::DataContractFetchInfo> {
+        fn contract_fetch_info(&self) -> Arc<DataContractFetchInfo> {
             let (_, contract_fetch_info) = self
                 .platform
                 .drive
@@ -801,6 +801,60 @@ mod generated_from_tests {
 
         let at = action_data(PlatformVersion::latest());
         assert_eq!(at.get("normalizedLabel"), Some(&text("b0b")));
+    }
+
+    /// The replace transformer, edited in place, generates the property only
+    /// from protocol version 14: before it, the data goes on as sent.
+    #[tokio::test]
+    async fn should_not_regenerate_the_property_on_replace_before_protocol_version_14() {
+        let mut fixture = HandleFixture::new();
+        assert_success(
+            &fixture
+                .create(platform_value!({ "label": "Bob" }), 20)
+                .await,
+        );
+        let stored = fixture.stored_handles().remove(0);
+        let transition = fixture
+            .replace_transition(&stored, |handle| {
+                handle.set("label", text("Robin"));
+                handle.remove("normalizedLabel");
+            })
+            .await;
+        let StateTransition::Batch(batch) = &transition else {
+            panic!("expected a batch transition");
+        };
+        let replace_transition = match batch.first_transition() {
+            Some(BatchedTransitionRef::Document(DocumentTransition::Replace(replace))) => replace,
+            other => panic!("expected a document replace, got {other:?}"),
+        };
+        let contract_fetch_info = fixture.contract_fetch_info();
+
+        let action_data = |platform_version: &PlatformVersion| {
+            let (result, _) =
+                DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
+                    replace_transition,
+                    fixture.identity.id(),
+                    &stored,
+                    &BlockInfo::default(),
+                    0,
+                    |_| Ok(contract_fetch_info.clone()),
+                    platform_version,
+                )
+                .expect("expected the transformer to run");
+            match result.into_data().expect("expected an action") {
+                BatchedTransitionAction::DocumentAction(
+                    DocumentTransitionAction::ReplaceAction(action),
+                ) => action.data().clone(),
+                other => panic!("expected a replace action, got {other:?}"),
+            }
+        };
+
+        let before = action_data(PlatformVersion::get(13).expect("protocol version 13"));
+        assert_eq!(before.get("label"), Some(&text("Robin")));
+        assert_eq!(before.get("normalizedLabel"), None);
+
+        let at = action_data(PlatformVersion::latest());
+        assert_eq!(at.get("normalizedLabel"), Some(&text("r0b1n")));
     }
 
     /// The replace structure dispatcher on both sides of the gate: the document

@@ -18,9 +18,11 @@ use crate::error::{WasmDppError, WasmDppResult};
 use dpp::consensus::basic::document::PropertyConstraintViolation;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::property_constraints::{DocumentSystemValues, PropertyRead};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
+use dpp::version::PlatformVersion;
 use js_sys::{Array, BigInt, Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -382,9 +384,10 @@ fn system_values_for_write(document: &Document) -> DocumentSystemValues {
 
 /// The first rule of `document_type`'s `propertyConstraints` that `document`
 /// breaks, in name order, as consensus judges a create or replace: its
-/// properties, its owner for `$ownerId`, and its system times and heights as
-/// [`system_values_for_write`] estimates them. `undefined` when it meets them
-/// all.
+/// properties with every `generatedFrom` property generated from its params,
+/// as the transition builders send them, its owner for `$ownerId`, and its
+/// system times and heights as [`system_values_for_write`] estimates them.
+/// `undefined` when it meets them all.
 pub(crate) fn check_property_constraints(
     document_type: DocumentTypeRef<'_>,
     document: &Document,
@@ -393,7 +396,9 @@ pub(crate) fn check_property_constraints(
     if constraints.is_empty() {
         return Ok(JsValue::UNDEFINED);
     }
-    let data = Value::from(document.properties().clone());
+    let mut properties = document.properties().clone();
+    document_type.regenerate_generated_properties(&mut properties, PlatformVersion::desired())?;
+    let data = Value::from(properties);
     let system = system_values_for_write(document);
     for (name, constraint) in constraints {
         if let Some(violation) = constraint.violation(&data, &system) {

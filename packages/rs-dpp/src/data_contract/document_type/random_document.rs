@@ -1,9 +1,11 @@
 use bincode::{Decode, DecodeUntrusted, Encode};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
-use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::document_type::{DocumentPropertyType, DocumentType, DocumentTypeRef};
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, TRANSFERRED_AT,
     TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
@@ -15,6 +17,9 @@ use crate::identity::Identity;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
+use platform_value::btreemap_extensions::{
+    BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
+};
 use platform_value::{Bytes32, Identifier, Value};
 use rand::prelude::StdRng;
 use rand::SeedableRng;
@@ -40,7 +45,9 @@ pub enum DocumentFieldFillSize {
 
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.
-pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
+pub trait CreateRandomDocument:
+    DocumentTypeV0Getters + DocumentTypeV2Getters + DocumentTypeV0Methods
+{
     /// Generates a single random document, employing default behavior for document field
     /// filling where fields that are not required will not be filled (`DoNotFillIfNotRequired`) and
     /// any fill size that is contractually allowed may be used (`AnyDocumentFillSize`).
@@ -231,17 +238,8 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
                 if property.required
                     || document_field_fill_type == DocumentFieldFillType::FillIfNotRequired
                 {
-                    let value = match document_field_fill_size {
-                        DocumentFieldFillSize::MinDocumentFillSize => {
-                            property.property_type.random_sub_filled_value(rng)
-                        }
-                        DocumentFieldFillSize::MaxDocumentFillSize => {
-                            property.property_type.random_filled_value(rng)
-                        }
-                        DocumentFieldFillSize::AnyDocumentFillSize => {
-                            property.property_type.random_value(rng)
-                        }
-                    };
+                    let value =
+                        random_value_of(&property.property_type, document_field_fill_size, rng);
                     Some((key.clone(), value))
                 } else {
                     None
@@ -249,17 +247,33 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
             })
             .collect();
 
-        // A random value is not what a function generates: drop the one drawn for each
-        // `generatedFrom` property and generate it from its params, as the platform
-        // does for a document that leaves it out
-        if !self.generated_from_fields().is_empty() {
-            let mut value = Value::from(properties);
-            for path in self.generated_from_fields() {
-                value.remove_optional_value_at_path(path)?;
+        // A random value is not what a function generates: replace the one drawn for each
+        // `generatedFrom` property with the value generated from its params. A drawn
+        // property whose params were not drawn (optional ones, or inside an optional object)
+        // gets them drawn first, so a required generated property is not left out.
+        for (path, generated_from) in self.generated_from_fields() {
+            if !matches!(properties.get_optional_at_path(path), Ok(Some(_))) {
+                continue;
             }
-            properties = value.into_btree_string_map()?;
-            self.fill_generated_properties(&mut properties, platform_version)?;
+            for param in generated_from.property_params() {
+                let head = param.split_once('.').map_or(param, |(head, _)| head);
+                if !properties.contains_key(head) {
+                    if let Some(property) = self.properties().get(head) {
+                        let value =
+                            random_value_of(&property.property_type, document_field_fill_size, rng);
+                        properties.insert(head.to_string(), value);
+                    }
+                }
+                if matches!(properties.get_optional_at_path(param), Ok(None)) {
+                    if let Some(property) = self.flattened_properties().get(param) {
+                        let value =
+                            random_value_of(&property.property_type, document_field_fill_size, rng);
+                        properties.insert_at_path(param, value)?;
+                    }
+                }
+            }
         }
+        self.regenerate_generated_properties(&mut properties, platform_version)?;
 
         let revision = if self.requires_revision() {
             Some(INITIAL_REVISION)
@@ -473,6 +487,19 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
             ));
         }
         Ok(vec)
+    }
+}
+
+/// A random value of `property_type` of the requested fill size.
+fn random_value_of(
+    property_type: &DocumentPropertyType,
+    document_field_fill_size: DocumentFieldFillSize,
+    rng: &mut StdRng,
+) -> Value {
+    match document_field_fill_size {
+        DocumentFieldFillSize::MinDocumentFillSize => property_type.random_sub_filled_value(rng),
+        DocumentFieldFillSize::MaxDocumentFillSize => property_type.random_filled_value(rng),
+        DocumentFieldFillSize::AnyDocumentFillSize => property_type.random_value(rng),
     }
 }
 

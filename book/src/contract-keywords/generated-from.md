@@ -4,12 +4,12 @@
 
 | | |
 |---|---|
-| **Where** | A string property, at the top level or inside an object. Not on a typed array or its `items` |
+| **Where** | A string property, at the top level or inside an object. Not on a typed array or its `items`, and not beside `$ref` |
 | **Value** | `{ "function": <name>, "params": [<path>, ...] }`: a built-in function, and as many params as it takes, each the dotted path of a property of the same document type (`"profile.display"` for a nested one), 1 to 256 characters |
 | **Default** | Absent: no rule |
 | **Since** | protocol version 14 |
-| **On update** | Fixed: adding, removing or changing it is refused (`IncompatibleDocumentTypeSchemaError`, 10246); a property an update adds may declare it only over a param the update adds too (`DocumentTypeUpdateError`, 40212) |
-| **Errors** | `DocumentPropertyNotGeneratedError` (10424) on a document; at registration `JsonSchemaError` (10101) or `InvalidContractStructure` (10231) |
+| **On update** | Fixed: adding, removing or changing it is refused (`IncompatibleDocumentTypeSchemaError`, 10246); a property an update adds may declare it only when one of its params is new too (`DocumentTypeUpdateError`, 40212) |
+| **Errors** | `DocumentPropertyNotGeneratedError` (10424) on a document; at registration `JsonSchemaError` (10101) or `InvalidContractStructure` (10231); on update `IncompatibleDocumentTypeSchemaError` (10246) or `DocumentTypeUpdateError` (40212) |
 
 ## Example
 
@@ -63,23 +63,23 @@ For now a param is always a property of the same document, written as its dotted
 ## How it works
 
 - **Generated on arrival.** When a document create or replace, or the values of an [index-only](index-only.md) delete, leaves the property out and supplies every param, the platform writes the generated value into the document before anything reads it: contest detection, the schema validation, the indexes and the stored document all see it. A property the document sends is left as sent. A generated value then goes through the property's own schema like a sent one, so any bound it declares, such as `maxLength`, should admit every value the function can generate from its params.
-- **Checked after the JSON schema.** Wherever a document's properties are validated, on every create and replace included and in a client that validates a document before sending it, the property must hold what the function generates from its params, and must be absent when a param is. A property that breaks this refuses the transition with `DocumentPropertyNotGeneratedError` (10424), which names the document type, the property, the function and its params. A schema error on any of the values is reported first.
+- **Checked after the JSON schema.** Wherever a document's properties are validated, on every create and replace included and in a client that validates a document before sending it, the property must hold what the function generates from its params, and must be absent when a param is. A document that repeats a key in an object on the way to the property or to a param is refused too, since the value it holds there would be ambiguous. A property that breaks this refuses the transition with `DocumentPropertyNotGeneratedError` (10424), which names the document type, the property, the function and its params. A schema error on any of the values is reported first.
 - **Absent params.** A property one of whose params is absent must be absent too. To make the params required in effect, list the generated property in `required`: a document without them then fails the schema.
 - **Replace.** A replace is judged on the whole new document. Leave the property out to have it generated from the new params; a stale value sent with changed params is refused.
 - **Transfers, purchases and deletes by id** do not change the data and are not judged. An index-only delete is: its values are generated and checked like a create's, so a stale value, or one without its params, refuses it.
 
-The SDK's transition builders generate the property the same way, so a transition built from a document carries the value the platform would generate, and contest detection sees it. A client that validates a document it built, before building a transition, should generate it first (in Rust, `DocumentTypeBasicMethods::fill_generated_properties`) or set the value; otherwise the local check reports the property missing. The proof a client verifies after a create or replace is checked against the document with the generated value, as the platform stored it.
+The SDK's transition builders generate the property from the document's params, replacing any value the document holds and leaving it out when a param is absent, so a transition built from a document carries the value the platform would generate, and contest detection sees it. A document fetched, edited and sent back through them therefore carries the value of its new params, not the stale one. The property-constraint pre-checks of the JavaScript and FFI SDKs judge the document the same way. A client that validates a document it built, before building a transition, should generate it first (in Rust, `DocumentTypeBasicMethods::regenerate_generated_properties`) or set the value; otherwise the local check reports the property missing. The proof a client verifies after a create or replace is checked against the document with the generated value, as the platform stored it.
 
 ## Rules at registration
 
-- The keyword is allowed only on a string property. On any other property, a typed array and its `items` included, the meta-schema refuses it (`JsonSchemaError`, 10101).
-- `function` must name a built-in, and `params` must list as many params as it takes.
+- The keyword is allowed only on a string property, and not beside `$ref`, whose definition replaces every keyword written next to it (declare it in the definition instead). On any other property, a typed array and its `items` included, the meta-schema refuses it (`JsonSchemaError`, 10101).
+- `function` must name a built-in, and `params` must list 1 to 16 params, as many as the function takes. The meta-schema refuses an unknown function or an empty or overlong list (`JsonSchemaError`, 10101).
 - Every param must name another string property of the same document type (not an object, not a system property, not the declaring property), and that property may not be generated itself.
 - Neither the declaring property nor a param may be [transient](transient.md) or sit inside a transient object: a transient value is never stored.
-- On a contract update, a new property may declare `generatedFrom` only when one of its params is new too. Documents stored before the update were never generated, so a new generated property whose params all existed is refused (`DocumentTypeUpdateError`, 40212).
 - Every param must sit inside every object that holds the declaring property: a top-level property may take any param, but `profile.normalized` must take params inside `profile`. A document that supplies the params then always holds the object the platform writes the value into.
+- On a contract update, a new property may declare `generatedFrom` only when one of its params is new too. Documents stored before the update were never generated, so a new generated property whose params all existed is refused (`DocumentTypeUpdateError`, 40212).
 
-The parser refuses a declaration that breaks these rules with `InvalidContractStructure` (10231).
+The meta-schema refuses the shape errors of the first two rules with `JsonSchemaError` (10101). The parser refuses a function with the wrong number of params, and a declaration that breaks the param rules (the third to fifth), with `InvalidContractStructure` (10231). The update rule refuses with `DocumentTypeUpdateError` (40212).
 
 ## See also
 

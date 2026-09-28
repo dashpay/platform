@@ -24,6 +24,7 @@ use crate::data_contract::document_type::property_constraints::DocumentSystemVal
 use crate::data_contract::document_type::{GeneratedFrom, GenerationFunction, GenerationParam};
 use crate::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use crate::data_contract::DataContract;
+use crate::document::Document;
 use crate::validation::SimpleConsensusValidationResult;
 use platform_value::platform_value;
 use platform_value::string_encoding::Encoding;
@@ -196,6 +197,46 @@ fn should_refuse_generated_from_on_a_typed_array_or_its_items() {
             "not on a typed array or its items",
         );
     }
+}
+
+/// A `$ref` replaces every keyword written beside it with its definition, so a
+/// declaration there would be dropped: the meta-schema refuses it.
+#[test]
+fn should_refuse_generated_from_beside_a_ref() {
+    let platform_version = PlatformVersion::latest();
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config available on this platform version");
+    let schema_defs = BTreeMap::from([(
+        "name".to_string(),
+        platform_value!({ "type": "string", "maxLength": 32 }),
+    )]);
+    let schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "label": string_property(0),
+            "normalizedLabel": {
+                "$ref": "#/$defs/name",
+                "type": "string",
+                "position": 1,
+                "generatedFrom": generated_from("label")
+            }
+        },
+        "additionalProperties": false
+    });
+    let error = expect_json_schema_error(DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "handle",
+        schema,
+        Some(&schema_defs),
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    ));
+    assert_eq!(error.keyword(), "not", "{error:?}");
 }
 
 #[test]
@@ -534,6 +575,30 @@ fn should_fill_nothing_before_protocol_version_14() {
     assert_eq!(properties, data(platform_value!({ "label": "Bob" })));
 }
 
+/// The client-side twin sets every property to what its current params generate,
+/// replacing a stale value, and removes one whose param is absent.
+#[test]
+fn should_regenerate_every_property_from_its_current_params() {
+    let document_type = parse(schema());
+    let mut properties = data(platform_value!({
+        "label": "Robin",
+        "normalizedLabel": "b0b",
+        "profile": { "normalizedDisplay": "stale" },
+        "slug": "stale"
+    }));
+    document_type
+        .regenerate_generated_properties(&mut properties, PlatformVersion::latest())
+        .expect("the regeneration runs");
+    assert_eq!(
+        properties,
+        data(platform_value!({
+            "label": "Robin",
+            "normalizedLabel": "r0b1n",
+            "profile": {}
+        }))
+    );
+}
+
 // ================================================================
 //  Check
 // ================================================================
@@ -620,6 +685,60 @@ fn should_check_nothing_before_protocol_version_14() {
         )
         .expect("validation executes")
         .is_valid());
+}
+
+/// A repeated key on the way to a param or to the property is refused: the
+/// schema validation and the stored document keep the last of repeated keys,
+/// where the platform generated from the first.
+#[test]
+fn should_refuse_a_repeated_key_on_the_way_to_a_param_or_the_property() {
+    let document_type = parse(schema());
+    let text = |value: &str| Value::Text(value.to_string());
+    let map = |entries: Vec<(&str, Value)>| {
+        Value::Map(
+            entries
+                .into_iter()
+                .map(|(key, value)| (text(key), value))
+                .collect(),
+        )
+    };
+
+    // A repeated param: the fill reads the first, the stored document would keep the last
+    let mut repeated_param = BTreeMap::from([(
+        "profile".to_string(),
+        map(vec![("display", text("zzz")), ("display", text("B0B"))]),
+    )]);
+    document_type
+        .fill_generated_properties(&mut repeated_param, PlatformVersion::latest())
+        .expect("the fill runs");
+    assert_eq!(repeated_param.get("slug"), Some(&text("zzz")));
+
+    let repeated_property = BTreeMap::from([
+        (
+            "profile".to_string(),
+            map(vec![
+                ("display", text("Bob")),
+                ("normalizedDisplay", text("zzz")),
+                ("normalizedDisplay", text("b0b")),
+            ]),
+        ),
+        ("slug".to_string(), text("b0b")),
+    ]);
+
+    for properties in [repeated_param, repeated_property] {
+        let properties = Value::from(properties);
+        let result = document_type
+            .validate_generated_from_properties(&properties, PlatformVersion::latest())
+            .expect("validation executes");
+        match first_basic_error(result) {
+            BasicError::DocumentPropertyNotGeneratedError(e) => {
+                assert_eq!(e.property(), "profile.normalizedDisplay", "{properties:?}")
+            }
+            other => {
+                panic!("{properties:?}: expected DocumentPropertyNotGeneratedError, got {other:?}")
+            }
+        }
+    }
 }
 
 // ================================================================
@@ -731,7 +850,7 @@ fn index_only_entry_schema() -> Value {
     })
 }
 
-fn document_of(document_type: &DocumentType, properties: Value) -> crate::document::Document {
+fn document_of(document_type: &DocumentType, properties: Value) -> Document {
     document_type
         .as_ref()
         .create_document_from_data(
@@ -804,6 +923,26 @@ fn should_build_replace_and_index_only_delete_transitions_carrying_the_generated
         Some(&Value::Text("011".to_string()))
     );
 
+    // A document fetched and edited still holds the value generated from its old
+    // label: the builder replaces it with the one the platform would generate
+    let stale = DocumentReplaceTransition::from_document(
+        document_of(
+            &handle_type,
+            platform_value!({ "label": "Robin", "normalizedLabel": "b0b" }),
+        ),
+        handle_type.as_ref(),
+        None,
+        2,
+        platform_version,
+        None,
+        None,
+    )
+    .expect("the replace transition builds");
+    assert_eq!(
+        stale.data().get("normalizedLabel"),
+        Some(&Value::Text("r0b1n".to_string()))
+    );
+
     let entry_type = parse(index_only_entry_schema());
     let delete = DocumentIndexOnlyDeleteTransition::from_document(
         document_of(&entry_type, platform_value!({ "name": "Bob" })),
@@ -855,6 +994,72 @@ fn should_generate_random_documents_holding_their_generated_values() {
                 )
                 .expect("a random document");
             let properties: Value = document.properties().into();
+            let result = document_type
+                .validate_generated_from_properties(&properties, platform_version)
+                .expect("validation executes");
+            assert!(result.is_valid(), "{properties:?}: {:?}", result.errors);
+        }
+    }
+}
+
+/// A required generated property whose param is optional, at the top level and
+/// inside an object: random documents draw the param too, so the property is
+/// never left out.
+#[cfg(feature = "random-documents")]
+#[test]
+fn should_draw_the_optional_params_of_a_required_generated_property() {
+    use crate::data_contract::document_type::random_document::{
+        CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+    };
+    use crate::document::DocumentV0Getters;
+    use platform_value::Bytes32;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    let platform_version = PlatformVersion::latest();
+    let document_type = parse(platform_value!({
+        "type": "object",
+        "properties": {
+            "label": string_property(0),
+            "normalizedLabel": generated_property(1, "label"),
+            "profile": {
+                "type": "object",
+                "position": 2,
+                "properties": {
+                    "display": string_property(0),
+                    "normalizedDisplay": generated_property(1, "profile.display")
+                },
+                "required": ["normalizedDisplay"],
+                "additionalProperties": false
+            }
+        },
+        "required": ["normalizedLabel", "profile"],
+        "additionalProperties": false
+    }));
+    let mut rng = StdRng::seed_from_u64(7);
+    for fill_type in [
+        DocumentFieldFillType::FillIfNotRequired,
+        DocumentFieldFillType::DoNotFillIfNotRequired,
+    ] {
+        for _ in 0..20 {
+            let entropy = Bytes32::random_with_rng(&mut rng);
+            let document = document_type
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    Identifier::new([3; 32]),
+                    entropy,
+                    fill_type,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("a random document");
+            let properties: Value = document.properties().into();
+            for path in ["normalizedLabel", "profile.normalizedDisplay"] {
+                assert!(
+                    matches!(properties.get_optional_value_at_path(path), Ok(Some(_))),
+                    "{path} in {properties:?}"
+                );
+            }
             let result = document_type
                 .validate_generated_from_properties(&properties, platform_version)
                 .expect("validation executes");

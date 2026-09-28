@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::property::{DocumentProperty, GeneratedFrom};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
@@ -61,10 +61,11 @@ pub struct DocumentTypeV2 {
     /// (protocol version 14), in schema order, so a document write finds
     /// them without walking every property. Empty on every pre-PV14 contract.
     pub(in crate::data_contract) distinct_from_fields: Vec<String>,
-    /// The dotted paths of the properties that declare `generatedFrom`
-    /// (protocol version 14), in schema order, so a document write finds
-    /// them without walking every property. Empty on every pre-PV14 contract.
-    pub(in crate::data_contract) generated_from_fields: Vec<String>,
+    /// The dotted path of every property that declares `generatedFrom`
+    /// (protocol version 14) with its declaration, in schema order, so a
+    /// document write finds them without walking every property. Empty on
+    /// every pre-PV14 contract.
+    pub(in crate::data_contract) generated_from_fields: Vec<(String, GeneratedFrom)>,
     /// On an indexOnly type, the top-level properties stored in every entry's
     /// value after the row commitment (the `entryPayload` keyword), in name
     /// order. Empty on every other type and on every pre-PV14 contract.
@@ -191,11 +192,7 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) documents_ttl_seconds: Option<u32>,
 }
 
-impl DocumentTypeBasicMethods for DocumentTypeV2 {
-    fn generated_from_fields(&self) -> &[String] {
-        &self.generated_from_fields
-    }
-}
+impl DocumentTypeBasicMethods for DocumentTypeV2 {}
 
 impl DocumentTypeV0Methods for DocumentTypeV2 {}
 
@@ -237,15 +234,14 @@ fn distinct_from_fields_of(
         .collect()
 }
 
-/// The dotted paths of the properties that declare `generatedFrom`, in the
+/// The properties that declare `generatedFrom`, with their declarations, in the
 /// flattened map's (schema) order.
 fn generated_from_fields_of(
     flattened_properties: &IndexMap<String, DocumentProperty>,
-) -> Vec<String> {
+) -> Vec<(String, GeneratedFrom)> {
     flattened_properties
         .iter()
-        .filter(|(_, property)| property.generated_from.is_some())
-        .map(|(path, _)| path.clone())
+        .filter_map(|(path, property)| Some((path.clone(), property.generated_from.clone()?)))
         .collect()
 }
 
