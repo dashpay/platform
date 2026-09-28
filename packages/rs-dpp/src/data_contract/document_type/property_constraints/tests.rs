@@ -1591,7 +1591,8 @@ fn should_parse_present_and_absent() {
             platform_value!({ "exists": "discount" }),
             "rule \"rule\" names \"exists\", which is not a comparison (equal, notEqual, \
              lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual), in, notIn, \
-             startsWith, endsWith, contains, present, absent, anyOf, allOf, not or implies",
+             startsWith, endsWith, contains, present, absent, anyOf, allOf, not, ifThen or \
+             ifThenElse",
         ),
     ] {
         expect_refusal(platform_value!({ "rule": condition }), needle);
@@ -2485,7 +2486,7 @@ fn should_tell_which_writes_a_rule_answers_to() {
     let banned = Identifier::new([9; 32]).to_string(Encoding::Base58);
     let also_banned = Identifier::new([8; 32]).to_string(Encoding::Base58);
     for (rule, transfer, price_update) in [
-        // notIn and implies answer to what their conditions read
+        // notIn, ifThen and ifThenElse answer to what their conditions read
         (
             platform_value!({ "notIn": ["$ownerId", [banned.clone(), also_banned.clone()]] }),
             true,
@@ -2498,17 +2499,29 @@ fn should_tell_which_writes_a_rule_answers_to() {
         ),
         (
             platform_value!({
-                "implies": [{ "present": "endsAt" }, { "lessThan": ["$transferredAt", "endsAt"] }]
+                "ifThen": [{ "present": "endsAt" }, { "lessThan": ["$transferredAt", "endsAt"] }]
             }),
             true,
             false,
         ),
         (
             platform_value!({
-                "implies": [{ "lessThan": ["$updatedAt", 5] }, { "present": "endsAt" }]
+                "ifThen": [{ "lessThan": ["$updatedAt", 5] }, { "present": "endsAt" }]
             }),
             false,
             true,
+        ),
+        // The else branch counts though it is taken only when the condition fails
+        (
+            platform_value!({
+                "ifThenElse": [
+                    { "absent": "endsAt" },
+                    { "present": "note" },
+                    { "lessThan": ["$transferredAt", "endsAt"] }
+                ]
+            }),
+            true,
+            false,
         ),
         (
             platform_value!({ "lessThan": ["$transferredAt", "endsAt"] }),
@@ -3077,14 +3090,14 @@ fn should_evaluate_min_max_and_abs() {
     }
 }
 
-/// `implies` holds when its second condition holds whenever its first does;
+/// `ifThen` holds when its second condition holds whenever its first does;
 /// the second is evaluated only when the first holds, and a fault in either
 /// breaks the rule.
 #[test]
-fn should_hold_the_conclusion_of_an_implies_only_when_its_premise_holds() {
+fn should_hold_the_then_branch_of_an_if_then_only_when_its_condition_holds() {
     let none = DocumentSystemValues::default();
     let rule = parse_rule_value(platform_value!({
-        "implies": [
+        "ifThen": [
             { "greaterThan": ["discount", 0] },
             { "greaterThanOrEqual": [{ "divide": ["price", "discount"] }, 10] }
         ]
@@ -3097,16 +3110,16 @@ fn should_hold_the_conclusion_of_an_implies_only_when_its_premise_holds() {
             ("discount", Value::U64(discount)),
         ])
     };
-    // No discount: the conclusion, which would divide by zero, is not evaluated
+    // No discount: the then branch, which would divide by zero, is not evaluated
     assert_eq!(rule.violation(&offer(100, 0), &none), None);
     assert_eq!(rule.violation(&offer(100, 10), &none), None);
     assert_eq!(
         rule.violation(&offer(100, 20), &none),
         Some(PropertyConstraintViolation::NotMet)
     );
-    // A fault in the premise breaks the rule
+    // A fault in the condition breaks the rule
     let faulty = parse_rule_value(platform_value!({
-        "implies": [
+        "ifThen": [
             { "greaterThan": [{ "divide": ["price", "discount"] }, 0] },
             { "present": "note" }
         ]
@@ -3118,47 +3131,165 @@ fn should_hold_the_conclusion_of_an_implies_only_when_its_premise_holds() {
 
     // An owner read in either condition makes a transfer answer to it
     let owned = parse_rule_value(platform_value!({
-        "implies": [{ "present": "sellerId" }, { "equal": ["sellerId", "$ownerId"] }]
+        "ifThen": [{ "present": "sellerId" }, { "equal": ["sellerId", "$ownerId"] }]
     }));
     assert!(owned.reads_owner());
 
-    expect_refusal(
-        platform_value!({ "rule": { "implies": [{ "present": "a" }] } }),
-        "at implies must list two conditions: one, then the one it implies",
-    );
-    expect_refusal(
-        platform_value!({ "rule": { "implies": [{ "present": "a" }, { "exists": "b" }] } }),
-        "at implies[1] names \"exists\"",
-    );
+    for (rule, needle) in [
+        (
+            platform_value!({ "ifThen": [{ "present": "a" }] }),
+            "at ifThen must list two conditions: the condition, then the one that must hold \
+             when it does",
+        ),
+        (
+            platform_value!({ "ifThen": [{ "present": "a" }, { "present": "b" }, { "present": "c" }] }),
+            "at ifThen must list two conditions",
+        ),
+        (
+            platform_value!({ "ifThen": { "present": "a" } }),
+            "at ifThen must list two conditions",
+        ),
+        (
+            platform_value!({ "ifThen": [{ "present": "a" }, { "exists": "b" }] }),
+            "at ifThen[1] names \"exists\"",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": rule }), needle);
+    }
 }
 
-/// An `implies` whose two conditions are alike holds for every document, and
-/// is reported as a repeat, like an `anyOf` listing a condition twice.
+/// `ifThenElse` holds its second condition when its first holds and its third
+/// when it does not, evaluating only the branch taken; a fault in the condition
+/// or in the branch taken breaks the rule.
 #[test]
-fn should_report_an_implies_of_its_own_premise() {
+fn should_hold_the_branch_an_if_then_else_selects() {
+    let none = DocumentSystemValues::default();
+    // A discount needs at least ten times its value in price; without one the
+    // price is at most 1000
+    let rule = parse_rule_value(platform_value!({
+        "ifThenElse": [
+            { "greaterThan": ["discount", 0] },
+            { "greaterThanOrEqual": [{ "divide": ["price", "discount"] }, 10] },
+            { "lessThanOrEqual": ["price", 1000] }
+        ]
+    }));
+    assert_eq!(rule.node_count(), 1 + 3 + 5 + 3);
+    assert_eq!(
+        rule.property_paths(),
+        ["discount", "price", "discount", "price"]
+    );
+    let offer = |price: u64, discount: u64| {
+        data(&[
+            ("price", Value::U64(price)),
+            ("discount", Value::U64(discount)),
+        ])
+    };
+    // The then branch
+    assert_eq!(rule.violation(&offer(100, 10), &none), None);
+    assert_eq!(
+        rule.violation(&offer(100, 20), &none),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    // The else branch, taken with no discount, so the then branch's division by
+    // zero is never evaluated
+    assert_eq!(rule.violation(&offer(1000, 0), &none), None);
+    assert_eq!(
+        rule.violation(&offer(1001, 0), &none),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+
+    // A fault in the branch taken breaks the rule, one in the branch not taken
+    // does not
+    let faulty_else = parse_rule_value(platform_value!({
+        "ifThenElse": [
+            { "greaterThan": ["discount", 0] },
+            { "present": "price" },
+            { "greaterThan": [{ "divide": ["price", "discount"] }, 0] }
+        ]
+    }));
+    assert_eq!(faulty_else.violation(&offer(100, 10), &none), None);
+    assert_eq!(
+        faulty_else.violation(&offer(100, 0), &none),
+        Some(PropertyConstraintViolation::DivisionByZero)
+    );
+
+    // An owner read in the else branch alone makes a transfer answer to it
+    let owned = parse_rule_value(platform_value!({
+        "ifThenElse": [
+            { "absent": "sellerId" },
+            { "present": "note" },
+            { "equal": ["sellerId", "$ownerId"] }
+        ]
+    }));
+    assert!(owned.reads_owner());
+
+    for (rule, needle) in [
+        (
+            platform_value!({ "ifThenElse": [{ "present": "a" }, { "present": "b" }] }),
+            "at ifThenElse must list three conditions: the condition, the one that must hold \
+             when it does, and the one that must hold when it does not",
+        ),
+        (
+            platform_value!({
+                "ifThenElse": [
+                    { "present": "a" },
+                    { "present": "b" },
+                    { "present": "c" },
+                    { "present": "d" }
+                ]
+            }),
+            "at ifThenElse must list three conditions",
+        ),
+        (
+            platform_value!({
+                "ifThenElse": [{ "present": "a" }, { "present": "b" }, { "exists": "c" }]
+            }),
+            "at ifThenElse[2] names \"exists\"",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": rule }), needle);
+    }
+}
+
+/// An `ifThen` or `ifThenElse` holding two alike conditions says what a
+/// simpler rule says, and is reported as a repeat, like an `anyOf` listing a
+/// condition twice.
+#[test]
+fn should_report_an_if_then_holding_two_alike_conditions() {
     let rules = parse(platform_value!({
-        "same": { "implies": [{ "present": "a" }, { "present": "a" }] },
+        "same": { "ifThen": [{ "present": "a" }, { "present": "a" }] },
         "nested": {
             "anyOf": [
                 { "equal": ["a", 1] },
-                { "implies": [{ "equal": ["b", 1] }, { "equal": ["b", 1.0] }] }
+                { "ifThen": [{ "equal": ["b", 1] }, { "equal": ["b", 1.0] }] }
             ]
         },
-        "fine": { "implies": [{ "present": "a" }, { "present": "b" }] }
+        "fine": { "ifThen": [{ "present": "a" }, { "present": "b" }] },
+        "sameBranches": {
+            "ifThenElse": [{ "present": "a" }, { "present": "b" }, { "present": "b" }]
+        },
+        "elseIsCondition": {
+            "ifThenElse": [{ "present": "a" }, { "present": "b" }, { "present": "a" }]
+        },
+        "fineElse": {
+            "ifThenElse": [{ "present": "a" }, { "present": "b" }, { "present": "c" }]
+        }
     }))
     .expect("parses");
-    assert_eq!(
-        rules["same"].repeated_condition(),
-        Some(("implies[1]".to_string(), "implies[0]".to_string()))
-    );
-    assert_eq!(
-        rules["nested"].repeated_condition(),
-        Some((
-            "anyOf[1].implies[1]".to_string(),
-            "anyOf[1].implies[0]".to_string()
-        ))
-    );
-    assert_eq!(rules["fine"].repeated_condition(), None);
+    for (name, found) in [
+        ("same", Some(("ifThen[1]", "ifThen[0]"))),
+        ("nested", Some(("anyOf[1].ifThen[1]", "anyOf[1].ifThen[0]"))),
+        ("fine", None),
+        ("sameBranches", Some(("ifThenElse[2]", "ifThenElse[1]"))),
+        ("elseIsCondition", Some(("ifThenElse[2]", "ifThenElse[0]"))),
+        ("fineElse", None),
+    ] {
+        assert_eq!(
+            rules[name].repeated_condition(),
+            found.map(|(repeat, earlier)| (repeat.to_string(), earlier.to_string())),
+            "{name}"
+        );
+    }
 }
 
 /// `notIn` takes what `in` takes, integers, strings or identifiers, holds when

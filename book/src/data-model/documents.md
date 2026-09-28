@@ -719,7 +719,8 @@ The first rule reads `((price + fee) * quantity) <= deposit`, `feeWaivedOrAtLeas
 - `{ "anyOf": [...] }`, holding if at least one of two or more conditions holds;
 - `{ "allOf": [...] }`, holding if every one of two or more conditions holds;
 - `{ "not": condition }`, holding if its one condition does not;
-- `{ "implies": [a, b] }`, holding if `b` holds whenever `a` does: `b` is evaluated only when `a` holds, so `{ "implies": [{ "greaterThan": ["discount", 0] }, { "greaterThanOrEqual": [{ "divide": ["price", "discount"] }, 10] }] }` never divides by zero, and a fault in either breaks the rule. It says what `{ "anyOf": [{ "not": a }, b] }` says, in one node fewer. The two may not be alike;
+- `{ "ifThen": [a, b] }`, holding if `b` holds whenever `a` does: `b` is evaluated only when `a` holds, so `{ "ifThen": [{ "greaterThan": ["discount", 0] }, { "greaterThanOrEqual": [{ "divide": ["price", "discount"] }, 10] }] }` never divides by zero, and a fault in either breaks the rule. It says what `{ "anyOf": [{ "not": a }, b] }` says, in one node fewer. The two may not be alike;
+- `{ "ifThenElse": [a, b, c] }`, holding if `b` holds when `a` does and `c` holds when it does not; only the branch `a` selects is evaluated. `{ "ifThenElse": [{ "greaterThanOrEqual": ["price", 1000] }, { "lessThanOrEqual": ["fee", 50] }, { "lessThanOrEqual": ["fee", 10] }] }` allows a higher fee on an expensive offer. No two of the three may be alike;
 - `{ "notIn": [expression, [values]] }`, an `in` negated, listed the same way and in as many nodes: `{ "notIn": ["fee", [7, 13]] }` refuses two fees.
 
 Conditions nest: `{ "not": { "allOf": [{ "equal": ["price", 0] }, { "greaterThan": ["quantity", 10] }] } }` refuses a free order of more than 10. An `anyOf` or `allOf` may not list two alike conditions, nor hold one of its own kind directly (it says what one flat list says), and a `not` may not hold a `not` or a `notIn` directly. An expression is one of:

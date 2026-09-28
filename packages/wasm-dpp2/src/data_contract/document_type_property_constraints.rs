@@ -96,9 +96,11 @@ export type PropertyConstraintEqualityOperand =
  *   elements are; an array the document leaves out holds nothing;
  * - `present` / `absent`: whether the document holds a property of any type;
  * - `notIn`: what `in` lists, holding when the operand takes none of the values;
- * - `anyOf` / `allOf` over two or more conditions, `not` over one, `implies`
- *   over two (the second holds whenever the first does). Conditions are
- *   checked in order and no further than the outcome needs.
+ * - `anyOf` / `allOf` over two or more conditions, `not` over one, `ifThen`
+ *   over two (the second must hold when the first does) and `ifThenElse` over
+ *   three (the second must hold when the first does, the third when it does
+ *   not). Conditions are checked in order and no further than the outcome
+ *   needs.
  */
 export type PropertyConstraintCondition =
   | { equal: [PropertyConstraintExpression, PropertyConstraintExpression] | [PropertyConstraintEqualityOperand, PropertyConstraintEqualityOperand] }
@@ -117,7 +119,8 @@ export type PropertyConstraintCondition =
   | { anyOf: PropertyConstraintCondition[] }
   | { allOf: PropertyConstraintCondition[] }
   | { not: PropertyConstraintCondition }
-  | { implies: [PropertyConstraintCondition, PropertyConstraintCondition] };
+  | { ifThen: [PropertyConstraintCondition, PropertyConstraintCondition] }
+  | { ifThenElse: [PropertyConstraintCondition, PropertyConstraintCondition, PropertyConstraintCondition] };
 
 /**
  * How a rule reads a property: `value` as an integer operand, `presence` in

@@ -7,8 +7,8 @@
 //! (`equal`, `notEqual`), a test of whether a string starts or ends with
 //! another (`startsWith`, `endsWith`), a test of whether an array property
 //! holds a value (`contains`), a test of whether the document holds a property
-//! (`present`, `absent`), or `anyOf`, `allOf`, `not` or `implies` over
-//! conditions; `notIn` is an `in` negated.
+//! (`present`, `absent`), or `anyOf`, `allOf`, `not`, `ifThen` or
+//! `ifThenElse` over conditions; `notIn` is an `in` negated.
 //!
 //! ```json
 //! "propertyConstraints": {
@@ -100,7 +100,8 @@ const POWER: &str = "power";
 const ANY_OF: &str = "anyOf";
 const ALL_OF: &str = "allOf";
 const NOT: &str = "not";
-const IMPLIES: &str = "implies";
+const IF_THEN: &str = "ifThen";
+const IF_THEN_ELSE: &str = "ifThenElse";
 const NOT_IN: &str = "notIn";
 const MIN: &str = "min";
 const MAX: &str = "max";
@@ -892,10 +893,15 @@ pub enum PropertyConstraint {
     AllOf(Vec<PropertyConstraint>),
     /// `not`: the condition does not hold.
     Not(Box<PropertyConstraint>),
-    /// `implies`: the second condition holds whenever the first does,
-    /// `{ "implies": [{ "equal": ["status", { "const": "closed" }] }, { "present": "closedAt" }] }`.
-    /// The second is evaluated only when the first holds.
-    Implies(Box<PropertyConstraint>, Box<PropertyConstraint>),
+    /// `ifThen`: `then` holds whenever `condition` does,
+    /// `{ "ifThen": [{ "equal": ["status", { "const": "closed" }] }, { "present": "closedAt" }] }`;
+    /// or `ifThenElse`, with `otherwise` given: `then` when `condition` holds,
+    /// `otherwise` when it does not. Only the branch taken is evaluated.
+    IfThen {
+        condition: Box<PropertyConstraint>,
+        then: Box<PropertyConstraint>,
+        otherwise: Option<Box<PropertyConstraint>>,
+    },
     /// `notIn`: an `in` ([`Self::In`], [`Self::TextIn`] or
     /// [`Self::IdentifierIn`]) that does not hold, the operand taking none of
     /// the listed values. It costs what the `in` costs.
@@ -912,8 +918,9 @@ impl PropertyConstraint {
     /// comparison evaluates its left side, then its right one; `anyOf` checks
     /// its conditions in declared order and holds at the first that holds;
     /// `allOf` fails at the first that fails; `not` inverts its condition;
-    /// `implies` evaluates its first condition, and its second only when the
-    /// first holds; a string comparison, `present` or `absent` never faults. The first fault
+    /// `ifThen` and `ifThenElse` evaluate their condition, then only the
+    /// branch it selects (an `ifThen` holding when the condition does not); a
+    /// string comparison, `present` or `absent` never faults. The first fault
     /// an evaluated expression meets ([`ConstraintExpression::evaluate`]) is
     /// returned whatever the conditions left unevaluated would say, and `not`
     /// never turns a fault into a pass. So an earlier condition guards a later
@@ -1047,11 +1054,17 @@ impl PropertyConstraint {
                 Ok(true)
             }
             PropertyConstraint::Not(condition) => Ok(!condition.holds(data, system)?),
-            PropertyConstraint::Implies(premise, conclusion) => {
-                if premise.holds(data, system)? {
-                    conclusion.holds(data, system)
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                if condition.holds(data, system)? {
+                    then.holds(data, system)
                 } else {
-                    Ok(true)
+                    otherwise
+                        .as_ref()
+                        .map_or(Ok(true), |otherwise| otherwise.holds(data, system))
                 }
             }
             PropertyConstraint::NotIn(condition) => Ok(!condition.holds(data, system)?),
@@ -1120,8 +1133,16 @@ impl PropertyConstraint {
                 conditions.iter().map(PropertyConstraint::node_count).sum()
             }
             PropertyConstraint::Not(condition) => condition.node_count(),
-            PropertyConstraint::Implies(premise, conclusion) => {
-                premise.node_count() + conclusion.node_count()
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                condition.node_count()
+                    + then.node_count()
+                    + otherwise
+                        .as_ref()
+                        .map_or(0, |otherwise| otherwise.node_count())
             }
             // The `in`'s own nodes, the negation adding none
             PropertyConstraint::NotIn(condition) => condition.node_count() - 1,
@@ -1165,9 +1186,14 @@ impl PropertyConstraint {
             PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
                 condition.reads_owner()
             }
-            PropertyConstraint::Implies(premise, conclusion) => {
-                premise.reads_owner() || conclusion.reads_owner()
-            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => [Some(condition), Some(then), otherwise.as_ref()]
+                .into_iter()
+                .flatten()
+                .any(|part| part.reads_owner()),
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
             | PropertyConstraint::TextCompare { .. }
@@ -1221,9 +1247,17 @@ impl PropertyConstraint {
             PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
                 condition.collect_system_reads(reads)
             }
-            PropertyConstraint::Implies(premise, conclusion) => {
-                premise.collect_system_reads(reads);
-                conclusion.collect_system_reads(reads);
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_system_reads(reads);
+                }
             }
             PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
@@ -1285,9 +1319,17 @@ impl PropertyConstraint {
             PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
                 condition.collect_text_affixes(affixes)
             }
-            PropertyConstraint::Implies(premise, conclusion) => {
-                premise.collect_text_affixes(affixes);
-                conclusion.collect_text_affixes(affixes);
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_text_affixes(affixes);
+                }
             }
             _ => {}
         }
@@ -1317,9 +1359,17 @@ impl PropertyConstraint {
             PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
                 condition.collect_text_properties(properties)
             }
-            PropertyConstraint::Implies(premise, conclusion) => {
-                premise.collect_text_properties(properties);
-                conclusion.collect_text_properties(properties);
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_text_properties(properties);
+                }
             }
             PropertyConstraint::TextAffix { text, affix, .. } => {
                 for side in [text, affix] {
@@ -1361,9 +1411,17 @@ impl PropertyConstraint {
             PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
                 condition.collect_text_constants(constants)
             }
-            PropertyConstraint::Implies(premise, conclusion) => {
-                premise.collect_text_constants(constants);
-                conclusion.collect_text_constants(constants);
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_text_constants(constants);
+                }
             }
             // Checked against the enum of the array's elements
             PropertyConstraint::Contains {
@@ -1384,7 +1442,8 @@ impl PropertyConstraint {
     }
 
     /// Where an `anyOf` or `allOf` of the rule lists the same condition twice,
-    /// or an `implies` implies its own premise:
+    /// or an `ifThen` or `ifThenElse` holds two alike (a then-branch equal to
+    /// the condition, or two equal branches, says what a simpler rule says):
     /// the repeat's place and the earlier one's (`anyOf[2]` and `anyOf[0]`),
     /// the first found in declared order, `None` when no list does. Conditions
     /// are alike when they parse alike, so `1` and `1.0` are the same value,
@@ -1422,17 +1481,32 @@ impl PropertyConstraint {
                 at.truncate(parent);
                 return found;
             }
-            // A condition implying itself holds for every document
-            PropertyConstraint::Implies(premise, conclusion) => {
-                let parent = enter(at, IMPLIES);
-                if premise == conclusion {
-                    return Some((format!("{at}[1]"), format!("{at}[0]")));
-                }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                let key = if otherwise.is_some() {
+                    IF_THEN_ELSE
+                } else {
+                    IF_THEN
+                };
+                let parent = enter(at, key);
+                let parts: Vec<&PropertyConstraint> =
+                    [Some(condition), Some(then), otherwise.as_ref()]
+                        .into_iter()
+                        .flatten()
+                        .map(|part| part.as_ref())
+                        .collect();
                 let base = at.len();
-                for (index, condition) in [premise, conclusion].into_iter().enumerate() {
+                for (index, part) in parts.iter().enumerate() {
+                    if let Some(earlier) = parts[..index].iter().position(|earlier| earlier == part)
+                    {
+                        return Some((format!("{at}[{index}]"), format!("{at}[{earlier}]")));
+                    }
                     // Writing to a `String` cannot fail
                     let _ = write!(at, "[{index}]");
-                    if let Some(found) = condition.find_repeated_condition(at) {
+                    if let Some(found) = part.find_repeated_condition(at) {
                         return Some(found);
                     }
                     at.truncate(base);
@@ -1531,9 +1605,17 @@ impl PropertyConstraint {
             PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
                 condition.collect_property_reads(reads)
             }
-            PropertyConstraint::Implies(premise, conclusion) => {
-                premise.collect_property_reads(reads);
-                conclusion.collect_property_reads(reads);
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_property_reads(reads);
+                }
             }
         }
     }
@@ -1645,7 +1727,7 @@ fn single_entry(value: &Value) -> Option<(&str, &Value)> {
 fn condition_keys() -> String {
     format!(
         "a comparison ({}), in, notIn, startsWith, endsWith, contains, present, absent, \
-         anyOf, allOf, not or implies",
+         anyOf, allOf, not, ifThen or ifThenElse",
         ConstraintComparison::ALL
             .map(ConstraintComparison::wire_name)
             .join(", ")
@@ -1734,20 +1816,39 @@ fn parse_condition(
                 property_kind,
             )?))
         }
-        IMPLIES => {
-            let Some([premise, conclusion]) = body.as_array().map(Vec::as_slice) else {
-                return Err(format!(
-                    "at {at} must list two conditions: one, then the one it implies"
-                ));
-            };
+        IF_THEN | IF_THEN_ELSE => {
             let base = at.len();
-            at.push_str("[0]");
-            let premise = parse_condition(premise, at, depth + 1, property_kind)?;
-            at.truncate(base);
-            at.push_str("[1]");
-            let conclusion = parse_condition(conclusion, at, depth + 1, property_kind)?;
-            at.truncate(base);
-            PropertyConstraint::Implies(Box::new(premise), Box::new(conclusion))
+            let mut part = |index: usize, value: &Value| {
+                // Writing to a `String` cannot fail
+                let _ = write!(at, "[{index}]");
+                let parsed = parse_condition(value, at, depth + 1, property_kind);
+                at.truncate(base);
+                parsed.map(Box::new)
+            };
+            match (key, body.as_array().map(Vec::as_slice)) {
+                (IF_THEN, Some([condition, then])) => PropertyConstraint::IfThen {
+                    condition: part(0, condition)?,
+                    then: part(1, then)?,
+                    otherwise: None,
+                },
+                (IF_THEN_ELSE, Some([condition, then, otherwise])) => PropertyConstraint::IfThen {
+                    condition: part(0, condition)?,
+                    then: part(1, then)?,
+                    otherwise: Some(part(2, otherwise)?),
+                },
+                (IF_THEN, _) => {
+                    return Err(format!(
+                        "at {at} must list two conditions: the condition, then the one that \
+                         must hold when it does"
+                    ));
+                }
+                _ => {
+                    return Err(format!(
+                        "at {at} must list three conditions: the condition, the one that must \
+                         hold when it does, and the one that must hold when it does not"
+                    ));
+                }
+            }
         }
         IN | NOT_IN => {
             let Some([operand, values]) = body.as_array().map(Vec::as_slice) else {

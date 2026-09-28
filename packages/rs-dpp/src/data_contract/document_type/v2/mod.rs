@@ -172,7 +172,7 @@ pub struct DocumentTypeV2 {
     /// integer expressions, of a string or an identifier property with
     /// constants or with another property of its kind, an `in` or `notIn` list
     /// of values, a `startsWith` or `endsWith`, a `contains`, a `present` or
-    /// `absent` test, or an `anyOf`, `allOf`, `not` or `implies` of
+    /// `absent` test, or an `anyOf`, `allOf`, `not`, `ifThen` or `ifThenElse` of
     /// conditions. Empty on document types that declare none. The parser
     /// (`apply_property_constraints`) holds every property an operand reads to
     /// be an integer or a boolean, every property compared with strings or

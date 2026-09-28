@@ -81,7 +81,8 @@ A rule is a condition: a JSON object with exactly one key.
 | `anyOf` | `[c1, c2, ...]` | At least one of two or more conditions holds |
 | `allOf` | `[c1, c2, ...]` | Every one of two or more conditions holds |
 | `not` | `condition` | Its one condition does not hold |
-| `implies` | `[c1, c2]` | The second condition holds whenever the first does. The second is evaluated only when the first holds, and a fault in either breaks the rule. The two may not be alike |
+| `ifThen` | `[if, then]` | If the first condition holds, the second must. The second is evaluated only when the first holds, and a fault in either breaks the rule. The two may not be alike |
+| `ifThenElse` | `[if, then, else]` | If the first condition holds, the second must; if not, the third must. Only the branch the first selects is evaluated. No two of the three may be alike |
 
 Conditions nest: `{ "not": { "allOf": [{ "equal": ["price", 0] }, { "greaterThan": ["quantity", 10] }] } }` refuses a free order of more than 10. An `anyOf` or `allOf` may not list the same condition twice, nor hold one of its own kind directly (it says what one flat list says), and a `not` may not hold a `not` or a `notIn` directly.
 
@@ -210,7 +211,7 @@ The parser then checks the rules against the document type (`InvalidContractStru
 - no literal divisor is 0 and no literal exponent is negative;
 - every time or height a rule reads is one the type lists in `required`, and takes no `ifAbsent` default;
 - `present` and `absent` do not name `$ownerId` or a time or height, and an index-only type has no rule reading any of them;
-- no `anyOf` or `allOf` lists two conditions that parse alike, such as `1` and `1.0`, or two `in` conditions listing the same values in another order, and no `implies` implies its own premise;
+- no `anyOf` or `allOf` lists two conditions that parse alike, such as `1` and `1.0`, or two `in` conditions listing the same values in another order, and no `ifThen` or `ifThenElse` holds two alike conditions;
 - no condition or operand nests more than 64 levels deep.
 
 Two limits come from the protocol version 14 `SystemLimits`, and a rule over one is refused the same way:
@@ -230,7 +231,7 @@ A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes a
 | `present`, `absent` | 1 |
 | `anyOf`, `allOf` | 1, plus their conditions |
 | `not` | 1, plus its condition |
-| `implies` | 1, plus its two conditions |
+| `ifThen`, `ifThenElse` | 1, plus their conditions |
 | `notIn` | as the `in` it negates |
 | An integer, a path, an `ifAbsent`, a size (`length`, `byteLength`, `count`) or a time or height | 1 |
 | `add`, `multiply`, `subtract`, `divide`, `modulo`, `power`, `min`, `max`, `abs` | 1, plus their operands |

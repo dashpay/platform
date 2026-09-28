@@ -128,7 +128,7 @@ pub(crate) mod property_names {
     /// identifier property with constants or with another property of its
     /// kind, an `in` or `notIn` list of values, a `startsWith` or `endsWith`,
     /// a `contains`, a `present` or `absent` test, or an `anyOf`, `allOf`,
-    /// `not` or `implies` of conditions) that every created or replaced
+    /// `not`, `ifThen` or `ifThenElse` of conditions) that every created or replaced
     /// document must meet. Meta-schema v3+ (protocol version 14). See
     /// `parse_property_constraints` in `property_constraints`.
     pub const PROPERTY_CONSTRAINTS: &str = "propertyConstraints";

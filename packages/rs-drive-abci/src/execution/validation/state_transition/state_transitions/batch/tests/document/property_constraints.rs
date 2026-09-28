@@ -420,9 +420,11 @@ mod property_constraints_tests {
     /// An `offer` type with the integers [`set_valid_offer`] fills and a
     /// `discount`, with one rule per shorthand operator: `depositNearTotal`
     /// (`abs`: the deposit is within 5 of the order total), `discountNeedsPrice`
-    /// (`implies`: a discount needs a price of 100 or more), `feeCapped` (`max`:
-    /// the fee is at most 10 or a tenth of the price), `feeNotBanned` (`notIn`)
-    /// and `noZeroTerms` (`min`: price, fee and quantity are all above 0).
+    /// (`ifThen`: a discount needs a price of 100 or more), `feeCapped` (`max`:
+    /// the fee is at most 10 or a tenth of the price), `feeNotBanned` (`notIn`),
+    /// `noZeroTerms` (`min`: price, fee and quantity are all above 0) and
+    /// `quantityTiers` (`ifThenElse`: at most 10 at a price of 100 or more, at
+    /// most 100 below it).
     fn shorthand_offer_schema() -> Value {
         platform_value!({
             "type": "object",
@@ -449,7 +451,7 @@ mod property_constraints_tests {
                     ]
                 },
                 "discountNeedsPrice": {
-                    "implies": [
+                    "ifThen": [
                         { "greaterThan": ["discount", 0] },
                         { "greaterThanOrEqual": ["price", 100] }
                     ]
@@ -460,6 +462,13 @@ mod property_constraints_tests {
                 "feeNotBanned": { "notIn": ["fee", [7, 13]] },
                 "noZeroTerms": {
                     "greaterThan": [{ "min": ["price", "fee", "quantity"] }, 0]
+                },
+                "quantityTiers": {
+                    "ifThenElse": [
+                        { "greaterThanOrEqual": ["price", 100] },
+                        { "lessThanOrEqual": ["quantity", 10] },
+                        { "lessThanOrEqual": ["quantity", 100] }
+                    ]
                 }
             },
             "additionalProperties": false
@@ -1924,10 +1933,11 @@ mod property_constraints_tests {
         assert_eq!(fixture.stored_offers().len(), 1);
     }
 
-    /// The shorthand operators read by real creates: each of five offers breaks
-    /// exactly one rule and is refused with it, and the valid offer is stored.
+    /// The shorthand operators read by real creates: each of seven offers breaks
+    /// exactly one rule and is refused with it, and the valid offers, one down
+    /// each branch of the `ifThenElse`, are stored.
     #[tokio::test]
-    async fn should_judge_min_max_abs_implies_and_not_in_on_create() {
+    async fn should_judge_min_max_abs_if_then_and_not_in_on_create() {
         let mut fixture = OfferFixture::with_schema(shorthand_offer_schema());
         let set = |document: &mut Document, entries: &[(&str, u64)]| {
             for (property, value) in entries {
@@ -1977,6 +1987,23 @@ mod property_constraints_tests {
             .create(|document| set(document, &[("quantity", 0), ("deposit", 0)]))
             .await;
         expect_violated(result, "noZeroTerms", PropertyConstraintViolation::NotMet);
+
+        // 11 at a price of 100, above the then branch's 10 (total and deposit 1210)
+        let result = fixture
+            .create(|document| set(document, &[("quantity", 11), ("deposit", 1210)]))
+            .await;
+        expect_violated(result, "quantityTiers", PropertyConstraintViolation::NotMet);
+
+        // 101 at a price of 50, above the else branch's 100 (total and deposit 6060)
+        let result = fixture
+            .create(|document| {
+                set(
+                    document,
+                    &[("price", 50), ("quantity", 101), ("deposit", 6060)],
+                )
+            })
+            .await;
+        expect_violated(result, "quantityTiers", PropertyConstraintViolation::NotMet);
         assert!(fixture.stored_offers().is_empty());
 
         // (100 + 10) * 2 = 220, no discount, a fee of 10
@@ -1984,6 +2011,18 @@ mod property_constraints_tests {
             fixture.create(|_| {}).await,
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
-        assert_eq!(fixture.stored_offers().len(), 1);
+        // 50 at a price of 50, within the else branch's 100 (total and deposit 3000)
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    set(
+                        document,
+                        &[("price", 50), ("quantity", 50), ("deposit", 3000)],
+                    )
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
     }
 }

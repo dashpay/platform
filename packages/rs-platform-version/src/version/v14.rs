@@ -1077,12 +1077,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     leaves out holding nothing; `present` or `absent` naming a property of
 ///     any type, whether the document holds it (the one way to tell a property
 ///     left out from one set to 0); `anyOf` or `allOf` over two or more
-///     conditions; `not` over one, or `implies` over two (the second holding
-///     whenever the first does, evaluated only then; the two never alike);
-///     `notIn`, an `in` negated in as many nodes. In an operand, a property the
-///     document leaves out counts as 0, or as the value of an `ifAbsent`
-///     operand naming
-///     it. Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
+///     conditions; `not` over one; `ifThen` over two (the second holding
+///     whenever the first does, evaluated only then) or `ifThenElse` over three
+///     (the second when the first holds, the third when it does not, only the
+///     branch taken evaluated), no two alike; `notIn`, an `in` negated in as
+///     many nodes. In an operand, a property the document leaves out counts as
+///     0, or as the value of an `ifAbsent` operand naming it.
+///     Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
 ///     remainder is never negative), and an overflow, a zero divisor, a
 ///     negative exponent or a value that is not an integer refuses the document
 ///     rather than wrapping. Conditions are checked in declared order and no

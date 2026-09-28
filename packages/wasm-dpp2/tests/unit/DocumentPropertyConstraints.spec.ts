@@ -358,7 +358,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
         .to.deep.include({ rule: 'secureUrl', violation: 'NotMet' });
     });
 
-    it('should check implies, notIn, min, max and abs', () => {
+    it('should check ifThen, ifThenElse, notIn, min, max and abs', () => {
       const contract = buildContract({
         order: {
           type: 'object',
@@ -371,10 +371,17 @@ describe('DataContract: propertyConstraints (v14)', () => {
           additionalProperties: false,
           propertyConstraints: {
             discountNeedsPrice: {
-              implies: [{ greaterThan: ['discount', 0] }, { greaterThanOrEqual: ['price', 100] }],
+              ifThen: [{ greaterThan: ['discount', 0] }, { greaterThanOrEqual: ['price', 100] }],
             },
             feeCapped: { lessThanOrEqual: ['fee', { max: [10, { divide: ['price', 10] }] }] },
             feeNotBanned: { notIn: ['fee', [7, 13]] },
+            feeTiers: {
+              ifThenElse: [
+                { greaterThanOrEqual: ['price', 1000] },
+                { lessThanOrEqual: ['fee', 50] },
+                { lessThanOrEqual: ['fee', 10] },
+              ],
+            },
             spreadSmall: { lessThanOrEqual: [{ abs: { subtract: ['price', 'fee'] } }, 1000] },
             termsPositive: { greaterThan: [{ min: ['price', 'fee'] }, 0] },
           },
@@ -398,6 +405,12 @@ describe('DataContract: propertyConstraints (v14)', () => {
         .to.deep.include({ rule: 'feeCapped', violation: 'NotMet' });
       expect(violationOf({ price: 100, fee: 7 }))
         .to.deep.include({ rule: 'feeNotBanned', violation: 'NotMet' });
+      // Each branch of the ifThenElse
+      expect(violationOf({ price: 1000, fee: 40 })).to.equal(undefined);
+      expect(violationOf({ price: 1000, fee: 60 }))
+        .to.deep.include({ rule: 'feeTiers', violation: 'NotMet' });
+      expect(violationOf({ price: 500, fee: 20 }))
+        .to.deep.include({ rule: 'feeTiers', violation: 'NotMet' });
       expect(violationOf({ price: 5000, fee: 10 }))
         .to.deep.include({ rule: 'spreadSmall', violation: 'NotMet' });
       expect(violationOf({ price: 100, fee: 0 }))
