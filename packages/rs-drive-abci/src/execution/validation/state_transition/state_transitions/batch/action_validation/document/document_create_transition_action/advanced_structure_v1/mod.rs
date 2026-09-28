@@ -138,13 +138,17 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                 ));
             }
         }
-        // Validate user defined properties
-
+        // Validate user defined properties. The rules read the writer, the block the
+        // create is recorded in, and the `countOf` and `sumOf` totals the action read from
+        // state as they will be once the document is stored.
         let result = data_contract
             .validate_document_properties(
                 document_type_name,
                 self.data().into(),
-                &DocumentSystemValues::created_in_block(owner_id, &self.block_info()),
+                &DocumentSystemValues {
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
+                    ..DocumentSystemValues::created_in_block(owner_id, &self.block_info())
+                },
                 platform_version,
             )
             .map_err(Error::Protocol)?;
@@ -280,6 +284,7 @@ mod tests {
             prefunded_voting_balance,
             current_store_contest_info: None,
             should_store_contest_info: None,
+            property_constraint_aggregates: Default::default(),
         })
     }
 
@@ -555,6 +560,7 @@ mod tests {
             prefunded_voting_balance,
             current_store_contest_info: None,
             should_store_contest_info: None,
+            property_constraint_aggregates: Default::default(),
         })
     }
 

@@ -1083,7 +1083,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (the second when the first holds, the third when it does not, only the
 ///     branch taken evaluated), no two alike; `notIn`, an `in` negated in as
 ///     many nodes. In an operand, a property the document leaves out counts as
-///     0, or as the value of an `ifAbsent` operand naming it.
+///     0, or as the value of an `ifAbsent` operand naming it. `countOf` and
+///     `sumOf` operands read a total from state: how many documents of a type
+///     of the same contract match a filter (keys of that type or `$ownerId`,
+///     values read from the document written), or an integer property's total
+///     over them, as the count or sum tree will keep it once the write is done;
+///     the batch transformer reads them into the action
+///     (`Drive::fetch_property_constraint_aggregate`, billed; in place in
+///     transformer 0, reading nothing before this version), a transfer or
+///     purchase reads again those depending on the owner, a price update those
+///     of the rules it judges, and a rule reading one it is not given is not
+///     judged by an SDK pre-check and an error in consensus, which reads them
+///     all.
 ///     Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
 ///     remainder is never negative), and an overflow, a zero divisor, a
 ///     negative exponent or a value that is not an integer refuses the document
@@ -1117,7 +1128,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
 ///     comparison, `in`, listed value, `const`, presence test and logical
 ///     operator counting as one), and that no `anyOf` or `allOf` lists the same
-///     condition twice. `DataContract::validate_document_properties` 0
+///     condition twice, and at most `max_property_constraint_aggregates` (4)
+///     distinct totals per type; once every type is parsed, that a tree keeps
+///     each total (`documentsCountable` or `documentsSummable`, or an index
+///     whose properties are exactly the filter's keys) and that no type with a
+///     contested index totals its own documents, in
+///     `create_document_types_from_document_schemas` 1, in place and inert
+///     before this version. `DataContract::validate_document_properties` 0
 ///     (extended in place, inert before this version, and taking the document's
 ///     owner for `$ownerId`) calls `validate_property_constraints`
 ///     (`validate_property_constraints` 0) after the schema validation, so
@@ -1133,7 +1150,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     takes the document version's system values (`DocumentSystemValues`):
 ///     consensus gives the writer and the block's time and heights on create,
 ///     and on replace the stored creation and transfer values with the block's
-///     as the update. The rules read no state and change nothing stored. They
+///     as the update. The rules change nothing stored and read no state but
+///     their totals. They
 ///     are fixed when the document type is created: a changed
 ///     `propertyConstraints` is an incompatible schema change on update. The
 ///     moderation charters contract declares its first one: a
@@ -1373,6 +1391,62 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     and two equal values over 255 bytes, which an unindexed string of 64
 ///     characters or more can hold, were refused
 ///     (`ReferencedDocumentPropertyMismatchError`, 40127).
+///
+/// 53. **Properties the platform generates (`generatedFrom`)**: the property
+///     keyword (meta-schema v3, `apply_generated_from` 0, `GeneratedFrom` on
+///     `DocumentProperty`) names a built-in `function` and its `params`,
+///     properties of the same document type, as
+///     `{ "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] }`.
+///     System functions are named under `sys.`, leaving other names to
+///     functions a contract may bring later. The `sys.stringTransformations`
+///     functions take one string and change ASCII characters only, keeping
+///     every other character, without Unicode tables: `lowercase`,
+///     `uppercase`, `capitalize`, `camelCase`, `snakeCase`, and
+///     `homographSafeASCII`, which lowercases, then maps `o` to `0` and `i`
+///     and `l` to `1`, DPNS's label normalization over ASCII. The parser
+///     checks at registration and update that `params` holds as many
+///     properties as the function takes, each another string property that
+///     is not generated itself, that neither the property nor a param is
+///     transient or inside a transient object, and that every param sits
+///     inside every object holding the property; a changed declaration is an
+///     incompatible schema change, and `validate_update` 1 refuses a property
+///     an update adds over params that all already existed
+///     (`DocumentTypeUpdateError`, 40212); meta-schema v3 refuses the keyword
+///     beside `$ref`, whose definition would replace it.
+///     `fill_generated_properties` (0) writes a declared property a document
+///     leaves out, from its params, in the action transformers of document
+///     create, replace and index-only delete, before the contest resolution
+///     and every check read the data, in `Document::try_from_create_transition`
+///     and `try_from_replace_transition`, and in
+///     `index_only_transition_entry_path_query`, the builder the prover and
+///     the verifier share, with which proofs are built and checked. The client
+///     transition builders, the SDK's contest fund lookup and the JS and FFI
+///     property-constraint pre-checks call `regenerate_generated_properties`
+///     (same slot) instead, which replaces a value the document holds and
+///     removes it when a param is absent, so a transition built from a
+///     fetched and edited document carries the value of its new params and
+///     its contest is detected from it.
+///     `DataContract::validate_document_properties` 0 calls
+///     `validate_generated_from_properties` (`validate_generated_from` 0)
+///     after the schema and `maxBytes`, and refuses a supplied value that is
+///     not what the function generates, one without its params, or a document
+///     repeating a key on the way to the property or a param, with
+///     `DocumentPropertyNotGeneratedError` (10424). Every call site was
+///     extended in place and is inert before this version, where the three
+///     slots are `None` and the meta-schemas refuse the keyword.
+///
+/// 55. **A preallocated index's agreement source fits a tree key**: contract
+///     create and update state validation 1 refuse, paid, a
+///     `propertyAgreement` pair through which a preallocated index is keyed
+///     when its referenced property can hold a value over 255 bytes
+///     (`ReferencedDocumentPropertyAgreementInvalidError`, 40126): creating a
+///     referenced document writes that value as a tree key, which failed with
+///     an internal error for a value over 255 bytes, and for any value once
+///     the property's midway size, which sized the estimate, passed 255
+///     bytes. `add_document_for_contract_operations` 1 now estimates that
+///     layer from the referring property, as an entry insert does, and
+///     preallocates nothing for a referenced value wider than the referring
+///     property can hold, which no referring document can agree with.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

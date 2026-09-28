@@ -37,9 +37,11 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
-use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dash_sdk::dpp::data_contract::document_type::methods::{
+    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+};
 use dash_sdk::dpp::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, PropertyRead,
+    AggregateKind, AggregateRead, DocumentSystemValues, PropertyRead,
 };
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
@@ -61,17 +63,21 @@ const PROPERTY_CONSTRAINTS_KEYWORD: &str = "propertyConstraints";
 /// Get the `propertyConstraints` rules of a document type as a JSON array
 ///
 /// Each element is
-/// `{ "name": string, "rule": object, "reads": [{ "path": string, "kind": string }], "readsOwner": bool, "readsSystem": [string] }`:
+/// `{ "name": string, "rule": object, "reads": [{ "path": string, "kind": string }], "readsOwner": bool, "readsSystem": [string], "readsTotals": [{ "kind": string, "documentType": string, "property"?: string, "filter": [string] }] }`:
 /// the rule's name (its key in `propertyConstraints`), the rule exactly as the
 /// document type's schema declares it, every property it reads in declared
 /// order (`kind` is `"value"` for an integer operand, `"presence"` for
 /// `present` / `absent`, `"text"` for a string comparison, `"identifier"` for
 /// an identifier comparison, `"length"` for a `length` or `byteLength` operand,
 /// `"count"` for a `count` operand and `"elements"` for the array a `contains`
-/// looks in; `$ownerId` is no property and is not listed), whether it reads `$ownerId`, which makes a transfer or a
-/// purchase answer to it too, and the system times and heights it reads
-/// (`"$createdAt"`, ...), which make a price update answer to a rule reading
-/// the update's and a transfer or purchase one reading the transfer's. Rules
+/// looks in; `$ownerId` is no property and is not listed), whether it reads `$ownerId` (or a
+/// total that depends on the owner), which makes a transfer or a purchase answer to it too,
+/// the system times and heights it reads (`"$createdAt"`, ...), which make a price update
+/// answer to a rule reading the update's and a transfer or purchase one reading the
+/// transfer's, and the `countOf` and `sumOf` totals it reads in declared order (`kind`
+/// `"countOf"` or `"sumOf"`, the type of the contract it totals, the summed `property` of
+/// a `sumOf` only, and the keys its `filter` matches documents by; a total the platform
+/// reads from state when the document is sent, which the pre-check does not). Rules
 /// are listed in name order, the order
 /// consensus checks them in. A document type declaring none gives `[]`, and so
 /// does every document type when the SDK's protocol version is below 14.
@@ -137,7 +143,9 @@ pub unsafe extern "C" fn dash_sdk_data_contract_get_property_constraints(
 /// every rule, in name order, evaluated by `PropertyConstraint::violation`.
 /// The device clock stands in for the block time the create records
 /// (`$createdAt`, `$updatedAt`, `$transferredAt`), and a rule reading a block
-/// height is not judged, since the height is unknown until the block.
+/// height is not judged, since the height is unknown until the block, and
+/// neither is a rule reading a `countOf` or `sumOf` total (`"readsTotals"`),
+/// which the platform reads from state when the document is sent.
 /// Nothing but the rules is checked: not the JSON schema, not the state.
 ///
 /// The result is the first rule broken, as
@@ -324,9 +332,29 @@ fn property_constraints_json(
                 .into_iter()
                 .map(|property| property.name())
                 .collect::<Vec<_>>(),
+            "readsTotals": constraint
+                .aggregate_reads()
+                .into_iter()
+                .map(total_read_json)
+                .collect::<Vec<_>>(),
         }));
     }
     Ok(serde_json::Value::Array(rules))
+}
+
+/// A `countOf` or `sumOf` a rule reads, as the descriptor lists it: its operator,
+/// the type it totals, the summed property of a `sumOf`, and the keys of its
+/// filter.
+fn total_read_json(read: &AggregateRead) -> serde_json::Value {
+    let mut entry = json!({
+        "kind": read.wire_name(),
+        "documentType": read.document_type,
+        "filter": read.filter.keys().collect::<Vec<_>>(),
+    });
+    if let AggregateKind::Sum { property } = &read.kind {
+        entry["property"] = json!(property);
+    }
+    entry
 }
 
 /// The system values a create of a document owned by `owner_id` will have, as
@@ -349,16 +377,27 @@ fn system_values_for_create(owner_id: Identifier) -> DocumentSystemValues {
 }
 
 /// The first rule of `document_type`'s `propertyConstraints` that `document`
-/// breaks, judged as consensus judges a create (its properties, its owner for
-/// `$ownerId`, and the system times [`system_values_for_create`] estimates),
-/// as the JSON `dash_sdk_data_contract_check_property_constraints` returns:
-/// JSON `null` when it meets them all.
+/// breaks, judged as consensus judges a create (its properties with every
+/// `generatedFrom` property generated from its params, as the transition
+/// builders send them, its owner for `$ownerId`, and the system times
+/// [`system_values_for_create`] estimates), as the JSON
+/// `dash_sdk_data_contract_check_property_constraints` returns: JSON `null`
+/// when it meets them all.
 fn property_constraint_violation_json(
     document_type: DocumentTypeRef<'_>,
     document: &Document,
     platform_version: &PlatformVersion,
 ) -> Result<serde_json::Value, DashSDKError> {
-    let data = Value::from(document.properties().clone());
+    let mut properties = document.properties().clone();
+    document_type
+        .regenerate_generated_properties(&mut properties, platform_version)
+        .map_err(|e| {
+            DashSDKError::new(
+                DashSDKErrorCode::ProtocolError,
+                format!("Failed to generate the generatedFrom properties: {}", e),
+            )
+        })?;
+    let data = Value::from(properties);
     let system = system_values_for_create(document.owner_id());
     let result = document_type
         .validate_property_constraints(&data, &system, platform_version)
@@ -617,7 +656,8 @@ mod tests {
                         { "path": "closedAt", "kind": "presence" }
                     ],
                     "readsOwner": false,
-                    "readsSystem": []
+                    "readsSystem": [],
+                    "readsTotals": []
                 },
                 {
                     "name": "discountBelowPrice",
@@ -627,7 +667,8 @@ mod tests {
                         { "path": "price", "kind": "value" }
                     ],
                     "readsOwner": false,
-                    "readsSystem": []
+                    "readsSystem": [],
+                    "readsTotals": []
                 },
                 {
                     "name": "perUnitFee",
@@ -637,7 +678,8 @@ mod tests {
                         { "path": "fee", "kind": "value" }
                     ],
                     "readsOwner": false,
-                    "readsSystem": []
+                    "readsSystem": [],
+                    "readsTotals": []
                 },
                 {
                     "name": "sellerIsOwner",
@@ -647,14 +689,16 @@ mod tests {
                         { "path": "sellerId", "kind": "identifier" }
                     ],
                     "readsOwner": true,
-                    "readsSystem": []
+                    "readsSystem": [],
+                    "readsTotals": []
                 },
                 {
                     "name": "tieredFee",
                     "rule": declared["tieredFee"],
                     "reads": [{ "path": "fee", "kind": "value" }],
                     "readsOwner": false,
-                    "readsSystem": []
+                    "readsSystem": [],
+                    "readsTotals": []
                 }
             ])
         );
@@ -1063,7 +1107,8 @@ mod tests {
                         { "path": "price", "kind": "value" }
                     ],
                     "readsOwner": false,
-                    "readsSystem": []
+                    "readsSystem": [],
+                    "readsTotals": []
                 },
                 {
                     "name": "openEndedSoldByOwner",
@@ -1080,7 +1125,8 @@ mod tests {
                         { "path": "endsAt", "kind": "value" }
                     ],
                     "readsOwner": true,
-                    "readsSystem": ["$createdAt"]
+                    "readsSystem": ["$createdAt"],
+                    "readsTotals": []
                 }
             ])
         );
@@ -1100,5 +1146,178 @@ mod tests {
         assert_eq!(ended["rule"], "openEndedSoldByOwner");
         assert_eq!(ended["violation"], "NotMet");
         assert_eq!(ending_sold_by_other, serde_json::Value::Null);
+    }
+
+    /// A `handle` type whose `normalizedLabel` is generated from `label`, with a
+    /// rule reserving the normalized name `dash`.
+    fn handle_contract_bytes() -> Vec<u8> {
+        let platform_version = PlatformVersion::latest();
+        let documents = platform_value!({
+            "handle": {
+                "type": "object",
+                "properties": {
+                    "label": { "type": "string", "maxLength": 63, "position": 0 },
+                    "normalizedLabel": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "position": 1,
+                        "generatedFrom": {
+                            "function": "sys.stringTransformations.homographSafeASCII",
+                            "params": ["label"]
+                        }
+                    }
+                },
+                "additionalProperties": false,
+                "propertyConstraints": {
+                    "notReserved": { "notEqual": ["normalizedLabel", { "const": "dash" }] }
+                }
+            }
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory for the protocol version")
+            .create_with_value_config(Identifier::new(OWNER), 1, documents, None, None)
+            .expect("handle contract")
+            .data_contract()
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialized contract")
+    }
+
+    /// The pre-check judges the rules on the document the transition builders
+    /// send: a `generatedFrom` property left out, or stale, is generated from
+    /// its params first, as consensus sees it.
+    #[test]
+    fn should_judge_a_generated_property_as_the_builders_send_it() {
+        let sdk = sdk_handle(PlatformVersion::latest());
+        let contract = handle_contract_bytes();
+
+        let left_out = check(sdk, &contract, "handle", json!({ "label": "DASH" }), OWNER);
+        let stale = check(
+            sdk,
+            &contract,
+            "handle",
+            json!({ "label": "DASH", "normalizedLabel": "b0b" }),
+            OWNER,
+        );
+        let other = check(sdk, &contract, "handle", json!({ "label": "Bob" }), OWNER);
+        destroy_mock_sdk_handle(sdk);
+
+        for result in [left_out, stale] {
+            let result = result.expect("checked");
+            assert_eq!(result["rule"], "notReserved");
+            assert_eq!(result["violation"], "NotMet");
+        }
+        assert_eq!(other.expect("checked"), serde_json::Value::Null);
+    }
+    /// A `listing` type whose trees keep its count, each owner's count and each
+    /// category's total price, with three rules reading those totals and one,
+    /// `priceCap`, reading only the price.
+    fn totalled_contract_bytes() -> Vec<u8> {
+        let platform_version = PlatformVersion::latest();
+        let documents = platform_value!({
+            "listing": {
+                "type": "object",
+                "documentsCountable": true,
+                "properties": {
+                    "price": { "type": "integer", "minimum": 0, "maximum": 1000000000, "position": 0 },
+                    "category": { "type": "integer", "minimum": 0, "maximum": 100, "position": 1 }
+                },
+                "required": ["price", "category"],
+                "indices": [
+                    {
+                        "name": "byOwner",
+                        "properties": [{ "$ownerId": "asc" }],
+                        "countable": "countable"
+                    },
+                    {
+                        "name": "byCategory",
+                        "properties": [{ "category": "asc" }],
+                        "summable": "price"
+                    }
+                ],
+                "propertyConstraints": {
+                    "allListings": { "lessThan": [{ "countOf": ["listing"] }, 1000] },
+                    "atMostTwoPerOwner": {
+                        "lessThanOrEqual": [
+                            { "countOf": ["listing", { "$ownerId": "$ownerId" }] },
+                            2
+                        ]
+                    },
+                    "categoryBudget": {
+                        "lessThanOrEqual": [
+                            { "sumOf": ["listing", "price", { "category": "category" }] },
+                            250
+                        ]
+                    },
+                    "priceCap": { "lessThanOrEqual": ["price", 1000] }
+                },
+                "additionalProperties": false
+            }
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory for the protocol version")
+            .create_with_value_config(Identifier::new(OWNER), 1, documents, None, None)
+            .expect("listing contract")
+            .data_contract()
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialized contract")
+    }
+
+    /// The descriptor lists the `countOf` and `sumOf` totals each rule reads,
+    /// and the pre-check, which reads no state, leaves a rule reading one
+    /// unjudged while it still judges the others.
+    #[test]
+    fn should_list_the_totals_a_rule_reads_and_leave_it_unjudged() {
+        let sdk = sdk_handle(PlatformVersion::latest());
+        let contract = totalled_contract_bytes();
+
+        let rules = rules_of(sdk, &contract, "listing");
+        // 500 is past the category budget of 250 even alone, but the budget's
+        // total is read from state, which the pre-check does not do
+        let over_budget = check(
+            sdk,
+            &contract,
+            "listing",
+            json!({ "price": 500, "category": 1 }),
+            OWNER,
+        );
+        let over_cap = check(
+            sdk,
+            &contract,
+            "listing",
+            json!({ "price": 2000, "category": 1 }),
+            OWNER,
+        );
+        destroy_mock_sdk_handle(sdk);
+
+        let rules = rules.expect("rules of listing");
+        let totals = |index: usize| rules[index]["readsTotals"].clone();
+        assert_eq!(
+            totals(0),
+            json!([{ "kind": "countOf", "documentType": "listing", "filter": [] }])
+        );
+        assert_eq!(
+            totals(1),
+            json!([{ "kind": "countOf", "documentType": "listing", "filter": ["$ownerId"] }])
+        );
+        assert_eq!(rules[1]["readsOwner"], json!(true));
+        assert_eq!(
+            totals(2),
+            json!([{
+                "kind": "sumOf",
+                "documentType": "listing",
+                "property": "price",
+                "filter": ["category"]
+            }])
+        );
+        assert_eq!(
+            rules[2]["reads"],
+            json!([{ "path": "category", "kind": "value" }])
+        );
+        assert_eq!(totals(3), json!([]));
+
+        assert_eq!(over_budget.expect("checked"), serde_json::Value::Null);
+        let over_cap = over_cap.expect("checked");
+        assert_eq!(over_cap["rule"], "priceCap");
+        assert_eq!(over_cap["violation"], "NotMet");
     }
 }

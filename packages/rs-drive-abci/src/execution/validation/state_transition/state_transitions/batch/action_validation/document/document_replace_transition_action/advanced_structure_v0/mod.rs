@@ -49,7 +49,8 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
 
         // Validate user defined properties. The rules read the writer, the times and
         // heights the replace keeps (creation, last transfer) and the ones it sets (the
-        // update), as the stored document will hold them.
+        // update), as the stored document will hold them, and the `countOf` and `sumOf`
+        // totals the action read from state as they will be once it is stored.
         let system = DocumentSystemValues {
             owner_id: Some(owner_id),
             created_at: self.created_at(),
@@ -61,6 +62,7 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
             created_at_core_block_height: self.created_at_core_block_height(),
             updated_at_core_block_height: self.updated_at_core_block_height(),
             transferred_at_core_block_height: self.transferred_at_core_block_height(),
+            aggregates: Some(self.property_constraint_aggregates().clone()),
         };
         let result = data_contract
             .validate_document_properties(

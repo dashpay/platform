@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a permanentDocument lookup, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the propertyConstraints doctype keyword (named conditions over the document's properties, comparisons between integer expressions, of a string or identifier property with constants or with another property of its kind, in (value membership) and present or absent tests combined with anyOf, allOf and not, which every created or replaced document must meet), the maxBytes property keyword (the most UTF-8 bytes a string, or each string element of a typed array, may take), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a permanentDocument lookup, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the propertyConstraints doctype keyword (named conditions over the document's properties, comparisons between integer expressions, of a string or identifier property with constants or with another property of its kind, in (value membership) and present or absent tests combined with anyOf, allOf and not, which every created or replaced document must meet), the maxBytes property keyword (the most UTF-8 bytes a string, or each string element of a typed array, may take), the generatedFrom property keyword (a string property whose value a built-in function generates from other properties of the same document, on arrival when a document leaves it out), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "referenceOperands": {
@@ -218,7 +218,7 @@
       "uniqueItems": true
     },
     "propertyConstraintExpression": {
-      "description": "An expression of a propertyConstraints rule: an integer value; the dotted path of a property of the document type, whose value it takes: an integer or boolean one (1 for true, 0 for false), 0 when the document leaves it out, or a string one compared with a const or another string property; a system time or height the document type records ($createdAt, $updatedAtBlockHeight, ...); or an object with one key: ifAbsent, a property path and the value it takes when the document leaves it out, an integer, or a string for a string property compared with strings; add, multiply, min or max, two or more operands; subtract, divide, modulo or power, exactly two; abs, one; length or byteLength, the characters or UTF-8 bytes of a string property, or count, the items of an array or byte array property, each 0 when the document leaves the property out; const, a string constant compared with a string property",
+      "description": "An expression of a propertyConstraints rule: an integer value; the dotted path of a property of the document type, whose value it takes: an integer or boolean one (1 for true, 0 for false), 0 when the document leaves it out, or a string one compared with a const or another string property; a system time or height the document type records ($createdAt, $updatedAtBlockHeight, ...); or an object with one key: ifAbsent, a property path and the value it takes when the document leaves it out, an integer, or a string for a string property compared with strings; add, multiply, min or max, two or more operands; subtract, divide, modulo or power, exactly two; abs, one; length or byteLength, the characters or UTF-8 bytes of a string property, or count, the items of an array or byte array property, each 0 when the document leaves the property out; countOf or sumOf, how many documents of a document type of this contract match a filter or the total of an integer property over them, as its count or sum trees keep it; const, a string constant compared with a string property",
       "type": [
         "integer",
         "string",
@@ -295,6 +295,39 @@
               "description": "The number of items of the array property at this path, or of bytes of the byte array property, as maxItems counts them, or 0 when the document leaves it out",
               "$ref": "#/$defs/propertyConstraintPath"
             },
+            "countOf": {
+              "description": "How many documents of a document type of this contract there are, as its count trees will keep it once the write is done: every one, which needs documentsCountable on that type, or those matching a filter, which needs a countable index of that type whose properties are exactly the filter's keys",
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/propertyConstraintAggregateType"
+                },
+                {
+                  "$ref": "#/$defs/propertyConstraintAggregateFilter"
+                }
+              ],
+              "items": false,
+              "minItems": 1
+            },
+            "sumOf": {
+              "description": "The total of an integer property over the documents of a document type of this contract, as its sum trees will keep it once the write is done: over every one, which needs documentsSummable naming the property on that type, or over those matching a filter, which needs an index of that type summable by the property whose properties are exactly the filter's keys",
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/propertyConstraintAggregateType"
+                },
+                {
+                  "description": "The integer property of that type to total",
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
+                },
+                {
+                  "$ref": "#/$defs/propertyConstraintAggregateFilter"
+                }
+              ],
+              "items": false,
+              "minItems": 2
+            },
             "const": {
               "description": "A constant, only as one side of an equal or notEqual whose other side is the path of a string property (a string), or of an identifier property or $ownerId (a base58 identifier): a string on its own is a path, and an integer is written as itself",
               "type": "string"
@@ -303,6 +336,49 @@
           "minProperties": 1,
           "maxProperties": 1,
           "additionalProperties": false
+        }
+      }
+    },
+    "propertyConstraintAggregateType": {
+      "description": "The name of the document type of this contract a countOf or sumOf totals, the declaring type included",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "propertyConstraintAggregateFilter": {
+      "description": "Which documents a countOf or sumOf totals: those whose value at each key, a property path of the totalled type or $ownerId, equals the value given for it, read from the document being written: a property path of it, $ownerId, an integer, or a { const } string or base58 identifier",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^(\\$ownerId|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$"
+      },
+      "additionalProperties": {
+        "type": [
+          "integer",
+          "string",
+          "object"
+        ],
+        "if": {
+          "type": "string"
+        },
+        "then": {
+          "pattern": "^(\\$ownerId|[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*)$"
+        },
+        "else": {
+          "if": {
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "const": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "const"
+            ],
+            "additionalProperties": false
+          }
         }
       }
     },
@@ -854,6 +930,38 @@
           "minimum": 1,
           "maximum": 65535
         },
+        "generatedFrom": {
+          "description": "Only on string properties: the platform generates the property's value with function from params, other properties of the same document. function names a system function, under sys.; the sys.stringTransformations functions take one string and change ASCII characters only, keeping every other character as it is: lowercase and uppercase change the case of A to Z; capitalize makes the first character uppercase and the rest lowercase; camelCase and snakeCase split the string into words (at every ASCII character that is neither a letter nor a digit, and before an ASCII uppercase letter that starts a word, as in helloWorld or XMLHttp) and join them as helloWorld or hello_world; homographSafeASCII lowercases, then turns o into 0 and i and l into 1 (the DPNS label normalization over ASCII, so it only resists homographs where the param's pattern admits ASCII alone). params lists, in order, as many properties as the function takes, each the dotted path of a property of the same document type. A function never refuses a value: which characters a param may hold is the param's pattern's job, and the generated property needs no pattern of its own. When a created or replaced document (or the values of an indexOnly delete) leaves the property out and supplies every param, the platform generates the value on arrival, before anything reads the document; a value the document supplies must equal the generated one, and the property must be absent when a param is. Checked wherever a document's properties are validated, every create and replace included, after the JSON schema (DocumentPropertyNotGeneratedError, 10424). At contract registration every param must be another string property of the document type that is not generated itself, neither the property nor a param may be transient or inside a transient object, and every param must sit inside every object that holds this property (a top-level property may take any param), so a document supplying the params always holds the object the value is written into. Not allowed on the items of a typed array, nor beside $ref, whose definition replaces every keyword written next to it: declare it in the definition. Adding, removing or changing it is an incompatible schema change on update, and a property an update adds may declare it only when one of its params is new too (documents stored before the update were never generated). Available from protocol version 14.",
+          "type": "object",
+          "properties": {
+            "function": {
+              "type": "string",
+              "enum": [
+                "sys.stringTransformations.camelCase",
+                "sys.stringTransformations.capitalize",
+                "sys.stringTransformations.homographSafeASCII",
+                "sys.stringTransformations.lowercase",
+                "sys.stringTransformations.snakeCase",
+                "sys.stringTransformations.uppercase"
+              ]
+            },
+            "params": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            }
+          },
+          "required": [
+            "function",
+            "params"
+          ],
+          "additionalProperties": false
+        },
         "requiredSince": {
           "type": "integer",
           "minimum": 1,
@@ -961,6 +1069,22 @@
           "required": [
             "type"
           ]
+        },
+        "generatedFrom": {
+          "description": "generatedFrom is only allowed on string properties, and not beside $ref, whose definition replaces every keyword written next to it",
+          "properties": {
+            "type": {
+              "const": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "not": {
+            "required": [
+              "$ref"
+            ]
+          }
         },
         "refersTo": {
           "description": "refersTo is only allowed on identifier properties, except an identityPublicKey reference with identityProperty, which sits on the key id property: an integer with minimum 0 and maximum 4294967295, the range of a key id",
@@ -2095,7 +2219,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Names of top-level properties whose values are validated on the transition but never stored: a create, and from protocol version 14 a replace, drops them before the document is written. From protocol version 14 every entry must name a top-level property (list the object around a nested one); no index may read a transient property or one inside a transient object; a refersTo lookup may not read one on either side, a propertyAgreement may not name one on its referenced side, and a stored key id may not pair with a transient identity; encryptedFor may not name one. Adding, removing or changing an entry on contract update is an incompatible schema change."
+      "description": "Names of top-level properties whose values are validated on the transition but never stored: a create, and from protocol version 14 a replace, drops them before the document is written. From protocol version 14 every entry must name a top-level property (list the object around a nested one); no index may read a transient property or one inside a transient object; a refersTo lookup may not read one on either side, a propertyAgreement may not name one on its referenced side, and a stored key id may not pair with a transient identity; encryptedFor may not name one; generatedFrom may neither name one nor sit on one. Adding, removing or changing an entry on contract update is an incompatible schema change."
     },
     "immutable": {
       "type": "array",
@@ -2174,7 +2298,7 @@
       }
     },
     "propertyConstraints": {
-      "description": "Rules every created or replaced document of the type must meet, by name (1 to 64 letters, digits or underscores). A rule is a condition: an object with one key, either a comparison (equal, notEqual, lessThan, lessThanOrEqual, greaterThan or greaterThanOrEqual) listing the two integer expressions it compares, left then right, equal or notEqual of the path of a string property and a const string ({ \"equal\": [\"status\", { \"const\": \"closed\" }] }, either way round) or of the paths of two string properties, which compares their strings, and likewise for identifier properties, whose constants are base58 identifiers, in listing an integer expression and two or more distinct integer values it may take or the path of a string property and two or more distinct strings, startsWith or endsWith listing two strings, a const or a string property each, at least one a property, and holding if the first starts or ends with the second, byte for byte (a constant looked for in a string property that declares enum must start or end one of its values), contains listing the path of a typed array property and the value one of its elements must equal (an integer expression among integers, a const string or string property among strings, a const base58 identifier, identifier property or $ownerId among identifiers; an array left out holds nothing, and a constant must be one of the elements' enum values when they declare one), present or absent naming a property of any type (the document holds it, or leaves it out or sets it to null), or anyOf, allOf, not, ifThen or ifThenElse over conditions: anyOf holds if at least one of its two or more conditions holds, allOf if every one does, not if its one condition does not, ifThen if its second condition holds whenever its first does (the second evaluated only then), ifThenElse if its second holds when its first does and its third when it does not (only that branch evaluated); notIn lists what in lists and holds if the expression takes none of the values. An expression is an integer value, the dotted path of an integer or boolean property of the document type, whose value it takes (a boolean reading as 1 for true and 0 for false), 0 when the document leaves it out, a system time or height the document type records by listing it in required ($createdAt, $updatedAt and $transferredAt, block times in milliseconds, and each with BlockHeight or CoreBlockHeight appended, the Platform and Core block heights: those of the create, of the last create, replace or price update, and of the last create, transfer or purchase), or an object with one key: ifAbsent, a property path and the value it takes when the document leaves it out (an integer, or a string for a string property compared with strings); add, multiply, min or max, two or more operands; subtract, divide, modulo or power, exactly two; abs, one; length or byteLength, the characters or UTF-8 bytes of a string property, or count, the items of an array or byte array property, each 0 when the document leaves the property out ({ \"lessThanOrEqual\": [{ \"count\": \"tags\" }, \"maxTags\"] }). A string property the document leaves out equals no constant and no other string property, not even one also left out, unless an ifAbsent gives it a string default ({ \"ifAbsent\": [\"status\", \"open\"] }), which it then reads as, and a constant compared with a string property that declares enum must be one of its values. The arithmetic is exact over 128-bit signed integers, operands evaluated left to right: divide and modulo are Euclidean (the remainder is never negative), 0 to the power 0 is 1, and a value or intermediate result that does not fit, a zero divisor, a negative exponent or a property value that is not an integer breaks the rule. Conditions are checked in declared order and no further than the outcome needs (anyOf stops at the first that holds, allOf at the first that fails), and a fault met in a condition that is checked breaks the rule whatever the others would say (not does not turn it into a pass), so an earlier condition can guard a later one. Every property an operand reads must be an integer or boolean property, every property length or byteLength measures a string property, every property count counts an array or byte array property, every property compared with a string a string property, present and absent may test a property of any type, and no property a rule reads may be transient or inside a transient object; every comparison and in must read at least one property, an anyOf or allOf may not hold two alike conditions or directly another of its kind, a not may not hold directly another not or a notIn, a literal 0 divisor or negative exponent is refused, and no condition or operand may nest deeper than 64 levels; a type declares at most SystemLimits max_property_constraints rules (16 from protocol version 14) of at most max_property_constraint_nodes nodes each (32), counting every comparison and logical operator, every in and each value it lists, every contains and its array, every const, every present or absent, every arithmetic operator and every operand, a size included; all checked at contract registration. When a document is created or replaced, consensus checks every rule, in name order, after the schema validation, and refuses the first one the document breaks (DocumentPropertyConstraintViolatedError, 10422). $ownerId, the document's owner, is an identifier operand (never a property: not in present, absent or an integer operand, and not on an indexOnly type), and a transfer or a purchase, which gives the document a new owner, is refused when it would break a rule reading it. Likewise a transfer or a purchase is judged against the rules reading the transfer's time and heights, and a price update against those reading the update's, since each sets them; an indexOnly type reads no system time or height. The rules read no state and change nothing stored. Fixed when the document type is created: adding, removing or changing a rule is an incompatible schema change on update. Available from protocol version 14.",
+      "description": "Rules every created or replaced document of the type must meet, by name (1 to 64 letters, digits or underscores). A rule is a condition: an object with one key, either a comparison (equal, notEqual, lessThan, lessThanOrEqual, greaterThan or greaterThanOrEqual) listing the two integer expressions it compares, left then right, equal or notEqual of the path of a string property and a const string ({ \"equal\": [\"status\", { \"const\": \"closed\" }] }, either way round) or of the paths of two string properties, which compares their strings, and likewise for identifier properties, whose constants are base58 identifiers, in listing an integer expression and two or more distinct integer values it may take or the path of a string property and two or more distinct strings, startsWith or endsWith listing two strings, a const or a string property each, at least one a property, and holding if the first starts or ends with the second, byte for byte (a constant looked for in a string property that declares enum must start or end one of its values), contains listing the path of a typed array property and the value one of its elements must equal (an integer expression among integers, a const string or string property among strings, a const base58 identifier, identifier property or $ownerId among identifiers; an array left out holds nothing, and a constant must be one of the elements' enum values when they declare one), present or absent naming a property of any type (the document holds it, or leaves it out or sets it to null), or anyOf, allOf, not, ifThen or ifThenElse over conditions: anyOf holds if at least one of its two or more conditions holds, allOf if every one does, not if its one condition does not, ifThen if its second condition holds whenever its first does (the second evaluated only then), ifThenElse if its second holds when its first does and its third when it does not (only that branch evaluated); notIn lists what in lists and holds if the expression takes none of the values. An expression is an integer value, the dotted path of an integer or boolean property of the document type, whose value it takes (a boolean reading as 1 for true and 0 for false), 0 when the document leaves it out, a system time or height the document type records by listing it in required ($createdAt, $updatedAt and $transferredAt, block times in milliseconds, and each with BlockHeight or CoreBlockHeight appended, the Platform and Core block heights: those of the create, of the last create, replace or price update, and of the last create, transfer or purchase), or an object with one key: ifAbsent, a property path and the value it takes when the document leaves it out (an integer, or a string for a string property compared with strings); add, multiply, min or max, two or more operands; subtract, divide, modulo or power, exactly two; abs, one; length or byteLength, the characters or UTF-8 bytes of a string property, or count, the items of an array or byte array property, each 0 when the document leaves the property out ({ \"lessThanOrEqual\": [{ \"count\": \"tags\" }, \"maxTags\"] }); countOf or sumOf, how many documents of a document type of this contract match a filter (keys of that type or $ownerId, each mapped to a value read from the document written) or the total of an integer property over them, as that type's count or sum trees keep it once the write is done, which needs documentsCountable or documentsSummable for a whole type and otherwise an index whose properties are exactly the filter's keys ({ \"lessThanOrEqual\": [{ \"countOf\": [\"listing\", { \"$ownerId\": \"$ownerId\" }] }, 10] }). A string property the document leaves out equals no constant and no other string property, not even one also left out, unless an ifAbsent gives it a string default ({ \"ifAbsent\": [\"status\", \"open\"] }), which it then reads as, and a constant compared with a string property that declares enum must be one of its values. The arithmetic is exact over 128-bit signed integers, operands evaluated left to right: divide and modulo are Euclidean (the remainder is never negative), 0 to the power 0 is 1, and a value or intermediate result that does not fit, a zero divisor, a negative exponent or a property value that is not an integer breaks the rule. Conditions are checked in declared order and no further than the outcome needs (anyOf stops at the first that holds, allOf at the first that fails), and a fault met in a condition that is checked breaks the rule whatever the others would say (not does not turn it into a pass), so an earlier condition can guard a later one. Every property an operand reads must be an integer or boolean property, every property length or byteLength measures a string property, every property count counts an array or byte array property, every property compared with a string a string property, present and absent may test a property of any type, and no property a rule reads may be transient or inside a transient object; every comparison and in must read at least one property, an anyOf or allOf may not hold two alike conditions or directly another of its kind, a not may not hold directly another not or a notIn, a literal 0 divisor or negative exponent is refused, and no condition or operand may nest deeper than 64 levels; a type declares at most SystemLimits max_property_constraints rules (16 from protocol version 14) of at most max_property_constraint_nodes nodes each (32), counting every comparison and logical operator, every in and each value it lists, every contains and its array, every const, every present or absent, every arithmetic operator and every operand, a size included; all checked at contract registration. When a document is created or replaced, consensus checks every rule, in name order, after the schema validation, and refuses the first one the document breaks (DocumentPropertyConstraintViolatedError, 10422). $ownerId, the document's owner, is an identifier operand (never a property: not in present, absent or an integer operand, and not on an indexOnly type), and a transfer or a purchase, which gives the document a new owner, is refused when it would break a rule reading it. Likewise a transfer or a purchase is judged against the rules reading the transfer's time and heights, and a price update against those reading the update's, since each sets them; an indexOnly type reads no system time or height. The rules change nothing stored, and read state only for countOf and sumOf, each total a billed read of a count or sum tree, at most max_property_constraint_aggregates distinct totals per type (4); a type with a contested index totals no documents of its own type, since a document a contest awards is stored without the rules judged. Fixed when the document type is created: adding, removing or changing a rule is an incompatible schema change on update. Available from protocol version 14.",
       "type": "object",
       "propertyNames": {
         "pattern": "^[a-zA-Z0-9_]{1,64}$"

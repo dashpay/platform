@@ -111,6 +111,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'discountBelowPrice',
@@ -121,6 +122,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'perUnitFee',
@@ -131,6 +133,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'sellerIsOwner',
@@ -141,6 +144,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           ],
           readsOwner: true,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'tieredFee',
@@ -148,6 +152,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'fee', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
       ]);
     });
@@ -202,6 +207,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'tags', kind: 'count' }, { path: 'maxTags', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'titleBytes',
@@ -209,6 +215,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'title', kind: 'length' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
       ]);
 
@@ -255,6 +262,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'endsAt', kind: 'value' }],
           readsOwner: false,
           readsSystem: ['$createdAt'],
+          readsTotals: [],
         },
         {
           name: 'listedAfterHeight10',
@@ -262,6 +270,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [],
           readsOwner: false,
           readsSystem: ['$createdAtBlockHeight'],
+          readsTotals: [],
         },
       ]);
 
@@ -308,6 +317,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'labels', kind: 'elements' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
       ]);
 
@@ -417,6 +427,81 @@ describe('DataContract: propertyConstraints (v14)', () => {
         .to.deep.include({ rule: 'termsPositive', violation: 'NotMet' });
     });
 
+    it('should report what a countOf or sumOf reads, and leave it to consensus', () => {
+      const rules = {
+        allListings: { lessThan: [{ countOf: ['listing'] }, 1000] },
+        atMostTwoPerOwner: {
+          lessThanOrEqual: [{ countOf: ['listing', { $ownerId: '$ownerId' }] }, 2],
+        },
+        categoryBudget: {
+          lessThanOrEqual: [{ sumOf: ['listing', 'price', { category: 'category' }] }, 250],
+        },
+      };
+      const contract = buildContract({
+        listing: {
+          type: 'object',
+          properties: {
+            price: {
+              type: 'integer', minimum: 0, maximum: 1000000000, position: 0,
+            },
+            category: {
+              type: 'integer', minimum: 0, maximum: 100, position: 1,
+            },
+          },
+          required: ['price', 'category'],
+          documentsCountable: true,
+          indices: [
+            { name: 'byOwner', properties: [{ $ownerId: 'asc' }], countable: 'countable' },
+            { name: 'byCategory', properties: [{ category: 'asc' }], summable: 'price' },
+          ],
+          additionalProperties: false,
+          propertyConstraints: rules,
+        },
+      });
+
+      // The count by owner depends on the owner, the category total on a
+      // property of the document written; a whole-type count has no filter
+      expect(contract.documentTypePropertyConstraints('listing')).to.deep.equal([
+        {
+          name: 'allListings',
+          rule: rules.allListings,
+          reads: [],
+          readsOwner: false,
+          readsSystem: [],
+          readsTotals: [{ kind: 'countOf', documentType: 'listing', filter: [] }],
+        },
+        {
+          name: 'atMostTwoPerOwner',
+          rule: rules.atMostTwoPerOwner,
+          reads: [],
+          readsOwner: true,
+          readsSystem: [],
+          readsTotals: [{ kind: 'countOf', documentType: 'listing', filter: ['$ownerId'] }],
+        },
+        {
+          name: 'categoryBudget',
+          rule: rules.categoryBudget,
+          reads: [{ path: 'category', kind: 'value' }],
+          readsOwner: false,
+          readsSystem: [],
+          readsTotals: [{
+            kind: 'sumOf', documentType: 'listing', property: 'price', filter: ['category'],
+          }],
+        },
+      ]);
+
+      // A price far past the budget: the total is read from state, which the
+      // pre-check does not do, so neither rule is judged
+      const listing = new wasm.Document({
+        properties: { price: 999999999, category: 1 },
+        documentTypeName: 'listing',
+        dataContractId: contract.id,
+        ownerId,
+        revision: BigInt(1),
+      });
+      expect(contract.checkDocumentPropertyConstraints(listing)).to.equal(undefined);
+    });
+
     it('should report integer literals past Number.MAX_SAFE_INTEGER exactly, as bigint', () => {
       const big = 9007199254740993n; // 2 ** 53 + 1, which a number rounds
       const rules = {
@@ -441,6 +526,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'balance', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
         {
           name: 'knownTier',
@@ -448,6 +534,7 @@ describe('DataContract: propertyConstraints (v14)', () => {
           reads: [{ path: 'tier', kind: 'value' }],
           readsOwner: false,
           readsSystem: [],
+          readsTotals: [],
         },
       ];
 
@@ -543,6 +630,25 @@ describe('DataContract: propertyConstraints (v14)', () => {
 
       expect(() => contract.checkDocumentPropertyConstraints(foreign)).to.throw(/another contract|not this one/);
       expect(() => contract.checkDocumentPropertyConstraints(unknownType)).to.throw(/not found/);
+    });
+  });
+
+  describe('a malformed rule', () => {
+    it('should throw with the consensus code Platform would refuse the contract with', () => {
+      const malformed = {
+        ...schemas,
+        offer: { ...schemas.offer, propertyConstraints: { rule: { equal: ['price'] } } },
+      };
+
+      try {
+        buildContract(malformed);
+        expect.fail('expected to throw');
+      } catch (e) {
+        expect(e).to.be.instanceOf(wasm.WasmDppError);
+        expect(e.message).to.match(/must list exactly two operands/);
+        // InvalidContractStructure
+        expect(e.code).to.equal(10231);
+      }
     });
   });
 });

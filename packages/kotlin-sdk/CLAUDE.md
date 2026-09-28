@@ -32,9 +32,9 @@ are data encrypted under Keystore-wrapped AES keys).
   `extern "C"` entry points of the FFI crates **as rlib dependencies**, so
   `DashSDKResult` never crosses JNI by value. Errors throw
   `org.dashfoundation.dashsdk.ffi.DashSDKException(code, message)`, which
-  also carries the consensus code and kind when a platform-wallet result
-  reports a consensus rejection (`DashSdkError.consensusError`; branch on
-  that, never on the message); panics
+  also carries the consensus code and kind when a platform-wallet result or
+  an rs-sdk-ffi `DashSDKError` reports a consensus rejection
+  (`DashSdkError.consensusError`; branch on that, never on the message); panics
   are caught at every export (`support::guard`) — the JNI library must never
   abort the app process (workspace profiles `*-android` keep
   `panic = "unwind"`).

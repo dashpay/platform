@@ -4552,6 +4552,31 @@ mod tests {
             );
         }
 
+        /// An update adding a `like` type whose preallocated index is keyed by
+        /// the existing `post.hashtag`, up to 280 characters, through an
+        /// agreement is refused as a registration is: accepted, it would stop
+        /// every post carrying a long hashtag from being created.
+        #[tokio::test]
+        async fn should_reject_contract_update_keying_a_preallocated_index_by_a_property_wider_than_a_tree_key(
+        ) {
+            let result = run_contract_update_from(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-preallocated-too-wide-update-v1.json",
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-preallocated-too-wide.json",
+                true,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                    ),
+                    ..
+                } if error.reason().contains("preallocated index byHashtagPost")
+            );
+        }
+
         /// The contract whose immutable `electedCharter` holds the `members`
         /// list, updated below with an `appeal` type reading it.
         const LIST_ELEMENT_V1_PATH: &str =

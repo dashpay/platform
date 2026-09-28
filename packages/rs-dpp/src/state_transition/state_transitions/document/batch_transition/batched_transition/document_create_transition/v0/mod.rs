@@ -307,7 +307,12 @@ impl DocumentFromCreateTransitionV0 for Document {
     where
         Self: Sized,
     {
-        let DocumentCreateTransitionV0 { base, data, .. } = v0;
+        let DocumentCreateTransitionV0 { base, mut data, .. } = v0;
+
+        // The document the platform stores holds every generated property the transition
+        // left out, generated on arrival. Inert before protocol version 14: the
+        // `fill_generated_properties` slot is `None` there and leaves the data as it is.
+        document_type.fill_generated_properties(&mut data, platform_version)?;
 
         let requires_created_at = document_type
             .required_fields()
@@ -422,7 +427,11 @@ impl DocumentFromCreateTransitionV0 for Document {
             .required_fields()
             .contains(document::property_names::CREATED_AT);
 
-        let properties = data.clone();
+        let mut properties = data.clone();
+        // The document the platform stores holds every generated property the transition
+        // left out, generated on arrival. Inert before protocol version 14: the
+        // `fill_generated_properties` slot is `None` there and leaves the data as it is.
+        document_type.fill_generated_properties(&mut properties, platform_version)?;
 
         let creator_id = if document_type.should_use_creator_id(
             contract.system_version_type(),

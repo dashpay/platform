@@ -573,6 +573,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_reference_expression_depth: 4,
         max_property_constraints: 16,
         max_property_constraint_nodes: 32,
+        max_property_constraint_aggregates: 4,
         max_state_transition_size: 20000, // Is different in this test version, not sure if this was a mistake
         // Load-bearing for state correctness, not just for throughput — see
         // SystemLimits::max_transitions_in_documents_batch. Raising it here

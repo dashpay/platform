@@ -7,9 +7,10 @@
 
 use crate::platform::fetch_many::FetchMany;
 use crate::{Error, Sdk};
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
+use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::voting::contender_structs::ContenderWithSerializedDocument;
@@ -34,8 +35,12 @@ impl Sdk {
         document_type: DocumentTypeRef<'_>,
         document: &Document,
     ) -> Result<Option<Credits>, Error> {
+        // The contest is resolved on the document the transition builder sends, with every
+        // `generatedFrom` property generated from its params as the platform generates it
+        let mut document = document.clone();
+        document_type.regenerate_generated_properties(document.properties_mut(), self.version())?;
         let Some(VotePoll::ContestedDocumentResourceVotePoll(vote_poll)) =
-            document_type.contested_vote_poll_for_document(document, self.version())?
+            document_type.contested_vote_poll_for_document(&document, self.version())?
         else {
             return Ok(None);
         };

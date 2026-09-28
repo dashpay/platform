@@ -539,6 +539,12 @@ mod property_constraints_tests {
 
         /// The fixture with its `offer` type declared by `schema`.
         fn with_schema(schema: Value) -> Self {
+            Self::with_schemas(schema, [])
+        }
+
+        /// The fixture with its `offer` type declared by `schema`, beside the
+        /// `others`, each by its name and schema.
+        fn with_schemas<const N: usize>(schema: Value, others: [(&str, Value); N]) -> Self {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
@@ -555,6 +561,11 @@ mod property_constraints_tests {
             contract
                 .set_document_schema("offer", schema, true, &mut Vec::new(), platform_version)
                 .expect("expected to add the offer document type");
+            for (name, schema) in others {
+                contract
+                    .set_document_schema(name, schema, true, &mut Vec::new(), platform_version)
+                    .expect("expected to add the document type");
+            }
             platform
                 .drive
                 .apply_contract(
@@ -614,11 +625,25 @@ mod property_constraints_tests {
             &mut self,
             fill: impl FnOnce(&mut Document),
         ) -> StateTransitionExecutionResult {
+            self.create_of("offer", |document| {
+                set_valid_offer(document);
+                fill(document);
+            })
+            .await
+        }
+
+        /// Creates a document of the type `document_type` changed by `fill`. On
+        /// success an offer becomes the fixture's document.
+        async fn create_of(
+            &mut self,
+            document_type: &str,
+            fill: impl FnOnce(&mut Document),
+        ) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let offer_type = self
                 .contract
-                .document_type_for_name("offer")
-                .expect("expected the offer document type");
+                .document_type_for_name(document_type)
+                .expect("expected the document type");
 
             let mut rng = StdRng::seed_from_u64(434);
             let entropy = Bytes32::random_with_rng(&mut rng);
@@ -635,7 +660,6 @@ mod property_constraints_tests {
             document
                 .set_id_for_creation(offer_type, &entropy.0, self.next_nonce, platform_version)
                 .expect("expected to set the document id");
-            set_valid_offer(&mut document);
             fill(&mut document);
 
             let transition = BatchTransition::new_document_creation_transition_from_document(
@@ -655,10 +679,12 @@ mod property_constraints_tests {
             self.next_nonce += 1;
 
             let result = self.process(&transition);
-            if matches!(
-                result,
-                StateTransitionExecutionResult::SuccessfulExecution { .. }
-            ) {
+            if document_type == "offer"
+                && matches!(
+                    result,
+                    StateTransitionExecutionResult::SuccessfulExecution { .. }
+                )
+            {
                 self.document = Some(document);
             }
             result
@@ -1709,6 +1735,7 @@ mod property_constraints_tests {
             removed_identifier_fields: BTreeMap::new(),
             stored_changed_values: BTreeMap::new(),
             creator_id: None,
+            property_constraint_aggregates: Default::default(),
         });
 
         let before = action
@@ -2109,5 +2136,496 @@ mod property_constraints_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// A mutable, transferable and purchasable `offer` type with the integers
+    /// [`set_valid_offer`] fills (a price of at most 10^9, which a sum tree
+    /// takes) and a required `category`, whose trees keep the count of each
+    /// owner's offers (`byOwner`), of each owner's offers in each category
+    /// (`byOwnerCategory`) and the total price of each category (`byCategory`),
+    /// declaring `rules`.
+    fn counted_offer_schema(rules: Value) -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "transferable": 1,
+            "tradeMode": 1,
+            "properties": {
+                "price": { "type": "integer", "minimum": 0, "maximum": 1000000000, "position": 0 },
+                "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                "quantity": { "type": "integer", "minimum": 0, "position": 2 },
+                "deposit": { "type": "integer", "minimum": 0, "position": 3 },
+                "category": { "type": "integer", "minimum": 0, "maximum": 100, "position": 4 }
+            },
+            "required": ["price", "fee", "quantity", "deposit", "category"],
+            "indices": [
+                {
+                    "name": "byOwner",
+                    "properties": [{ "$ownerId": "asc" }],
+                    "countable": "countable"
+                },
+                {
+                    "name": "byOwnerCategory",
+                    "properties": [{ "$ownerId": "asc" }, { "category": "asc" }],
+                    "countable": "countable"
+                },
+                {
+                    "name": "byCategory",
+                    "properties": [{ "category": "asc" }],
+                    "summable": "price"
+                }
+            ],
+            "propertyConstraints": rules,
+            "additionalProperties": false
+        })
+    }
+
+    /// Sets an offer's `category` and `price`.
+    fn priced_in(category: u64, price: u64) -> impl FnOnce(&mut Document) {
+        move |document: &mut Document| {
+            document.set("category", Value::U64(category));
+            document.set("price", Value::U64(price));
+        }
+    }
+
+    /// `countOf` over the writer's own type by `$ownerId`: an identity owns at
+    /// most two offers. The total is the one the tree keeps once the write is
+    /// done, so a replace of one of the two, which leaves the count as it was,
+    /// is judged by 2.
+    #[tokio::test]
+    async fn should_cap_the_offers_of_each_owner_on_create_and_replace() {
+        let mut fixture = OfferFixture::with_schema(counted_offer_schema(platform_value!({
+            "atMostTwoPerOwner": {
+                "lessThanOrEqual": [{ "countOf": ["offer", { "$ownerId": "$ownerId" }] }, 2]
+            }
+        })));
+        for _ in 0..2 {
+            assert_matches!(
+                fixture.create(priced_in(1, 100)).await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+        let result = fixture.create(priced_in(1, 100)).await;
+        expect_violated(
+            result,
+            "atMostTwoPerOwner",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        assert_matches!(
+            fixture.replace(priced_in(2, 150)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// `sumOf` over the offers of one category: their prices total at most 250.
+    /// A create adds its price; a replace takes out the price it stored and adds
+    /// the new one, and one moving the offer to another category takes its
+    /// price out of the first.
+    #[tokio::test]
+    async fn should_total_the_prices_of_a_category_on_create_and_replace() {
+        let mut fixture = OfferFixture::with_schema(counted_offer_schema(platform_value!({
+            "categoryBudget": {
+                "lessThanOrEqual": [
+                    { "sumOf": ["offer", "price", { "category": "category" }] },
+                    250
+                ]
+            }
+        })));
+        for price in [100, 100] {
+            assert_matches!(
+                fixture.create(priced_in(1, price)).await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+        // 200 + 60 is above 250
+        let result = fixture.create(priced_in(1, 60)).await;
+        expect_violated(
+            result,
+            "categoryBudget",
+            PropertyConstraintViolation::NotMet,
+        );
+        // 200 + 50 is 250
+        assert_matches!(
+            fixture.create(priced_in(1, 50)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // 250 - 50 + 60
+        let result = fixture.replace(priced_in(1, 60)).await;
+        expect_violated(
+            result,
+            "categoryBudget",
+            PropertyConstraintViolation::NotMet,
+        );
+        // Moved to category 2, the offer leaves 200 in category 1
+        assert_matches!(
+            fixture.replace(priced_in(2, 200)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture.create(priced_in(1, 50)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // Category 2 holds 200
+        let result = fixture.create(priced_in(2, 51)).await;
+        expect_violated(
+            result,
+            "categoryBudget",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert_eq!(fixture.stored_offers().len(), 4);
+    }
+
+    /// A transfer or a purchase counts the offer toward its new owner, so one
+    /// reaching an owner at the cap is refused.
+    #[tokio::test]
+    async fn should_count_a_transferred_or_bought_offer_toward_its_new_owner() {
+        let mut fixture = OfferFixture::with_schema(counted_offer_schema(platform_value!({
+            "atMostOnePerOwner": {
+                "lessThanOrEqual": [{ "countOf": ["offer", { "$ownerId": "$ownerId" }] }, 1]
+            }
+        })));
+        let recipient = fixture.other_identity(971);
+        assert_matches!(
+            fixture.create(priced_in(1, 100)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture.transfer(recipient.0.id()).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // The writer owns none again, so it may list another
+        assert_matches!(
+            fixture.create(priced_in(1, 100)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture.transfer(recipient.0.id()).await;
+        expect_violated(
+            result,
+            "atMostOnePerOwner",
+            PropertyConstraintViolation::NotMet,
+        );
+
+        fixture.set_price(1000).await;
+        let result = fixture.purchase_by(&recipient, 1000).await;
+        expect_violated(
+            result,
+            "atMostOnePerOwner",
+            PropertyConstraintViolation::NotMet,
+        );
+        let buyer = fixture.other_identity(972);
+        assert_matches!(
+            fixture.purchase_by(&buyer, 1000).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let mut owners = fixture
+            .stored_offers()
+            .iter()
+            .map(|offer| offer.owner_id())
+            .collect::<Vec<_>>();
+        owners.sort();
+        let mut expected = vec![recipient.0.id(), buyer.0.id()];
+        expected.sort();
+        assert_eq!(owners, expected);
+    }
+
+    /// `countOf` over another type of the contract: an identity lists an offer
+    /// only once it has a profile.
+    #[tokio::test]
+    async fn should_count_the_documents_of_another_type() {
+        let mut fixture = OfferFixture::with_schemas(
+            counted_offer_schema(platform_value!({
+                "hasProfile": {
+                    "greaterThanOrEqual": [
+                        { "countOf": ["profile", { "$ownerId": "$ownerId" }] },
+                        1
+                    ]
+                }
+            })),
+            [(
+                "profile",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "handle": { "type": "string", "maxLength": 20, "position": 0 }
+                    },
+                    "required": ["handle"],
+                    "indices": [{
+                        "name": "byOwner",
+                        "properties": [{ "$ownerId": "asc" }],
+                        "countable": "countable"
+                    }],
+                    "additionalProperties": false
+                }),
+            )],
+        );
+        let result = fixture.create(priced_in(1, 100)).await;
+        expect_violated(result, "hasProfile", PropertyConstraintViolation::NotMet);
+
+        assert_matches!(
+            fixture
+                .create_of("profile", |document| {
+                    document.set("handle", Value::Text("sam".to_string()))
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture.create(priced_in(1, 100)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// The totals a rule reads are state reads, billed with the write: the same
+    /// create costs more when a rule reads a total than when it reads a
+    /// property.
+    #[tokio::test]
+    async fn should_bill_the_totals_a_rule_reads() {
+        let processing_fee = |result: StateTransitionExecutionResult| {
+            let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result
+            else {
+                panic!("expected the create to succeed, got {result:?}");
+            };
+            fee_result.processing_fee
+        };
+        let mut plain = OfferFixture::with_schema(counted_offer_schema(platform_value!({
+            "rule": { "lessThanOrEqual": ["price", 1000] }
+        })));
+        let mut counted = OfferFixture::with_schema(counted_offer_schema(platform_value!({
+            "rule": {
+                "lessThanOrEqual": [{ "countOf": ["offer", { "$ownerId": "$ownerId" }] }, 1000]
+            }
+        })));
+        let plain_fee = processing_fee(plain.create(priced_in(1, 100)).await);
+        let counted_fee = processing_fee(counted.create(priced_in(1, 100)).await);
+        assert!(
+            counted_fee > plain_fee,
+            "reading the count must be billed: {counted_fee} <= {plain_fee}"
+        );
+    }
+
+    /// A price update is judged against the rules reading its update time; one
+    /// that reads a total too reads it, so the time is judged, not skipped.
+    #[tokio::test]
+    async fn should_judge_a_price_update_by_a_rule_reading_a_total() {
+        let mut schema = counted_offer_schema(platform_value!({
+            "updatedBeforeEndAndFewOffers": {
+                "allOf": [
+                    { "lessThanOrEqual": ["$updatedAt", "endsAt"] },
+                    {
+                        "lessThanOrEqual": [
+                            { "countOf": ["offer", { "$ownerId": "$ownerId" }] },
+                            5
+                        ]
+                    }
+                ]
+            }
+        }));
+        let Value::Map(properties) = schema
+            .get_mut("properties")
+            .expect("properties")
+            .expect("properties are set")
+        else {
+            panic!("properties is an object");
+        };
+        properties.push((
+            Value::Text("endsAt".to_string()),
+            platform_value!({ "type": "integer", "minimum": 0, "position": 5 }),
+        ));
+        let Value::Array(required) = schema
+            .get_mut("required")
+            .expect("required")
+            .expect("required is set")
+        else {
+            panic!("required is an array");
+        };
+        required.push(Value::Text("endsAt".to_string()));
+        required.push(Value::Text("$updatedAt".to_string()));
+        let mut fixture = OfferFixture::with_schema(schema);
+        fixture.block_info = at_block(NOW, 20);
+        assert_matches!(
+            fixture
+                .create(|document| {
+                    priced_in(1, 100)(document);
+                    document.set("endsAt", Value::U64(NOW + DAY_MS));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        fixture.block_info = at_block(NOW + 2 * DAY_MS, 30);
+        let result = fixture.try_set_price(1000).await;
+        expect_violated(
+            result,
+            "updatedBeforeEndAndFewOffers",
+            PropertyConstraintViolation::NotMet,
+        );
+        fixture.block_info = at_block(NOW + DAY_MS / 2, 30);
+        fixture.set_price(1000).await;
+    }
+
+    /// `schema` with the document-type-level `entries` added.
+    fn with_keys<const N: usize>(mut schema: Value, entries: [(&str, Value); N]) -> Value {
+        let Value::Map(map) = &mut schema else {
+            panic!("a schema is an object");
+        };
+        for (key, value) in entries {
+            map.push((Value::Text(key.to_string()), value));
+        }
+        schema
+    }
+
+    /// `countOf` and `sumOf` over every document of the type, read from the
+    /// primary-key trees `documentsCountable` and `documentsSummable` keep: at
+    /// most two offers, whose prices total at most 250.
+    #[tokio::test]
+    async fn should_cap_the_whole_type_by_its_count_and_total() {
+        let mut fixture = OfferFixture::with_schema(with_keys(
+            counted_offer_schema(platform_value!({
+                "fewOffers": { "lessThanOrEqual": [{ "countOf": ["offer"] }, 2] },
+                "priceBudget": { "lessThanOrEqual": [{ "sumOf": ["offer", "price"] }, 250] }
+            })),
+            [
+                ("documentsCountable", Value::Bool(true)),
+                ("documentsSummable", Value::Text("price".to_string())),
+            ],
+        ));
+        for category in [1, 2] {
+            assert_matches!(
+                fixture.create(priced_in(category, 100)).await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+        let result = fixture.create(priced_in(3, 10)).await;
+        expect_violated(result, "fewOffers", PropertyConstraintViolation::NotMet);
+        // 200 - 100 + 150, the count unchanged
+        assert_matches!(
+            fixture.replace(priced_in(2, 150)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // 250 - 150 + 151
+        let result = fixture.replace(priced_in(2, 151)).await;
+        expect_violated(result, "priceBudget", PropertyConstraintViolation::NotMet);
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// `countOf` by two keys, `$ownerId` and `category`: one offer per owner and
+    /// category. The first read finds no branch for the owner yet, which reads
+    /// as 0, and so does a category the owner has no offer in.
+    #[tokio::test]
+    async fn should_count_by_two_keys_from_an_empty_branch() {
+        let mut fixture = OfferFixture::with_schema(counted_offer_schema(platform_value!({
+            "onePerCategory": {
+                "lessThanOrEqual": [
+                    {
+                        "countOf": [
+                            "offer",
+                            { "$ownerId": "$ownerId", "category": "category" }
+                        ]
+                    },
+                    1
+                ]
+            }
+        })));
+        assert_matches!(
+            fixture.create(priced_in(1, 100)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture.create(priced_in(1, 100)).await;
+        expect_violated(
+            result,
+            "onePerCategory",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert_matches!(
+            fixture.create(priced_in(2, 100)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// `sumOf` over another type of the contract: an offer's price is at most
+    /// what the deposits of its category total.
+    #[tokio::test]
+    async fn should_total_a_property_of_another_type() {
+        let mut fixture = OfferFixture::with_schemas(
+            counted_offer_schema(platform_value!({
+                "coveredByDeposits": {
+                    "lessThanOrEqual": [
+                        "price",
+                        { "sumOf": ["deposit", "amount", { "category": "category" }] }
+                    ]
+                }
+            })),
+            [(
+                "deposit",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 100,
+                            "position": 0
+                        },
+                        "amount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000000000,
+                            "position": 1
+                        }
+                    },
+                    "required": ["category", "amount"],
+                    "indices": [{
+                        "name": "byCategory",
+                        "properties": [{ "category": "asc" }],
+                        "summable": "amount"
+                    }],
+                    "additionalProperties": false
+                }),
+            )],
+        );
+        let result = fixture.create(priced_in(1, 100)).await;
+        expect_violated(
+            result,
+            "coveredByDeposits",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert_matches!(
+            fixture
+                .create_of("deposit", |document| {
+                    document.set("category", Value::U64(1));
+                    document.set("amount", Value::U64(150));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture.create(priced_in(1, 100)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture.create(priced_in(2, 100)).await;
+        expect_violated(
+            result,
+            "coveredByDeposits",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
+    }
+
+    /// The totals a rule reads leave out the other writes of its batch, which is
+    /// sound only while a document batch carries one transition: raising the
+    /// limit needs the batch's own writes added to them.
+    #[test]
+    fn should_keep_one_transition_per_document_batch_while_rules_read_totals() {
+        assert_eq!(
+            PlatformVersion::latest()
+                .system_limits
+                .max_transitions_in_documents_batch,
+            1
+        );
     }
 }

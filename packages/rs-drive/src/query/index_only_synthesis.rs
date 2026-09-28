@@ -45,6 +45,7 @@ use crate::query::{
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef, Index};
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
@@ -1091,6 +1092,12 @@ pub fn index_only_entry_path_and_key_from_values(
 /// proven (and verified) against. Shared by `prove_state_transition` and
 /// `verify_state_transition_was_executed_with_proof` — one builder, both
 /// sides.
+///
+/// `data` is the transition's values. The entry holds every `generatedFrom`
+/// property the transition left out, as the node generated it on arrival, so
+/// the builder generates them here for both sides (the `fill_generated_properties`
+/// slot is `None` before protocol version 14, and indexOnly types only exist
+/// from it).
 pub fn index_only_transition_entry_path_query(
     contract_id: Identifier,
     document_type: DocumentTypeRef,
@@ -1098,12 +1105,13 @@ pub fn index_only_transition_entry_path_query(
     owner_id: Identifier,
     platform_version: &PlatformVersion,
 ) -> Result<grovedb::PathQuery, Error> {
+    let data = document_type.data_as_stored(data, platform_version)?;
     let index = index_only_proof_index(&document_type)?;
     let (path, member_key) = index_only_entry_path_and_key_from_values(
         contract_id,
         document_type,
         index,
-        data,
+        &data,
         owner_id,
         platform_version,
     )?;

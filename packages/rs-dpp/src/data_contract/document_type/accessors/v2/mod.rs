@@ -1,5 +1,7 @@
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
-use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
+use crate::data_contract::document_type::property::{
+    DocumentPropertyReferenceTarget, GeneratedFrom,
+};
 use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -79,6 +81,12 @@ pub trait DocumentTypeV2Getters {
     /// (protocol version 14), in schema order. Empty on generations that
     /// predate the keyword.
     fn distinct_from_fields(&self) -> &[String];
+
+    /// The dotted path of every property that declares `generatedFrom`
+    /// (protocol version 14) with its declaration, in schema order, so a
+    /// document write visits only them. Empty on generations that predate the
+    /// keyword.
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)];
 
     /// The subset of [`Self::immutable_fields`] a replace may still set while
     /// the stored document has no value for them (the

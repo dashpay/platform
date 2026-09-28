@@ -171,6 +171,9 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `encryptedFor.recipient` | identifier property path or `"$ownerId"` | The identity the value is encrypted to. | 14 | [encryptedFor](contract-keywords/encrypted-for.md#example) |
 | `encryptedFor.recipientKey`, `.senderKey` | integer property paths | The properties holding the recipient's and the sender's key ids. | 14 | [encryptedFor](contract-keywords/encrypted-for.md#example) |
 | `encryptedFor.scheme` | `"ecdh-secp256k1-aes256-cbc"` | How the ciphertext is made. | 14 | [The scheme](contract-keywords/encrypted-for.md#the-scheme) |
+| `generatedFrom` | `{ "function", "params" }` | The platform generates the string from other properties of the document; on arrival when a document leaves it out. | 14 | [generatedFrom](contract-keywords/generated-from.md) · [internals](data-model/documents.md#generated-properties-generatedfrom) |
+| `generatedFrom.function` | `"sys.stringTransformations.homographSafeASCII"` | The system function that generates the value: `sys.stringTransformations.` `lowercase`, `uppercase`, `capitalize`, `camelCase`, `snakeCase` or `homographSafeASCII`. | 14 | [Functions](contract-keywords/generated-from.md#functions) |
+| `generatedFrom.params` | property paths | The properties the function reads, in order. | 14 | [Params](contract-keywords/generated-from.md#params) |
 | `refersTo` | a declaration | What an identifier points at, checked when a document is written. See the [keys](#refersto). | 14 | [References](contract-keywords/refers-to.md) · [internals](data-model/documents.md#document-references-refersto) |
 
 A typed array's element (`items`) takes `type`, `enum`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems` and `maxItems` (bytes of a byte array element), `byteArray`, `contentMediaType`, `maxBytes`, `distinctFrom`, `refersTo`, `$comment` and `description`. It takes no `position`, `const`, `uniqueItems` or `examples`.
@@ -233,6 +236,10 @@ A rule is one condition. Conditions:
 | `present`, `absent` | a path | The document holds the property, or leaves it out (or null, or an object with no member present). | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 | `anyOf`, `allOf` | two or more conditions | At least one, or every, condition holds, checked in order. | 14 | [Evaluation order](contract-keywords/property-constraints.md#evaluation-order-and-short-circuiting) |
 | `not` | a condition | The condition does not hold. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
+| `ifThen`, `ifThenElse` | `[if, then]`, `[if, then, else]` | The second condition holds when the first does (and, for `ifThenElse`, the third when it does not); only the branch taken is evaluated. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
+| `notIn` | `[a, [values]]` | `a` takes none of the listed values. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
+| `startsWith`, `endsWith` | `[text, affix]` | A string starts or ends with another, byte for byte. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
+| `contains` | `[array, value]` | A typed array holds an element equal to the value. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 
 Expressions:
 
@@ -242,6 +249,8 @@ Expressions:
 | a path | `"price"`, `"meta.total"` | An integer or boolean property's value; 0 when left out. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
 | `add`, `multiply` | two or more operands | The sum or product. | 14 | [Arithmetic](contract-keywords/property-constraints.md#arithmetic) |
 | `subtract`, `divide`, `modulo`, `power` | `[a, b]` | The difference, Euclidean quotient or remainder, or power. | 14 | [Arithmetic](contract-keywords/property-constraints.md#arithmetic) |
+| `min`, `max`, `abs` | two or more operands, or one for `abs` | The least, the greatest, or the absolute value. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
+| `countOf`, `sumOf` | `[type, filter?]`, `[type, property, filter?]` | How many documents of a type of the contract match the filter, or the total of an integer property over them, from its count or sum trees. | 14 | [Totals of other documents](contract-keywords/property-constraints.md#totals-of-other-documents) |
 | `ifAbsent` | `[path, default]` | The property's value, or the default when left out (an integer, or a string for a string property). | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
 | `length`, `byteLength` | a string path | A string's length in characters, or in UTF-8 bytes. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
 | `count` | an array path | The elements of a typed array, or the bytes of a byte array. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
