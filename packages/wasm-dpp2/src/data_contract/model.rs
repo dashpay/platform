@@ -148,8 +148,9 @@ export interface DataContractConfig {
  * team is seated (no election exists yet) the contract is moderated by its `interim`
  * moderators, or by nobody: with the moderated document types not yet usable (every
  * document transition of one is refused) or used unmoderated meanwhile. Windows and the
- * cool-down are in seconds: the windows one day to four weeks (one week when left out), the
- * cool-down of a contestable seat two weeks to three years.
+ * cool-down are in seconds: the windows at most four weeks, at least one day on mainnet and
+ * 0 on any other network (one week when left out), the cool-down of a contestable seat two
+ * weeks to three years.
  */
 export type ContractModerators =
   | { $type: "contractOwner" }
