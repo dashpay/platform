@@ -784,8 +784,9 @@ public class PlatformWalletManager: ObservableObject {
 
     /// Runs the blocking native stop behind the async [`stopSpv()`]. The
     /// Rust stop waits for the SPV run loop to finish its current sync tick
-    /// and drain its tasks — up to its 15 s budget plus a 2 s abort grace —
-    /// so it must park a plain GCD thread: never the main thread, and never
+    /// and drain its tasks — up to 15 s for the client stop and 15 s for the
+    /// run-loop join plus a 2 s abort grace, about 32 s in all — so it must
+    /// park a plain GCD thread: never the main thread, and never
     /// a Swift Concurrency cooperative-pool thread. Per-manager, not
     /// [`destroyQueue`]: a slow SPV stop must not hold up other managers'
     /// creates, loads and teardowns on that process-wide queue. Internal so

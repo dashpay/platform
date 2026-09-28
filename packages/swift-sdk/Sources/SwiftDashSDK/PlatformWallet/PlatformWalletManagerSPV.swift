@@ -326,9 +326,9 @@ extension PlatformWalletManager {
     /// one.
     ///
     /// The native stop waits for the SPV run loop to finish its current sync
-    /// tick and drain its tasks — up to its 15 s budget plus a 2 s abort
-    /// grace — so on the main actor the blocking variant freezes the UI for
-    /// that long.
+    /// tick and drain its tasks — up to 15 s for the client stop and 15 s for
+    /// the run-loop join plus a 2 s abort grace, about 32 s in all — so on the
+    /// main actor the blocking variant freezes the UI for that long.
     ///
     /// Admitted like the other async native entry points: [`shutdown()`]
     /// waits for an in-flight stop before destroying the handle, and a stop
