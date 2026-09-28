@@ -1,6 +1,14 @@
 on:
   workflow_call:
     inputs:
+      runner-architecture:
+        description: Optional native architecture for image validation (X64 or ARM64)
+        type: string
+        default: ''
+      validate-arm64-image:
+        description: Use validation-only ARM64 capacity before admission to the ordinary Rust pool
+        type: boolean
+        default: false
       doctests-changed:
         description: Whether doc comments with code examples have changed
         type: boolean
@@ -50,15 +58,17 @@ jobs:
         id: select
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/runner-image.py select --kind rust
+          RUNNER_ARCHITECTURE: ${{ inputs.runner-architecture }}
+          VALIDATE_ARM64_IMAGE: ${{ inputs.validate-arm64-image }}
+        run: |
+          extra=()
+          if [ "$VALIDATE_ARM64_IMAGE" = true ]; then extra+=(--validation); fi
+          python3 .github/scripts/runner-image.py select --kind rust --arch "$RUNNER_ARCHITECTURE" "${extra[@]}"
 
   test:
     name: Tests
-    # Scheduled onto whichever self-hosted runner is free — the macOS boxes or
-    # the Linux one. `rust-ci` is a custom label applied to exactly those
-    # runners; pairing it with `self-hosted` keeps the job off GitHub-hosted
-    # runners entirely, so untrusted code never reaches a hosted Linux VM by
-    # way of a label collision.
+    # Shared image pool: physical Linux hosts and ARM64 Linux VMs on Macs.
+    # Native macOS registrations remain available for Swift/Xcode.
     needs: select-runner
     runs-on: ${{ fromJSON(needs.select-runner.outputs.labels) }}
     # Fork PRs must not execute on any persistent runner, macOS or Linux.
