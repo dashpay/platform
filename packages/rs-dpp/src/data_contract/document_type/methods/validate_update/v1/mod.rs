@@ -74,6 +74,15 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
+        // Validate that a property the update adds is generated only when one of its
+        // params is new too (the keyword arrives with protocol version 14, the only
+        // version selecting this generation)
+        let result = self.validate_generated_from_additions(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         // Validate that index definitions are unchanged
         let result = self.validate_index_definitions_unchanged(new_document_type);
 
@@ -393,6 +402,42 @@ impl DocumentTypeRef<'_> {
             )
             .into(),
         )
+    }
+
+    /// A property this update adds may declare `generatedFrom` only when a param is new
+    /// too. Documents stored before the update were never generated, so a new generated
+    /// property whose params all existed would be missing from every stored document
+    /// holding them, for good on a type whose documents are never replaced; with a new
+    /// param, those documents lack it, and the generated property is rightly absent. A
+    /// property that already existed keeps its declaration unchanged: the schema
+    /// compatibility differ freezes the keyword.
+    fn validate_generated_from_additions(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        let old_properties = self.flattened_properties();
+        for (path, generated_from) in new_document_type.generated_from_fields() {
+            if old_properties.contains_key(path) {
+                continue;
+            }
+            if generated_from
+                .property_params()
+                .all(|param| old_properties.contains_key(param))
+            {
+                let params = generated_from.params_description();
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentTypeUpdateError::new(
+                        self.data_contract_id(),
+                        self.name(),
+                        format!(
+                            "document type can not add property \"{path}\" generated from existing properties ({params}): documents stored before the update hold them without it"
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+        SimpleConsensusValidationResult::new()
     }
 
     /// A document type's time to live is fixed when the type is created. Every document
@@ -931,6 +976,84 @@ mod tests {
             .as_ref()
             .validate_update(
                 make_document_type(Some(86400)).as_ref(),
+                2,
+                platform_version,
+            )
+            .expect("validate_update should not error");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn should_refuse_adding_a_generated_property_over_existing_params() {
+        let platform_version = PlatformVersion::latest();
+        let data_contract_id = Identifier::random();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        let make_document_type = |properties: Value| {
+            let schema = platform_value!({
+                "type": "object",
+                "properties": properties,
+                "additionalProperties": false,
+            });
+            DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                "handle",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("document type should parse")
+        };
+        let string = |position: u64| platform_value!({ "type": "string", "maxLength": 32, "position": position });
+        let generated = |position: u64, source: &str| {
+            platform_value!({
+                "type": "string", "maxLength": 32, "position": position,
+                "generatedFrom": {
+                    "function": "sys.stringTransformations.homographSafeASCII",
+                    "params": [source]
+                }
+            })
+        };
+        let old = make_document_type(platform_value!({ "label": string(0) }));
+
+        // Stored handles hold a label but would never hold the generated value
+        let result = old
+            .as_ref()
+            .validate_update(
+                make_document_type(platform_value!({
+                    "label": string(0),
+                    "normalizedLabel": generated(1, "label")
+                }))
+                .as_ref(),
+                2,
+                platform_version,
+            )
+            .expect("validate_update should not error");
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                if e.additional_message().contains(
+                    "can not add property \"normalizedLabel\" generated from existing properties (label)"
+                )
+        );
+
+        // A new property generated from a new param holds for every stored document:
+        // neither is there
+        let result = old
+            .as_ref()
+            .validate_update(
+                make_document_type(platform_value!({
+                    "label": string(0),
+                    "nickname": string(1),
+                    "normalizedNickname": generated(2, "nickname")
+                }))
+                .as_ref(),
                 2,
                 platform_version,
             )

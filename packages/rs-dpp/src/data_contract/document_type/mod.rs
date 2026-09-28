@@ -181,6 +181,16 @@ pub(crate) mod property_names {
     /// Meta-schema v3+ (protocol version 14). See `apply_max_bytes` in
     /// `try_from_schema`.
     pub const MAX_BYTES: &str = "maxBytes";
+    /// Property-level object on a string property: the [`FUNCTION`] the platform
+    /// generates the value with and its [`PARAMS`], other properties of the same
+    /// document. Meta-schema v3+ (protocol version 14). See
+    /// `apply_generated_from` in `try_from_schema`.
+    pub const GENERATED_FROM: &str = "generatedFrom";
+    /// `generatedFrom`: the function name, one of `SystemFunction::ALL`.
+    pub const FUNCTION: &str = "function";
+    /// `generatedFrom`: the parameters, dotted paths of properties of the same
+    /// document type.
+    pub const PARAMS: &str = "params";
     pub const KEY_REQUIREMENTS: &str = "keyRequirements";
     pub const PURPOSE: &str = "purpose";
     pub const BOUND_TO: &str = "boundTo";

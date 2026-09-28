@@ -6,7 +6,7 @@ use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{
-    DocumentProperty, DocumentPropertyReferenceTarget,
+    DocumentProperty, DocumentPropertyReferenceTarget, GeneratedFrom,
 };
 
 use platform_value::{Identifier, Value};
@@ -264,6 +264,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
 
     fn distinct_from_fields(&self) -> &[String] {
         &self.distinct_from_fields
+    }
+
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)] {
+        &self.generated_from_fields
     }
 
     fn immutable_fields_allow_setting(&self) -> &BTreeSet<String> {

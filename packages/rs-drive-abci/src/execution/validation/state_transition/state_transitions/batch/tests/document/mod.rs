@@ -8,6 +8,7 @@ mod document_ttl;
 mod dpns;
 mod encrypted_for;
 mod gas_sponsorship;
+mod generated_from;
 mod id_reuse;
 mod immutable;
 mod index_only;
