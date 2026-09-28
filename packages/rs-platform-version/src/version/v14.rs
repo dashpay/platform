@@ -514,8 +514,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contract may declare, when it is created, that its moderators are a team
 ///     elected by masternodes and evonodes (`ContractModerators::Elected`, a third kind
 ///     beside the owner and an appointed set, in the same config V2). The
-///     declaration is frozen: the join and vote windows (one day to four weeks,
-///     one week by default), in seconds and bounded by `SYSTEM_LIMITS_V4`;
+///     declaration is frozen: the join and vote windows (at most four weeks, at
+///     least one day on mainnet and 0 elsewhere, one week by default), in
+///     seconds and bounded by `SYSTEM_LIMITS_V4`;
 ///     whether the seat can be contested again once a team is seated
 ///     (`seatContestable`, required with no default), and for a contestable
 ///     seat the challenge cool-down (`challengeCoolDown`, in seconds, two weeks
@@ -1049,8 +1050,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `greaterThanOrEqual`) of two integer expressions built from integer
 ///     literals, paths of integer or boolean properties (a boolean reading as 1
 ///     for true and 0 for false), `add`, `subtract`, `multiply`, `divide`,
-///     `modulo` and `power`, and sizes: `length` and `byteLength`, the
-///     characters and UTF-8 bytes of a string property, and `count`, the items
+///     `modulo` and `power`, `min` and `max` over two or more operands and
+///     `abs` over one, and sizes: `length` and `byteLength`, the characters and
+///     UTF-8 bytes of a string property, and `count`, the items
 ///     of an array or byte array property, each 0 for a property the document
 ///     leaves out, and the system times and heights `$createdAt`, `$updatedAt`
 ///     and `$transferredAt` (block times in milliseconds), each also with
@@ -1076,9 +1078,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     leaves out holding nothing; `present` or `absent` naming a property of
 ///     any type, whether the document holds it (the one way to tell a property
 ///     left out from one set to 0); `anyOf` or `allOf` over two or more
-///     conditions; or `not` over one. In an operand, a property the document
-///     leaves out counts as 0, or as the value of an `ifAbsent` operand naming
-///     it. Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
+///     conditions; `not` over one; `ifThen` over two (the second holding
+///     whenever the first does, evaluated only then) or `ifThenElse` over three
+///     (the second when the first holds, the third when it does not, only the
+///     branch taken evaluated), no two alike; `notIn`, an `in` negated in as
+///     many nodes. In an operand, a property the document leaves out counts as
+///     0, or as the value of an `ifAbsent` operand naming it.
+///     Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
 ///     remainder is never negative), and an overflow, a zero divisor, a
 ///     negative exponent or a value that is not an integer refuses the document
 ///     rather than wrapping. Conditions are checked in declared order and no
@@ -1103,8 +1109,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     compared with itself; that strings and identifiers are only compared for
 ///     equality, and never with each other; that no `in` lists a value twice;
 ///     that an `anyOf` or `allOf` holds none directly of its own kind and a
-///     `not` no `not`; that an indexOnly type, whose deletes carry no owner,
-///     reads no `$ownerId`; and that no condition or operand nests deeper than
+///     `not` no `not` or `notIn`; that an indexOnly type, whose deletes carry
+///     no owner, reads no `$ownerId`; and that no condition or operand nests
+///     deeper than
 ///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse. Under full
 ///     validation it holds the limits `SystemLimits::max_property_constraints`
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
@@ -1346,6 +1353,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     create structure validation 1 leaves the amount to state validation;
 ///     version 0 wants exactly the contest's fund.
 ///
+/// 52. **Property constraints judge what is stored, and read `$defs`**: to
+///     `present` and `absent` (item 39), an object none of whose members is
+///     present (`{}`, or `{ "inner": {} }` around one) is absent, since a
+///     stored document reads it back as no object at all. A create or replace
+///     carrying `meta: {}` was judged with `meta` present, and a later
+///     transfer, purchase or price update, judged on the stored document, with
+///     it absent. The parser (generation 3) reads the schema of a property
+///     given as a `$ref` to the contract's `$defs` from the definition, as the
+///     core parse does, when it checks a rule's string constants and defaults
+///     against the property's `enum` and an `encryptedFor` key id's bounds; it
+///     refused every such contract with a decoding error before.
 /// 53. **A `propertyAgreement` pair compares values, and an agreement keying a
 ///     preallocated index fits a tree key**: document reference validation 0
 ///     judges each pair as two values of the referring property's type

@@ -6,7 +6,9 @@
 //! with its rules, and any change to them is an incompatible update. Protocol
 //! version 13 refuses the keyword when registering and ignores it when reading.
 
-use super::immutable_tests::{expect_structure_error, parse_dispatched};
+use super::immutable_tests::{
+    expect_structure_error, parse_dispatched, parse_dispatched_with_defs,
+};
 use super::*;
 use crate::block::block_info::BlockInfo;
 use crate::consensus::basic::basic_error::BasicError;
@@ -18,6 +20,8 @@ use crate::data_contract::document_type::property_constraints::{
 };
 use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
 use crate::data_contract::DataContract;
+use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use crate::document::{Document, DocumentV0, DocumentV0Getters};
 use crate::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
     PlatformSerializableWithPlatformVersion,
@@ -353,6 +357,143 @@ fn should_hold_string_comparisons_to_string_properties_and_their_enums() {
                 full_validation,
             ),
             "rule \"rule\" compares \"note\", which is transient or inside a transient object",
+        );
+    }
+}
+
+/// A string property whose schema is a `$ref` to one of the contract's `$defs`
+/// is held to the definition's `enum`, as one declared inline is: a constant, a
+/// listed string, a prefix, a default and an element looked for that the enum
+/// admits register, and a misspelt one is refused. On both paths.
+#[test]
+fn should_hold_string_constants_to_the_enum_of_a_referenced_definition() {
+    let schema_defs = BTreeMap::from([
+        (
+            "state".to_string(),
+            schema_value(json!({
+                "type": "string",
+                "enum": ["open", "closed"],
+                "maxLength": 10
+            })),
+        ),
+        (
+            "labels".to_string(),
+            schema_value(json!({
+                "type": "array",
+                "maxItems": 5,
+                "items": { "type": "string", "maxLength": 10, "enum": ["sale", "new"] }
+            })),
+        ),
+    ]);
+    let referencing = |rules: serde_json::Value| {
+        let mut schema = order_schema(Some(rules), None);
+        schema["properties"]["state"] = json!({ "$ref": "#/$defs/state", "position": 10 });
+        schema["properties"]["labels"] = json!({ "$ref": "#/$defs/labels", "position": 13 });
+        schema_value(schema)
+    };
+    let parse = |rules: serde_json::Value, full_validation: bool| {
+        parse_dispatched_with_defs(
+            referencing(rules),
+            Some(&schema_defs),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+    };
+
+    let rules = json!({
+        "closedState": { "equal": ["state", { "const": "closed" }] },
+        "listedState": { "in": ["state", ["open", "closed"]] },
+        "closingState": { "startsWith": ["state", { "const": "clo" }] },
+        "stateDefaultsOpen": {
+            "equal": [{ "ifAbsent": ["state", "open"] }, { "const": "open" }]
+        },
+        "onSale": { "contains": ["labels", { "const": "sale" }] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        assert_eq!(document_type.property_constraints().len(), 5);
+    }
+
+    for (rules, needle) in [
+        (
+            json!({ "rule": { "equal": ["state", { "const": "closd" }] } }),
+            "rule \"rule\" compares \"state\" with \"closd\", which is not one of its enum values",
+        ),
+        (
+            json!({ "rule": { "in": ["state", ["open", "shut"]] } }),
+            "rule \"rule\" compares \"state\" with \"shut\", which is not one of its enum values",
+        ),
+        (
+            json!({ "rule": { "endsWith": ["state", { "const": "ed!" }] } }),
+            "rule \"rule\" tests whether \"state\" ends with \"ed!\", which none of its enum \
+             values does",
+        ),
+        (
+            json!({
+                "rule": { "equal": [{ "ifAbsent": ["state", "opne"] }, { "const": "open" }] }
+            }),
+            "rule \"rule\" gives \"state\" the default \"opne\", which is not one of its enum \
+             values",
+        ),
+        (
+            json!({ "rule": { "contains": ["labels", { "const": "old" }] } }),
+            "rule \"rule\" compares \"labels\" with \"old\", which is not one of its enum values",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(parse(rules.clone(), full_validation), needle);
+        }
+    }
+}
+
+/// A `$ref` may name a schema below one of the contract's `$defs`, as
+/// `#/$defs/wrapper/properties/inner` does, and the property is then held to
+/// the `enum` found there, as the core parse reads it: a constant the enum
+/// lists registers, and one it does not is refused. On both paths.
+#[test]
+fn should_hold_string_constants_to_the_enum_below_a_referenced_definition() {
+    let schema_defs = BTreeMap::from([(
+        "wrapper".to_string(),
+        schema_value(json!({
+            "type": "object",
+            "properties": {
+                "inner": {
+                    "type": "string",
+                    "enum": ["open", "closed"],
+                    "maxLength": 10,
+                    "position": 0
+                }
+            },
+            "additionalProperties": false
+        })),
+    )]);
+    let parse = |rules: serde_json::Value, full_validation: bool| {
+        let mut schema = order_schema(Some(rules), None);
+        schema["properties"]["state"] =
+            json!({ "$ref": "#/$defs/wrapper/properties/inner", "position": 10 });
+        parse_dispatched_with_defs(
+            schema_value(schema),
+            Some(&schema_defs),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+    };
+
+    for full_validation in [true, false] {
+        let document_type = parse(
+            json!({ "closedState": { "equal": ["state", { "const": "closed" }] } }),
+            full_validation,
+        )
+        .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        assert_eq!(document_type.property_constraints().len(), 1);
+
+        expect_structure_error(
+            parse(
+                json!({ "rule": { "equal": ["state", { "const": "closd" }] } }),
+                full_validation,
+            ),
+            "rule \"rule\" compares \"state\" with \"closd\", which is not one of its enum values",
         );
     }
 }
@@ -1155,6 +1296,7 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
             }
         }),
         json!({ "rule": { "not": { "not": { "equal": ["price", 1] } } } }),
+        json!({ "rule": { "not": { "notIn": ["price", [1, 2]] } } }),
         json!({ "rule": { "anyOf": [{ "equal": ["price", 1] }, { "equal": ["price"] }] } }),
         json!({ "rule": { "present": 1 } }),
         json!({ "rule": { "absent": ["note"] } }),
@@ -1248,12 +1390,17 @@ fn should_refuse_property_constraints_before_protocol_version_14_and_ignore_them
 const CONTRACT_ID: [u8; 32] = [7; 32];
 
 fn order_contract(rules: Option<serde_json::Value>, version: u32) -> DataContract {
+    contract_with_order_type(order_schema(rules, None), version)
+}
+
+/// A contract whose `order` type is declared by `schema`.
+fn contract_with_order_type(schema: serde_json::Value, version: u32) -> DataContract {
     let contract = json!({
         "$formatVersion": "1",
         "id": Identifier::from(CONTRACT_ID).to_string(Encoding::Base58),
         "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
         "version": version,
-        "documentSchemas": { "order": order_schema(rules, None) }
+        "documentSchemas": { "order": schema }
     });
     DataContract::from_value(
         platform_value::to_value(contract).expect("the contract converts"),
@@ -1285,6 +1432,95 @@ fn should_round_trip_a_contract_with_its_rules_through_platform_serialization() 
     };
     assert_eq!(rules(&recovered), rules(&original));
     assert_eq!(rules(&recovered).len(), 1);
+}
+
+/// A stored document keeps no object none of whose members it holds: `{}`,
+/// and `{ "inner": {} }` around one, are read back as no object at all. So
+/// `present` and `absent` judge such an object absent in the data a create
+/// carries too, and every rule reaches the same verdict on a document's data
+/// as on the document read back from storage, which a transfer, a purchase
+/// and a price update are judged on.
+#[test]
+fn should_judge_presence_alike_on_the_data_and_on_the_stored_document() {
+    let platform_version = PlatformVersion::latest();
+    let mut schema = order_schema(
+        Some(json!({
+            "metaOrSeller": {
+                "anyOf": [{ "present": "meta" }, { "equal": ["sellerId", "$ownerId"] }]
+            },
+            "noMetaOrSeller": {
+                "anyOf": [{ "absent": "meta" }, { "equal": ["sellerId", "$ownerId"] }]
+            },
+            "noInner": { "absent": "meta.inner" }
+        })),
+        None,
+    );
+    schema["properties"]["meta"]["properties"]["inner"] = json!({
+        "type": "object",
+        "position": 2,
+        "properties": { "note": { "type": "string", "maxLength": 30, "position": 0 } },
+        "additionalProperties": false
+    });
+    let contract = contract_with_order_type(schema, 1);
+    let order_type = contract
+        .document_type_for_name("order")
+        .expect("the order type");
+
+    for (meta, kept) in [
+        (platform_value!({}), false),
+        (platform_value!({ "inner": {} }), false),
+        (platform_value!({ "tag": "x" }), true),
+    ] {
+        // Owned by someone other than its seller, so `meta` alone decides
+        let document: Document = DocumentV0 {
+            id: Identifier::new([5; 32]),
+            owner_id: Identifier::new([3; 32]),
+            properties: BTreeMap::from([
+                ("price".to_string(), Value::U64(100)),
+                ("fee".to_string(), Value::U64(10)),
+                ("quantity".to_string(), Value::U64(2)),
+                ("deposit".to_string(), Value::U64(220)),
+                ("sellerId".to_string(), Value::Identifier([4; 32])),
+                ("meta".to_string(), meta.clone()),
+            ]),
+            revision: Some(1),
+            ..Default::default()
+        }
+        .into();
+        let bytes = document
+            .serialize(order_type, &contract, platform_version)
+            .expect("the document serializes");
+        let stored = Document::from_bytes(&bytes, order_type, platform_version)
+            .expect("the document deserializes");
+        assert_eq!(
+            stored.properties().contains_key("meta"),
+            kept,
+            "{meta:?}: the stored document keeps meta"
+        );
+
+        let system = DocumentSystemValues::of_document(&document);
+        let data = Value::from(document.properties().clone());
+        let stored_data = Value::from(stored.properties().clone());
+        let rules = order_type.property_constraints();
+        for (name, rule) in rules {
+            assert_eq!(
+                rule.violation(&data, &system),
+                rule.violation(&stored_data, &system),
+                "{name} on {meta:?}"
+            );
+        }
+        assert_eq!(
+            rules["metaOrSeller"].violation(&data, &system).is_none(),
+            kept,
+            "{meta:?}"
+        );
+        assert_eq!(
+            rules["noMetaOrSeller"].violation(&data, &system).is_none(),
+            !kept,
+            "{meta:?}"
+        );
+        assert_eq!(rules["noInner"].violation(&data, &system), None, "{meta:?}");
+    }
 }
 
 /// Every stored document was judged against the rules, so none may be added,
@@ -1846,5 +2082,139 @@ fn should_test_string_properties_for_prefixes_and_suffixes() {
             registered.as_ref().is_err_and(is_json_schema_error),
             "{rules}: the meta-schema should refuse it, got {registered:?}"
         );
+    }
+}
+
+/// `min`, `max`, `abs`, `ifThen`, `ifThenElse` and `notIn` register on both
+/// paths, their reads held to the same checks as any; a `notIn` string is
+/// checked against the property's enum, and an `ifThen` or `ifThenElse`
+/// holding two alike conditions is refused under full validation only, like
+/// any repeated condition.
+#[test]
+fn should_register_min_max_abs_if_then_and_not_in() {
+    let seller = Identifier::new([5; 32]).to_string(Encoding::Base58);
+    let other = Identifier::new([6; 32]).to_string(Encoding::Base58);
+    let rules = json!({
+        "feeCapped": { "lessThanOrEqual": ["fee", { "max": [10, { "divide": ["price", 10] }] }] },
+        "cheapSide": { "greaterThanOrEqual": [{ "min": ["price", "fee"] }, 1] },
+        "depositNearOrder": {
+            "lessThanOrEqual": [{ "abs": { "subtract": ["deposit", "price"] } }, 1000]
+        },
+        "closedHasNote": {
+            "ifThen": [{ "equal": ["state", { "const": "closed" }] }, { "present": "note" }]
+        },
+        "feeByState": {
+            "ifThenElse": [
+                { "equal": ["state", { "const": "open" }] },
+                { "lessThanOrEqual": ["fee", 50] },
+                { "lessThanOrEqual": ["fee", 10] }
+            ]
+        },
+        "feeNotBanned": { "notIn": ["fee", [13, 666]] },
+        "notSpam": { "notIn": ["note", ["spam", "scam"]] },
+        "notTheseSellers": { "notIn": ["sellerId", [seller.clone(), other.clone()]] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(constraints.len(), 8);
+        assert_eq!(
+            constraints["closedHasNote"].property_reads(),
+            [
+                ("state", PropertyRead::Text),
+                ("note", PropertyRead::Presence)
+            ]
+        );
+        assert_eq!(
+            constraints["feeByState"].property_paths(),
+            ["state", "fee", "fee"]
+        );
+        assert_eq!(
+            constraints["depositNearOrder"].property_paths(),
+            ["deposit", "price"]
+        );
+    }
+
+    // The reads inside are held to the usual checks
+    for (rule, needle) in [
+        (
+            json!({ "notIn": ["state", ["open", "x"]] }),
+            "rule \"rule\" compares \"state\" with \"x\", which is not one of its enum values",
+        ),
+        (
+            json!({ "equal": [{ "abs": "note" }, 1] }),
+            "reads \"note\", which has type string, not integer or boolean",
+        ),
+        (
+            json!({ "ifThen": [{ "present": "note" }, { "lessThan": ["missing", 1] }] }),
+            "reads \"missing\", which is not an integer or boolean property",
+        ),
+        (
+            json!({
+                "ifThenElse": [
+                    { "present": "note" },
+                    { "present": "fee" },
+                    { "equal": ["state", { "const": "x" }] }
+                ]
+            }),
+            "rule \"rule\" compares \"state\" with \"x\", which is not one of its enum values",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(json!({ "rule": rule.clone() }), full_validation),
+                needle,
+            );
+        }
+    }
+
+    // Two alike conditions say what a simpler rule says
+    for (same, needle) in [
+        (
+            json!({ "ifThen": [{ "present": "note" }, { "present": "note" }] }),
+            "rule \"rule\" at ifThen[1] repeats the condition at ifThen[0]",
+        ),
+        (
+            json!({
+                "ifThenElse": [{ "present": "note" }, { "present": "fee" }, { "present": "fee" }]
+            }),
+            "rule \"rule\" at ifThenElse[2] repeats the condition at ifThenElse[1]",
+        ),
+    ] {
+        let same = json!({ "rule": same });
+        expect_structure_error(parse_order(same.clone(), true), needle);
+        parse_order(same, false).expect("a stored rule is not re-judged for repeats");
+    }
+
+    // The meta-schema checks the shapes when registering
+    for rules in [
+        json!({ "rule": { "ifThen": [{ "present": "note" }] } }),
+        json!({ "rule": { "ifThen": { "present": "note" } } }),
+        json!({
+            "rule": { "ifThen": [{ "present": "note" }, { "present": "fee" }, { "present": "id" }] }
+        }),
+        json!({ "rule": { "ifThenElse": [{ "present": "note" }, { "present": "fee" }] } }),
+        json!({
+            "rule": {
+                "ifThenElse": [
+                    { "present": "note" },
+                    { "present": "fee" },
+                    { "present": "id" },
+                    { "present": "x" }
+                ]
+            }
+        }),
+        json!({ "rule": { "notIn": ["price"] } }),
+        json!({ "rule": { "notIn": ["price", [1, 1]] } }),
+        json!({ "rule": { "equal": [{ "min": ["price"] }, 1] } }),
+        json!({ "rule": { "equal": [{ "abs": ["price", "fee"] }, 1] } }),
+    ] {
+        let registered = parse_order(rules.clone(), true);
+        assert!(
+            registered.as_ref().is_err_and(is_json_schema_error),
+            "{rules}: the meta-schema should refuse it, got {registered:?}"
+        );
+        expect_structure_error(parse_order(rules, false), "propertyConstraints");
     }
 }

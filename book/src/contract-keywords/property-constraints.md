@@ -73,15 +73,18 @@ A rule is a condition: a JSON object with exactly one key.
 | `equal`, `notEqual` | `[left, right]` | The two sides are equal, or differ. The sides are two integer expressions, or a string property and a string constant or another string property, or an identifier property and an identifier constant, another identifier property or `$ownerId` |
 | `lessThan`, `lessThanOrEqual`, `greaterThan`, `greaterThanOrEqual` | `[left, right]` | The left integer expression compares with the right one this way. Integers only |
 | `in` | `[expression, [v1, v2, ...]]` | The expression takes one of the listed values: two or more, no two alike, all integers or all strings. With strings, the expression is a string property, or an identifier property or `$ownerId` with the strings as base58 identifiers |
+| `notIn` | `[expression, [v1, v2, ...]]` | The expression takes none of the listed values: an `in` negated, listed the same way, in as many nodes. A string or identifier property the document leaves out takes none |
 | `startsWith`, `endsWith` | `[text, affix]` | The first string starts, or ends, with the second, byte for byte with no case folding. Each side is a string constant, a string property or an `ifAbsent` string default, at least one a property and never the same one twice. A string property left out without a default takes no string, and the condition does not hold for it |
 | `contains` | `["path", value]` | The typed array property at the path holds an element equal to the value: an integer expression among integers; a string constant, a string property or an `ifAbsent` string default among strings; an identifier constant, an identifier property or `$ownerId` among identifiers. An array the document leaves out holds nothing, and a string or identifier property it leaves out is among no elements |
-| `present` | `"path"` | The document holds the property, with a value other than null |
-| `absent` | `"path"` | The document leaves the property out, or sets it to null |
+| `present` | `"path"` | The document holds the property, with a value other than null and, for an object, with at least one member present |
+| `absent` | `"path"` | The document leaves the property out, sets it to null, or gives an object no member that is present |
 | `anyOf` | `[c1, c2, ...]` | At least one of two or more conditions holds |
 | `allOf` | `[c1, c2, ...]` | Every one of two or more conditions holds |
 | `not` | `condition` | Its one condition does not hold |
+| `ifThen` | `[if, then]` | If the first condition holds, the second must. The second is evaluated only when the first holds, and a fault in either breaks the rule. The two may not be alike |
+| `ifThenElse` | `[if, then, else]` | If the first condition holds, the second must; if not, the third must. Only the branch the first selects is evaluated. No two of the three may be alike |
 
-Conditions nest: `{ "not": { "allOf": [{ "equal": ["price", 0] }, { "greaterThan": ["quantity", 10] }] } }` refuses a free order of more than 10. An `anyOf` or `allOf` may not list the same condition twice, nor hold one of its own kind directly (it says what one flat list says), and a `not` may not hold a `not` directly.
+Conditions nest: `{ "not": { "allOf": [{ "equal": ["price", 0] }, { "greaterThan": ["quantity", 10] }] } }` refuses a free order of more than 10. An `anyOf` or `allOf` may not list the same condition twice, nor hold one of its own kind directly (it says what one flat list says), and a `not` may not hold a `not` or a `notIn` directly.
 
 An `in` says what an `anyOf` of `equal` comparisons says, in far fewer nodes: `{ "in": ["fee", [0, 10, 25, 50]] }` is 6 nodes where the `anyOf` is 13.
 
@@ -109,6 +112,8 @@ An integer expression is one of:
 | `divide` | `{ "divide": [a, b] }` | The Euclidean quotient of `a` by `b` |
 | `modulo` | `{ "modulo": [a, b] }` | The Euclidean remainder of `a` by `b`, never negative |
 | `power` | `{ "power": [a, b] }` | `a` to the power `b` |
+| `min`, `max` | `{ "max": [a, b, ...] }` | The least or greatest of two or more operands, every one evaluated |
+| `abs` | `{ "abs": a }` | The absolute value of its one operand |
 | `length`, `byteLength` | `{ "length": "title" }` | The characters (as `maxLength` counts them) or UTF-8 bytes (as `maxBytes` counts them) of a string property, 0 when the document leaves it out |
 | `count` | `{ "count": "tags" }` | The items of an array property, or the bytes of a byte array property, 0 when the document leaves it out |
 | system time or height | `"$createdAt"`, `"$updatedAtBlockHeight"` | A time or height the document records (see [Times and heights](#times-and-heights)) |
@@ -193,7 +198,7 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 - the keyword is an object of one or more rules, named with 1 to 64 letters, digits or underscores;
 - every condition and every operator object has exactly one key;
 - a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings;
-- no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not`;
+- no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not` or a `notIn`;
 - a path matches `$ownerId`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, so `$revision` and other system properties are refused.
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):
@@ -206,7 +211,7 @@ The parser then checks the rules against the document type (`InvalidContractStru
 - no literal divisor is 0 and no literal exponent is negative;
 - every time or height a rule reads is one the type lists in `required`, and takes no `ifAbsent` default;
 - `present` and `absent` do not name `$ownerId` or a time or height, and an index-only type has no rule reading any of them;
-- no `anyOf` or `allOf` lists two conditions that parse alike, such as `1` and `1.0`, or two `in` conditions listing the same values in another order;
+- no `anyOf` or `allOf` lists two conditions that parse alike, such as `1` and `1.0`, or two `in` conditions listing the same values in another order, and no `ifThen` or `ifThenElse` holds two alike conditions;
 - no condition or operand nests more than 64 levels deep.
 
 Two limits come from the protocol version 14 `SystemLimits`, and a rule over one is refused the same way:
@@ -226,8 +231,10 @@ A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes a
 | `present`, `absent` | 1 |
 | `anyOf`, `allOf` | 1, plus their conditions |
 | `not` | 1, plus its condition |
+| `ifThen`, `ifThenElse` | 1, plus their conditions |
+| `notIn` | as the `in` it negates |
 | An integer, a path, an `ifAbsent`, a size (`length`, `byteLength`, `count`) or a time or height | 1 |
-| `add`, `multiply`, `subtract`, `divide`, `modulo`, `power` | 1, plus their operands |
+| `add`, `multiply`, `subtract`, `divide`, `modulo`, `power`, `min`, `max`, `abs` | 1, plus their operands |
 
 `depositCoversOrder` above is 7 nodes (the comparison, `multiply`, `add` and four paths), and `closedNeedsClosedAt` is 5. An `in` fits up to 30 values in 32 nodes.
 
@@ -262,7 +269,7 @@ Six nodes: the comparison, `add`, three paths and `100`.
 }
 ```
 
-`present` and `absent` work on properties of any type, strings and objects included. On an integer they are also the only way to tell "not given" from "given as 0", since a missing integer reads as 0 in an expression.
+`present` and `absent` work on properties of any type, strings and objects included. On an integer they are also the only way to tell "not given" from "given as 0", since a missing integer reads as 0 in an expression. An object with no member present, `{}` or `{ "inner": {} }`, counts as absent: a stored document does not keep it, and a transfer, purchase or price update is judged on the stored document, so a create or replace is judged the same way.
 
 **A time window.** An event ends after it starts, and lasts at most a week (`startsAt` and `endsAt` are required integer timestamps in milliseconds):
 

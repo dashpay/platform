@@ -439,9 +439,10 @@ mod tests {
     const OWNER: [u8; 32] = [1; 32];
     const OTHER: [u8; 32] = [2; 32];
 
-    /// The rules of the `offer` type, as declared: one of each family (a string
-    /// constant with `present`, an integer comparison, a division, `$ownerId`
-    /// with `absent`, and `in`), in a declaration order that is not name order.
+    /// The rules of the `offer` type, as declared: one of each family (an
+    /// `ifThen` over a string constant and `present`, an integer comparison, a
+    /// division, `$ownerId` with `absent`, and `in`), in a declaration order that
+    /// is not name order.
     fn offer_rules() -> serde_json::Value {
         json!({
             "tieredFee": { "in": ["fee", [1, 10, 25]] },
@@ -450,8 +451,8 @@ mod tests {
                 "anyOf": [{ "absent": "sellerId" }, { "equal": ["sellerId", "$ownerId"] }]
             },
             "closedNeedsClosedAt": {
-                "anyOf": [
-                    { "notEqual": ["status", { "const": "closed" }] },
+                "ifThen": [
+                    { "equal": ["status", { "const": "closed" }] },
                     { "present": "closedAt" }
                 ]
             },
@@ -958,5 +959,146 @@ mod tests {
         assert_eq!(ended["rule"], "endsAfterCreation");
         assert_eq!(ended["violation"], "NotMet");
         assert_eq!(open.expect("checked"), serde_json::Value::Null);
+    }
+
+    /// A `deal` type with two `ifThenElse` rules: `feePerPrice` (with a fee, the
+    /// price is at least ten times it; without one, at most 100) and
+    /// `openEndedSoldByOwner` (a deal without an end is sold by its owner, one
+    /// with an end ends after its creation).
+    fn branching_contract_bytes() -> Vec<u8> {
+        let platform_version = PlatformVersion::latest();
+        let documents = platform_value!({
+            "deal": {
+                "type": "object",
+                "properties": {
+                    "price": { "type": "integer", "minimum": 0, "position": 0 },
+                    "fee": { "type": "integer", "minimum": 0, "position": 1 },
+                    "endsAt": { "type": "integer", "minimum": 0, "position": 2 },
+                    "sellerId": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 32,
+                        "maxItems": 32,
+                        "contentMediaType": "application/x.dash.dpp.identifier",
+                        "position": 3
+                    }
+                },
+                "required": ["price", "fee", "$createdAt"],
+                "additionalProperties": false,
+                "propertyConstraints": {
+                    "feePerPrice": {
+                        "ifThenElse": [
+                            { "greaterThan": ["fee", 0] },
+                            { "greaterThanOrEqual": [{ "divide": ["price", "fee"] }, 10] },
+                            { "lessThanOrEqual": ["price", 100] }
+                        ]
+                    },
+                    "openEndedSoldByOwner": {
+                        "ifThenElse": [
+                            { "absent": "endsAt" },
+                            { "equal": ["sellerId", "$ownerId"] },
+                            { "greaterThan": ["endsAt", "$createdAt"] }
+                        ]
+                    }
+                }
+            }
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory for the protocol version")
+            .create_with_value_config(Identifier::new(OWNER), 1, documents, None, None)
+            .expect("deal contract")
+            .data_contract()
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialized contract")
+    }
+
+    /// An `ifThenElse` reports what every branch reads, the owner and the
+    /// system times included, and the pre-check judges only the branch its
+    /// condition takes: with no fee, `feePerPrice`'s division by zero is never
+    /// reached.
+    #[test]
+    fn should_report_every_branch_of_an_if_then_else_and_judge_the_one_taken() {
+        let sdk = sdk_handle(PlatformVersion::latest());
+        let contract = branching_contract_bytes();
+        // Open-ended and sold by its owner unless stated, so
+        // `openEndedSoldByOwner` holds
+        let violation_of = |properties: serde_json::Value| {
+            let mut document = json!({ "price": 100, "fee": 10, "sellerId": base58(OWNER) });
+            for (key, value) in properties.as_object().expect("an object") {
+                document[key] = value.clone();
+            }
+            check(sdk, &contract, "deal", document, OWNER).expect("checked")
+        };
+
+        let rules = rules_of(sdk, &contract, "deal");
+        let met = violation_of(json!({}));
+        let fee_too_high = violation_of(json!({ "fee": 20 }));
+        let no_fee = violation_of(json!({ "fee": 0 }));
+        let no_fee_too_dear = violation_of(json!({ "price": 101, "fee": 0 }));
+        let sold_by_other = violation_of(json!({ "sellerId": base58(OTHER) }));
+        let ended = violation_of(json!({ "endsAt": 1 }));
+        // Ends in 2100: the else branch is taken, and the seller is not judged
+        let ending_sold_by_other = violation_of(json!({
+            "endsAt": 4_102_444_800_000u64,
+            "sellerId": base58(OTHER)
+        }));
+        destroy_mock_sdk_handle(sdk);
+
+        assert_eq!(
+            rules.expect("rules of deal"),
+            json!([
+                {
+                    "name": "feePerPrice",
+                    "rule": {
+                        "ifThenElse": [
+                            { "greaterThan": ["fee", 0] },
+                            { "greaterThanOrEqual": [{ "divide": ["price", "fee"] }, 10] },
+                            { "lessThanOrEqual": ["price", 100] }
+                        ]
+                    },
+                    "reads": [
+                        { "path": "fee", "kind": "value" },
+                        { "path": "price", "kind": "value" },
+                        { "path": "fee", "kind": "value" },
+                        { "path": "price", "kind": "value" }
+                    ],
+                    "readsOwner": false,
+                    "readsSystem": []
+                },
+                {
+                    "name": "openEndedSoldByOwner",
+                    "rule": {
+                        "ifThenElse": [
+                            { "absent": "endsAt" },
+                            { "equal": ["sellerId", "$ownerId"] },
+                            { "greaterThan": ["endsAt", "$createdAt"] }
+                        ]
+                    },
+                    "reads": [
+                        { "path": "endsAt", "kind": "presence" },
+                        { "path": "sellerId", "kind": "identifier" },
+                        { "path": "endsAt", "kind": "value" }
+                    ],
+                    "readsOwner": true,
+                    "readsSystem": ["$createdAt"]
+                }
+            ])
+        );
+
+        assert_eq!(met, serde_json::Value::Null);
+        // The then branch: 100 / 20 is below 10
+        assert_eq!(fee_too_high["rule"], "feePerPrice");
+        assert_eq!(fee_too_high["violation"], "NotMet");
+        // The else branch: no division, so no division by zero
+        assert_eq!(no_fee, serde_json::Value::Null);
+        assert_eq!(no_fee_too_dear["rule"], "feePerPrice");
+        assert_eq!(no_fee_too_dear["violation"], "NotMet");
+        // Without an end, the owner must be the seller
+        assert_eq!(sold_by_other["rule"], "openEndedSoldByOwner");
+        assert_eq!(sold_by_other["violation"], "NotMet");
+        // With one, it must come after the create, timed by the device clock
+        assert_eq!(ended["rule"], "openEndedSoldByOwner");
+        assert_eq!(ended["violation"], "NotMet");
+        assert_eq!(ending_sold_by_other, serde_json::Value::Null);
     }
 }

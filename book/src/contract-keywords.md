@@ -230,7 +230,7 @@ A rule is one condition. Conditions:
 | `equal`, `notEqual` | `[a, b]` | The two sides are equal, or differ: integer expressions, strings or identifiers. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 | `lessThan`, `lessThanOrEqual`, `greaterThan`, `greaterThanOrEqual` | `[a, b]` | The integer comparison holds. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 | `in` | `[a, [values]]` | `a` takes one of two or more listed integers, strings or identifiers. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
-| `present`, `absent` | a path | The document holds the property, or leaves it out (or null). | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
+| `present`, `absent` | a path | The document holds the property, or leaves it out (or null, or an object with no member present). | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 | `anyOf`, `allOf` | two or more conditions | At least one, or every, condition holds, checked in order. | 14 | [Evaluation order](contract-keywords/property-constraints.md#evaluation-order-and-short-circuiting) |
 | `not` | a condition | The condition does not hold. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 

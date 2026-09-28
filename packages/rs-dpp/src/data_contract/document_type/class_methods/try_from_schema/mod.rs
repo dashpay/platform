@@ -41,6 +41,9 @@ mod v3;
 
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
+/// How a `$ref` to one of the contract's `$defs` starts: `#/$defs/<name>`.
+const DEFINITIONS_REF_PREFIX: &str = "#/$defs/";
+
 /// The longest property path a keyword may name: `keyIdProperty`, the
 /// `propertyAgreement` pairs and the `encryptedFor` paths share it, and the
 /// meta-schema states the same bound as `maxLength`.
@@ -1790,11 +1793,13 @@ fn apply_encrypted_for_v0(
 /// the stored ciphertext without its recipe), and the byte array's own
 /// `maxItems` must hold the scheme's shortest ciphertext. Paths are looked up
 /// among the flattened properties, so a nested property is named by its
-/// dotted path.
+/// dotted path. A key property's schema reached through a `$ref` is read from
+/// `schema_defs`, the contract's `$defs`, as the core parse reads it.
 ///
 /// Owned by parser generation 3: the only generation that admits the keyword.
 pub(super) fn validate_encrypted_for_declarations(
     document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
     document_type_name: &str,
 ) -> Result<(), DataContractError> {
     let flattened_properties = &document_type.flattened_properties;
@@ -1858,7 +1863,7 @@ pub(super) fn validate_encrypted_for_declarations(
                     "{key} \"{key_path}\" is not a property of the document type"
                 )));
             }
-            if !is_key_id_schema(&document_type.schema, key_path)? {
+            if !is_key_id_schema(&document_type.schema, schema_defs, key_path)? {
                 return Err(structure_error(format!(
                     "{key} \"{key_path}\" must be an integer property with minimum at least 0 \
                      and maximum at most {}, so that it carries a key id",
@@ -1891,7 +1896,9 @@ pub(super) fn validate_encrypted_for_declarations(
 /// checked on every parse; under full validation, the limits too: at most
 /// `SystemLimits::max_property_constraints` rules, each of at most
 /// `max_property_constraint_nodes` nodes, and no `anyOf` or `allOf` listing
-/// the same condition twice.
+/// the same condition twice. The `enum` a constant or a default is checked
+/// against is read from the property's schema, through a `$ref` into
+/// `schema_defs`, the contract's `$defs`, as the core parse reads it.
 ///
 /// Only parser generation 3 calls it, once the core parse has run the
 /// meta-schema, so under full validation a malformed declaration is the
@@ -1901,6 +1908,7 @@ pub(super) fn validate_encrypted_for_declarations(
 /// entirely.
 pub(super) fn apply_property_constraints(
     document_type: &mut DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
     document_type_name: &str,
     full_validation: bool,
     platform_version: &PlatformVersion,
@@ -1915,6 +1923,7 @@ pub(super) fn apply_property_constraints(
         None => Ok(()),
         Some(0) => apply_property_constraints_v0(
             document_type,
+            schema_defs,
             document_type_name,
             full_validation,
             platform_version,
@@ -1944,6 +1953,7 @@ fn property_at_path<'a>(
 
 fn apply_property_constraints_v0(
     document_type: &mut DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
     document_type_name: &str,
     full_validation: bool,
     platform_version: &PlatformVersion,
@@ -2220,7 +2230,7 @@ fn apply_property_constraints_v0(
         // A constant or a default a string property's `enum` does not list is a
         // typo: the property could never hold it
         for (path, constant) in constraint.text_constants() {
-            if !enum_admits(&document_type.schema, path, constant)? {
+            if !enum_admits(&document_type.schema, schema_defs, path, constant)? {
                 return Err(structure_error(format!(
                     "rule \"{name}\" compares \"{path}\" with \"{constant}\", which is not one of \
                      its enum values"
@@ -2230,7 +2240,7 @@ fn apply_property_constraints_v0(
         // A constant a string property must start or end with, when the property
         // declares an `enum`, must fit one of its values, or the test never holds
         for (path, affix, position) in constraint.text_affixes() {
-            if !enum_any(&document_type.schema, path, |member| {
+            if !enum_any(&document_type.schema, schema_defs, path, |member| {
                 position.holds(member, affix)
             })? {
                 let tests = match position {
@@ -2244,7 +2254,7 @@ fn apply_property_constraints_v0(
             }
         }
         for (path, default) in constraint.text_defaults() {
-            if !enum_admits(&document_type.schema, path, default)? {
+            if !enum_admits(&document_type.schema, schema_defs, path, default)? {
                 return Err(structure_error(format!(
                     "rule \"{name}\" gives \"{path}\" the default \"{default}\", which is not \
                      one of its enum values"
@@ -2284,25 +2294,32 @@ fn apply_property_constraints_v0(
 
 /// Whether the string property at the dotted `path` of `schema`, a document
 /// type's, may hold `value`: always, unless it declares an `enum` that does not
-/// list it.
-fn enum_admits(schema: &Value, path: &str, value: &str) -> Result<bool, DataContractError> {
-    enum_any(schema, path, |member| member == value)
+/// list it. `$ref`s are followed into `schema_defs`, the contract's `$defs`.
+fn enum_admits(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    path: &str,
+    value: &str,
+) -> Result<bool, DataContractError> {
+    enum_any(schema, schema_defs, path, |member| member == value)
 }
 
 /// Whether the string property at the dotted `path` of `schema` (or the
 /// elements of the typed array there) may hold a value `admits`: always,
-/// unless it declares an `enum`, one of whose values must then pass.
+/// unless it declares an `enum`, one of whose values must then pass. `$ref`s
+/// are followed into `schema_defs`, the contract's `$defs`.
 fn enum_any(
     schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
     path: &str,
     admits: impl Fn(&str) -> bool,
 ) -> Result<bool, DataContractError> {
-    let Some(property_schema) = schema_at_path(schema, path)? else {
+    let Some(property_schema) = schema_at_path(schema, schema_defs, path)? else {
         return Ok(true);
     };
     // A value a `contains` looks for in an array is one of its elements
     let property_schema = match property_schema.get(property_names::ITEMS) {
-        Some(items) => resolve_schema(schema, items)?,
+        Some(items) => resolve_schema(schema, schema_defs, items)?,
         None => property_schema,
     };
     let Some(Value::Array(members)) = property_schema.get(property_names::ENUM) else {
@@ -2314,12 +2331,14 @@ fn enum_any(
 }
 
 /// The schema of the property at the dotted `path` of `schema`, a document
-/// type's, `None` when the path names none. `$ref`s are followed.
+/// type's, `None` when the path names none. `$ref`s are followed, into
+/// `schema_defs`, the contract's `$defs`, for `#/$defs/...`.
 fn schema_at_path<'a>(
     schema: &'a Value,
+    schema_defs: Option<&'a BTreeMap<String, Value>>,
     path: &str,
 ) -> Result<Option<BTreeMap<String, &'a Value>>, DataContractError> {
-    let mut current = resolve_schema(schema, schema)?;
+    let mut current = resolve_schema(schema, schema_defs, schema)?;
     for segment in path.split('.') {
         let Some(properties) = current.get(property_names::PROPERTIES) else {
             return Ok(None);
@@ -2327,30 +2346,70 @@ fn schema_at_path<'a>(
         let Some(next) = properties.to_btree_ref_string_map()?.get(segment).copied() else {
             return Ok(None);
         };
-        current = resolve_schema(schema, next)?;
+        current = resolve_schema(schema, schema_defs, next)?;
     }
     Ok(Some(current))
 }
 
 /// The schema `value` is within the document type schema `schema`, its `$ref`
-/// followed.
+/// followed ([`resolve_schema_ref`]).
 fn resolve_schema<'a>(
     schema: &'a Value,
+    schema_defs: Option<&'a BTreeMap<String, Value>>,
     value: &'a Value,
 ) -> Result<BTreeMap<String, &'a Value>, DataContractError> {
     let map = value.to_btree_ref_string_map()?;
     match map.get_optional_str(property_names::REF)? {
-        Some(schema_ref) => Ok(resolve_uri(schema, schema_ref)?.to_btree_ref_string_map()?),
+        Some(schema_ref) => {
+            Ok(resolve_schema_ref(schema, schema_defs, schema_ref)?.to_btree_ref_string_map()?)
+        }
         None => Ok(map),
+    }
+}
+
+/// The value the `$ref` `uri` of the document type schema `schema` names,
+/// found where the core parse finds it, in the schema with the contract's
+/// `$defs` added ([`DocumentType::enrich_with_base_schema`]): a
+/// `#/$defs/<name>` reference, and a path below one, in `schema_defs`; any
+/// other in `schema`, which holds no `$defs` of its own. Every document
+/// meta-schema names a definition with letters, digits, `-` and `_` only, so
+/// the name ends at the next `/`.
+fn resolve_schema_ref<'a>(
+    schema: &'a Value,
+    schema_defs: Option<&'a BTreeMap<String, Value>>,
+    uri: &str,
+) -> Result<&'a Value, DataContractError> {
+    let Some(definition_path) = uri.strip_prefix(DEFINITIONS_REF_PREFIX) else {
+        return resolve_uri(schema, uri);
+    };
+    let (name, below) = match definition_path.split_once('/') {
+        Some((name, below)) => (name, Some(below)),
+        None => (definition_path, None),
+    };
+    let definition = schema_defs
+        .and_then(|definitions| definitions.get(name))
+        .ok_or_else(|| {
+            DataContractError::InvalidURI(format!(
+                "{uri} names no definition in the contract's $defs"
+            ))
+        })?;
+    match below {
+        Some(below) => resolve_uri(definition, &format!("#/{below}")),
+        None => Ok(definition),
     }
 }
 
 /// Whether the property at the dotted `path` of `schema` is declared as an
 /// integer with `minimum` at least 0 and `maximum` at most `u32::MAX`, read
 /// from the schema rather than from the parsed type so that the answer does
-/// not depend on the contract's `sizedIntegerTypes`. `$ref`s are followed.
-fn is_key_id_schema(schema: &Value, path: &str) -> Result<bool, DataContractError> {
-    let Some(current) = schema_at_path(schema, path)? else {
+/// not depend on the contract's `sizedIntegerTypes`. `$ref`s are followed into
+/// `schema_defs`, the contract's `$defs`.
+fn is_key_id_schema(
+    schema: &Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    path: &str,
+) -> Result<bool, DataContractError> {
+    let Some(current) = schema_at_path(schema, schema_defs, path)? else {
         return Ok(false);
     };
     let is_integer = current.get_optional_str(property_names::TYPE)? == Some("integer");
@@ -5033,6 +5092,160 @@ mod tests {
             assert!(
                 err.to_string().contains(fragment),
                 "{key}={path}: expected {fragment:?}, got {err}"
+            );
+        }
+    }
+
+    /// The document type of `schema` parsed at the latest platform version
+    /// with the contract's `$defs`, which a `$ref` in it resolves against.
+    fn try_document_type_from_schema_with_defs(
+        schema: serde_json::Value,
+        schema_defs: &BTreeMap<String, Value>,
+        full_validation: bool,
+    ) -> Result<DocumentType, ProtocolError> {
+        let platform_version = PlatformVersion::latest();
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+
+        let value = platform_value::to_value(schema).expect("schema should convert");
+
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            value,
+            Some(schema_defs),
+            &BTreeMap::new(),
+            &config,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )
+    }
+
+    /// A key id property whose schema is a `$ref` to one of the contract's
+    /// `$defs` is read from the definition, as the core parse reads it: a
+    /// bounded integer there registers, and an unbounded one is refused as
+    /// it is inline. On both paths. Each key has a definition of its own:
+    /// the schema depth check refuses two references to one definition.
+    #[test]
+    fn should_read_an_encrypted_for_key_id_through_a_ref() {
+        let key_id = || {
+            platform_value::to_value(json!({
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295_u64
+            }))
+            .expect("the definition converts")
+        };
+        let schema_defs = BTreeMap::from([
+            ("recipientKey".to_string(), key_id()),
+            ("senderKey".to_string(), key_id()),
+            (
+                "anyInteger".to_string(),
+                platform_value::to_value(json!({ "type": "integer", "minimum": 0 }))
+                    .expect("the definition converts"),
+            ),
+        ]);
+        let mut schema = encrypted_schema(encrypted_for_declaration());
+        schema["properties"]["recipientKeyId"] =
+            json!({ "$ref": "#/$defs/recipientKey", "position": 1 });
+        schema["properties"]["senderKeyId"] = json!({ "$ref": "#/$defs/senderKey", "position": 2 });
+        for full_validation in [true, false] {
+            let document_type = try_document_type_from_schema_with_defs(
+                schema.clone(),
+                &schema_defs,
+                full_validation,
+            )
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+            let encrypted_for =
+                encrypted_for_of(&document_type, "encryptedMessage").expect("should be declared");
+            assert_eq!(encrypted_for.recipient_key, "recipientKeyId");
+            assert_eq!(encrypted_for.sender_key, "senderKeyId");
+        }
+
+        schema["properties"]["senderKeyId"] =
+            json!({ "$ref": "#/$defs/anyInteger", "position": 2 });
+        for full_validation in [true, false] {
+            let err = try_document_type_from_schema_with_defs(
+                schema.clone(),
+                &schema_defs,
+                full_validation,
+            )
+            .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(
+                    "senderKey \"senderKeyId\" must be an integer property with minimum at least 0"
+                ),
+                "full_validation {full_validation}: got {err}"
+            );
+        }
+    }
+
+    /// A `$ref` may name a schema below one of the contract's `$defs`, as
+    /// `#/$defs/keys/properties/recipient` does, and a key id property is then
+    /// read from the schema found there, as the core parse reads it: a bounded
+    /// integer registers, and an unbounded one is refused as it is inline. On
+    /// both paths. Each key names a schema of its own: the schema depth check
+    /// refuses two references to one schema.
+    #[test]
+    fn should_read_an_encrypted_for_key_id_through_a_ref_below_a_definition() {
+        let schema_defs = BTreeMap::from([(
+            "keys".to_string(),
+            platform_value::to_value(json!({
+                "type": "object",
+                "properties": {
+                    "recipient": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295_u64,
+                        "position": 0
+                    },
+                    "sender": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4294967295_u64,
+                        "position": 1
+                    },
+                    "unbounded": { "type": "integer", "minimum": 0, "position": 2 }
+                },
+                "additionalProperties": false
+            }))
+            .expect("the definition converts"),
+        )]);
+        let mut schema = encrypted_schema(encrypted_for_declaration());
+        schema["properties"]["recipientKeyId"] =
+            json!({ "$ref": "#/$defs/keys/properties/recipient", "position": 1 });
+        schema["properties"]["senderKeyId"] =
+            json!({ "$ref": "#/$defs/keys/properties/sender", "position": 2 });
+        for full_validation in [true, false] {
+            let document_type = try_document_type_from_schema_with_defs(
+                schema.clone(),
+                &schema_defs,
+                full_validation,
+            )
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+            let encrypted_for =
+                encrypted_for_of(&document_type, "encryptedMessage").expect("should be declared");
+            assert_eq!(encrypted_for.recipient_key, "recipientKeyId");
+            assert_eq!(encrypted_for.sender_key, "senderKeyId");
+        }
+
+        schema["properties"]["senderKeyId"] =
+            json!({ "$ref": "#/$defs/keys/properties/unbounded", "position": 2 });
+        for full_validation in [true, false] {
+            let err = try_document_type_from_schema_with_defs(
+                schema.clone(),
+                &schema_defs,
+                full_validation,
+            )
+            .expect_err("should be refused");
+            assert!(
+                err.to_string().contains(
+                    "senderKey \"senderKeyId\" must be an integer property with minimum at least 0"
+                ),
+                "full_validation {full_validation}: got {err}"
             );
         }
     }
