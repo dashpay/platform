@@ -404,6 +404,159 @@ class DocumentPropertyConstraintsTest {
         }
     }
 
+    /**
+     * The totals rules read, as rs-sdk-ffi's
+     * `should_list_the_totals_a_rule_reads_and_leave_it_unjudged` reports them:
+     * a whole-type count, a count by owner, a sum by category, and none.
+     */
+    private val totalRulesJson = """
+        [
+          {
+            "name": "allListings",
+            "readsOwner": false,
+            "reads": [],
+            "readsSystem": [],
+            "readsTotals": [{ "kind": "countOf", "documentType": "listing", "filter": [] }],
+            "rule": { "lessThan": [{ "countOf": ["listing"] }, 1000] }
+          },
+          {
+            "name": "atMostTwoPerOwner",
+            "readsOwner": true,
+            "reads": [],
+            "readsSystem": [],
+            "readsTotals": [
+              { "kind": "countOf", "documentType": "listing", "filter": ["${'$'}ownerId"] }
+            ],
+            "rule": {
+              "lessThanOrEqual": [{ "countOf": ["listing", { "${'$'}ownerId": "${'$'}ownerId" }] }, 2]
+            }
+          },
+          {
+            "name": "categoryBudget",
+            "readsOwner": false,
+            "reads": [{ "kind": "value", "path": "category" }],
+            "readsSystem": [],
+            "readsTotals": [
+              {
+                "kind": "sumOf",
+                "documentType": "listing",
+                "property": "price",
+                "filter": ["category"]
+              }
+            ],
+            "rule": {
+              "lessThanOrEqual": [{ "sumOf": ["listing", "price", { "category": "category" }] }, 250]
+            }
+          },
+          {
+            "name": "priceCap",
+            "readsOwner": false,
+            "reads": [{ "kind": "value", "path": "price" }],
+            "readsSystem": [],
+            "readsTotals": [],
+            "rule": { "lessThanOrEqual": ["price", 1000] }
+          }
+        ]
+    """.trimIndent()
+
+    // Totals
+
+    @Test
+    fun `should decode the totals each rule reads`() {
+        val rules = DocumentPropertyConstraint.listFromJson(totalRulesJson)
+
+        assertEquals(
+            listOf("allListings", "atMostTwoPerOwner", "categoryBudget", "priceCap"),
+            rules.map { it.name },
+        )
+        assertEquals(
+            listOf(
+                listOf(
+                    PropertyConstraintTotalRead(
+                        PropertyConstraintTotalRead.Kind.CountOf,
+                        "listing",
+                        null,
+                        emptyList(),
+                    ),
+                ),
+                listOf(
+                    PropertyConstraintTotalRead(
+                        PropertyConstraintTotalRead.Kind.CountOf,
+                        "listing",
+                        null,
+                        listOf("${'$'}ownerId"),
+                    ),
+                ),
+                listOf(
+                    PropertyConstraintTotalRead(
+                        PropertyConstraintTotalRead.Kind.SumOf,
+                        "listing",
+                        "price",
+                        listOf("category"),
+                    ),
+                ),
+                emptyList(),
+            ),
+            rules.map { it.readsTotals },
+        )
+        assertEquals(listOf(false, true, false, false), rules.map { it.readsOwner })
+        assertEquals(
+            listOf(PropertyConstraintRead("category", PropertyConstraintRead.Kind.Value)),
+            rules[2].reads,
+        )
+    }
+
+    /** A native library built before `readsTotals` leaves the key out. */
+    @Test
+    fun `should read a rule without readsTotals as reading no total`() {
+        val rules = DocumentPropertyConstraint.listFromJson(
+            """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":[],"rule":{"present":"a"}}]""",
+        )
+
+        assertEquals(emptyList<PropertyConstraintTotalRead>(), rules.single().readsTotals)
+        assertEquals(
+            DocumentPropertyConstraint("r", """{"present":"a"}""", emptyList(), readsOwner = false),
+            rules.single(),
+        )
+    }
+
+    @Test
+    fun `should round trip every total kind name and keep an unknown one`() {
+        for (kind in listOf(PropertyConstraintTotalRead.Kind.CountOf, PropertyConstraintTotalRead.Kind.SumOf)) {
+            assertEquals(kind, PropertyConstraintTotalRead.Kind.fromName(kind.name))
+        }
+        assertEquals(
+            PropertyConstraintTotalRead.Kind.Other("averageOf"),
+            PropertyConstraintTotalRead.Kind.fromName("averageOf"),
+        )
+    }
+
+    @Test
+    fun `should refuse a malformed readsTotals`() {
+        val malformed = listOf(
+            "null",
+            "{}",
+            "[1]",
+            "[null]",
+            // Every total names its kind, type and filter
+            """[{"documentType":"listing","filter":[]}]""",
+            """[{"kind":"countOf","filter":[]}]""",
+            """[{"kind":"countOf","documentType":"listing"}]""",
+            // The filter lists strings, and a property is one
+            """[{"kind":"countOf","documentType":"listing","filter":"${'$'}ownerId"}]""",
+            """[{"kind":"countOf","documentType":"listing","filter":[7]}]""",
+            """[{"kind":"sumOf","documentType":"listing","property":7,"filter":[]}]""",
+            """[{"kind":7,"documentType":"listing","filter":[]}]""",
+        )
+        for (readsTotals in malformed) {
+            val json =
+                """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":[],"readsTotals":$readsTotals,"rule":{"present":"a"}}]"""
+            assertThrows(json, DashSdkError.SerializationError::class.java) {
+                DocumentPropertyConstraint.listFromJson(json)
+            }
+        }
+    }
+
     // Violations
 
     @Test

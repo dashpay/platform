@@ -89,7 +89,7 @@ impl DocumentPurchaseTransitionActionStructureValidationV0 for DocumentPurchaseT
             .validate_property_constraints_for_system_change(
                 self.document().properties(),
                 &DocumentSystemValues {
-                    aggregates: self.property_constraint_aggregates().clone(),
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
                     ..DocumentSystemValues::of_document(self.document())
                 },
                 SystemChange::Transfer,

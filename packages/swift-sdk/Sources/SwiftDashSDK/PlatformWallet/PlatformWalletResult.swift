@@ -403,7 +403,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
 /// numeric `code` names the exact rule that refused it (40722 is a second
 /// once-per-identity token claim), and its `kind` says which family of rule
 /// that was. Rust reads both off the consensus error and puts them on the FFI
-/// result, so a host branches on the code rather than recognising the
+/// result (`PlatformWalletFFIResult` from the wallet FFI, `DashSDKError` from
+/// rs-sdk-ffi), so a host branches on the code rather than recognising the
 /// rejection in its rendered text.
 public struct PlatformConsensusError: Equatable, Sendable {
     /// The family a consensus rejection belongs to.
@@ -411,7 +412,8 @@ public struct PlatformConsensusError: Equatable, Sendable {
     /// rs-dpp groups its codes by family (basic 1xxxx, signature 2xxxx, fee
     /// 3xxxx, state 4xxxx) and hands the grouping over as a value of its own,
     /// so this side never derives it from the digits of `code`. Mirror of
-    /// `PlatformWalletFFIConsensusErrorKind`.
+    /// `PlatformWalletFFIConsensusErrorKind` and rs-sdk-ffi's
+    /// `DashSDKConsensusErrorKind`, which name the same families.
     public enum Kind: Equatable, Sendable {
         case basic
         case signature
@@ -427,6 +429,19 @@ public struct PlatformConsensusError: Equatable, Sendable {
             case PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_SIGNATURE: self = .signature
             case PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_FEE:       self = .fee
             case PLATFORM_WALLET_FFI_CONSENSUS_ERROR_KIND_STATE:     self = .state
+            default: return nil
+            }
+        }
+
+        /// The same decoding for rs-sdk-ffi's kind: `nil` for
+        /// `ConsensusErrorKindNone` and for any family this mirror does not
+        /// know yet.
+        init?(ffi: DashSDKConsensusErrorKind) {
+            switch ffi {
+            case ConsensusErrorKindBasic:     self = .basic
+            case ConsensusErrorKindSignature: self = .signature
+            case ConsensusErrorKindFee:       self = .fee
+            case ConsensusErrorKindState:     self = .state
             default: return nil
             }
         }
@@ -447,6 +462,15 @@ public struct PlatformConsensusError: Equatable, Sendable {
 
     /// The rejection an FFI result carries, or `nil` when it carries none.
     init?(ffi: PlatformWalletFFIResult) {
+        guard ffi.consensus_code != 0, let kind = Kind(ffi: ffi.consensus_kind) else {
+            return nil
+        }
+        self.init(code: ffi.consensus_code, kind: kind)
+    }
+
+    /// The rejection an rs-sdk-ffi error carries, or `nil` when it carries
+    /// none.
+    init?(ffi: DashSDKError) {
         guard ffi.consensus_code != 0, let kind = Kind(ffi: ffi.consensus_kind) else {
             return nil
         }

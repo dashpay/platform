@@ -19,7 +19,9 @@ use dpp::consensus::basic::document::PropertyConstraintViolation;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::property_constraints::{DocumentSystemValues, PropertyRead};
+use dpp::data_contract::document_type::property_constraints::{
+    AggregateKind, DocumentSystemValues, PropertyRead,
+};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
@@ -181,6 +183,22 @@ export type PropertyConstraintSystemProperty =
   | '$transferredAtCoreBlockHeight';
 
 /**
+ * A `countOf` or `sumOf` total a rule reads: how many documents of
+ * `documentType`, a type of the same contract, match the filter, or the total
+ * of their integer `property` (a `sumOf` only). `filter` lists the keys the
+ * documents are matched by, properties of that type or `$ownerId`; the values
+ * they must take are in the rule. The platform reads the total from state when
+ * the document is sent; `checkDocumentPropertyConstraints` cannot, and does
+ * not judge a rule reading one.
+ */
+export type PropertyConstraintTotalRead = {
+  kind: 'countOf' | 'sumOf';
+  documentType: string;
+  property?: string;
+  filter: string[];
+};
+
+/**
  * A single `propertyConstraints` rule of a document type.
  */
 export type DocumentPropertyConstraint = {
@@ -190,7 +208,10 @@ export type DocumentPropertyConstraint = {
   rule: PropertyConstraintCondition;
   /** Every property the rule reads, in declared order; `$ownerId` is no property and is not listed. */
   reads: Array<{ path: string; kind: PropertyConstraintReadKind }>;
-  /** Whether the rule reads `$ownerId`: then a transfer or a purchase is judged against it too. */
+  /**
+   * Whether the rule reads `$ownerId`, or a total that depends on the owner:
+   * then a transfer or a purchase is judged against it too.
+   */
   readsOwner: boolean;
   /**
    * The system times and heights the rule reads, in declared order. A price
@@ -198,6 +219,11 @@ export type DocumentPropertyConstraint = {
    * purchase against one reading the transfer's.
    */
   readsSystem: PropertyConstraintSystemProperty[];
+  /**
+   * The `countOf` and `sumOf` totals the rule reads, in declared order, one
+   * read twice listed twice. The pre-check does not judge a rule reading one.
+   */
+  readsTotals: PropertyConstraintTotalRead[];
 };
 
 /**
@@ -389,6 +415,27 @@ pub(crate) fn property_constraints_for_document_type(
             reads_system.push(&JsValue::from_str(property.name()));
         }
         set_field(&object, "readsSystem", &reads_system, name)?;
+        let reads_totals = Array::new();
+        for read in constraint.aggregate_reads() {
+            let entry = Object::new();
+            set_field(&entry, "kind", &JsValue::from_str(read.wire_name()), name)?;
+            set_field(
+                &entry,
+                "documentType",
+                &JsValue::from_str(&read.document_type),
+                name,
+            )?;
+            if let AggregateKind::Sum { property } = &read.kind {
+                set_field(&entry, "property", &JsValue::from_str(property), name)?;
+            }
+            let filter = Array::new();
+            for key in read.filter.keys() {
+                filter.push(&JsValue::from_str(key));
+            }
+            set_field(&entry, "filter", &filter, name)?;
+            reads_totals.push(&entry);
+        }
+        set_field(&object, "readsTotals", &reads_totals, name)?;
         rules.push(&object);
     }
 

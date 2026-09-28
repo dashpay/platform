@@ -479,6 +479,8 @@ extension SDK {
 
         // Get the JSON string
         guard result.json_string != nil else {
+            var mutableResult = result
+            dash_sdk_data_contract_fetch_result_free(&mutableResult)
             throw SDKError.internalError("No JSON data returned from contract fetch")
         }
 
@@ -691,7 +693,7 @@ extension SDK {
 
         defer {
             // Clean up document handle
-            dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+            dash_sdk_document_free(OpaquePointer(documentHandle))
         }
 
         // Get document info to convert to JSON
@@ -1606,8 +1608,9 @@ extension SDK {
             let errorMessage = error.pointee.message != nil
                 ? String(cString: error.pointee.message!)
                 : "Unknown error"
+            let failure = SDKError.stateTransitionFailure(errorMessage, ffiError: error.pointee)
             dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw failure
         }
     }
 

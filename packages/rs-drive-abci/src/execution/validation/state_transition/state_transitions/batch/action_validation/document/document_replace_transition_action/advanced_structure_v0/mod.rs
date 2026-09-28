@@ -62,7 +62,7 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
             created_at_core_block_height: self.created_at_core_block_height(),
             updated_at_core_block_height: self.updated_at_core_block_height(),
             transferred_at_core_block_height: self.transferred_at_core_block_height(),
-            aggregates: self.property_constraint_aggregates().clone(),
+            aggregates: Some(self.property_constraint_aggregates().clone()),
         };
         let result = data_contract
             .validate_document_properties(

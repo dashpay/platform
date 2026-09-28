@@ -149,7 +149,7 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                 document_type_name,
                 self.data().into(),
                 &DocumentSystemValues {
-                    aggregates: self.property_constraint_aggregates().clone(),
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
                     ..DocumentSystemValues::created_in_block(owner_id, &self.block_info())
                 },
                 platform_version,

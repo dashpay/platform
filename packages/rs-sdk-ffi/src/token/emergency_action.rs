@@ -180,7 +180,7 @@ pub unsafe extern "C" fn dash_sdk_token_emergency_action(
             .token_emergency_action(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!("Failed to perform emergency action and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to perform emergency action and wait", e)
             })?;
 
         Ok(result)

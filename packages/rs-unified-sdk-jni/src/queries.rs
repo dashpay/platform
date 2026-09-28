@@ -7,8 +7,8 @@
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.QueriesNative`.
 
 use crate::results::{
-    unwrap_address_info, unwrap_address_info_map, unwrap_handle, unwrap_identity_balance_map,
-    unwrap_string,
+    throw_sdk_error, unwrap_address_info, unwrap_address_info_map, unwrap_handle,
+    unwrap_identity_balance_map, unwrap_string,
 };
 use crate::support::{guard, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString};
@@ -1513,15 +1513,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_dataCon
         // Error path: throw, free inner buffers, bail with null.
         if !result.error.is_null() {
             // SAFETY: non-null error is a valid CString-backed DashSDKError.
-            let err = unsafe { &*result.error };
-            let message = if err.message.is_null() {
-                String::from("Unknown SDK error")
-            } else {
-                unsafe { CStr::from_ptr(err.message) }
-                    .to_string_lossy()
-                    .into_owned()
-            };
-            throw_sdk_exception(env, err.code as i32, &message);
+            unsafe { throw_sdk_error(env, &*result.error) };
             unsafe { dash_sdk_data_contract_fetch_result_free(&mut result) };
             return ptr::null_mut();
         }

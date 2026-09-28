@@ -1091,8 +1091,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the batch transformer reads them into the action
 ///     (`Drive::fetch_property_constraint_aggregate`, billed; in place in
 ///     transformer 0, reading nothing before this version), a transfer or
-///     purchase reads again those depending on the owner, and a rule reading
-///     one it is not given (an SDK pre-check) is not judged.
+///     purchase reads again those depending on the owner, a price update those
+///     of the rules it judges, and a rule reading one it is not given is not
+///     judged by an SDK pre-check and an error in consensus, which reads them
+///     all.
 ///     Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
 ///     remainder is never negative), and an overflow, a zero divisor, a
 ///     negative exponent or a value that is not an integer refuses the document
@@ -1129,7 +1131,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     condition twice, and at most `max_property_constraint_aggregates` (4)
 ///     distinct totals per type; once every type is parsed, that a tree keeps
 ///     each total (`documentsCountable` or `documentsSummable`, or an index
-///     whose properties are exactly the filter's keys), in
+///     whose properties are exactly the filter's keys) and that no type with a
+///     contested index totals its own documents, in
 ///     `create_document_types_from_document_schemas` 1, in place and inert
 ///     before this version. `DataContract::validate_document_properties` 0
 ///     (extended in place, inert before this version, and taking the document's
@@ -1456,6 +1459,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     preorder hash of a name under a parent byte for byte; the DPNS contract
 ///     and its create trigger are unchanged. See
 ///     `book/src/data-model/documents.md`.
+///
+/// 55. **A preallocated index's agreement source fits a tree key**: contract
+///     create and update state validation 1 refuse, paid, a
+///     `propertyAgreement` pair through which a preallocated index is keyed
+///     when its referenced property can hold a value over 255 bytes
+///     (`ReferencedDocumentPropertyAgreementInvalidError`, 40126): creating a
+///     referenced document writes that value as a tree key, which failed with
+///     an internal error for a value over 255 bytes, and for any value once
+///     the property's midway size, which sized the estimate, passed 255
+///     bytes. `add_document_for_contract_operations` 1 now estimates that
+///     layer from the referring property, as an entry insert does, and
+///     preallocates nothing for a referenced value wider than the referring
+///     property can hold, which no referring document can agree with.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

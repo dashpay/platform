@@ -2141,8 +2141,9 @@ mod property_constraints_tests {
     /// A mutable, transferable and purchasable `offer` type with the integers
     /// [`set_valid_offer`] fills (a price of at most 10^9, which a sum tree
     /// takes) and a required `category`, whose trees keep the count of each
-    /// owner's offers (`byOwner`) and the total price of each category
-    /// (`byCategory`), declaring `rules`.
+    /// owner's offers (`byOwner`), of each owner's offers in each category
+    /// (`byOwnerCategory`) and the total price of each category (`byCategory`),
+    /// declaring `rules`.
     fn counted_offer_schema(rules: Value) -> Value {
         platform_value!({
             "type": "object",
@@ -2161,6 +2162,11 @@ mod property_constraints_tests {
                 {
                     "name": "byOwner",
                     "properties": [{ "$ownerId": "asc" }],
+                    "countable": "countable"
+                },
+                {
+                    "name": "byOwnerCategory",
+                    "properties": [{ "$ownerId": "asc" }, { "category": "asc" }],
                     "countable": "countable"
                 },
                 {
@@ -2459,6 +2465,155 @@ mod property_constraints_tests {
         );
         fixture.block_info = at_block(NOW + DAY_MS / 2, 30);
         fixture.set_price(1000).await;
+    }
+
+    /// `schema` with the document-type-level `entries` added.
+    fn with_keys<const N: usize>(mut schema: Value, entries: [(&str, Value); N]) -> Value {
+        let Value::Map(map) = &mut schema else {
+            panic!("a schema is an object");
+        };
+        for (key, value) in entries {
+            map.push((Value::Text(key.to_string()), value));
+        }
+        schema
+    }
+
+    /// `countOf` and `sumOf` over every document of the type, read from the
+    /// primary-key trees `documentsCountable` and `documentsSummable` keep: at
+    /// most two offers, whose prices total at most 250.
+    #[tokio::test]
+    async fn should_cap_the_whole_type_by_its_count_and_total() {
+        let mut fixture = OfferFixture::with_schema(with_keys(
+            counted_offer_schema(platform_value!({
+                "fewOffers": { "lessThanOrEqual": [{ "countOf": ["offer"] }, 2] },
+                "priceBudget": { "lessThanOrEqual": [{ "sumOf": ["offer", "price"] }, 250] }
+            })),
+            [
+                ("documentsCountable", Value::Bool(true)),
+                ("documentsSummable", Value::Text("price".to_string())),
+            ],
+        ));
+        for category in [1, 2] {
+            assert_matches!(
+                fixture.create(priced_in(category, 100)).await,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+        let result = fixture.create(priced_in(3, 10)).await;
+        expect_violated(result, "fewOffers", PropertyConstraintViolation::NotMet);
+        // 200 - 100 + 150, the count unchanged
+        assert_matches!(
+            fixture.replace(priced_in(2, 150)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        // 250 - 150 + 151
+        let result = fixture.replace(priced_in(2, 151)).await;
+        expect_violated(result, "priceBudget", PropertyConstraintViolation::NotMet);
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// `countOf` by two keys, `$ownerId` and `category`: one offer per owner and
+    /// category. The first read finds no branch for the owner yet, which reads
+    /// as 0, and so does a category the owner has no offer in.
+    #[tokio::test]
+    async fn should_count_by_two_keys_from_an_empty_branch() {
+        let mut fixture = OfferFixture::with_schema(counted_offer_schema(platform_value!({
+            "onePerCategory": {
+                "lessThanOrEqual": [
+                    {
+                        "countOf": [
+                            "offer",
+                            { "$ownerId": "$ownerId", "category": "category" }
+                        ]
+                    },
+                    1
+                ]
+            }
+        })));
+        assert_matches!(
+            fixture.create(priced_in(1, 100)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture.create(priced_in(1, 100)).await;
+        expect_violated(
+            result,
+            "onePerCategory",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert_matches!(
+            fixture.create(priced_in(2, 100)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_eq!(fixture.stored_offers().len(), 2);
+    }
+
+    /// `sumOf` over another type of the contract: an offer's price is at most
+    /// what the deposits of its category total.
+    #[tokio::test]
+    async fn should_total_a_property_of_another_type() {
+        let mut fixture = OfferFixture::with_schemas(
+            counted_offer_schema(platform_value!({
+                "coveredByDeposits": {
+                    "lessThanOrEqual": [
+                        "price",
+                        { "sumOf": ["deposit", "amount", { "category": "category" }] }
+                    ]
+                }
+            })),
+            [(
+                "deposit",
+                platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 100,
+                            "position": 0
+                        },
+                        "amount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 1000000000,
+                            "position": 1
+                        }
+                    },
+                    "required": ["category", "amount"],
+                    "indices": [{
+                        "name": "byCategory",
+                        "properties": [{ "category": "asc" }],
+                        "summable": "amount"
+                    }],
+                    "additionalProperties": false
+                }),
+            )],
+        );
+        let result = fixture.create(priced_in(1, 100)).await;
+        expect_violated(
+            result,
+            "coveredByDeposits",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert_matches!(
+            fixture
+                .create_of("deposit", |document| {
+                    document.set("category", Value::U64(1));
+                    document.set("amount", Value::U64(150));
+                })
+                .await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert_matches!(
+            fixture.create(priced_in(1, 100)).await,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let result = fixture.create(priced_in(2, 100)).await;
+        expect_violated(
+            result,
+            "coveredByDeposits",
+            PropertyConstraintViolation::NotMet,
+        );
+        assert_eq!(fixture.stored_offers().len(), 1);
     }
 
     /// The totals a rule reads leave out the other writes of its batch, which is

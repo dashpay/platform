@@ -75,10 +75,12 @@ internal object QueriesNative {
     /**
      * The `propertyConstraints` rules (protocol version 14) of [documentType]
      * as a JSON array in name order, each
-     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner", "readsSystem"}`:
+     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner", "readsSystem", "readsTotals"}`:
      * `kind` is `value`, `presence`, `text`, `identifier`, `length`, `count`
-     * or `elements`, and `readsSystem` names the system times and heights the
-     * rule reads (`$createdAt`, `$updatedAtBlockHeight`, ...).
+     * or `elements`, `readsSystem` names the system times and heights the
+     * rule reads (`$createdAt`, `$updatedAtBlockHeight`, ...), and
+     * `readsTotals` lists its `countOf` and `sumOf` totals as
+     * `{"kind", "documentType", "property" (a sumOf only), "filter"}`.
      * [serializedContract] is the contract's platform serialization (what
      * [dataContractFetchWithSerialization] returns), read by Rust at the SDK's
      * protocol version; no network call. Throws on error (unknown document
@@ -98,7 +100,8 @@ internal object QueriesNative {
      * for [dataContractGetPropertyConstraints]. The device clock stands in for
      * the block time the create records (`$createdAt`, `$updatedAt`,
      * `$transferredAt`), and a rule reading a block height is not judged, the
-     * height being unknown until the block. No network call. Throws on
+     * height being unknown until the block, nor is one reading a `countOf` or
+     * `sumOf` total, which only the platform reads from state. No network call. Throws on
      * error (as above, plus an owner id that is not 32 bytes or properties
      * that are not a JSON object).
      */
