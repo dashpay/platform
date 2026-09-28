@@ -170,13 +170,16 @@ pub struct DocumentTypeV2 {
     /// order they are checked (`propertyConstraints` keyword, protocol version
     /// 14): each a condition on the document's properties, a comparison of two
     /// integer expressions, of a string or an identifier property with
-    /// constants or with another property of its kind, an `in` list of values,
-    /// a `present` or `absent` test, or an `anyOf`, `allOf` or `not` of
+    /// constants or with another property of its kind, an `in` or `notIn` list
+    /// of values, a `startsWith` or `endsWith`, a `contains`, a `present` or
+    /// `absent` test, or an `anyOf`, `allOf`, `not` or `implies` of
     /// conditions. Empty on document types that declare none. The parser
     /// (`apply_property_constraints`) holds every property an operand reads to
     /// be an integer or a boolean, every property compared with strings or
-    /// identifiers to be of that kind, and every property a rule reads to be
-    /// neither transient nor inside a transient object.
+    /// identifiers to be of that kind, every property a size measures or a
+    /// `contains` looks in to be of the type it reads, every system time or
+    /// height a rule reads to be one the type records, and every property a
+    /// rule reads to be neither transient nor inside a transient object.
     pub(in crate::data_contract) property_constraints: BTreeMap<String, PropertyConstraint>,
     /// How many seconds after its creation (`$createdAt`) the platform deletes each
     /// document of the type (`ttl` keyword, protocol version 14), `None` when the

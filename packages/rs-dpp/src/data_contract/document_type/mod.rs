@@ -126,8 +126,9 @@ pub(crate) mod property_names {
     /// Doctype-level object of named rules, each a condition on the document's
     /// properties (a comparison of two integer expressions, of a string or an
     /// identifier property with constants or with another property of its
-    /// kind, an `in` list of values, a `present` or `absent` test, or an
-    /// `anyOf`, `allOf` or `not` of conditions) that every created or replaced
+    /// kind, an `in` or `notIn` list of values, a `startsWith` or `endsWith`,
+    /// a `contains`, a `present` or `absent` test, or an `anyOf`, `allOf`,
+    /// `not` or `implies` of conditions) that every created or replaced
     /// document must meet. Meta-schema v3+ (protocol version 14). See
     /// `parse_property_constraints` in `property_constraints`.
     pub const PROPERTY_CONSTRAINTS: &str = "propertyConstraints";

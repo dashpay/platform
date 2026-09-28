@@ -536,18 +536,16 @@ impl ConstraintExpression {
                     (left.evaluate(data, system)?, right.evaluate(data, system)?);
                 power(base, exponent)
             }
-            ConstraintExpression::Min(operands) | ConstraintExpression::Max(operands) => {
-                let mut values = Vec::with_capacity(operands.len());
-                for operand in operands {
-                    values.push(operand.evaluate(data, system)?);
-                }
-                let extreme = if matches!(self, ConstraintExpression::Min(_)) {
-                    values.into_iter().min()
-                } else {
-                    values.into_iter().max()
-                };
-                // A parsed min or max has two or more operands
-                extreme.ok_or(PropertyConstraintViolation::Overflow)
+            // Folded from their identities, as add and multiply are
+            ConstraintExpression::Min(operands) => {
+                operands.iter().try_fold(i128::MAX, |least, operand| {
+                    Ok(least.min(operand.evaluate(data, system)?))
+                })
+            }
+            ConstraintExpression::Max(operands) => {
+                operands.iter().try_fold(i128::MIN, |greatest, operand| {
+                    Ok(greatest.max(operand.evaluate(data, system)?))
+                })
             }
             ConstraintExpression::Abs(operand) => operand
                 .evaluate(data, system)?
@@ -913,8 +911,9 @@ impl PropertyConstraint {
     /// Evaluated left to right, and no further than the outcome needs: a
     /// comparison evaluates its left side, then its right one; `anyOf` checks
     /// its conditions in declared order and holds at the first that holds;
-    /// `allOf` fails at the first that fails; `not` inverts its condition; a
-    /// string comparison, `present` or `absent` never faults. The first fault
+    /// `allOf` fails at the first that fails; `not` inverts its condition;
+    /// `implies` evaluates its first condition, and its second only when the
+    /// first holds; a string comparison, `present` or `absent` never faults. The first fault
     /// an evaluated expression meets ([`ConstraintExpression::evaluate`]) is
     /// returned whatever the conditions left unevaluated would say, and `not`
     /// never turns a fault into a pass. So an earlier condition guards a later
@@ -1722,6 +1721,12 @@ fn parse_condition(
                      condition inside it says: declare that condition"
                 ));
             }
+            if single_entry(body).is_some_and(|(inner, _)| inner == NOT_IN) {
+                return Err(format!(
+                    "at {at}.{NOT_IN} is a notIn directly inside a not, which says what an in \
+                     of the same values says: declare that in"
+                ));
+            }
             PropertyConstraint::Not(Box::new(parse_condition(
                 body,
                 at,
@@ -1775,7 +1780,8 @@ fn parse_condition(
                 else {
                     return Err(format!(
                         "at {at}[0] must be the path of a string property or an ifAbsent giving \
-                         one a string default: an in over strings reads a string property"
+                         one a string default: {} over strings reads a string property",
+                        if key == NOT_IN { "a notIn" } else { "an in" }
                     ));
                 };
                 at.push_str("[1]");
@@ -2343,7 +2349,14 @@ fn parse_expression(
         ADD => ConstraintExpression::Add(operand_list(operands, at, depth + 1)?),
         MIN => ConstraintExpression::Min(operand_list(operands, at, depth + 1)?),
         MAX => ConstraintExpression::Max(operand_list(operands, at, depth + 1)?),
-        ABS => ConstraintExpression::Abs(Box::new(parse_expression(operands, at, depth + 1)?)),
+        ABS => {
+            if operands.as_array().is_some() {
+                return Err(format!(
+                    "at {at} must be one operand, not a list: abs takes a single operand"
+                ));
+            }
+            ConstraintExpression::Abs(Box::new(parse_expression(operands, at, depth + 1)?))
+        }
         MULTIPLY => ConstraintExpression::Multiply(operand_list(operands, at, depth + 1)?),
         SUBTRACT => {
             let (left, right) = operand_pair(operands, at, depth + 1)?;

@@ -83,7 +83,7 @@ A rule is a condition: a JSON object with exactly one key.
 | `not` | `condition` | Its one condition does not hold |
 | `implies` | `[c1, c2]` | The second condition holds whenever the first does. The second is evaluated only when the first holds, and a fault in either breaks the rule. The two may not be alike |
 
-Conditions nest: `{ "not": { "allOf": [{ "equal": ["price", 0] }, { "greaterThan": ["quantity", 10] }] } }` refuses a free order of more than 10. An `anyOf` or `allOf` may not list the same condition twice, nor hold one of its own kind directly (it says what one flat list says), and a `not` may not hold a `not` directly.
+Conditions nest: `{ "not": { "allOf": [{ "equal": ["price", 0] }, { "greaterThan": ["quantity", 10] }] } }` refuses a free order of more than 10. An `anyOf` or `allOf` may not list the same condition twice, nor hold one of its own kind directly (it says what one flat list says), and a `not` may not hold a `not` or a `notIn` directly.
 
 An `in` says what an `anyOf` of `equal` comparisons says, in far fewer nodes: `{ "in": ["fee", [0, 10, 25, 50]] }` is 6 nodes where the `anyOf` is 13.
 
@@ -197,7 +197,7 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 - the keyword is an object of one or more rules, named with 1 to 64 letters, digits or underscores;
 - every condition and every operator object has exactly one key;
 - a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings;
-- no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not`;
+- no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not` or a `notIn`;
 - a path matches `$ownerId`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, so `$revision` and other system properties are refused.
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):

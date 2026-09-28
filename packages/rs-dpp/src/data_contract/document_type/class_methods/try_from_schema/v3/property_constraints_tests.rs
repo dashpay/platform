@@ -1155,6 +1155,7 @@ fn should_check_the_grammar_with_the_meta_schema_and_the_parser() {
             }
         }),
         json!({ "rule": { "not": { "not": { "equal": ["price", 1] } } } }),
+        json!({ "rule": { "not": { "notIn": ["price", [1, 2]] } } }),
         json!({ "rule": { "anyOf": [{ "equal": ["price", 1] }, { "equal": ["price"] }] } }),
         json!({ "rule": { "present": 1 } }),
         json!({ "rule": { "absent": ["note"] } }),

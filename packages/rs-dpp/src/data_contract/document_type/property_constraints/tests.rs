@@ -2482,7 +2482,34 @@ fn should_not_judge_a_rule_reading_a_system_value_not_given() {
 /// transfer's time and heights, a price update those reading the update's.
 #[test]
 fn should_tell_which_writes_a_rule_answers_to() {
+    let banned = Identifier::new([9; 32]).to_string(Encoding::Base58);
+    let also_banned = Identifier::new([8; 32]).to_string(Encoding::Base58);
     for (rule, transfer, price_update) in [
+        // notIn and implies answer to what their conditions read
+        (
+            platform_value!({ "notIn": ["$ownerId", [banned.clone(), also_banned.clone()]] }),
+            true,
+            false,
+        ),
+        (
+            platform_value!({ "notIn": ["$updatedAtBlockHeight", [1, 2]] }),
+            false,
+            true,
+        ),
+        (
+            platform_value!({
+                "implies": [{ "present": "endsAt" }, { "lessThan": ["$transferredAt", "endsAt"] }]
+            }),
+            true,
+            false,
+        ),
+        (
+            platform_value!({
+                "implies": [{ "lessThan": ["$updatedAt", 5] }, { "present": "endsAt" }]
+            }),
+            false,
+            true,
+        ),
         (
             platform_value!({ "lessThan": ["$transferredAt", "endsAt"] }),
             true,
@@ -3043,7 +3070,7 @@ fn should_evaluate_min_max_and_abs() {
         ),
         (
             platform_value!({ "equal": [{ "abs": ["a"] }, 1] }),
-            "at equal[0].abs must be an integer, a property path or an object with one key",
+            "at equal[0].abs must be one operand, not a list: abs takes a single operand",
         ),
     ] {
         expect_refusal(platform_value!({ "rule": rule }), needle);
@@ -3207,6 +3234,17 @@ fn should_negate_an_in_with_not_in() {
         platform_value!({ "rule": { "notIn": ["fee"] } }),
         "at notIn must list an integer expression and the values it may not take",
     );
+    expect_refusal(
+        platform_value!({ "rule": { "notIn": [5, ["a", "b"]] } }),
+        "a notIn over strings reads a string property",
+    );
+    // A not over a notIn says what the in says, as a not over a not does
+    expect_refusal(
+        platform_value!({ "rule": { "not": { "notIn": ["fee", [13, 666]] } } }),
+        "at not.notIn is a notIn directly inside a not, which says what an in of the same \
+         values says: declare that in",
+    );
+    parse_rule_value(platform_value!({ "not": { "in": ["fee", [13, 666]] } }));
     expect_refusal(
         platform_value!({ "rule": { "notIn": ["fee", [1, 1]] } }),
         "at notIn[1]",
