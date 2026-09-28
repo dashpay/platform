@@ -404,13 +404,15 @@ private fun PropertyConstraintsFormSection(section: PropertyConstraintsSection) 
 
 /**
  * One `propertyConstraints` rule: its name, the rule as declared, what it
- * reads, and whether an owner change is judged against it too
+ * reads, the system times and heights it reads, and whether an owner change
+ * is judged against it too
  * (← `PropertyConstraintRowView` in DocumentTypeDetailsView.swift).
  */
 @Composable
 private fun PropertyConstraintRow(rule: DocumentPropertyConstraint) {
     val prettyRule = remember(rule) { rule.prettyRuleJson }
     val reads = remember(rule) { propertyConstraintReadsText(rule) }
+    val systemReads = remember(rule) { propertyConstraintSystemReadsText(rule) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -444,6 +446,19 @@ private fun PropertyConstraintRow(rule: DocumentPropertyConstraint) {
                 "Reads: $reads",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (systemReads != null) {
+            Text(
+                systemReads,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.testTag("documentType.propertyConstraint.${rule.name}.readsSystem"),
+            )
+            Text(
+                PROPERTY_CONSTRAINT_SYSTEM_READS_NOTE,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
             )
         }
         if (rule.readsOwner) {

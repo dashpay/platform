@@ -12,6 +12,7 @@ import org.dashfoundation.dashsdk.queries.PropertyConstraintViolation
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -46,6 +47,15 @@ class PropertyConstraintsTest {
             PropertyConstraintRead("sellerId", PropertyConstraintRead.Kind.Presence),
         ),
         readsOwner = true,
+    )
+
+    /** A rule reading system times and heights, one twice, as Rust lists them. */
+    private val timedRule = DocumentPropertyConstraint(
+        name = "settledAfterTransfer",
+        ruleJson = """{"greaterThan":["${'$'}updatedAt","${'$'}transferredAtCoreBlockHeight"]}""",
+        reads = emptyList(),
+        readsOwner = false,
+        readsSystem = listOf("${'$'}updatedAt", "${'$'}transferredAtCoreBlockHeight", "${'$'}updatedAt"),
     )
 
     private val violation = PropertyConstraintViolation(
@@ -208,6 +218,45 @@ class PropertyConstraintsTest {
     @Test
     fun `should list each read once with its kind`() {
         assertEquals("sellerId (presence), sellerId (identifier)", propertyConstraintReadsText(rule))
+        assertEquals(
+            "title (length), tags (count), labels (elements)",
+            propertyConstraintReadsText(
+                DocumentPropertyConstraint(
+                    name = "sizes",
+                    ruleJson = "{}",
+                    reads = listOf(
+                        PropertyConstraintRead("title", PropertyConstraintRead.Kind.Length),
+                        PropertyConstraintRead("tags", PropertyConstraintRead.Kind.Count),
+                        PropertyConstraintRead("labels", PropertyConstraintRead.Kind.Elements),
+                    ),
+                    readsOwner = false,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `should list each system value a rule reads once`() {
+        assertEquals(
+            "Reads ${'$'}updatedAt, ${'$'}transferredAtCoreBlockHeight",
+            propertyConstraintSystemReadsText(timedRule),
+        )
+    }
+
+    @Test
+    fun `should show no system line for a rule reading none`() {
+        assertNull(propertyConstraintSystemReadsText(rule))
+    }
+
+    /** The note under a rule reading a system value; the SwiftExampleApp shows the same text. */
+    @Test
+    fun `should say which writes the update and transfer times answer to`() {
+        assertEquals(
+            "A price update is judged against the rules reading ${'$'}updatedAt or its block " +
+                "heights, and a transfer or purchase against those reading ${'$'}transferredAt or " +
+                "its block heights.",
+            PROPERTY_CONSTRAINT_SYSTEM_READS_NOTE,
+        )
     }
 
     @Test

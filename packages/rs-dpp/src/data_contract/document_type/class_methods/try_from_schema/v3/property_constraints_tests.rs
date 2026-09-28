@@ -1758,3 +1758,93 @@ fn should_hold_contains_to_arrays_of_the_kind_looked_for() {
         );
     }
 }
+
+/// `startsWith` and `endsWith` test string properties, on both paths; a
+/// constant tested against a property with an `enum` must start or end one of
+/// its values; a side that is no stored string property is refused.
+#[test]
+fn should_test_string_properties_for_prefixes_and_suffixes() {
+    let rules = json!({
+        "refNote": { "startsWith": ["note", { "const": "ref:" }] },
+        "tagSuffix": { "endsWith": ["note", "meta.tag"] },
+        "openish": { "startsWith": ["state", { "const": "op" }] },
+        "closedish": { "endsWith": ["state", { "const": "sed" }] }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        let constraints = document_type.property_constraints();
+        assert_eq!(
+            constraints["tagSuffix"].property_reads(),
+            [
+                ("note", PropertyRead::Text),
+                ("meta.tag", PropertyRead::Text)
+            ]
+        );
+        assert_eq!(
+            constraints["refNote"].property_reads(),
+            [("note", PropertyRead::Text)]
+        );
+    }
+
+    for (rule, needle) in [
+        (
+            json!({ "startsWith": ["state", { "const": "x" }] }),
+            "rule \"rule\" tests whether \"state\" starts with \"x\", which none of its enum \
+             values does",
+        ),
+        (
+            json!({ "not": { "endsWith": ["state", { "const": "xyz" }] } }),
+            "rule \"rule\" tests whether \"state\" ends with \"xyz\", which none of its enum \
+             values does",
+        ),
+        (
+            json!({ "startsWith": ["price", { "const": "1" }] }),
+            "compares \"price\" with a string, but it has type",
+        ),
+        (
+            json!({ "endsWith": ["buyerId", { "const": "a" }] }),
+            "compares \"buyerId\" with a string, but it has type identifier, not string",
+        ),
+        (
+            json!({ "startsWith": ["note", "missing"] }),
+            "compares \"missing\" with a string, but it is not a string property",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(json!({ "rule": rule.clone() }), full_validation),
+                needle,
+            );
+        }
+    }
+
+    // A transient string is never stored, so no rule may test one
+    let schema = order_schema(
+        Some(json!({ "rule": { "startsWith": ["note", { "const": "ref:" }] } })),
+        Some("note"),
+    );
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                schema_value(schema.clone()),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "compares \"note\", which is transient or inside a transient object",
+        );
+    }
+
+    // The meta-schema checks the shape when registering
+    for rules in [
+        json!({ "rule": { "startsWith": ["note"] } }),
+        json!({ "rule": { "endsWith": "note" } }),
+        json!({ "rule": { "startsWith": ["note", { "const": "a" }, "meta.tag"] } }),
+    ] {
+        let registered = parse_order(rules.clone(), true);
+        assert!(
+            registered.as_ref().is_err_and(is_json_schema_error),
+            "{rules}: the meta-schema should refuse it, got {registered:?}"
+        );
+    }
+}

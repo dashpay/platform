@@ -2,7 +2,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::apply_required_since::apply_required_since;
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::property_constraints::{
-    parse_property_constraints, ElementKind, EqualityKind, PropertyRead,
+    parse_property_constraints, AffixPosition, ElementKind, EqualityKind, PropertyRead,
 };
 use crate::data_contract::document_type::reference_lookup::{
     MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
@@ -2457,6 +2457,22 @@ fn apply_property_constraints_v0(
                 )));
             }
         }
+        // A constant a string property must start or end with, when the property
+        // declares an `enum`, must fit one of its values, or the test never holds
+        for (path, affix, position) in constraint.text_affixes() {
+            if !enum_any(&document_type.schema, path, |member| {
+                position.holds(member, affix)
+            })? {
+                let tests = match position {
+                    AffixPosition::Start => "starts with",
+                    AffixPosition::End => "ends with",
+                };
+                return Err(structure_error(format!(
+                    "rule \"{name}\" tests whether \"{path}\" {tests} \"{affix}\", which none \
+                     of its enum values does"
+                )));
+            }
+        }
         for (path, default) in constraint.text_defaults() {
             if !enum_admits(&document_type.schema, path, default)? {
                 return Err(structure_error(format!(
@@ -2500,6 +2516,17 @@ fn apply_property_constraints_v0(
 /// type's, may hold `value`: always, unless it declares an `enum` that does not
 /// list it.
 fn enum_admits(schema: &Value, path: &str, value: &str) -> Result<bool, DataContractError> {
+    enum_any(schema, path, |member| member == value)
+}
+
+/// Whether the string property at the dotted `path` of `schema` (or the
+/// elements of the typed array there) may hold a value `admits`: always,
+/// unless it declares an `enum`, one of whose values must then pass.
+fn enum_any(
+    schema: &Value,
+    path: &str,
+    admits: impl Fn(&str) -> bool,
+) -> Result<bool, DataContractError> {
     let Some(property_schema) = schema_at_path(schema, path)? else {
         return Ok(true);
     };
@@ -2511,7 +2538,9 @@ fn enum_admits(schema: &Value, path: &str, value: &str) -> Result<bool, DataCont
     let Some(Value::Array(members)) = property_schema.get(property_names::ENUM) else {
         return Ok(true);
     };
-    Ok(members.iter().any(|member| member.as_text() == Some(value)))
+    Ok(members
+        .iter()
+        .any(|member| member.as_text().is_some_and(&admits)))
 }
 
 /// The schema of the property at the dotted `path` of `schema`, a document

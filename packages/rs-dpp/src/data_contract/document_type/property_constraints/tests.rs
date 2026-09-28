@@ -1590,8 +1590,8 @@ fn should_parse_present_and_absent() {
         (
             platform_value!({ "exists": "discount" }),
             "rule \"rule\" names \"exists\", which is not a comparison (equal, notEqual, \
-             lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual), in, contains, present, \
-             absent, anyOf, allOf or not",
+             lessThan, lessThanOrEqual, greaterThan, greaterThanOrEqual), in, startsWith, \
+             endsWith, contains, present, absent, anyOf, allOf or not",
         ),
     ] {
         expect_refusal(platform_value!({ "rule": condition }), needle);
@@ -2827,5 +2827,155 @@ fn should_look_for_a_value_among_the_elements() {
     assert_eq!(
         per_unit.violation(&data(&[("bonus", Value::U64(0))]), &none),
         Some(PropertyConstraintViolation::DivisionByZero)
+    );
+}
+
+// ── startsWith and endsWith ─────────────────────────────────────────────
+
+/// Each side is a const or a string property, with or without a default;
+/// a string constant looked for in a property is listed for the enum check.
+#[test]
+fn should_parse_starts_with_and_ends_with() {
+    for (key, position) in [
+        ("startsWith", AffixPosition::Start),
+        ("endsWith", AffixPosition::End),
+    ] {
+        assert_eq!(position.wire_name(), key);
+        let rule = parse_rule_value(platform_value!({ key: ["status", { "const": "op" }] }));
+        assert_eq!(
+            rule,
+            PropertyConstraint::TextAffix {
+                position,
+                text: TextOperand::Property(TextProperty {
+                    path: "status".to_string(),
+                    if_absent: None,
+                }),
+                affix: TextOperand::Constant("op".to_string()),
+            },
+            "{key}"
+        );
+        assert_eq!(rule.node_count(), 3);
+        assert_eq!(rule.property_reads(), [("status", PropertyRead::Text)]);
+        assert_eq!(rule.text_affixes(), [("status", "op", position)]);
+        // A prefix or a suffix is not a whole value: no equality enum check
+        assert!(rule.text_constants().is_empty());
+
+        let both = parse_rule_value(platform_value!({
+            key: [{ "ifAbsent": ["to", "x"] }, "from"]
+        }));
+        assert_eq!(
+            both.property_reads(),
+            [("to", PropertyRead::Text), ("from", PropertyRead::Text)]
+        );
+        assert_eq!(both.text_defaults(), [("to", "x")]);
+        assert!(both.text_affixes().is_empty());
+
+        // A constant tested for a property's affix is no enum typo to check
+        let constant_text = parse_rule_value(platform_value!({
+            key: [{ "const": "https://example.org" }, "status"]
+        }));
+        assert!(constant_text.text_affixes().is_empty());
+    }
+}
+
+#[test]
+fn should_refuse_a_malformed_starts_with() {
+    for (rule, needle) in [
+        (
+            platform_value!({ "startsWith": ["status"] }),
+            "at startsWith must list two strings: the one tested, then the one it must start with",
+        ),
+        (
+            platform_value!({ "endsWith": ["status", "from", "to"] }),
+            "at endsWith must list two strings: the one tested, then the one it must end with",
+        ),
+        (
+            platform_value!({ "startsWith": [{ "const": "a" }, { "const": "b" }] }),
+            "rule \"rule\" reads no property",
+        ),
+        (
+            platform_value!({ "endsWith": ["status", "status"] }),
+            "at endsWith tests \"status\" against itself",
+        ),
+        (
+            platform_value!({ "startsWith": ["status", 5] }),
+            "at startsWith[1] must be the path of a string property",
+        ),
+        (
+            platform_value!({ "startsWith": ["status", { "const": 5 }] }),
+            "at startsWith[1].const must be a string",
+        ),
+    ] {
+        expect_refusal(platform_value!({ "rule": rule }), needle);
+    }
+}
+
+/// Byte for byte, with no case folding: a string starts and ends with the
+/// empty one and with itself; a property left out without a default takes no
+/// string, and the condition does not hold for it.
+#[test]
+fn should_test_whether_a_string_starts_or_ends_with_another() {
+    let none = DocumentSystemValues::default();
+    let https =
+        parse_rule_value(platform_value!({ "startsWith": ["status", { "const": "https://" }] }));
+    let domain =
+        parse_rule_value(platform_value!({ "endsWith": ["status", { "const": ".dash" }] }));
+    for (status, starts, ends) in [
+        (Some("https://pay.dash"), true, true),
+        (Some("HTTPS://pay.dash"), false, true),
+        (Some("http://pay.dash/"), false, false),
+        (Some("https://"), true, false),
+        (Some(""), false, false),
+        (None, false, false),
+    ] {
+        let values = match status {
+            Some(status) => data(&[("status", Value::from(status))]),
+            None => data(&[]),
+        };
+        assert_eq!(https.holds(&values, &none), Ok(starts), "{status:?}");
+        assert_eq!(domain.holds(&values, &none), Ok(ends), "{status:?}");
+    }
+
+    // Multibyte text compares byte for byte, which for valid strings is
+    // character for character
+    let accented =
+        parse_rule_value(platform_value!({ "startsWith": ["status", { "const": "é" }] }));
+    assert_eq!(
+        accented.holds(&data(&[("status", Value::from("été"))]), &none),
+        Ok(true)
+    );
+    assert_eq!(
+        accented.holds(&data(&[("status", Value::from("e"))]), &none),
+        Ok(false)
+    );
+
+    // Two properties: a reply's path starts with its thread's
+    let nested = parse_rule_value(platform_value!({ "startsWith": ["to", "from"] }));
+    let paths = |to: &str, from: Option<&str>| {
+        let mut entries = vec![("to", Value::from(to))];
+        if let Some(from) = from {
+            entries.push(("from", Value::from(from)));
+        }
+        data(&entries)
+    };
+    assert_eq!(nested.holds(&paths("a/b/c", Some("a/b")), &none), Ok(true));
+    assert_eq!(nested.holds(&paths("a/c", Some("a/b")), &none), Ok(false));
+    assert_eq!(nested.holds(&paths("a/b", None), &none), Ok(false));
+    // A default fills a property left out
+    let defaulted = parse_rule_value(platform_value!({
+        "startsWith": ["to", { "ifAbsent": ["from", ""] }]
+    }));
+    assert_eq!(defaulted.holds(&paths("a/b", None), &none), Ok(true));
+    // `not` refuses a prefix
+    let not_draft = parse_rule_value(platform_value!({
+        "not": { "startsWith": ["status", { "const": "draft:" }] }
+    }));
+    assert_eq!(
+        not_draft.violation(&data(&[("status", Value::from("draft:1"))]), &none),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    assert_eq!(
+        not_draft.violation(&data(&[("status", Value::from("final"))]), &none),
+        None
     );
 }

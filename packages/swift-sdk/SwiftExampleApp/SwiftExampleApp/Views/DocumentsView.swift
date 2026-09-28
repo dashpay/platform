@@ -1834,9 +1834,10 @@ struct CreateDocumentView: View {
     }
 
     /// The first propertyConstraints rule the document would break, or `nil`
-    /// when it meets them all or has none. A check that cannot run (no SDK,
-    /// no stored contract serialization) blocks nothing: consensus judges the
-    /// document either way.
+    /// when it meets every rule judged or has none (the device clock stands in
+    /// for the block time, and a rule reading a block height is not judged).
+    /// A check that cannot run (no SDK, no stored contract serialization)
+    /// blocks nothing: consensus judges the document either way.
     private func propertyConstraintViolation(
         of docType: PersistentDocumentType,
         propertiesJSON: String,

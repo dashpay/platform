@@ -1068,9 +1068,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     declaring `refersTo` included) or of `$ownerId`, the document's owner,
 ///     likewise, with base58 identifier constants or another identifier operand
 ///     and no default, an identifier the document leaves out equalling none;
-///     `contains`, whether a typed array property holds an element equal to an
-///     integer expression, a string or an identifier operand (a constant, a
-///     property, or `$ownerId`), as its elements are, an array the document
+///     `startsWith` or `endsWith`, whether a string (a constant or a string
+///     property, at least one a property) starts or ends with another, byte for
+///     byte; `contains`, whether a typed array property holds an element equal
+///     to an integer expression, a string or an identifier operand (a constant,
+///     a property, or `$ownerId`), as its elements are, an array the document
 ///     leaves out holding nothing; `present` or `absent` naming a property of
 ///     any type, whether the document holds it (the one way to tell a property
 ///     left out from one set to 0); `anyOf` or `allOf` over two or more
@@ -1086,21 +1088,23 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     a pass, so an earlier condition guards a later one. The parser checks
 ///     that every path an operand reads names an integer or boolean property,
 ///     every path a `length` or `byteLength` measures a string property, every
-///     path a `count` counts an array or byte array property, every array a
-///     `contains` looks in a typed array of the kind it looks for (a string
-///     constant in the elements' `enum` when they declare one), every system
-///     time or height a rule reads one the type lists in `required` (none on an
-///     indexOnly type), every path compared with identifiers an identifier
-///     property, every path compared with strings a string property (whose
-///     `enum`, if it declares one, lists every constant it is compared with),
-///     and every path `present` or `absent` tests a property of any type, none
-///     transient nor inside a transient object; that every comparison and `in`
-///     reads a property or the owner; that nothing is compared with itself;
-///     that strings and identifiers are only compared for equality, and never
-///     with each other; that no `in` lists a value twice; that an `anyOf` or
-///     `allOf` holds none directly of its own kind and a `not` no `not`; that
-///     an indexOnly type, whose deletes carry no owner, reads no `$ownerId`;
-///     and that no condition or operand nests deeper than
+///     path a `count` counts an array or byte array property, every string
+///     `startsWith` or `endsWith` tests a string property (a constant tested
+///     against one with an `enum` starting or ending one of its values), every
+///     array a `contains` looks in a typed array of the kind it looks for (a
+///     string constant in the elements' `enum` when they declare one), every
+///     system time or height a rule reads one the type lists in `required`
+///     (none on an indexOnly type), every path compared with identifiers an
+///     identifier property, every path compared with strings a string property
+///     (whose `enum`, if it declares one, lists every constant it is compared
+///     with), and every path `present` or `absent` tests a property of any
+///     type, none transient nor inside a transient object; that every
+///     comparison and `in` reads a property or the owner; that nothing is
+///     compared with itself; that strings and identifiers are only compared for
+///     equality, and never with each other; that no `in` lists a value twice;
+///     that an `anyOf` or `allOf` holds none directly of its own kind and a
+///     `not` no `not`; that an indexOnly type, whose deletes carry no owner,
+///     reads no `$ownerId`; and that no condition or operand nests deeper than
 ///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse. Under full
 ///     validation it holds the limits `SystemLimits::max_property_constraints`
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every

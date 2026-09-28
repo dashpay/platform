@@ -75,7 +75,10 @@ internal object QueriesNative {
     /**
      * The `propertyConstraints` rules (protocol version 14) of [documentType]
      * as a JSON array in name order, each
-     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner"}`.
+     * `{"name", "rule", "reads": [{"path", "kind"}], "readsOwner", "readsSystem"}`:
+     * `kind` is `value`, `presence`, `text`, `identifier`, `length`, `count`
+     * or `elements`, and `readsSystem` names the system times and heights the
+     * rule reads (`$createdAt`, `$updatedAtBlockHeight`, ...).
      * [serializedContract] is the contract's platform serialization (what
      * [dataContractFetchWithSerialization] returns), read by Rust at the SDK's
      * protocol version; no network call. Throws on error (unknown document
@@ -92,7 +95,10 @@ internal object QueriesNative {
      * as `{"rule", "violation", "message"}`, or the JSON text `null` when it
      * meets every rule. [propertiesJson] is what the create would send and
      * [ownerId] the 32-byte owner `$ownerId` reads; [serializedContract] as
-     * for [dataContractGetPropertyConstraints]. No network call. Throws on
+     * for [dataContractGetPropertyConstraints]. The device clock stands in for
+     * the block time the create records (`$createdAt`, `$updatedAt`,
+     * `$transferredAt`), and a rule reading a block height is not judged, the
+     * height being unknown until the block. No network call. Throws on
      * error (as above, plus an owner id that is not 32 bytes or properties
      * that are not a JSON object).
      */

@@ -4,9 +4,10 @@
 //! expressions, a test of whether an integer expression takes one of listed
 //! values (`in`), a comparison of a string or an identifier property with
 //! constants (`equal`, `notEqual`, `in`) or with another property of its kind
-//! (`equal`, `notEqual`), a test of whether an array property holds a value
-//! (`contains`), a test of whether the document holds a property (`present`,
-//! `absent`), or `anyOf`, `allOf` or `not` over conditions.
+//! (`equal`, `notEqual`), a test of whether a string starts or ends with
+//! another (`startsWith`, `endsWith`), a test of whether an array property
+//! holds a value (`contains`), a test of whether the document holds a property
+//! (`present`, `absent`), or `anyOf`, `allOf` or `not` over conditions.
 //!
 //! ```json
 //! "propertyConstraints": {
@@ -101,6 +102,8 @@ const PRESENT: &str = "present";
 const ABSENT: &str = "absent";
 const IN: &str = "in";
 const CONTAINS: &str = "contains";
+const STARTS_WITH: &str = "startsWith";
+const ENDS_WITH: &str = "endsWith";
 const LENGTH: &str = "length";
 const BYTE_LENGTH: &str = "byteLength";
 const COUNT: &str = "count";
@@ -677,6 +680,57 @@ impl TextProperty {
     }
 }
 
+/// Where `startsWith` and `endsWith` look for their second string in their
+/// first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AffixPosition {
+    /// `startsWith`: at the start.
+    Start,
+    /// `endsWith`: at the end.
+    End,
+}
+
+impl AffixPosition {
+    /// The condition key declaring it.
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            AffixPosition::Start => STARTS_WITH,
+            AffixPosition::End => ENDS_WITH,
+        }
+    }
+
+    /// Whether `text` starts or ends with `affix`, byte for byte: no case
+    /// folding or normalization, and every string starts and ends with the
+    /// empty one.
+    pub fn holds(self, text: &str, affix: &str) -> bool {
+        match self {
+            AffixPosition::Start => text.starts_with(affix),
+            AffixPosition::End => text.ends_with(affix),
+        }
+    }
+}
+
+/// A side of a `startsWith` or `endsWith`: a string constant, or a string
+/// property with or without an `ifAbsent` default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextOperand {
+    /// A `{ "const": string }`.
+    Constant(String),
+    /// A string property.
+    Property(TextProperty),
+}
+
+impl TextOperand {
+    /// The string it takes for a document whose properties are `data`, `None`
+    /// for a property left out without a default.
+    fn value<'a>(&'a self, data: &'a Value) -> Option<&'a str> {
+        match self {
+            TextOperand::Constant(value) => Some(value),
+            TextOperand::Property(property) => property.value(data),
+        }
+    }
+}
+
 /// What a `contains` looks for among an array property's elements, of the
 /// kind of its elements.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -760,6 +814,16 @@ pub enum PropertyConstraint {
     IdentifierIn {
         path: String,
         values: BTreeSet<Identifier>,
+    },
+    /// `startsWith` or `endsWith`: the string `text` takes starts or ends, as
+    /// `position` says, with the one `affix` takes,
+    /// `{ "startsWith": ["url", { "const": "https://" }] }`. A string property
+    /// the document leaves out without a default takes no string, and the
+    /// condition does not hold for it.
+    TextAffix {
+        position: AffixPosition,
+        text: TextOperand,
+        affix: TextOperand,
     },
     /// `contains`: the typed array property at the dotted path `array` holds
     /// an element equal to `needle`, `{ "contains": ["tags", { "const": "sale" }] }`.
@@ -866,6 +930,14 @@ impl PropertyConstraint {
                 Ok(identifier_value(data, owner_id, path)
                     .is_some_and(|value| values.contains(&value)))
             }
+            PropertyConstraint::TextAffix {
+                position,
+                text,
+                affix,
+            } => Ok(matches!(
+                (text.value(data), affix.value(data)),
+                (Some(text), Some(affix)) if position.holds(text, affix)
+            )),
             PropertyConstraint::Contains { array, needle } => {
                 let elements = match data.get_optional_value_at_path(array) {
                     Ok(Some(Value::Array(elements))) => elements.as_slice(),
@@ -964,6 +1036,7 @@ impl PropertyConstraint {
             // The property and the constant, as a comparison of a path with a value
             PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::TextAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. } => 2,
             PropertyConstraint::TextIn { values, .. } => 1 + values.len(),
@@ -1026,6 +1099,7 @@ impl PropertyConstraint {
             | PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::TextAffix { .. }
             | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => false,
@@ -1074,6 +1148,7 @@ impl PropertyConstraint {
             PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::TextAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
@@ -1105,6 +1180,33 @@ impl PropertyConstraint {
             .collect()
     }
 
+    /// Every string constant a `startsWith` or `endsWith` looks for in a string
+    /// property, with the property's path and where it is looked for, in
+    /// declared order: a property that declares an `enum` must have a value
+    /// the constant could start or end, or the condition would never hold.
+    pub fn text_affixes(&self) -> Vec<(&str, &str, AffixPosition)> {
+        let mut affixes = Vec::new();
+        self.collect_text_affixes(&mut affixes);
+        affixes
+    }
+
+    fn collect_text_affixes<'a>(&'a self, affixes: &mut Vec<(&'a str, &'a str, AffixPosition)>) {
+        match self {
+            PropertyConstraint::TextAffix {
+                position,
+                text: TextOperand::Property(property),
+                affix: TextOperand::Constant(value),
+            } => affixes.push((&property.path, value, *position)),
+            PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
+                for condition in conditions {
+                    condition.collect_text_affixes(affixes);
+                }
+            }
+            PropertyConstraint::Not(condition) => condition.collect_text_affixes(affixes),
+            _ => {}
+        }
+    }
+
     /// Every string property the rule's string comparisons read, in declared
     /// order.
     fn text_properties(&self) -> Vec<&TextProperty> {
@@ -1127,6 +1229,13 @@ impl PropertyConstraint {
                 }
             }
             PropertyConstraint::Not(condition) => condition.collect_text_properties(properties),
+            PropertyConstraint::TextAffix { text, affix, .. } => {
+                for side in [text, affix] {
+                    if let TextOperand::Property(property) = side {
+                        properties.push(property);
+                    }
+                }
+            }
             PropertyConstraint::Contains {
                 needle: ContainsNeedle::TextProperty(property),
                 ..
@@ -1166,6 +1275,7 @@ impl PropertyConstraint {
             PropertyConstraint::Compare { .. }
             | PropertyConstraint::In { .. }
             | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::TextAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
@@ -1197,6 +1307,7 @@ impl PropertyConstraint {
             | PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::TextAffix { .. }
             | PropertyConstraint::IdentifierCompare { .. }
             | PropertyConstraint::IdentifierCompareProperties { .. }
             | PropertyConstraint::IdentifierIn { .. }
@@ -1258,6 +1369,13 @@ impl PropertyConstraint {
                 for path in [left, right] {
                     if path != OWNER_ID {
                         reads.push((path, PropertyRead::Identifier));
+                    }
+                }
+            }
+            PropertyConstraint::TextAffix { text, affix, .. } => {
+                for side in [text, affix] {
+                    if let TextOperand::Property(property) = side {
+                        reads.push((&property.path, PropertyRead::Text));
                     }
                 }
             }
@@ -1402,7 +1520,8 @@ fn single_entry(value: &Value) -> Option<(&str, &Value)> {
 /// Every key a condition object may hold, for the errors.
 fn condition_keys() -> String {
     format!(
-        "a comparison ({}), in, contains, present, absent, anyOf, allOf or not",
+        "a comparison ({}), in, startsWith, endsWith, contains, present, absent, anyOf, allOf \
+         or not",
         ConstraintComparison::ALL
             .map(ConstraintComparison::wire_name)
             .join(", ")
@@ -1537,6 +1656,45 @@ fn parse_condition(
                 let values = in_values(values, at)?;
                 at.truncate(base);
                 PropertyConstraint::In { operand, values }
+            }
+        }
+        STARTS_WITH | ENDS_WITH => {
+            let Some([text, affix]) = body.as_array().map(Vec::as_slice) else {
+                return Err(format!(
+                    "at {at} must list two strings: the one tested, then the one it must {} with",
+                    if key == STARTS_WITH { "start" } else { "end" }
+                ));
+            };
+            let text = text_operand(text, &format!("{at}[0]"))?;
+            let affix = text_operand(affix, &format!("{at}[1]"))?;
+            match (&text, &affix) {
+                (TextOperand::Constant(_), TextOperand::Constant(_)) => {
+                    at.truncate(parent);
+                    return Err(format!(
+                        "{}reads no property, so it would hold for every document or for none",
+                        located(at)
+                    ));
+                }
+                (TextOperand::Property(text), TextOperand::Property(affix))
+                    if text.path == affix.path =>
+                {
+                    return Err(format!(
+                        "at {at} tests \"{}\" against itself, so it would hold for every \
+                         document or for none",
+                        text.path
+                    ));
+                }
+                _ => {}
+            }
+            let position = if key == STARTS_WITH {
+                AffixPosition::Start
+            } else {
+                AffixPosition::End
+            };
+            PropertyConstraint::TextAffix {
+                position,
+                text,
+                affix,
             }
         }
         CONTAINS => {
@@ -1912,6 +2070,15 @@ fn text_side(value: &Value, at: &str) -> Result<TextSide, String> {
         "at {at} must be the path of a string property, an ifAbsent giving one a string \
          default, or a const: strings are compared with strings"
     ))
+}
+
+/// A side at `at` (`startsWith[1]`) of a `startsWith` or `endsWith`: a `const`
+/// string or a string property, as [`text_side`] reads them.
+fn text_operand(value: &Value, at: &str) -> Result<TextOperand, String> {
+    Ok(match text_side(value, at)? {
+        TextSide::Constant(value) => TextOperand::Constant(value),
+        TextSide::Property(property) => TextOperand::Property(property),
+    })
 }
 
 /// The comparison at `at` (`equal`) of `left` and `right`, a comparison of
