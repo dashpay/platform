@@ -501,7 +501,7 @@ fn should_match_a_document_by_the_values_its_filter_takes() {
     let owner = Identifier::from([3; 32]);
     let other = Identifier::from([4; 32]);
     let document = |category: u64, status: &str| {
-        Value::from(BTreeMap::from([
+        Value::from(std::collections::BTreeMap::from([
             ("price".to_string(), Value::U64(40)),
             ("category".to_string(), Value::U64(category)),
             ("status".to_string(), Value::Text(status.to_string())),
@@ -642,12 +642,12 @@ fn should_match_a_document_by_the_values_its_filter_takes() {
     );
 }
 
-/// A string key whose `enum` sits behind a `$ref` into the contract's `$defs`
-/// still holds a constant to it: the contract-level check follows `$ref`s as
-/// the rest of the parse does.
+/// A filter key whose schema is a `$ref` to one of the contract's `$defs` is
+/// held to the definition's `enum`, as one declared inline is: a constant the
+/// enum lists registers, and a misspelt one is refused.
 #[test]
-fn should_hold_a_constant_to_the_enum_a_key_refers_to() {
-    let contract = |status: &str| {
+fn should_hold_a_constant_to_the_enum_of_a_key_declared_by_reference() {
+    let counting = |status: &str| {
         let contract = json!({
             "$formatVersion": "1",
             "id": Identifier::from([7; 32]).to_string(Encoding::Base58),
@@ -659,6 +659,7 @@ fn should_hold_a_constant_to_the_enum_a_key_refers_to() {
             "documentSchemas": {
                 "listing": {
                     "type": "object",
+                    "documentsCountable": true,
                     "properties": {
                         "status": { "$ref": "#/$defs/status", "position": 0 }
                     },
@@ -668,20 +669,27 @@ fn should_hold_a_constant_to_the_enum_a_key_refers_to() {
                         "properties": [{ "$ownerId": "asc" }, { "status": "asc" }],
                         "countable": "countable"
                     }],
+                    "additionalProperties": false
+                },
+                "seller": {
+                    "type": "object",
+                    "properties": {
+                        "note": { "type": "string", "maxLength": 20, "position": 0 }
+                    },
+                    "additionalProperties": false,
                     "propertyConstraints": {
-                        "fewOpen": {
-                            "lessThan": [
+                        "rule": {
+                            "lessThanOrEqual": [
                                 {
                                     "countOf": [
                                         "listing",
                                         { "$ownerId": "$ownerId", "status": { "const": status } }
                                     ]
                                 },
-                                5
+                                10
                             ]
                         }
-                    },
-                    "additionalProperties": false
+                    }
                 }
             }
         });
@@ -692,9 +700,9 @@ fn should_hold_a_constant_to_the_enum_a_key_refers_to() {
         )
     };
 
-    contract("open").expect("an enum value registers");
+    counting("open").expect("a constant the referenced enum lists registers");
     expect_structure_error(
-        contract("opne"),
+        counting("opne"),
         "with \"status\" at \"opne\", which is not one of its enum values",
     );
 }
@@ -791,7 +799,7 @@ fn should_refuse_to_skip_a_rule_whose_total_consensus_did_not_read() {
     )
     .expect("the contract registers");
     let listing = contract.document_type_for_name("listing").expect("listing");
-    let data = Value::from(BTreeMap::from([
+    let data = Value::from(std::collections::BTreeMap::from([
         ("price".to_string(), Value::U64(40)),
         ("category".to_string(), Value::U64(1)),
         ("status".to_string(), Value::Text("open".to_string())),

@@ -895,6 +895,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         block_info,
                         user_fee_increase,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
+                        platform_version,
                     )?;
 
                 execution_context
@@ -928,7 +929,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             DocumentTransition::IndexOnlyDelete(document_index_only_delete_transition) => {
                 let (batched_action, fee_result) = DocumentIndexOnlyDeleteTransitionAction::try_from_document_borrowed_index_only_delete_transition_with_contract_lookup(document_index_only_delete_transition, owner_id, user_fee_increase, |_identifier| {
                     Ok(data_contract_fetch_info.clone())
-                })?;
+                }, platform_version)?;
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));

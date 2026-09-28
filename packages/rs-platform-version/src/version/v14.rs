@@ -1383,6 +1383,49 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     against the property's `enum` and an `encryptedFor` key id's bounds; it
 ///     refused every such contract with a decoding error before.
 ///
+/// 53. **Properties the platform generates (`generatedFrom`)**: the property
+///     keyword (meta-schema v3, `apply_generated_from` 0, `GeneratedFrom` on
+///     `DocumentProperty`) names a built-in `function` and its `params`,
+///     properties of the same document type, as
+///     `{ "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] }`.
+///     System functions are named under `sys.`, leaving other names to
+///     functions a contract may bring later. The `sys.stringTransformations`
+///     functions take one string and change ASCII characters only, keeping
+///     every other character, without Unicode tables: `lowercase`,
+///     `uppercase`, `capitalize`, `camelCase`, `snakeCase`, and
+///     `homographSafeASCII`, which lowercases, then maps `o` to `0` and `i`
+///     and `l` to `1`, DPNS's label normalization over ASCII. The parser
+///     checks at registration and update that `params` holds as many
+///     properties as the function takes, each another string property that
+///     is not generated itself, that neither the property nor a param is
+///     transient or inside a transient object, and that every param sits
+///     inside every object holding the property; a changed declaration is an
+///     incompatible schema change, and `validate_update` 1 refuses a property
+///     an update adds over params that all already existed
+///     (`DocumentTypeUpdateError`, 40212); meta-schema v3 refuses the keyword
+///     beside `$ref`, whose definition would replace it.
+///     `fill_generated_properties` (0) writes a declared property a document
+///     leaves out, from its params, in the action transformers of document
+///     create, replace and index-only delete, before the contest resolution
+///     and every check read the data, in `Document::try_from_create_transition`
+///     and `try_from_replace_transition`, and in
+///     `index_only_transition_entry_path_query`, the builder the prover and
+///     the verifier share, with which proofs are built and checked. The client
+///     transition builders, the SDK's contest fund lookup and the JS and FFI
+///     property-constraint pre-checks call `regenerate_generated_properties`
+///     (same slot) instead, which replaces a value the document holds and
+///     removes it when a param is absent, so a transition built from a
+///     fetched and edited document carries the value of its new params and
+///     its contest is detected from it.
+///     `DataContract::validate_document_properties` 0 calls
+///     `validate_generated_from_properties` (`validate_generated_from` 0)
+///     after the schema and `maxBytes`, and refuses a supplied value that is
+///     not what the function generates, one without its params, or a document
+///     repeating a key on the way to the property or a param, with
+///     `DocumentPropertyNotGeneratedError` (10424). Every call site was
+///     extended in place and is inert before this version, where the three
+///     slots are `None` and the meta-schemas refuse the keyword.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

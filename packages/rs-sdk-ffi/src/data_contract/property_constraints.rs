@@ -37,7 +37,9 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
-use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dash_sdk::dpp::data_contract::document_type::methods::{
+    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+};
 use dash_sdk::dpp::data_contract::document_type::property_constraints::{
     DocumentSystemValues, PropertyRead,
 };
@@ -349,16 +351,27 @@ fn system_values_for_create(owner_id: Identifier) -> DocumentSystemValues {
 }
 
 /// The first rule of `document_type`'s `propertyConstraints` that `document`
-/// breaks, judged as consensus judges a create (its properties, its owner for
-/// `$ownerId`, and the system times [`system_values_for_create`] estimates),
-/// as the JSON `dash_sdk_data_contract_check_property_constraints` returns:
-/// JSON `null` when it meets them all.
+/// breaks, judged as consensus judges a create (its properties with every
+/// `generatedFrom` property generated from its params, as the transition
+/// builders send them, its owner for `$ownerId`, and the system times
+/// [`system_values_for_create`] estimates), as the JSON
+/// `dash_sdk_data_contract_check_property_constraints` returns: JSON `null`
+/// when it meets them all.
 fn property_constraint_violation_json(
     document_type: DocumentTypeRef<'_>,
     document: &Document,
     platform_version: &PlatformVersion,
 ) -> Result<serde_json::Value, DashSDKError> {
-    let data = Value::from(document.properties().clone());
+    let mut properties = document.properties().clone();
+    document_type
+        .regenerate_generated_properties(&mut properties, platform_version)
+        .map_err(|e| {
+            DashSDKError::new(
+                DashSDKErrorCode::ProtocolError,
+                format!("Failed to generate the generatedFrom properties: {}", e),
+            )
+        })?;
+    let data = Value::from(properties);
     let system = system_values_for_create(document.owner_id());
     let result = document_type
         .validate_property_constraints(&data, &system, platform_version)
@@ -1100,5 +1113,66 @@ mod tests {
         assert_eq!(ended["rule"], "openEndedSoldByOwner");
         assert_eq!(ended["violation"], "NotMet");
         assert_eq!(ending_sold_by_other, serde_json::Value::Null);
+    }
+
+    /// A `handle` type whose `normalizedLabel` is generated from `label`, with a
+    /// rule reserving the normalized name `dash`.
+    fn handle_contract_bytes() -> Vec<u8> {
+        let platform_version = PlatformVersion::latest();
+        let documents = platform_value!({
+            "handle": {
+                "type": "object",
+                "properties": {
+                    "label": { "type": "string", "maxLength": 63, "position": 0 },
+                    "normalizedLabel": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "position": 1,
+                        "generatedFrom": {
+                            "function": "sys.stringTransformations.homographSafeASCII",
+                            "params": ["label"]
+                        }
+                    }
+                },
+                "additionalProperties": false,
+                "propertyConstraints": {
+                    "notReserved": { "notEqual": ["normalizedLabel", { "const": "dash" }] }
+                }
+            }
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory for the protocol version")
+            .create_with_value_config(Identifier::new(OWNER), 1, documents, None, None)
+            .expect("handle contract")
+            .data_contract()
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialized contract")
+    }
+
+    /// The pre-check judges the rules on the document the transition builders
+    /// send: a `generatedFrom` property left out, or stale, is generated from
+    /// its params first, as consensus sees it.
+    #[test]
+    fn should_judge_a_generated_property_as_the_builders_send_it() {
+        let sdk = sdk_handle(PlatformVersion::latest());
+        let contract = handle_contract_bytes();
+
+        let left_out = check(sdk, &contract, "handle", json!({ "label": "DASH" }), OWNER);
+        let stale = check(
+            sdk,
+            &contract,
+            "handle",
+            json!({ "label": "DASH", "normalizedLabel": "b0b" }),
+            OWNER,
+        );
+        let other = check(sdk, &contract, "handle", json!({ "label": "Bob" }), OWNER);
+        destroy_mock_sdk_handle(sdk);
+
+        for result in [left_out, stale] {
+            let result = result.expect("checked");
+            assert_eq!(result["rule"], "notReserved");
+            assert_eq!(result["violation"], "NotMet");
+        }
+        assert_eq!(other.expect("checked"), serde_json::Value::Null);
     }
 }

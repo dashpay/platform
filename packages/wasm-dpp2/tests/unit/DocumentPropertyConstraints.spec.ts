@@ -606,4 +606,23 @@ describe('DataContract: propertyConstraints (v14)', () => {
       expect(() => contract.checkDocumentPropertyConstraints(unknownType)).to.throw(/not found/);
     });
   });
+
+  describe('a malformed rule', () => {
+    it('should throw with the consensus code Platform would refuse the contract with', () => {
+      const malformed = {
+        ...schemas,
+        offer: { ...schemas.offer, propertyConstraints: { rule: { equal: ['price'] } } },
+      };
+
+      try {
+        buildContract(malformed);
+        expect.fail('expected to throw');
+      } catch (e) {
+        expect(e).to.be.instanceOf(wasm.WasmDppError);
+        expect(e.message).to.match(/must list exactly two operands/);
+        // InvalidContractStructure
+        expect(e.code).to.equal(10231);
+      }
+    });
+  });
 });

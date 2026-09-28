@@ -57,7 +57,8 @@ use crate::consensus::ConsensusError;
 use super::common;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
-    validate_list_element_sources, validate_reference_lookup_sources,
+    validate_generated_from_declarations, validate_list_element_sources,
+    validate_reference_lookup_sources,
 };
 
 mod ranked_prefix_overlap;
@@ -542,6 +543,9 @@ fn parse_generation_3(
     // A schema reached through a `$ref` is read from the contract's `$defs`, as
     // the core parse read it.
     validate_encrypted_for_declarations(&v2, schema_defs, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // The same for the string property each `generatedFrom` declaration names.
+    validate_generated_from_declarations(&v2, name)
         .map_err(consensus_or_protocol_data_contract_error)?;
     // The same for the properties a `refersTo` lookup reads to assemble its key,
     // the lookup of the `ownerRefersTo` declaration included.
@@ -1086,6 +1090,8 @@ mod immutable_tests;
 #[cfg(test)]
 mod index_only_tests;
 
+#[cfg(all(test, feature = "validation"))]
+mod generated_from_tests;
 #[cfg(test)]
 mod keep_history_tests;
 #[cfg(all(test, feature = "validation"))]

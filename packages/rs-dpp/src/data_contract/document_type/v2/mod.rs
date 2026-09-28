@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::property::{DocumentProperty, GeneratedFrom};
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
@@ -61,6 +61,11 @@ pub struct DocumentTypeV2 {
     /// (protocol version 14), in schema order, so a document write finds
     /// them without walking every property. Empty on every pre-PV14 contract.
     pub(in crate::data_contract) distinct_from_fields: Vec<String>,
+    /// The dotted path of every property that declares `generatedFrom`
+    /// (protocol version 14) with its declaration, in schema order, so a
+    /// document write finds them without walking every property. Empty on
+    /// every pre-PV14 contract.
+    pub(in crate::data_contract) generated_from_fields: Vec<(String, GeneratedFrom)>,
     /// On an indexOnly type, the top-level properties stored in every entry's
     /// value after the row commitment (the `entryPayload` keyword), in name
     /// order. Empty on every other type and on every pre-PV14 contract.
@@ -233,9 +238,21 @@ fn distinct_from_fields_of(
         .collect()
 }
 
+/// The properties that declare `generatedFrom`, with their declarations, in the
+/// flattened map's (schema) order.
+fn generated_from_fields_of(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+) -> Vec<(String, GeneratedFrom)> {
+    flattened_properties
+        .iter()
+        .filter_map(|(path, property)| Some((path.clone(), property.generated_from.clone()?)))
+        .collect()
+}
+
 impl From<DocumentTypeV0> for DocumentTypeV2 {
     fn from(value: DocumentTypeV0) -> Self {
         let distinct_from_fields = distinct_from_fields_of(&value.flattened_properties);
+        let generated_from_fields = generated_from_fields_of(&value.flattened_properties);
         DocumentTypeV2 {
             name: value.name,
             schema: value.schema,
@@ -250,6 +267,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
             distinct_from_fields,
+            generated_from_fields,
             entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,
@@ -288,6 +306,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
 impl From<DocumentTypeV1> for DocumentTypeV2 {
     fn from(value: DocumentTypeV1) -> Self {
         let distinct_from_fields = distinct_from_fields_of(&value.flattened_properties);
+        let generated_from_fields = generated_from_fields_of(&value.flattened_properties);
         DocumentTypeV2 {
             name: value.name,
             schema: value.schema,
@@ -302,6 +321,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             immutable_fields: BTreeSet::new(),
             immutable_fields_allow_setting: BTreeSet::new(),
             distinct_from_fields,
+            generated_from_fields,
             entry_payload: BTreeSet::new(),
             documents_keep_history: value.documents_keep_history,
             documents_keep_transfer_history: value.documents_keep_transfer_history,

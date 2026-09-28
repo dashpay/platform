@@ -201,6 +201,7 @@ impl DocumentTypeV0 {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             }
         };
 
@@ -596,6 +597,7 @@ impl DocumentTypeV0 {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
             }
         };
 

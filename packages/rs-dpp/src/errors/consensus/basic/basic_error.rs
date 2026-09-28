@@ -55,10 +55,11 @@ use crate::consensus::basic::document::{
     ContestedDocumentsTemporarilyNotAllowedError, DataContractNotPresentError,
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
     DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError,
-    DocumentPropertyNotDistinctError, DocumentTransitionsAreAbsentError,
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    DocumentPropertyNotDistinctError, DocumentPropertyNotGeneratedError,
+    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
+    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
+    InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
     MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
     MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
@@ -835,6 +836,11 @@ pub enum BasicError {
     InvalidTokenDistributionEpochIntervalTooShortError(
         InvalidTokenDistributionEpochIntervalTooShortError,
     ),
+
+    // A `generatedFrom` string property that is not what its function generates from its params
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentPropertyNotGeneratedError(DocumentPropertyNotGeneratedError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -987,6 +993,19 @@ mod tests {
                 )
             ),
             199
+        );
+        // A `generatedFrom` property that is not what its function generates (protocol
+        // version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentPropertyNotGeneratedError(
+                DocumentPropertyNotGeneratedError::new(
+                    "domain".to_string(),
+                    "normalizedLabel".to_string(),
+                    "sys.stringTransformations.homographSafeASCII".to_string(),
+                    vec!["label".to_string()],
+                )
+            )),
+            200
         );
     }
 
