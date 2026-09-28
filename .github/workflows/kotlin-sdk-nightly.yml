@@ -15,8 +15,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: v4.1-dev
+        # Scheduled runs test the default branch; dispatches test their selected
+        # ref. Do not silently compile an old release branch with newer CI.
 
       - name: Free disk space
         run: |
@@ -90,7 +90,9 @@ jobs:
           working-directory: packages/kotlin-sdk
           # -Ptestnet=true lifts the TestnetGuard so the live-network
           # queries (identity fetch, DPNS resolve, contract fetch) run.
-          script: ./gradlew :sdk:connectedDebugAndroidTest -Ptestnet=true --stacktrace
+          # Use the same secure-lockscreen setup as daytime instrumented tests.
+          # Keystore authentication-required keys cannot be created otherwise.
+          script: bash ../../.github/scripts/kotlin-instrumented-tests.sh -Ptestnet=true
 
       - name: Upload reports on failure
         if: failure()
