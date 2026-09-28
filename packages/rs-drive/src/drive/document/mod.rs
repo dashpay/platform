@@ -34,6 +34,10 @@ mod insert;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod insert_contested;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
+pub use insert_contested::{
+    ContestedDocumentVotePollAwardContender, ContestedDocumentVotePollAwardOutcome,
+};
+#[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 pub mod query;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod update;

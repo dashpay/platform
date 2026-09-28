@@ -1115,7 +1115,7 @@ pub(in crate::execution) mod tests {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn create_dpns_name_contest_on_identities(
+    pub(in crate::execution) async fn create_dpns_name_contest_on_identities(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         identity_1: &(Identity, SimpleSigner, IdentityPublicKey),
         identity_2: &(Identity, SimpleSigner, IdentityPublicKey),
@@ -3520,13 +3520,24 @@ pub(in crate::execution) mod tests {
 
             // Confirm it is the expected decode-failure variant from the encoding
             // flip, not some unrelated error. Matching the variant (rather than the
-            // Debug string) keeps the test robust to message/format changes.
+            // Debug string) keeps the test robust to message/format changes. The
+            // contender bytes are decoded inside Drive from protocol version 17
+            // (the native award operation), so the same protocol error arrives
+            // wrapped in Drive's error there and bare from the older resolver.
+            let error = result.unwrap_err();
+            let protocol_error = match &error {
+                crate::error::Error::Protocol(protocol_error) => protocol_error,
+                crate::error::Error::Drive(drive::error::Error::Protocol(protocol_error)) => {
+                    protocol_error.as_ref()
+                }
+                other => panic!("expected a protocol decode error, got {other:?}"),
+            };
             assert_matches!(
-                result.unwrap_err(),
-                crate::error::Error::Protocol(dpp::ProtocolError::DataContractError(
+                protocol_error,
+                dpp::ProtocolError::DataContractError(
                     dpp::data_contract::errors::DataContractError::CorruptedSerialization(_)
                         | dpp::data_contract::errors::DataContractError::DecodingContractError(_)
-                ))
+                )
             );
         }
 

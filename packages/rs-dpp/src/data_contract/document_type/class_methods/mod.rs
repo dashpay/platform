@@ -11,6 +11,8 @@ mod create_document_types_from_document_schemas;
 mod should_use_creator_id;
 mod system_properties;
 mod try_from_schema;
+#[cfg(feature = "validation")]
+mod validate_contested_index_parameters;
 
 #[inline]
 pub(crate) fn consensus_or_protocol_data_contract_error(
