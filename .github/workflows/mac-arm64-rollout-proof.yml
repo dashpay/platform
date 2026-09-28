@@ -1,0 +1,21 @@
+name: Mac ARM64 rollout proof
+on:
+  push:
+    branches: [ci/mac-arm64-rollout-proof-20260928]
+    paths: [.github/workflows/mac-arm64-rollout-proof.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: read
+  actions: read
+jobs:
+  rust:
+    name: Full Rust workspace on Mac ARM64
+    uses: ./.github/workflows/tests-rs-workspace.yml
+    with:
+      runner-architecture: ARM64
+      validate-arm64-image: true
+      doctests-changed: true
+      shielded-changed: true
+      coverage: false
