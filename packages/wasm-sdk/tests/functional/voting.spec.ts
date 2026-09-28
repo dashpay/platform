@@ -52,4 +52,30 @@ describe('Voting', function describeVoting() {
       });
     });
   });
+
+  describe('getVotePollsByEndDate()', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    it('should accept millisecond timestamps given as numbers', async () => {
+      const now = Date.now();
+
+      const entries = await client.getVotePollsByEndDate({
+        startTimeMs: now - 30 * DAY_MS,
+        endTimeMs: now + 30 * DAY_MS,
+        limit: 10,
+      });
+
+      expect(entries).to.be.an('array');
+    });
+
+    it('should accept millisecond timestamps given as bigints', async () => {
+      const entries = await client.getVotePollsByEndDate({
+        startTimeMs: BigInt(Date.now()),
+        startTimeIncluded: false,
+        limit: 10,
+      });
+
+      expect(entries).to.be.an('array');
+    });
+  });
 });
