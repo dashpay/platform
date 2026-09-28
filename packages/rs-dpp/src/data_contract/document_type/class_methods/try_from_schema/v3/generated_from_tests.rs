@@ -612,6 +612,32 @@ fn should_fill_nothing_before_protocol_version_14() {
     assert_eq!(properties, data(platform_value!({ "label": "Bob" })));
 }
 
+/// The data as the platform stores it: generated properties written into a copy,
+/// and the data borrowed as it is on a type that declares none.
+#[test]
+fn should_read_the_data_as_stored() {
+    use std::borrow::Cow;
+
+    let data = data(platform_value!({ "label": "Bob" }));
+    let generating = parse(schema());
+    let stored = generating
+        .data_as_stored(&data, PlatformVersion::latest())
+        .expect("the fill runs");
+    assert!(matches!(stored, Cow::Owned(_)));
+    assert_eq!(
+        stored.get("normalizedLabel"),
+        Some(&Value::Text("b0b".to_string()))
+    );
+
+    let plain = parse(schema_with(string_property(1)));
+    assert!(matches!(
+        plain
+            .data_as_stored(&data, PlatformVersion::latest())
+            .expect("nothing to fill"),
+        Cow::Borrowed(borrowed) if borrowed == &data
+    ));
+}
+
 /// The client-side twin sets every property to what its current params generate,
 /// replacing a stale value, and removes one whose param is absent.
 #[test]

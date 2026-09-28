@@ -1105,8 +1105,7 @@ pub fn index_only_transition_entry_path_query(
     owner_id: Identifier,
     platform_version: &PlatformVersion,
 ) -> Result<grovedb::PathQuery, Error> {
-    let mut data = data.clone();
-    document_type.fill_generated_properties(&mut data, platform_version)?;
+    let data = document_type.data_as_stored(data, platform_version)?;
     let index = index_only_proof_index(&document_type)?;
     let (path, member_key) = index_only_entry_path_and_key_from_values(
         contract_id,
