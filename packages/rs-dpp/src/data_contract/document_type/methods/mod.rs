@@ -35,6 +35,11 @@ use platform_value::btreemap_extensions::{
 use platform_value::{Identifier, Value};
 
 pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
+    /// The dotted paths of the properties that declare `normalizedFrom` (protocol
+    /// version 14), in schema order, so a document write visits only them. Empty on
+    /// generations that predate the keyword.
+    fn normalized_from_fields(&self) -> &[String];
+
     fn unique_id_for_storage(&self) -> [u8; 32] {
         rand::random::<[u8; 32]>()
     }
@@ -270,8 +275,12 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     }
 
     fn fill_normalized_properties_v0(&self, data: &mut BTreeMap<String, Value>) {
-        for (path, property) in self.flattened_properties() {
-            let Some(normalized_from) = &property.normalized_from else {
+        for path in self.normalized_from_fields() {
+            let Some(normalized_from) = self
+                .flattened_properties()
+                .get(path)
+                .and_then(|property| property.normalized_from.as_ref())
+            else {
                 continue;
             };
             // Supplied, or unreadable (an intermediate that is not a map, which the schema
@@ -335,8 +344,12 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         &self,
         properties: &Value,
     ) -> SimpleConsensusValidationResult {
-        for (path, property) in self.flattened_properties() {
-            let Some(normalized_from) = &property.normalized_from else {
+        for path in self.normalized_from_fields() {
+            let Some(normalized_from) = self
+                .flattened_properties()
+                .get(path)
+                .and_then(|property| property.normalized_from.as_ref())
+            else {
                 continue;
             };
             // A lookup error (an intermediate that is not a map) reads as absent: the schema
@@ -349,7 +362,9 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
             let normalized = match (value, source) {
                 (None, None) => true,
                 (Some(value), Some(source)) => match (value.as_text(), source.as_text()) {
-                    (Some(value), Some(source)) => value == normalized_from.normalize(source),
+                    (Some(value), Some(source)) => {
+                        normalized_from.is_normalized_form(source, value)
+                    }
                     _ => true,
                 },
                 (Some(_), None) | (None, Some(_)) => false,

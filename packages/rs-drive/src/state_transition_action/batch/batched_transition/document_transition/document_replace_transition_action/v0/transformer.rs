@@ -75,7 +75,10 @@ impl DocumentReplaceTransitionActionV0 {
         // Added in place at protocol version 14, inert before it: `fill_normalized_properties`
         // is `None` there and leaves the data as sent. From 14 on, every `normalizedFrom`
         // property the transition leaves out is computed from its source here, before the
-        // changed fields below and every later check read the data.
+        // changed fields below and every later check read the data. `document_type()`
+        // cannot fail here at any version: building the base action above already resolved
+        // the document type (its token cost is read from it), and the
+        // `document_type_field_is_required` calls below resolve it the same way.
         let mut data = data.clone();
         base.document_type()?
             .fill_normalized_properties(&mut data, platform_version)?;

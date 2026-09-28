@@ -27,6 +27,7 @@ use crate::consensus::state::data_contract::document_type_update_error::Document
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV1Getters, DocumentTypeV2Getters,
 };
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -69,6 +70,15 @@ impl DocumentTypeRef<'_> {
         // Validate that the type keeps its time to live (the keyword arrives with
         // protocol version 14, the only version selecting this generation)
         let result = self.validate_documents_ttl_unchanged(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        // Validate that a property the update adds is normalized only from a source the
+        // update adds too (the keyword arrives with protocol version 14, the only version
+        // selecting this generation)
+        let result = self.validate_normalized_from_additions(new_document_type);
 
         if !result.is_valid() {
             return Ok(result);
@@ -403,6 +413,45 @@ impl DocumentTypeRef<'_> {
     /// It runs before the schema compatibility differ, which only freezes the key's text,
     /// so a real change gets this error. A document type added by an update declares `ttl`
     /// freely.
+    /// A property this update adds may declare `normalizedFrom` only over a source the
+    /// update adds too. Documents stored before the update never had the property
+    /// computed, so a new normalized property over an existing source would be missing
+    /// from every stored document that holds the source, for good on a type whose
+    /// documents are never replaced. A property that already existed keeps its
+    /// declaration unchanged: the schema compatibility differ freezes the keyword.
+    fn validate_normalized_from_additions(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        let old_properties = self.flattened_properties();
+        for path in new_document_type.normalized_from_fields() {
+            if old_properties.contains_key(path) {
+                continue;
+            }
+            let Some(source) = new_document_type
+                .flattened_properties()
+                .get(path)
+                .and_then(|property| property.normalized_from.as_ref())
+                .map(|normalized_from| normalized_from.property.as_str())
+            else {
+                continue;
+            };
+            if old_properties.contains_key(source) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentTypeUpdateError::new(
+                        self.data_contract_id(),
+                        self.name(),
+                        format!(
+                            "document type can not add property \"{path}\" normalized from existing property \"{source}\": documents stored before the update hold \"{source}\" without it"
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
+        SimpleConsensusValidationResult::new()
+    }
+
     fn validate_documents_ttl_unchanged(
         &self,
         new_document_type: DocumentTypeRef,
@@ -931,6 +980,81 @@ mod tests {
             .as_ref()
             .validate_update(
                 make_document_type(Some(86400)).as_ref(),
+                2,
+                platform_version,
+            )
+            .expect("validate_update should not error");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn should_refuse_adding_a_normalized_property_over_an_existing_source() {
+        let platform_version = PlatformVersion::latest();
+        let data_contract_id = Identifier::random();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        let make_document_type = |properties: Value| {
+            let schema = platform_value!({
+                "type": "object",
+                "properties": properties,
+                "additionalProperties": false,
+            });
+            DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                "handle",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("document type should parse")
+        };
+        let string = |position: u64| platform_value!({ "type": "string", "maxLength": 32, "position": position });
+        let normalized = |position: u64, source: &str| {
+            platform_value!({
+                "type": "string", "maxLength": 32, "position": position,
+                "normalizedFrom": { "property": source, "transform": "homographSafeASCII" }
+            })
+        };
+        let old = make_document_type(platform_value!({ "label": string(0) }));
+
+        // Stored handles hold a label but would never hold its normalized form
+        let result = old
+            .as_ref()
+            .validate_update(
+                make_document_type(platform_value!({
+                    "label": string(0),
+                    "normalizedLabel": normalized(1, "label")
+                }))
+                .as_ref(),
+                2,
+                platform_version,
+            )
+            .expect("validate_update should not error");
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                if e.additional_message().contains(
+                    "can not add property \"normalizedLabel\" normalized from existing property \"label\""
+                )
+        );
+
+        // A new property normalized from a new source holds for every stored document:
+        // neither is there
+        let result = old
+            .as_ref()
+            .validate_update(
+                make_document_type(platform_value!({
+                    "label": string(0),
+                    "nickname": string(1),
+                    "normalizedNickname": normalized(2, "nickname")
+                }))
+                .as_ref(),
                 2,
                 platform_version,
             )

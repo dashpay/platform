@@ -17,13 +17,17 @@ mod normalized_from_tests {
     use dpp::consensus::state::state_error::StateError;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
-    use dpp::identity::{Identity, IdentityPublicKey};
+    use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
     use dpp::platform_value::platform_value;
     use dpp::prelude::Identifier;
     use dpp::prelude::{DataContract, IdentityNonce};
     use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
     use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-    use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
+    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
+    use dpp::state_transition::batch_transition::batched_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+    use dpp::state_transition::batch_transition::batched_transition::{
+        BatchedTransitionMutRef, BatchedTransitionRef,
+    };
     use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
@@ -86,11 +90,76 @@ mod normalized_from_tests {
         })
     }
 
+    /// An indexOnly `entry` type: a `name` and its `normalizedName`, both
+    /// stored only in the one index, whose terminal is the owner.
+    fn entry_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "indices": [
+                {
+                    "name": "byNormalizedName",
+                    "properties": [{ "normalizedName": "asc" }, { "name": "asc" }],
+                    "terminal": "$ownerId"
+                }
+            ],
+            "properties": {
+                "name": { "type": "string", "pattern": "^[a-zA-Z0-9-]{1,32}$", "maxLength": 32, "position": 0 },
+                "normalizedName": {
+                    "type": "string",
+                    "pattern": "^[a-hj-km-np-z0-9-]{1,32}$",
+                    "maxLength": 32,
+                    "normalizedFrom": { "property": "name", "transform": "homographSafeASCII" },
+                    "position": 1
+                }
+            },
+            "required": ["name", "normalizedName"],
+            "additionalProperties": false
+        })
+    }
+
+    /// An immutable `name` type whose unique index over `normalizedLabel` is
+    /// contested, as DPNS's `domain` is: a short normalized label opens a
+    /// masternode vote.
+    fn name_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "documentsMutable": false,
+            "indices": [
+                {
+                    "name": "byNormalizedLabel",
+                    "properties": [{ "normalizedLabel": "asc" }],
+                    "unique": true,
+                    "contested": {
+                        "fieldMatches": [
+                            { "field": "normalizedLabel", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
+                        ],
+                        "resolution": 0
+                    }
+                }
+            ],
+            "properties": {
+                "label": { "type": "string", "pattern": "^[a-zA-Z0-9-]{3,32}$", "maxLength": 32, "position": 0 },
+                "normalizedLabel": {
+                    "type": "string",
+                    "pattern": "^[a-hj-km-np-z0-9-]{3,32}$",
+                    "maxLength": 32,
+                    "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" },
+                    "position": 1
+                }
+            },
+            "required": ["label", "normalizedLabel"],
+            "additionalProperties": false
+        })
+    }
+
     fn text(value: &str) -> Value {
         Value::Text(value.to_string())
     }
 
-    /// One identity and one contract whose `handle` type is the one above.
+    /// One identity and one contract holding the `handle`, `entry` and `name`
+    /// types above.
     struct HandleFixture {
         platform: TempPlatform<MockCoreRPCLike>,
         signer: SimpleSigner,
@@ -118,15 +187,15 @@ mod normalized_from_tests {
                 platform_version.protocol_version,
             )
             .data_contract_owned();
-            contract
-                .set_document_schema(
-                    "handle",
-                    handle_schema(),
-                    true,
-                    &mut Vec::new(),
-                    platform_version,
-                )
-                .expect("expected to add the handle document type");
+            for (name, schema) in [
+                ("handle", handle_schema()),
+                ("entry", entry_schema()),
+                ("name", name_schema()),
+            ] {
+                contract
+                    .set_document_schema(name, schema, true, &mut Vec::new(), platform_version)
+                    .unwrap_or_else(|e| panic!("expected to add the {name} document type: {e}"));
+            }
             platform
                 .drive
                 .apply_contract(
@@ -149,16 +218,26 @@ mod normalized_from_tests {
             }
         }
 
-        /// A create transition for a handle holding exactly `properties`.
-        async fn create_transition(&mut self, properties: Value, seed: u64) -> StateTransition {
+        /// A create transition for a document of `type_name` holding `properties`,
+        /// and the document. The builder computes a normalized property the
+        /// document leaves out, as the platform would; `as_given` sends the
+        /// document exactly as `properties` says instead, so what the test sees is
+        /// the platform's own computation.
+        async fn create_transition_of(
+            &mut self,
+            type_name: &str,
+            properties: Value,
+            seed: u64,
+            as_given: bool,
+        ) -> (Document, StateTransition) {
             let platform_version = PlatformVersion::latest();
-            let handle_type = self
+            let document_type = self
                 .contract
-                .document_type_for_name("handle")
-                .expect("expected the handle document type");
+                .document_type_for_name(type_name)
+                .expect("expected the document type");
             let mut rng = StdRng::seed_from_u64(seed);
             let entropy = Bytes32::random_with_rng(&mut rng);
-            let mut handle = handle_type
+            let mut document = document_type
                 .random_document_with_identifier_and_entropy(
                     &mut rng,
                     self.identity.id(),
@@ -167,17 +246,18 @@ mod normalized_from_tests {
                     DocumentFieldFillSize::AnyDocumentFillSize,
                     platform_version,
                 )
-                .expect("expected a random handle");
-            handle
-                .set_id_for_creation(handle_type, &entropy.0, self.next_nonce, platform_version)
+                .expect("expected a random document");
+            document
+                .set_id_for_creation(document_type, &entropy.0, self.next_nonce, platform_version)
                 .expect("expected to set the document id");
-            *handle.properties_mut() = properties
+            let properties = properties
                 .into_btree_string_map()
                 .expect("the properties are a map");
+            *document.properties_mut() = properties.clone();
 
             let transition = BatchTransition::new_document_creation_transition_from_document(
-                handle,
-                handle_type,
+                document.clone(),
+                document_type,
                 entropy.0,
                 &self.key,
                 self.next_nonce,
@@ -190,6 +270,49 @@ mod normalized_from_tests {
             .await
             .expect("expected the create transition");
             self.next_nonce += 1;
+            let transition = if as_given {
+                self.send_as_given(transition, properties).await
+            } else {
+                transition
+            };
+            (document, transition)
+        }
+
+        /// A create transition for a handle holding exactly `properties`.
+        async fn create_transition(&mut self, properties: Value, seed: u64) -> StateTransition {
+            self.create_transition_of("handle", properties, seed, true)
+                .await
+                .1
+        }
+
+        /// `transition` with its document's data set to exactly `data`, signed
+        /// again.
+        async fn send_as_given(
+            &self,
+            mut transition: StateTransition,
+            data: BTreeMap<String, Value>,
+        ) -> StateTransition {
+            {
+                let StateTransition::Batch(batch) = &mut transition else {
+                    panic!("expected a batch transition");
+                };
+                let Some(BatchedTransitionMutRef::Document(document_transition)) =
+                    batch.first_transition_mut()
+                else {
+                    panic!("expected a document transition");
+                };
+                *document_transition
+                    .data_mut()
+                    .expect("the document transition carries data") = data;
+            }
+            transition
+                .sign_external(
+                    &self.key,
+                    &self.signer,
+                    Some(|_, _| Ok(SecurityLevel::HIGH)),
+                )
+                .await
+                .expect("expected to sign the transition again");
             transition
         }
 
@@ -198,12 +321,13 @@ mod normalized_from_tests {
             self.process(&transition)
         }
 
-        /// Replaces `stored` with `mutate` applied and the revision bumped.
-        async fn replace(
+        /// A replace transition for `stored` with `mutate` applied and the revision
+        /// bumped, sent as given.
+        async fn replace_transition(
             &mut self,
             stored: &Document,
             mutate: impl FnOnce(&mut Document),
-        ) -> StateTransitionExecutionResult {
+        ) -> StateTransition {
             let platform_version = PlatformVersion::latest();
             let mut replacement = stored.clone();
             mutate(&mut replacement);
@@ -214,6 +338,7 @@ mod normalized_from_tests {
                 .contract
                 .document_type_for_name("handle")
                 .expect("expected the handle document type");
+            let properties = replacement.properties().clone();
             let transition = BatchTransition::new_document_replacement_transition_from_document(
                 replacement,
                 handle_type,
@@ -228,7 +353,41 @@ mod normalized_from_tests {
             .await
             .expect("expected the replace transition");
             self.next_nonce += 1;
+            self.send_as_given(transition, properties).await
+        }
+
+        /// Replaces `stored` with `mutate` applied and the revision bumped.
+        async fn replace(
+            &mut self,
+            stored: &Document,
+            mutate: impl FnOnce(&mut Document),
+        ) -> StateTransitionExecutionResult {
+            let transition = self.replace_transition(stored, mutate).await;
             self.process(&transition)
+        }
+
+        /// Proves the committed state `transition` wrote and verifies the proof as
+        /// a client holding the contract does.
+        fn verify_proof(&self, transition: &StateTransition) -> StateTransitionProofResult {
+            let platform_version = PlatformVersion::latest();
+            let proof = self
+                .platform
+                .drive
+                .prove_state_transition(transition, None, platform_version)
+                .expect("expected to prove the state transition")
+                .into_data()
+                .expect("expected proof bytes");
+            let known_contracts: BTreeMap<Identifier, DataContract> =
+                BTreeMap::from([(self.contract.id(), self.contract.clone())]);
+            let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+                transition,
+                &BlockInfo::default(),
+                &proof,
+                &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
+                platform_version,
+            )
+            .expect("expected the proof to verify");
+            outcome.into_result()
         }
 
         fn process(&self, transition: &StateTransition) -> StateTransitionExecutionResult {
@@ -441,32 +600,15 @@ mod normalized_from_tests {
     /// transition wrote, computed property included, and the proof verifies.
     #[tokio::test]
     async fn should_verify_the_proof_of_a_create_that_left_the_normalized_property_out() {
-        let platform_version = PlatformVersion::latest();
         let mut fixture = HandleFixture::new();
         let transition = fixture
             .create_transition(platform_value!({ "label": "Olive" }), 8)
             .await;
         assert_success(&fixture.process(&transition));
 
-        let proof = fixture
-            .platform
-            .drive
-            .prove_state_transition(&transition, None, platform_version)
-            .expect("expected to prove the state transition")
-            .into_data()
-            .expect("expected proof bytes");
-        let known_contracts: BTreeMap<Identifier, DataContract> =
-            BTreeMap::from([(fixture.contract.id(), fixture.contract.clone())]);
-        let (_, outcome) = Drive::verify_state_transition_was_executed_with_proof(
-            &transition,
-            &BlockInfo::default(),
-            &proof,
-            &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
-            platform_version,
-        )
-        .expect("expected the proof to verify");
-
-        let StateTransitionProofResult::VerifiedDocuments(documents) = outcome.into_result() else {
+        let StateTransitionProofResult::VerifiedDocuments(documents) =
+            fixture.verify_proof(&transition)
+        else {
             panic!("expected verified documents");
         };
         let document = documents
@@ -475,6 +617,133 @@ mod normalized_from_tests {
             .flatten()
             .expect("the proof holds the created document");
         assert_eq!(document.get("normalizedLabel"), Some(&text("011ve")));
+    }
+
+    /// The replace a client proves is rebuilt from the transition with the
+    /// property it left out computed from the new source.
+    #[tokio::test]
+    async fn should_verify_the_proof_of_a_replace_that_left_the_normalized_property_out() {
+        let mut fixture = HandleFixture::new();
+        assert_success(
+            &fixture
+                .create(platform_value!({ "label": "Bob" }), 10)
+                .await,
+        );
+        let stored = fixture.stored_handles().remove(0);
+
+        let transition = fixture
+            .replace_transition(&stored, |handle| {
+                handle.set("label", text("Oliver"));
+                handle.remove("normalizedLabel");
+            })
+            .await;
+        assert_success(&fixture.process(&transition));
+
+        let StateTransitionProofResult::VerifiedDocuments(documents) =
+            fixture.verify_proof(&transition)
+        else {
+            panic!("expected verified documents");
+        };
+        let document = documents
+            .into_values()
+            .next()
+            .flatten()
+            .expect("the proof holds the replaced document");
+        assert_eq!(document.get("normalizedLabel"), Some(&text("011ver")));
+    }
+
+    /// An indexOnly entry has no primary row: its create and delete are proved
+    /// and executed through the entry its values produce, so the property the
+    /// transitions leave out must be computed on both sides, by the node and by
+    /// the verifier. The delete names the entry without the normalized value and
+    /// still finds it (a delete of a missing entry is refused).
+    #[tokio::test]
+    async fn should_create_prove_and_delete_an_index_only_entry_that_leaves_the_normalized_property_out(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let mut fixture = HandleFixture::new();
+        let (entry, create) = fixture
+            .create_transition_of("entry", platform_value!({ "name": "Bob" }), 11, true)
+            .await;
+        assert_success(&fixture.process(&create));
+
+        let StateTransitionProofResult::VerifiedDocuments(documents) =
+            fixture.verify_proof(&create)
+        else {
+            panic!("expected verified documents");
+        };
+        let proved = documents
+            .into_values()
+            .next()
+            .flatten()
+            .expect("the proof holds the created entry");
+        assert_eq!(proved.get("normalizedName"), Some(&text("b0b")));
+
+        let entry_type = fixture
+            .contract
+            .document_type_for_name("entry")
+            .expect("expected the entry document type");
+        let delete = BatchTransition::new_document_deletion_transition_from_document(
+            entry.clone(),
+            entry_type,
+            &fixture.key,
+            fixture.next_nonce,
+            0,
+            None,
+            &fixture.signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected the delete transition");
+        fixture.next_nonce += 1;
+        let delete = fixture
+            .send_as_given(delete, entry.properties().clone())
+            .await;
+        assert_success(&fixture.process(&delete));
+
+        let StateTransitionProofResult::VerifiedDocuments(documents) =
+            fixture.verify_proof(&delete)
+        else {
+            panic!("expected verified documents");
+        };
+        assert_eq!(documents.into_values().next(), Some(None));
+    }
+
+    /// A contested index over the normalized property: a document built by the
+    /// SDK without the property carries its contest, because the builder
+    /// computes the property before it resolves the contest; and a transition
+    /// sent without the property, with its contest named, is resolved by the
+    /// node against the value it computes.
+    #[tokio::test]
+    async fn should_resolve_the_contest_of_a_document_that_leaves_the_normalized_property_out() {
+        let mut fixture = HandleFixture::new();
+
+        let (_, built) = fixture
+            .create_transition_of("name", platform_value!({ "label": "Bob" }), 12, false)
+            .await;
+        let StateTransition::Batch(batch) = &built else {
+            panic!("expected a batch transition");
+        };
+        let Some(BatchedTransitionRef::Document(DocumentTransition::Create(create))) =
+            batch.first_transition()
+        else {
+            panic!("expected a document create");
+        };
+        assert_eq!(create.data().get("normalizedLabel"), Some(&text("b0b")));
+        assert_eq!(
+            create
+                .prefunded_voting_balance()
+                .as_ref()
+                .map(|(index, _)| index.as_str()),
+            Some("byNormalizedLabel")
+        );
+        assert_success(&fixture.process(&built));
+
+        let (_, as_given) = fixture
+            .create_transition_of("name", platform_value!({ "label": "Alice" }), 13, true)
+            .await;
+        assert_success(&fixture.process(&as_given));
     }
 
     /// The create transformer computes the property only from protocol version

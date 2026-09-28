@@ -16,7 +16,9 @@ use super::*;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use crate::data_contract::document_type::methods::{
+    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+};
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::data_contract::document_type::{NormalizationTransform, NormalizedFrom};
 use crate::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
@@ -646,4 +648,190 @@ fn should_refuse_a_wrong_normalized_property_in_document_validation() {
         validate(platform_value!({ "label": 7, "normalizedLabel": "bob" })).first_error(),
         Some(ConsensusError::BasicError(BasicError::JsonSchemaError(_)))
     ));
+}
+
+// ================================================================
+//  Client builders and random documents
+// ================================================================
+
+/// An immutable `name` type whose unique index over `normalizedLabel` is
+/// contested, as DPNS's `domain` is.
+fn contested_name_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "indices": [
+            {
+                "name": "byNormalizedLabel",
+                "properties": [{ "normalizedLabel": "asc" }],
+                "unique": true,
+                "contested": {
+                    "fieldMatches": [
+                        { "field": "normalizedLabel", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
+                    ],
+                    "resolution": 0
+                }
+            }
+        ],
+        "properties": {
+            "label": string_property(0),
+            "normalizedLabel": normalized_property(1, "label")
+        },
+        "required": ["label", "normalizedLabel"],
+        "additionalProperties": false
+    })
+}
+
+/// An indexOnly `entry` type: a `name` and its `normalizedName`, both in the
+/// one index, whose terminal is the owner.
+fn index_only_entry_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "indices": [
+            {
+                "name": "byNormalizedName",
+                "properties": [{ "normalizedName": "asc" }, { "name": "asc" }],
+                "terminal": "$ownerId"
+            }
+        ],
+        "properties": {
+            "name": string_property(0),
+            "normalizedName": normalized_property(1, "name")
+        },
+        "required": ["name", "normalizedName"],
+        "additionalProperties": false
+    })
+}
+
+fn document_of(document_type: &DocumentType, properties: Value) -> crate::document::Document {
+    document_type
+        .as_ref()
+        .create_document_from_data(
+            properties,
+            Identifier::new([3; 32]),
+            1,
+            1,
+            [7; 32],
+            PlatformVersion::latest(),
+        )
+        .expect("the document builds")
+}
+
+/// The contest is resolved on the document the platform will store: the create
+/// builder computes the normalized property a document leaves out before it
+/// resolves the contest, so the transition carries both.
+#[test]
+fn should_build_a_create_transition_carrying_the_normalized_property_and_its_contest() {
+    use crate::state_transition::batch_transition::batched_transition::DocumentCreateTransition;
+    use crate::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+
+    let document_type = parse(contested_name_schema());
+    let transition = DocumentCreateTransition::from_document(
+        document_of(&document_type, platform_value!({ "label": "Bob" })),
+        document_type.as_ref(),
+        [7; 32],
+        None,
+        1,
+        PlatformVersion::latest(),
+        None,
+        None,
+    )
+    .expect("the create transition builds");
+
+    assert_eq!(
+        transition.data().get("normalizedLabel"),
+        Some(&Value::Text("b0b".to_string()))
+    );
+    assert_eq!(
+        transition
+            .prefunded_voting_balance()
+            .as_ref()
+            .map(|(index, _)| index.as_str()),
+        Some("byNormalizedLabel")
+    );
+}
+
+#[test]
+fn should_build_replace_and_index_only_delete_transitions_carrying_the_normalized_property() {
+    use crate::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
+    use crate::state_transition::batch_transition::batched_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
+    use crate::state_transition::batch_transition::batched_transition::{
+        DocumentIndexOnlyDeleteTransition, DocumentReplaceTransition,
+    };
+
+    let platform_version = PlatformVersion::latest();
+    let handle_type = parse(schema());
+    let replace = DocumentReplaceTransition::from_document(
+        document_of(&handle_type, platform_value!({ "label": "Oil" })),
+        handle_type.as_ref(),
+        None,
+        2,
+        platform_version,
+        None,
+        None,
+    )
+    .expect("the replace transition builds");
+    assert_eq!(
+        replace.data().get("normalizedLabel"),
+        Some(&Value::Text("011".to_string()))
+    );
+
+    let entry_type = parse(index_only_entry_schema());
+    let delete = DocumentIndexOnlyDeleteTransition::from_document(
+        document_of(&entry_type, platform_value!({ "name": "Bob" })),
+        entry_type.as_ref(),
+        None,
+        3,
+        platform_version,
+        None,
+        None,
+    )
+    .expect("the indexOnly delete transition builds");
+    assert_eq!(
+        delete.data().get("normalizedName"),
+        Some(&Value::Text("b0b".to_string()))
+    );
+}
+
+/// Random documents hold each normalized property as its source's normalized
+/// form, so fixtures and strategy tests produce documents consensus accepts.
+#[cfg(feature = "random-documents")]
+#[test]
+fn should_generate_random_documents_holding_the_normalized_form_of_their_source() {
+    use crate::data_contract::document_type::random_document::{
+        CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+    };
+    use crate::document::DocumentV0Getters;
+    use platform_value::Bytes32;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    let platform_version = PlatformVersion::latest();
+    let document_type = parse(schema());
+    let mut rng = StdRng::seed_from_u64(99);
+    for fill_type in [
+        DocumentFieldFillType::FillIfNotRequired,
+        DocumentFieldFillType::DoNotFillIfNotRequired,
+    ] {
+        for _ in 0..20 {
+            let entropy = Bytes32::random_with_rng(&mut rng);
+            let document = document_type
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    Identifier::new([3; 32]),
+                    entropy,
+                    fill_type,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("a random document");
+            let properties: Value = document.properties().into();
+            let result = document_type
+                .validate_normalized_from_properties(&properties, platform_version)
+                .expect("validation executes");
+            assert!(result.is_valid(), "{properties:?}: {:?}", result.errors);
+        }
+    }
 }

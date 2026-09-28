@@ -15,9 +15,10 @@ use crate::identity::Identity;
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::{Bytes32, Identifier};
+use platform_value::{Bytes32, Identifier, Value};
 use rand::prelude::StdRng;
 use rand::SeedableRng;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode, DecodeUntrusted)]
 pub enum DocumentFieldFillType {
@@ -223,7 +224,7 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
             entropy.as_slice(),
         );
         // dbg!("gen", hex::encode(id), hex::encode(&self.data_contract_id), hex::encode(&owner_id), self.name.as_str(), hex::encode(entropy.as_slice()));
-        let properties = self
+        let mut properties: BTreeMap<String, Value> = self
             .properties()
             .iter()
             .filter_map(|(key, property)| {
@@ -247,6 +248,18 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
                 }
             })
             .collect();
+
+        // A random value is not its source's normalized form: drop the one generated for
+        // each `normalizedFrom` property and compute it from the source, as the platform
+        // does for a document that leaves it out
+        if !self.normalized_from_fields().is_empty() {
+            let mut value = Value::from(properties);
+            for path in self.normalized_from_fields() {
+                value.remove_optional_value_at_path(path)?;
+            }
+            properties = value.into_btree_string_map()?;
+            self.fill_normalized_properties(&mut properties, platform_version)?;
+        }
 
         let revision = if self.requires_revision() {
             Some(INITIAL_REVISION)

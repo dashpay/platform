@@ -72,6 +72,11 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) json_schema_validator: StatelessJsonSchemaLazyValidator,
 }
 
-impl DocumentTypeBasicMethods for DocumentTypeV0 {}
+impl DocumentTypeBasicMethods for DocumentTypeV0 {
+    /// Generation 0 predates `normalizedFrom`: no property declares it.
+    fn normalized_from_fields(&self) -> &[String] {
+        &[]
+    }
+}
 
 impl DocumentTypeV0Methods for DocumentTypeV0 {}

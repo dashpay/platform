@@ -67,7 +67,9 @@ impl DocumentIndexOnlyDeleteTransitionActionV0 {
         // Added in place at protocol version 14, inert before it: `fill_normalized_properties`
         // is `None` there and leaves the values as sent. From 14 on, the values name an
         // entry the way its create stored it: a `normalizedFrom` property left out is
-        // computed from its source, as the create computed it.
+        // computed from its source, as the create computed it. `document_type()` cannot
+        // fail here: building the base action above already resolved the document type
+        // (its deletion token cost is read from it).
         let mut data = data.clone();
         base.document_type()?
             .fill_normalized_properties(&mut data, platform_version)?;

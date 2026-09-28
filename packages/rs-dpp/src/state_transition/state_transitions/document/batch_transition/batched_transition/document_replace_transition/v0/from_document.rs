@@ -1,3 +1,4 @@
+use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::errors::DocumentError;
 use crate::document::{Document, DocumentV0Getters};
@@ -17,6 +18,11 @@ impl DocumentReplaceTransitionV0 {
         platform_version: &PlatformVersion,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {
+        // The transition carries every `normalizedFrom` property the document leaves out,
+        // computed as the platform would compute it on arrival (inert before protocol
+        // version 14)
+        let mut document = document;
+        document_type.fill_normalized_properties(document.properties_mut(), platform_version)?;
         Ok(DocumentReplaceTransitionV0 {
             base: DocumentBaseTransition::from_document(
                 &document,

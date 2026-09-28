@@ -513,13 +513,7 @@ fn validate_distinct_from_targets_v0(
             )));
         }
         let Some(target_property) = flattened_properties.get(target) else {
-            // Objects are not in the flattened map, only their members are
-            let names_an_object = flattened_properties.keys().any(|key| {
-                key.len() > target.len()
-                    && key.starts_with(target)
-                    && key.as_bytes()[target.len()] == b'.'
-            });
-            if names_an_object {
+            if names_an_object(flattened_properties, target) {
                 return Err(DataContractError::InvalidContractStructure(format!(
                     "document type \"{document_type_name}\" property \"{path}\" declares distinctFrom \
                      \"{target}\", which is an object, not an identifier property: name one of \
@@ -542,6 +536,15 @@ fn validate_distinct_from_targets_v0(
         }
     }
     Ok(())
+}
+
+/// Whether `path`, missing from the flattened map, names an object of the
+/// document type: objects are not in the flattened map, only their members are.
+fn names_an_object(flattened_properties: &IndexMap<String, DocumentProperty>, path: &str) -> bool {
+    flattened_properties.keys().any(|key| {
+        key.strip_prefix(path)
+            .is_some_and(|rest| rest.starts_with('.'))
+    })
 }
 
 /// The value of an element keyword on the `items` of a typed array property,
@@ -1921,13 +1924,16 @@ fn apply_normalized_from_v0(
     property_type: &DocumentPropertyType,
 ) -> Result<Option<NormalizedFrom>, DataContractError> {
     if let DocumentPropertyType::TypedArray(_) = property_type {
-        let on_items = match inner_properties.get(property_names::ITEMS) {
-            Some(items) => items
-                .to_btree_ref_string_map()?
-                .contains_key(property_names::NORMALIZED_FROM),
-            None => false,
-        };
-        if on_items || inner_properties.contains_key(property_names::NORMALIZED_FROM) {
+        // On the array itself first: the shared items lookup would refuse it there as
+        // belonging on the items, and the keyword belongs on neither
+        if inner_properties.contains_key(property_names::NORMALIZED_FROM)
+            || typed_array_items_keyword(
+                inner_properties,
+                property_names::NORMALIZED_FROM,
+                "has no source",
+            )?
+            .is_some()
+        {
             return Err(DataContractError::InvalidContractStructure(
                 "normalizedFrom is only allowed on string properties, not on a typed array or \
                  its items"
@@ -2046,12 +2052,7 @@ pub(super) fn validate_normalized_from_declarations(
             ));
         }
         let Some(source_property) = flattened_properties.get(source) else {
-            // Objects are not in the flattened map, only their members are
-            let names_an_object = flattened_properties.keys().any(|key| {
-                key.strip_prefix(source)
-                    .is_some_and(|rest| rest.starts_with('.'))
-            });
-            if names_an_object {
+            if names_an_object(flattened_properties, source) {
                 return Err(structure_error(format!(
                     "property \"{source}\" is an object, not a string property: name one of \
                      its string members"

@@ -329,9 +329,25 @@ impl DocumentTypeRef<'_> {
     }
 }
 
-impl DocumentTypeBasicMethods for DocumentType {}
+impl DocumentTypeBasicMethods for DocumentType {
+    fn normalized_from_fields(&self) -> &[String] {
+        match self {
+            DocumentType::V0(v0) => v0.normalized_from_fields(),
+            DocumentType::V1(v1) => v1.normalized_from_fields(),
+            DocumentType::V2(v2) => v2.normalized_from_fields(),
+        }
+    }
+}
 
-impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {}
+impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {
+    fn normalized_from_fields(&self) -> &[String] {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.normalized_from_fields(),
+            DocumentTypeRef::V1(v1) => v1.normalized_from_fields(),
+            DocumentTypeRef::V2(v2) => v2.normalized_from_fields(),
+        }
+    }
+}
 
 impl DocumentTypeV0Methods for DocumentType {}
 

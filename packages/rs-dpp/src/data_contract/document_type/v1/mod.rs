@@ -79,7 +79,12 @@ pub struct DocumentTypeV1 {
     pub(in crate::data_contract) token_costs: TokenCosts,
 }
 
-impl DocumentTypeBasicMethods for DocumentTypeV1 {}
+impl DocumentTypeBasicMethods for DocumentTypeV1 {
+    /// Generation 1 predates `normalizedFrom`: no property declares it.
+    fn normalized_from_fields(&self) -> &[String] {
+        &[]
+    }
+}
 
 impl DocumentTypeV0Methods for DocumentTypeV1 {}
 

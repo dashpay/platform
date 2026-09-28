@@ -36,6 +36,12 @@ impl NormalizedFrom {
     pub fn normalize(&self, source: &str) -> String {
         self.transform.apply(source)
     }
+
+    /// Whether `value` is the normalized form of `source`, compared character by
+    /// character without building the normalized string.
+    pub fn is_normalized_form(&self, source: &str, value: &str) -> bool {
+        self.transform.is_applied(source, value)
+    }
 }
 
 /// How a [`NormalizedFrom`] property is computed from its source.
@@ -73,18 +79,30 @@ impl NormalizationTransform {
             .find(|transform| transform.as_str() == name)
     }
 
+    /// What one character of a source becomes.
+    fn apply_to_character(&self, character: char) -> char {
+        match self {
+            NormalizationTransform::HomographSafeAscii => match character.to_ascii_lowercase() {
+                'o' => '0',
+                'i' | 'l' => '1',
+                other => other,
+            },
+        }
+    }
+
     /// The normalized form of `source`.
     pub fn apply(&self, source: &str) -> String {
-        match self {
-            NormalizationTransform::HomographSafeAscii => source
-                .chars()
-                .map(|character| match character.to_ascii_lowercase() {
-                    'o' => '0',
-                    'i' | 'l' => '1',
-                    other => other,
-                })
-                .collect(),
-        }
+        source
+            .chars()
+            .map(|character| self.apply_to_character(character))
+            .collect()
+    }
+
+    /// Whether `value` is the normalized form of `source`, without building it.
+    pub fn is_applied(&self, source: &str, value: &str) -> bool {
+        value.chars().eq(source
+            .chars()
+            .map(|character| self.apply_to_character(character)))
     }
 }
 
@@ -195,6 +213,25 @@ mod tests {
         assert_ne!(convert_to_homograph_safe_chars("\u{212A}"), "\u{212A}");
         assert_eq!(HOMOGRAPH_SAFE_ASCII.apply("Ωmega"), "Ωmega");
         assert_eq!(HOMOGRAPH_SAFE_ASCII.apply("Olé"), "01é");
+    }
+
+    #[test]
+    fn should_compare_a_value_with_the_normalized_form_without_building_it() {
+        for (source, value, expected) in [
+            ("Bob", "b0b", true),
+            ("Bob", "bob", false),
+            ("Bob", "b0", false),
+            ("Bob", "b0bb", false),
+            ("", "", true),
+            ("Olé", "01é", true),
+        ] {
+            assert_eq!(
+                HOMOGRAPH_SAFE_ASCII.is_applied(source, value),
+                expected,
+                "{source:?} / {value:?}"
+            );
+            assert_eq!(HOMOGRAPH_SAFE_ASCII.apply(source) == value, expected);
+        }
     }
 
     #[test]

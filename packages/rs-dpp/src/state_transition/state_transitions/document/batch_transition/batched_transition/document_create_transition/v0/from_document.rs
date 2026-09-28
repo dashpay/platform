@@ -1,4 +1,6 @@
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::{
+    DocumentTypeBasicMethods, DocumentTypeV0Methods,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0Getters};
 use crate::prelude::IdentityNonce;
@@ -30,6 +32,11 @@ impl DocumentCreateTransitionV0 {
                 platform_version,
             )?;
         }
+        // The platform computes every `normalizedFrom` property a document leaves out when
+        // the document arrives; computing it here too lets the contest resolution below, and
+        // the transition, see the value the platform will store (inert before protocol
+        // version 14)
+        document_type.fill_normalized_properties(document.properties_mut(), platform_version)?;
         let prefunded_voting_balance =
             document_type.prefunded_voting_balance_for_document(&document, platform_version)?;
         Ok(DocumentCreateTransitionV0 {

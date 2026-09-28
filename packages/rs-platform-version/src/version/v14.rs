@@ -1357,13 +1357,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     string property that declares no `normalizedFrom` itself, that neither
 ///     side is transient or inside a transient object, and that the source
 ///     sits inside every object holding the declaring property; a changed
-///     declaration is an incompatible schema change. `fill_normalized_properties`
+///     declaration is an incompatible schema change, and `validate_update` 1
+///     refuses a property an update adds over a source that already existed
+///     (`DocumentTypeUpdateError`, 40212). `fill_normalized_properties`
 ///     (0) writes a declared property a document leaves out, from its source,
 ///     in the action transformers of document create, replace and index-only
 ///     delete, before the contest resolution and every check read the data,
 ///     and in `Document::try_from_create_transition` and
 ///     `try_from_replace_transition`, with which proof verification rebuilds
-///     the written document. `DataContract::validate_document_properties` 0
+///     the written document, and in the client transition builders, so a
+///     transition built from a document carries the value and its contest is
+///     detected from it. `DataContract::validate_document_properties` 0
 ///     calls `validate_normalized_from_properties` (`validate_normalized_from`
 ///     0) after the schema and `maxBytes`, and refuses a supplied value that is
 ///     not the source's normalized form, or one without its source, with

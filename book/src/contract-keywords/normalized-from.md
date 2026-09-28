@@ -53,15 +53,16 @@ The transform refuses nothing. Which characters a value may hold is the job of t
 - **Checked after the JSON schema.** Wherever a document's properties are validated, on every create and replace included and in a client that validates a document before sending it, the property must hold the source's normalized form, and must be absent when the source is. A property that breaks this refuses the transition with `DocumentPropertyNotNormalizedError` (10424), which names the document type, the property, its source and the transform. A schema error on either value is reported first.
 - **Absent source.** A property whose source is absent must be absent too. To make the source required in effect, list the normalized property in `required`: a document without the source then fails the schema.
 - **Replace.** A replace is judged on the whole new document. Leave the property out to have it computed from the new source; a stale value sent with a changed source is refused.
-- **Transfers, purchases and deletes** do not change the data and are not judged.
+- **Transfers, purchases and deletes by id** do not change the data and are not judged. An index-only delete is: its values are filled and checked like a create's, so a stale normalized value, or one without its source, refuses it.
 
-A document a client builds has not been through the platform's fill, so a client that validates it locally before sending should fill it first (in Rust, `DocumentTypeBasicMethods::fill_normalized_properties`) or send the normalized value; otherwise the local check reports the property missing. The proof a client verifies after a create or replace is checked against the filled document, as the platform stored it.
+The SDK's transition builders compute the property the same way, so a transition built from a document carries the value the platform would compute, and contest detection sees it. A client that validates a document it built, before building a transition, should fill it first (in Rust, `DocumentTypeBasicMethods::fill_normalized_properties`) or set the normalized value; otherwise the local check reports the property missing. The proof a client verifies after a create or replace is checked against the filled document, as the platform stored it.
 
 ## Rules at registration
 
 - The keyword is allowed only on a string property. On any other property, a typed array and its `items` included, the meta-schema refuses it (`JsonSchemaError`, 10101).
 - `property` must name another string property of the same document type (not an object, not a system property, not the declaring property), and that property may not declare `normalizedFrom` itself.
 - Neither the declaring property nor its source may be [transient](transient.md) or sit inside a transient object: a transient value is never stored.
+- On a contract update, a new property may declare `normalizedFrom` only over a source the update adds too. Documents stored before the update never had the property computed, so a new normalized property over an existing source is refused (`DocumentTypeUpdateError`, 40212).
 - The source must sit inside every object that holds the declaring property: a top-level property may take any source, but `profile.normalized` must take one inside `profile`. A document that supplies the source then always holds the object the platform writes the normalized form into.
 
 The parser refuses a declaration that breaks these rules with `InvalidContractStructure` (10231).
