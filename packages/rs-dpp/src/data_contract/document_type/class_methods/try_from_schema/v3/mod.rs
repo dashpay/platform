@@ -1101,6 +1101,8 @@ mod name_rules_tests;
 #[cfg(all(test, feature = "validation"))]
 mod owner_reference_tests;
 #[cfg(all(test, feature = "validation"))]
+mod property_constraint_aggregates_tests;
+#[cfg(all(test, feature = "validation"))]
 mod property_constraints_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_expression_tests;

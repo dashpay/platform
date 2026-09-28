@@ -18,6 +18,7 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_reference_expression_depth: 4,
     max_property_constraints: 16,
     max_property_constraint_nodes: 32,
+    max_property_constraint_aggregates: 4,
     max_state_transition_size: 20480, //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.

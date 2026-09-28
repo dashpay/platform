@@ -66,9 +66,10 @@ use crate::version::system_limits::SystemLimits;
 ///   never read them; every leaf counts against `max_references_per_document`.
 /// * Property constraints (protocol version 14): a document type declares at most 16
 ///   `propertyConstraints` rules (`max_property_constraints`) of at most 32 nodes each
-///   (`max_property_constraint_nodes`), both backfilled into the earlier tables, whose
-///   parsers never read them. The rules read no state, so these two bound the arithmetic
-///   one document write causes.
+///   (`max_property_constraint_nodes`), reading at most 4 distinct `countOf` and `sumOf`
+///   totals (`max_property_constraint_aggregates`), all backfilled into the earlier tables,
+///   whose parsers never read them. The first two bound the arithmetic one document write
+///   causes, the third the count and sum trees it reads.
 /// * Document expiry (protocol version 14): a document type may declare a `ttl` of at least
 ///   one hour (`min_document_ttl_seconds`) and at most one year (`max_document_ttl_seconds`),
 ///   and the platform deletes at most 128 expired documents per block
@@ -97,7 +98,8 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
     max_property_constraints: 16, // propertyConstraints (new in v14): contract registration caps the rules one document type declares
     max_property_constraint_nodes: 32, // propertyConstraints (new in v14): contract registration caps the nodes (comparison, operators, properties, values) of one rule
-    max_state_transition_size: 20480,  //20 KiB
+    max_property_constraint_aggregates: 4, // propertyConstraints countOf / sumOf (new in v14): contract registration caps the distinct totals one document type's rules read
+    max_state_transition_size: 20480,      //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
     max_transitions_in_documents_batch: 1,

@@ -16,6 +16,11 @@ pub struct DriveDocumentMethodVersions {
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
     pub primary_key_tree_type: FeatureVersion,
     pub expiration: DriveDocumentExpirationMethodVersions,
+    /// `Drive::fetch_property_constraint_aggregate`: a `countOf` or `sumOf` total a
+    /// `propertyConstraints` rule reads, from the count or sum tree keeping it. Reachable
+    /// from protocol version 14 only, the first version whose parser reads a rule; the slot
+    /// is 0 in every table.
+    pub fetch_property_constraint_aggregate: FeatureVersion,
 }
 
 /// Drive methods of document expiry: the expirations tree under `Misc` that indexes every

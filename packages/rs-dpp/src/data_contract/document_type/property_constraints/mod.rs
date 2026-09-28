@@ -57,6 +57,13 @@
 //! [`SystemProperty`]), on a document type that records them, so a price update
 //! and a transfer or a purchase, which change some of them, are judged against
 //! the rules reading those.
+//! `countOf` and `sumOf` are integer operands read from state, [`AggregateRead`]:
+//! how many documents of a type of the same contract match, or the total of an
+//! integer property over them, from the count and sum trees their indexes keep
+//! (`{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }`), as the total will
+//! be once the write is done. Consensus reads them before judging the rules
+//! ([`DocumentSystemValues::aggregates`]); a rule reading one it is not given is
+//! not judged.
 //! How the arithmetic treats overflow, division and powers is set out on
 //! [`ConstraintExpression::evaluate`], and how conditions combine on
 //! [`PropertyConstraint::holds`].
@@ -69,6 +76,7 @@
 //! Nothing here is serialized: a document type rebuilds its rules from its
 //! stored schema whenever the contract is loaded.
 
+mod aggregate;
 #[cfg(test)]
 mod tests;
 
@@ -106,6 +114,8 @@ const NOT_IN: &str = "notIn";
 const MIN: &str = "min";
 const MAX: &str = "max";
 const ABS: &str = "abs";
+const COUNT_OF: &str = "countOf";
+const SUM_OF: &str = "sumOf";
 const PRESENT: &str = "present";
 const ABSENT: &str = "absent";
 const IN: &str = "in";
@@ -120,7 +130,7 @@ const CONST: &str = "const";
 
 /// Every key an operand object may hold, for the errors.
 const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power, min, max, abs, \
-                            ifAbsent, length, byteLength or count";
+                            ifAbsent, length, byteLength, count, countOf or sumOf";
 
 /// The deepest a condition or an operand may sit in its rule: the rule's own
 /// condition at depth 0, and each operand of a comparison, and each condition
@@ -288,8 +298,8 @@ pub enum SystemChange {
 /// names. Consensus passes every one the document type records; a client
 /// passes those it knows. `$ownerId` equals no identifier when the owner is
 /// unknown, and [`PropertyConstraint::violation`] does not judge a rule reading
-/// a time or a height it is not given.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// a time, a height or an aggregate it is not given.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DocumentSystemValues {
     pub owner_id: Option<Identifier>,
     pub created_at: Option<TimestampMillis>,
@@ -301,6 +311,10 @@ pub struct DocumentSystemValues {
     pub created_at_core_block_height: Option<CoreBlockHeight>,
     pub updated_at_core_block_height: Option<CoreBlockHeight>,
     pub transferred_at_core_block_height: Option<CoreBlockHeight>,
+    /// The `countOf` and `sumOf` totals the rules read, each as it will be once
+    /// the write is done ([`AggregateRead`]). Consensus reads every one the
+    /// rules judged against the write read; a client gives none.
+    pub aggregates: BTreeMap<AggregateRead, i128>,
 }
 
 impl DocumentSystemValues {
@@ -327,6 +341,7 @@ impl DocumentSystemValues {
             created_at_core_block_height: Some(block_info.core_height),
             updated_at_core_block_height: Some(block_info.core_height),
             transferred_at_core_block_height: Some(block_info.core_height),
+            aggregates: BTreeMap::new(),
         }
     }
 
@@ -343,6 +358,7 @@ impl DocumentSystemValues {
             created_at_core_block_height: document.created_at_core_block_height(),
             updated_at_core_block_height: document.updated_at_core_block_height(),
             transferred_at_core_block_height: document.transferred_at_core_block_height(),
+            aggregates: BTreeMap::new(),
         }
     }
 
@@ -403,6 +419,79 @@ impl SizeMeasure {
     }
 }
 
+/// What an aggregate operand totals over the documents it matches.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AggregateKind {
+    /// `countOf`: how many there are.
+    Count,
+    /// `sumOf`: the total of the integer property at `property` over them.
+    Sum { property: String },
+}
+
+/// The value a key of an aggregate's filter must take, read from the document
+/// being written.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum AggregateBinding {
+    /// The document's property at the dotted `path`; `kind` is how it
+    /// compares, `None` for an integer.
+    Property {
+        path: String,
+        kind: Option<EqualityKind>,
+    },
+    /// `"$ownerId"`: the document's owner.
+    Owner,
+    /// An integer.
+    Integer(i128),
+    /// `{ "const": ... }`: a string, or a base58 identifier where the key is
+    /// an identifier.
+    Constant(String),
+}
+
+/// A `countOf` or `sumOf` operand: the documents of the type
+/// `document_type`, of the same contract, whose values at the keys of
+/// `filter` (a property path of that type, or `$ownerId`) equal the values
+/// the bindings read from the document being written, counted or with an
+/// integer property totalled; every document of the type when the filter is
+/// empty. The total is the one a count or sum tree of that type keeps, as it
+/// will be once the write is done: when the type is the writer's own, the
+/// document being written counts as it will be stored, and no longer as it
+/// was. A registered rule reads only totals a tree keeps: `documentsCountable`
+/// or `documentsSummable` for a whole type, and otherwise an index whose
+/// properties are exactly the filter's keys ([`Self::answering_index`]).
+///
+/// `{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }` counts the
+/// writer's listings; `{ "sumOf": ["pledge", "amount", { "campaignId": "campaignId" }] }`
+/// totals the pledges to the document's campaign.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AggregateRead {
+    pub kind: AggregateKind,
+    pub document_type: String,
+    pub filter: BTreeMap<String, AggregateBinding>,
+    /// Whether `document_type` is the type declaring the rule, so that the
+    /// document being written is among those it totals.
+    pub of_own_type: bool,
+}
+
+impl AggregateRead {
+    /// The operand key declaring it.
+    pub fn wire_name(&self) -> &'static str {
+        match self.kind {
+            AggregateKind::Count => COUNT_OF,
+            AggregateKind::Sum { .. } => SUM_OF,
+        }
+    }
+
+    /// Whether the total depends on the document's owner: a binding reads
+    /// `$ownerId`, or the type is the writer's own and a key is `$ownerId`, so
+    /// that the document counts toward another owner once it changes hands.
+    pub fn reads_owner(&self) -> bool {
+        self.filter
+            .values()
+            .any(|binding| *binding == AggregateBinding::Owner)
+            || (self.of_own_type && self.filter.contains_key(OWNER_ID))
+    }
+}
+
 /// An integer expression, one side of a rule or an operand inside one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstraintExpression {
@@ -438,6 +527,9 @@ pub enum ConstraintExpression {
     Max(Vec<ConstraintExpression>),
     /// `abs`: the absolute value of its one operand.
     Abs(Box<ConstraintExpression>),
+    /// `countOf` or `sumOf`: a total read from state, its value in the
+    /// [`DocumentSystemValues`] the rule is judged with.
+    Aggregate(AggregateRead),
 }
 
 impl ConstraintExpression {
@@ -458,7 +550,7 @@ impl ConstraintExpression {
     ///   one measured, which the schema validation reported first refuses;
     /// * a system property takes its value in `system`, 0 when not given
     ///   ([`PropertyConstraint::violation`] does not judge a rule reading one it
-    ///   is not given);
+    ///   is not given), and so does an aggregate;
     /// * `add` and `multiply` fold their operands from the left, so an overflow
     ///   on the way is a fault even when a later operand would bring the result
     ///   back in range;
@@ -481,6 +573,9 @@ impl ConstraintExpression {
         match self {
             ConstraintExpression::Value(value) => Ok(*value),
             ConstraintExpression::System(property) => Ok(system.value(*property).unwrap_or(0)),
+            ConstraintExpression::Aggregate(read) => {
+                Ok(system.aggregates.get(read).copied().unwrap_or(0))
+            }
             ConstraintExpression::Property { path, if_absent } => {
                 property_value(data, path, *if_absent)
             }
@@ -562,6 +657,8 @@ impl ConstraintExpression {
             | ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
             | ConstraintExpression::System(_) => 0,
+            // One for each key and the value it takes
+            ConstraintExpression::Aggregate(read) => read.filter.len(),
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
             | ConstraintExpression::Min(operands)
@@ -576,13 +673,15 @@ impl ConstraintExpression {
         }
     }
 
-    /// Whether the expression reads at least one property.
+    /// Whether the expression reads at least one property, or a value read
+    /// from state, so that it is no constant.
     fn reads_property(&self) -> bool {
         match self {
             ConstraintExpression::Value(_) => false,
             ConstraintExpression::Property { .. }
             | ConstraintExpression::Size { .. }
-            | ConstraintExpression::System(_) => true,
+            | ConstraintExpression::System(_)
+            | ConstraintExpression::Aggregate(_) => true,
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
             | ConstraintExpression::Min(operands)
@@ -605,6 +704,19 @@ impl ConstraintExpression {
         match self {
             ConstraintExpression::Value(_) | ConstraintExpression::System(_) => {}
             ConstraintExpression::Property { path, .. } => reads.push((path, PropertyRead::Value)),
+            // The properties of the document being written its filter reads
+            ConstraintExpression::Aggregate(read) => {
+                for binding in read.filter.values() {
+                    if let AggregateBinding::Property { path, kind } = binding {
+                        let read = match kind {
+                            None => PropertyRead::Value,
+                            Some(EqualityKind::Text) => PropertyRead::Text,
+                            Some(EqualityKind::Identifier) => PropertyRead::Identifier,
+                        };
+                        reads.push((path, read));
+                    }
+                }
+            }
             ConstraintExpression::Size { measure, path } => reads.push((path, measure.read())),
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
@@ -632,7 +744,8 @@ impl ConstraintExpression {
             ConstraintExpression::System(property) => reads.push(*property),
             ConstraintExpression::Value(_)
             | ConstraintExpression::Property { .. }
-            | ConstraintExpression::Size { .. } => {}
+            | ConstraintExpression::Size { .. }
+            | ConstraintExpression::Aggregate(_) => {}
             ConstraintExpression::Add(operands)
             | ConstraintExpression::Multiply(operands)
             | ConstraintExpression::Min(operands)
@@ -650,6 +763,42 @@ impl ConstraintExpression {
                 right.collect_system_reads(reads);
             }
         }
+    }
+
+    /// Appends the aggregates the expression reads to `reads`, in the order it
+    /// reads them.
+    fn collect_aggregate_reads<'a>(&'a self, reads: &mut Vec<&'a AggregateRead>) {
+        match self {
+            ConstraintExpression::Aggregate(read) => reads.push(read),
+            ConstraintExpression::Value(_)
+            | ConstraintExpression::Property { .. }
+            | ConstraintExpression::Size { .. }
+            | ConstraintExpression::System(_) => {}
+            ConstraintExpression::Add(operands)
+            | ConstraintExpression::Multiply(operands)
+            | ConstraintExpression::Min(operands)
+            | ConstraintExpression::Max(operands) => {
+                for operand in operands {
+                    operand.collect_aggregate_reads(reads);
+                }
+            }
+            ConstraintExpression::Abs(operand) => operand.collect_aggregate_reads(reads),
+            ConstraintExpression::Subtract(left, right)
+            | ConstraintExpression::Divide(left, right)
+            | ConstraintExpression::Modulo(left, right)
+            | ConstraintExpression::Power(left, right) => {
+                left.collect_aggregate_reads(reads);
+                right.collect_aggregate_reads(reads);
+            }
+        }
+    }
+
+    /// Whether an aggregate the expression reads depends on the document's
+    /// owner ([`AggregateRead::reads_owner`]).
+    fn reads_owner(&self) -> bool {
+        let mut reads = Vec::new();
+        self.collect_aggregate_reads(&mut reads);
+        reads.into_iter().any(AggregateRead::reads_owner)
     }
 }
 
@@ -693,7 +842,7 @@ pub enum ElementKind {
 /// array a `contains` looks in (the kind of its elements), since the
 /// declaration alone does not tell a string property, an identifier property
 /// or an integer one apart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EqualityKind {
     /// A string property.
     Text,
@@ -1078,7 +1227,9 @@ impl PropertyConstraint {
     /// when the rule evaluates to false. A rule reading a system property
     /// `system` does not give is not judged: consensus gives every one the
     /// document type records, the only ones a rule may read, so only a client
-    /// that does not know one skips the rule.
+    /// that does not know one skips the rule. So is a rule reading an aggregate
+    /// `system` does not give: consensus reads every one before judging the
+    /// write, and a client, which cannot read state here, gives none.
     pub fn violation(
         &self,
         data: &Value,
@@ -1088,6 +1239,10 @@ impl PropertyConstraint {
             .system_reads()
             .into_iter()
             .any(|property| system.value(property).is_none())
+            || self
+                .aggregate_reads()
+                .into_iter()
+                .any(|read| !system.aggregates.contains_key(read))
         {
             return None;
         }
@@ -1167,11 +1322,20 @@ impl PropertyConstraint {
         reads
     }
 
-    /// Whether the rule compares the document's owner, `$ownerId`: then a
+    /// Whether the rule compares the document's owner, `$ownerId`, or reads an
+    /// aggregate depending on it ([`AggregateRead::reads_owner`]): then a
     /// transfer or a purchase, which changes the owner and nothing else, is
     /// judged against it too.
     pub fn reads_owner(&self) -> bool {
         match self {
+            PropertyConstraint::Compare { left, right, .. } => {
+                left.reads_owner() || right.reads_owner()
+            }
+            PropertyConstraint::In { operand, .. } => operand.reads_owner(),
+            PropertyConstraint::Contains {
+                needle: ContainsNeedle::Integer(expression),
+                ..
+            } => expression.reads_owner(),
             PropertyConstraint::Contains {
                 needle: ContainsNeedle::IdentifierProperty(path),
                 ..
@@ -1195,15 +1359,65 @@ impl PropertyConstraint {
                 .into_iter()
                 .flatten()
                 .any(|part| part.reads_owner()),
-            PropertyConstraint::Compare { .. }
-            | PropertyConstraint::In { .. }
-            | PropertyConstraint::TextCompare { .. }
+            PropertyConstraint::TextCompare { .. }
             | PropertyConstraint::TextCompareProperties { .. }
             | PropertyConstraint::TextIn { .. }
             | PropertyConstraint::TextAffix { .. }
             | PropertyConstraint::Contains { .. }
             | PropertyConstraint::Present(_)
             | PropertyConstraint::Absent(_) => false,
+        }
+    }
+
+    /// The aggregates the rule reads (`countOf`, `sumOf`), in declared order,
+    /// one read twice listed twice.
+    pub fn aggregate_reads(&self) -> Vec<&AggregateRead> {
+        let mut reads = Vec::new();
+        self.collect_aggregate_reads(&mut reads);
+        reads
+    }
+
+    fn collect_aggregate_reads<'a>(&'a self, reads: &mut Vec<&'a AggregateRead>) {
+        match self {
+            PropertyConstraint::Compare { left, right, .. } => {
+                left.collect_aggregate_reads(reads);
+                right.collect_aggregate_reads(reads);
+            }
+            PropertyConstraint::In { operand, .. } => operand.collect_aggregate_reads(reads),
+            PropertyConstraint::Contains {
+                needle: ContainsNeedle::Integer(expression),
+                ..
+            } => expression.collect_aggregate_reads(reads),
+            PropertyConstraint::AnyOf(conditions) | PropertyConstraint::AllOf(conditions) => {
+                for condition in conditions {
+                    condition.collect_aggregate_reads(reads);
+                }
+            }
+            PropertyConstraint::Not(condition) | PropertyConstraint::NotIn(condition) => {
+                condition.collect_aggregate_reads(reads)
+            }
+            PropertyConstraint::IfThen {
+                condition,
+                then,
+                otherwise,
+            } => {
+                for part in [Some(condition), Some(then), otherwise.as_ref()]
+                    .into_iter()
+                    .flatten()
+                {
+                    part.collect_aggregate_reads(reads);
+                }
+            }
+            PropertyConstraint::TextCompare { .. }
+            | PropertyConstraint::TextCompareProperties { .. }
+            | PropertyConstraint::TextIn { .. }
+            | PropertyConstraint::TextAffix { .. }
+            | PropertyConstraint::IdentifierCompare { .. }
+            | PropertyConstraint::IdentifierCompareProperties { .. }
+            | PropertyConstraint::IdentifierIn { .. }
+            | PropertyConstraint::Contains { .. }
+            | PropertyConstraint::Present(_)
+            | PropertyConstraint::Absent(_) => {}
         }
     }
 
@@ -1622,6 +1836,14 @@ impl PropertyConstraint {
     }
 }
 
+/// What the parse of one document type's rules knows of the type: its name,
+/// which tells an aggregate of the type's own documents from one of another
+/// type's, and `property_kind` ([`parse_property_constraints`]).
+struct ParseContext<'a> {
+    document_type_name: &'a str,
+    property_kind: &'a dyn Fn(&str) -> Option<EqualityKind>,
+}
+
 /// Reads the `propertyConstraints` keyword of a document type's `schema`:
 /// every rule by its name, in name order, the order a document is checked
 /// against them. Empty when the schema declares none. `property_kind` tells
@@ -1684,6 +1906,10 @@ pub fn parse_property_constraints(
         ));
     }
 
+    let context = ParseContext {
+        document_type_name,
+        property_kind,
+    };
     let mut constraints = BTreeMap::new();
     for (name, rule) in rules {
         let Some(name) = name.as_text().filter(|name| is_rule_name(name)) else {
@@ -1694,7 +1920,7 @@ pub fn parse_property_constraints(
         };
         // Where a condition or an operand sits in the rule (`anyOf[1].lessThan[0]`),
         // grown and trimmed in place as the parse descends and only read into an error
-        let constraint = parse_condition(rule, &mut String::new(), 0, property_kind)
+        let constraint = parse_condition(rule, &mut String::new(), 0, &context)
             .map_err(|message| structure_error(format!("rule \"{name}\" {message}")))?;
         if constraints.insert(name.to_string(), constraint).is_some() {
             return Err(structure_error(format!("declares rule \"{name}\" twice")));
@@ -1766,7 +1992,7 @@ fn parse_condition(
     value: &Value,
     at: &mut String,
     depth: usize,
-    property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    context: &ParseContext,
 ) -> Result<PropertyConstraint, String> {
     if depth > MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH {
         return Err(format!(
@@ -1787,16 +2013,12 @@ fn parse_condition(
         if path == OWNER_ID {
             Some(EqualityKind::Identifier)
         } else {
-            property_kind(path)
+            (context.property_kind)(path)
         }
     };
     let condition = match key {
-        ANY_OF => {
-            PropertyConstraint::AnyOf(condition_list(body, key, at, depth + 1, property_kind)?)
-        }
-        ALL_OF => {
-            PropertyConstraint::AllOf(condition_list(body, key, at, depth + 1, property_kind)?)
-        }
+        ANY_OF => PropertyConstraint::AnyOf(condition_list(body, key, at, depth + 1, context)?),
+        ALL_OF => PropertyConstraint::AllOf(condition_list(body, key, at, depth + 1, context)?),
         NOT => {
             if single_entry(body).is_some_and(|(inner, _)| inner == NOT) {
                 return Err(format!(
@@ -1810,19 +2032,14 @@ fn parse_condition(
                      of the same values says: declare that in"
                 ));
             }
-            PropertyConstraint::Not(Box::new(parse_condition(
-                body,
-                at,
-                depth + 1,
-                property_kind,
-            )?))
+            PropertyConstraint::Not(Box::new(parse_condition(body, at, depth + 1, context)?))
         }
         IF_THEN | IF_THEN_ELSE => {
             let base = at.len();
             let mut part = |index: usize, value: &Value| {
                 // Writing to a `String` cannot fail
                 let _ = write!(at, "[{index}]");
-                let parsed = parse_condition(value, at, depth + 1, property_kind);
+                let parsed = parse_condition(value, at, depth + 1, context);
                 at.truncate(base);
                 parsed.map(Box::new)
             };
@@ -1892,7 +2109,7 @@ fn parse_condition(
                 PropertyConstraint::TextIn { property, values }
             } else {
                 at.push_str("[0]");
-                let operand = parse_expression(operand, at, depth + 1)?;
+                let operand = parse_expression(operand, at, depth + 1, context)?;
                 at.truncate(base);
                 if !operand.reads_property() {
                     at.truncate(parent);
@@ -1966,7 +2183,7 @@ fn parse_condition(
             at.push_str("[1]");
             // The kind of the array's elements decides what a const spells, and
             // what is checked against the parsed document type
-            let needle = match property_kind(array) {
+            let needle = match (context.property_kind)(array) {
                 Some(EqualityKind::Text) => match text_side(needle, at)? {
                     TextSide::Constant(value) => ContainsNeedle::TextConstant(value),
                     TextSide::Property(property) => ContainsNeedle::TextProperty(property),
@@ -1981,7 +2198,7 @@ fn parse_condition(
                          integer is written as itself"
                     ));
                 }
-                None => ContainsNeedle::Integer(parse_expression(needle, at, depth + 1)?),
+                None => ContainsNeedle::Integer(parse_expression(needle, at, depth + 1, context)?),
             };
             at.truncate(base);
             PropertyConstraint::Contains {
@@ -2046,7 +2263,7 @@ fn parse_condition(
                     });
                 }
             }
-            let (left, right) = operand_pair(body, at, depth + 1)?;
+            let (left, right) = operand_pair(body, at, depth + 1, context)?;
             if !left.reads_property() && !right.reads_property() {
                 at.truncate(parent);
                 return Err(format!(
@@ -2074,7 +2291,7 @@ fn condition_list(
     key: &str,
     at: &mut String,
     depth: usize,
-    property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+    context: &ParseContext,
 ) -> Result<Vec<PropertyConstraint>, String> {
     let Some(values) = conditions.as_array().filter(|values| values.len() >= 2) else {
         return Err(format!("at {at} must list two or more conditions"));
@@ -2090,7 +2307,7 @@ fn condition_list(
                  says: list its conditions in the outer {key}"
             ));
         }
-        parsed.push(parse_condition(value, at, depth, property_kind)?);
+        parsed.push(parse_condition(value, at, depth, context)?);
         at.truncate(base);
     }
     Ok(parsed)
@@ -2389,6 +2606,7 @@ fn parse_expression(
     value: &Value,
     at: &mut String,
     depth: usize,
+    context: &ParseContext,
 ) -> Result<ConstraintExpression, String> {
     if depth > MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH {
         return Err(format!(
@@ -2448,24 +2666,29 @@ fn parse_expression(
                 if_absent: integer_value(if_absent, at)?,
             }
         }
-        ADD => ConstraintExpression::Add(operand_list(operands, at, depth + 1)?),
-        MIN => ConstraintExpression::Min(operand_list(operands, at, depth + 1)?),
-        MAX => ConstraintExpression::Max(operand_list(operands, at, depth + 1)?),
+        ADD => ConstraintExpression::Add(operand_list(operands, at, depth + 1, context)?),
+        MIN => ConstraintExpression::Min(operand_list(operands, at, depth + 1, context)?),
+        MAX => ConstraintExpression::Max(operand_list(operands, at, depth + 1, context)?),
         ABS => {
             if operands.as_array().is_some() {
                 return Err(format!(
                     "at {at} must be one operand, not a list: abs takes a single operand"
                 ));
             }
-            ConstraintExpression::Abs(Box::new(parse_expression(operands, at, depth + 1)?))
+            ConstraintExpression::Abs(Box::new(parse_expression(
+                operands,
+                at,
+                depth + 1,
+                context,
+            )?))
         }
-        MULTIPLY => ConstraintExpression::Multiply(operand_list(operands, at, depth + 1)?),
+        MULTIPLY => ConstraintExpression::Multiply(operand_list(operands, at, depth + 1, context)?),
         SUBTRACT => {
-            let (left, right) = operand_pair(operands, at, depth + 1)?;
+            let (left, right) = operand_pair(operands, at, depth + 1, context)?;
             ConstraintExpression::Subtract(Box::new(left), Box::new(right))
         }
         DIVIDE | MODULO => {
-            let (dividend, divisor) = operand_pair(operands, at, depth + 1)?;
+            let (dividend, divisor) = operand_pair(operands, at, depth + 1, context)?;
             if divisor == ConstraintExpression::Value(0) {
                 return Err(format!("at {at} divides by 0"));
             }
@@ -2476,7 +2699,7 @@ fn parse_expression(
             }
         }
         POWER => {
-            let (base, exponent) = operand_pair(operands, at, depth + 1)?;
+            let (base, exponent) = operand_pair(operands, at, depth + 1, context)?;
             if let ConstraintExpression::Value(exponent) = exponent {
                 if exponent < 0 {
                     return Err(format!(
@@ -2502,6 +2725,11 @@ fn parse_expression(
                 path: path.to_string(),
             }
         }
+        // Which document type it names, and what its keys name, is checked
+        // once every document type of the contract is parsed
+        COUNT_OF | SUM_OF => {
+            ConstraintExpression::Aggregate(parse_aggregate(key == SUM_OF, operands, at, context)?)
+        }
         CONST => {
             at.truncate(parent);
             return Err(format!(
@@ -2520,21 +2748,134 @@ fn parse_expression(
     Ok(expression)
 }
 
+/// A `countOf` (`sum` false) or `sumOf` at `at`, listing a document type,
+/// for a `sumOf` the integer property to total, and optionally the filter its
+/// documents must match: an object of one or more keys, each a property path
+/// of that type or `$ownerId`, and the value it must take, a property path of
+/// the document being written, `$ownerId`, an integer or a `{ "const": ... }`.
+fn parse_aggregate(
+    sum: bool,
+    operands: &Value,
+    at: &mut String,
+    context: &ParseContext,
+) -> Result<AggregateRead, String> {
+    let parts = operands.as_array().map(Vec::as_slice).unwrap_or_default();
+    let (document_type, property, filter) = match (sum, parts) {
+        (false, [document_type]) => (document_type, None, None),
+        (false, [document_type, filter]) => (document_type, None, Some(filter)),
+        (true, [document_type, property]) => (document_type, Some(property), None),
+        (true, [document_type, property, filter]) => (document_type, Some(property), Some(filter)),
+        (false, _) => {
+            return Err(format!(
+                "at {at} must list the document type to count, then optionally the values \
+                 its documents must match: [type] or [type, {{ key: value, ... }}]"
+            ))
+        }
+        (true, _) => {
+            return Err(format!(
+                "at {at} must list the document type, the integer property of it to total, \
+                 then optionally the values its documents must match: [type, property] or \
+                 [type, property, {{ key: value, ... }}]"
+            ))
+        }
+    };
+    let Some(document_type) = document_type.as_text().filter(|name| !name.is_empty()) else {
+        return Err(format!("at {at} must name a document type first"));
+    };
+    let kind = match property {
+        None => AggregateKind::Count,
+        Some(property) => {
+            let Some(property) = property.as_text().filter(|path| !path.is_empty()) else {
+                return Err(format!("at {at} must name the property to total second"));
+            };
+            AggregateKind::Sum {
+                property: property.to_string(),
+            }
+        }
+    };
+    let mut bindings = BTreeMap::new();
+    if let Some(filter) = filter {
+        let base = at.len();
+        // Writing to a `String` cannot fail
+        let _ = write!(at, "[{}]", if sum { 2 } else { 1 });
+        let entries = match filter {
+            Value::Map(entries) if !entries.is_empty() => entries,
+            _ => {
+                return Err(format!(
+                    "at {at} must match its documents by one or more keys: {{ key: value, ... }}"
+                ))
+            }
+        };
+        for (key, binding) in entries {
+            let Some(key) = key.as_text().filter(|key| !key.is_empty()) else {
+                return Err(format!(
+                    "at {at} holds the key {}, but a key is a property path of the type or \
+                     $ownerId",
+                    key.non_qualified_string_representation()
+                ));
+            };
+            if key.starts_with('$') && key != OWNER_ID {
+                return Err(format!(
+                    "at {at} matches by {key}, but the one system value a key names is $ownerId"
+                ));
+            }
+            let binding = match binding {
+                Value::Text(path) if path == OWNER_ID => AggregateBinding::Owner,
+                Value::Text(path) if path.starts_with('$') => {
+                    return Err(format!(
+                        "at {at}.{key} takes {path}, but the one system value a key takes is \
+                         $ownerId"
+                    ))
+                }
+                Value::Text(path) => AggregateBinding::Property {
+                    kind: (context.property_kind)(path),
+                    path: path.clone(),
+                },
+                binding if is_number(binding) => {
+                    AggregateBinding::Integer(integer_value(binding, &format!("{at}.{key}"))?)
+                }
+                binding => match single_entry(binding) {
+                    Some((CONST, Value::Text(constant))) => {
+                        AggregateBinding::Constant(constant.clone())
+                    }
+                    _ => {
+                        return Err(format!(
+                            "at {at}.{key} must be a property path of the document, $ownerId, \
+                             an integer or a {{ \"const\": ... }} string or base58 identifier"
+                        ))
+                    }
+                },
+            };
+            if bindings.insert(key.to_string(), binding).is_some() {
+                return Err(format!("at {at} matches by {key} twice"));
+            }
+        }
+        at.truncate(base);
+    }
+    Ok(AggregateRead {
+        kind,
+        of_own_type: document_type == context.document_type_name,
+        document_type: document_type.to_string(),
+        filter: bindings,
+    })
+}
+
 /// The exactly two operands listed at `at`, `depth` levels into their rule.
 fn operand_pair(
     operands: &Value,
     at: &mut String,
     depth: usize,
+    context: &ParseContext,
 ) -> Result<(ConstraintExpression, ConstraintExpression), String> {
     let Some([left, right]) = operands.as_array().map(Vec::as_slice) else {
         return Err(format!("at {at} must list exactly two operands"));
     };
     let base = at.len();
     at.push_str("[0]");
-    let left = parse_expression(left, at, depth)?;
+    let left = parse_expression(left, at, depth, context)?;
     at.truncate(base);
     at.push_str("[1]");
-    let right = parse_expression(right, at, depth)?;
+    let right = parse_expression(right, at, depth, context)?;
     at.truncate(base);
     Ok((left, right))
 }
@@ -2544,6 +2885,7 @@ fn operand_list(
     operands: &Value,
     at: &mut String,
     depth: usize,
+    context: &ParseContext,
 ) -> Result<Vec<ConstraintExpression>, String> {
     let Some(values) = operands.as_array().filter(|values| values.len() >= 2) else {
         return Err(format!("at {at} must list two or more operands"));
@@ -2553,7 +2895,7 @@ fn operand_list(
     for (index, value) in values.iter().enumerate() {
         // Writing to a `String` cannot fail
         let _ = write!(at, "[{index}]");
-        expressions.push(parse_expression(value, at, depth)?);
+        expressions.push(parse_expression(value, at, depth, context)?);
         at.truncate(base);
     }
     Ok(expressions)

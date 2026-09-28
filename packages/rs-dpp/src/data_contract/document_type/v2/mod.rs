@@ -169,7 +169,8 @@ pub struct DocumentTypeV2 {
     /// The rules every created or replaced document must meet, by name, in the
     /// order they are checked (`propertyConstraints` keyword, protocol version
     /// 14): each a condition on the document's properties, a comparison of two
-    /// integer expressions, of a string or an identifier property with
+    /// integer expressions (which may read a `countOf` or `sumOf` total of a
+    /// type of the contract), of a string or an identifier property with
     /// constants or with another property of its kind, an `in` or `notIn` list
     /// of values, a `startsWith` or `endsWith`, a `contains`, a `present` or
     /// `absent` test, or an `anyOf`, `allOf`, `not`, `ifThen` or `ifThenElse` of

@@ -45,7 +45,12 @@ const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
  * - `length` and `byteLength`: the characters (as `maxLength` counts them)
  *   and the UTF-8 bytes of a string property; `count`: the items of an array
  *   property, or the bytes of a byte array property. Each is 0 when the
- *   document leaves the property out.
+ *   document leaves the property out;
+ * - `countOf` and `sumOf`: a total read from state, how many documents of a
+ *   type of the same contract match a filter, or the total of an integer
+ *   property over them, as the type's count or sum trees keep it once the
+ *   write is done. `checkDocumentPropertyConstraints` does not judge a rule
+ *   reading one.
  */
 export type PropertyConstraintExpression =
   | number
@@ -63,7 +68,24 @@ export type PropertyConstraintExpression =
   | { abs: PropertyConstraintExpression }
   | { length: string }
   | { byteLength: string }
-  | { count: string };
+  | { count: string }
+  | { countOf: [documentType: string] | [documentType: string, filter: PropertyConstraintAggregateFilter] }
+  | {
+    sumOf:
+    | [documentType: string, property: string]
+    | [documentType: string, property: string, filter: PropertyConstraintAggregateFilter]
+  };
+
+/**
+ * Which documents a `countOf` or `sumOf` totals: each key, a property path of
+ * the counted type or `"$ownerId"`, mapped to the value its documents must
+ * take there, read from the document being written: a property path of it,
+ * `"$ownerId"`, an integer, or a `const` string or base58 identifier.
+ */
+export type PropertyConstraintAggregateFilter = Record<
+  string,
+  string | number | bigint | { const: string }
+>;
 
 /**
  * One side of a comparison of strings or identifiers.
@@ -376,7 +398,8 @@ pub(crate) fn property_constraints_for_document_type(
 /// heights the write keeps, with the device clock standing in for the block
 /// time it records (its update, and its creation and transfer when the
 /// document has none yet). The block heights it records are unknown until the
-/// block, so a rule reading one is not judged.
+/// block, so a rule reading one is not judged, and so is a rule reading a
+/// `countOf` or `sumOf` total, which no client reads from state here.
 fn system_values_for_write(document: &Document) -> DocumentSystemValues {
     // Milliseconds since the epoch, a whole number well inside a `u64`
     let now = js_sys::Date::now() as u64;

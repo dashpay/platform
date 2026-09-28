@@ -1,6 +1,6 @@
 # propertyConstraints
 
-`propertyConstraints` holds named rules that every created or replaced document of a type must meet. JSON Schema bounds one property at a time; these rules relate properties to each other: a deposit that covers price times quantity, percentages that add up to 100, a closed order that carries its closing time, a second party who is not the owner. Each rule is a small tree of comparisons, arithmetic and logic that consensus evaluates against the document, without reading any state.
+`propertyConstraints` holds named rules that every created or replaced document of a type must meet. JSON Schema bounds one property at a time; these rules relate properties to each other: a deposit that covers price times quantity, percentages that add up to 100, a closed order that carries its closing time, a second party who is not the owner. Each rule is a small tree of comparisons, arithmetic and logic that consensus evaluates against the document. A rule can also read a total of other documents, how many there are or what an integer property adds up to, from the count and sum trees their indexes keep (see [Totals of other documents](#totals-of-other-documents)).
 
 | | |
 |---|---|
@@ -49,10 +49,10 @@
 
 - **Create and replace.** The rules run after the JSON schema validation of the document's properties (and after [maxBytes](max-bytes.md)), so every value a rule reads has passed its property's schema. A replace is judged on the whole new document, not only on what changed.
 - **Name order, first failure.** Rules are checked in the order of their names, and the first rule the document breaks refuses the transition with `DocumentPropertyConstraintViolatedError` (10422). The error names the document type, the rule, and why it failed (below).
-- **Transfer and purchase.** These change only the owner and the transfer's time and heights. Rules that read `$ownerId` or `$transferredAt…` are judged again, against the stored document with its new owner and transfer values; other rules are not, since nothing they read changed. A transfer or purchase that would break such a rule is refused with 10422.
+- **Transfer and purchase.** These change only the owner and the transfer's time and heights. Rules that read `$ownerId`, `$transferredAt…` or a total that depends on the owner are judged again, against the stored document with its new owner and transfer values; other rules are not, since nothing they read changed. A transfer or purchase that would break such a rule is refused with 10422.
 - **Price updates** change only the update's time and heights, so the rules that read `$updatedAt…` are judged again the same way; other rules are not.
 - **Deletes** are not judged, with one exception: a delete of an [index-only](index-only.md) document carries the row's values, which are validated like a create's, rules included. The delete carries neither the owner nor any time or height, which is why an index-only type may not have a rule reading `$ownerId` or a system time or height.
-- **No state, no fee.** A rule reads only the document, its owner and its times and heights. It changes nothing stored and adds no fee; the limits below bound its cost. SDKs that validate a document before sending it apply the same rules.
+- **State and fees.** A rule reads the document, its owner and its times and heights, and a `countOf` or `sumOf` reads a total from state. Each such total is a state read billed with the write; nothing else a rule does adds a fee, and it changes nothing stored. The limits below bound its cost. SDKs that validate a document before sending it apply the same rules, except those reading a total, which they cannot read.
 
 Why a rule fails, as the error reports it:
 
@@ -117,6 +117,7 @@ An integer expression is one of:
 | `length`, `byteLength` | `{ "length": "title" }` | The characters (as `maxLength` counts them) or UTF-8 bytes (as `maxBytes` counts them) of a string property, 0 when the document leaves it out |
 | `count` | `{ "count": "tags" }` | The items of an array property, or the bytes of a byte array property, 0 when the document leaves it out |
 | system time or height | `"$createdAt"`, `"$updatedAtBlockHeight"` | A time or height the document records (see [Times and heights](#times-and-heights)) |
+| `countOf`, `sumOf` | `{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }` | A total of documents of a type of the same contract, read from state (see [Totals of other documents](#totals-of-other-documents)) |
 
 Where `maxLength`, `maxBytes` and `maxItems` bound one property by a fixed number, a size can be compared with another property or bounded only under a condition: `{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }` holds a list to its own limit. A size never breaks a rule by itself: a property left out or null has size 0, and so would a value of another type, which the schema validation refuses first.
 
@@ -172,6 +173,37 @@ A rule may read one only when the document type records it by listing it in `req
 
 SDK pre-checks run before the block exists: they use the device clock for the times a write records, and do not judge a rule reading a block height, which is unknown until the block.
 
+## Totals of other documents
+
+`countOf` and `sumOf` read a total from state: how many documents of a type of the same contract match a filter, or what one of their integer properties adds up to. The total is the one a count or sum tree keeps ([Count Trees](../drive/document-count-trees.md), [Sum Trees](../drive/document-sum-trees.md)), so reading it costs about the same however many documents match.
+
+| Form | Value | The counted type needs |
+|---|---|---|
+| `{ "countOf": ["listing"] }` | How many `listing` documents there are | `documentsCountable` |
+| `{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }` | How many of them match the filter | A countable index whose properties are exactly the filter's keys |
+| `{ "sumOf": ["pledge", "amount"] }` | The total `amount` over every `pledge` | `documentsSummable: "amount"` |
+| `{ "sumOf": ["pledge", "amount", { "campaignId": "campaignRef" }] }` | The total over those matching the filter | An index with `summable: "amount"` whose properties are exactly the filter's keys |
+
+A filter maps each key, a property of the counted type or `$ownerId`, to the value it must take, read from the document being written: one of its properties (`"campaignRef"`), `$ownerId`, an integer, or a `{ "const": ... }` string or base58 identifier. The counted type may be the rule's own.
+
+```json
+"propertyConstraints": {
+  "atMostTenListings": {
+    "lessThanOrEqual": [{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }, 10]
+  },
+  "pledgesWithinGoal": {
+    "lessThanOrEqual": [{ "sumOf": ["pledge", "amount", { "campaignId": "campaignRef" }] }, "goal"]
+  }
+}
+```
+
+- **As it will be after the write.** The total is the stored one with the write applied. When the counted type is the rule's own, a create adds the document, a replace swaps its stored version for the new one, and a transfer or purchase moves it to its new owner. So `atMostTenListings`, declared on `listing`, keeps every owner at ten or fewer, and a replace of one of ten is allowed.
+- **Judged when the rule's own type is written.** A rule is never judged on writes of the type it counts. On its own type it holds for good, since every write that could raise the total is judged. On another type it is only checked when its own type is written, and can go stale later: deleting a `profile` does not undo a `post` that needed one. Deletes are not judged, so a lower bound can be broken by deleting documents.
+- **Transfers, purchases and price updates.** A total that depends on the owner (a filter value of `$ownerId`, or a `$ownerId` key on the rule's own type) is read again for a transfer or purchase, the document counted toward its new owner. A rule a price update judges, one reading `$updatedAt…`, reads its totals too.
+- **Billed.** Each total is a state read billed with the write. A total two rules read alike is read once.
+- **Every earlier write counts.** A document batch carries one transition, and each state transition of a block is applied before the next is validated, so a total includes every write before it.
+- **SDK pre-checks** cannot read state, so they do not judge a rule reading a total.
+
 ## Evaluation order and short-circuiting
 
 Conditions are checked in declared order and no further than the outcome needs. A comparison evaluates its left side, then its right. `anyOf` stops at the first condition that holds, `allOf` at the first that fails. Operands are evaluated left to right.
@@ -199,7 +231,8 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 - every condition and every operator object has exactly one key;
 - a comparison, `subtract`, `divide`, `modulo` and `power` take exactly two operands; `add` and `multiply` two or more; `anyOf` and `allOf` two or more conditions, no two alike; an `in` two or more distinct values, all integers or all strings;
 - no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not` or a `notIn`;
-- a path matches `$ownerId`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, so `$revision` and other system properties are refused.
+- a path matches `$ownerId`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, so `$revision` and other system properties are refused;
+- a `countOf` lists a type name and optionally a filter, and a `sumOf` a type name, a property and optionally a filter; a filter has one or more keys, each `$ownerId` or a dotted path, and each value is a path, `$ownerId`, an integer or a `{ "const": ... }` string.
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):
 
@@ -212,12 +245,16 @@ The parser then checks the rules against the document type (`InvalidContractStru
 - every time or height a rule reads is one the type lists in `required`, and takes no `ifAbsent` default;
 - `present` and `absent` do not name `$ownerId` or a time or height, and an index-only type has no rule reading any of them;
 - no `anyOf` or `allOf` lists two conditions that parse alike, such as `1` and `1.0`, or two `in` conditions listing the same values in another order, and no `ifThen` or `ifThenElse` holds two alike conditions;
-- no condition or operand nests more than 64 levels deep.
+- no condition or operand nests more than 64 levels deep;
+- once every document type of the contract is parsed, every `countOf` and `sumOf` counts a type of the contract that is not index-only, with a tree that keeps the total as set out in [Totals of other documents](#totals-of-other-documents). A unique, contested, ranked, time-range or index-only-terminal index keeps no such total, nor does one with more properties than the filter has keys;
+- every key of a filter is `$ownerId` or an integer, string or identifier property of the counted type, and its value is of the same kind; a string constant is in the key's `enum` when it has one, and an identifier constant is base58;
+- every property a filter value reads is listed in `required`, with every object around it, so a write always has the value; an index-only type has no rule reading a total.
 
-Two limits come from the protocol version 14 `SystemLimits`, and a rule over one is refused the same way:
+Three limits come from the protocol version 14 `SystemLimits`, and a rule over one is refused the same way:
 
 - at most 16 rules per document type (`max_property_constraints`);
-- at most 32 nodes per rule (`max_property_constraint_nodes`).
+- at most 32 nodes per rule (`max_property_constraint_nodes`);
+- at most 4 distinct `countOf` and `sumOf` totals read by one document type's rules, a total read twice counting once (`max_property_constraint_aggregates`).
 
 A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes are counted like this:
 
@@ -235,6 +272,7 @@ A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes a
 | `notIn` | as the `in` it negates |
 | An integer, a path, an `ifAbsent`, a size (`length`, `byteLength`, `count`) or a time or height | 1 |
 | `add`, `multiply`, `subtract`, `divide`, `modulo`, `power`, `min`, `max`, `abs` | 1, plus their operands |
+| `countOf`, `sumOf` | 1, plus 1 per filter key |
 
 `depositCoversOrder` above is 7 nodes (the comparison, `multiply`, `add` and four paths), and `closedNeedsClosedAt` is 5. An `in` fits up to 30 values in 32 nodes.
 

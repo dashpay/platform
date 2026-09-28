@@ -1083,7 +1083,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (the second when the first holds, the third when it does not, only the
 ///     branch taken evaluated), no two alike; `notIn`, an `in` negated in as
 ///     many nodes. In an operand, a property the document leaves out counts as
-///     0, or as the value of an `ifAbsent` operand naming it.
+///     0, or as the value of an `ifAbsent` operand naming it. `countOf` and
+///     `sumOf` operands read a total from state: how many documents of a type
+///     of the same contract match a filter (keys of that type or `$ownerId`,
+///     values read from the document written), or an integer property's total
+///     over them, as the count or sum tree will keep it once the write is done;
+///     the batch transformer reads them into the action
+///     (`Drive::fetch_property_constraint_aggregate`, billed; in place in
+///     transformer 0, reading nothing before this version), a transfer or
+///     purchase reads again those depending on the owner, and a rule reading
+///     one it is not given (an SDK pre-check) is not judged.
 ///     Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
 ///     remainder is never negative), and an overflow, a zero divisor, a
 ///     negative exponent or a value that is not an integer refuses the document
@@ -1117,7 +1126,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
 ///     comparison, `in`, listed value, `const`, presence test and logical
 ///     operator counting as one), and that no `anyOf` or `allOf` lists the same
-///     condition twice. `DataContract::validate_document_properties` 0
+///     condition twice, and at most `max_property_constraint_aggregates` (4)
+///     distinct totals per type; once every type is parsed, that a tree keeps
+///     each total (`documentsCountable` or `documentsSummable`, or an index
+///     whose properties are exactly the filter's keys), in
+///     `create_document_types_from_document_schemas` 1, in place and inert
+///     before this version. `DataContract::validate_document_properties` 0
 ///     (extended in place, inert before this version, and taking the document's
 ///     owner for `$ownerId`) calls `validate_property_constraints`
 ///     (`validate_property_constraints` 0) after the schema validation, so
@@ -1133,7 +1147,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     takes the document version's system values (`DocumentSystemValues`):
 ///     consensus gives the writer and the block's time and heights on create,
 ///     and on replace the stored creation and transfer values with the block's
-///     as the update. The rules read no state and change nothing stored. They
+///     as the update. The rules change nothing stored and read no state but
+///     their totals. They
 ///     are fixed when the document type is created: a changed
 ///     `propertyConstraints` is an incompatible schema change on update. The
 ///     moderation charters contract declares its first one: a
