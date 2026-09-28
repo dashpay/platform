@@ -230,12 +230,15 @@ impl SpvRuntime {
     /// never sync. A parked loop that has exited since is dropped and the
     /// start goes ahead.
     fn ensure_no_live_run_loop(&self) -> Result<(), PlatformWalletError> {
+        // Lock `task` before reading the counter. A stop counts itself before
+        // it takes the handle under this lock, so a start either still sees
+        // the handle or already sees the stop.
+        let mut task = self.task.lock().expect("spv task mutex poisoned");
         if self.stops_in_progress.load(Ordering::SeqCst) > 0 {
             return Err(PlatformWalletError::SpvError(
                 "an SPV stop is still in progress; wait for it before starting SPV".to_string(),
             ));
         }
-        let mut task = self.task.lock().expect("spv task mutex poisoned");
         match task.as_ref() {
             Some(handle) if !handle.is_finished() => Err(PlatformWalletError::SpvError(
                 "the previous SPV run loop has not exited yet; stop SPV again before starting it"
@@ -994,14 +997,18 @@ mod tests {
             tokio::spawn(async move { runtime.stop().await })
         };
         // The stop takes the handle out of `task` before it joins it.
-        while runtime
-            .task
-            .lock()
-            .expect("spv task mutex poisoned")
-            .is_some()
-        {
-            tokio::task::yield_now().await;
-        }
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while runtime
+                .task
+                .lock()
+                .expect("spv task mutex poisoned")
+                .is_some()
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the stop should take the run-loop handle promptly");
 
         let result = runtime.start(ClientConfig::default()).await;
 
@@ -1030,9 +1037,13 @@ mod tests {
     async fn should_drop_a_parked_run_loop_that_has_exited() {
         let runtime = unstarted_runtime();
         let exited = tokio::spawn(async {});
-        while !exited.is_finished() {
-            tokio::task::yield_now().await;
-        }
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !exited.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("an empty task should finish promptly");
         *runtime.task.lock().expect("spv task mutex poisoned") = Some(exited);
 
         assert!(runtime.ensure_no_live_run_loop().is_ok());
