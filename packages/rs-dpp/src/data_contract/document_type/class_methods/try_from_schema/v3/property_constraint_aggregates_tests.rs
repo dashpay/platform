@@ -639,3 +639,60 @@ fn should_match_a_document_by_the_values_its_filter_takes() {
         0
     );
 }
+
+/// A string key whose `enum` sits behind a `$ref` into the contract's `$defs`
+/// still holds a constant to it: the contract-level check follows `$ref`s as
+/// the rest of the parse does.
+#[test]
+fn should_hold_a_constant_to_the_enum_a_key_refers_to() {
+    let contract = |status: &str| {
+        let contract = json!({
+            "$formatVersion": "1",
+            "id": Identifier::from([7; 32]).to_string(Encoding::Base58),
+            "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+            "version": 1,
+            "schemaDefs": {
+                "status": { "type": "string", "enum": ["open", "closed"], "maxLength": 10 }
+            },
+            "documentSchemas": {
+                "listing": {
+                    "type": "object",
+                    "properties": {
+                        "status": { "$ref": "#/$defs/status", "position": 0 }
+                    },
+                    "required": ["status"],
+                    "indices": [{
+                        "name": "byOwnerStatus",
+                        "properties": [{ "$ownerId": "asc" }, { "status": "asc" }],
+                        "countable": "countable"
+                    }],
+                    "propertyConstraints": {
+                        "fewOpen": {
+                            "lessThan": [
+                                {
+                                    "countOf": [
+                                        "listing",
+                                        { "$ownerId": "$ownerId", "status": { "const": status } }
+                                    ]
+                                },
+                                5
+                            ]
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            }
+        });
+        DataContract::from_value(
+            platform_value::to_value(contract).expect("the contract converts"),
+            true,
+            PlatformVersion::latest(),
+        )
+    };
+
+    contract("open").expect("an enum value registers");
+    expect_structure_error(
+        contract("opne"),
+        "with \"status\" at \"opne\", which is not one of its enum values",
+    );
+}

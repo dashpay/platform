@@ -2390,10 +2390,12 @@ impl AggregateKeyKind {
 /// a base58 identifier; and a tree of that type keeps the total
 /// ([`AggregateRead::whole_type_kept`], [`AggregateRead::answering_index`]),
 /// so that a rule never reads a total a count or sum tree does not keep.
-/// Registration only: the index and property settings it relies on do not
-/// change on a contract update.
+/// `$ref`s are followed into `schema_defs`, the contract's `$defs`, as the core
+/// parse reads them. Registration only: the index and property settings it
+/// relies on do not change on a contract update.
 pub(in crate::data_contract::document_type::class_methods) fn validate_property_constraint_aggregates(
     document_types: &BTreeMap<String, DocumentType>,
+    schema_defs: Option<&BTreeMap<String, Value>>,
 ) -> Result<(), DataContractError> {
     for (type_name, document_type) in document_types {
         let declaring = document_type.as_ref();
@@ -2487,7 +2489,7 @@ pub(in crate::data_contract::document_type::class_methods) fn validate_property_
                                 AggregateKeyKind::Text => {
                                     // A constant the key's `enum` does not list is a typo:
                                     // no document could match it
-                                    if !enum_admits(counted.schema(), key, constant)? {
+                                    if !enum_admits(counted.schema(), schema_defs, key, constant)? {
                                         return Err(error(format!(
                                             "{totals} with \"{key}\" at \"{constant}\", which is \
                                              not one of its enum values"
