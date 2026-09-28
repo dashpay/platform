@@ -4,14 +4,14 @@
 //!
 //! The platform computes the property when a created or replaced document
 //! leaves it out and supplies every parameter, and checks it when the document
-//! supplies it. The functions are a closed list of built-ins named under
-//! `sys.` ([`generation_function`]). A function never refuses a value: which
+//! supplies it. The functions are a closed list of system functions named
+//! under `sys.` ([`system_function`]). A function never refuses a value: which
 //! characters a parameter may hold is the job of that parameter's own
 //! `pattern`, and the generated property needs no pattern of its own.
 
-pub mod generation_function;
+pub mod system_function;
 
-pub use generation_function::GenerationFunction;
+pub use system_function::{StringTransformation, SystemFunction};
 
 use serde::{Deserialize, Serialize};
 
@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GeneratedFrom {
     /// The function that generates the value.
-    pub function: GenerationFunction,
+    pub function: SystemFunction,
     /// What the function is applied to, in order.
     pub params: Vec<GenerationParam>,
 }
@@ -70,7 +70,9 @@ mod tests {
     #[test]
     fn should_read_and_write_the_wire_form() {
         let declaration = GeneratedFrom {
-            function: GenerationFunction::HomographSafeAscii,
+            function: SystemFunction::StringTransformation(
+                StringTransformation::HomographSafeAscii,
+            ),
             params: vec![GenerationParam::Property("label".to_string())],
         };
         assert_eq!(declaration.params_description(), "label");

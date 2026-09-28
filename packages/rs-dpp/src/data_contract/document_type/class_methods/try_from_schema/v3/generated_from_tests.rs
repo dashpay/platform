@@ -21,7 +21,9 @@ use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
 use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
-use crate::data_contract::document_type::{GeneratedFrom, GenerationFunction, GenerationParam};
+use crate::data_contract::document_type::{
+    GeneratedFrom, GenerationParam, StringTransformation, SystemFunction,
+};
 use crate::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use crate::data_contract::DataContract;
 use crate::document::Document;
@@ -125,7 +127,9 @@ fn should_parse_generated_from_onto_string_properties_at_any_depth() {
     let document_type = parse(schema());
     let expected = |source: &str| {
         Some(GeneratedFrom {
-            function: GenerationFunction::HomographSafeAscii,
+            function: SystemFunction::StringTransformation(
+                StringTransformation::HomographSafeAscii,
+            ),
             params: vec![GenerationParam::Property(source.to_string())],
         })
     };
@@ -239,6 +243,37 @@ fn should_refuse_generated_from_beside_a_ref() {
     assert_eq!(error.keyword(), "not", "{error:?}");
 }
 
+/// Every system function registers, and generates what it returns for the
+/// document's param.
+#[test]
+fn should_register_and_generate_with_every_string_transformation() {
+    for transformation in StringTransformation::ALL {
+        let document_type = parse(schema_with(platform_value!({
+            "type": "string",
+            "maxLength": 64,
+            "generatedFrom": { "function": transformation.as_str(), "params": ["label"] },
+            "position": 1
+        })));
+        assert_eq!(
+            generated_from_of(&document_type, "value").map(|declaration| declaration.function),
+            Some(SystemFunction::StringTransformation(transformation))
+        );
+        let mut properties = BTreeMap::from([(
+            "label".to_string(),
+            Value::Text("hello World-again".to_string()),
+        )]);
+        document_type
+            .fill_generated_properties(&mut properties, PlatformVersion::latest())
+            .expect("the fill runs");
+        assert_eq!(
+            properties.get("value"),
+            Some(&Value::Text(transformation.apply("hello World-again"))),
+            "{}",
+            transformation.as_str()
+        );
+    }
+}
+
 #[test]
 fn should_refuse_a_malformed_generated_from() {
     let with = |generated_from: Value| {
@@ -257,7 +292,9 @@ fn should_refuse_a_malformed_generated_from() {
                 "params": ["label"]
             }),
             "function \"sys.stringTransformations.homographSafe\" is unknown, expected one of \
-             \"sys.stringTransformations.homographSafeASCII\"",
+             \"sys.stringTransformations.camelCase\", \"sys.stringTransformations.capitalize\", \
+             \"sys.stringTransformations.homographSafeASCII\", \"sys.stringTransformations.lowercase\", \
+             \"sys.stringTransformations.snakeCase\", \"sys.stringTransformations.uppercase\"",
         ),
         // Built-ins are named under sys.: the bare name is no function
         (

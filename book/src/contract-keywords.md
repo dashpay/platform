@@ -172,7 +172,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `encryptedFor.recipientKey`, `.senderKey` | integer property paths | The properties holding the recipient's and the sender's key ids. | 14 | [encryptedFor](contract-keywords/encrypted-for.md#example) |
 | `encryptedFor.scheme` | `"ecdh-secp256k1-aes256-cbc"` | How the ciphertext is made. | 14 | [The scheme](contract-keywords/encrypted-for.md#the-scheme) |
 | `generatedFrom` | `{ "function", "params" }` | The platform generates the string from other properties of the document; on arrival when a document leaves it out. | 14 | [generatedFrom](contract-keywords/generated-from.md) · [internals](data-model/documents.md#generated-properties-generatedfrom) |
-| `generatedFrom.function` | `"sys.stringTransformations.homographSafeASCII"` | The built-in function that generates the value. | 14 | [Functions](contract-keywords/generated-from.md#functions) |
+| `generatedFrom.function` | `"sys.stringTransformations.homographSafeASCII"` | The system function that generates the value: `sys.stringTransformations.` `lowercase`, `uppercase`, `capitalize`, `camelCase`, `snakeCase` or `homographSafeASCII`. | 14 | [Functions](contract-keywords/generated-from.md#functions) |
 | `generatedFrom.params` | property paths | The properties the function reads, in order. | 14 | [Params](contract-keywords/generated-from.md#params) |
 | `refersTo` | a declaration | What an identifier points at, checked when a document is written. See the [keys](#refersto). | 14 | [References](contract-keywords/refers-to.md) · [internals](data-model/documents.md#document-references-refersto) |
 

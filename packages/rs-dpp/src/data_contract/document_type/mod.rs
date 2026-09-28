@@ -185,7 +185,7 @@ pub(crate) mod property_names {
     /// document. Meta-schema v3+ (protocol version 14). See
     /// `apply_generated_from` in `try_from_schema`.
     pub const GENERATED_FROM: &str = "generatedFrom";
-    /// `generatedFrom`: the function name, one of `GenerationFunction::ALL`.
+    /// `generatedFrom`: the function name, one of `SystemFunction::ALL`.
     pub const FUNCTION: &str = "function";
     /// `generatedFrom`: the parameters, dotted paths of properties of the same
     /// document type.

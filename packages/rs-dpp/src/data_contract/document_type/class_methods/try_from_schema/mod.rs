@@ -16,9 +16,9 @@ use crate::data_contract::document_type::{
     ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
     DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceLookup,
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
-    GeneratedFrom, GenerationFunction, GenerationParam, IdentityKeyReferenceRequirements,
-    KeyIdReference, KeyReferenceIdentityProperty, ListElementReference, LookupKeySource,
-    ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
+    GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements, KeyIdReference,
+    KeyReferenceIdentityProperty, ListElementReference, LookupKeySource, ReferenceCombinator,
+    ReferenceOperands, SystemFunction, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -1979,10 +1979,10 @@ fn apply_generated_from_v0(
         .get(property_names::FUNCTION)
         .and_then(|value| value.as_text())
         .ok_or_else(shape_error)?;
-    let function = GenerationFunction::from_wire_name(function_name).ok_or_else(|| {
+    let function = SystemFunction::from_wire_name(function_name).ok_or_else(|| {
         DataContractError::InvalidContractStructure(format!(
             "generatedFrom function {function_name:?} is unknown, expected one of {}",
-            GenerationFunction::ALL
+            SystemFunction::ALL
                 .iter()
                 .map(|function| format!("{:?}", function.as_str()))
                 .collect::<Vec<_>>()

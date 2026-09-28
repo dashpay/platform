@@ -1357,11 +1357,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `DocumentProperty`) names a built-in `function` and its `params`,
 ///     properties of the same document type, as
 ///     `{ "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] }`.
-///     Built-ins are named under `sys.`, leaving other names to functions a
-///     contract may bring later; the one built-in takes one string and
-///     lowercases ASCII `A` to `Z`, then maps `o` to `0` and `i` and `l` to
-///     `1`, keeping every other character, which is DPNS's label
-///     normalization over ASCII computed without Unicode tables. The parser
+///     System functions are named under `sys.`, leaving other names to
+///     functions a contract may bring later. The `sys.stringTransformations`
+///     functions take one string and change ASCII characters only, keeping
+///     every other character, without Unicode tables: `lowercase`,
+///     `uppercase`, `capitalize`, `camelCase`, `snakeCase`, and
+///     `homographSafeASCII`, which lowercases, then maps `o` to `0` and `i`
+///     and `l` to `1`, DPNS's label normalization over ASCII. The parser
 ///     checks at registration and update that `params` holds as many
 ///     properties as the function takes, each another string property that
 ///     is not generated itself, that neither the property nor a param is

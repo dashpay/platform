@@ -47,7 +47,7 @@ pub mod reference_expression;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
-pub use generated_from::{GeneratedFrom, GenerationFunction, GenerationParam};
+pub use generated_from::{GeneratedFrom, GenerationParam, StringTransformation, SystemFunction};
 pub use list_element_reference::ListElementReference;
 pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
