@@ -320,6 +320,11 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// never landed. The DashPay rescan reconcile consults it before it
     /// stores a backfill record with a lowered cursor.
     pub(crate) sync_fault: Arc<std::sync::atomic::AtomicBool>,
+    /// The manager's shared record of each wallet's durable sync cursor,
+    /// also the lock that orders cursor writes between the wallet-event
+    /// adapter and the DashPay rescan reconcile. See
+    /// [`DurableCursors`](crate::changeset::DurableCursors).
+    pub(crate) durable_cursors: crate::changeset::DurableCursors,
     /// Broadcaster for DashPay payment transactions. Distinct from the
     /// asset-lock broadcaster — the asset-lock manager is always
     /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
@@ -362,6 +367,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             asset_locks: Arc::clone(&self.asset_locks),
             persister: self.persister.clone(),
             sync_fault: Arc::clone(&self.sync_fault),
+            durable_cursors: Arc::clone(&self.durable_cursors),
             broadcaster: Arc::clone(&self.broadcaster),
             sdk_writer: Arc::clone(&self.sdk_writer),
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),

@@ -1889,6 +1889,13 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
         let mut outcome = RoundOutcome::default();
+        // Whether this round's `synced_height` reached the host. A backfill
+        // record rides the round that lowers the cursor it vouches for, and
+        // must not reach the host when that cursor did not: a host without
+        // atomic rounds would keep the coverage over its old cursor, and no
+        // rollback on this side can take it back (dashpay/platform#4302
+        // review).
+        let mut cursor_delivered = false;
 
         // Wallet-registration metadata. Fires at most once per round
         // (registration emits the entry; subsequent rounds carry
@@ -2158,6 +2165,8 @@ impl PlatformWalletPersistence for FFIPersister {
                         result
                     );
                     outcome.record(result);
+                } else if core_cs.synced_height.is_some() {
+                    cursor_delivered = true;
                 }
             }
 
@@ -2226,7 +2235,15 @@ impl PlatformWalletPersistence for FFIPersister {
         // after the core changeset callback so the lowered cursor a rescan
         // round carries is staged before the record that vouches for it.
         // Whole-record semantics: the host replaces what it holds.
-        if let Some(record) = changeset.dashpay_backfill.as_ref() {
+        let backfill_cursor_owed = changeset
+            .core
+            .as_ref()
+            .is_some_and(|core| core.synced_height.is_some());
+        if let Some(record) = changeset
+            .dashpay_backfill
+            .as_ref()
+            .filter(|_| !backfill_cursor_owed || cursor_delivered)
+        {
             if let Some(cb) = self.wallet_dashpay_backfill_callback {
                 let covered = build_dashpay_backfill_covered_for_callback(record);
                 let result = unsafe {
@@ -5335,6 +5352,7 @@ fn decode_dashpay_backfill(
         rewound_from: entry.dashpay_backfill_rewound_from,
         covered,
         unpersisted_cursor: None,
+        unpersisted_extent: None,
     }
 }
 
@@ -8515,6 +8533,97 @@ mod tests {
             .expect("a host without the slot still stores the round");
         assert!(sink.events.lock().unwrap().is_empty());
         drop(persister);
+    }
+
+    /// A backfill record rides the round that lowers the cursor it vouches
+    /// for, and must not reach the host when that cursor did not — a host
+    /// without atomic rounds would keep the coverage over its old cursor
+    /// (dashpay/platform#4302 review). Withheld when the changeset callback
+    /// fails or is absent for a round that carries a cursor; delivered for a
+    /// record-only round.
+    #[test]
+    fn a_backfill_record_is_withheld_when_its_cursor_did_not_reach_the_host() {
+        use platform_wallet::changeset::{CoreChangeSet, DashPayBackfillRecord};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Default)]
+        struct Sink {
+            backfills: AtomicUsize,
+        }
+        unsafe extern "C" fn reject_changeset(
+            _ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            1
+        }
+        unsafe extern "C" fn count_backfill(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _floor: u32,
+            _rewound_from: u32,
+            _covered: *const DashPayBackfillCoveredContactFFI,
+            _covered_count: usize,
+        ) -> i32 {
+            (*(ctx as *const Sink))
+                .backfills
+                .fetch_add(1, Ordering::SeqCst);
+            0
+        }
+        fn persister(
+            sink: &Sink,
+            changeset: Option<PersistWalletChangesetFnForTest>,
+        ) -> FFIPersister {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: sink as *const Sink as *mut c_void,
+                    on_persist_wallet_changeset_fn: changeset,
+                    ..PersistenceCallbacks::default()
+                },
+                PersistenceCapabilities::NONE,
+                PersistenceExtensionCallbacks {
+                    wallet_dashpay_backfill: Some(count_backfill),
+                    ..Default::default()
+                },
+            )
+        }
+        type PersistWalletChangesetFnForTest =
+            unsafe extern "C" fn(*mut c_void, *const u8, *const WalletChangeSetFFI) -> i32;
+        let rewind_round = || PlatformWalletChangeSet {
+            core: Some(CoreChangeSet {
+                synced_height: Some(100),
+                synced_height_is_rewind: true,
+                ..CoreChangeSet::default()
+            }),
+            dashpay_backfill: Some(DashPayBackfillRecord::default()),
+            ..PlatformWalletChangeSet::default()
+        };
+
+        // The host rejected the cursor: the record must not follow it.
+        let sink = Sink::default();
+        let rejected = persister(&sink, Some(reject_changeset));
+        assert!(rejected.store([1u8; 32], rewind_round()).is_err());
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 0);
+
+        // The host takes no cursors at all: a record over one is meaningless.
+        let sink = Sink::default();
+        let cursorless = persister(&sink, None);
+        cursorless
+            .store([1u8; 32], rewind_round())
+            .expect("nothing failed");
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 0);
+
+        // A record-only round (no cursor to pair with) is delivered.
+        cursorless
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    dashpay_backfill: Some(DashPayBackfillRecord::default()),
+                    ..PlatformWalletChangeSet::default()
+                },
+            )
+            .expect("record-only round");
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 1);
     }
 
     /// The restore side of dashpay/platform#4302: a wallet-restore entry

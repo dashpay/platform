@@ -137,6 +137,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         use crate::changeset::{CoreChangeSet, PlatformWalletChangeSet};
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
+        // The durable-cursor lock first, then the manager (see
+        // `DurableCursors`): held until this pass's store returns, so no
+        // adapter commit can interleave between deciding a cursor and storing
+        // it.
+        let mut durable_cursors = self.durable_cursors.lock().await;
         let mut wm = self.wallet_manager.write().await;
         let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
             return Ok(None);
@@ -294,13 +299,32 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .iter()
                 .any(|(o, c)| (o, c) == (owner, contact))
         });
-        record.record_pass(synced_height, floor, to_mark.iter().copied());
+        // This pass's extent, widened by one a failed earlier round still owes.
+        let extent = match (
+            floor.map(|floor| (floor, synced_height)),
+            record.unpersisted_extent.take(),
+        ) {
+            (Some((f1, r1)), Some((f2, r2))) => Some((f1.min(f2), r1.max(r2))),
+            (this_pass, owed) => this_pass.or(owed),
+        };
+        match extent {
+            Some((extent_floor, rewound_from)) => {
+                record.record_pass(rewound_from, Some(extent_floor), to_mark.iter().copied())
+            }
+            None => record.record_pass(synced_height, None, to_mark.iter().copied()),
+        };
         let owed = record.unpersisted_cursor.take();
-        let cursor_to_write = match (floor, owed) {
+        let needed_cursor = match (floor, owed) {
             (Some(floor), Some(owed)) => Some(floor.min(owed)),
             (Some(floor), None) => Some(floor),
             (None, owed) => owed,
         };
+        // Never write a cursor at or above the one the host already holds:
+        // coverage is safe beside any lower durable cursor, and writing a
+        // higher one would claim rows the adapter has not persisted yet.
+        let durable = durable_cursors.get(&self.wallet_id).copied();
+        let cursor_to_write =
+            needed_cursor.filter(|cursor| durable.is_none_or(|durable| *cursor < durable));
         let cursor_now = floor.unwrap_or(synced_height);
         let faulted = self.sync_fault.load(std::sync::atomic::Ordering::Relaxed);
         let stored = if faulted {
@@ -309,6 +333,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let changeset = PlatformWalletChangeSet {
                 core: cursor_to_write.map(|cursor| CoreChangeSet {
                     synced_height: Some(cursor),
+                    synced_height_is_rewind: true,
                     ..CoreChangeSet::default()
                 }),
                 dashpay_backfill: Some(record.clone()),
@@ -316,6 +341,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             };
             self.persister.store(changeset).map_err(Some)
         };
+        if stored.is_ok() {
+            if let Some(cursor) = cursor_to_write {
+                durable_cursors.insert(self.wallet_id, cursor);
+            }
+        }
         if let Err(error) = stored {
             match error {
                 Some(error) => tracing::warn!(
@@ -332,7 +362,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             info.dashpay_backfill = previous_record;
             info.dashpay_backfill.unpersisted_cursor =
-                Some(cursor_to_write.map_or(cursor_now, |cursor| cursor.min(cursor_now)));
+                Some(needed_cursor.map_or(cursor_now, |cursor| cursor.min(cursor_now)));
+            info.dashpay_backfill.unpersisted_extent = extent;
             for (owner, contact, _) in &to_mark {
                 if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
                     managed.dashpay_rescan_triggered_mut().remove(contact);
@@ -2970,18 +3001,23 @@ mod tests {
             .retain(|o, c| (o, c) != (&owner, &contact));
     }
 
+    /// Move the wallet's cursor to `height` the way a scan does: in memory,
+    /// and — as the event adapter would once it commits the advance — on the
+    /// host, recorded in the manager's durable-cursor map.
     async fn set_synced_height(
         manager: &Arc<PlatformWalletManager<RecordingPersister>>,
         wallet_id: WalletId,
         height: u32,
     ) {
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let mut durable = manager.durable_cursors.lock().await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let mut wm = wallet.identity().wallet_manager.write().await;
         wm.get_wallet_info_mut(&wallet_id)
             .expect("info")
             .core_wallet
             .update_synced_height(height);
+        durable.insert(wallet_id, height);
     }
 
     async fn synced_height(
@@ -4100,6 +4136,19 @@ mod tests {
             let record = round.dashpay_backfill.as_ref().unwrap();
             assert_eq!(record.covered_from(&owner, &first), Some(100));
             assert_eq!(record.covered_from(&owner, &later), Some(200));
+            assert_eq!(
+                (record.floor, record.rewound_from),
+                (100, 1_000),
+                "the retry keeps the failed rewind's extent"
+            );
+            assert!(
+                record.is_pending(100),
+                "the backfill still reads as climbing"
+            );
+            assert!(
+                round.core.as_ref().unwrap().synced_height_is_rewind,
+                "the owed cursor rides as a rewind"
+            );
         }
         let wm = manager.wallet_manager.read().await;
         assert_eq!(
@@ -4214,6 +4263,119 @@ mod tests {
         assert_eq!(info.core_wallet.synced_height(), 100);
         assert!(info.dashpay_backfill.is_empty());
         assert_eq!(info.dashpay_backfill.unpersisted_cursor, Some(100));
+    }
+
+    /// The host lags memory (a healthy backlog: the adapter has not yet
+    /// committed the advances that took memory to 1000). A rewind to 800
+    /// must not write 800 — that would claim the rows between the host's
+    /// cursor and 800 are on disk when they are still queued. The host's
+    /// cursor is already below the floor, so the record is stored with no
+    /// cursor, and nothing records a durable height that was never written
+    /// (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn a_rewind_above_the_hosts_cursor_writes_no_cursor() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        establish_receival_contact(&manager, &persister, wallet_id, owner, contact, 800, 800).await;
+        set_synced_height(&manager, wallet_id, 100).await;
+        // Memory advances to 1000; the host still holds 100.
+        {
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            let mut wm = wallet.identity().wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .core_wallet
+                .update_synced_height(1_000);
+        }
+        persister.stores.lock().unwrap().clear();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile"),
+            Some(800),
+            "memory rewinds to the floor"
+        );
+        {
+            let stores = persister.stores.lock().unwrap();
+            let round = last_stored_record(&stores).expect("the record is stored");
+            assert!(
+                round.core.is_none(),
+                "the host's 100 is already below the floor; 800 must not be written"
+            );
+            assert_eq!(
+                round
+                    .dashpay_backfill
+                    .as_ref()
+                    .unwrap()
+                    .covered_from(&owner, &contact),
+                Some(800)
+            );
+        }
+        assert_eq!(
+            manager
+                .durable_cursors
+                .lock()
+                .await
+                .get(&wallet_id)
+                .copied(),
+            Some(100),
+            "the recorded durable cursor is still what the host holds"
+        );
+    }
+
+    /// `spv_rescan_filters_blocking` lowers the cursor in memory only. The
+    /// next record round must carry that reset, or it stores coverage
+    /// justified by a rewind the host never saw (dashpay/platform#4302
+    /// review): here a contact forward-covered at the reset cursor produces
+    /// a round with no rewind of its own, which now carries the owed 100.
+    #[tokio::test]
+    async fn a_manual_rescan_reset_rides_the_next_record_round() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        set_synced_height(&manager, wallet_id, 1_000).await;
+        {
+            let manager = Arc::clone(&manager);
+            tokio::task::spawn_blocking(move || {
+                assert!(manager.spv_rescan_filters_blocking(&wallet_id, 100));
+            })
+            .await
+            .expect("manual rescan");
+        }
+        assert_eq!(synced_height(&manager, wallet_id).await, 100);
+        establish_receival_contact(&manager, &persister, wallet_id, owner, contact, 200, 200).await;
+        persister.stores.lock().unwrap().clear();
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile"),
+            None,
+            "the contact is forward-covered at the reset cursor"
+        );
+        let stores = persister.stores.lock().unwrap();
+        let round = last_stored_record(&stores).expect("the record is stored");
+        let core = round.core.as_ref().expect("the owed reset rides the round");
+        assert_eq!(core.synced_height, Some(100));
+        assert!(core.synced_height_is_rewind);
+        assert_eq!(
+            round
+                .dashpay_backfill
+                .as_ref()
+                .unwrap()
+                .covered_from(&owner, &contact),
+            Some(200)
+        );
     }
 
     async fn synced_height_of(
@@ -8588,6 +8750,7 @@ mod tests {
             asset_locks: Arc::clone(&real.asset_locks),
             persister: real.persister.clone(),
             sync_fault: Arc::clone(&real.sync_fault),
+            durable_cursors: Arc::clone(&real.durable_cursors),
             broadcaster: Arc::new(GatedRejectingBroadcaster { entered, release }),
             sdk_writer: Arc::clone(&real.sdk_writer),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
@@ -8628,6 +8791,7 @@ mod tests {
             asset_locks: Arc::clone(&real.asset_locks),
             persister: real.persister.clone(),
             sync_fault: Arc::clone(&real.sync_fault),
+            durable_cursors: Arc::clone(&real.durable_cursors),
             broadcaster: Arc::new(GatedBroadcaster { entered, release }),
             sdk_writer: Arc::clone(&real.sdk_writer),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
@@ -8649,6 +8813,7 @@ mod tests {
             asset_locks: Arc::clone(&real.asset_locks),
             persister: real.persister.clone(),
             sync_fault: Arc::clone(&real.sync_fault),
+            durable_cursors: Arc::clone(&real.durable_cursors),
             broadcaster: Arc::new(AcceptingBroadcaster),
             sdk_writer: Arc::clone(&real.sdk_writer),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
@@ -8685,6 +8850,7 @@ mod tests {
             asset_locks: Arc::clone(&real.asset_locks),
             persister: real.persister.clone(),
             sync_fault: Arc::clone(&real.sync_fault),
+            durable_cursors: Arc::clone(&real.durable_cursors),
             broadcaster: Arc::new(RejectingBroadcaster),
             sdk_writer: Arc::clone(&real.sdk_writer),
             dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),

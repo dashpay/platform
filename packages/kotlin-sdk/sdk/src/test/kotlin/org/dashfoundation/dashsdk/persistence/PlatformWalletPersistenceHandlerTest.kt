@@ -4888,6 +4888,60 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(4, db.dashpayDao().getContactRequestsByOwner(ownerId).single().externalAccountReference)
     }
 
+    /**
+     * dashpay/platform#4302 review: adding the backfill record and the
+     * outbound-account marker must not change the JVM constructors of the two
+     * restore holders, or a bridge compiled against the previous SDK throws
+     * `NoSuchMethodError` when it builds restore rows. Pins both the
+     * full-arity constructor (Java callers) and `WalletRestoreData`'s
+     * default-argument synthetic (Kotlin callers leaving `providerSpecialTxs`
+     * out) against the v4.2-dev parameter lists.
+     */
+    @Test
+    fun restoreHoldersKeepTheirPreviousJvmConstructors() {
+        fun ctorTypes(cls: Class<*>) = cls.declaredConstructors.map { it.parameterTypes.map { p -> p.name } }.toSet()
+
+        val walletBase = listOf(
+            "[B", "int", "[Lorg.dashfoundation.dashsdk.ffi.AccountSpecData;", "long", "long", "long",
+            "int", "int", "int", "long",
+            "[Lorg.dashfoundation.dashsdk.ffi.IdentityRestoreData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.PlatformAddressBalanceRestoreData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.UtxoRestoreData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.CoreAddressPoolRestoreData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.TrackedAssetLockRestoreData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.UnresolvedAssetLockTxRecordData;",
+            "[Lorg.dashfoundation.dashsdk.ffi.ProviderSpecialTxRestoreData;",
+            "[B",
+        )
+        val walletCtors = ctorTypes(org.dashfoundation.dashsdk.ffi.WalletRestoreData::class.java)
+        assertTrue("full-arity constructor unchanged", walletCtors.contains(walletBase))
+        assertTrue(
+            "default-argument constructor unchanged",
+            walletCtors.contains(walletBase + listOf("int", "kotlin.jvm.internal.DefaultConstructorMarker")),
+        )
+
+        val contactBase = listOf(
+            "[B", "[B", "boolean", "int", "int", "int", "[B", "[B", "[B", "int", "long", "boolean",
+            "java.lang.String", "java.lang.String", "boolean", "java.lang.String", "[I",
+        )
+        assertTrue(
+            "contact restore constructor unchanged",
+            ctorTypes(org.dashfoundation.dashsdk.ffi.ContactRequestRestoreData::class.java).contains(contactBase),
+        )
+
+        // The new fields are still plain fields native can read by name.
+        for ((cls, names) in listOf(
+            org.dashfoundation.dashsdk.ffi.WalletRestoreData::class.java to listOf(
+                "hasDashPayBackfill", "dashPayBackfillFloor", "dashPayBackfillRewoundFrom", "dashPayBackfillCovered",
+            ),
+            org.dashfoundation.dashsdk.ffi.ContactRequestRestoreData::class.java to listOf(
+                "hasExternalAccountReference", "externalAccountReference",
+            ),
+        )) {
+            for (name in names) assertNotNull("$name is a JVM field", cls.getField(name))
+        }
+    }
+
     @Test
     fun loadWalletListScopesToTheHandlerNetwork() = runTest {
         // A network-scoped handler must never hand the Rust loader a

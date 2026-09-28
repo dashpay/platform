@@ -105,6 +105,13 @@ pub struct DashPayBackfillRecord {
     /// behind. `None` when nothing is owed.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub unpersisted_cursor: Option<u32>,
+    /// In-memory only, like [`unpersisted_cursor`](Self::unpersisted_cursor):
+    /// the `(floor, rewound_from)` a rewind whose record round failed to
+    /// store still has to contribute. The retry folds it back in, so the
+    /// stored record keeps the backfill's real extent instead of the empty
+    /// one a retry with no rewind of its own would produce.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub unpersisted_extent: Option<(u32, u32)>,
 }
 
 impl DashPayBackfillRecord {
@@ -278,6 +285,7 @@ impl DashPayBackfillRecord {
             rewound_from,
             covered,
             unpersisted_cursor: None,
+            unpersisted_extent: None,
         })
     }
 }

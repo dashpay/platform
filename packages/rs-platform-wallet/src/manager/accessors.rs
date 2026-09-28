@@ -866,6 +866,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             return true;
         }
         info.core_wallet.update_synced_height(from_height);
+        // Not persisted here, so remember it as owed: the next DashPay
+        // backfill record round carries it as that round's cursor, and no
+        // coverage reaches disk beside a durable cursor this reset retracted
+        // in memory only (dashpay/platform#4302 review).
+        let owed = &mut info.dashpay_backfill.unpersisted_cursor;
+        *owed = Some(owed.map_or(from_height, |cursor| cursor.min(from_height)));
         tracing::info!(
             wallet_id = %hex::encode(wallet_id),
             from_height,

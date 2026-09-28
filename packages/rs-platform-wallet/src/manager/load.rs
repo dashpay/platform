@@ -240,6 +240,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 &platform_info,
             );
 
+            // The cursor the host just handed back is the durable one: seed
+            // the shared record of it before any writer can race it.
+            let loaded_cursor = platform_info.core_wallet.metadata.synced_height;
+
             if wallet_id != expected_wallet_id {
                 load_error = Some(PlatformWalletError::WalletCreation(format!(
                     "Persisted wallet id {} does not match recomputed id {}",
@@ -343,7 +347,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 Arc::clone(&persister_dyn),
                 broadcaster,
                 Arc::clone(&self.sync_fault),
+                Arc::clone(&self.durable_cursors),
             );
+            // No manager-lock guard is alive here, so taking the cursor lock
+            // keeps its order (cursor lock, then manager).
+            self.durable_cursors
+                .lock()
+                .await
+                .insert(wallet_id, loaded_cursor);
 
             // Initialize the platform-address provider. If the snapshot
             // carried a slice for this wallet, restore it directly;

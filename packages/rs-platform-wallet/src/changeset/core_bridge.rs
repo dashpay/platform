@@ -172,6 +172,9 @@ struct BatchDiagnostics {
     wallets: usize,
     /// Highest watermark the store accepted and committed.
     persisted: Option<u32>,
+    /// The watermark each wallet's store accepted in this drain — what that
+    /// wallet's host now holds, recorded into [`DurableCursors`].
+    persisted_by_wallet: BTreeMap<WalletId, u32>,
     /// Highest watermark withheld by the fail-closed guard.
     frozen: Option<u32>,
     /// Highest watermark the store rejected.
@@ -261,13 +264,92 @@ pub fn spawn_wallet_event_adapter<P>(
 where
     P: PlatformWalletPersistence + 'static,
 {
+    spawn_wallet_event_adapter_with_durable_cursors(
+        wallet_manager,
+        persister,
+        receiver,
+        sync_fault,
+        crate::changeset::DurableCursors::default(),
+        cancel,
+    )
+}
+
+/// The durable `synced_height` each wallet's host last accepted, shared by
+/// every writer of that cursor and doubling as the lock that orders them.
+///
+/// Two writers exist: the wallet-event adapter (advances, one per committed
+/// batch) and the DashPay rescan reconcile (a deliberate rewind stored with
+/// the backfill record that vouches for it). Without one lock across
+/// "decide the height" and "store it", an advance the adapter had already
+/// projected could be stored after the rewind and put the durable cursor back
+/// above the range still to be re-matched, and a rewind could advance the
+/// durable cursor past rows the adapter had not yet persisted
+/// (dashpay/platform#4302 review). Both take this lock before they read the
+/// wallet's in-memory cursor and hold it until their `store()` returns; the
+/// adapter strips an advance above the in-memory cursor at commit time, and
+/// the reconcile never writes a cursor at or above the recorded durable one.
+///
+/// Lock order is this mutex, then the wallet manager — never the reverse.
+/// Seeded with the cursor each wallet was loaded or created with.
+pub type DurableCursors = Arc<tokio::sync::Mutex<BTreeMap<WalletId, u32>>>;
+
+/// [`spawn_wallet_event_adapter`] sharing `durable_cursors` with the other
+/// writer of the durable sync cursor (the DashPay rescan reconcile). The
+/// manager uses this form; see [`DurableCursors`].
+pub fn spawn_wallet_event_adapter_with_durable_cursors<P>(
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: Weak<P>,
+    receiver: mpsc::UnboundedReceiver<WalletEvent>,
+    sync_fault: Arc<AtomicBool>,
+    durable_cursors: DurableCursors,
+    cancel: CancellationToken,
+) -> JoinHandle<()>
+where
+    P: PlatformWalletPersistence + 'static,
+{
     tokio::spawn(run_wallet_event_adapter(
         wallet_manager,
         persister,
         receiver,
         sync_fault,
+        durable_cursors,
         cancel,
     ))
+}
+
+/// Strip, from each wallet's batch, a sync-height advance above that
+/// wallet's in-memory cursor. Such an advance was projected before a rewind
+/// lowered the cursor; storing it now would claim coverage the rescan has
+/// not produced. Called with [`DurableCursors`] held, right before commit,
+/// so no rewind can slip in between this check and the store.
+async fn drop_watermarks_above_the_live_cursor(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    batch: &mut BTreeMap<WalletId, WalletBatch>,
+) {
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+    let wm = wallet_manager.read().await;
+    for (wallet_id, wallet_batch) in batch.iter_mut() {
+        let Some(height) = wallet_batch.core.synced_height else {
+            continue;
+        };
+        if wallet_batch.core.synced_height_is_rewind {
+            continue;
+        }
+        let Some(info) = wm.get_wallet_info(wallet_id) else {
+            continue;
+        };
+        let live = info.core_wallet.synced_height();
+        if height > live {
+            tracing::debug!(
+                wallet_id = %hex::encode(wallet_id),
+                projected = height,
+                live,
+                "wallet-event adapter: dropping a sync-height advance projected before a rewind"
+            );
+            wallet_batch.core.synced_height = None;
+        }
+    }
 }
 
 /// Drain `receiver`, project each [`WalletEvent`] into a
@@ -326,6 +408,7 @@ async fn run_wallet_event_adapter<P>(
     persister: Weak<P>,
     mut receiver: mpsc::UnboundedReceiver<WalletEvent>,
     sync_fault: Arc<AtomicBool>,
+    durable_cursors: DurableCursors,
     cancel: CancellationToken,
 ) where
     P: PlatformWalletPersistence + 'static,
@@ -497,6 +580,12 @@ async fn run_wallet_event_adapter<P>(
         // it again costs nothing — whereas the reverse error, omitting a wallet
         // whose store did run, would leave a watermark free to advance past
         // rows nobody can account for.
+        // Take the durable-cursor lock for the whole commit and re-check each
+        // watermark against the live cursor under it: a rewind that ran since
+        // this batch was projected must win (see [`DurableCursors`]). The
+        // guard rides into the commit thread and is released when it returns.
+        let mut cursors = Arc::clone(&durable_cursors).lock_owned().await;
+        drop_watermarks_above_the_live_cursor(&wallet_manager, &mut batch).await;
         let batch_wallet_ids: Vec<WalletId> = batch
             .iter()
             .filter(|(_, wallet_batch)| {
@@ -538,6 +627,12 @@ async fn run_wallet_event_adapter<P>(
                 &freeze_for_commit,
                 &mut settled,
             );
+            // What each host now holds, for the next writer to measure
+            // against.
+            for (wallet_id, height) in &diag.persisted_by_wallet {
+                cursors.insert(*wallet_id, *height);
+            }
+            drop(cursors);
             // Hand the claim back out: the next chunk of a cancellation drain
             // inherits it instead of racing a fresh upgrade against the owner's
             // release. A panicking `commit_batch` drops it instead, and the
@@ -821,6 +916,7 @@ fn commit_wallet<P>(
             // the adapter's own progress marker and holding it back would
             // re-drive work without making anything safer.
             core.synced_height = None;
+            core.synced_height_is_rewind = false;
         }
 
         let cs = PlatformWalletChangeSet {
@@ -890,6 +986,7 @@ fn commit_wallet<P>(
             Ok(()) => {
                 if let Some(h) = offered_height {
                     diag.record_persisted(h);
+                    diag.persisted_by_wallet.insert(wallet_id, h);
                 }
             }
             Err(e) => {
@@ -992,6 +1089,7 @@ fn fault_and_freeze(
 fn freeze_synced_height_if_faulted(core: &mut CoreChangeSet, persistence_faulted: bool) {
     if persistence_faulted {
         core.synced_height = None;
+        core.synced_height_is_rewind = false;
     }
 }
 
@@ -4573,6 +4671,83 @@ mod tests {
         assert_eq!(unknown.synced_height, Some(7));
     }
 
+    /// The commit-time re-check that closes the projection-to-commit window:
+    /// the adapter projects an advance to 1000, releases the manager, and a
+    /// rescan rewinds the wallet to 100 and stores that before the commit.
+    /// Under the durable-cursor lock the commit re-reads the live cursor and
+    /// drops the stale advance; a rewind-marked cursor and an advance at or
+    /// below the live cursor pass through (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn the_commit_drops_an_advance_projected_before_a_rewind() {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+        use key_wallet::test_utils::TestWalletContext;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let ctx = TestWalletContext::new_random();
+        let mut info = PlatformWalletInfo {
+            observed_input_conflicts: Default::default(),
+            core_wallet: ctx.managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+        };
+        info.core_wallet.update_synced_height(1_000);
+        let manager = test_manager();
+        let wallet_id = manager
+            .write()
+            .await
+            .insert_wallet(ctx.wallet, info)
+            .expect("insert wallet");
+
+        // Projected while the wallet was at 1000.
+        let projected =
+            super::build_core_changeset(&manager, &sync_height_event(wallet_id, 1_000)).await;
+        assert_eq!(projected.synced_height, Some(1_000));
+
+        // The rescan rewinds before the commit.
+        manager
+            .write()
+            .await
+            .get_wallet_info_mut(&wallet_id)
+            .expect("info")
+            .core_wallet
+            .update_synced_height(100);
+
+        let batch_with = |core: CoreChangeSet| {
+            let mut batch: BTreeMap<WalletId, super::WalletBatch> = BTreeMap::new();
+            batch.entry(wallet_id).or_default().core = core;
+            batch
+        };
+        let mut stale = batch_with(projected);
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut stale).await;
+        assert_eq!(
+            stale[&wallet_id].core.synced_height, None,
+            "stale advance dropped"
+        );
+
+        let mut in_step = batch_with(CoreChangeSet {
+            synced_height: Some(100),
+            ..CoreChangeSet::default()
+        });
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut in_step).await;
+        assert_eq!(in_step[&wallet_id].core.synced_height, Some(100));
+
+        let mut rewind = batch_with(CoreChangeSet {
+            synced_height: Some(500),
+            synced_height_is_rewind: true,
+            ..CoreChangeSet::default()
+        });
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut rewind).await;
+        assert_eq!(
+            rewind[&wallet_id].core.synced_height,
+            Some(500),
+            "a rewind is never second-guessed"
+        );
+    }
+
     /// A record-bearing (non-watermark) event: carries
     /// `last_processed_height` but no `synced_height`, so it survives the
     /// freeze untouched. Used both as a sentinel to prove loop progress and
@@ -4616,6 +4791,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -4676,6 +4852,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::new(AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
             cancel,
         )
         .await;
@@ -4730,6 +4907,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::new(AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
             cancel,
         ));
 
@@ -4791,6 +4969,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -4845,6 +5024,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -4893,6 +5073,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -4940,6 +5121,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -4992,6 +5174,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -5039,6 +5222,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -5126,6 +5310,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -5187,6 +5372,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -5270,6 +5456,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -5371,6 +5558,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -5459,6 +5647,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -5533,6 +5722,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -5582,6 +5772,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::clone(&sync_fault),
+            crate::changeset::DurableCursors::default(),
             cancel.clone(),
         ));
 
@@ -6903,6 +7094,7 @@ mod tests {
             Arc::downgrade(&persister),
             rx,
             Arc::new(AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
             CancellationToken::new(),
         ));
         handle.await.expect("the adapter exits on a closed channel");

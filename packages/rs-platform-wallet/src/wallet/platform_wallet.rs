@@ -671,7 +671,7 @@ impl PlatformWallet {
     /// the wallet. The wallet must have been inserted into the WalletManager
     /// before calling this.
     // Every argument is a shared handle the manager owns; a builder would
-    // only move the same eight names behind a struct.
+    // only move the same nine names behind a struct.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
@@ -682,6 +682,7 @@ impl PlatformWallet {
         persister: Arc<dyn PlatformWalletPersistence>,
         broadcaster: Arc<SpvBroadcaster>,
         sync_fault: Arc<std::sync::atomic::AtomicBool>,
+        durable_cursors: crate::changeset::DurableCursors,
     ) -> Self {
         // Build the per-wallet persister handle once and share it with
         // the sub-wallets that need to queue their own changesets
@@ -728,6 +729,7 @@ impl PlatformWallet {
             asset_locks: Arc::clone(&asset_locks),
             persister: wallet_persister.clone(),
             sync_fault,
+            durable_cursors,
             broadcaster: dashpay_broadcaster,
             // DashPay write helper: forwards to the live SDK, erasing its
             // generic write signatures behind concrete by-value methods.

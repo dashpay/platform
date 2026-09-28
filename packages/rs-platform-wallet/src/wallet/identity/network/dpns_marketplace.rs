@@ -3776,6 +3776,7 @@ mod tests {
             asset_locks,
             persister,
             sync_fault: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            durable_cursors: crate::changeset::DurableCursors::default(),
             broadcaster,
             sdk_writer: Arc::new(super::super::sdk_writer::SdkWriter::new(sdk)),
             dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),

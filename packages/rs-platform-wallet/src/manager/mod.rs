@@ -24,7 +24,9 @@ use tokio_util::sync::CancellationToken;
 
 use key_wallet_manager::WalletManager;
 
-use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
+use crate::changeset::{
+    spawn_wallet_event_adapter_with_durable_cursors, DurableCursors, PlatformWalletPersistence,
+};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::dashpay_sync::DashPaySyncManager;
 use crate::manager::dpns_sync::DpnsSyncManager;
@@ -439,6 +441,10 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// failed / rescan pending" state rather than re-freezing silently on
     /// the next launch.
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
+    /// The durable sync cursor each wallet's host last accepted, shared by
+    /// the wallet-event adapter and the DashPay rescan reconcile — the lock
+    /// that orders their cursor writes. See [`DurableCursors`].
+    pub(super) durable_cursors: DurableCursors,
     /// Per-WALLET in-broadcast fence maps, handed to every
     /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) registered
     /// under each id.
@@ -500,16 +506,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Host-visible hard sync-fault latch. The
         // adapter raises it the first time it freezes a durable watermark.
         let sync_fault = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let durable_cursors = DurableCursors::default();
 
         // Spawn the wallet-event adapter that translates upstream
         // `WalletEvent`s into `CoreChangeSet`s and forwards them to
         // the persister.
         let event_adapter_cancel = CancellationToken::new();
-        let event_adapter_join = spawn_wallet_event_adapter(
+        let event_adapter_join = spawn_wallet_event_adapter_with_durable_cursors(
             Arc::clone(&wallet_manager),
             Arc::downgrade(&persister),
             event_receiver,
             Arc::clone(&sync_fault),
+            Arc::clone(&durable_cursors),
             event_adapter_cancel.clone(),
         );
 
@@ -607,6 +615,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
             registry,
             sync_fault,
+            durable_cursors,
             in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         }
     }
@@ -1189,6 +1198,7 @@ mod tests {
             Arc::new(NoopPersister) as Arc<dyn PlatformWalletPersistence>,
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
             Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
         ));
         mgr.wallets.rcu(|wallets| {
             let mut next = std::collections::BTreeMap::clone(wallets);

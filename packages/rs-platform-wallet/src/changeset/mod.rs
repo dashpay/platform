@@ -46,7 +46,9 @@ pub use changeset::{
 };
 pub use client_start_state::ClientStartState;
 pub use client_wallet_start_state::ClientWalletStartState;
-pub use core_bridge::spawn_wallet_event_adapter;
+pub use core_bridge::{
+    spawn_wallet_event_adapter, spawn_wallet_event_adapter_with_durable_cursors, DurableCursors,
+};
 pub use dashpay_backfill::{DashPayBackfillCoveredContact, DashPayBackfillRecord};
 pub use identity_manager_start_state::IdentityManagerStartState;
 pub use identity_scan_state::IdentityScanStateEntry;

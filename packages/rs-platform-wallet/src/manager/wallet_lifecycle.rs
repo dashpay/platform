@@ -437,6 +437,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // treat re-registering an existing wallet as a benign no-op
         // instead of substring-matching the error text. Everything else
         // stays `WalletCreation`.
+        let created_cursor = platform_info.core_wallet.metadata.synced_height;
         let wallet_id = {
             let mut wm = self.wallet_manager.write().await;
             wm.insert_wallet(wallet, platform_info)
@@ -569,7 +570,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             persister_dyn,
             broadcaster,
             Arc::clone(&self.sync_fault),
+            Arc::clone(&self.durable_cursors),
         );
+        self.durable_cursors
+            .lock()
+            .await
+            .insert(wallet_id, created_cursor);
 
         // Restore the platform-address provider from the slice read above —
         // the only area wired up today. `from_persisted` skips the live
