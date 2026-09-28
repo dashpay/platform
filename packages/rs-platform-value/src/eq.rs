@@ -228,14 +228,16 @@ impl Value {
     ///   past `i128::MAX` equals only the same `U128`.
     /// * When either side is a `Float`, both sides are read as an `f64` and
     ///   compared by bits (`f64::to_bits`), not with `==`: `-0.0` is not
-    ///   `0.0`, and a NaN equals a NaN of the same bits, itself included. A
-    ///   document index derives a `number` property's tree key from those
-    ///   bits, so two floats are the same here exactly when their keys are.
+    ///   `0.0`, as their document tree keys are not, and a NaN equals a NaN
+    ///   of the same bits, itself included. This is bit equality, not tree
+    ///   key equality: the tree key encoding maps a few distinct bit patterns
+    ///   (a negative NaN and a negative subnormal) to one key.
     ///   An integer on the other side is read as the `f64` it converts to, as
-    ///   [`to_float`](Self::to_float) reads it: a document stores `date` and
+    ///   [`as_float`](Self::as_float) reads it: a document stores `date` and
     ///   `number` properties as floats while a transition may carry one as an
     ///   integer. Past 2^53 an integer rounds to the nearest `f64`, as it does
-    ///   when stored.
+    ///   when stored, so the comparison is not transitive there: `2^53 + 1`
+    ///   and `2^53` both equal the float `2^53` but not each other.
     /// * An `Array` whose every element is a `U8` holds the bytes it lists, as
     ///   [`to_identifier_bytes`](Self::to_identifier_bytes) reads it, so it
     ///   equals the same bytes carried as bytes, an identifier, or another
@@ -281,8 +283,8 @@ impl Value {
             (Value::Map(_), _) | (_, Value::Map(_)) => false,
             // 3) floats by bits, an integer read as the float it converts to
             (Value::Float(_), _) | (_, Value::Float(_)) => matches!(
-                (self.to_float(), other.to_float()),
-                (Ok(this), Ok(that)) if this.to_bits() == that.to_bits()
+                (self.as_float(), other.as_float()),
+                (Some(this), Some(that)) if this.to_bits() == that.to_bits()
             ),
             // 4) bytes by bytes, integers by value, anything else by `==`
             _ => self.equal_underlying_data(other),
@@ -486,8 +488,8 @@ mod same_scalar_data_tests {
         ));
     }
 
-    /// Floats compare by bits, as their tree keys do, where
-    /// `equal_underlying_data` compares them with `==`.
+    /// Floats compare by bits, where `equal_underlying_data` compares them
+    /// with `==`.
     #[test]
     fn should_compare_floats_by_their_bits() {
         let quiet_nan = Value::Float(f64::NAN);
@@ -513,6 +515,28 @@ mod same_scalar_data_tests {
         assert!(!same(&Value::U64(0), &Value::Float(-0.0)));
         assert!(!same(&Value::Text("1".to_string()), &Value::Float(1.0)));
         assert!(!same(&Value::Bool(true), &Value::Float(1.0)));
+    }
+
+    /// Past 2^53 an integer rounds to the nearest `f64`, as storage rounds
+    /// it, so two integers that differ can both equal one float.
+    #[test]
+    fn should_round_an_integer_past_2_pow_53_to_the_nearest_float() {
+        let two_pow_53 = 1u64 << 53;
+        let float_two_pow_53 = Value::Float(two_pow_53 as f64);
+
+        assert!(same(&Value::U64(two_pow_53 + 1), &float_two_pow_53));
+        assert!(same(&Value::U64(two_pow_53), &float_two_pow_53));
+        assert!(!same(&Value::U64(two_pow_53 + 1), &Value::U64(two_pow_53)));
+
+        assert!(same(
+            &Value::I128(i128::MIN),
+            &Value::Float(-(2.0f64.powi(127)))
+        ));
+        assert!(same(
+            &Value::U128(u128::MAX),
+            &Value::Float(2.0f64.powi(128))
+        ));
+        assert!(!same(&Value::U128(u128::MAX), &Value::Float(f64::INFINITY)));
     }
 
     #[test]
