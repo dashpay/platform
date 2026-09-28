@@ -1,4 +1,6 @@
-use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::{
+    UniquenessOfDataRequestUpdateType, UniquenessOfDataRequestV1,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -10,6 +12,10 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Validate that a restored document would be unique in the state
+    ///
+    /// A restore reaches this only from protocol version 14, whose table
+    /// selects uniqueness generation 2, the one taking the V1 request. The
+    /// removed document holds no index entry, so it is checked as a new one.
     #[inline(always)]
     pub(super) fn validate_restored_document_uniqueness_v0(
         &self,
@@ -19,12 +25,12 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let request = UniquenessOfDataRequestV0 {
+        let request = UniquenessOfDataRequestV1 {
             contract,
             document_type,
             owner_id: document.owner_id(),
+            creator_id: document.creator_id(),
             document_id: document.id(),
-            allow_original: false,
             created_at: document.created_at(),
             updated_at: document.updated_at(),
             transferred_at: document.transferred_at(),
@@ -35,6 +41,7 @@ impl Drive {
             updated_at_core_block_height: document.updated_at_core_block_height(),
             transferred_at_core_block_height: document.transferred_at_core_block_height(),
             data: document.properties(),
+            update_type: UniquenessOfDataRequestUpdateType::NewDocument,
         };
         self.validate_uniqueness_of_data(request.into(), transaction, platform_version)
     }
