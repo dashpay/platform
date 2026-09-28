@@ -840,37 +840,51 @@ mod unknown_configuration_key_tests {
     /// Pinned because it is the asymmetry a reader will not expect from the version 0 refusal
     /// the tests above assert, and because closing it would change which configurations decode
     /// at all — a decision to take deliberately, not as a side effect of tightening a struct.
+    /// A key no format version carries is refused at format version 1, as it is at 0.
+    ///
+    /// The refusal has to hold on both wires. `TokenConfigurationV1` takes version 0's fields
+    /// through `serde(flatten)`, and an unknown key arriving through a flattened field is not
+    /// offered to the inner struct at all, so version 0's own refusal cannot reach it — the
+    /// attribute has to sit on the version that owns the flatten.
     #[test]
-    fn should_drop_rather_than_refuse_an_unrecognized_key_at_format_version_1() {
+    fn should_refuse_an_unrecognized_key_at_format_version_1() {
         let mut configuration =
             TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
         configuration.set_has_shielded_pool(true);
 
-        // A key no format version carries. Beside `$formatVersion: "0"` a key like this is what
-        // earns the refusal the tests above assert; at version 1 it decodes.
         const UNRECOGNIZED_KEY: &str = "thisKeyIsInNoFormatVersion";
 
         let mut json = configuration.to_json().expect("to_json");
         json.as_object_mut()
             .expect("configuration object")
             .insert(UNRECOGNIZED_KEY.to_string(), serde_json::Value::Bool(true));
-        let decoded = TokenConfiguration::from_json(json)
-            .expect("an unrecognized key is dropped at format version 1, not refused");
-        // Equal to the configuration without the key: it is dropped rather than kept anywhere,
-        // and the fields that are recognized are unaffected by its presence.
-        assert_eq!(decoded, configuration);
-        assert_eq!(decoded.format_version(), 1);
-        assert!(decoded.has_shielded_pool());
+        let error = TokenConfiguration::from_json(json)
+            .expect_err("an unrecognized key must be refused, not dropped")
+            .to_string();
+        assert!(
+            error.contains(UNRECOGNIZED_KEY),
+            "the refusal must name the key it refused, got {error}"
+        );
 
         let mut value = configuration.to_object().expect("to_object");
         value.as_map_mut().expect("configuration map").push((
             platform_value::Value::Text(UNRECOGNIZED_KEY.to_string()),
             platform_value::Value::Bool(true),
         ));
-        let decoded =
-            TokenConfiguration::from_object(value).expect("the contract ingest path drops it too");
-        assert_eq!(decoded, configuration);
-        assert_eq!(decoded.format_version(), 1);
-        assert!(decoded.has_shielded_pool());
+        let error = TokenConfiguration::from_object(value)
+            .expect_err("the contract ingest path must refuse it too")
+            .to_string();
+        assert!(
+            error.contains(UNRECOGNIZED_KEY),
+            "the refusal must name the key it refused, got {error}"
+        );
+
+        // The same configuration without the key still decodes, so the refusal is the key's
+        // doing and not a fixture that stopped building.
+        let clean = TokenConfiguration::from_json(configuration.to_json().expect("to_json"))
+            .expect("the configuration itself still decodes");
+        assert_eq!(clean, configuration);
+        assert_eq!(clean.format_version(), 1);
+        assert!(clean.has_shielded_pool());
     }
 }
