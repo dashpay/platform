@@ -23,7 +23,7 @@
 // fields rather than rename this file.
 
 mod contract_moderation_gate;
-mod property_constraint_aggregates;
+pub(crate) mod property_constraint_aggregates;
 
 use contract_moderation_gate::{BatchTransitionContractModerationGate, ContractModerationRefusal};
 use property_constraint_aggregates::attach_property_constraint_aggregates;

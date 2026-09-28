@@ -181,7 +181,8 @@ export type ContractModerators =
       /**
        * The moderated document types of the contract, each with the non-empty abilities a
        * charter may claim on it: `ban`, `suspend` and `warn` need the list the contract
-       * keeps, `deleteDocuments` the type flagged `canBeDeletedByModerators`. The lists stay
+       * keeps, `deleteDocuments` the type setting `moderatorAbilities.delete`,
+       * `changeDocumentFields` the type listing `moderatorAbilities.changeFields`. The lists stay
        * contract-wide. A charter does not price actions: a type's `actionFees.moderators`
        * amount is the most a team may charge.
        */
@@ -203,7 +204,7 @@ export type ElectedModerationSeat =
   | { seatContestable: false; challengeCoolDown?: never };
 
 /** What a charter may claim on an elected contract. */
-export type ModerationAbility = "deleteDocuments" | "ban" | "suspend" | "warn";
+export type ModerationAbility = "deleteDocuments" | "ban" | "suspend" | "warn" | "changeDocumentFields";
 
 /** Who moderates an elected contract until its first team is seated. */
 export type InterimModerators =
@@ -214,8 +215,9 @@ export type InterimModerators =
 
 /**
  * The moderation a data contract declares. At least one list must be kept, unless a document
- * type sets `canBeDeletedByModerators`: moderators that only delete documents need no list. A
- * list that is kept can never be turned off by a contract update.
+ * type gives its moderators an ability (`moderatorAbilities`): moderators that only delete
+ * documents or change the fields kept for them need no list. A list that is kept can never be
+ * turned off by a contract update.
  */
 export interface ContractModerationConfig {
     banlist: boolean;

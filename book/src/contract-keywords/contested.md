@@ -72,7 +72,7 @@ The fund, the windows, the tallies and the special case of moderation elections 
 - `resolution` is present and is `0` or `1`; `1` is refused before protocol version 14.
 - `fieldMatches`, when present, holds at least one entry, and each `regexPattern` is a valid regular expression (`RegexError`, 10247).
 - A contested index cannot carry a [`timeRange`](time-range.md) or a ranking (a ranking needs a non-unique index), and an [index-only type](index-only.md) cannot have one.
-- A document type with a contested index cannot set [`ttl`](ttl.md), nor `canBeDeletedByModerators` (see [Deletion](deletion.md)): a moderator's restore puts a document back by an ordinary insert, and a contested value is only awarded through a vote.
+- A document type with a contested index cannot set [`ttl`](ttl.md), nor `moderatorAbilities.delete` (see [Deletion](deletion.md)): a moderator's restore puts a document back by an ordinary insert, and a contested value is only awarded through a vote.
 
 ## See also
 

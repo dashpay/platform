@@ -12,6 +12,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 };
 
 use crate::error::Error;
+use crate::execution::validation::state_transition::common::moderators::moderator_field_write_refusal;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::DocumentReferenceValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_replace_transition_action::state_v0::DocumentReplaceTransitionActionStateValidationV0;
@@ -115,6 +116,33 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
                         .into(),
                     ));
                 }
+            }
+        }
+
+        // Fields only the contract's moderators write (protocol version 14): a replace that
+        // changes, adds or removes one is refused unless its signer moderates the contract. A
+        // replace carries the whole document, so one that leaves such a field as a moderator set
+        // it changes nothing there. `changed_data_fields` is name-ordered, so the reported field
+        // is deterministic.
+        let moderator_fields = document_type.moderator_changeable_fields();
+        if let Some(field) = self
+            .changed_data_fields()
+            .iter()
+            .find(|field| moderator_fields.contains(*field))
+        {
+            if let Some(error) = moderator_field_write_refusal(
+                platform.drive,
+                &contract_fetch_info.contract,
+                document_type_name,
+                self.base().id(),
+                field,
+                owner_id,
+                &block_info.epoch,
+                execution_context,
+                transaction,
+                platform_version,
+            )? {
+                return Ok(SimpleConsensusValidationResult::new_with_error(error));
             }
         }
 

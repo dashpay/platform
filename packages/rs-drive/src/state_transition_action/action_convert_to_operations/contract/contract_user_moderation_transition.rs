@@ -2,8 +2,9 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
-    ContractDocumentDeletionContext, ContractDocumentRestorationContext,
-    ContractUserModerationTransitionActionV0, ContractWarningContext,
+    ContractDocumentChangeContext, ContractDocumentDeletionContext,
+    ContractDocumentRestorationContext, ContractUserModerationTransitionActionV0,
+    ContractWarningContext,
 };
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use crate::util::batch::DriveOperation::{
@@ -46,6 +47,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         warning,
                         document_deletion,
                         document_restoration,
+                        document_change,
                         moderation_action_count,
                         ..
                     },
@@ -250,6 +252,40 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             },
                         ));
                     }
+                    ContractUserModerationAction::ChangeDocumentFields {
+                        document_type_name,
+                        ..
+                    } => {
+                        let ContractDocumentChangeContext {
+                            data_contract_fetch_info,
+                            document,
+                        } = document_change
+                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "a document field change action must carry what its validation built",
+                        )))?;
+                        // The document is updated the way a replace updates it, every index and
+                        // aggregate of its type included. Its storage flags name its owner, as a
+                        // replace's do: the moderator pays for the bytes the change adds, and a
+                        // refund of the document's storage stays the owner's, as it always was.
+                        let owner_id = document.owner_id();
+                        let storage_flags =
+                            StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
+                        operations.push(DocumentOperation(DocumentOperationType::UpdateDocument {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentOwnedInfo((
+                                    document,
+                                    Some(Cow::Owned(storage_flags)),
+                                )),
+                                owner_id: Some(owner_id.to_buffer()),
+                            },
+                            contract_info: DataContractInfo::DataContractFetchInfo(
+                                data_contract_fetch_info,
+                            ),
+                            document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                document_type_name,
+                            ),
+                        }));
+                    }
                 }
 
                 // A member of an elected contract's seated team signed an action that counts
@@ -295,6 +331,7 @@ mod tests {
             warning: None,
             document_deletion: None,
             document_restoration: None,
+            document_change: None,
             moderation_action_count: None,
             user_fee_increase: 0,
         })

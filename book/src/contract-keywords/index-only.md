@@ -83,7 +83,7 @@ Rules at registration:
 - At least one index involves no `$createdAt` and does not set `skipIfAbsent`: the proof index.
 - Every property is in `required`, except the first property of a `skipIfAbsent` index. An object holding an indexed property is required too.
 - Every property appears in at least one index that does not skip, as a property or a terminal component, except the `entryPayload` properties and a skip index's first property.
-- The type cannot also set [`ttl`](ttl.md) or `canBeDeletedByModerators`, and a `refersTo` lookup cannot target it.
+- The type cannot also set [`ttl`](ttl.md) or `moderatorAbilities.delete`, and a `refersTo` lookup cannot target it.
 
 ## `entryPayload`
 

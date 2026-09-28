@@ -46,11 +46,11 @@
 //! Generation 0 fails on a diff under any of them as an unsupported keyword.
 
 use crate::data_contract::document_type::property_names::{
-    ACTION_FEES, CAN_BE_DELETED_BY_MODERATORS, CAN_BE_DELETED_BY_MODERATORS_FOR, CONTAINS,
-    DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES,
-    MIN_PROPERTIES, PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE,
-    TOKEN_COST, TRANSIENT, TTL,
+    ACTION_FEES, CONTAINS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE,
+    ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
+    KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES,
+    PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, TOKEN_COST,
+    TRANSIENT, TTL,
 };
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
@@ -142,7 +142,7 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
 /// A keyword missing from this list is still refused, by the fallback in
 /// [`validate_schema_compatibility_v1`], but only the first change under it is
 /// reported: the list keeps every change reported at its own path.
-const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 19] = [
+const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 18] = [
     TOKEN_COST,
     TTL,
     ACTION_FEES,
@@ -157,8 +157,7 @@ const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 19] = [
     RANGE_SUMMABLE,
     DOCUMENTS_AVERAGEABLE,
     RANGE_AVERAGEABLE,
-    CAN_BE_DELETED_BY_MODERATORS,
-    CAN_BE_DELETED_BY_MODERATORS_FOR,
+    MODERATOR_ABILITIES,
     MIN_PROPERTIES,
     MAX_PROPERTIES,
     CONTAINS,
@@ -679,6 +678,24 @@ mod tests {
                 "/entryPayload/1",
             ),
             (
+                "/moderatorAbilities",
+                json!({"delete": true}),
+                json!({"delete": false}),
+                "/moderatorAbilities/delete",
+            ),
+            (
+                "/moderatorAbilities",
+                json!({"delete": true, "deleteWithin": 3600}),
+                json!({"delete": true, "deleteWithin": 7200}),
+                "/moderatorAbilities/deleteWithin",
+            ),
+            (
+                "/moderatorAbilities",
+                json!({"changeFields": ["a", "b"]}),
+                json!({"changeFields": ["a", "c"]}),
+                "/moderatorAbilities/changeFields/1",
+            ),
+            (
                 "/properties/list/contains",
                 json!({"minimum": 1}),
                 json!({"minimum": 0}),
@@ -698,8 +715,6 @@ mod tests {
             ("/rangeSummable", json!(true), json!(false)),
             ("/documentsAverageable", json!("a"), json!("b")),
             ("/rangeAverageable", json!(true), json!(false)),
-            ("/canBeDeletedByModerators", json!(true), json!(false)),
-            ("/canBeDeletedByModeratorsFor", json!(3600), json!(7200)),
             ("/minProperties", json!(1), json!(0)),
             ("/maxProperties", json!(2), json!(3)),
             ("/properties/object/minProperties", json!(1), json!(0)),

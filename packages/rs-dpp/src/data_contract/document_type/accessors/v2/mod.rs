@@ -43,17 +43,25 @@ pub trait DocumentTypeV2Getters {
     fn entry_payload(&self) -> &BTreeSet<String>;
 
     /// Returns whether the contract's moderators may delete documents of this
-    /// type (the `canBeDeletedByModerators` keyword, protocol version 14).
-    /// Independent of `documents_can_be_deleted`, which rules what a document's
-    /// own owner may do. False on document types that predate the keyword.
+    /// type (`moderatorAbilities.delete`, protocol version 14). Independent of
+    /// `documents_can_be_deleted`, which rules what a document's own owner may
+    /// do. False on document types that predate the keyword.
     fn documents_can_be_deleted_by_moderators(&self) -> bool;
 
     /// For how many seconds after a document's last modification (`$updatedAt`,
     /// or `$createdAt` on a type that carries no `$updatedAt`)
-    /// the moderators may still delete it (the `canBeDeletedByModeratorsFor`
-    /// keyword, protocol version 14). `None` means no limit, and is what every
-    /// document type that predates the keyword answers.
+    /// the moderators may still delete it (`moderatorAbilities.deleteWithin`,
+    /// protocol version 14). `None` means no limit, and is what every document
+    /// type that predates the keyword answers.
     fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32>;
+
+    /// The top-level properties only the contract's moderators write
+    /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator
+    /// changes them with a `ContractUserModeration` transition, and a document's
+    /// owner sets, changes or removes them in a create or a replace only when it
+    /// moderates the contract. Empty on document types that list none and on
+    /// those that predate the keyword.
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String>;
 
     /// How many seconds after its creation (`$createdAt`) the platform deletes each
     /// document of the type (the `ttl` keyword, protocol version 14). `None` means the
@@ -62,7 +70,7 @@ pub trait DocumentTypeV2Getters {
     fn documents_ttl_seconds(&self) -> Option<u32>;
 
     /// Whether a document of the type can stop existing once written: its owner may delete
-    /// it (`canBeDeleted`), the contract's moderators may (`canBeDeletedByModerators`), or
+    /// it (`canBeDeleted`), the contract's moderators may (`moderatorAbilities.delete`), or
     /// the platform deletes it when its `ttl` passes. A `permanentDocument` reference and a
     /// list element reference may only target a type for which this is false, and a
     /// `deletableDocument` reference only one for which it is true; a lookup follows the

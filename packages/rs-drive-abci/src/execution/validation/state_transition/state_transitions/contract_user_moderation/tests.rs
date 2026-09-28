@@ -74,6 +74,7 @@ use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod moderator_fields;
 mod seated_team;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
@@ -2207,7 +2208,7 @@ fn post_schema(deletable_by_moderators: bool) -> Value {
         },
         "required": ["text"],
         "additionalProperties": false,
-        "canBeDeletedByModerators": deletable_by_moderators,
+        "moderatorAbilities": { "delete": deletable_by_moderators },
     })
 }
 
@@ -2557,7 +2558,10 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
         .schema()
         .clone();
     nice_document_schema
-        .insert("canBeDeletedByModerators".to_string(), Value::Bool(true))
+        .insert(
+            "moderatorAbilities".to_string(),
+            platform_value!({ "delete": true }),
+        )
         .expect("expected to set the keyword");
     add_document_type(&mut flipped, DOCUMENT_TYPE, nice_document_schema);
     let update = setup.contract_update(flipped).await;
@@ -2886,7 +2890,10 @@ async fn setup_with_a_moderation_window() -> Setup {
                 contract,
                 POST,
                 post_schema_with(platform_value!({
-                    "canBeDeletedByModeratorsFor": MODERATION_WINDOW_SECONDS,
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteWithin": MODERATION_WINDOW_SECONDS,
+                    },
                     "documentsMutable": true,
                     "required": ["text", "$updatedAt"],
                 })),
@@ -2986,7 +2993,10 @@ async fn should_measure_the_window_from_the_creation_of_a_post_that_never_change
                 contract,
                 POST,
                 post_schema_with(platform_value!({
-                    "canBeDeletedByModeratorsFor": MODERATION_WINDOW_SECONDS,
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteWithin": MODERATION_WINDOW_SECONDS,
+                    },
                     "documentsMutable": false,
                     "required": ["text", "$createdAt"],
                 })),
@@ -3039,20 +3049,13 @@ async fn should_fix_the_window_of_a_document_type() {
             .expect("expected the post type")
             .schema()
             .clone();
-        match window {
-            Some(seconds) => {
-                schema
-                    .insert("canBeDeletedByModeratorsFor".to_string(), seconds.into())
-                    .expect("expected to set the window");
-            }
-            None => {
-                if let Value::Map(map) = &mut schema {
-                    map.retain(|(key, _)| {
-                        key != &Value::Text("canBeDeletedByModeratorsFor".to_string())
-                    });
-                }
-            }
-        }
+        let abilities = match window {
+            Some(seconds) => platform_value!({ "delete": true, "deleteWithin": seconds }),
+            None => platform_value!({ "delete": true }),
+        };
+        schema
+            .insert("moderatorAbilities".to_string(), abilities)
+            .expect("expected to set the window");
         add_document_type(&mut changed, POST, schema);
         let update = setup.contract_update(changed).await;
         assert_paid_with_code(&setup.process(&update, &transaction), DOCUMENT_TYPE_UPDATE);

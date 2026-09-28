@@ -277,7 +277,8 @@ impl Drive {
             // A document deletion proves the record it left: a document id is produced at most
             // once, so the record is of that document and the document is gone. A document
             // restore proves the same record, now marked restored; the document's id is inside
-            // the bytes the transition carries, read under the contract's document type.
+            // the bytes the transition carries, read under the contract's document type. A
+            // document field change proves the document itself, holding the fields it set.
             StateTransition::ContractUserModeration(st) => {
                 let contract_id = st.data_contract_id();
                 if let Some((document_type_name, document_id)) = st.action().document() {
@@ -320,6 +321,37 @@ impl Drive {
                             ]),
                         },
                     )
+                } else if let Some((document_type_name, document_id, _)) =
+                    st.action().changed_document()
+                {
+                    // A field change proves the document as it now stands, the same single
+                    // document query a replace is proved by, which the verifier rebuilds.
+                    let Some(contract_fetch_info) = self.get_contract_with_fetch_info(
+                        contract_id.to_buffer(),
+                        false,
+                        None,
+                        platform_version,
+                    )?
+                    else {
+                        return Err(Error::Proof(ProofError::UnknownContract(format!(
+                            "unknown contract with id {} in contract moderation proving",
+                            contract_id
+                        ))));
+                    };
+                    let document_type = contract_fetch_info
+                        .contract
+                        .document_type_for_name(document_type_name)?;
+                    let query = SingleDocumentDriveQuery {
+                        contract_id: contract_id.into_buffer(),
+                        document_type_name: document_type_name.to_string(),
+                        document_type_keeps_history: document_type.documents_keep_history(),
+                        document_id: document_id.into_buffer(),
+                        block_time_ms: None,
+                        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+                    };
+                    let mut path_query = query.construct_path_query(platform_version)?;
+                    path_query.query.limit = None;
+                    path_query
                 } else {
                     let target_identity_id = st.target_identity_id().ok_or(Error::Drive(
                         DriveError::CorruptedCodeExecution(
@@ -362,9 +394,11 @@ impl Drive {
                             vec![ContractModerationList::Warnings]
                         }
                         ContractUserModerationAction::DeleteDocument { .. }
-                        | ContractUserModerationAction::RestoreDocument { .. } => {
+                        | ContractUserModerationAction::RestoreDocument { .. }
+                        | ContractUserModerationAction::ChangeDocumentFields { .. } => {
                             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                                "a document deletion or restore is proved by the arms above",
+                                "a document deletion, restore or field change is proved by the \
+                                 arms above",
                             )))
                         }
                     };

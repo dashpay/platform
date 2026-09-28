@@ -4,7 +4,8 @@ use dpp::consensus::state::document::document_contest_maximum_contenders_reached
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::identifier::Identifier;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -16,6 +17,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 };
 
 use crate::error::Error;
+use crate::execution::validation::state_transition::common::moderators::moderator_field_write_refusal;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
@@ -121,6 +123,37 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
                 ));
             }
             self.set_prefunded_voting_fund(fund_to_join);
+        }
+
+        // Fields only the contract's moderators write (protocol version 14): a create that sets
+        // one is refused unless its signer moderates the contract. The first such field in name
+        // order is the one reported. The advanced structure validation has already refused a
+        // document type the contract lacks.
+        let contract = &self.base().data_contract_fetch_info().contract;
+        let document_type_name = self.base().document_type_name();
+        let moderator_field = contract
+            .document_type_optional_for_name(document_type_name)
+            .and_then(|document_type| {
+                let moderator_fields = document_type.moderator_changeable_fields();
+                self.data()
+                    .keys()
+                    .find(|field| moderator_fields.contains(*field))
+            });
+        if let Some(field) = moderator_field {
+            if let Some(error) = moderator_field_write_refusal(
+                platform.drive,
+                contract,
+                document_type_name,
+                self.base().id(),
+                field,
+                owner_id,
+                &block_info.epoch,
+                execution_context,
+                transaction,
+                platform_version,
+            )? {
+                return Ok(SimpleConsensusValidationResult::new_with_error(error));
+            }
         }
 
         // The creator of a document being created is its writer

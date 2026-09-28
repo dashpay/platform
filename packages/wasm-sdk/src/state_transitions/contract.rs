@@ -8,6 +8,7 @@ use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -28,7 +29,7 @@ use wasm_dpp2::data_contract::{
     DataContractWasm,
 };
 use wasm_dpp2::identity::{IdentityPublicKeyWasm, IdentityWasm};
-use wasm_dpp2::utils::try_from_options_optional;
+use wasm_dpp2::utils::{try_from_options_optional, try_from_options_with, ToSerdeJSONExt};
 use wasm_dpp2::{IdentifierWasm, IdentitySignerWasm};
 
 // ============================================================================
@@ -328,7 +329,7 @@ export interface ContractModerationResult {
 /**
  * Options for deleting one document on a moderated data contract as a moderator (protocol
  * version 14), whoever owns it, except the contract owner and the moderators. The document
- * type must set `canBeDeletedByModerators`; when it also sets `canBeDeletedByModeratorsFor`,
+ * type must set `moderatorAbilities.delete`; when it also sets `moderatorAbilities.deleteWithin`,
  * the deletion passes up to and including that many seconds after the document's last
  * modification, and is refused (41116) once block time is later than that. As for the other
  * moderations, the signer must hold
@@ -413,10 +414,49 @@ export interface ContractRestoreDocumentOptions {
   /** Optional broadcast settings */
   settings?: PutSettings;
 }
+
+/**
+ * Options for changing, as a moderator, the fields a document type keeps for its moderators
+ * (`moderatorAbilities.changeFields`, protocol version 14) on one of its documents, whoever
+ * owns it. Every other property, `$updatedAt` among them, stays as its owner wrote it, and
+ * `$revision` goes up by one. A field the type does not keep for its moderators is refused
+ * (41123), and so is a signer that does not moderate the contract (41101), a seated team
+ * without `changeDocumentFields` on the type (41201), and a change that leaves the document
+ * outside its schema, its `propertyConstraints` or its unique indexes. The signer pays for the
+ * bytes the change adds. As for the other moderations, the signer must hold a CRITICAL
+ * authentication key without contract bounds of the moderating identity.
+ */
+export interface ContractChangeDocumentFieldsOptions {
+  /** The moderating identity: the contract owner, a named moderator or a seated team's member */
+  identity: Identity;
+  /** The moderated contract */
+  contractId: IdentifierLike;
+  /** The document type of the document */
+  documentTypeName: string;
+  /** The document to change */
+  documentId: IdentifierLike;
+  /**
+   * Each field to set, by its top-level property name, `null` removing it. Values are read as
+   * the document type's properties are: an identifier as a base58 string, bytes as base64.
+   */
+  fields: Record<string, unknown>;
+  /**
+   * Why. A seated team names a reason document its proposal lists; both parts are otherwise
+   * optional, and left out, no code and an empty text are sent.
+   */
+  reason?: ContractModerationReason;
+  /** Signer holding a CRITICAL authentication key without contract bounds of the identity */
+  signer: IdentitySigner;
+  /** Optional broadcast settings */
+  settings?: PutSettings;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
+    #[wasm_bindgen(typescript_type = "ContractChangeDocumentFieldsOptions")]
+    pub type ContractChangeDocumentFieldsOptionsJs;
+
     #[wasm_bindgen(typescript_type = "ContractModerationOptions")]
     pub type ContractModerationOptionsJs;
 
@@ -463,6 +503,14 @@ struct ContractDeleteDocumentOptionsInput {
 #[serde(rename_all = "camelCase")]
 struct ContractRestoreDocumentOptionsInput {
     document_type_name: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContractChangeDocumentFieldsOptionsInput {
+    document_type_name: String,
+    #[serde(default)]
+    reason: Option<ContractModerationReasonInput>,
 }
 
 impl WasmSdk {
@@ -623,7 +671,7 @@ impl WasmSdk {
 
     /// Deletes one document on a moderated contract as a moderator, whoever owns it, except
     /// the contract owner and the moderators. The document type must set
-    /// `canBeDeletedByModerators`. The document's owner gets no storage refund, and a record
+    /// `moderatorAbilities.delete`. The document's owner gets no storage refund, and a record
     /// of the deletion stays under the contract, which `getContractDocumentRemovals` reads.
     ///
     /// @param options - The moderating identity, the contract, the document type, the document, an optional `reason` and the signer
@@ -744,6 +792,70 @@ impl WasmSdk {
         set("documentId", IdentifierWasm::from(document_id).into())?;
         set_removal_fields(&result, &removal, |id| IdentifierWasm::from(id).into())?;
         Ok(JsValue::from(result).into())
+    }
+
+    /// Changes, as a moderator, the fields a document type keeps for its moderators on one of
+    /// its documents, whoever owns it: each field set to its value, a `null` removing it. Every
+    /// other property stays as its owner wrote it, `$updatedAt` among them, and `$revision`
+    /// goes up by one, so a replace its owner built on the earlier revision is refused.
+    ///
+    /// @param options - The moderating identity, the contract, the document type, the document, the `fields`, an optional `reason` and the signer
+    /// @returns The document as it now stands, proved
+    #[wasm_bindgen(js_name = "contractChangeDocumentFields")]
+    pub async fn contract_change_document_fields(
+        &self,
+        options: ContractChangeDocumentFieldsOptionsJs,
+    ) -> Result<DocumentWasm, WasmSdkError> {
+        // Extract complex types first (borrows &options)
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let contract_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "contractId")?.into();
+        let document_id: Identifier =
+            IdentifierWasm::try_from_options(&options, "documentId")?.into();
+        let mut fields = try_from_options_with(&options, "fields", |value| {
+            value.with_serde_to_platform_value_map()
+        })?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Deserialize simple fields last (consumes options)
+        let parsed: ContractChangeDocumentFieldsOptionsInput = deserialize_required_query(
+            options,
+            "Options object is required",
+            "contract document field change options",
+        )?;
+
+        // The proof shows the document as it now stands, which the verifier reads under the
+        // contract's document type, so the contract is resolved and cached before anything is
+        // paid for. Its type reads the fields the way it reads a document's properties: an
+        // identifier from base58, bytes from base64.
+        let contract = self.get_or_fetch_contract(contract_id).await?;
+        let document_type = contract
+            .document_type_for_name(&parsed.document_type_name)
+            .map_err(|e| WasmSdkError::invalid_argument(e.to_string()))?;
+        document_type.sanitize_document_properties(&mut fields);
+
+        let document = identity
+            .change_contract_document_fields(
+                self.inner_sdk(),
+                contract_id,
+                parsed.document_type_name.clone(),
+                document_id,
+                fields,
+                // As for a deletion, the reason and both of its parts are optional.
+                parsed.reason.map(Into::into).unwrap_or_default(),
+                None,
+                signer,
+                settings,
+            )
+            .await?;
+        Ok(DocumentWasm::new(
+            document,
+            contract_id,
+            parsed.document_type_name,
+            None,
+        ))
     }
 }
 

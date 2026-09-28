@@ -31,6 +31,7 @@ use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef}
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeSet;
 
 use super::common::UpdateValidationOptions;
 
@@ -57,10 +58,10 @@ impl DocumentTypeRef<'_> {
             return Ok(result);
         }
 
-        // Validate that the type keeps whether moderators may delete its
+        // Validate that the type keeps what its moderators may do to its
         // documents (a generation 1 rule: the keyword arrives with protocol
         // version 14, and the shared config checks above also serve v0)
-        let result = self.validate_can_be_deleted_by_moderators_unchanged(new_document_type);
+        let result = self.validate_moderator_abilities_unchanged(new_document_type);
 
         if !result.is_valid() {
             return Ok(result);
@@ -350,15 +351,43 @@ impl DocumentTypeRef<'_> {
         SimpleConsensusValidationResult::new()
     }
 
-    /// Whether moderators may delete documents of a type is fixed when the
-    /// type is created: whoever wrote a document knows from the type's first
-    /// version who may take it down, and a type that is the target of a
-    /// permanentDocument reference was admitted as one nobody can delete.
-    /// A document type added by an update declares the flag freely.
-    fn validate_can_be_deleted_by_moderators_unchanged(
+    /// What moderators may do to documents of a type (`moderatorAbilities`) is
+    /// fixed when the type is created: whoever wrote a document knows from the
+    /// type's first version who may take it down and which of its fields
+    /// others write, a type that is the target of a permanentDocument
+    /// reference was admitted as one nobody can delete, and a field only
+    /// moderators write starts absent on every document, so no stored one could
+    /// hold a value its owner set. A document type added by an update declares
+    /// the abilities freely.
+    fn validate_moderator_abilities_unchanged(
         &self,
         new_document_type: DocumentTypeRef,
     ) -> SimpleConsensusValidationResult {
+        let (old_fields, new_fields) = (
+            self.moderator_changeable_fields(),
+            new_document_type.moderator_changeable_fields(),
+        );
+        if old_fields != new_fields {
+            let list = |fields: &BTreeSet<String>| {
+                if fields.is_empty() {
+                    "none".to_string()
+                } else {
+                    fields.iter().cloned().collect::<Vec<_>>().join(", ")
+                }
+            };
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change which fields only its moderators write: changing from {} to {}",
+                        list(old_fields),
+                        list(new_fields)
+                    ),
+                )
+                .into(),
+            );
+        }
         if new_document_type.documents_can_be_deleted_by_moderators()
             == self.documents_can_be_deleted_by_moderators()
         {
@@ -779,7 +808,7 @@ mod tests {
                     "text": { "type": "string", "maxLength": 50, "position": 0 },
                 },
                 "additionalProperties": false,
-                "canBeDeletedByModerators": deletable_by_moderators,
+                "moderatorAbilities": { "delete": deletable_by_moderators },
             })
         };
 
@@ -855,11 +884,15 @@ mod tests {
                 },
                 "required": ["$updatedAt"],
                 "additionalProperties": false,
-                "canBeDeletedByModerators": true,
+                "moderatorAbilities": { "delete": true },
             });
             if let Some(seconds) = window {
                 schema
-                    .insert("canBeDeletedByModeratorsFor".to_string(), seconds.into())
+                    .set_value_at_path(
+                        "moderatorAbilities",
+                        "deleteWithin",
+                        platform_value::Value::U32(seconds),
+                    )
                     .expect("expected to set the window");
             }
             DocumentType::try_from_schema(
@@ -905,6 +938,91 @@ mod tests {
             .as_ref()
             .validate_update(
                 make_document_type(Some(86400)).as_ref(),
+                2,
+                platform_version,
+            )
+            .expect("validate_update should not error");
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn should_return_invalid_result_when_the_fields_only_moderators_write_are_changed() {
+        let platform_version = PlatformVersion::latest();
+        let data_contract_id = Identifier::random();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: true,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }));
+        let make_document_type = |fields: &[&str]| {
+            let mut schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "maxLength": 50, "position": 0 },
+                    "status": { "type": "integer", "minimum": 0, "maximum": 3, "position": 1 },
+                    "note": { "type": "string", "maxLength": 50, "position": 2 },
+                },
+                "additionalProperties": false,
+            });
+            if !fields.is_empty() {
+                schema
+                    .insert(
+                        "moderatorAbilities".to_string(),
+                        platform_value!({ "changeFields": fields }),
+                    )
+                    .expect("expected to set the fields");
+            }
+            DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                "report",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("document type should parse")
+        };
+
+        // Added, removed or swapped, the list is fixed: a field only moderators write starts
+        // absent on every document, and one its owner could set would no longer be theirs.
+        for (old_fields, new_fields, from, to) in [
+            (&[][..], &["status"][..], "none", "status"),
+            (&["status"][..], &[][..], "status", "none"),
+            (
+                &["status"][..],
+                &["note", "status"][..],
+                "status",
+                "note, status",
+            ),
+            (&["status"][..], &["note"][..], "status", "note"),
+        ] {
+            let result = make_document_type(old_fields)
+                .as_ref()
+                .validate_update(make_document_type(new_fields).as_ref(), 2, platform_version)
+                .expect("validate_update should not error");
+            let expected = format!(
+                "document type can not change which fields only its moderators write: changing from {from} to {to}"
+            );
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                    if e.additional_message() == expected
+            );
+        }
+
+        // Unchanged, it passes.
+        let result = make_document_type(&["status"])
+            .as_ref()
+            .validate_update(
+                make_document_type(&["status"]).as_ref(),
                 2,
                 platform_version,
             )
@@ -1360,8 +1478,8 @@ mod tests {
             ),
             (
                 platform_value!({}),
-                platform_value!({"canBeDeletedByModerators": false}),
-                "/canBeDeletedByModerators",
+                platform_value!({"moderatorAbilities": {"delete": false}}),
+                "/moderatorAbilities",
             ),
             (
                 platform_value!({"documentsCountable": true, "documentsSummable": "n"}),

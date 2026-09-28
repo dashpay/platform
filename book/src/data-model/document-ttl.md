@@ -47,7 +47,7 @@ the document in place.
   cleanup deletes a fixed number per block, so a sustained flood of creations with a short
   time to live builds a backlog it drains at that rate, and that lag grows with it.
 - The document may be deleted earlier as usual: by its owner when `canBeDeleted` allows it,
-  by the contract's moderators when `canBeDeletedByModerators` does. `canBeDeleted: false`
+  by the contract's moderators when `moderatorAbilities.delete` does. `canBeDeleted: false`
   only stops the owner; the platform still deletes the document when it expires.
 - The deletion is an ordinary deletion: the document and every index entry go, count and sum
   trees are decremented, and nothing is left behind.
@@ -78,12 +78,12 @@ update accepted in the last block before the expiry proves the document present,
 fetched after the next block's cleanup finds it gone.
 
 References treat a type with a `ttl` as deletable, like one with `canBeDeleted` or
-`canBeDeletedByModerators`. A `permanentDocument` reference, a lookup one included, and a list
+`moderatorAbilities.delete`. A `permanentDocument` reference, a lookup one included, and a list
 element reference may not target it; a `deletableDocument` reference may, a lookup one included.
 The check is `DocumentTypeV2Getters::documents_can_disappear`.
 
 Everything else composes: mutable types, `transferable`, `tradeMode`,
-`canBeDeletedByModerators` (a moderator's restore puts the document back with its original
+`moderatorAbilities.delete` (a moderator's restore puts the document back with its original
 `$createdAt`, and is refused once that document has expired),
 `creationRestrictionMode`, countable, summable and ranked indexes, `timeRange` indexes with
 or without their own `ttl`, `refersTo` declared on the type, action fees and token costs.

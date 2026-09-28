@@ -54,7 +54,7 @@ A vote is cast once and stays as cast: no replace is accepted, and with `canBeDe
 - A contested index needs a type whose documents cannot be replaced (`ContestedUniqueIndexOnMutableDocumentTypeError`, 10248). See [Contested Indexes](contested.md).
 - An `indexOnly` type must set `documentsMutable: false`. See [Index-Only Types](index-only.md).
 - `immutable` and `immutableAllowSetting` are only accepted when the type's documents are mutable (`InvalidContractStructure`, 10231).
-- `canBeDeletedByModeratorsFor` on a mutable type needs `$updatedAt` in `required`. See [Deletion](deletion.md).
+- `moderatorAbilities.deleteWithin` on a mutable type needs `$updatedAt` in `required`. See [Deletion](deletion.md).
 
 ## `immutable`
 

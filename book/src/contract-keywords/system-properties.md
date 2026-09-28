@@ -101,7 +101,7 @@ The platform sets these from the block that processes the transition; the writer
 Timestamps may be indexed. Some keywords need one in `required`, since they read it:
 
 - [`ttl`](ttl.md) counts from `$createdAt`.
-- `canBeDeletedByModeratorsFor` counts from `$updatedAt`, or from `$createdAt` on a type whose documents cannot be replaced (see [Deletion](deletion.md)).
+- `moderatorAbilities.deleteWithin` counts from `$updatedAt`, or from `$createdAt` on a type whose documents cannot be replaced (see [Deletion](deletion.md)).
 - A [time-range index](time-range.md) needs the timestamp it buckets.
 
 ## Block heights

@@ -63,7 +63,7 @@ fn post_schema(deletable_by_moderators: bool) -> Value {
         },
         "required": ["text"],
         "additionalProperties": false,
-        "canBeDeletedByModerators": deletable_by_moderators,
+        "moderatorAbilities": { "delete": deletable_by_moderators },
     })
 }
 

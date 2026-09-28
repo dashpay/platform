@@ -10,7 +10,7 @@ use crate::serialization::json_safe_fields;
 use crate::serialization::JsonSafeFields;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Value};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -18,10 +18,11 @@ use crate::data_contract::config::moderation::ContractModerationReason;
 use crate::identity::{KeyID, TimestampMillis};
 use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 use crate::ProtocolError;
+use std::collections::BTreeMap;
 use std::fmt;
 
 /// What the moderator does on the contract: to one identity, or to one document.
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -68,7 +69,7 @@ pub enum ContractUserModerationAction {
         #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
         identity_id: Identifier,
     },
-    /// Deletes a document of a document type that sets `canBeDeletedByModerators`, whoever
+    /// Deletes a document of a document type that sets `moderatorAbilities.delete`, whoever
     /// owns it, except the contract owner and the moderators. The document's owner gets no
     /// storage refund, and a `ContractDocumentRemoval` stays under the contract.
     DeleteDocument {
@@ -89,6 +90,21 @@ pub enum ContractUserModerationAction {
         document_type_name: String,
         /// The document as it was serialized when it was removed.
         document: BinaryData,
+    },
+    /// Sets or removes fields of a document that only moderators write, the ones its document
+    /// type lists under `moderatorAbilities.changeFields`, whoever owns it. Every other
+    /// property, `$updatedAt` among them, stays as it was; `$revision` goes up by one, so a
+    /// replace its owner built on the earlier revision is refused. The signer pays for the
+    /// bytes the change adds, and a refund of the document's storage stays the owner's.
+    ChangeDocumentFields {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentTypeName"))]
+        document_type_name: String,
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentId"))]
+        document_id: Identifier,
+        /// Each field's new value, by its top-level property name; `null` removes the field.
+        fields: BTreeMap<String, Value>,
+        /// Why, checked against a seated team's proposal like every other reason.
+        reason: ContractModerationReason,
     },
 }
 
@@ -113,13 +129,15 @@ impl ContractUserModerationAction {
             | ContractUserModerationAction::Warn { identity_id, .. }
             | ContractUserModerationAction::ClearWarnings { identity_id } => Some(*identity_id),
             ContractUserModerationAction::DeleteDocument { .. }
-            | ContractUserModerationAction::RestoreDocument { .. } => None,
+            | ContractUserModerationAction::RestoreDocument { .. }
+            | ContractUserModerationAction::ChangeDocumentFields { .. } => None,
         }
     }
 
     /// The document a deletion targets, as its document type name and its id. `None` for an
-    /// action on an identity, and for a restore, which carries the document itself: its id is
-    /// only known once the bytes are decoded under the document type.
+    /// action on an identity, for a field change ([`Self::changed_document`]), and for a
+    /// restore, which carries the document itself: its id is only known once the bytes are
+    /// decoded under the document type.
     pub fn document(&self) -> Option<(&str, Identifier)> {
         match self {
             ContractUserModerationAction::DeleteDocument {
@@ -143,14 +161,31 @@ impl ContractUserModerationAction {
         }
     }
 
-    /// The document type name a deletion or a restore names, `None` for an action on an
-    /// identity.
+    /// The document a field change targets, as its document type name and its id, with the
+    /// fields it sets (a `null` value removes one). `None` for every other action.
+    pub fn changed_document(&self) -> Option<(&str, Identifier, &BTreeMap<String, Value>)> {
+        match self {
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name,
+                document_id,
+                fields,
+                ..
+            } => Some((document_type_name.as_str(), *document_id, fields)),
+            _ => None,
+        }
+    }
+
+    /// The document type name a deletion, a restore or a field change names, `None` for an
+    /// action on an identity.
     pub fn document_type_name(&self) -> Option<&str> {
         match self {
             ContractUserModerationAction::DeleteDocument {
                 document_type_name, ..
             }
             | ContractUserModerationAction::RestoreDocument {
+                document_type_name, ..
+            }
+            | ContractUserModerationAction::ChangeDocumentFields {
                 document_type_name, ..
             } => Some(document_type_name.as_str()),
             _ => None,
@@ -165,14 +200,15 @@ impl ContractUserModerationAction {
         }
     }
 
-    /// The reason a ban, a suspend, a warn or a document deletion carries, `None` for an
-    /// action that takes an identity off a list.
+    /// The reason a ban, a suspend, a warn, a document deletion or a field change carries,
+    /// `None` for an action that takes an identity off a list, and for a restore.
     pub fn reason(&self) -> Option<&ContractModerationReason> {
         match self {
             ContractUserModerationAction::Ban { reason, .. }
             | ContractUserModerationAction::Suspend { reason, .. }
             | ContractUserModerationAction::Warn { reason, .. }
-            | ContractUserModerationAction::DeleteDocument { reason, .. } => Some(reason),
+            | ContractUserModerationAction::DeleteDocument { reason, .. }
+            | ContractUserModerationAction::ChangeDocumentFields { reason, .. } => Some(reason),
             ContractUserModerationAction::Unban { .. }
             | ContractUserModerationAction::Unsuspend { .. }
             | ContractUserModerationAction::ClearWarnings { .. }
@@ -191,6 +227,7 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::ClearWarnings { .. } => "clearWarnings",
             ContractUserModerationAction::DeleteDocument { .. } => "deleteDocument",
             ContractUserModerationAction::RestoreDocument { .. } => "restoreDocument",
+            ContractUserModerationAction::ChangeDocumentFields { .. } => "changeDocumentFields",
         }
     }
 }
@@ -221,6 +258,20 @@ impl fmt::Display for ContractUserModerationAction {
                     document.len()
                 )
             }
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name,
+                document_id,
+                fields,
+                ..
+            } => {
+                write!(
+                    f,
+                    "change {} of {} document {}",
+                    fields.keys().cloned().collect::<Vec<_>>().join(", "),
+                    document_type_name,
+                    document_id
+                )
+            }
             ContractUserModerationAction::Ban { identity_id, .. }
             | ContractUserModerationAction::Unban { identity_id }
             | ContractUserModerationAction::Unsuspend { identity_id }
@@ -234,13 +285,14 @@ impl fmt::Display for ContractUserModerationAction {
 
 // `until` is a u64, but basic structure validation refuses one past
 // `SystemLimits::max_contract_suspension_until` (2^53 - 1), so it is exact in JSON. The
-// reason holds a u16 and a string.
+// reason holds a u16 and a string. The fields of a field change are document values, which
+// travel in JSON as a document's own do.
 #[cfg(feature = "json-conversion")]
 impl JsonSafeFields for ContractUserModerationAction {}
 
 /// Edits the banlist, the suspension list or the warning list of a moderated data contract,
-/// or deletes or restores a document of one of its document types that moderators may
-/// delete. Signed by the
+/// deletes or restores a document of one of its document types that moderators may delete,
+/// or changes the fields only moderators write of one of its documents. Signed by the
 /// contract owner or a moderator named in the contract's config, with a CRITICAL
 /// authentication key, under the signer's contract-scoped nonce.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
@@ -475,6 +527,77 @@ mod test {
         assert!(json.get("documentId").is_some());
         let back: ContractUserModerationAction = serde_json::from_value(json).expect("from json");
         assert_eq!(back, action);
+    }
+
+    fn field_change() -> ContractUserModerationAction {
+        ContractUserModerationAction::ChangeDocumentFields {
+            document_type_name: "report".to_string(),
+            document_id: Identifier::from([7; 32]),
+            fields: BTreeMap::from([
+                ("status".to_string(), Value::U8(2)),
+                ("resolution".to_string(), Value::Null),
+            ]),
+            reason: ContractModerationReason::from_text("handled"),
+        }
+    }
+
+    #[test]
+    fn should_name_the_document_and_the_fields_of_a_change() {
+        let action = field_change();
+        // A field change names a document, not an identity, and is not a deletion: the proof
+        // of a deletion is a removal record, which a change does not leave.
+        assert_eq!(action.identity_id(), None);
+        assert_eq!(action.document(), None);
+        assert_eq!(action.restored_document(), None);
+        let (document_type_name, document_id, fields) = action
+            .changed_document()
+            .expect("a change names its document");
+        assert_eq!(document_type_name, "report");
+        assert_eq!(document_id, Identifier::from([7; 32]));
+        assert_eq!(fields.len(), 2);
+        assert_eq!(action.document_type_name(), Some("report"));
+        assert_eq!(
+            action.reason(),
+            Some(&ContractModerationReason::from_text("handled"))
+        );
+        assert_eq!(action.name(), "changeDocumentFields");
+        assert_eq!(
+            action.to_string(),
+            format!(
+                "change resolution, status of report document {}",
+                Identifier::from([7; 32])
+            )
+        );
+    }
+
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn should_tag_a_field_change_on_the_wire() {
+        let action = field_change();
+        let json = serde_json::to_value(&action).expect("to json");
+        assert_eq!(json["$type"], "changeDocumentFields");
+        assert_eq!(json["documentTypeName"], "report");
+        assert!(json.get("documentId").is_some());
+        assert_eq!(json["fields"]["status"], 2);
+        assert!(json["fields"]["resolution"].is_null());
+        let back: ContractUserModerationAction = serde_json::from_value(json).expect("from json");
+        assert_eq!(
+            back.changed_document().map(|(_, id, _)| id),
+            Some(Identifier::from([7; 32]))
+        );
+    }
+
+    #[test]
+    fn should_round_trip_a_field_change_through_bincode() {
+        let transition = ContractUserModerationTransitionV0 {
+            action: field_change(),
+            ..make_v0()
+        };
+        let bytes =
+            bincode::encode_to_vec(&transition, bincode::config::standard()).expect("encode");
+        let (back, _): (ContractUserModerationTransitionV0, usize) =
+            bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("decode");
+        assert_eq!(back, transition);
     }
 
     #[test]

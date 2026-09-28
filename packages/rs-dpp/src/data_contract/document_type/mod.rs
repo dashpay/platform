@@ -26,6 +26,7 @@ pub mod v2;
 #[cfg(feature = "validation")]
 pub(crate) mod validator;
 
+use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
@@ -238,21 +239,32 @@ pub(crate) mod property_names {
     /// Meta-schema v3+ (protocol version 14). See `apply_index_only` in
     /// `try_from_schema::common`.
     pub const ENTRY_PAYLOAD: &str = "entryPayload";
-    /// Doctype-level flag letting the contract's moderators (its owner and the
-    /// identities its moderation config appoints) delete documents of this type
-    /// with a `ContractUserModeration` transition, whatever `canBeDeleted` says
-    /// about the documents' own owners. Meta-schema v3+ (protocol version 14).
-    /// See `apply_can_be_deleted_by_moderators` in `try_from_schema::common`
-    /// for what the flag requires of the type and of the contract.
-    pub const CAN_BE_DELETED_BY_MODERATORS: &str = "canBeDeletedByModerators";
-    /// Doctype-level limit on `canBeDeletedByModerators`: for how many seconds
-    /// after a document's last modification (`$updatedAt`, or `$createdAt` on a
-    /// type whose documents never change and carry no `$updatedAt`) the moderators may
-    /// still delete it. Past that the document is settled and no moderator can
-    /// remove it; a replace moves `$updatedAt` and opens the window again.
-    /// Absent means no limit. Meta-schema v3+ (protocol version 14). See
-    /// `apply_can_be_deleted_by_moderators_for` in `try_from_schema::common`.
-    pub const CAN_BE_DELETED_BY_MODERATORS_FOR: &str = "canBeDeletedByModeratorsFor";
+    /// Doctype-level object saying what the contract's moderators (its owner and the
+    /// identities its moderation config appoints, or its seated team) may do to documents of
+    /// this type with a `ContractUserModeration` transition, whatever `canBeDeleted` and
+    /// `documentsMutable` say about the documents' own owners: delete them (`delete`, within
+    /// `deleteWithin` seconds of their last modification when given), and write the fields
+    /// `changeFields` lists, which nobody else writes. Meta-schema v3+ (protocol version
+    /// 14). See [`moderator_abilities`] for its keys, and `apply_moderator_abilities` in
+    /// `try_from_schema::common` for what each requires of the type and of the contract.
+    pub const MODERATOR_ABILITIES: &str = "moderatorAbilities";
+
+    /// The keys of the `moderatorAbilities` object.
+    pub mod moderator_abilities {
+        /// When true, the moderators may delete documents of the type, leaving a removal
+        /// record under the contract.
+        pub const DELETE: &str = "delete";
+        /// For how many seconds after a document's last modification (`$updatedAt`, or
+        /// `$createdAt` on a type whose documents never change and carry no `$updatedAt`) the
+        /// moderators may still delete it. Past that the document is settled and no moderator
+        /// can remove it; a replace moves `$updatedAt` and opens the window again. Absent
+        /// means no limit. Needs `delete: true`.
+        pub const DELETE_WITHIN: &str = "deleteWithin";
+        /// The top-level properties only the moderators write: a document's owner can
+        /// neither set them when creating it nor change them when replacing it, unless the
+        /// owner moderates the contract.
+        pub const CHANGE_FIELDS: &str = "changeFields";
+    }
     /// Doctype-level time to live, in seconds: the platform deletes each document of the
     /// type once `$createdAt` plus this many seconds has passed, whoever owns it and
     /// whatever `canBeDeleted` says; from then on it can no longer be changed or restored by a
@@ -332,9 +344,17 @@ impl DocumentTypeRef<'_> {
     }
 }
 
-impl DocumentTypeBasicMethods for DocumentType {}
+impl DocumentTypeBasicMethods for DocumentType {
+    fn has_moderator_changeable_fields(&self) -> bool {
+        !self.moderator_changeable_fields().is_empty()
+    }
+}
 
-impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {}
+impl DocumentTypeBasicMethods for DocumentTypeRef<'_> {
+    fn has_moderator_changeable_fields(&self) -> bool {
+        !self.moderator_changeable_fields().is_empty()
+    }
+}
 
 impl DocumentTypeV0Methods for DocumentType {}
 

@@ -1,6 +1,6 @@
 # Deletion
 
-A document can leave the state three ways: its owner deletes it, the contract's moderators delete it, or the platform deletes it when its time to live runs out. `canBeDeleted` rules the first, `canBeDeletedByModerators` and `canBeDeletedByModeratorsFor` the second, and `ttl` the third (see [Time To Live](ttl.md)). Each is independent of the others: a type may let moderators remove what its authors cannot retract, or expire documents that nobody may delete by hand.
+A document can leave the state three ways: its owner deletes it, the contract's moderators delete it, or the platform deletes it when its time to live runs out. `canBeDeleted` rules the first, `moderatorAbilities.delete` and `moderatorAbilities.deleteWithin` the second, and `ttl` the third (see [Time To Live](ttl.md)). Each is independent of the others: a type may let moderators remove what its authors cannot retract, or expire documents that nobody may delete by hand.
 
 ## `canBeDeleted`
 
@@ -54,13 +54,13 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
 - From protocol version 14, a type with `documentsKeepHistory: true` must set `canBeDeleted: false` (`InvalidContractStructure`, 10231). The default is `true`, so it has to be written out. A contract registered earlier with both flags on stays readable, but its next update is checked like a new contract, so that update must turn `canBeDeleted` off on the type. That is the one change to `canBeDeleted` an update may make.
 - For references, a type whose owner may delete its documents is deletable: a `permanentDocument` or `listElement` reference may not point at it (`ReferencedDocumentTypeDeletableError`, 40122), and a `deletableDocument` reference may. See [References](refers-to.md).
 
-## `canBeDeletedByModerators`
+## `moderatorAbilities.delete`
 
-Lets the contract's moderators delete documents of the type, whoever owns them. It is how an application takes down content that breaks its rules, where a ban only stops an identity from writing more.
+Lets the contract's moderators delete documents of the type, whoever owns them. It is how an application takes down content that breaks its rules, where a ban only stops an identity from writing more. It is one key of the [`moderatorAbilities`](moderator-abilities.md) object, which also names the fields only moderators write.
 
 | | |
 |---|---|
-| **Where** | document type, in a contract whose config declares `moderation` |
+| **Where** | `moderatorAbilities` of a document type, in a contract whose config declares `moderation` |
 | **Value** | boolean |
 | **Default** | `false` |
 | **Since** | protocol version 14 |
@@ -74,8 +74,7 @@ Lets the contract's moderators delete documents of the type, whoever owns them. 
   "type": "object",
   "documentsMutable": true,
   "canBeDeleted": false,
-  "canBeDeletedByModerators": true,
-  "canBeDeletedByModeratorsFor": 604800,
+  "moderatorAbilities": { "delete": true, "deleteWithin": 604800 },
   "properties": {
     "text": { "type": "string", "maxLength": 280, "position": 0 }
   },
@@ -89,7 +88,7 @@ Authors cannot retract a post, but the contract's moderators can remove one for 
 ### How it works
 
 - A moderator deletes a document with the contract user moderation transition, naming the document type, the document id and a reason. The moderators are the ones the contract's `moderation` config declares; see [Contract Moderation](../data-model/contract-moderation.md#the-model).
-- The transition is checked in this order, each refusal paid: the document type exists (`InvalidDocumentTypeError`, 10406); it carries the keyword (41115); the signer is the contract owner or a moderator (41101); the document exists (40101); its owner is neither the contract owner nor a moderator (41102); and, when the type sets `canBeDeletedByModeratorsFor`, the window has not passed (41116).
+- The transition is checked in this order, each refusal paid: the document type exists (`InvalidDocumentTypeError`, 10406); it sets `delete` (41115); the signer is the contract owner or a moderator (41101); the document exists (40101); its owner is neither the contract owner nor a moderator (41102); and, when the type sets `deleteWithin`, the window has not passed (41116).
 - The document and all its index entries are deleted as an owner's delete would delete them, without the `canBeDeleted` check. A removal record is written under the contract: whose document it was, which moderator removed it, the reason, the block time and a hash of the document. The record is never deleted.
 - The document's owner gets no storage refund, and the moderator pays neither the type's delete token cost nor its delete action fee.
 - For a week after the deletion a moderator may restore the document exactly as it was. See [Restoring Documents](../data-model/contract-moderation.md#restoring-documents).
@@ -98,17 +97,17 @@ Authors cannot retract a post, but the contract's moderators can remove one for 
 
 All refusals below are `InvalidContractStructure` (10231).
 
-- The contract's config must declare `moderation`. Moderation cannot be added by a later update, so without it nobody could ever delete anything. In return the `moderation` block may keep no banlist, suspension list or warning list at all when a document type carries this keyword.
+- The contract's config must declare `moderation`. Moderation cannot be added by a later update, so without it nobody could ever delete anything. In return the `moderation` block may keep no banlist, suspension list or warning list at all when a document type gives its moderators an ability.
 - Refused on a type that keeps history (Drive never deletes those documents), on an `indexOnly` type (there is no stored row to name), on a type with `creationRestrictionMode` 1 or 2 (its documents are the contract owner's or the platform's), and on a type with a contested index (a restore could not go through the vote the index requires).
 - For references, the type is deletable even with `canBeDeleted: false`: a `permanentDocument` or `listElement` reference may not point at it (40122), and a `deletableDocument` reference may.
 
-## `canBeDeletedByModeratorsFor`
+## `moderatorAbilities.deleteWithin`
 
 Limits the moderators' deletion to a window after a document's last change. Once the window has passed the document is settled: moderation acts on what was just written and does not reach back into what has stood unchallenged.
 
 | | |
 |---|---|
-| **Where** | document type, with `canBeDeletedByModerators: true` |
+| **Where** | `moderatorAbilities` of a document type, with `delete: true` |
 | **Value** | integer, seconds, 1 to 4294967295 |
 | **Default** | absent: no limit |
 | **Since** | protocol version 14 |
@@ -118,22 +117,22 @@ Limits the moderators' deletion to a window after a document's last change. Once
 ### How it works
 
 - The window is measured from the document's `$updatedAt`, or from its `$createdAt` on a type that does not record `$updatedAt`. A deletion at exactly that time plus the window still passes; after it, every moderator is refused, the contract owner included.
-- A replace or a price update moves `$updatedAt`, so new content opens the window again. A transfer or a purchase does not move it.
+- A replace or a price update moves `$updatedAt`, so new content opens the window again. A transfer, a purchase or a moderator's [field change](moderator-abilities.md#changefields) does not move it.
 - A restored document comes back with its old `$updatedAt`, so it may already be settled.
 - The window says nothing about the document's own owner, whose deletion `canBeDeleted` rules at any age.
 
 ### Rules at registration
 
-- Needs `canBeDeletedByModerators: true` (`InvalidContractStructure`, 10231).
+- Needs `delete: true` (`InvalidContractStructure`, 10231).
 - A type whose documents can be replaced must list `$updatedAt` in `required`: measured from creation alone, an author could wait the window out and then rewrite a post into something no moderator can remove. A type with `documentsMutable: false` must list `$updatedAt` or `$createdAt`. Both refusals are 10231.
-- A window of 0 is refused by the meta-schema (`JsonSchemaError`, 10101). A type that moderators may never delete from simply leaves `canBeDeletedByModerators` out.
+- A window of 0 is refused by the meta-schema (`JsonSchemaError`, 10101). A type that moderators may never delete from simply leaves `delete` out.
 
 ## How they combine
 
 | Who deletes | Allowed by | Refund to the owner |
 |---|---|---|
 | The document's owner | `canBeDeleted: true`, on a type that does not keep history | Yes, except on a type with a `ttl` |
-| The contract's moderators | `canBeDeletedByModerators: true`, within `canBeDeletedByModeratorsFor` when set | No |
+| The contract's moderators | `moderatorAbilities.delete: true`, within `moderatorAbilities.deleteWithin` when set | No |
 | The platform | `ttl`, once it has passed | No |
 
 A type that allows any of the three counts as deletable for references. Only a type that allows none of them can be the target of a `permanentDocument` or `listElement` reference.
@@ -141,6 +140,7 @@ A type that allows any of the three counts as deletable for references. Only a t
 ## See also
 
 - [Deleting Documents](../data-model/contract-moderation.md#deleting-documents) and [Restoring Documents](../data-model/contract-moderation.md#restoring-documents), for the moderation transition and the removal record
+- [Moderator Abilities](moderator-abilities.md), for the `moderatorAbilities` object and the fields only moderators write
 - [Time To Live](ttl.md), the third way a document leaves the state
 - [History](history.md), for why a type that keeps history can never delete
 - [Mutability](mutability.md) and [Creation, Transfers and Trading](ownership-and-trading.md)

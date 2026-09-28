@@ -9,6 +9,9 @@ mod transformer;
 // A moderator's document deletion (`contract_user_moderation`) reads the document the way a
 // document's own deletion does, billed the same.
 pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id;
+// A moderator's field change judges the changed document by its type's `propertyConstraints`
+// as a replace does, with the totals they read.
+pub(in crate::execution::validation::state_transition) use transformer::v0::property_constraint_aggregates::read_property_constraint_aggregates_for_moderator_change;
 
 #[cfg(test)]
 mod tests;

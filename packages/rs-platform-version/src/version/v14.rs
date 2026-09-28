@@ -438,7 +438,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     argument, `setIdForCreation` and the `identityContractNonce`
 ///     constructor option.
 /// 19. **Document deletion by moderators**: a document type of a contract
-///     that declares moderation may set `canBeDeletedByModerators` (meta-schema
+///     that declares moderation may set `moderatorAbilities.delete` (meta-schema
 ///     v3, fixed when the type is created, refused on a type that keeps
 ///     history, is indexOnly or restricts creation; for references such a type
 ///     is deletable, so a permanentDocument reference refuses it and a
@@ -461,7 +461,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     fee is charged.
 ///     The moderation method table, the verify table and the query table gain
 ///     the document removal methods (`getContractDocumentRemovals`).
-///     `canBeDeletedByModeratorsFor` bounds the deletion in time: so many
+///     `moderatorAbilities.deleteWithin` bounds the deletion in time: so many
 ///     seconds after a document's last modification (`$updatedAt`, or
 ///     `$createdAt` on a type whose documents never change; the type must
 ///     require its clock), past which no moderator deletes it, the
@@ -505,7 +505,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     deleted; a restored document deleted again gets a fresh record in place
 ///     of the marked one, which the deletion transform reads to know. Neither
 ///     the type's creation token cost nor its `actionFees` creation fee is
-///     charged, and no fee agreement is asked. `canBeDeletedByModerators` is
+///     charged, and no fee agreement is asked. `moderatorAbilities.delete` is
 ///     now also refused on a type with a contested index, whose deletions
 ///     could never be undone. The record grows on the wire
 ///     (`getContractDocumentRemovals`: `document_hash`, `restoration`).
@@ -1467,6 +1467,37 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `""` agreed with `"\0"`, and two equal values over 255 bytes, which
 ///     an unindexed string of 64 characters or more can hold, were refused
 ///     (`ReferencedDocumentPropertyMismatchError`, 40127).
+///
+/// 57. **Moderator abilities, and fields only moderators write**: the two
+///     doctype keywords of moderator deletion (19) become one object,
+///     `moderatorAbilities` (meta-schema v3): `delete` for
+///     `canBeDeletedByModerators`, `deleteWithin` for
+///     `canBeDeletedByModeratorsFor`, and `changeFields`, the top-level
+///     properties only the contract's moderators write. The whole object is
+///     fixed with the type (40212). A listed property must be declared,
+///     optional, stored, not immutable, neither a reference nor read by one,
+///     neither generated nor a generation parameter, and in no contested index,
+///     on a type that is not indexOnly; a type listing any keeps `$revision` even
+///     when `documentsMutable` is false, and a lookup key or a list element's
+///     list may not read such a field of the type it refers to.
+///     `ContractUserModeration` gains the `ChangeDocumentFields` action: a
+///     moderator (for a seated team, holding the new `changeDocumentFields`
+///     ability, appended to `ModerationAbility`, on the type, and citing a
+///     listed reason) sets or removes those fields on any document of the type,
+///     whoever owns it. The changed document is judged as a replace judges one
+///     (schema, `propertyConstraints` with their totals, `distinctFrom`,
+///     `encryptedFor` shapes, unique indexes through
+///     `validate_moderated_document_uniqueness`, the restore's check
+///     generalized and renamed), its references are not checked again, and it
+///     is stored with the replace's update, `$revision` one higher and
+///     `$updatedAt` untouched; the moderator pays, refunds of what the change
+///     frees stay the owner's, and a seated team counts the action. The proof
+///     is the document as it now stands. Batch create state validation 2 and
+///     replace state validation 1 refuse a document's owner who sets, changes
+///     or removes such a field without moderating the contract. New errors:
+///     `InvalidContractModerationDocumentFieldsError` (10905),
+///     `DocumentFieldNotChangeableByModeratorsError` (41123) and
+///     `DocumentModeratorFieldNotWritableError` (41124), appended.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

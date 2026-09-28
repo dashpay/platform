@@ -248,6 +248,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         self.documents_can_be_deleted_by_moderators_for
     }
 
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
+        &self.moderator_changeable_fields
+    }
+
     fn documents_ttl_seconds(&self) -> Option<u32> {
         self.documents_ttl_seconds
     }

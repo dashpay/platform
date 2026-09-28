@@ -2,16 +2,18 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
+use crate::serialization::platform_value_to_object_with_base58_identifiers;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
-    try_from_options, try_from_options_optional, try_to_bytes, try_to_u16, try_to_u32, try_to_u64,
+    ToSerdeJSONExt, try_from_options, try_from_options_optional, try_from_options_optional_with,
+    try_to_bytes, try_to_u16, try_to_u32, try_to_u64,
 };
 use dpp::data_contract::config::moderation::{
     ContractModerationDocument, ContractModerationReason, ContractWarning,
 };
-use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
+use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{Identifier, UserFeeIncrease};
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
@@ -24,6 +26,7 @@ use dpp::state_transition::{
     StateTransitionSingleSigned,
 };
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -87,13 +90,15 @@ export type ContractUserModerationActionJSON =
   | { $type: "warn"; identityId: string; reason: ContractModerationReason }
   | { $type: "clearWarnings"; identityId: string }
   | { $type: "deleteDocument"; documentTypeName: string; documentId: string; reason: ContractModerationReason }
-  | { $type: "restoreDocument"; documentTypeName: string; document: string };
+  | { $type: "restoreDocument"; documentTypeName: string; document: string }
+  | { $type: "changeDocumentFields"; documentTypeName: string; documentId: string; fields: Record<string, unknown>; reason: ContractModerationReason };
 
 /**
  * Bans, unbans, suspends, unsuspends, warns or clears the warnings of one identity on a
  * moderated data contract, or deletes one document of a document type that sets
- * `canBeDeletedByModerators`, or restores one such document a moderator deleted (protocol
- * version 14).
+ * `moderatorAbilities.delete`, or restores one such document a moderator deleted, or sets the
+ * fields a document type keeps for its moderators (`moderatorAbilities.changeFields`) on one of
+ * its documents (protocol version 14).
  * Signed by the contract owner or a moderator its config names, with a CRITICAL
  * authentication key, under the signer's contract-scoped nonce.
  */
@@ -105,16 +110,28 @@ export interface ContractUserModerationTransitionOptions {
     /** The signer's nonce for the contract */
     identityContractNonce: bigint;
     /** What is done */
-    action: "ban" | "unban" | "suspend" | "unsuspend" | "warn" | "clearWarnings" | "deleteDocument" | "restoreDocument";
+    action: "ban" | "unban" | "suspend" | "unsuspend" | "warn" | "clearWarnings" | "deleteDocument" | "restoreDocument" | "changeDocumentFields";
     /**
-     * The identity the action targets. Needed by every action but a deleteDocument and a
-     * restoreDocument, which name a document instead and refuse it.
+     * The identity the action targets. Needed by every action but a deleteDocument, a
+     * restoreDocument and a changeDocumentFields, which name a document instead and refuse it.
      */
     identityId?: IdentifierLike;
-    /** For a deleteDocument or a restoreDocument, which need it: the document type of the document. Refused beside another action. */
+    /**
+     * For a deleteDocument, a restoreDocument or a changeDocumentFields, which need it: the
+     * document type of the document. Refused beside another action.
+     */
     documentTypeName?: string;
-    /** For a deleteDocument, which needs it: the document. Refused beside another action. */
+    /**
+     * For a deleteDocument or a changeDocumentFields, which need it: the document. Refused
+     * beside another action.
+     */
     documentId?: IdentifierLike;
+    /**
+     * For a changeDocumentFields, which needs it: each field the change sets, by its top-level
+     * property name, `null` removing it. Every one must be a field the document type keeps for
+     * its moderators (`moderatorAbilities.changeFields`). Refused beside another action.
+     */
+    fields?: Record<string, unknown>;
     /**
      * For a restoreDocument, which needs it: the document as it was serialized under its
      * document type when it was deleted (`Document.toBytes()` of the document as fetched
@@ -125,9 +142,9 @@ export interface ContractUserModerationTransitionOptions {
     /** For a suspend: the block time, in milliseconds, at which the suspension lapses */
     until?: bigint;
     /**
-     * Why. A ban, a suspend and a warn each need one. A deleteDocument may leave it out, which
-     * stores no code and an empty text. Refused beside an unban, an unsuspend or a
-     * clearWarnings.
+     * Why. A ban, a suspend and a warn each need one. A deleteDocument and a
+     * changeDocumentFields may leave it out, which stores no code and an empty text. Refused
+     * beside an unban, an unsuspend, a clearWarnings or a restoreDocument.
      */
     reason?: ContractModerationReason;
     userFeeIncrease?: number;
@@ -146,6 +163,7 @@ export interface ContractUserModerationObject {
         documentTypeName?: string;
         documentId?: Uint8Array;
         document?: Uint8Array;
+        fields?: Record<string, unknown>;
         until?: bigint;
         reason?: ContractModerationReason;
     };
@@ -330,22 +348,27 @@ impl From<ContractUserModerationWasm> for ContractUserModerationTransition {
 pub struct ContractUserModerationActionParts {
     /// The identity a ban, an unban, a suspend, an unsuspend, a warn or a clearWarnings targets
     pub identity_id: Option<Identifier>,
-    /// The document type of the document a deleteDocument targets
+    /// The document type of the document a deleteDocument, a restoreDocument or a
+    /// changeDocumentFields targets
     pub document_type_name: Option<String>,
-    /// The document a deleteDocument targets
+    /// The document a deleteDocument or a changeDocumentFields targets
     pub document_id: Option<Identifier>,
     /// The document a restoreDocument brings back, as it was serialized when it was deleted
     pub document: Option<Vec<u8>>,
+    /// The fields a changeDocumentFields sets, a `null` removing one
+    pub fields: Option<BTreeMap<String, Value>>,
     /// The end of a suspend
     pub until: Option<u64>,
-    /// Why: needed by a ban, a suspend and a warn, optional for a deleteDocument
+    /// Why: needed by a ban, a suspend and a warn, optional for a deleteDocument and a
+    /// changeDocumentFields
     pub reason: Option<ContractModerationReason>,
 }
 
 /// The action for a name and its parts: an identity for the actions on an identity, with
 /// `until` for a suspend and `reason` for a ban, a suspend and a warn, a document type
-/// name and a document id for a deleteDocument, with or without a `reason`, and a document
-/// type name and the document's bytes for a restoreDocument.
+/// name and a document id for a deleteDocument, with or without a `reason`, a document
+/// type name and the document's bytes for a restoreDocument, and a document type name, a
+/// document id and the fields for a changeDocumentFields, with or without a `reason`.
 pub fn moderation_action_from_parts(
     action: &str,
     parts: ContractUserModerationActionParts,
@@ -355,6 +378,7 @@ pub fn moderation_action_from_parts(
         document_type_name,
         document_id,
         document,
+        fields,
         until,
         reason,
     } = parts;
@@ -367,10 +391,19 @@ pub fn moderation_action_from_parts(
     }
     // The same goes for a reason: only an action that adds an entry or a removal record stores
     // one.
-    let stores_a_reason = matches!(action, "ban" | "suspend" | "warn" | "deleteDocument");
+    let stores_a_reason = matches!(
+        action,
+        "ban" | "suspend" | "warn" | "deleteDocument" | "changeDocumentFields"
+    );
     if reason.is_some() && !stores_a_reason {
         return Err(WasmDppError::invalid_argument(format!(
-            "`reason` is only valid for a ban, a suspend, a warn or a deleteDocument action, not for `{action}`"
+            "`reason` is only valid for a ban, a suspend, a warn, a deleteDocument or a changeDocumentFields action, not for `{action}`"
+        )));
+    }
+    // Only a field change sets fields.
+    if fields.is_some() && action != "changeDocumentFields" {
+        return Err(WasmDppError::invalid_argument(format!(
+            "`fields` is only valid for a changeDocumentFields action, not for `{action}`"
         )));
     }
     // And for the target: a deletion and a restore name a document and every other action an
@@ -378,7 +411,7 @@ pub fn moderation_action_from_parts(
     // mixed the two up would sign something it did not mean. A deletion names its document by
     // id, a restore carries it.
     match action {
-        "deleteDocument" | "restoreDocument" => {
+        "deleteDocument" | "restoreDocument" | "changeDocumentFields" => {
             if identity_id.is_some() {
                 return Err(WasmDppError::invalid_argument(format!(
                     "`identityId` is not valid for a {action} action, which names a document"
@@ -388,15 +421,15 @@ pub fn moderation_action_from_parts(
         _ => {
             if document_type_name.is_some() || document_id.is_some() || document.is_some() {
                 return Err(WasmDppError::invalid_argument(format!(
-                    "`documentTypeName`, `documentId` and `document` are only valid for a deleteDocument or a restoreDocument action, not for `{action}`"
+                    "`documentTypeName`, `documentId` and `document` are only valid for a deleteDocument, a restoreDocument or a changeDocumentFields action, not for `{action}`"
                 )));
             }
         }
     }
-    if action == "deleteDocument" && document.is_some() {
-        return Err(WasmDppError::invalid_argument(
-            "`document` is only valid for a restoreDocument action: a deleteDocument names its document by `documentId`",
-        ));
+    if matches!(action, "deleteDocument" | "changeDocumentFields") && document.is_some() {
+        return Err(WasmDppError::invalid_argument(format!(
+            "`document` is only valid for a restoreDocument action: a {action} names its document by `documentId`"
+        )));
     }
     if action == "restoreDocument" && document_id.is_some() {
         return Err(WasmDppError::invalid_argument(
@@ -440,8 +473,15 @@ pub fn moderation_action_from_parts(
             document_type_name: document_type_name.ok_or_else(|| needs("a `documentTypeName`"))?,
             document: BinaryData::new(document.ok_or_else(|| needs("a `document`"))?),
         }),
+        "changeDocumentFields" => Ok(ContractUserModerationAction::ChangeDocumentFields {
+            document_type_name: document_type_name.ok_or_else(|| needs("a `documentTypeName`"))?,
+            document_id: document_id.ok_or_else(|| needs("a `documentId`"))?,
+            fields: fields.ok_or_else(|| needs("`fields`"))?,
+            // As for a deletion, the reason is optional
+            reason: reason.unwrap_or_default(),
+        }),
         other => Err(WasmDppError::invalid_argument(format!(
-            "unknown moderation action `{other}`: expected ban, unban, suspend, unsuspend, warn, clearWarnings, deleteDocument or restoreDocument"
+            "unknown moderation action `{other}`: expected ban, unban, suspend, unsuspend, warn, clearWarnings, deleteDocument, restoreDocument or changeDocumentFields"
         ))),
     }
 }
@@ -468,6 +508,9 @@ impl ContractUserModerationWasm {
                 Some(try_to_bytes(value, "document")?)
             }
         };
+        let fields = try_from_options_optional_with(&options, "fields", |value| {
+            value.with_serde_to_platform_value_map()
+        })?;
 
         // Deserialize primitive fields via serde last (consumes options)
         let input: ContractUserModerationOptionsInput =
@@ -481,6 +524,7 @@ impl ContractUserModerationWasm {
                 document_type_name: input.document_type_name,
                 document_id: document_id.map(Into::into),
                 document,
+                fields,
                 until: input.until,
                 reason: input.reason.map(Into::into),
             },
@@ -610,20 +654,23 @@ impl ContractUserModerationWasm {
         self.0.identity_contract_nonce()
     }
 
-    /// The action's name: ban, unban, suspend, unsuspend, warn, clearWarnings, deleteDocument or restoreDocument
+    /// The action's name: ban, unban, suspend, unsuspend, warn, clearWarnings, deleteDocument,
+    /// restoreDocument or changeDocumentFields
     #[wasm_bindgen(getter = "action")]
     pub fn action(&self) -> String {
         self.0.action().name().to_string()
     }
 
-    /// The identity the action targets, undefined for a deleteDocument and a restoreDocument:
-    /// they name a document, and whose it is is only known once the document is read
+    /// The identity the action targets, undefined for a deleteDocument, a restoreDocument and a
+    /// changeDocumentFields: they name a document, and whose it is is only known once the
+    /// document is read
     #[wasm_bindgen(getter = "identityId")]
     pub fn identity_id(&self) -> Option<IdentifierWasm> {
         self.0.target_identity_id().map(Into::into)
     }
 
-    /// For a deleteDocument or a restoreDocument, the document type of its document
+    /// For a deleteDocument, a restoreDocument or a changeDocumentFields, the document type of
+    /// its document
     #[wasm_bindgen(getter = "documentTypeName")]
     pub fn document_type_name(&self) -> Option<String> {
         self.0
@@ -642,13 +689,41 @@ impl ContractUserModerationWasm {
             .map(|(_, document)| document.to_vec())
     }
 
-    /// For a deleteDocument, the document it deletes
+    /// For a deleteDocument, the document it deletes, and for a changeDocumentFields, the
+    /// document it changes
     #[wasm_bindgen(getter = "documentId")]
     pub fn document_id(&self) -> Option<IdentifierWasm> {
-        self.0
-            .action()
+        let action = self.0.action();
+        action
             .document()
-            .map(|(_, document_id)| document_id.into())
+            .map(|(_, document_id)| document_id)
+            .or_else(|| {
+                action
+                    .changed_document()
+                    .map(|(_, document_id, _)| document_id)
+            })
+            .map(Into::into)
+    }
+
+    /// For a changeDocumentFields, the fields it sets, identifiers as base58 strings, a `null`
+    /// removing one
+    #[wasm_bindgen(
+        getter = "fields",
+        unchecked_return_type = "Record<string, unknown> | undefined"
+    )]
+    pub fn fields(&self) -> WasmDppResult<JsValue> {
+        match self.0.action().changed_document() {
+            None => Ok(JsValue::UNDEFINED),
+            Some((_, _, fields)) => {
+                let fields = Value::Map(
+                    fields
+                        .iter()
+                        .map(|(name, value)| (Value::Text(name.clone()), value.clone()))
+                        .collect(),
+                );
+                Ok(platform_value_to_object_with_base58_identifiers(&fields)?)
+            }
+        }
     }
 
     /// For a suspend, the block time in milliseconds at which the suspension lapses
@@ -657,7 +732,7 @@ impl ContractUserModerationWasm {
         self.0.action().until()
     }
 
-    /// For a ban, a suspend, a warn and a deleteDocument, why
+    /// For a ban, a suspend, a warn, a deleteDocument and a changeDocumentFields, why
     #[wasm_bindgen(getter = "reason")]
     pub fn reason(&self) -> Option<ContractModerationReasonJs> {
         self.0

@@ -73,6 +73,7 @@
 - [transient](contract-keywords/transient.md)
 - [Mutability](contract-keywords/mutability.md)
 - [Deletion](contract-keywords/deletion.md)
+- [Moderator Abilities](contract-keywords/moderator-abilities.md)
 - [Time To Live (ttl)](contract-keywords/ttl.md)
 - [Creation, Transfers and Trading](contract-keywords/ownership-and-trading.md)
 - [History](contract-keywords/history.md)

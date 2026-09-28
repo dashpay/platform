@@ -23,6 +23,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::Value;
 use dpp::prelude::{AddressNonce, Identifier};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
@@ -1269,6 +1270,17 @@ impl Drive {
                     platform_version,
                 )
             }
+            StateTransition::ContractUserModeration(transition)
+                if transition.action().changed_document().is_some() =>
+            {
+                verify_contract_document_change_execution(
+                    proof,
+                    transition,
+                    known_contracts_provider_fn,
+                    carries_owner_balance,
+                    platform_version,
+                )
+            }
             StateTransition::ContractUserModeration(transition) => {
                 // The proof holds the entries of the lists the moderation touched, present or
                 // absent, and nothing more. A ban touched every barring list the contract
@@ -1306,9 +1318,11 @@ impl Drive {
                         vec![ContractModerationList::Warnings]
                     }
                     ContractUserModerationAction::DeleteDocument { .. }
-                    | ContractUserModerationAction::RestoreDocument { .. } => {
+                    | ContractUserModerationAction::RestoreDocument { .. }
+                    | ContractUserModerationAction::ChangeDocumentFields { .. } => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
-                            "a document deletion or restore is verified above".to_string(),
+                            "a document deletion, restore or field change is verified above"
+                                .to_string(),
                         )))
                     }
                 };
@@ -1351,7 +1365,8 @@ impl Drive {
                         statuses.warnings().is_some_and(<[_]>::is_empty)
                     }
                     ContractUserModerationAction::DeleteDocument { .. }
-                    | ContractUserModerationAction::RestoreDocument { .. } => false,
+                    | ContractUserModerationAction::RestoreDocument { .. }
+                    | ContractUserModerationAction::ChangeDocumentFields { .. } => false,
                 };
                 if !as_expected {
                     return Err(Error::Proof(ProofError::IncorrectProof(format!(
@@ -3056,6 +3071,70 @@ fn verify_contract_document_restore_execution(
             ))
         }
         _ => Err(Error::Proof(ProofError::IncorrectProof(format!(
+            "proof of state transition execution does not show the {} on contract {} by {}",
+            transition.action(),
+            contract_id,
+            transition.owner_id()
+        )))),
+    }
+}
+
+/// A moderator's document field change is proved by the document as it now stands: it
+/// exists, and each field the transition names holds the value it set, or is absent where it
+/// set `null`. Its other properties are the owner's and are not compared; the revision the
+/// change bumped is the block's to say.
+fn verify_contract_document_change_execution(
+    proof: &[u8],
+    transition: &ContractUserModerationTransition,
+    known_contracts_provider_fn: &ContractLookupFn,
+    verify_subset_of_proof: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(RootHash, StateTransitionProofResult), Error> {
+    let contract_id = transition.data_contract_id();
+    let Some((document_type_name, document_id, fields)) = transition.action().changed_document()
+    else {
+        return Err(Error::Proof(ProofError::CorruptedProof(
+            "only a document field change is verified by the changed document".to_string(),
+        )));
+    };
+    let contract = known_contracts_provider_fn(&contract_id)?.ok_or(Error::Proof(
+        ProofError::UnknownContract(format!(
+            "unknown contract with id {} in contract document change verification",
+            contract_id
+        )),
+    ))?;
+    let document_type = contract.document_type_for_name(document_type_name)?;
+    let query = SingleDocumentDriveQuery {
+        contract_id: contract_id.into_buffer(),
+        document_type_name: document_type_name.to_string(),
+        document_type_keeps_history: document_type.documents_keep_history(),
+        document_id: document_id.into_buffer(),
+        block_time_ms: None,
+        contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+    };
+    let (root_hash, document) = query.verify_proof(
+        verify_subset_of_proof,
+        proof,
+        document_type,
+        platform_version,
+    )?;
+    let changed = document.filter(|document| {
+        fields.iter().all(|(field, value)| {
+            let stored = document.properties().get(field);
+            // The document is read back under its type, so an integer comes back at the
+            // width the type stores it in, whichever the transition carried it in.
+            match value {
+                Value::Null => stored.is_none(),
+                value => stored.is_some_and(|stored| stored.equal_underlying_data(value)),
+            }
+        })
+    });
+    match changed {
+        Some(document) => Ok((
+            root_hash,
+            VerifiedDocuments(BTreeMap::from([(document_id, Some(document))])),
+        )),
+        None => Err(Error::Proof(ProofError::IncorrectProof(format!(
             "proof of state transition execution does not show the {} on contract {} by {}",
             transition.action(),
             contract_id,

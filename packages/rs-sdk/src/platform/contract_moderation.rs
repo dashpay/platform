@@ -17,7 +17,7 @@
 //! * [`ContractDocumentRemovals::fetch`] with a [`ContractDocumentRemovalsPageQuery`] returns
 //!   the records of the documents the moderators deleted within one document type, either one
 //!   page in document id order or the records of the ids named. The document type must be one
-//!   that sets `canBeDeletedByModerators`: no other keeps records, and the node refuses a query
+//!   that sets `moderatorAbilities.delete`: no other keeps records, and the node refuses a query
 //!   over a tree that does not exist.
 //!
 //! Every type also implements [`FetchUnproved`] for the unverified fast path.

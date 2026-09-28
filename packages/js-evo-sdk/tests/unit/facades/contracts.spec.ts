@@ -418,6 +418,24 @@ describe('ContractsFacade', () => {
       expect(result.restoredBy).to.equal(identityId);
     });
 
+    it('should forward moderatorChangeDocumentFields() to contractChangeDocumentFields() and return the changed document', async function run() {
+      const changed = Object.create(wasmSDKPackage.Document.prototype);
+      const stub = this.sinon.stub(wasmSdk, 'contractChangeDocumentFields').resolves(changed);
+      const options = {
+        identity: Object.create(wasmSDKPackage.Identity.prototype),
+        contractId,
+        documentTypeName,
+        documentId,
+        fields: { status: 2, resolution: null },
+        signer,
+      };
+
+      const result = await client.contracts.moderatorChangeDocumentFields(options);
+
+      expect(stub).to.be.calledOnceWithExactly(options);
+      expect(result).to.equal(changed);
+    });
+
     it('should fetch the removal records of the documents named, which carry no cursor', async function run() {
       const page = { removals: [{ documentId, ...removal }] };
       const stub = this.sinon.stub(wasmSdk, 'getContractDocumentRemovals').resolves(page);
