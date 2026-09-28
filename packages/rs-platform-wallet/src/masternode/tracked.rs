@@ -26,17 +26,18 @@
 //! session-scoped; hosts read
 //! [`PersistenceCapabilities::TRACKED_MASTERNODES`] to know which they got.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dash_sdk::platform::Fetch;
 use dashcore::transaction::special_transaction::provider_registration::ProviderMasternodeType;
 use dashcore::transaction::TransactionPayload;
-use dashcore::{Address as DashAddress, Network};
+use dashcore::{Address as DashAddress, Network, OutPoint};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
 use dpp::prelude::Identifier;
+use key_wallet_manager::WalletManager;
 use serde_json::{json, Value};
 
 use super::list::MasternodeListSummary;
@@ -53,6 +54,8 @@ use crate::manager::PlatformWalletManager;
 use crate::wallet::masternode_withdrawal::{
     execute_masternode_withdrawal, MasternodeWithdrawalKey, RawSecretCoreSigner,
 };
+use crate::wallet::outpoint_locks::{lock_known_masternode_collaterals, named_collateral};
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 // ---------------------------------------------------------------------------
 // Model
@@ -500,6 +503,9 @@ pub struct TrackedMasternodes {
     sdk: std::sync::Arc<dash_sdk::Sdk>,
     persister: std::sync::Arc<dyn PlatformWalletPersistence>,
     network: Network,
+    /// The manager's wallets, so a refresh that learns a registration can
+    /// lock its collateral in them.
+    wallet_manager: std::sync::Arc<tokio::sync::RwLock<WalletManager<PlatformWalletInfo>>>,
 }
 
 /// Apply one registry mutation and durably replace the persisted set as one
@@ -672,6 +678,24 @@ impl TrackedMasternodes {
         }
     }
 
+    /// The collateral of every tracked masternode whose registration has
+    /// been fetched (see [`Self::refresh`]).
+    pub(crate) fn known_collaterals(&self) -> BTreeSet<OutPoint> {
+        self.registry
+            .rows
+            .read()
+            .expect("tracked masternode registry lock poisoned")
+            .values()
+            .filter_map(|tracked| {
+                let registration = tracked.snapshot.registration.as_ref()?;
+                Some(named_collateral(
+                    &tracked.pro_tx_hash,
+                    registration.collateral,
+                ))
+            })
+            .collect()
+    }
+
     /// The wire proTxHashes currently tracked (for locate's
     /// `already_tracked` mark).
     pub fn hashes(&self) -> std::collections::BTreeSet<[u8; 32]> {
@@ -812,6 +836,17 @@ impl TrackedMasternodes {
             |snapshot| self.learn(pro_tx_hash, snapshot),
         )
         .await?;
+
+        // Once the registration is known, keep its collateral out of every
+        // wallet's coin selection: spending it would end the registration.
+        if let Some(registration) = tracked.snapshot.registration.as_ref() {
+            let collateral = named_collateral(&tracked.pro_tx_hash, registration.collateral);
+            lock_known_masternode_collaterals(
+                self.wallet_manager.as_ref(),
+                &BTreeSet::from([collateral]),
+            )
+            .await;
+        }
 
         let entry = outcome
             .list_now
@@ -1066,6 +1101,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             sdk: self.sdk_arc(),
             persister: std::sync::Arc::clone(&self.persister) as _,
             network: self.sdk().network,
+            wallet_manager: std::sync::Arc::clone(&self.wallet_manager),
         }
     }
 

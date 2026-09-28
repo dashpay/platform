@@ -1,6 +1,6 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -367,6 +367,16 @@ pub struct PlatformWalletInfo {
     /// [`RewindBarrier`](crate::changeset::core_bridge::RewindBarrier). In
     /// memory only.
     pub rewind_barrier: crate::changeset::core_bridge::RewindBarrier,
+    /// Outpoints `core_wallet` locked during a transaction check that are not
+    /// persisted yet.
+    ///
+    /// Every ProRegTx the wallet processes locks its collateral, relevant or
+    /// not, and no `WalletEvent` carries that lock. The check queues it here
+    /// and the wallet-event adapter drains the queue into the next changeset
+    /// it stores for this wallet. Interior mutability because the adapter
+    /// projects under the manager's read lock; a poisoned mutex keeps its
+    /// contents.
+    pub(crate) pending_outpoint_locks: std::sync::Mutex<BTreeSet<OutPoint>>,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.

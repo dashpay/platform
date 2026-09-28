@@ -147,6 +147,33 @@ pub fn build_dashpay_backfill_covered_for_callback(
             contact_identity_id: entry.contact.to_buffer(),
             account_index: entry.account_index,
             covered_from: entry.covered_from,
+/// One change to a wallet's locked outpoints, carried by the persistence
+/// extension's `on_persist_wallet_changeset_outpoint_locks_fn` slot.
+///
+/// A locked outpoint is kept out of coin selection: the collateral of a
+/// masternode registration the wallet processed (spending it would end the
+/// registration), or an outpoint locked by hand. The lock does not need a
+/// coin behind it, so a host keeps it apart from its UTXO rows, keyed by
+/// `(wallet_id, outpoint)`, and hands every stored lock back through the
+/// `on_load_wallet_locked_outpoints_fn` slot.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct OutpointLockFFI {
+    pub outpoint: OutPointFFI,
+    /// `true`: store the lock. `false`: delete it.
+    pub locked: bool,
+}
+
+/// Project a changeset's outpoint locks into their C mirrors for the
+/// extension slot, in outpoint order.
+pub(crate) fn build_outpoint_locks_for_callback(
+    cs: &platform_wallet::changeset::CoreChangeSet,
+) -> Vec<OutpointLockFFI> {
+    cs.outpoint_locks
+        .iter()
+        .map(|(outpoint, locked)| OutpointLockFFI {
+            outpoint: OutPointFFI::from(outpoint),
+            locked: *locked,
         })
         .collect()
 }

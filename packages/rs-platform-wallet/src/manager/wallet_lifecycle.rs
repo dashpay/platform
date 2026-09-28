@@ -366,7 +366,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            pending_outpoint_locks: Default::default(),
         };
+        // A tracked masternode's collateral may reach this wallet as it syncs;
+        // lock it now so it arrives locked.
+        platform_info.lock_known_masternode_collaterals(
+            &self.tracked_masternodes_service().known_collaterals(),
+        );
 
         wallet.downgrade_to_external_signable();
 

@@ -96,7 +96,8 @@ public enum DashModelContainer {
             PersistentTrackedMasternode.self,
             PersistentIdentityBalanceMetadata.self,
             PersistentPrivateContactRequestsPosition.self,
-            PersistentPrivateShieldedAddress.self
+            PersistentPrivateShieldedAddress.self,
+            PersistentLockedOutpoint.self
         ]
     }
 

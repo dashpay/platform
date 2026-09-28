@@ -75,6 +75,9 @@ final class InvitationPersistenceTests: XCTestCase {
             // persist/load/free trio onto `PersistentPrivateContactRequestsPosition`
             // and `PersistentPrivateShieldedAddress`.
             | PlatformWalletPersistenceCapabilities.privateContactRequestScanState
+            // Locked outpoints: the handler wires the persist/load/free trio
+            // onto `PersistentLockedOutpoint`, so locks survive a restart.
+            | PlatformWalletPersistenceCapabilities.outpointLocks
 
         XCTAssertEqual(
             capabilities.version,

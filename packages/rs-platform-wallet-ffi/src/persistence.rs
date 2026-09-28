@@ -59,9 +59,10 @@ use crate::contact_persistence::{
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
 use crate::core_wallet_types::{
-    build_dashpay_backfill_covered_for_callback, build_sweep_batches_for_callback,
-    build_utxo_credit_verdicts_for_callback, free_wallet_changeset_ffi,
-    DashPayBackfillCoveredContactFFI, SweepBatchFFI, UtxoCreditVerdictFFI, WalletChangeSetFFI,
+    build_dashpay_backfill_covered_for_callback, build_outpoint_locks_for_callback,
+    build_sweep_batches_for_callback, build_utxo_credit_verdicts_for_callback,
+    free_wallet_changeset_ffi, DashPayBackfillCoveredContactFFI, OutPointFFI, OutpointLockFFI,
+    SweepBatchFFI, UtxoCreditVerdictFFI, WalletChangeSetFFI,
 };
 use crate::dashpay_payment::{build_payment_persist_entries, DashpayPaymentPersistEntryFFI};
 use crate::dpns_name_state_persistence::{
@@ -198,6 +199,12 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS:
 /// un-ignore stores the sender's removal and the read-position rewind it
 /// brings in one changeset.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: u64 = 1 << 15;
+/// Locked outpoints (masternode collateral, and outpoints locked by hand)
+/// are persisted AND restored. Requires the extension trio
+/// `on_persist_wallet_changeset_outpoint_locks_fn` +
+/// `on_load_wallet_locked_outpoints_fn` +
+/// `on_load_wallet_locked_outpoints_free_fn`, and the host declaring the bit.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_OUTPOINT_LOCKS: u64 = 1 << 13;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -455,6 +462,35 @@ pub type FreePrivateContactScanStateWalletsFn = unsafe extern "C" fn(
     wallet_ids: *const [u8; 32],
     wallet_ids_count: usize,
 );
+/// Carries a round's changes to the wallet's locked outpoints (see
+/// [`OutpointLockFFI`]): store a row per `locked` entry, keyed by
+/// `(wallet_id, outpoint)`, and delete the row of every other entry. A lock
+/// needs no coin behind it, so the row lives apart from the UTXO rows and
+/// survives the coin being spent. Fired inside the round's begin/end bracket,
+/// after the round's other core callbacks, only on rounds that carry a lock
+/// change. A non-zero return fails the round like any other per-kind
+/// callback.
+pub type PersistWalletChangesetOutpointLocksFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    locks: *const OutpointLockFFI,
+    locks_count: usize,
+) -> i32;
+
+/// Return every outpoint the host keeps locked for `wallet_id`, whether or
+/// not it holds the coin. The host allocates the array and keeps it valid
+/// until Rust hands it back through the matching free callback. Called once
+/// per restored wallet during load.
+pub type LoadWalletLockedOutpointsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_outpoints: *mut *const OutPointFFI,
+    out_count: *mut usize,
+) -> i32;
+
+/// Release an array previously returned by a [`LoadWalletLockedOutpointsFn`].
+pub type FreeWalletLockedOutpointsFn =
+    unsafe extern "C" fn(context: *mut c_void, outpoints: *const OutPointFFI, count: usize);
 
 /// Size- and version-tagged additive persistence callbacks.
 ///
@@ -708,6 +744,32 @@ pub struct PersistenceCallbacksExtension {
             wallet_ids: *const [u8; 32],
             wallet_ids_count: usize,
         ),
+    /// The round's outpoint lock changes (see
+    /// [`PersistWalletChangesetOutpointLocksFn`]). Wired together with the
+    /// load + free pair below: the `OUTPOINT_LOCKS` capability is attested
+    /// only when all three are present (and declared). Appended under the
+    /// same version as every slot above; a host whose `struct_size` stops
+    /// before it keeps locks for the session only.
+    pub on_persist_wallet_changeset_outpoint_locks_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            locks: *const OutpointLockFFI,
+            locks_count: usize,
+        ) -> i32,
+    >,
+    /// See [`LoadWalletLockedOutpointsFn`].
+    pub on_load_wallet_locked_outpoints_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_outpoints: *mut *const OutPointFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    /// See [`FreeWalletLockedOutpointsFn`].
+    pub on_load_wallet_locked_outpoints_free_fn: Option<
+        unsafe extern "C" fn(context: *mut c_void, outpoints: *const OutPointFFI, count: usize),
     >,
 }
 
@@ -736,6 +798,9 @@ impl Default for PersistenceCallbacksExtension {
             on_load_private_contact_scan_state_free_fn: None,
             on_load_private_contact_scan_state_wallets_fn: None,
             on_load_private_contact_scan_state_wallets_free_fn: None,
+            on_persist_wallet_changeset_outpoint_locks_fn: None,
+            on_load_wallet_locked_outpoints_fn: None,
+            on_load_wallet_locked_outpoints_free_fn: None,
         }
     }
 }
@@ -764,6 +829,9 @@ pub struct PersistenceExtensionCallbacks {
     pub load_private_contact_scan_state_free: Option<FreePrivateContactScanStateFn>,
     pub load_private_contact_scan_state_wallets: Option<LoadPrivateContactScanStateWalletsFn>,
     pub load_private_contact_scan_state_wallets_free: Option<FreePrivateContactScanStateWalletsFn>,
+    pub wallet_changeset_outpoint_locks: Option<PersistWalletChangesetOutpointLocksFn>,
+    pub load_wallet_locked_outpoints: Option<LoadWalletLockedOutpointsFn>,
+    pub load_wallet_locked_outpoints_free: Option<FreeWalletLockedOutpointsFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1705,6 +1773,11 @@ pub struct FFIPersister {
     tracked_masternodes_callbacks: PersistenceExtensionCallbacks,
     persist_identity_balance_block_time_callback: Option<PersistIdentityBalanceBlockTimeFn>,
     load_identity_balance_block_time_callback: Option<LoadIdentityBalanceBlockTimeFn>,
+    /// Extension-negotiated outpoint-lock trio (persist / load / free). A
+    /// host without it keeps locks for the session only.
+    wallet_changeset_outpoint_locks_callback: Option<PersistWalletChangesetOutpointLocksFn>,
+    load_wallet_locked_outpoints_callback: Option<LoadWalletLockedOutpointsFn>,
+    load_wallet_locked_outpoints_free_callback: Option<FreeWalletLockedOutpointsFn>,
     /// Semantic capability declaration supplied separately from the callback
     /// vtable by the additive manager-create API. Keeping this out of
     /// `PersistenceCallbacks` preserves that established C struct's size.
@@ -1830,6 +1903,10 @@ impl FFIPersister {
             persist_identity_balance_block_time_callback: extensions
                 .persist_identity_balance_block_time,
             load_identity_balance_block_time_callback: extensions.load_identity_balance_block_time,
+            wallet_changeset_outpoint_locks_callback: extensions.wallet_changeset_outpoint_locks,
+            load_wallet_locked_outpoints_callback: extensions.load_wallet_locked_outpoints,
+            load_wallet_locked_outpoints_free_callback: extensions
+                .load_wallet_locked_outpoints_free,
             declared_capabilities,
             round_lock: Mutex::new(RoundGuardState::default()),
         }
@@ -1848,6 +1925,56 @@ impl FFIPersister {
             }
             kind => kind,
         }
+    }
+
+    /// Hand every outpoint lock the host stored for `wallet_id` back to the
+    /// wallet through `lock_outpoint`, which also moves a held coin into the
+    /// locked balance. A host without the load slot restores none.
+    fn restore_locked_outpoints(
+        &self,
+        wallet_id: &[u8; 32],
+        wallet_info: &mut key_wallet::wallet::ManagedWalletInfo,
+    ) -> Result<(), PersistenceError> {
+        let Some(load) = self.load_wallet_locked_outpoints_callback else {
+            return Ok(());
+        };
+        // Fail closed on a half-wired pair, like the tracked-masternode and
+        // shielded loads: without the free callback every load would leak
+        // the host's array.
+        let Some(free) = self.load_wallet_locked_outpoints_free_callback else {
+            return Err(PersistenceError::backend(
+                "on_load_wallet_locked_outpoints_fn requires \
+                 on_load_wallet_locked_outpoints_free_fn; wire both or neither",
+            ));
+        };
+        let mut outpoints_ptr: *const OutPointFFI = std::ptr::null();
+        let mut count: usize = 0;
+        let rc = unsafe {
+            load(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                &mut outpoints_ptr,
+                &mut count,
+            )
+        };
+        if rc != 0 {
+            return Err(persist_callback_error(
+                rc,
+                format!("on_load_wallet_locked_outpoints_fn returned error code {rc}"),
+            ));
+        }
+        let mut outpoints = Vec::with_capacity(count);
+        if !outpoints_ptr.is_null() && count > 0 {
+            // SAFETY: the host guarantees `count` contiguous entries that stay
+            // valid until the free callback below.
+            let rows = unsafe { slice::from_raw_parts(outpoints_ptr, count) };
+            outpoints.extend(rows.iter().map(dashcore::OutPoint::from));
+        }
+        unsafe { free(self.callbacks.context, outpoints_ptr, count) };
+        for outpoint in outpoints {
+            wallet_info.lock_outpoint(outpoint);
+        }
+        Ok(())
     }
 
     /// Compute the callback contracts that are structurally complete in this
@@ -1923,6 +2050,12 @@ impl FFIPersister {
                 .is_some()
         {
             capabilities = capabilities.union(PersistenceCapabilities::TRACKED_MASTERNODES);
+        }
+        if self.wallet_changeset_outpoint_locks_callback.is_some()
+            && self.load_wallet_locked_outpoints_callback.is_some()
+            && self.load_wallet_locked_outpoints_free_callback.is_some()
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::OUTPOINT_LOCKS);
         }
         if self.callbacks.on_persist_wallet_changeset_fn.is_some()
             && wallet_restore
@@ -2655,6 +2788,34 @@ impl PlatformWalletPersistence for FFIPersister {
                     if result != 0 {
                         eprintln!(
                             "Wallet changeset sweeps persistence callback returned error code {}",
+                            result
+                        );
+                        outcome.record(result);
+                    }
+                }
+            }
+
+            // Outpoint locks ride their own size-negotiated extension slot:
+            // a lock needs no coin behind it, so it has no place among the
+            // per-account UTXO rows of the frozen changeset struct. Fired
+            // last in the core block, only when the round changes a lock. A
+            // host without the slot keeps locks for the session only and
+            // cannot attest `OUTPOINT_LOCKS`.
+            if !core_cs.outpoint_locks.is_empty() {
+                if let Some(cb) = self.wallet_changeset_outpoint_locks_callback {
+                    let locks = build_outpoint_locks_for_callback(core_cs);
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            locks.as_ptr(),
+                            locks.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Wallet changeset outpoint-lock persistence callback returned error \
+                             code {}",
                             result
                         );
                         outcome.record(result);
@@ -3907,6 +4068,7 @@ impl PlatformWalletPersistence for FFIPersister {
                     }
                 }
             }
+            self.restore_locked_outpoints(&entry.wallet_id, &mut wallet_state.wallet_info)?;
             if let Some(cb) = self.load_identity_balance_block_time_callback {
                 for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
                     for managed in identities.values_mut() {
@@ -12193,6 +12355,8 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE,
             PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE.bits()
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_OUTPOINT_LOCKS,
+            PersistenceCapabilities::OUTPOINT_LOCKS.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,
@@ -14978,5 +15142,199 @@ mod tests {
             .map(|n| n.label.as_str())
             .collect();
         assert_eq!(restored, ["alice", "bob", "carol"]);
+    }
+}
+
+#[cfg(test)]
+mod outpoint_lock_tests {
+    //! The outpoint-lock trio: a round's lock changes reach the host through
+    //! their own extension slot, the host's stored locks come back on load,
+    //! and `OUTPOINT_LOCKS` is attested only with the whole trio declared.
+
+    use super::*;
+    use dashcore::hashes::Hash as _;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use platform_wallet::changeset::CoreChangeSet;
+
+    #[derive(Default)]
+    struct Sink {
+        locks: std::sync::Mutex<Vec<(dashcore::OutPoint, bool)>>,
+        stored: Vec<OutPointFFI>,
+        freed: std::sync::Mutex<usize>,
+    }
+
+    unsafe extern "C" fn record_locks(
+        ctx: *mut c_void,
+        _wallet_id: *const u8,
+        locks: *const OutpointLockFFI,
+        locks_count: usize,
+    ) -> i32 {
+        let sink = &*(ctx as *const Sink);
+        let mut recorded = sink.locks.lock().unwrap();
+        for lock in slice::from_raw_parts(locks, locks_count) {
+            recorded.push((dashcore::OutPoint::from(&lock.outpoint), lock.locked));
+        }
+        0
+    }
+
+    unsafe extern "C" fn load_locks(
+        ctx: *mut c_void,
+        _wallet_id: *const u8,
+        out_outpoints: *mut *const OutPointFFI,
+        out_count: *mut usize,
+    ) -> i32 {
+        let sink = &*(ctx as *const Sink);
+        *out_outpoints = sink.stored.as_ptr();
+        *out_count = sink.stored.len();
+        0
+    }
+
+    unsafe extern "C" fn free_locks(
+        ctx: *mut c_void,
+        _outpoints: *const OutPointFFI,
+        _count: usize,
+    ) {
+        let sink = &*(ctx as *const Sink);
+        *sink.freed.lock().unwrap() += 1;
+    }
+
+    fn outpoint(byte: u8, vout: u32) -> dashcore::OutPoint {
+        dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([byte; 32]),
+            vout,
+        }
+    }
+
+    fn trio() -> PersistenceExtensionCallbacks {
+        PersistenceExtensionCallbacks {
+            wallet_changeset_outpoint_locks: Some(record_locks),
+            load_wallet_locked_outpoints: Some(load_locks),
+            load_wallet_locked_outpoints_free: Some(free_locks),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn should_hand_a_rounds_lock_changes_to_the_host_in_outpoint_order() {
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            callbacks,
+            PersistenceCapabilities::NONE,
+            trio(),
+        );
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        synced_height: Some(10),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("a round without lock changes succeeds");
+        assert!(
+            sink.locks.lock().unwrap().is_empty(),
+            "a round without lock changes never fires the slot"
+        );
+
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        outpoint_locks: BTreeMap::from([
+                            (outpoint(0xCD, 0), false),
+                            (outpoint(0xAB, 1), true),
+                        ]),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("a lock round succeeds");
+        assert_eq!(
+            sink.locks.lock().unwrap().clone(),
+            vec![(outpoint(0xAB, 1), true), (outpoint(0xCD, 0), false)]
+        );
+        drop(persister);
+    }
+
+    #[test]
+    fn should_restore_the_hosts_locks_into_the_wallet_on_load() {
+        let wallet = key_wallet::Wallet::from_seed_bytes(
+            [0x21; 64],
+            dashcore::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .expect("seed wallet");
+        let mut info = key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet, 0);
+        let sink = Sink {
+            stored: vec![
+                OutPointFFI::from(&outpoint(0x11, 0)),
+                OutPointFFI::from(&outpoint(0x22, 3)),
+            ],
+            ..Sink::default()
+        };
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            callbacks,
+            PersistenceCapabilities::NONE,
+            trio(),
+        );
+
+        persister
+            .restore_locked_outpoints(&[1u8; 32], &mut info)
+            .expect("restore");
+        assert!(info.is_outpoint_locked(&outpoint(0x11, 0)));
+        assert!(info.is_outpoint_locked(&outpoint(0x22, 3)));
+        assert_eq!(
+            *sink.freed.lock().unwrap(),
+            1,
+            "the host's array is freed once"
+        );
+        drop(persister);
+    }
+
+    #[test]
+    fn should_attest_outpoint_locks_only_with_the_whole_trio_declared() {
+        let declared = PersistenceCapabilities::OUTPOINT_LOCKS;
+        let wired = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks::default(),
+            declared,
+            trio(),
+        );
+        assert!(wired
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::OUTPOINT_LOCKS));
+
+        let undeclared = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks::default(),
+            PersistenceCapabilities::NONE,
+            trio(),
+        );
+        assert!(!undeclared
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::OUTPOINT_LOCKS));
+
+        let without_free = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks::default(),
+            declared,
+            PersistenceExtensionCallbacks {
+                load_wallet_locked_outpoints_free: None,
+                ..trio()
+            },
+        );
+        assert!(!without_free
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::OUTPOINT_LOCKS));
     }
 }

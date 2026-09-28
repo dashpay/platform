@@ -105,6 +105,16 @@ impl PersistenceCapabilities {
     /// declaration only when `on_persist_dashpay_payments_fn` is actually
     /// wired.
     pub const DASHPAY_PAYMENTS: Self = Self(1 << 12);
+    /// Locked outpoints (masternode collateral, and outpoints locked by hand)
+    /// are persisted AND restored: a stored `CoreChangeSet`'s
+    /// `outpoint_locks` are durably applied, a lock kept whether or not its
+    /// coin has a row yet, and a restart hands every stored lock back to the
+    /// wallet. Without this bit a lock lasts for the session, and a
+    /// collateral is locked again only when the wallet sees its registration
+    /// again. On the FFI surface locks travel through the persistence
+    /// extension's size-negotiated persist slot and come back through its
+    /// load and free slots; all three must be wired.
+    pub const OUTPOINT_LOCKS: Self = Self(1 << 13);
 
     /// Asset-lock operation UUIDs survive store/load, including consumed tombstones.
     /// Missing or malformed persistence data fails load rather than becoming an
@@ -278,6 +288,7 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE,
                 "private_contact_request_scan_state",
             ),
+            (PersistenceCapabilities::OUTPOINT_LOCKS, "outpoint_locks"),
         ];
 
         KNOWN
@@ -323,6 +334,7 @@ mod tests {
         assert_eq!(PersistenceCapabilities::TRACKED_MASTERNODES.bits(), 0x400);
         assert_eq!(PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits(), 0x800);
         assert_eq!(PersistenceCapabilities::DASHPAY_PAYMENTS.bits(), 0x1000);
+        assert_eq!(PersistenceCapabilities::OUTPOINT_LOCKS.bits(), 0x2000);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits(),
             0x2000
