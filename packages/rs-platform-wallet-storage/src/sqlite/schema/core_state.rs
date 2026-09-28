@@ -10,6 +10,7 @@ use dashcore::ephemerealdata::chain_lock::ChainLock;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
+use platform_wallet::changeset::changeset::UtxoCreditVerdict;
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -92,13 +93,14 @@ pub fn apply(
                 finalized = excluded.finalized, \
                 record_blob = excluded.record_blob",
         )?;
-        for record in &cs.records {
+        for incoming in &cs.records {
+            let record = super::core_history::preserve_known_details(tx, wallet_id, incoming)?;
             let block_info = record.block_info();
             let height = block_info.map(|b| i64::from(b.height()));
             let block_hash = block_info.map(|b| AsRef::<[u8]>::as_ref(&b.block_hash()).to_vec());
             let block_time = block_info.map(|b| i64::from(b.timestamp()));
             let finalized = block_info.is_some();
-            let payload = blob::encode(record)?;
+            let payload = blob::encode(&record)?;
             stmt.execute(params![
                 wallet_id.as_slice(),
                 AsRef::<[u8]>::as_ref(&record.txid),
@@ -108,6 +110,7 @@ pub fn apply(
                 finalized,
                 payload,
             ])?;
+            super::core_history::index_record(tx, wallet_id, &record)?;
         }
     }
     // `addresses_derived` is intentionally NOT persisted here — the pool
@@ -144,7 +147,24 @@ pub fn apply(
                      refresh the record itself to update its confirmation height"
                 );
             }
-            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, false)?;
+            let spent = match cs.utxo_credit_verdicts.get(&utxo.outpoint) {
+                Some(UtxoCreditVerdict::ObservedSpent { .. } | UtxoCreditVerdict::Doomed) => true,
+                Some(UtxoCreditVerdict::Uncredited) => {
+                    let prior_spent: Option<bool> = tx
+                        .query_row(
+                            "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                            params![wallet_id.as_slice(), blob::encode_outpoint(&utxo.outpoint)?],
+                            |row| row.get(0),
+                        )
+                        .optional()?;
+                    let Some(prior_spent) = prior_spent else {
+                        continue;
+                    };
+                    prior_spent
+                }
+                None => false,
+            };
+            execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, spent)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -227,6 +247,7 @@ pub fn apply(
         if heights_advanced {
             collect_finalized_tombstones(tx, wallet_id)?;
         }
+        super::core_history::apply(tx, wallet_id, cs)?;
         return Ok(());
     }
 
@@ -390,6 +411,7 @@ pub fn apply(
     if heights_advanced {
         collect_finalized_tombstones(tx, wallet_id)?;
     }
+    super::core_history::apply(tx, wallet_id, cs)?;
     Ok(())
 }
 
@@ -1391,6 +1413,403 @@ mod tests {
             is_locked: false,
             is_trusted: false,
         }
+    }
+
+    #[test]
+    fn should_repair_history_when_spent_funding_arrives_late() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xAB; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let funding = sample_utxo(Txid::from_byte_array([0x31; 32]), 100, true);
+        let mut spending = transaction_record(
+            Txid::from_byte_array([0x32; 32]),
+            TransactionContext::InBlock(BlockInfo::new(101, BlockHash::all_zeros(), 123)),
+        );
+        spending.transaction.input.push(dashcore::TxIn {
+            previous_output: funding.outpoint,
+            script_sig: dashcore::ScriptBuf::new(),
+            sequence: u32::MAX,
+            witness: dashcore::Witness::new(),
+        });
+        spending.transaction.output.push(TxOut {
+            value: 90_000,
+            script_pubkey: funding.txout.script_pubkey.clone(),
+        });
+        spending.txid = spending.transaction.txid();
+        spending.net_amount = 90_000;
+        let mut change = sample_utxo(spending.txid, 101, true);
+        change.txout.value = 90_000;
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![spending.clone()],
+                new_utxos: vec![change],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let other_wallet = [0xCD; 32];
+        tx.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&other_wallet[..]],
+        )
+        .unwrap();
+        apply(
+            &tx,
+            &other_wallet,
+            &CoreChangeSet {
+                new_utxos: vec![funding.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            get_tx_record(&tx, &wallet_id, &spending.txid, &LoadCtx::strict())
+                .unwrap()
+                .unwrap()
+                .net_amount,
+            90_000,
+            "another wallet's funding must not affect this history"
+        );
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                new_utxos: vec![funding.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let repaired = get_tx_record(&tx, &wallet_id, &spending.txid, &LoadCtx::strict())
+            .unwrap()
+            .unwrap();
+        assert_eq!(repaired.net_amount, -60_000);
+        assert_eq!(repaired.direction, TransactionDirection::Internal);
+        assert_eq!(repaired.input_details.len(), 1);
+        assert_eq!(repaired.block_info().unwrap().height(), 101);
+        let spent: bool = tx
+            .query_row(
+                "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![
+                    &wallet_id[..],
+                    blob::encode_outpoint(&funding.outpoint).unwrap()
+                ],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(spent, "late funding must not resurrect the spent coin");
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![spending.clone()],
+                new_utxos: vec![funding],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let replayed = get_tx_record(&tx, &wallet_id, &spending.txid, &LoadCtx::strict())
+            .unwrap()
+            .unwrap();
+        assert_eq!(replayed.net_amount, -60_000);
+        assert_eq!(replayed.input_details.len(), 1);
+    }
+
+    #[test]
+    fn should_repair_existing_history_during_migration() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xAC; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let funding = sample_utxo(Txid::from_byte_array([0x41; 32]), 100, true);
+        let mut spending = transaction_record(Txid::all_zeros(), TransactionContext::Mempool);
+        spending.transaction.input.push(dashcore::TxIn {
+            previous_output: funding.outpoint,
+            script_sig: dashcore::ScriptBuf::new(),
+            sequence: u32::MAX,
+            witness: dashcore::Witness::new(),
+        });
+        spending.txid = spending.transaction.txid();
+        spending.net_amount = 0;
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![spending.clone()],
+                new_utxos: vec![funding.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.execute(
+            "UPDATE core_transactions SET record_blob = ?1 WHERE wallet_id = ?2 AND txid = ?3",
+            params![
+                blob::encode(&spending).unwrap(),
+                &wallet_id[..],
+                AsRef::<[u8]>::as_ref(&spending.txid)
+            ],
+        )
+        .unwrap();
+        tx.execute_batch("DROP TABLE IF EXISTS core_transaction_inputs; DELETE FROM refinery_schema_history WHERE version >= 19;").unwrap();
+        tx.commit().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let repaired = get_tx_record(&conn, &wallet_id, &spending.txid, &LoadCtx::strict())
+            .unwrap()
+            .unwrap();
+        assert_eq!(repaired.net_amount, -150_000);
+        assert_eq!(repaired.input_details.len(), 1);
+        let spent: bool = conn
+            .query_row(
+                "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![
+                    &wallet_id[..],
+                    blob::encode_outpoint(&funding.outpoint).unwrap()
+                ],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            !spent,
+            "a stale mempool attempt cannot undo a released coin during migration"
+        );
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        assert_eq!(
+            get_tx_record(&conn, &wallet_id, &spending.txid, &LoadCtx::strict())
+                .unwrap()
+                .unwrap()
+                .net_amount,
+            -150_000
+        );
+    }
+
+    #[test]
+    fn should_roll_back_history_migration_on_corrupt_record() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        conn.execute_batch("DROP TABLE core_transaction_inputs; DELETE FROM refinery_schema_history WHERE version >= 19;").unwrap();
+        let wallet_id = [0xADu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)", params![&wallet_id[..], &[0u8;32][..], &[0xffu8][..]]).unwrap();
+        assert!(crate::sqlite::migrations::run(&mut conn).is_err());
+        let tables: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'core_transaction_inputs'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tables, 0);
+        let version: i64 = conn
+            .query_row(
+                "SELECT max(version) FROM refinery_schema_history",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, 18);
+    }
+
+    #[test]
+    fn should_keep_uncredited_outputs_spent() {
+        use platform_wallet::changeset::changeset::UtxoCreditVerdict;
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xAEu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+        for (marker, verdict) in [
+            (1, UtxoCreditVerdict::ObservedSpent { height: 101 }),
+            (2, UtxoCreditVerdict::Doomed),
+        ] {
+            let utxo = sample_utxo(Txid::from_byte_array([marker; 32]), 100, true);
+            let outpoint = utxo.outpoint;
+            apply(
+                &tx,
+                &wallet_id,
+                &CoreChangeSet {
+                    new_utxos: vec![utxo],
+                    utxo_credit_verdicts: [(outpoint, verdict)].into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let spent: bool = tx
+                .query_row(
+                    "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                    params![&wallet_id[..], blob::encode_outpoint(&outpoint).unwrap()],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(spent, "engine did not credit {verdict:?}");
+        }
+    }
+
+    #[test]
+    fn should_exclude_historical_contact_outputs_from_accounting() {
+        use key_wallet::managed_account::transaction_record::{OutputDetail, OutputRole};
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xAFu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let mut record = transaction_record(Txid::all_zeros(), TransactionContext::Mempool);
+        let mut output = sample_utxo(record.txid, 0, false);
+        record.transaction.output = vec![output.txout.clone()];
+        record.txid = record.transaction.txid();
+        record.output_details = vec![OutputDetail {
+            index: 0,
+            role: OutputRole::Received,
+            address: Some(output.address.clone()),
+            value: output.value(),
+        }];
+        record.net_amount = output.value() as i64;
+        output.outpoint.txid = record.txid;
+        conn.execute("INSERT INTO core_address_pool (wallet_id, account_type, account_index, pool_type, address_index, script) VALUES (?1, 'dashpay_external', 0, 0, 0, ?2)", params![&wallet_id[..], output.txout.script_pubkey.as_bytes()]).unwrap();
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![record.clone()],
+                new_utxos: vec![output],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let repaired = get_tx_record(&tx, &wallet_id, &record.txid, &LoadCtx::strict())
+            .unwrap()
+            .unwrap();
+        assert_eq!(repaired.net_amount, 0);
+        assert_eq!(repaired.output_details[0].role, OutputRole::Sent);
+    }
+
+    #[test]
+    fn should_preserve_known_inputs_when_replay_has_no_historical_txo() {
+        use key_wallet::managed_account::transaction_record::InputDetail;
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xB0u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let funding = sample_utxo(Txid::from_byte_array([0x42; 32]), 100, true);
+        let mut record = transaction_record(Txid::all_zeros(), TransactionContext::Mempool);
+        record.transaction.input.push(dashcore::TxIn {
+            previous_output: funding.outpoint,
+            script_sig: dashcore::ScriptBuf::new(),
+            sequence: u32::MAX,
+            witness: dashcore::Witness::new(),
+        });
+        record.txid = record.transaction.txid();
+        record.input_details = vec![InputDetail {
+            index: 0,
+            value: funding.value(),
+            address: funding.address,
+        }];
+        record.net_amount = -150_000;
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![record.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        record.input_details.clear();
+        record.net_amount = 0;
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![record.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let repaired = get_tx_record(&tx, &wallet_id, &record.txid, &LoadCtx::strict())
+            .unwrap()
+            .unwrap();
+        assert_eq!(repaired.net_amount, -150_000);
+        assert_eq!(repaired.input_details.len(), 1);
+    }
+
+    #[test]
+    fn should_preserve_spendability_for_unknown_credit_verdicts() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xB1u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let utxo = sample_utxo(Txid::from_byte_array([0x43; 32]), 100, true);
+        let cs = CoreChangeSet {
+            new_utxos: vec![utxo.clone()],
+            utxo_credit_verdicts: [(utxo.outpoint, UtxoCreditVerdict::Uncredited)].into(),
+            ..Default::default()
+        };
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &cs).unwrap();
+        let count: i64 = tx
+            .query_row("SELECT count(*) FROM core_utxos", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "unknown credit cannot create a spendable coin");
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                new_utxos: vec![utxo.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        apply(&tx, &wallet_id, &cs).unwrap();
+        let spent: bool = tx
+            .query_row("SELECT spent FROM core_utxos", [], |r| r.get(0))
+            .unwrap();
+        assert!(!spent, "unknown credit cannot invent a spend");
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                spent_utxos: vec![utxo],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        apply(&tx, &wallet_id, &cs).unwrap();
+        let spent: bool = tx
+            .query_row("SELECT spent FROM core_utxos", [], |r| r.get(0))
+            .unwrap();
+        assert!(spent, "unknown credit cannot clear a prior spend");
     }
 
     fn sample_chain_lock(height: u32) -> ChainLock {

@@ -625,6 +625,24 @@ fn coalesce_newest_wins<K: std::hash::Hash + Eq>(
     }
 }
 
+/// Keep the last correction per account before folding account contributions.
+pub(crate) fn coalesce_account_records(records: &mut Vec<TransactionRecord>) {
+    let mut positions = BTreeMap::new();
+    for mut record in std::mem::take(records) {
+        let key = (record.txid, record.account_type);
+        if let Some(&position) = positions.get(&key) {
+            let previous: &TransactionRecord = &records[position];
+            if context_rank(&previous.context) > context_rank(&record.context) {
+                record.context = previous.context.clone();
+            }
+            records[position] = record;
+        } else {
+            positions.insert(key, records.len());
+            records.push(record);
+        }
+    }
+}
+
 /// Rank a [`TransactionContext`](key_wallet::transaction_checking::TransactionContext)
 /// by how far along the confirmation lifecycle the observation is.
 /// Used by [`fold_same_txid_records`] so a fold never regresses a

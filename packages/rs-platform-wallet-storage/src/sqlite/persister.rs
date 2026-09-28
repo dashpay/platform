@@ -2402,16 +2402,17 @@ mod tests {
         // Not rehydrated by `load()`, but read on demand by a production
         // entry point, so the state is reachable rather than abandoned.
         const READ_BY_A_DEDICATED_API: &[&str] = &[
-            "dpns_name_states",      // get_dpns_name_state
-            "meta_contact",          // the kv object store
-            "meta_data_versions",    // schema::versions
-            "meta_global",           // the kv object store
-            "meta_identity",         // the kv object store
-            "meta_platform_address", // the kv object store
-            "meta_store_generation", // schema::versions
-            "meta_token",            // the kv object store
-            "meta_wallet",           // the kv object store
-            "tracked_masternodes",   // load_tracked_masternodes
+            "core_transaction_inputs", // core_history::apply repairs indexed consumers
+            "dpns_name_states",        // get_dpns_name_state
+            "meta_contact",            // the kv object store
+            "meta_data_versions",      // schema::versions
+            "meta_global",             // the kv object store
+            "meta_identity",           // the kv object store
+            "meta_platform_address",   // the kv object store
+            "meta_store_generation",   // schema::versions
+            "meta_token",              // the kv object store
+            "meta_wallet",             // the kv object store
+            "tracked_masternodes",     // load_tracked_masternodes
         ];
         const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
         // `load()` rehydrates these only with the `shielded` feature on, so
