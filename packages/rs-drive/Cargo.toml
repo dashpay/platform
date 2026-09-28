@@ -14,7 +14,7 @@ license = "MIT"
 resolver = "2"
 
 [dependencies]
-bincode = { version = "=2.0.1", features = ["serde"] }
+bincode = { workspace = true, features = ["serde"] }
 platform-version = { path = "../rs-platform-version" }
 # used to convert integers to bytes, needed in verifier
 integer-encoding = { version = "4.0.0" }
@@ -52,13 +52,13 @@ enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.13", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e", optional = true, default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e" }
-grovedb-query = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e", optional = true }
-grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e" }
-grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "6fc7e1e82de27a56c3428c0d5dd15b5f6a0ea23e" }
+grovedb = { workspace = true, optional = true }
+grovedb-costs = { workspace = true, optional = true }
+grovedb-path = { workspace = true }
+grovedb-query = { workspace = true }
+grovedb-storage = { workspace = true, optional = true }
+grovedb-version = { workspace = true }
+grovedb-epoch-based-storage-flags = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -80,6 +80,9 @@ dpp = { path = "../rs-dpp", features = [
 once_cell = "1.7"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 assert_matches = "1.5.0"
+# Replays merk proof ops to record the exact shape of fixed-key layers in
+# grovedb-structure.json
+grovedb-merk = { workspace = true, features = ["minimal"] }
 
 [[bench]]
 name = "benchmarks"
@@ -101,6 +104,9 @@ harness = false
 
 default = ["full", "verify", "fixtures-and-mocks", "cbor_query"]
 grovedbg = ["grovedb/grovedbg"]
+# The GroveDB structure described as code (`drive::structure`). Tests always
+# compile it; nothing in the node depends on it.
+structure = ["server"]
 fee-distribution = ["dpp/fee-distribution"]
 fixtures-and-mocks = [
   "full",

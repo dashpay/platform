@@ -17,7 +17,10 @@ pub const ID: Identifier = Identifier(IdentifierBytes32(ID_BYTES));
 pub const OWNER_ID: Identifier = Identifier(IdentifierBytes32(OWNER_ID_BYTES));
 
 pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Value>, Error> {
-    match platform_version.system_data_contracts.withdrawals {
+    match platform_version
+        .system_data_contracts
+        .masternode_reward_shares
+    {
         1 => Ok(None),
         version => Err(Error::UnknownVersionMismatch {
             method: "masternode_reward_shares_contract::load_definitions".to_string(),
@@ -27,7 +30,10 @@ pub fn load_definitions(platform_version: &PlatformVersion) -> Result<Option<Val
     }
 }
 pub fn load_documents_schemas(platform_version: &PlatformVersion) -> Result<Value, Error> {
-    match platform_version.system_data_contracts.withdrawals {
+    match platform_version
+        .system_data_contracts
+        .masternode_reward_shares
+    {
         1 => v1::load_documents_schemas(),
         version => Err(Error::UnknownVersionMismatch {
             method: "masternode_reward_shares_contract::load_documents_schemas".to_string(),

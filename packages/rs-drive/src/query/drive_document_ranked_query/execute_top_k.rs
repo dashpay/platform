@@ -28,22 +28,27 @@ impl DriveDocumentRankedQuery<'_> {
     /// the direction and the tie contract.
     ///
     /// Fewer than `k` entries is normal (the index simply has fewer
-    /// groups than `offset + k`) and is not an error. On an `IN`-pinned
-    /// request, an element whose branch chain is missing at ANY depth —
-    /// the branch key itself, or any deeper pinned segment under a
-    /// *present* key — contributes an **empty branch** (union
+    /// groups than `offset + k`) and is not an error. So is a pinned
+    /// prefix no document has written yet — this window's `timeRange`
+    /// bucket before its first like, a `hashtag` nobody has used, a
+    /// TTL-dropped bucket: a pinned value tree is created by the first
+    /// write under it (contract registration creates only the level
+    /// trees), and grovedb answers a single-path axis read over a path
+    /// that does not exist with the traversal's empty page — no
+    /// entries, `skipped` 0 — on the read and the proof alike, the
+    /// absence authenticated by the layers the walk did emit. On an
+    /// `IN`-pinned request, an element whose branch chain is missing at
+    /// ANY depth — the branch key itself, or any deeper pinned segment
+    /// under a *present* key — contributes an **empty branch** (union
     /// semantics), exactly as the proved envelope authenticates it, and
     /// the union is served from **one committed state**: the branched
     /// read always runs under a grovedb snapshot read transaction, so
     /// every per-branch probe and walk reads the same RocksDB snapshot
     /// (a caller transaction is rejected on this shape, mirroring the
     /// branched prover — read per prefix element under a transaction).
-    /// A missing path under a single `==` pin *is* an error rather than
-    /// an empty result: the indexed property-name tree is created when
-    /// the contract is registered, so its absence means the
-    /// contract-level state is not what the request claims, not that
-    /// the ranking is empty. (An index with no documents yet has the
-    /// tree, with an empty secondary, and yields an empty entry list.)
+    /// What stays an error is a path that exists but does not lead to
+    /// an indexed tree carrying the axis: contract-level state that is
+    /// not what the request claims.
     ///
     /// The paginated grovedb primitive is used unconditionally, with
     /// `offset = 0` standing in for an unpaginated request, so the
@@ -219,7 +224,11 @@ impl DriveDocumentRankedQuery<'_> {
     /// unqueryable with `prove = true`; the paginated prover emits a
     /// guaranteed-empty range against the secondary instead, so the
     /// proved and unproven paths agree on empty state. Pinned by the
-    /// `ranking_an_empty_index_reads_empty_and_proves_empty` test.
+    /// `ranking_an_empty_index_reads_empty_and_proves_empty` test. A
+    /// pinned prefix whose value tree does not exist yet proves empty
+    /// too: grovedb authenticates the absent path and the verifier
+    /// reads it as an empty page (pinned by
+    /// `an_absent_equality_pin_reads_empty_and_proves_empty`).
     pub fn execute_top_k_with_proof(
         &self,
         drive: &Drive,

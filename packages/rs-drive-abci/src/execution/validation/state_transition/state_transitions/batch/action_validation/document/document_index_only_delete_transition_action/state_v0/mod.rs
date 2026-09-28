@@ -112,6 +112,7 @@ impl DocumentIndexOnlyDeleteTransitionActionStateValidationV0
                     index,
                     &document,
                     &expected_commitment,
+                    block_info.time_ms,
                     transaction,
                     &mut probe_operations,
                     platform_version,

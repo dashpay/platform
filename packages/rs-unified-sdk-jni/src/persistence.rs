@@ -1302,6 +1302,14 @@ unsafe extern "C" fn tramp_persist_identity_keys(
     })
 }
 
+/// `onPersistIdentityKeyUpsert`'s JNI descriptor. The trailing `ZJZJ` is the
+/// key usage limits pair (`hasTotalBudget`, `totalBudget`, `hasExpiresAt`,
+/// `expiresAt`). Bound at the `call_method` site and in
+/// [`BRIDGE_METHOD_TABLE`] so the two cannot drift: the smoke test resolves
+/// the table up front, while the call site only resolves when a key is
+/// first persisted.
+const IDENTITY_KEY_UPSERT_DESCRIPTOR: &str = "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ)I";
+
 unsafe fn persist_identity_key_upsert(
     env: &mut JNIEnv,
     bridge: &JObject,
@@ -1317,7 +1325,7 @@ unsafe fn persist_identity_key_upsert(
     env.call_method(
         bridge,
         "onPersistIdentityKeyUpsert",
-        "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I",
+        IDENTITY_KEY_UPSERT_DESCRIPTOR,
         &[
             wid.into(),
             (&identity_id).into(),
@@ -1338,6 +1346,10 @@ unsafe fn persist_identity_key_upsert(
             JValue::Byte(e.contract_bounds_kind as i8),
             (&cb_id).into(),
             (&cb_doctype).into(),
+            JValue::Bool(e.total_budget_is_some as u8),
+            JValue::Long(e.total_budget as i64),
+            JValue::Bool(e.expires_at_is_some as u8),
+            JValue::Long(e.expires_at as i64),
         ],
     )?
     .i()
@@ -2582,6 +2594,11 @@ fn build_wallet_restore_entry(
         tracked_asset_locks_count: 0,
         unresolved_asset_lock_tx_records: ptr::null(),
         unresolved_asset_lock_tx_records_count: 0,
+        // Android does not stage unconfirmed outgoing sends yet: the replay
+        // that consumes them is wired on the iOS path only. Null/0 leaves it
+        // inert here, exactly as it was before the field existed.
+        unconfirmed_outgoing_tx_records: ptr::null(),
+        unconfirmed_outgoing_tx_records_count: 0,
         core_address_pools: ptr::null(),
         core_address_pools_count: 0,
         last_applied_chain_lock_bytes: ptr::null(),
@@ -3358,13 +3375,18 @@ fn build_identity_key_restore(
     let read_only = env.get_field(holder, "readOnly", "Z")?.z()?;
     let data = read_bytes_field_vec(env, holder, "data")?;
     let contract_bounds_kind = env.get_field(holder, "contractBoundsKind", "B")?.b()? as u8;
-    // `contractBoundsId` is 32 bytes for kind 1/2, empty for kind 0 — the
+    // `contractBoundsId` is 32 bytes for kinds 1, 2 and 3, empty for kind 0 — the
     // optional-id reader maps the empty sentinel to the all-zero id.
     let contract_bounds_id = read_optional_id32_field(env, holder, "contractBoundsId")?;
     // Doc-type C-string only meaningful for kind 2; read as a nullable
     // Java String. Interior NULs (impossible for a DPP document-type name)
     // would fail `CString::new` — degrade to `None` rather than fail the load.
     let doc_type = read_opt_cstring_field(env, holder, "contractBoundsDocumentType")?;
+    // Usage limits (protocol version 14): a limited key must restore as limited.
+    let total_budget_is_some = env.get_field(holder, "totalBudgetIsSome", "Z")?.z()?;
+    let total_budget = env.get_field(holder, "totalBudget", "J")?.j()? as u64;
+    let expires_at_is_some = env.get_field(holder, "expiresAtIsSome", "Z")?.z()?;
+    let expires_at = env.get_field(holder, "expiresAt", "J")?.j()? as u64;
 
     let key = IdentityKeyRestoreFFI {
         key_id,
@@ -3377,6 +3399,10 @@ fn build_identity_key_restore(
         contract_bounds_kind,
         contract_bounds_id,
         contract_bounds_document_type: ptr::null(),
+        total_budget_is_some,
+        total_budget,
+        expires_at_is_some,
+        expires_at,
     };
     Ok(IdentityKeyRestoreStaged {
         key,
@@ -4533,10 +4559,7 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
          [BZ[BZLjava/lang/String;J)I",
     ),
-    (
-        "onPersistIdentityKeyUpsert",
-        "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;)I",
-    ),
+    ("onPersistIdentityKeyUpsert", IDENTITY_KEY_UPSERT_DESCRIPTOR),
     ("onPersistIdentityKeyRemoval", "([B[BI)I"),
     ("onPersistTokenBalanceUpsert", "([B[B[BJ)I"),
     ("onPersistTokenBalanceRemoval", "([B[B[B)I"),

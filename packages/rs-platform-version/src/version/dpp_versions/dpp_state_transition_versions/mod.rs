@@ -3,6 +3,7 @@ use versioned_feature_core::FeatureVersion;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPStateTransitionVersions {
@@ -10,6 +11,7 @@ pub struct DPPStateTransitionVersions {
     pub identities: IdentityTransitionVersions,
     pub contract: ContractTransitionVersions,
     pub address_funds: AddressFundsTransitionVersions,
+    pub shielded: ShieldedTransitionVersions,
     pub max_address_inputs: u16,
     pub max_address_outputs: u16,
     pub max_address_fee_strategies: u16,
@@ -34,12 +36,23 @@ pub struct ContractTransitionVersions {
 pub struct AddressFundsTransitionVersions {
     pub address_funds_transition_default_version: FeatureVersion,
     pub credit_withdrawal: FeatureVersion,
+    /// Stateless rules for the address credit withdrawal transition: 0 is the protocol version
+    /// 13 rule set, 1 adds the Core fee-rate cap and the fee-inclusive minimum of version 14.
+    pub validate_credit_withdrawal_structure: FeatureVersion,
     /// Minimum credits for an address output (500,000 credits = 0.000005 Dash)
     pub min_output_amount: u64,
     /// Minimum credits an input must contribute (100,000 credits = 0.000001 Dash)
     pub min_input_amount: u64,
     /// Minimum credits to fund an identity (from addresses)
     pub min_identity_funding_amount: u64,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ShieldedTransitionVersions {
+    /// Stateless rules for the shielded withdrawal transition: 0 is the protocol version 13
+    /// rule set, 1 adds the Core fee-rate cap and the fee-inclusive range check on the amount
+    /// reserved for Core of version 14.
+    pub validate_withdrawal_structure: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

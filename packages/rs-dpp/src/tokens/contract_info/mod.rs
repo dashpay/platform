@@ -1,10 +1,16 @@
 use crate::data_contract::TokenContractPosition;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::tokens::contract_info::v0::TokenContractInfoV0;
 use crate::ProtocolError;
-use bincode::Encode;
+use bincode::{DecodeUntrusted, Encode};
 use derive_more::From;
 use platform_serialization::de::Decode;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
@@ -17,11 +23,13 @@ pub mod v0;
     Clone,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     PlatformVersioned,
     From,
     PartialEq,
+    DecodeUntrusted,
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[cfg_attr(
@@ -38,10 +46,10 @@ pub enum TokenContractInfo {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenContractInfo {}
+impl JsonConvertible for TokenContractInfo {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenContractInfo {}
+impl ValueConvertible for TokenContractInfo {}
 
 impl TokenContractInfo {
     pub fn new(

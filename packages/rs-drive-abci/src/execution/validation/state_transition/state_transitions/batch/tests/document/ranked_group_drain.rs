@@ -281,6 +281,9 @@ async fn create_visit<S: Signer<IdentityPublicKey>>(
             platform_version,
         )
         .expect("expected a random visit document");
+    document
+        .set_id_for_creation(visit, &entropy.0, identity_contract_nonce, platform_version)
+        .expect("expected to set the document id");
     document.set(GROUP_PROPERTY, Value::Text(group.to_string()));
     document.set("guests", Value::U64(guests));
 

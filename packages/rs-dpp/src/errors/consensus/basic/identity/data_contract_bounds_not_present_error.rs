@@ -1,11 +1,13 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode, DecodeUntrusted,
+)]
 #[error("Data Contract {data_contract_id} expected bounds are not present")]
 pub struct DataContractBoundsNotPresentError {
     /*

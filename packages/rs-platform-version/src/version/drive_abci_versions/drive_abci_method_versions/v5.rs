@@ -91,6 +91,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V5: DriveAbciMethodVersions = DriveAbciMeth
         // Rebroadcasting should also no longer use the first two quorums only
         rebroadcast_expired_withdrawal_documents: 1,
         append_signatures_and_broadcast_withdrawal_transactions: 0,
+        has_pending_withdrawal_work: 0,
         cleanup_expired_locks_of_withdrawal_amounts: 0,
         record_credit_inflows_for_withdrawals: None,
         record_total_credits_history_for_withdrawals: None,
@@ -131,6 +132,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V5: DriveAbciMethodVersions = DriveAbciMeth
         update_checkpoints: None,
         record_shielded_pool_anchor: None,
         prune_shielded_pool_anchors: None,
+        expire_documents: None,
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,

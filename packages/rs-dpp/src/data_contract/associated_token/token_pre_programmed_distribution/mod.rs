@@ -3,18 +3,21 @@ use crate::data_contract::associated_token::token_pre_programmed_distribution::v
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod accessors;
+mod methods;
 
 pub mod v0;
 
 #[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From)]
+#[derive(
+    Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From, DecodeUntrusted,
+)]
 #[serde(tag = "$formatVersion")]
 pub enum TokenPreProgrammedDistribution {
     #[serde(rename = "0")]

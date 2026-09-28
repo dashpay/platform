@@ -1,54 +1,6 @@
-//! Provider account and public-key pool reconstruction for SQLite load.
+//! Platform-node public-key pool reconstruction for SQLite load.
 
 use key_wallet::account::AccountType;
-use platform_wallet::changeset::ProviderKeyExtendedPubKey;
-
-/// Why a provider key-material account could not be rebuilt into an
-/// [`AccountCollection`](key_wallet::account::account_collection::AccountCollection).
-#[derive(Debug, thiserror::Error)]
-pub(super) enum ProviderAccountRebuildError {
-    /// The curve-specific account constructor rejected the key.
-    #[error("provider key account is invalid")]
-    Invalid(#[from] key_wallet::error::Error),
-    /// The collection refused the account — its `account_type` does not match
-    /// the curve (e.g. a BLS key offered as `ProviderPlatformKeys`).
-    #[error("account collection rejected the provider key account: {0}")]
-    Rejected(&'static str),
-}
-
-/// Rebuild a watch-only provider account in its curve-specific collection slot.
-pub(super) fn rebuild_provider_key_account(
-    accounts: &mut key_wallet::account::account_collection::AccountCollection,
-    wallet_id: [u8; 32],
-    network: key_wallet::Network,
-    account_type: AccountType,
-    extended_public_key: &ProviderKeyExtendedPubKey,
-) -> Result<(), ProviderAccountRebuildError> {
-    match extended_public_key {
-        ProviderKeyExtendedPubKey::Bls(key) => {
-            let account = key_wallet::account::BLSAccount::new(
-                Some(wallet_id.to_vec()),
-                account_type,
-                key.clone(),
-                network,
-            )?;
-            accounts
-                .insert_bls_account(account)
-                .map_err(ProviderAccountRebuildError::Rejected)
-        }
-        ProviderKeyExtendedPubKey::EdDSA(key) => {
-            let account = key_wallet::account::EdDSAAccount::new(
-                Some(wallet_id.to_vec()),
-                account_type,
-                key.clone(),
-                network,
-            )?;
-            accounts
-                .insert_eddsa_account(account)
-                .map_err(ProviderAccountRebuildError::Rejected)
-        }
-    }
-}
 
 /// Errors while inserting a pre-derived platform-node key into its managed pool.
 #[derive(Debug, thiserror::Error)]
@@ -149,85 +101,12 @@ pub(super) fn insert_platform_node_pool_entry(
 mod tests {
     use super::*;
     use key_wallet::Network;
+    // Shared with `platform-wallet`'s own `rebuild_provider_key_account` tests
+    // via its `test-utils` feature (see this crate's `[dev-dependencies]`) —
+    // one fixture instead of two drifting copies.
+    use platform_wallet::changeset::provider_key_account::provider_key_test_wallet;
     use platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys;
 
-    fn provider_key_test_wallet() -> key_wallet::wallet::Wallet {
-        key_wallet::wallet::Wallet::from_seed_bytes(
-            [0x42; 64],
-            Network::Testnet,
-            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
-        )
-        .expect("provider key test wallet")
-    }
-
-    #[test]
-    fn rebuild_provider_key_account_restores_bls_and_eddsa() {
-        let wallet = provider_key_test_wallet();
-        let bls_key = wallet
-            .accounts
-            .bls_account_of_type(AccountType::ProviderOperatorKeys)
-            .expect("BLS provider account")
-            .bls_public_key
-            .clone();
-        let eddsa_key = wallet
-            .accounts
-            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
-            .expect("EdDSA provider account")
-            .ed25519_public_key
-            .clone();
-        let mut accounts = key_wallet::account::account_collection::AccountCollection::new();
-        let wallet_id = [0x24; 32];
-
-        rebuild_provider_key_account(
-            &mut accounts,
-            wallet_id,
-            Network::Testnet,
-            AccountType::ProviderOperatorKeys,
-            &ProviderKeyExtendedPubKey::Bls(bls_key),
-        )
-        .expect("rebuild BLS provider account");
-        rebuild_provider_key_account(
-            &mut accounts,
-            wallet_id,
-            Network::Testnet,
-            AccountType::ProviderPlatformKeys,
-            &ProviderKeyExtendedPubKey::EdDSA(eddsa_key),
-        )
-        .expect("rebuild EdDSA provider account");
-
-        assert!(accounts
-            .bls_account_of_type(AccountType::ProviderOperatorKeys)
-            .is_some());
-        assert!(accounts
-            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
-            .is_some());
-    }
-
-    #[test]
-    fn rebuild_provider_key_account_rejects_curve_account_type_mismatch() {
-        let wallet = provider_key_test_wallet();
-        let bls_key = wallet
-            .accounts
-            .bls_account_of_type(AccountType::ProviderOperatorKeys)
-            .expect("BLS provider account")
-            .bls_public_key
-            .clone();
-        let mut accounts = key_wallet::account::account_collection::AccountCollection::new();
-
-        let error = rebuild_provider_key_account(
-            &mut accounts,
-            [0x24; 32],
-            Network::Testnet,
-            AccountType::ProviderPlatformKeys,
-            &ProviderKeyExtendedPubKey::Bls(bls_key),
-        )
-        .expect_err("BLS key must not rebuild as a platform-node account");
-
-        assert!(matches!(error, ProviderAccountRebuildError::Rejected(_)));
-        assert!(accounts
-            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
-            .is_none());
-    }
     #[test]
     fn insert_used_platform_node_pool_entry_restores_used_bookkeeping() {
         use dashcore::hashes::Hash;

@@ -543,7 +543,7 @@ fn managed_identity_from_entry(
 /// Insert a stub identity row (test helper) so identity_keys /
 /// dashpay_profiles can reference it via their FK. The stub carries a
 /// `null`-encoded `IdentityEntry` so `entry_blob` always decodes; real data
-/// overwrites via [`apply`].
+/// overwrites via [`apply_upserts`].
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn ensure_exists(
     conn: &Connection,

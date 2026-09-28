@@ -11,12 +11,12 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 
+use platform_wallet::changeset::provider_key_account::{
+    rebuild_provider_key_account, ProviderAccountRebuildError,
+};
 use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
 
-use crate::sqlite::provider_accounts::{
-    insert_platform_node_pool_entry, rebuild_provider_key_account, PlatformNodePoolError,
-    ProviderAccountRebuildError,
-};
+use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite, SiteCoords};
 use crate::sqlite::schema::accounts::{self, AccountManifest};
@@ -947,6 +947,98 @@ mod tests {
         let err = build_wallet(Network::Testnet, [0u8; 32], &AccountManifest::default())
             .expect_err("empty manifest must be MissingManifest");
         assert!(matches!(err, WalletStorageError::MissingAccount { .. }));
+    }
+
+    fn provider_keys(
+        w: &Wallet,
+    ) -> (
+        key_wallet::derivation_bls_bip32::ExtendedBLSPubKey,
+        key_wallet::derivation_slip10::ExtendedEd25519PubKey,
+    ) {
+        let bls = w
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("Default-created wallet has a BLS provider account")
+            .bls_public_key
+            .clone();
+        let eddsa = w
+            .accounts
+            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+            .expect("Default-created wallet has an EdDSA provider account")
+            .ed25519_public_key
+            .clone();
+        (bls, eddsa)
+    }
+
+    #[test]
+    fn watch_only_rebuild_restores_provider_key_accounts() {
+        use platform_wallet::changeset::{ProviderKeyAccountEntry, ProviderKeyExtendedPubKey};
+
+        let w = Wallet::from_seed_bytes(
+            [3u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let id = w.compute_wallet_id();
+        let (bls, eddsa) = provider_keys(&w);
+        let manifest = AccountManifest {
+            ecdsa: manifest_for(&w),
+            provider: vec![
+                ProviderKeyAccountEntry {
+                    account_type: AccountType::ProviderOperatorKeys,
+                    extended_public_key: ProviderKeyExtendedPubKey::Bls(bls.clone()),
+                },
+                ProviderKeyAccountEntry {
+                    account_type: AccountType::ProviderPlatformKeys,
+                    extended_public_key: ProviderKeyExtendedPubKey::EdDSA(eddsa.clone()),
+                },
+            ],
+        };
+
+        let restored = build_wallet(Network::Testnet, id, &manifest).unwrap();
+
+        let restored_bls = restored
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("BLS provider account must be rebuilt");
+        assert_eq!(restored_bls.bls_public_key.to_bytes(), bls.to_bytes());
+        assert_eq!(restored_bls.parent_wallet_id.as_deref(), Some(&id[..]));
+        assert!(restored_bls.is_watch_only);
+        let restored_eddsa = restored
+            .accounts
+            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+            .expect("EdDSA provider account must be rebuilt");
+        assert_eq!(restored_eddsa.ed25519_public_key, eddsa);
+        assert_eq!(restored_eddsa.parent_wallet_id.as_deref(), Some(&id[..]));
+        assert!(restored_eddsa.is_watch_only);
+    }
+
+    #[test]
+    fn watch_only_rebuild_rejects_provider_curve_type_mismatch() {
+        use platform_wallet::changeset::{ProviderKeyAccountEntry, ProviderKeyExtendedPubKey};
+
+        let w = Wallet::from_seed_bytes(
+            [3u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let (bls, _) = provider_keys(&w);
+        let manifest = AccountManifest {
+            ecdsa: manifest_for(&w),
+            provider: vec![ProviderKeyAccountEntry {
+                account_type: AccountType::ProviderPlatformKeys,
+                extended_public_key: ProviderKeyExtendedPubKey::Bls(bls),
+            }],
+        };
+
+        let err = build_wallet(Network::Testnet, w.compute_wallet_id(), &manifest)
+            .expect_err("a BLS key must not rebuild as the platform-node account");
+        assert!(matches!(
+            err,
+            WalletStorageError::ProviderKeyAccountEntryMismatch
+        ));
     }
 
     /// Regression: after restart-in-place the watch-only pools eagerly

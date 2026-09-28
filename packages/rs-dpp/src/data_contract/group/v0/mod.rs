@@ -11,8 +11,10 @@ use crate::data_contract::GroupContractPosition;
 use crate::serialization::json_safe_fields;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
@@ -25,11 +27,13 @@ use std::collections::BTreeMap;
     Decode,
     Encode,
     PlatformSerialize,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     Debug,
     Clone,
     PartialEq,
     Eq,
+    DecodeUntrusted,
 )]
 #[serde(rename_all = "camelCase")]
 #[platform_serialize(unversioned)]
@@ -94,7 +98,7 @@ impl GroupMethodsV0 for GroupV0 {
         group_contract_position: Option<GroupContractPosition>,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let max_group_members = platform_version.system_limits.max_contract_group_size as u32;
+        let max_group_members = platform_version.system_limits.max_group_member_count as u32;
         const GROUP_POWER_LIMIT: GroupMemberPower = u16::MAX as GroupMemberPower;
 
         // Check the number of members does not exceed the maximum allowed
@@ -206,7 +210,7 @@ mod tests {
         #[test]
         fn test_group_exceeds_max_members() {
             let platform_version = PlatformVersion::latest();
-            let max = platform_version.system_limits.max_contract_group_size as u32;
+            let max = platform_version.system_limits.max_group_member_count as u32;
 
             let mut members = BTreeMap::new();
             for i in 0..=max {

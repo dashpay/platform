@@ -105,7 +105,13 @@ pub struct ContactRequestInput {
 /// Result of creating a contact request document
 #[derive(Debug)]
 pub struct ContactRequestResult {
-    /// The document ID
+    /// The document id derived from `entropy` alone.
+    ///
+    /// From protocol version 14 the id of a new document also commits to the
+    /// identity contract nonce of its create transition, which is only
+    /// assigned when the document is sent, so this is a placeholder there:
+    /// the id of the contact request is the one on the document returned by
+    /// `send_contact_request`.
     pub id: Identifier,
     /// The owner ID (sender identity ID)
     pub owner_id: Identifier,
@@ -113,10 +119,11 @@ pub struct ContactRequestResult {
     pub properties: BTreeMap<String, Value>,
     /// The entropy used to derive `id`.
     ///
-    /// This must be reused when broadcasting the document so that the
-    /// document id computed at creation matches the id platform consensus
-    /// recomputes from the entropy (otherwise the create transition is
-    /// rejected with `InvalidDocumentTransitionIdError`).
+    /// This must be reused when broadcasting the document: up to protocol
+    /// version 13 the id platform consensus recomputes from the entropy must
+    /// match `id` (otherwise the create transition is rejected with
+    /// `InvalidDocumentTransitionIdError`), and from protocol version 14 it is
+    /// one of the inputs of the final id.
     pub entropy: Bytes32,
 }
 

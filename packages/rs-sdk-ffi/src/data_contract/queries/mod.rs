@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 
 mod fetch;
+mod fetch_by_range;
 mod fetch_json;
 mod fetch_many;
 mod fetch_with_serialization;
@@ -9,6 +10,7 @@ mod info;
 
 // Re-export all public functions for convenient access
 pub use fetch::dash_sdk_data_contract_fetch;
+pub use fetch_by_range::dash_sdk_data_contracts_fetch_by_range;
 pub use fetch_json::dash_sdk_data_contract_fetch_json;
 pub use fetch_many::dash_sdk_data_contracts_fetch_many;
 pub use fetch_with_serialization::{

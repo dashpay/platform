@@ -3,13 +3,19 @@ use crate::core_types::validator::v0::ValidatorV0;
 use crate::core_types::validator_set::v0::{
     ValidatorSetV0, ValidatorSetV0Getters, ValidatorSetV0Setters,
 };
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "core-types-serialization")]
 use crate::ProtocolError;
 #[cfg(feature = "core-types-serialization")]
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::{ProTxHash, QuorumHash};
 #[cfg(feature = "core-types-serialization")]
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -28,7 +34,14 @@ pub mod v0;
 )]
 #[cfg_attr(
     feature = "core-types-serialization",
-    derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
+    derive(
+        Encode,
+        Decode,
+        DecodeUntrusted,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
+        PlatformSerialize
+    ),
     platform_serialize(limit = 15000, unversioned)
 )]
 pub enum ValidatorSet {
@@ -38,10 +51,10 @@ pub enum ValidatorSet {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for ValidatorSet {}
+impl JsonConvertible for ValidatorSet {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for ValidatorSet {}
+impl ValueConvertible for ValidatorSet {}
 
 impl Display for ValidatorSet {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

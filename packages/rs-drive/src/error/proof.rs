@@ -73,6 +73,32 @@ pub enum ProofError {
         /// The actual path
         actual: Path,
     },
+
+    /// The bytes do not start with a decodable GroveDB proof envelope discriminant.
+    #[error("invalid GroveDB proof envelope in the {proof}: {reason}")]
+    InvalidGroveDBProofEnvelope {
+        /// Which proof was being read: "proof", "predecessor proof", "forward proof"
+        proof: &'static str,
+        /// The decoder's own error
+        reason: String,
+    },
+
+    /// The GroveDB proof envelope is older than the floor the protocol version sets in
+    /// `SystemLimits::minimum_grovedb_proof_envelope_version`, so its payload is refused
+    /// before Drive verifies it.
+    #[error(
+        "unsupported GroveDB proof envelope version {version} in the {proof}: protocol version {protocol_version} requires at least version {minimum}"
+    )]
+    UnsupportedGroveDBProofEnvelopeVersion {
+        /// Which proof was being read: "proof", "predecessor proof", "forward proof"
+        proof: &'static str,
+        /// The envelope version found in the bytes
+        version: u32,
+        /// The floor the protocol version sets
+        minimum: u32,
+        /// The protocol version the verifier ran with
+        protocol_version: u32,
+    },
 }
 #[allow(dead_code)]
 #[deprecated(note = "This function is marked as unused.")]
@@ -93,5 +119,7 @@ fn get_error_code(error: &ProofError) -> u32 {
         ProofError::InvalidMetadata(_) => 6011,
         ProofError::MissingContextRequirement(_) => 6012,
         ProofError::UnexpectedResultProof(_) => 6013,
+        ProofError::InvalidGroveDBProofEnvelope { .. } => 6014,
+        ProofError::UnsupportedGroveDBProofEnvelopeVersion { .. } => 6015,
     }
 }

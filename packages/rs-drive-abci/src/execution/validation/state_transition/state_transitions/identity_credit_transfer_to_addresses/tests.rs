@@ -2955,7 +2955,7 @@ mod tests {
 
     mod serialization_tests {
         use super::*;
-        use dpp::serialization::PlatformDeserializable;
+        use dpp::serialization::PlatformDeserializableUntrusted;
         use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
         use dpp::state_transition::StateTransitionIdentitySigned;
         use dpp::state_transition::StateTransitionLike;
@@ -2988,8 +2988,8 @@ mod tests {
                 .expect("should serialize");
 
             // Deserialize
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             // Verify the deserialized transition matches the original
             match (&original_transition, &deserialized) {
@@ -3042,8 +3042,8 @@ mod tests {
             let serialized = transition.serialize_to_bytes().expect("should serialize");
 
             // Should deserialize successfully
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             match deserialized {
                 StateTransition::IdentityCreditTransferToAddresses(t) => {
@@ -4195,6 +4195,7 @@ mod tests {
         /// (read_only affects whether the key can be updated, not whether it can sign)
         #[tokio::test]
         async fn test_read_only_transfer_key_can_sign() {
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(618);
             let mut signer = SimpleSigner::default();
@@ -4223,12 +4224,8 @@ mod tests {
 
             // Make it read-only by creating a new key with read_only = true
             // We need to modify the inner V0 struct
-            let transfer_key = match transfer_key {
-                IdentityPublicKey::V0(mut v0) => {
-                    v0.read_only = true;
-                    IdentityPublicKey::V0(v0)
-                }
-            };
+            let mut transfer_key = transfer_key;
+            transfer_key.set_read_only(true);
 
             signer.add_identity_public_key(auth_key.clone(), auth_private_key);
             signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);

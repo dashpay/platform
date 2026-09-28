@@ -56,7 +56,8 @@ impl Drive {
             path_holding_total_credits_vec,
             TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec(),
             Item(new_total.encode_var_vec(), None),
-        );
+        )
+        .dont_check_for_backwards_references();
         drive_operations.push(GroveOperation(replace_op));
         Ok(drive_operations)
     }

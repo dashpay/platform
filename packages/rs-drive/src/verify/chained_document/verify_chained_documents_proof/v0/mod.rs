@@ -39,13 +39,14 @@ impl DriveDocumentQuery<'_> {
         let bootstrap_documents = bootstrap_trios
             .into_iter()
             .filter(|(_, _, element)| element.is_some())
-            .map(|(path, key, _)| {
+            .map(|(path, key, element)| {
                 synthesize_index_only_document(
                     self.contract.id(),
                     self.document_type,
                     index,
                     &path,
                     &key,
+                    element.as_ref(),
                 )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
@@ -92,6 +93,7 @@ impl DriveDocumentQuery<'_> {
                         index,
                         &path,
                         &key,
+                        Some(&element),
                     )?);
                 }
                 Some(segment) if segment == outer_type_name => {
@@ -126,7 +128,7 @@ impl DriveDocumentQuery<'_> {
         // and the exact-set assembly refuses any divergence between
         // them and the proven outer documents, in either direction.
         let join_values = self.chained_join_values(&inner_documents)?;
-        let outer_documents =
+        let (outer_documents, missing_outer_ids) =
             self.assemble_chained_outer_documents(&join_values, outer_documents)?;
 
         Ok((
@@ -134,6 +136,7 @@ impl DriveDocumentQuery<'_> {
             ChainedDocumentsResult {
                 inner_documents,
                 outer_documents,
+                missing_outer_ids,
             },
         ))
     }

@@ -82,7 +82,7 @@ the per-group counts the range-count layout maintains
 
 ### Value-Sensitive Prerequisites in the Meta-Schema
 
-The document meta-schema enforces the same prerequisites, but it cannot use the `dependentRequired` rows the `range*` keywords use. `dependentRequired` fires on **key presence**, so a written-out opt-out — `"rankedCountable": false`, which the structural parser accepts as exactly that — would be made to demand a `rangeCountable` the index does not need. Meta-schema v3 therefore expresses the ranked prerequisites as value-sensitive `if` / `then` pairs:
+The document meta-schema enforces the same prerequisites, in two forms. The `range*` rows are presence rules: a `rangeSummable` key, whatever its value, needs a `summable` (or an `averageable`) key beside it, and a `rangeAverageable` key needs an `averageable`. `rangeCountable` has no row: it implies `countable`, exactly as the doctype-level `rangeCountable` implies `documentsCountable`, and the parser promotes an omitted `countable` to `"countable"` (an explicit `"countableAllowingOffset"` is kept, an explicit `"notCountable"` is rejected as a contradiction). The ranked rules are **value-sensitive** `if` / `then` pairs, because a written-out opt-out, `"rankedCountable": false`, which the structural parser accepts as exactly that, must not be made to demand a `rangeCountable` the index does not need:
 
 ```json
 {
@@ -90,17 +90,26 @@ The document meta-schema enforces the same prerequisites, but it cannot use the 
     "properties": {
       "rankedCountable": { "anyOf": [{ "const": true }, { "type": "object" }] }
     },
-    "required": ["rankedCountable"]
+    "required": ["rankedCountable"],
+    "not": { "required": ["rangeAverageable"] }
   },
   "then": { "required": ["rangeCountable"] }
 }
 ```
 
-(The `rankedCountable` conditional matches the object form as well as the literal `true` — both spellings need `rangeCountable`; only a written-out `false` escapes the requirement.)
+(The `rankedCountable` conditional matches the object form as well as the literal `true`; both spellings need a range axis, and only a written-out `false` escapes the requirement.)
 
-The `range*` rows keep their presence semantics because that is what they shipped with in v2, and changing them would move historical validation results.
+Every rule is **sugar-aware**, and the `not` clause above is what makes it so. JSON-schema validation runs over the index object exactly as authored, before `averageable` / `rangeAverageable` are expanded into their `countable` + `summable` longhand, so each rule spells the sugar out as an accepted alternative: `rangeSummable` accepts `averageable` in place of `summable`, `rankedCountable` and `rankedSummable` accept `rangeAverageable` in place of their own range axis, and `rankedAverageable` accepts the explicit `rangeCountable` + `rangeSummable` pair in place of `rangeAverageable`. The doctype-level `rangeSummable` row accepts `documentsAverageable` the same way. The parser then checks the same prerequisites on the resolved flags, so the two layers agree on every spelling, and the sugar form of a multi-axis index is the whole declaration:
 
-One asymmetry is worth knowing when authoring: **the meta-schema demands the literal key, the parser accepts the effect.** `rankedAverageable: true` needs a literal `rangeAverageable: true` to satisfy the schema's `then`, even though the parser is satisfied by the explicit `countable` + `summable` + `rangeCountable` + `rangeSummable` longhand. Since full JSON-schema validation only runs under `full_validation`, both layers matter — write the sugar form and the two agree.
+```json
+{"name": "storeRating", "properties": [{"storeId": "asc"}],
+ "averageable": "rating", "rangeAverageable": true,
+ "rankedAverageable": true, "rankedCountable": true}
+```
+
+Up to `4.2.0-beta.1`, meta-schema v3 demanded the literal key instead: this index failed registration with `"rangeCountable" is a required property`, and adding `rangeCountable` then pulled in a literal `countable` through a presence row, so the only accepted spellings carried keys the sugar already implied. The same release also made the index-level parser demand an explicit `countable` beside `rangeCountable`, while the doctype level had always treated `rangeCountable` as implying `documentsCountable`. v3 is editable until 4.2 is live on mainnet, so both rules were corrected in place rather than carried into a v4; below protocol version 14 nothing moves.
+
+The two layers are not gated alike. The structural parser runs on every parse, `full_validation` or not, and is compiled into every build. The JSON-schema layer runs only under `full_validation`, and only in builds with rs-dpp's `validation` feature, which `wasm-dpp2` (and so `@dashevo/evo-sdk`) does not enable. An SDK-side `DataContract.fromJSON(json, true, pv)` therefore sees the parser's verdict alone, which is why the two layers agreeing on every spelling matters: it is what keeps an offline acceptance from turning into a registration refusal.
 
 ### Shape Restrictions
 
@@ -403,7 +412,7 @@ Note that the fixture puts each shape on its **own document type**. That's not a
 | Top / bottom K groups by sum of a property | `rankedSummable: true` on an index with `summable: "<prop>"` + `rangeSummable: true` |
 | Top / bottom K groups by average of a property | `rankedAverageable: true` on an index with `averageable: "<prop>"` + `rangeAverageable: true` (or the count+sum longhand) |
 | Two rankings on one index (e.g. by count *and* by average) | Both keywords. The tree is a PCPSIT carrying both axes in its TLV; you pay one secondary Merk per axis on every write. |
-| A ranking filtered by another property (`top 5 restaurants in London`) | A **compound ranked index** with the filter property leading: `[city, restaurantId]` with the ranked flags. Each city gets its own secondary; the query pins the prefix with an equality `where` (`WHERE city == "London" GROUP BY restaurantId ORDER BY <agg> DESC LIMIT 5`). Equality pins select one prefix; at most one pin may be an `IN` (2..=10 distinct elements; a never-written element — or one whose deeper pinned path was never written — contributes an empty branch), which walks one secondary per element and merges by `(aggregate, encoded prefix, group key)`, proved in one branched `PathQuery` envelope (shared ancestors proved once, per-element authenticated absence) — entries then carry `in_key`. A single-element `IN` normalizes to the equality pin; a `null` pin stays legal on its own but cannot combine with an `IN` (null addresses its prefix through an empty path segment the branched proof cannot express); a non-zero `OFFSET` is rejected together with `IN`; and branched proofs are generated from committed state only. A range operator on the prefix stays rejected, and there is still no global cross-prefix ordering beyond that merge. |
+| A ranking filtered by another property (`top 5 restaurants in London`) | A **compound ranked index** with the filter property leading: `[city, restaurantId]` with the ranked flags. Each city gets its own secondary; the query pins the prefix with an equality `where` (`WHERE city == "London" GROUP BY restaurantId ORDER BY <agg> DESC LIMIT 5`). Equality pins select one prefix; at most one pin may be an `IN` (2..=10 distinct elements; a never-written element — or one whose deeper pinned path was never written — contributes an empty branch), which walks one secondary per element and merges by `(aggregate, encoded prefix, group key)`, proved in one branched `PathQuery` envelope (shared ancestors proved once, per-element authenticated absence) — entries then carry `in_key`. A single `==` pin on a prefix no document has written yet (a `timeRange` window before its first document, a hashtag nobody has used) is likewise an authenticated **empty page**, at any `OFFSET`: GroveDB answers a single-path axis read over a path that does not exist with the traversal's empty result, the absence proved by the layers the walk emits rather than reported as an error. A single-element `IN` normalizes to the equality pin; a `null` pin stays legal on its own but cannot combine with an `IN` (null addresses its prefix through an empty path segment the branched proof cannot express); a non-zero `OFFSET` is rejected together with `IN`; and branched proofs are generated from committed state only. A range operator on the prefix stays rejected, and there is still no global cross-prefix ordering beyond that merge. |
 | A ranking on a unique or contested index | Not available, and not meaningful: every group holds at most one document. |
 | Range aggregates without ranking (the 4.0 surface) | Just the `range*` flags. Ranking is strictly additive — adding it never changes what a range query returns. |
 | Nothing ranking-aware (default) | Don't set any `ranked*` flag. The terminal property-name tree keeps the type its range flags give it. |

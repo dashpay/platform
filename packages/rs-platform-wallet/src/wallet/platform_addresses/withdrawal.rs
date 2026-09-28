@@ -4,9 +4,11 @@ use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, P
 use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
-use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+use dpp::state_transition::address_credit_withdrawal_transition::{
+    AddressCreditWithdrawalTransition, MIN_CORE_FEE_PER_BYTE,
+};
 use dpp::version::PlatformVersion;
-use dpp::withdrawal::Pooling;
+use dpp::withdrawal::{min_withdrawal_amount_with_core_fee, Pooling};
 
 use super::InputSelection;
 use crate::error::promote_address_nonce_error_or_sdk;
@@ -57,8 +59,9 @@ pub struct WithdrawalPlan {
     pub fee_strategy: AddressFundsFeeStrategy,
     /// The net credits that will actually be withdrawn:
     /// `Σ inputs − estimated_fee`. This is the figure a UI should show as
-    /// "amount to withdraw" and the figure that must clear
-    /// `system_limits.min_withdrawal_amount`.
+    /// "amount to withdraw" and the figure that must clear the protocol's
+    /// minimum withdrawal at the chosen Core fee rate (see
+    /// `min_withdrawal_amount_for`).
     pub net_withdrawable: Credits,
     /// The estimated address-credit-withdrawal transition fee reserved on the
     /// fee-source input, sized from the selected input count (no change
@@ -173,7 +176,9 @@ impl PlatformAddressWallet {
                 // returns (rather than re-deriving inputs/fee here) guarantees
                 // the preflight gate and this spend path can never disagree
                 // about whether — or for how much — the account can withdraw.
-                let plan = self.plan_withdrawal(account_index, version).await?;
+                let plan = self
+                    .plan_withdrawal(account_index, core_fee_per_byte, version)
+                    .await?;
                 self.sdk
                     .withdraw_address_funds(
                         plan.inputs,
@@ -232,9 +237,11 @@ impl PlatformAddressWallet {
     pub async fn preflight_withdrawal(
         &self,
         account_index: u32,
+        core_fee_per_byte: u32,
     ) -> Result<WithdrawalPlan, PlatformWalletError> {
         let version = self.sdk.version();
-        self.plan_withdrawal(account_index, version).await
+        self.plan_withdrawal(account_index, core_fee_per_byte, version)
+            .await
     }
 
     /// Build the full [`WithdrawalPlan`] for an AUTO withdrawal: select the
@@ -303,6 +310,7 @@ impl PlatformAddressWallet {
     pub(crate) async fn plan_withdrawal(
         &self,
         account_index: u32,
+        core_fee_per_byte: u32,
         platform_version: &PlatformVersion,
     ) -> Result<WithdrawalPlan, PlatformWalletError> {
         // Candidate SET only — balances are read fresh from the chain below,
@@ -340,7 +348,7 @@ impl PlatformAddressWallet {
 
         let selected = select_withdrawable_inputs(funded, platform_version)?;
 
-        reserve_withdrawal_fee_on_largest_input(selected, platform_version)
+        reserve_withdrawal_fee_on_largest_input(selected, core_fee_per_byte, platform_version)
     }
 }
 
@@ -440,8 +448,37 @@ where
 /// when no input can absorb the fee while respecting the per-input minimum, the
 /// net falls below the minimum withdrawal amount, there are too many inputs, or
 /// the net exceeds the maximum withdrawal amount.
+/// The minimum net withdrawal the protocol version accepts at `core_fee_per_byte`.
+///
+/// From the version whose address withdrawal structure rules are fee-capped, the Core fee of
+/// the asset unlock is carved out of the withdrawn amount, so the floor is
+/// `min_withdrawal_amount` plus that fee (`validate_structure_v1` in dpp). Earlier versions
+/// draw the fee from the Core credit pool and floor at `min_withdrawal_amount` alone.
+///
+/// A rate below `MIN_CORE_FEE_PER_BYTE` is never valid on-chain, so it is treated as that
+/// minimum: a binding that defaults the rate to zero must not plan against a lower floor than
+/// any withdrawal can actually use.
+fn min_withdrawal_amount_for(
+    core_fee_per_byte: u32,
+    platform_version: &PlatformVersion,
+) -> Credits {
+    let core_fee_per_byte = core_fee_per_byte.max(MIN_CORE_FEE_PER_BYTE);
+    if platform_version
+        .dpp
+        .state_transitions
+        .address_funds
+        .validate_credit_withdrawal_structure
+        == 0
+    {
+        platform_version.system_limits.min_withdrawal_amount
+    } else {
+        min_withdrawal_amount_with_core_fee(core_fee_per_byte, platform_version)
+    }
+}
+
 fn reserve_withdrawal_fee_on_largest_input(
     mut selected: BTreeMap<PlatformAddress, Credits>,
+    core_fee_per_byte: u32,
     platform_version: &PlatformVersion,
 ) -> Result<WithdrawalPlan, PlatformWalletError> {
     // DPP's `AddressCreditWithdrawalTransition` v0 validator rejects the whole
@@ -496,13 +533,14 @@ fn reserve_withdrawal_fee_on_largest_input(
 
     // The reduced fee-source amount must still be ≥ `min_input_amount`, and the
     // overall withdrawal (accumulated − estimated_fee) must clear the minimum
-    // withdrawal amount, otherwise the transition is rejected on-chain.
+    // withdrawal amount at the chosen Core fee rate, otherwise the transition
+    // is rejected on-chain.
     let min_input_amount = platform_version
         .dpp
         .state_transitions
         .address_funds
         .min_input_amount;
-    let min_withdrawal_amount = platform_version.system_limits.min_withdrawal_amount;
+    let min_withdrawal_amount = min_withdrawal_amount_for(core_fee_per_byte, platform_version);
     // DPP rejects `withdrawal_amount > max_withdrawal_amount` (50_000_000_000_000
     // = 500 DASH on v1/v2 system_limits) with `WithdrawalBelowMinAmountError`
     // (the range error carries both bounds) — see `validate_structure` in
@@ -607,7 +645,7 @@ mod tests {
         let mut input = BTreeMap::new();
         input.insert(addr(1), balance);
 
-        let plan = reserve_withdrawal_fee_on_largest_input(input, pv)
+        let plan = reserve_withdrawal_fee_on_largest_input(input, 1, pv)
             .expect("single funded input above the fee should select");
 
         assert_eq!(plan.inputs.get(&addr(1)).copied(), Some(balance - fee));
@@ -641,7 +679,7 @@ mod tests {
         inputs.insert(addr(1), small); // lex-smallest → BTreeMap index 0
         inputs.insert(addr(9), large); // larger → BTreeMap index 1
 
-        let plan = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let plan = reserve_withdrawal_fee_on_largest_input(inputs, 1, pv)
             .expect("the larger peer can absorb the fee");
 
         assert_eq!(
@@ -681,7 +719,7 @@ mod tests {
         inputs.insert(addr(5), small_a); // index 1
         inputs.insert(addr(9), small_b); // index 2
 
-        let plan = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let plan = reserve_withdrawal_fee_on_largest_input(inputs, 1, pv)
             .expect("the largest input can absorb the fee");
 
         assert_eq!(
@@ -707,7 +745,7 @@ mod tests {
         let pv = PlatformVersion::latest();
         let fee = estimated_fee(3, pv);
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
-        let min_withdrawal = pv.system_limits.min_withdrawal_amount;
+        let min_withdrawal = min_withdrawal_amount_for(1, pv);
 
         // Largest input leaves < min_input after the fee is reserved.
         let large = fee + min_input - 1;
@@ -728,7 +766,7 @@ mod tests {
             "test setup: aggregate must clear the withdrawal minimum"
         );
 
-        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, 1, pv)
             .expect_err("largest input below fee + min_input must error");
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
     }
@@ -743,7 +781,7 @@ mod tests {
         let mut inputs = BTreeMap::new();
         inputs.insert(addr(1), fee - 1);
 
-        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, 1, pv)
             .expect_err("balance below the fee must error");
         assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
     }
@@ -769,7 +807,7 @@ mod tests {
         let mut inputs = BTreeMap::new();
         inputs.insert(addr(3), balance);
 
-        let plan = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let plan = reserve_withdrawal_fee_on_largest_input(inputs, 1, pv)
             .expect("a balance above min_input + fee must plan successfully");
 
         assert_eq!(plan.estimated_fee, fee);
@@ -802,7 +840,7 @@ mod tests {
         let pv = PlatformVersion::latest();
         let fee = estimated_fee(2, pv);
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
-        let min_withdrawal = pv.system_limits.min_withdrawal_amount;
+        let min_withdrawal = min_withdrawal_amount_for(1, pv);
 
         // Largest input leaves < min_input after the fee is reserved on it.
         let large = fee + min_input - 1;
@@ -827,7 +865,7 @@ mod tests {
             "test setup: aggregate-after-fee must clear the withdrawal minimum"
         );
 
-        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, 1, pv)
             .expect_err("the largest input below min_input + fee cannot fund a withdrawal");
         assert!(
             matches!(err, PlatformWalletError::AddressOperation(_)),
@@ -851,7 +889,7 @@ mod tests {
         let pv = PlatformVersion::latest();
         let fee = estimated_fee(1, pv);
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
-        let min_withdrawal = pv.system_limits.min_withdrawal_amount;
+        let min_withdrawal = min_withdrawal_amount_for(1, pv);
 
         // Net = balance − fee = min_withdrawal − 1, i.e. one credit short of
         // the withdrawal floor while still clearing the fee.
@@ -870,7 +908,7 @@ mod tests {
         let mut inputs = BTreeMap::new();
         inputs.insert(addr(4), balance);
 
-        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, 1, pv)
             .expect_err("an input that nets below the withdrawal floor cannot fund a withdrawal");
         assert!(
             matches!(err, PlatformWalletError::AddressOperation(_)),
@@ -887,6 +925,56 @@ mod tests {
     /// a guaranteed-rejected transition. We size each input well above
     /// `min_input_amount + fee` so neither the per-input headroom nor the
     /// aggregate gates fire — isolating the input-count cap as the only failure.
+    /// From protocol version 14 the Core fee comes out of the withdrawn amount, so a net that
+    /// clears the bare `min_withdrawal_amount` but not the fee-inclusive floor is rejected
+    /// on-chain; the planner must refuse it too, while v13 still accepts it.
+    #[test]
+    fn plan_net_at_the_bare_minimum_cant_fund_from_v14() {
+        let v13 = PlatformVersion::get(13).expect("protocol version 13");
+        let v14 = PlatformVersion::get(14).expect("protocol version 14");
+        let bare_minimum = v14.system_limits.min_withdrawal_amount;
+        assert!(
+            min_withdrawal_amount_for(1, v14) > bare_minimum
+                && min_withdrawal_amount_for(1, v13) == bare_minimum,
+            "test setup: only v14 adds the Core fee to the floor"
+        );
+
+        let inputs = |pv: &PlatformVersion| {
+            let mut inputs = BTreeMap::new();
+            inputs.insert(addr(4), estimated_fee(1, pv) + bare_minimum);
+            inputs
+        };
+
+        let plan = reserve_withdrawal_fee_on_largest_input(inputs(v13), 1, v13)
+            .expect("v13 floors at the bare minimum");
+        assert_eq!(plan.net_withdrawable, bare_minimum);
+
+        let err = reserve_withdrawal_fee_on_largest_input(inputs(v14), 1, v14)
+            .expect_err("v14 floors at the minimum plus the Core fee");
+        assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
+
+        let mut funded = BTreeMap::new();
+        funded.insert(
+            addr(4),
+            estimated_fee(1, v14) + min_withdrawal_amount_for(1, v14),
+        );
+        let plan = reserve_withdrawal_fee_on_largest_input(funded, 1, v14)
+            .expect("a net at the fee-inclusive floor funds a v14 withdrawal");
+        assert_eq!(plan.net_withdrawable, min_withdrawal_amount_for(1, v14));
+    }
+
+    /// A zero rate is never valid on-chain; the planner floors it at the minimum rate so a
+    /// binding that defaults to zero cannot plan below any usable withdrawal's floor.
+    #[test]
+    fn zero_rate_floors_like_the_minimum_rate() {
+        let v14 = PlatformVersion::get(14).expect("protocol version 14");
+        assert_eq!(
+            min_withdrawal_amount_for(0, v14),
+            min_withdrawal_amount_for(MIN_CORE_FEE_PER_BYTE, v14)
+        );
+        assert!(min_withdrawal_amount_for(0, v14) > v14.system_limits.min_withdrawal_amount);
+    }
+
     #[test]
     fn plan_more_than_max_inputs_cant_fund() {
         let pv = PlatformVersion::latest();
@@ -909,7 +997,7 @@ mod tests {
             "test setup: must hold one more input than the cap"
         );
 
-        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, 1, pv)
             .expect_err("more than max_address_inputs funded inputs cannot withdraw at once");
         match err {
             PlatformWalletError::AddressOperation(msg) => assert!(
@@ -939,7 +1027,7 @@ mod tests {
         let mut inputs = BTreeMap::new();
         inputs.insert(addr(7), balance);
 
-        let err = reserve_withdrawal_fee_on_largest_input(inputs, pv)
+        let err = reserve_withdrawal_fee_on_largest_input(inputs, 1, pv)
             .expect_err("a net above the maximum withdrawal cannot be withdrawn in one go");
         match err {
             PlatformWalletError::AddressOperation(msg) => assert!(
@@ -1087,7 +1175,7 @@ mod tests {
         balances.insert(addr(1), min_amount); // lex-smallest, exactly the minimum
         balances.insert(addr(9), large); // larger → fee source
 
-        let plan = reserve_withdrawal_fee_on_largest_input(balances.clone(), pv)
+        let plan = reserve_withdrawal_fee_on_largest_input(balances.clone(), 1, pv)
             .expect("an exactly-minimum input beside a fundable fee source must plan");
 
         // The exactly-minimum input is withdrawn at its FULL balance — not
@@ -1137,7 +1225,7 @@ mod tests {
         balances.insert(addr(1), recipient_balance);
         balances.insert(addr(9), origin_balance);
 
-        let plan = reserve_withdrawal_fee_on_largest_input(balances.clone(), pv)
+        let plan = reserve_withdrawal_fee_on_largest_input(balances.clone(), 1, pv)
             .expect("both inputs clear the minimums and the origin absorbs the fee");
 
         assert_eq!(
@@ -1178,7 +1266,7 @@ mod tests {
         balances.insert(addr(7), dpp::dash_to_credits!(5.0)); // largest → fee source
         balances.insert(addr(9), dpp::dash_to_credits!(0.02));
 
-        let plan = reserve_withdrawal_fee_on_largest_input(balances.clone(), pv)
+        let plan = reserve_withdrawal_fee_on_largest_input(balances.clone(), 1, pv)
             .expect("a spread of fundable inputs must plan");
 
         assert_plan_spendable(&plan, &balances);
@@ -1387,7 +1475,7 @@ mod plan_withdrawal_seam_tests {
         // sized from the CHAIN (100M), not the doubled cache (200M).
         let pv = PlatformVersion::latest();
         let plan = wallet
-            .plan_withdrawal(ACCOUNT, pv)
+            .plan_withdrawal(ACCOUNT, 1, pv)
             .await
             .expect("plan must succeed against the on-chain balances");
 
@@ -1523,7 +1611,7 @@ mod plan_withdrawal_seam_tests {
 
         let pv = PlatformVersion::latest();
         let plan = wallet
-            .plan_withdrawal(ACCOUNT, pv)
+            .plan_withdrawal(ACCOUNT, 1, pv)
             .await
             .expect("plan must succeed from the hydrated balance map even with an empty pool");
 

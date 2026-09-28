@@ -2,11 +2,12 @@
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use crate::identity::identity_public_key::v1::IdentityPublicKeyV1;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
@@ -20,10 +21,14 @@ pub mod accessors;
 pub mod conversion;
 pub mod fields;
 pub mod v0;
+pub mod v1;
+use crate::fee::Credits;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 pub use fields::*;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 
 pub mod methods;
 pub use methods::*;
@@ -44,12 +49,14 @@ pub type TimestampMillis = u64;
     Deserialize,
     Encode,
     Decode,
-    PlatformDeserialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
     PlatformSerialize,
     From,
     Hash,
     Ord,
     PartialOrd,
+    DecodeUntrusted,
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
@@ -57,6 +64,9 @@ pub type TimestampMillis = u64;
 pub enum IdentityPublicKey {
     #[serde(rename = "0")]
     V0(IdentityPublicKeyV0),
+    /// A key that may carry a budget and an expiry, from protocol version 14
+    #[serde(rename = "1")]
+    V1(IdentityPublicKeyV1),
 }
 
 #[cfg(feature = "json-conversion")]
@@ -204,6 +214,25 @@ impl IdentityPublicKey {
             }),
         }
     }
+
+    /// Returns the key with the given usage limits. Limits only exist from the V1 key format,
+    /// so a V0 key becomes a V1 key; every other field is kept.
+    pub fn with_limits(
+        self,
+        total_budget: Option<Credits>,
+        expires_at: Option<TimestampMillis>,
+    ) -> Self {
+        match self {
+            IdentityPublicKey::V0(v0) => {
+                IdentityPublicKeyV1::from_v0_with_limits(v0, total_budget, expires_at).into()
+            }
+            IdentityPublicKey::V1(mut v1) => {
+                v1.total_budget = total_budget;
+                v1.expires_at = expires_at;
+                v1.into()
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -214,7 +243,7 @@ mod tests {
     use crate::identity::identity_public_key::contract_bounds::ContractBounds;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
     use platform_value::{BinaryData, Identifier};
     use platform_version::version::LATEST_PLATFORM_VERSION;
     use rand::SeedableRng;
@@ -233,8 +262,10 @@ mod tests {
             .into();
         let serialized = key.serialize_to_bytes().expect("expected to serialize key");
         let unserialized: IdentityPublicKey =
-            PlatformDeserializable::deserialize_from_bytes(serialized.as_slice())
-                .expect("expected to deserialize key");
+            PlatformDeserializableUntrusted::deserialize_from_bytes_untrusted(
+                serialized.as_slice(),
+            )
+            .expect("expected to deserialize key");
         assert_eq!(key, unserialized)
     }
 

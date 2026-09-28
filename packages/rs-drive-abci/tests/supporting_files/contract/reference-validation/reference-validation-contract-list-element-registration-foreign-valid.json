@@ -1,0 +1,47 @@
+{
+  "$formatVersion": "1",
+  "id": "7aS168gt2SNGWTDFQChsjdCbzh3sShGL68uMedEwoeVE",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "ballot": {
+      "type": "object",
+      "properties": {
+        "electedCharterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "permanentDocument",
+            "contractId": "9AJn2N8f1Sz9wNA9ShzGWBTwALcULn7QhGMBoesgg4zG",
+            "documentType": "electedCharter"
+          }
+        },
+        "voterId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 1,
+          "refersTo": {
+            "type": "listElement",
+            "contractId": "9AJn2N8f1Sz9wNA9ShzGWBTwALcULn7QhGMBoesgg4zG",
+            "documentType": "electedCharter",
+            "propertyAgreement": {
+              "electedCharterId": "$id"
+            },
+            "inList": "members"
+          }
+        }
+      },
+      "required": [
+        "electedCharterId"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -224,6 +224,15 @@ pub(crate) fn time_range_index_keys<'a>(
 /// × stored/indexOnly): the insert side creates the tree and the delete
 /// side emits `EstimatedLayerInformation` describing it, and any drift
 /// produces dry-run fees that disagree with applied fees.
+///
+/// Shipped generations depend on this function:
+/// `add_reference_for_index_level_for_contract_operations` v0 (protocol
+/// versions 1-14) and `remove_reference_for_index_level_for_contract_operations`
+/// v0 (protocol versions 1-13) call it for every stored-type index terminal;
+/// protocol version 14's remove-reference v1 calls it too.
+/// Changing what it returns for an index shape protocol versions 1-13 can
+/// declare changes the trees and fees of those versions; make such a change a
+/// new versioned method instead of editing this function.
 pub(crate) fn terminal_member_tree_type(index_type: &IndexLevelTypeInfo) -> TreeType {
     let count_provable = matches!(
         index_type.countable,
@@ -339,6 +348,7 @@ mod tests {
             ranked_averageable: false,
             terminal: None,
             preallocated: false,
+            flat: false,
         }
     }
 
@@ -822,6 +832,7 @@ mod tests {
             range_seconds: 21_600,
             step_seconds: 7_200,
             phase_seconds: 0,
+            ttl_seconds: None,
         };
         let key = DriveKeyInfo::KeySize(KeyInfo::MaxKeySize {
             unique_id: vec![7u8; 4],
@@ -860,6 +871,7 @@ mod tests {
             range_seconds: 100 * 3_600,
             step_seconds: 3_600,
             phase_seconds: 0,
+            ttl_seconds: None,
         };
         assert_eq!(oversized.overlap_factor(), 100);
         let keys = time_range_index_keys(Some(&oversized), key, 24);

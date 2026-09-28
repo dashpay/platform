@@ -1264,37 +1264,64 @@ mod tests {
 
     // TC-040 — proptest: no single-byte flip surfaces the plaintext.
     // Minimises to the offset that breaks coverage if one exists.
+    //
+    // Every case re-derives the KDF at its floor target, so the PR suite runs
+    // a reduced case count and the nightly long-running job runs the full
+    // default count.
+    fn single_byte_flip_never_yields_plaintext(
+        offset: usize,
+        mask: u8,
+    ) -> Result<(), proptest::test_runner::TestCaseError> {
+        // Re-built per case so the proptest harness can shrink
+        // independently of the host RNG.
+        let plaintext: &[u8] = b"goldfinch";
+        let p = pw("pw");
+        let valid = wrap_with_params(
+            &wid(1),
+            "seed",
+            Some(&p),
+            plaintext,
+            KdfParams::floor_target(),
+        )
+        .unwrap()
+        .expose_secret()
+        .to_vec();
+        // Out-of-bounds offset → skip via prop_assume so proptest
+        // shrinks toward in-bounds offsets.
+        proptest::prop_assume!(offset < valid.len());
+        let mut buf = valid.clone();
+        buf[offset] ^= mask;
+        match unwrap(&wid(1), "seed", Some(&p), &buf) {
+            Ok(secret) => {
+                proptest::prop_assert_ne!(
+                    secret.expose_secret(),
+                    plaintext,
+                    "single-byte flip at offset {} surfaced the plaintext",
+                    offset
+                );
+            }
+            Err(_) => { /* any typed error is fine */ }
+        }
+        Ok(())
+    }
+
     proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(32))]
         #[test]
         fn prop_single_byte_flip_never_yields_plaintext(
             (offset, mask) in (0usize..200usize, 1u8..=255u8),
         ) {
-            // Re-built per case so the proptest harness can shrink
-            // independently of the host RNG.
-            let plaintext: &[u8] = b"goldfinch";
-            let p = pw("pw");
-            let valid = wrap_with_params(&wid(1), "seed", Some(&p), plaintext, KdfParams::floor_target())
-                .unwrap()
-                .expose_secret()
-                .to_vec();
-            if offset >= valid.len() {
-                // Out-of-bounds offset → skip via prop_assume so proptest
-                // shrinks toward in-bounds offsets.
-                proptest::prop_assume!(offset < valid.len());
-            }
-            let mut buf = valid.clone();
-            buf[offset] ^= mask;
-            match unwrap(&wid(1), "seed", Some(&p), &buf) {
-                Ok(secret) => {
-                    proptest::prop_assert_ne!(
-                        secret.expose_secret(),
-                        plaintext,
-                        "single-byte flip at offset {} surfaced the plaintext",
-                        offset
-                    );
-                }
-                Err(_) => { /* any typed error is fine */ }
-            }
+            single_byte_flip_never_yields_plaintext(offset, mask)?;
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        #[ignore] // Long-running: runs in nightly CI only
+        fn prop_single_byte_flip_never_yields_plaintext_full(
+            (offset, mask) in (0usize..200usize, 1u8..=255u8),
+        ) {
+            single_byte_flip_never_yields_plaintext(offset, mask)?;
         }
     }
 }

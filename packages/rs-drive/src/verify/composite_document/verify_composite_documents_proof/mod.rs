@@ -18,11 +18,13 @@ impl DriveDocumentQuery<'_> {
     /// sub-query is derived from those exactly as the prover derived it
     /// from its materialization, the merged query is rebuilt, and the
     /// AUTHORITATIVE full pass verifies the whole composition — grovedb
-    /// enforces every component's lifted per-instance limit and range
+    /// enforces every component's per-instance limit and range
     /// completeness. The proven results are then routed back to their
     /// components: an entry no derivation asked for is an invalid proof,
-    /// so is a by-id join missing a referenced document (a
-    /// `permanentDocument` reference cannot dangle), and so is any
+    /// so is a by-id join off a `permanentDocument` property missing a
+    /// referenced document (such a reference cannot dangle; off a
+    /// `deletableDocument` property the proven-absent document is left
+    /// out instead), and so is any
     /// divergence between the values the proven page derives and the
     /// candidates the query was built from. A proof covering only the
     /// page (an old node serving the plain query) fails the full pass
@@ -31,6 +33,20 @@ impl DriveDocumentQuery<'_> {
     /// One proof means one root by construction; the caller combines the
     /// returned root hash with the surrounding tenderdash signature — see
     /// `rs-drive-proof-verifier` for the canonical composition.
+    ///
+    /// # Parameters
+    ///
+    /// * `proof`: The merged proof, as `query_composite_documents_with_proof` produced it.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((RootHash, CompositeDocumentsResult))` with the proof's root hash, the proven page,
+    ///   one proven result per sub-query, and the ids each by-id join proved absent.
+    /// * `Err(Error)` when the method version is unknown, the query is not a valid composite
+    ///   query, or the proof is invalid: it fails verification, carries an entry no derivation
+    ///   asked for, lacks a referenced document that cannot be deleted, or its page derives
+    ///   values other than those the query was built from.
     pub fn verify_composite_documents_proof(
         &self,
         proof: &[u8],

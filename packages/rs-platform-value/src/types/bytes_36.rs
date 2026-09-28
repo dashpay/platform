@@ -3,12 +3,14 @@ use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode, DecodeUntrusted,
+)]
 pub struct Bytes36(pub [u8; 36]);
 
 impl Bytes36 {

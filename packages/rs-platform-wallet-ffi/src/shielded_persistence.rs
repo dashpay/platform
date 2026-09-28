@@ -130,7 +130,7 @@ pub struct ShieldedActivityFFI {
     pub kind_tag: u8,
     /// Direction: 0 In, 1 Out, 2 Self.
     pub direction: u8,
-    /// Status: 0 Pending, 1 Confirmed, 2 Failed.
+    /// Status: 0 Pending, 1 Confirmed, 2 Failed, 3 Unknown.
     pub status: u8,
     /// Display amount in credits (principal; excludes self-change and
     /// zero-value fillers).

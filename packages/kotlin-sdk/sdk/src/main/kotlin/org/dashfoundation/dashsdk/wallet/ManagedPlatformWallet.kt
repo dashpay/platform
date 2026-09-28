@@ -904,10 +904,15 @@ class ManagedPlatformWallet internal constructor(
      * gating a submit button on [WithdrawalPreflight.canWithdraw] keeps it in
      * lockstep with what the spend accepts. Runs on [Dispatchers.IO] (the
      * Rust side polls a proof query on an 8 MB-stack worker).
+     *
+     * [coreFeePerByte] must match the rate passed to the withdrawal: from
+     * protocol version 14 the Core fee is carved out of the withdrawn amount,
+     * so the minimum net the preflight enforces is the protocol floor plus the
+     * Core fee at that rate. The default is the minimum valid rate.
      */
     suspend fun preflightWithdrawal(
         accountIndex: Int = 0,
-        coreFeePerByte: Int = 0,
+        coreFeePerByte: Int = 1,
     ): WithdrawalPreflight = withContext(Dispatchers.IO) {
         val triple = mapNativeErrors {
             WalletManagerNative.walletPlatformAddressPreflightWithdrawal(
@@ -1079,11 +1084,12 @@ class ManagedPlatformWallet internal constructor(
      * Swift `WithdrawalPreflightFFI` message carries. Returns null when the
      * withdrawal can proceed (no reason to show) or no message was recorded.
      * Complements [preflightWithdrawal], whose `canWithdraw` flag remains the
-     * authoritative gate.
+     * authoritative gate. [coreFeePerByte] must match the rate passed to the
+     * withdrawal, as for [preflightWithdrawal].
      */
     suspend fun preflightWithdrawalReason(
         accountIndex: Int = 0,
-        coreFeePerByte: Int = 0,
+        coreFeePerByte: Int = 1,
     ): String? = withContext(Dispatchers.IO) {
         mapNativeErrors {
             WalletManagerNative.walletPlatformAddressPreflightWithdrawalReason(

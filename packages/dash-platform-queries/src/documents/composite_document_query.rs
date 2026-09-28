@@ -63,7 +63,10 @@ pub struct CompositeBinding {
     pub source_property: String,
     /// The sub-query field receiving the `IN` clause. `$id` makes the
     /// sub-query a by-id JOIN (the source property must then declare
-    /// `refersTo: permanentDocument` targeting the sub-query's type);
+    /// `refersTo: permanentDocument` or `refersTo: deletableDocument`
+    /// targeting the sub-query's type; with the latter a derived id
+    /// whose document was deleted since is left out of the documents and
+    /// reported among that sub-result's missing ids);
     /// otherwise `$ownerId` or an indexed property (a LOOKUP).
     pub field: String,
 }

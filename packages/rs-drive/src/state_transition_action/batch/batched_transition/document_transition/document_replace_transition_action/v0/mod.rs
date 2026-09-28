@@ -1,5 +1,6 @@
 pub mod transformer;
 
+use dpp::data_contract::document_type::property_constraints::AggregateRead;
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
@@ -40,8 +41,32 @@ pub struct DocumentReplaceTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
     /// Updated fields
     pub changed_data_fields: BTreeSet<String>,
+    /// The subset of `changed_data_fields` the stored document had no value
+    /// for: properties this replace supplies for the first time. Read by the
+    /// immutable-property check, which lets a property listed under
+    /// `immutableAllowSetting` through exactly when it is set from absent.
+    pub added_data_fields: BTreeSet<String>,
+    /// The identifier each REMOVED top-level property held in the stored
+    /// document (removed properties that held anything else are absent).
+    /// Read by the immutable-property check, which lets an `immutable`
+    /// `deletableDocument` reference be cleared once the document it
+    /// pointed at is gone: the stored value is the only record of what
+    /// that was.
+    pub removed_identifier_fields: BTreeMap<String, Identifier>,
+    /// The stored value of each `changed_data_fields` property the stored
+    /// document held (the changed and the removed ones, not the added ones).
+    /// Read by the reference validation, which re-validates only the
+    /// elements of a changed typed array of references that the stored list
+    /// did not already hold, as an unchanged single reference is not
+    /// re-validated either.
+    pub stored_changed_values: BTreeMap<String, Value>,
     /// Creator id
     pub creator_id: Option<Identifier>,
+    /// The `countOf` and `sumOf` totals the document type's `propertyConstraints` rules
+    /// read, each as it will be once this write is done, read from state when the action is
+    /// built; `None` when the rules judging the write read none, and boxed, since only
+    /// such a write holds any and the action is one variant of a large enum.
+    pub property_constraint_aggregates: Option<Box<BTreeMap<AggregateRead, i128>>>,
 }
 
 /// document replace transition action accessors v0
@@ -81,11 +106,26 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
 
     /// The fields that have changed
     fn changed_data_fields(&self) -> &BTreeSet<String>;
+    /// The changed fields the stored document had no value for (set for the
+    /// first time by this replace)
+    fn added_data_fields(&self) -> &BTreeSet<String>;
+    /// The identifier each removed top-level property held in the stored
+    /// document
+    fn removed_identifier_fields(&self) -> &BTreeMap<String, Identifier>;
+    /// The stored value of each changed property the stored document held
+    fn stored_changed_values(&self) -> &BTreeMap<String, Value>;
     /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
 
     /// creator id
     fn creator_id(&self) -> Option<Identifier>;
+
+    /// The `countOf` and `sumOf` totals the rules judging this write read, each as it will
+    /// be once the write is done
+    fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128>;
+
+    /// Sets the totals the rules judging this write read, once they are read from state
+    fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>);
 }
 
 /// document from replace transition v0

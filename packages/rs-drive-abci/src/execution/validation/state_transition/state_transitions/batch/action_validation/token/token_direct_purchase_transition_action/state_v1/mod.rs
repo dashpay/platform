@@ -1,0 +1,104 @@
+use dpp::block::block_info::BlockInfo;
+use dpp::consensus::ConsensusError;
+use dpp::consensus::state::state_error::StateError;
+use dpp::consensus::state::token::TokenMintPastMaxSupplyError;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::prelude::Identifier;
+use dpp::validation::SimpleConsensusValidationResult;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::{TokenDirectPurchaseTransitionAction, TokenDirectPurchaseTransitionActionAccessorsV0};
+use dpp::version::PlatformVersion;
+use drive::error::drive::DriveError;
+use drive::query::TransactionArg;
+use crate::error::Error;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::TokenBaseTransitionActionValidation;
+use crate::platform_types::platform::PlatformStateRef;
+
+pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait TokenDirectPurchaseTransitionActionStateValidationV1 {
+    fn validate_state_v1(
+        &self,
+        platform: &PlatformStateRef,
+        owner_id: Identifier,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
+}
+impl TokenDirectPurchaseTransitionActionStateValidationV1 for TokenDirectPurchaseTransitionAction {
+    // Security note: direct purchases intentionally do NOT check token pause status.
+    // A paused token restricts transfers but not purchases. This allows token issuers
+    // to pause trading/movement while still permitting new buyers to acquire tokens
+    // (e.g., during a distribution event or when transfers are temporarily frozen for
+    // compliance reasons). This is by design, not a missing check.
+    fn validate_state_v1(
+        &self,
+        platform: &PlatformStateRef,
+        owner_id: Identifier,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        let validation_result = self.base().validate_state(
+            platform,
+            owner_id,
+            block_info,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        let contract = &self.data_contract_fetch_info_ref().contract;
+        let token_configuration = contract.expected_token_configuration(self.token_position())?;
+
+        // The total supply is stored in a sum item, so `i64::MAX` caps it even when the token
+        // configures no max supply. v0 checked only a configured max supply, so a purchase past
+        // `i64::MAX` passed validation and then failed in execution as an internal error, which
+        // charges nothing. The ceiling is checked here like a max supply.
+        let max_supply = token_configuration
+            .max_supply()
+            .map_or(i64::MAX as u64, |max_supply| {
+                max_supply.min(i64::MAX as u64)
+            });
+
+        let (token_total_supply, fee) = platform.drive.fetch_token_total_supply_with_cost(
+            self.token_id().to_buffer(),
+            block_info,
+            transaction,
+            platform_version,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+        let Some(token_total_supply) = token_total_supply else {
+            return Err(Error::Drive(drive::error::Error::Drive(
+                DriveError::CorruptedDriveState(format!(
+                    "token {} total supply not found",
+                    self.token_id()
+                )),
+            )));
+        };
+        // A sum that overflows would also always go over the max supply.
+        if token_total_supply
+            .checked_add(self.token_count())
+            .is_none_or(|total_supply_after_purchase| total_supply_after_purchase > max_supply)
+        {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(
+                    TokenMintPastMaxSupplyError::new(
+                        self.token_id(),
+                        self.token_count(),
+                        token_total_supply,
+                        max_supply,
+                    ),
+                )),
+            ));
+        }
+
+        Ok(SimpleConsensusValidationResult::new())
+    }
+}

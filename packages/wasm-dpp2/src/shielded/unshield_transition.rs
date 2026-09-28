@@ -5,7 +5,7 @@ use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_
 use crate::utils::try_from_options;
 use crate::utils::try_vec_to_fixed_bytes;
 use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::state_transition::unshield_transition::v0::UnshieldTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
@@ -194,7 +194,7 @@ impl UnshieldTransitionWasm {
 
     #[wasm_bindgen(js_name = fromBytes)]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<UnshieldTransitionWasm> {
-        let st = StateTransition::deserialize_from_bytes(&bytes)?;
+        let st = StateTransition::deserialize_from_bytes_untrusted(&bytes)?;
         match st {
             StateTransition::Unshield(inner) => Ok(inner.into()),
             _ => Err(WasmDppError::invalid_argument(

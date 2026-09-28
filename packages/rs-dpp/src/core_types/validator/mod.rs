@@ -1,5 +1,9 @@
 use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 use crate::core_types::validator::v0::{ValidatorV0, ValidatorV0Getters, ValidatorV0Setters};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use dashcore::{ProTxHash, PubkeyHash};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -21,10 +25,10 @@ pub enum Validator {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for Validator {}
+impl JsonConvertible for Validator {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for Validator {}
+impl ValueConvertible for Validator {}
 
 impl ValidatorV0Getters for Validator {
     fn pro_tx_hash(&self) -> &ProTxHash {

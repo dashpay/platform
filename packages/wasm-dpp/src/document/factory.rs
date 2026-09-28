@@ -145,7 +145,7 @@ impl DocumentFactoryWASM {
 
         let documents_by_action = extract_documents_by_action(documents)?;
 
-        for (_, documents) in documents_by_action.iter() {
+        for documents in documents_by_action.values() {
             for document in documents.iter() {
                 if !contract_ids_to_check.contains(&document.data_contract().id()) {
                     return Err(JsValue::from_str(

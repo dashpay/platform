@@ -16,10 +16,9 @@
 //! everything from chain.
 
 use dpp::document::{Document, DocumentV0};
-use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
@@ -381,23 +380,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             op: PendingContactCryptoOp::ContactInfoDecrypt,
             enqueued_at_ms,
         };
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-                return;
-            };
-            let Some(managed) = info.identity_manager.managed_identity_mut(owner_id) else {
-                tracing::warn!(
-                    owner = %owner_id,
-                    "contactInfo-decrypt enqueue for a non-resident identity; dropping"
-                );
-                return;
-            };
-            upsert_pending_contact_crypto(
-                managed.dashpay_pending_contact_crypto_mut(),
-                entry.clone(),
+        // Serialize the queue write with identity removal under the same guard.
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return;
+        };
+        let Some(managed) = info.identity_manager.managed_identity_mut(owner_id) else {
+            tracing::warn!(
+                owner = %owner_id,
+                "contactInfo-decrypt enqueue for a non-resident identity; dropping"
             );
-        }
+            return;
+        };
+        upsert_pending_contact_crypto(managed.dashpay_pending_contact_crypto_mut(), entry.clone());
         let changeset = PlatformWalletChangeSet {
             pending_contact_crypto_added: vec![entry],
             ..Default::default()
@@ -543,6 +538,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // here; the encrypt step below reuses these bytes.
         let plaintext = encode_private_data_bounded(&metadata)?;
 
+        let dashpay_contract = super::dashpay_contract()?;
+
         // 1. Local state first — works offline and feeds SwiftData.
         let (established_count, identity_index, signing_key, root_key_id) = {
             let mut wm = self.wallet_manager.write().await;
@@ -567,15 +564,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             let established_count = managed.dashpay().established_contacts().len();
             let identity_index = managed.identity_index;
-            let signing_key = managed
-                .identity
-                .get_first_public_key_matching(
-                    Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
-                    false,
-                )
-                .cloned();
+            let signing_key = super::usable_authentication_key(
+                &managed.identity,
+                dashpay_contract.id(),
+                "contactInfo",
+                &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+                &[KeyType::ECDSA_SECP256K1],
+            )
+            .cloned();
             // Shared own-ECDH-root selector (same policy as the
             // contact-request send path); `Option` preserved — a missing
             // key defers the publish rather than erroring here.
@@ -749,7 +745,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             creator_id: None,
         });
 
-        let dashpay_contract = super::dashpay_contract()?;
         let document_type = dashpay_contract
             .document_type_for_name("contactInfo")
             .map_err(|e| {
@@ -776,5 +771,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             "Published contactInfo document"
         );
         Ok(ContactInfoPublishOutcome::Published)
+    }
+}
+
+#[cfg(test)]
+mod pending_enqueue_tests {
+    #[tokio::test]
+    async fn should_serialize_contact_info_enqueue_with_identity_removal() {
+        let (iw, owner, backend) = super::super::pending_crypto_tests::fixture().await;
+        iw.dashpay().enqueue_contact_info_decrypt(&owner).await;
+        assert_eq!(backend.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
+        super::super::pending_crypto_tests::remove_owner(&iw, &owner).await;
+        iw.dashpay().enqueue_contact_info_decrypt(&owner).await;
+        assert_eq!(backend.writes.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }

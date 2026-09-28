@@ -1,3 +1,4 @@
+pub mod action_fee_agreement;
 mod batch_transition;
 pub mod batched_transition;
 pub mod document_base_transition;

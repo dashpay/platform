@@ -246,6 +246,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var coreAddressesByAddress: [String: PersistentCoreAddress] = [:]
     }
     private var roundIndex: ChangesetRoundIndex?
+    /// Number of persistence rounds committed by this handler, read and
+    /// compared on `serialQueue`. The store reconcile classifies rows off
+    /// this queue and applies the verdicts on it; a round committed in
+    /// between may have re-credited one of them (a reorg of the spender
+    /// delivers the coin back in `utxos_added`), so a flip is refused when
+    /// the count moved since the rows were read, and the page is
+    /// classified again.
+    private(set) var committedRoundGeneration: UInt64 = 0
 
     /// Set when the open round advanced either half of the tombstone
     /// finality boundary — `syncedHeight` through the changeset callback or
@@ -255,6 +263,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// round's single save. Cleared by `beginChangeset` and `endChangeset`.
     /// Confined to `serialQueue` like all other mutable handler state.
     private var roundAdvancedFinalityBoundary = false
+
+    /// The engine's credit verdicts for the open round — every `Received` /
+    /// `Change` output this round's records carry that the engine did NOT
+    /// credit to the owning account — keyed by the 36-byte outpoint.
+    /// Delivered through the extension's
+    /// `on_persist_wallet_changeset_utxo_verdicts_fn` BEFORE the changeset
+    /// callback, so `upsertUtxo` consults it while it materialises the
+    /// round's `utxos_added`: a row for a coin the engine never held would
+    /// otherwise be written unspent, restored into the engine at the next
+    /// launch, and show as a phantom balance (rust-dashcore#992). An
+    /// outpoint absent here is credited — the ordinary case. Kept outside
+    /// `ChangesetRoundIndex` so it survives an unindexed round. Cleared by
+    /// `beginChangeset` and `endChangeset`. Confined to `serialQueue`.
+    private var roundUtxoCreditVerdicts: [Data: UtxoCreditVerdictFFI] = [:]
+
+    /// How `upsertUtxo` applied the round's verdicts — logged once, as
+    /// counts, by `endChangeset`. Confined to `serialQueue`.
+    private var roundUtxoCreditTally = UtxoCreditVerdictTally()
 
     /// Breadcrumb backfills that arrived on the serial queue while a
     /// changeset round was open. The backfill both mutates
@@ -1414,6 +1440,36 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// would have Rust clear the sweep while the dead row survives to be
     /// replayed at the next load.
     @discardableResult
+    /// Stage the round's credit verdicts (see `roundUtxoCreditVerdicts`).
+    /// Fired by Rust inside the begin/end bracket BEFORE the changeset
+    /// callback, only on rounds that carry at least one verdict. Nothing is
+    /// written here — the verdicts are applied by `upsertUtxo` when the
+    /// round's `utxos_added` entries arrive, and a verdict for an outpoint
+    /// no entry names is simply dropped with the round.
+    func persistWalletChangesetUtxoVerdicts(
+        walletId: Data,
+        verdicts: UnsafePointer<UtxoCreditVerdictFFI>?,
+        count: UInt
+    ) -> Bool {
+        onQueue {
+            switch roundWalletLookup(walletId: walletId, callback: "wallet_changeset_utxo_verdicts") {
+            case .failed: return false
+            case .absent: return true
+            case .found: break
+            }
+            guard count > 0, let verdictsPtr = verdicts else { return true }
+            for i in 0..<Int(count) {
+                let entry = verdictsPtr[i]
+                let outpoint = PersistentTxo.makeOutpoint(
+                    txid: hashData(entry.outpoint.txid),
+                    vout: entry.outpoint.vout
+                )
+                roundUtxoCreditVerdicts[outpoint] = entry
+            }
+            return true
+        }
+    }
+
     func persistWalletChangesetSweeps(
         walletId: Data,
         sweeps: UnsafePointer<SweepBatchFFI>?,
@@ -2088,14 +2144,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return try backgroundContext.fetch(descriptor).first
     }
 
-    /// Predicate matching the `PersistentWallet` row owned by THIS
-    /// handler. A handler is constructed per-network, so when
-    /// `self.network` is set we scope to `(walletId, networkRaw)` —
-    /// otherwise the mainnet handler would find and overwrite the
-    /// devnet row (and vice versa) now that the same `walletId` can
-    /// have one row per network. When `self.network` is `nil` (the
-    /// advanced `configure(sdkPointer:network:nil)` path) we fall
-    /// back to walletId-only matching to preserve that behaviour.
+    /// Match this handler's wallet and, when supplied, its network.
+    /// Wallet IDs are network-scoped and globally unique in the current model;
+    /// checking the network also rejects stale or mismatched rows. Legacy
+    /// `network: nil` handlers retain walletId-only matching.
     private func walletRecordPredicate(walletId: Data) -> Predicate<PersistentWallet> {
         if let network = self.network {
             let networkRaw = network.rawValue
@@ -2313,6 +2365,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     /// Resolve a `PersistentTxo` by its unique 36-byte `outpoint`.
     private func fetchTxoRow(outpoint: Data) -> PersistentTxo? {
+        try? fetchTxoRowChecked(outpoint: outpoint)
+    }
+
+    /// Throwing core of `fetchTxoRow`: `nil` is a successful miss, a read
+    /// that fails throws. Round writers take the `nil` (a miss and a failed
+    /// read both mean "write the row"); the reconcile passes must not,
+    /// because for them a miss is an insert and a failed read is a stop.
+    private func fetchTxoRowChecked(outpoint: Data) throws -> PersistentTxo? {
         if let known = roundIndex?.txosByOutpoint[outpoint] {
             return known.isDeleted ? nil : known
         }
@@ -2321,7 +2381,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         descriptor.fetchLimit = 1
         if roundIndex != nil { descriptor.includePendingChanges = false }
-        guard let row = (try? backgroundContext.fetch(descriptor))?.first,
+        guard let row = try modelFetcher.fetch(descriptor, in: backgroundContext).first,
               !row.isDeleted else { return nil }
         roundIndex?.txosByOutpoint[outpoint] = row
         return row
@@ -2774,7 +2834,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // linked spender with context at or above InstantSend-locked:
         // confirmed evidence on record is never displaced by a re-delivery
         // (the pending-input resolve and the spend emit own that link).
-        if redelivered, record.isSpent {
+        // The engine's verdict on this very output, if it did NOT credit
+        // it (see `roundUtxoCreditVerdicts`). Any verdict vetoes the
+        // recovery clear below: the wallet is not handing this coin back
+        // as unspent — its record merely still names the output as ours.
+        let creditVerdict = roundUtxoCreditVerdicts[outpoint]
+        if creditVerdict == nil, redelivered, record.isSpent {
             let settledSpender = record.spendingTransaction.map {
                 $0.context >= TransactionContextType.instantSend.rawValue
             } ?? false
@@ -2784,6 +2849,33 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 if record.spendingTransaction == nil {
                     record.spendingInputIndex = nil
                 }
+            }
+        }
+        if let creditVerdict {
+            switch creditVerdict.verdict {
+            case UtxoCreditVerdictCode.observedSpent, UtxoCreditVerdictCode.doomed:
+                // Block-context evidence that a coin is not spendable: the
+                // wallet observed a block spending it before the output was
+                // recognised (the spender may never have been recorded —
+                // rust-dashcore#992), or the record can never confirm. The
+                // row is written spent with no spender link; `isSpent` is
+                // monotonic, so a row already spent is left as it is.
+                if record.isSpent {
+                    roundUtxoCreditTally.alreadySpent += 1
+                } else {
+                    record.isSpent = true
+                    if creditVerdict.verdict == UtxoCreditVerdictCode.observedSpent {
+                        roundUtxoCreditTally.observedSpent += 1
+                    } else {
+                        roundUtxoCreditTally.doomed += 1
+                    }
+                }
+            default:
+                // No context: the coin was taken between emit and drain, or
+                // carries an account-level spent mark. The spender's own
+                // record or the sweep callback settles it; here the verdict
+                // only kept the recovery clear from resurrecting the row.
+                roundUtxoCreditTally.uncredited += 1
             }
         }
 
@@ -2799,15 +2891,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
         }
 
-        // Resolve any deferred spend signal that landed before this
-        // TXO existed. `upsertTransaction` writes a
-        // `PersistentPendingInput` row for every input outpoint
-        // whose previous-output isn't in SwiftData yet; the matching
-        // upsert here drains those rows and stamps `isSpent` on the
-        // TXO. Symmetric with the resolve path in
-        // `upsertTransaction`, so the spend signal is order-
-        // independent at this layer regardless of which side arrives
-        // first.
+        drainPendingInputs(into: record, resolvedWalletId: resolvedWalletId)
+    }
+
+    /// Resolve any deferred spend signal that landed before this TXO
+    /// existed. `upsertTransaction` writes a `PersistentPendingInput` row
+    /// for every input outpoint whose previous-output isn't in SwiftData
+    /// yet; the matching upsert here drains those rows and stamps
+    /// `isSpent` on the TXO. Symmetric with the resolve path in
+    /// `upsertTransaction`, so the spend signal is order-independent at
+    /// this layer regardless of which side arrives first. Shared by
+    /// `upsertUtxo` and the store reconcile's heal path
+    /// (`reconcileHealMissingTxos`), so both writers honour the same
+    /// tombstone precedence and spender-adoption rules.
+    private func drainPendingInputs(into record: PersistentTxo, resolvedWalletId: Data) {
         let pendingRows = pendingInputRows(outpoint: record.outpoint)
         if !pendingRows.isEmpty {
             // A tombstone is not an observation — it is a sweep's settled
@@ -3092,6 +3189,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         // boundary `min(chainlockHeight, syncedHeight)` needs the number.
         extensionCallbacks.on_persist_wallet_changeset_chain_lock_height_fn =
             persistWalletChangesetChainLockHeightCallback
+        // The engine's credit verdicts — the outputs a round's records call
+        // ours that the engine did not credit — ride a slot of their own
+        // for the same reason, and are fired BEFORE the changeset callback
+        // so `upsertUtxo` has them in hand (see `roundUtxoCreditVerdicts`).
+        extensionCallbacks.on_persist_wallet_changeset_utxo_verdicts_fn =
+            persistWalletChangesetUtxoVerdictsCallback
+        extensionCallbacks.on_persist_identity_balance_block_time_fn = persistIdentityBalanceBlockTimeCallback
+        extensionCallbacks.on_load_identity_balance_block_time_fn = loadIdentityBalanceBlockTimeCallback
         return extensionCallbacks
     }
 
@@ -3173,6 +3278,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     func beginChangeset(walletId: Data) {
         onQueue {
             self.inChangeset = true
+            self.roundUtxoCreditVerdicts = [:]
+            self.roundUtxoCreditTally = UtxoCreditVerdictTally()
             SDKLogger.event(
                 "persistence_changeset_started",
                 category: .persistence,
@@ -3240,6 +3347,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // rows the store fetch finds on its own, and after a rollback the
             // context has un-inserted every one of them.
             defer {
+                if self.roundUtxoCreditTally.total > 0 {
+                    // Counts only: the outpoints themselves are wallet
+                    // history and never leave the store.
+                    SDKLogger.event(
+                        "persistence_txo_credit_verdicts",
+                        category: .persistence,
+                        fields: [
+                            "already_spent_count": .integer(Int64(self.roundUtxoCreditTally.alreadySpent)),
+                            "doomed_count": .integer(Int64(self.roundUtxoCreditTally.doomed)),
+                            "observed_spent_count": .integer(Int64(self.roundUtxoCreditTally.observedSpent)),
+                            "round_success": .boolean(success),
+                            "uncredited_count": .integer(Int64(self.roundUtxoCreditTally.uncredited)),
+                            "wallet_reference": .reference(walletId),
+                        ]
+                    )
+                }
+                self.roundUtxoCreditVerdicts = [:]
+                self.roundUtxoCreditTally = UtxoCreditVerdictTally()
                 self.roundIndex = nil
                 self.roundAdvancedFinalityBoundary = false
                 self.inChangeset = false
@@ -3285,6 +3410,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
                 do {
                     try backgroundContext.save()
+                    committedRoundGeneration &+= 1
                     SDKLogger.event(
                         "persistence_changeset_committed",
                         category: .persistence,
@@ -3811,26 +3937,38 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             )
             // Project the snapshot's ContractBounds enum into the
-            // pair of columns `PersistentPublicKey` uses:
-            //   * `contractBoundsIds` — `[contractId]` (or nil)
-            //   * `contractBoundsDocumentTypeName` — non-nil iff the
+            // three columns `PersistentPublicKey` uses:
+            //   * `contractBoundsIds`: `[boundId]` (or nil)
+            //   * `contractBoundsDocumentTypeName`: non-nil iff the
             //     bound was `.singleContractDocumentType`
-            // Keeping both lets the SwiftData row round-trip both
-            // variants verbatim; legacy stores without the
-            // doc-type column just see `nil` for the second field
-            // and reconstruct as `.singleContract`.
+            //   * `contractBoundsKind`: the FFI discriminant
+            // Keeping all three lets the SwiftData row round-trip
+            // every variant verbatim. The kind is what separates
+            // `.contractGroup` from `.singleContract`: both carry a
+            // bare id, so a store that only had the first two columns
+            // restored a group bound as unbounded. Legacy rows
+            // written before the column exists leave it `nil` and
+            // keep the old inference.
             let snapshotBoundsIds: [Data]?
             let snapshotBoundsDocType: String?
+            let snapshotBoundsKind: Int
             switch entry.contractBounds {
             case .some(.singleContract(let id)):
                 snapshotBoundsIds = [id]
                 snapshotBoundsDocType = nil
+                snapshotBoundsKind = 1
             case .some(.singleContractDocumentType(let id, let name)):
                 snapshotBoundsIds = [id]
                 snapshotBoundsDocType = name
+                snapshotBoundsKind = 2
+            case .some(.contractGroup(let id)):
+                snapshotBoundsIds = [id]
+                snapshotBoundsDocType = nil
+                snapshotBoundsKind = 3
             case .none:
                 snapshotBoundsIds = nil
                 snapshotBoundsDocType = nil
+                snapshotBoundsKind = 0
             }
 
             let row: PersistentPublicKey
@@ -3850,6 +3988,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     disabledAt: entry.disabledAt.map { Int64(bitPattern: $0) },
                     contractBounds: snapshotBoundsIds,
                     contractBoundsDocumentTypeName: snapshotBoundsDocType,
+                    contractBoundsKind: snapshotBoundsKind,
                     identityId: identityHex
                 )
                 backgroundContext.insert(row)
@@ -3877,6 +4016,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // scope) must overwrite any stale value here.
             row.contractBounds = snapshotBoundsIds
             row.contractBoundsDocumentTypeName = snapshotBoundsDocType
+            row.contractBoundsKind = snapshotBoundsKind
+
+            // Usage limits (protocol version 14). Rust is the source of
+            // truth on every callback, and a key limits update raises a
+            // budget / moves an expiry in place, so the row follows the
+            // snapshot rather than keeping whatever it held: a key whose
+            // budget was just raised must not read back at the old value.
+            row.totalBudgetCredits = entry.totalBudget
+            row.expiresAtMillis = entry.expiresAt
 
             // Private-key handling: no secret crosses the FFI. A
             // wallet-derivable key whose private bytes were materialized by
@@ -4765,6 +4913,55 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         return (written, skipped, failed)
     }
 
+    // MARK: - Identity balance freshness (additive persistence extension)
+
+    private func balanceMetadataDescriptor(walletId: Data, identityId: Data)
+        -> FetchDescriptor<PersistentIdentityBalanceMetadata> {
+        // Match legacy identity persistence when the wallet's network is unresolved.
+        let network = self.network ?? walletNetwork(walletId: walletId) ?? .testnet
+        let networkRaw = network.rawValue
+        return FetchDescriptor(predicate: #Predicate {
+            $0.networkRaw == networkRaw && $0.walletId == walletId && $0.identityId == identityId
+        })
+    }
+
+    func persistIdentityBalanceBlockTime(walletId: Data, identityId: Data, blockTime: BlockTime?) throws {
+        try onQueue {
+            guard inChangeset else {
+                throw PlatformWalletError.walletOperation("Balance metadata requires an identity changeset")
+            }
+            let descriptor = balanceMetadataDescriptor(walletId: walletId, identityId: identityId)
+            let existing = try backgroundContext.fetch(descriptor).first
+            guard let blockTime else {
+                if let existing { backgroundContext.delete(existing) }
+                return
+            }
+            if let existing {
+                existing.platformHeight = Int64(bitPattern: blockTime.height)
+                existing.coreHeight = blockTime.core_height
+                existing.timestampMillis = Int64(bitPattern: blockTime.timestamp)
+            } else {
+                // An unresolved legacy network can mislabel this sidecar as testnet;
+                // scoped deletion may retain it until an unscoped orphan purge.
+                let network = self.network ?? walletNetwork(walletId: walletId) ?? .testnet
+                backgroundContext.insert(PersistentIdentityBalanceMetadata(
+                    networkRaw: network.rawValue, walletId: walletId, identityId: identityId,
+                    platformHeight: blockTime.height, coreHeight: blockTime.core_height,
+                    timestampMillis: blockTime.timestamp))
+            }
+            // endChangeset performs the atomic save with the balance itself.
+        }
+    }
+
+    func loadIdentityBalanceBlockTime(walletId: Data, identityId: Data) throws -> BlockTime? {
+        try onQueue {
+            let descriptor = balanceMetadataDescriptor(walletId: walletId, identityId: identityId)
+            guard let row = try backgroundContext.fetch(descriptor).first else { return nil }
+            return BlockTime(height: UInt64(bitPattern: row.platformHeight), core_height: row.coreHeight,
+                             timestamp: UInt64(bitPattern: row.timestampMillis))
+        }
+    }
+
     // MARK: - Identity snapshot structs
 
     /// Swift-side snapshot of the Rust `IdentityEntryFFI` with C
@@ -4872,6 +5069,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let keyType: UInt8
         let readOnly: Bool
         let disabledAt: UInt64?
+        /// Usage limit (protocol version 14): the credits the key may take
+        /// from the identity over its whole lifetime. `nil` for a key
+        /// without a budget.
+        let totalBudget: UInt64?
+        /// Usage limit (protocol version 14): the block time in
+        /// milliseconds from which the key can no longer sign. `nil` for a
+        /// key without an expiry.
+        let expiresAt: UInt64?
         let publicKeyData: Data
         let publicKeyHash: Data
         /// Owning wallet if this key is derivable from one we control.
@@ -4882,11 +5087,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let derivationIndices: (identityIndex: UInt32, keyIndex: UInt32)?
         /// Full ContractBounds projection mirrored from Rust:
         /// `nil` when the key has no bounds; `.singleContract` for
-        /// kind=1; `.singleContractDocumentType` for kind=2. Carried
-        /// so the SwiftData row preserves the doc-type name on
-        /// round-trip (would otherwise be silently downgraded to
-        /// `.singleContract` and break local DPP projections that
-        /// read `identity.identityPublicKeys`).
+        /// kind=1; `.singleContractDocumentType` for kind=2;
+        /// `.contractGroup` for kind=3. Carried so the SwiftData row
+        /// preserves the doc-type name on round-trip (would
+        /// otherwise be silently downgraded to `.singleContract` and
+        /// break local DPP projections that read
+        /// `identity.identityPublicKeys`) and so a group bound is not
+        /// mistaken for a whole-contract one.
         let contractBounds: ManagedPlatformWallet.ContractBounds?
     }
 
@@ -6101,7 +6308,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    /// Wipe a wallet's SwiftData footprint.
+    /// Discard completed legacy-migration snapshots for this store before an
+    /// explicit wallet deletion, even when there are no live wallet rows left.
+    /// Full snapshots can contain multiple wallets; their removal leaves all
+    /// current live rows intact. Pending recovery and cleanup errors are fatal.
+    /// Call before removing associated keys so failures remain retryable.
+    public func deleteCompletedMigrationSnapshots() throws {
+        try onQueue { try deleteCompletedMigrationSnapshotsOnQueue() }
+    }
+
+    private func deleteCompletedMigrationSnapshotsOnQueue() throws {
+        let urls = Set(modelContainer.configurations
+            .filter { !$0.isStoredInMemoryOnly }.map(\.url))
+        for url in urls.sorted(by: { $0.path < $1.path }) {
+            try DashLegacySchemaBridge.deleteCompletedSnapshots(at: url)
+        }
+    }
+
+    /// Wipe a wallet's SwiftData footprint, including completed store snapshots.
     public func deleteWalletData(walletId: Data) throws {
         SDKLogger.event(
             "persistence_wallet_delete_started",
@@ -6110,11 +6334,37 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         )
         try onQueue {
             do {
+                // Run before the first saved deletion, including retries where
+                // the wallet row is already absent. Stay on the handler queue.
+                try deleteCompletedMigrationSnapshotsOnQueue()
                 let walletDescriptor = FetchDescriptor<PersistentWallet>(
                     predicate: walletRecordPredicate(walletId: walletId)
                 )
                 let walletRow = try backgroundContext.fetch(walletDescriptor).first
                 let walletNetwork = walletRow?.network
+                // Sidecars retain an explicit network key. Preserve other-network
+                // rows even when retrying after this handler's wallet row is gone.
+                let metadataNetwork = self.network ?? walletNetwork
+                let metadata: FetchDescriptor<PersistentIdentityBalanceMetadata>
+                if let raw = metadataNetwork?.rawValue {
+                    metadata = FetchDescriptor(predicate: #Predicate {
+                        $0.walletId == walletId && $0.networkRaw == raw
+                    })
+                } else {
+                    metadata = FetchDescriptor(predicate: #Predicate { $0.walletId == walletId })
+                }
+                // Without a network, only unclaimed sidecars are safe to purge.
+                // Do not infer ownership from an unrelated handler's network.
+                var claimedNetworks = Set<UInt32>()
+                if metadataNetwork == nil {
+                    let owners = FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate { $0.walletId == walletId })
+                    claimedNetworks = Set(try backgroundContext.fetch(owners).compactMap(\.networkRaw))
+                }
+                for row in try backgroundContext.fetch(metadata)
+                    where !claimedNetworks.contains(row.networkRaw) {
+                    backgroundContext.delete(row)
+                }
 
                 if let walletRow = walletRow {
                     // Wallet → identities is `.nullify`; this delete
@@ -6463,7 +6713,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// A wallet is "restorable" when it has at least one
     /// `PersistentAccount` row with non-empty
     /// `accountExtendedPubKeyBytes`. The Rust side reconstructs the
-    /// watch-only `Wallet` via `Wallet::new_watch_only(network,
+    /// external-signable `Wallet` via `Wallet::new_external_signable(network,
     /// wallet_id, accounts)`; accounts come directly from the spec
     /// array, wallet id from the top-level struct.
     ///
@@ -7014,6 +7264,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             entry.unresolved_asset_lock_tx_records = unresolvedBuf.map { UnsafePointer($0) }
             entry.unresolved_asset_lock_tx_records_count = UInt(unresolvedCount)
 
+            // Sends still unconfirmed on the host. Replayed Rust-side so
+            // their spend effect survives the restart; without it the
+            // input comes back spendable and the balance re-counts the
+            // coin — permanently, for a send that never reached the
+            // network. Asset-lock funding rows are excluded here because
+            // they already ride the array above and `resume_asset_lock`
+            // owns them.
+            let (unconfirmedBuf, unconfirmedCount) =
+                buildUnconfirmedOutgoingTxRecordBuffer(
+                    rows: unspentBuckets[w.walletId] ?? [],
+                    allocation: allocation,
+                    excludingTxids: unresolvedAssetLockFundingTxids(walletId: w.walletId)
+                )
+            entry.unconfirmed_outgoing_tx_records = unconfirmedBuf.map { UnsafePointer($0) }
+            entry.unconfirmed_outgoing_tx_records_count = UInt(unconfirmedCount)
+
             // Provider special transactions (ProRegTx / ProUpServTx /
             // ProUpRegTx / ProUpRevTx) re-staged onto the provider-key
             // accounts so #876 retention keeps them and the masternode
@@ -7515,6 +7781,127 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// transaction table) are skipped — the Rust side has no way to
     /// reconstruct a transaction without its consensus bytes, so
     /// projecting an empty row would just bloat the FFI surface.
+    /// Project the sends this wallet still holds as unconfirmed into the
+    /// FFI restore array, so the Rust load path can replay their spend
+    /// effect (see `ClientWalletStartState::unconfirmed_outgoing_txs`).
+    ///
+    /// Why this is needed at all: `spendIsInBlock` deliberately withholds
+    /// `isSpent` from an input whose spender is only in the mempool,
+    /// because that sighting is reversible by eviction. The UTXO restore
+    /// therefore hands the input back as spendable, and the balance
+    /// re-counts the coin. A running app never showed this — it held the
+    /// spend in memory — and a restart used to recover it only by
+    /// re-observing the transaction on the network, which never happens
+    /// for a send that did not reach the network in the first place.
+    ///
+    /// The selection is driven from the TXO side rather than the
+    /// transaction side, which makes the liveness rule fall out for free:
+    /// a row is offered only while one of *our* outputs still points at it
+    /// as its spender and is still unspent. A send that already lost a
+    /// conflict has had its inputs flipped by the winning spender, so it
+    /// drops out on its own — important, because the FFI restore does not
+    /// rebuild `observed_spent`, so Rust could not make that judgement.
+    ///
+    /// Asset-lock funding transactions are excluded: they ride
+    /// `unresolved_asset_lock_tx_records` and already have an owner in
+    /// `resume_asset_lock`. One owner per transaction.
+    ///
+    /// Takes the bucketed `isSpent == false` rows the caller already
+    /// fetched rather than querying by `walletId` again: that bucketing
+    /// routes a legacy row whose `walletId` was never backfilled through
+    /// `account.wallet.walletId`, and it prefetches `spendingTransaction`,
+    /// which this pass reads for every row.
+    /// Wire-order txids of the funding transactions already carried by
+    /// `unresolved_asset_lock_tx_records`. Read from the same rows that
+    /// buffer selects from, through the same decoder, rather than
+    /// re-deriving a txid from the serialized bytes.
+    private func unresolvedAssetLockFundingTxids(walletId: Data) -> Set<Data>? {
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate { entry in
+                entry.walletId == walletId && entry.statusRaw < 2
+            }
+        )
+        // `nil`, not an empty set, when the fetch fails: an empty exclusion
+        // set reads as "this wallet has no unresolved asset locks", which
+        // would let a funding transaction into the ordinary replay even
+        // though `resume_asset_lock` owns it. The caller offers nothing at
+        // all instead — one launch without a replay, rather than a
+        // transaction applied through the wrong path.
+        guard let locks = try? backgroundContext.fetch(descriptor) else { return nil }
+        return Set(locks.compactMap { Self.assetLockFundingTxid(outPointHex: $0.outPointHex) })
+    }
+
+    private func buildUnconfirmedOutgoingTxRecordBuffer(
+        rows txos: [PersistentTxo],
+        allocation: LoadAllocation,
+        excludingTxids excluded: Set<Data>?
+    ) -> (UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>?, Int) {
+        // Fail closed: without a trustworthy exclusion set we cannot tell an
+        // asset-lock funding transaction from an ordinary send.
+        guard let excluded else {
+            SDKLogger.event(
+                "persistence_unconfirmed_outgoing_skipped",
+                category: .persistence,
+                severity: .error,
+                fields: ["reason": .publicText("asset_lock_exclusion_fetch_failed")]
+            )
+            return (nil, 0)
+        }
+        guard !txos.isEmpty else { return (nil, 0) }
+
+        // Distinct spenders, still unconfirmed, still ours to replay.
+        var candidates: [Data: PersistentTransaction] = [:]
+        for txo in txos {
+            guard let spender = txo.spendingTransaction else { continue }
+            // Mirror `spendIsInBlock` exactly: it withholds `isSpent` for
+            // every context below `inBlock`, so an InstantSend-locked send
+            // (context 1) leaves its input unspent in the store too and needs
+            // the same replay. Filtering on `== 0` covered only half of that.
+            guard spender.context < TransactionContextType.inBlock.rawValue,
+                  spender.blockHeight == 0
+            else { continue }
+            guard !spender.transactionData.isEmpty else { continue }
+            guard !excluded.contains(spender.txid) else { continue }
+            candidates[spender.txid] = spender
+        }
+        guard !candidates.isEmpty else { return (nil, 0) }
+
+        // Ascending `firstSeen`: a parent send must be replayed before a
+        // child that spends its change, or the child finds no input and is
+        // discarded as irrelevant.
+        let ordered = candidates.values.sorted { $0.firstSeen < $1.firstSeen }
+
+        var entries: [UnconfirmedOutgoingTxRecordFFI] = []
+        entries.reserveCapacity(ordered.count)
+        for row in ordered {
+            let txBytes = row.transactionData
+            // Carry the row's identity so Rust can refuse bytes that do not
+            // hash to it. The replay applies the transaction through the
+            // ordinary state-update path, so a stale or partially-written
+            // `transactionData` would move accounting for inputs and outputs
+            // that have nothing to do with this send.
+            guard row.txid.count == 32 else { continue }
+            let txBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: txBytes.count)
+            txBytes.copyBytes(to: txBuf, count: txBytes.count)
+            allocation.scalarBuffers.append((txBuf, txBytes.count))
+            var entry = UnconfirmedOutgoingTxRecordFFI()
+            withUnsafeMutableBytes(of: &entry.txid) { raw in
+                raw.copyBytes(from: row.txid)
+            }
+            entry.tx_bytes = txBuf
+            entry.tx_bytes_len = UInt(txBytes.count)
+            entry.first_seen = row.firstSeen
+            entries.append(entry)
+        }
+
+        let buf = UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>.allocate(
+            capacity: entries.count
+        )
+        buf.initialize(from: entries, count: entries.count)
+        allocation.unconfirmedOutgoingTxRecordArrays.append((buf, entries.count))
+        return (buf, entries.count)
+    }
+
     private func buildUnresolvedAssetLockTxRecordBuffer(
         walletId: Data,
         allocation: LoadAllocation
@@ -7837,30 +8224,45 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
                     // Mirror the contract-bounds projection into
                     // the restore row so scoped keys (DashPay's
-                    // SingleContractDocumentType, in particular)
-                    // come back with their full variant on cold
-                    // restart instead of silently degrading to
-                    // unbounded. Encoding matches
-                    // `IdentityKeyEntryFFI` on the persist side:
+                    // SingleContractDocumentType, and AUTHENTICATION
+                    // keys bound to a contract group) come back with
+                    // their full variant on cold restart instead of
+                    // silently degrading to unbounded. Encoding
+                    // matches `IdentityKeyEntryFFI` on the persist
+                    // side:
                     //   * kind=0 → no bounds; id zeroed, doc-type null
                     //   * kind=1 → SingleContract; id meaningful
                     //   * kind=2 → SingleContractDocumentType; id +
                     //     doc-type both meaningful
-                    // Length-validated by `pk.publicKeyData.count
-                    // == 32` (matches the gating in
-                    // `toIdentityPublicKey()`); a row with a
-                    // wrong-length id falls back to "no bounds"
-                    // rather than crashing FFI marshalling on the
-                    // Rust side.
-                    if let id = pk.contractBounds?.first, id.count == 32 {
+                    //   * kind=3 → ContractGroup; id meaningful (a
+                    //     group id), doc-type null
+                    // The kind comes off the row when it was stored
+                    // and from the legacy inference when it was not
+                    // (`effectiveContractBoundsKind`). A kind=2 row
+                    // whose doc-type went missing demotes to kind=1,
+                    // the same demotion Rust performs, rather than
+                    // handing the decoder a null doc-type for a
+                    // variant that needs one. Id length is validated
+                    // here; a row with a wrong-length id, or a kind
+                    // this build does not know, falls back to "no
+                    // bounds" rather than crashing FFI marshalling on
+                    // the Rust side or asserting a bound we cannot
+                    // describe.
+                    let boundsKind = pk.effectiveContractBoundsKind
+                    if (1...3).contains(boundsKind),
+                        let id = pk.contractBounds?.first, id.count == 32 {
                         withUnsafeMutableBytes(of: &row.contract_bounds_id) { dst in
                             id.copyBytes(to: dst.bindMemory(to: UInt8.self).baseAddress!, count: 32)
                         }
-                        if let docType = pk.contractBoundsDocumentTypeName, !docType.isEmpty {
+                        let docType = pk.contractBoundsDocumentTypeName
+                        if boundsKind == 2, let docType = docType, !docType.isEmpty {
                             row.contract_bounds_kind = 2
                             row.contract_bounds_document_type = UnsafePointer(
                                 duplicateCString(docType, allocation: allocation)
                             )
+                        } else if boundsKind == 3 {
+                            row.contract_bounds_kind = 3
+                            row.contract_bounds_document_type = nil
                         } else {
                             row.contract_bounds_kind = 1
                             row.contract_bounds_document_type = nil
@@ -7868,6 +8270,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     } else {
                         row.contract_bounds_kind = 0
                         row.contract_bounds_document_type = nil
+                    }
+
+                    // Usage limits (protocol version 14). Without them a
+                    // key registered with a budget or an expiry would come
+                    // back unlimited on cold restart, and the restored
+                    // identity would offer it for signing work consensus
+                    // rejects. `total_budget` is credits; `expires_at` is
+                    // block time in milliseconds.
+                    if let totalBudget = pk.totalBudgetCredits {
+                        row.total_budget_is_some = true
+                        row.total_budget = totalBudget
+                    } else {
+                        row.total_budget_is_some = false
+                        row.total_budget = 0
+                    }
+                    if let expiresAt = pk.expiresAtMillis {
+                        row.expires_at_is_some = true
+                        row.expires_at = expiresAt
+                    } else {
+                        row.expires_at_is_some = false
+                        row.expires_at = 0
                     }
 
                     keyBuf[k] = row
@@ -8654,6 +9077,10 @@ private final class LoadAllocation {
     /// so the next chain-lock event can cascade-promote them. The
     /// `tx_bytes` buffer each row references lives in `scalarBuffers`.
     var unresolvedAssetLockTxRecordArrays: [(UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>, Int)] = []
+    /// `UnconfirmedOutgoingTxRecordFFI` arrays per wallet. The `tx_bytes`
+    /// each entry points at are staged on `scalarBuffers`, like the
+    /// asset-lock records above.
+    var unconfirmedOutgoingTxRecordArrays: [(UnsafeMutablePointer<UnconfirmedOutgoingTxRecordFFI>, Int)] = []
     /// Per-wallet `ProviderSpecialTxRestoreEntryFFI` arrays — provider
     /// special txs re-staged so #876 retention keeps them resident after a
     /// restart. The `tx_bytes` buffer each row references lives in
@@ -8731,6 +9158,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in unresolvedAssetLockTxRecordArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in unconfirmedOutgoingTxRecordArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
@@ -8985,6 +9416,36 @@ private func persistWalletChangesetChainLockHeightCallback(
     return handler.persistWalletChangesetChainLockHeight(
         walletId: walletId,
         height: chainLockHeight
+    ) ? 0 : 1
+}
+
+/// C shim for the extension's
+/// `on_persist_wallet_changeset_utxo_verdicts_fn` — the engine's credit
+/// verdicts for the round, fired inside the same begin/end bracket BEFORE
+/// the changeset callback so `upsertUtxo` can consult them while it
+/// materialises the round's UTXO rows. Same non-zero-fails-the-round
+/// contract as its siblings: a verdict dropped here would leave a phantom
+/// coin the store hands back to the engine at the next load.
+private func persistWalletChangesetUtxoVerdictsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    verdictsPtr: UnsafePointer<UtxoCreditVerdictFFI>?,
+    verdictsCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    return handler.persistWalletChangesetUtxoVerdicts(
+        walletId: walletId,
+        verdicts: verdictsPtr,
+        count: verdictsCount
     ) ? 0 : 1
 }
 
@@ -9500,6 +9961,8 @@ private func persistIdentityKeysCallback(
             //   0 → no bounds
             //   1 → SingleContract { id }
             //   2 → SingleContractDocumentType { id, doc_type_name }
+            //   3 → ContractGroup { id } (id is a group id, doc-type
+            //       pointer is always null)
             // The doc-type C-string for kind=2 is owned by Rust and
             // freed via `free_identity_key_entry_ffi` after this
             // callback returns, so we copy it into a Swift String
@@ -9519,6 +9982,8 @@ private func persistIdentityKeysCallback(
                 } else {
                     bounds = nil
                 }
+            case 3:
+                bounds = .contractGroup(id: dataFromTuple32(e.contract_bounds_id))
             default:
                 bounds = nil
             }
@@ -9531,6 +9996,8 @@ private func persistIdentityKeysCallback(
                 keyType: e.key_type,
                 readOnly: e.read_only,
                 disabledAt: e.disabled_at_is_some ? e.disabled_at : nil,
+                totalBudget: e.total_budget_is_some ? e.total_budget : nil,
+                expiresAt: e.expires_at_is_some ? e.expires_at : nil,
                 publicKeyData: pubKey,
                 publicKeyHash: dataFromTuple20(e.public_key_hash),
                 walletId: walletId,
@@ -10634,4 +11101,473 @@ private func persistDashpayPaymentsCallback(
 
     handler.persistDashpayPayments(walletId: walletId, entriesByOwner: entriesByOwner)
     return 0
+}
+
+// MARK: - Credit verdicts
+
+/// The `verdict` codes of `UtxoCreditVerdictFFI`, mirroring the
+/// `UTXO_CREDIT_VERDICT_*` constants in
+/// `rs-platform-wallet-ffi/src/core_wallet_types.rs`. Kept as typed Swift
+/// constants so the `switch` in `upsertUtxo` compares like with like.
+private enum UtxoCreditVerdictCode {
+    /// The wallet observed a block at `spent_at_height` spending the
+    /// outpoint before the output was recognised (rust-dashcore#649 skip;
+    /// the spender may be unrecorded — rust-dashcore#992).
+    static let observedSpent: UInt8 = 1
+    /// The record is unconfirmed and one of its inputs was already spent
+    /// in a block; nothing it created was credited.
+    static let doomed: UInt8 = 2
+    /// Not credited for a reason the bridge cannot name; no context.
+    static let uncredited: UInt8 = 3
+}
+
+/// Per-round tally of how `upsertUtxo` applied the engine's credit
+/// verdicts. Logged as counts by `endChangeset`.
+private struct UtxoCreditVerdictTally {
+    /// Rows written spent on an observed-spent verdict.
+    var observedSpent = 0
+    /// Rows written spent on a doomed verdict.
+    var doomed = 0
+    /// Rows that were already spent when their verdict arrived.
+    var alreadySpent = 0
+    /// Context-free verdicts, which only vetoed the recovery clear.
+    var uncredited = 0
+
+    var total: Int { observedSpent + doomed + alreadySpent + uncredited }
+}
+
+// MARK: - Core TXO store reconcile
+
+/// One step of the store reconcile, run on `serialQueue` as its own
+/// closure so a Rust persistence round is never interleaved with a
+/// half-applied step (see `PlatformWalletManager.reconcileCoreTxoStore`).
+enum CoreTxoReconcileStep<T: Sendable>: Sendable {
+    /// A Rust changeset round is open; nothing was read or written. The
+    /// caller retries shortly — saving mid-round would commit the round's
+    /// staged rows early.
+    case retryLater
+    /// The step's writes failed to save and were rolled back.
+    case failed
+    case done(T)
+}
+
+/// One unspent store row of the wallet, with the query the engine
+/// classifies it by.
+struct CoreTxoStoreUnspentRow: Sendable {
+    let outpoint: Data
+    let amount: UInt64
+    let query: CoreOutpointOwnershipQuery
+}
+
+/// A page of `CoreTxoStoreUnspentRow`s. `fetched` counts every row the
+/// page read before the wallet filter, so an offset walk can advance
+/// exactly.
+struct CoreTxoStoreUnspentPage: Sendable {
+    let rows: [CoreTxoStoreUnspentRow]
+    let fetched: Int
+    let hasMore: Bool
+    /// `committedRoundGeneration` as read together with the rows.
+    let generation: UInt64
+}
+
+/// Counts from one heal step.
+struct CoreTxoHealCounts: Sendable {
+    var inserted = 0
+    var insertedDuffs: UInt64 = 0
+    /// Rows the drain of pending inputs wrote spent on insert — not repairs.
+    var healedSpent = 0
+    var alreadyPresent = 0
+    var skippedImmature = 0
+    var skippedUnresolvedAccount = 0
+    var skippedInvalid = 0
+}
+
+/// Counts from one classify-apply step.
+struct CoreTxoFlipCounts: Sendable {
+    var flipped = 0
+    var flippedDuffs: UInt64 = 0
+    var unspent = 0
+    var unknown = 0
+    var notOwned = 0
+    /// Rows that changed under the walk (already spent, or gone).
+    var stale = 0
+    /// A round committed between the read and the apply: nothing written,
+    /// the page is classified again.
+    var staleGeneration = false
+}
+
+extension PlatformWalletPersistenceHandler {
+    /// Heal pass: insert every engine coin in `rows` that the store lacks,
+    /// validated and gated — never touch a row that exists.
+    ///
+    /// A row is inserted exactly as `upsertUtxo` would insert it (stub
+    /// parent transaction when the record is absent, account relationship,
+    /// wallet denorm, address link, pending-input drain) so both writers
+    /// honour the same rules. Gates, in order: a malformed row (txid not
+    /// 32 bytes, empty script or address) is skipped; a coin the engine
+    /// does not call confirmed, or below `minConfirmations` at `tipHeight`,
+    /// is skipped (the inventory
+    /// carries the engine's own flags, but a fresh coin can still reorg or,
+    /// for coinbase, be immature — it ages into a later run); a coin whose
+    /// owning account has no store row is skipped and counted rather than
+    /// filed unowned, because the restore loader routes by account and an
+    /// unowned row would be dropped at the next launch, recreating the loss.
+    /// Inserted rows are `isConfirmed == true` — the gate guarantees it.
+    /// A store read that fails is not a skip: the step fails and the run
+    /// stops, like the unspent-page read in the classify pass.
+    func reconcileHealMissingTxos(
+        walletId: Data,
+        rows: [CoreEngineUtxo],
+        tipHeight: UInt32,
+        minConfirmations: UInt32
+    ) -> CoreTxoReconcileStep<CoreTxoHealCounts> {
+        onQueue {
+            guard !inChangeset else { return .retryLater }
+            var counts = CoreTxoHealCounts()
+            for row in rows {
+                guard row.txid.count == 32, !row.scriptPubKey.isEmpty, !row.address.isEmpty else {
+                    counts.skippedInvalid += 1
+                    continue
+                }
+                // The engine's own confirmation flag first, then the depth
+                // this store requires before it materialises a coin it never
+                // saw arrive. Which accounts may be healed at all is the
+                // engine's call: `wallet_utxos_page` omits a contact's
+                // watch-only chain.
+                guard row.isConfirmed, row.height > 0, tipHeight >= row.height,
+                      tipHeight - row.height + 1 >= minConfirmations
+                else {
+                    counts.skippedImmature += 1
+                    continue
+                }
+                let outpoint = row.outpoint
+                let present: PersistentTxo?
+                do {
+                    present = try fetchTxoRowChecked(outpoint: outpoint)
+                } catch {
+                    return reconcileReadFailed(walletId: walletId, error: error)
+                }
+                if present != nil {
+                    counts.alreadyPresent += 1
+                    continue
+                }
+                let accountRow: PersistentAccount?
+                do {
+                    accountRow = try findAccountRow(walletId: walletId, key: row.account)
+                } catch {
+                    return reconcileReadFailed(walletId: walletId, error: error)
+                }
+                guard let account = accountRow else {
+                    counts.skippedUnresolvedAccount += 1
+                    continue
+                }
+                let parentTx: PersistentTransaction
+                if let existing = fetchTransactionRow(txid: row.txid) {
+                    parentTx = existing
+                } else {
+                    // Stub row, exactly as `upsertUtxo` does: empty bytes read
+                    // back as a miss on the persister-fallback decode path,
+                    // and the real record overwrites every field when it
+                    // arrives.
+                    parentTx = PersistentTransaction(txid: row.txid, transactionData: Data())
+                    backgroundContext.insert(parentTx)
+                }
+                let record = PersistentTxo(
+                    transaction: parentTx,
+                    vout: row.vout,
+                    amount: row.amount,
+                    address: row.address,
+                    scriptPubKey: row.scriptPubKey,
+                    height: row.height
+                )
+                record.account = account
+                record.walletId = walletId
+                record.isCoinbase = row.isCoinbase
+                record.isConfirmed = true
+                record.isInstantLocked = row.isInstantLocked
+                record.isLocked = row.isLocked
+                backgroundContext.insert(record)
+                if let coreAddr = coreAddressRow(address: row.address) {
+                    record.coreAddress = coreAddr
+                }
+                drainPendingInputs(into: record, resolvedWalletId: walletId)
+                if record.isSpent {
+                    // A pending-input claim or a swept tombstone already
+                    // covered this outpoint, so the drain wrote the row spent
+                    // on the spot. That is not a repair of the divergence the
+                    // engine reported — the engine holds the coin, the store
+                    // now says spent, and nothing un-marks a spent row — so it
+                    // is counted on its own for the operator to see.
+                    counts.healedSpent += 1
+                    SDKLogger.event(
+                        "persistence_txo_reconcile_item",
+                        category: .persistence,
+                        fields: [
+                            "action": .publicText("healed_spent"),
+                            "outpoint_reference": .reference(outpoint),
+                            "wallet_reference": .reference(walletId),
+                        ]
+                    )
+                    continue
+                }
+                counts.inserted += 1
+                counts.insertedDuffs = counts.insertedDuffs.addingReportingOverflow(row.amount).0
+                SDKLogger.event(
+                    "persistence_txo_reconcile_item",
+                    category: .persistence,
+                    fields: [
+                        "action": .publicText("healed"),
+                        "outpoint_reference": .reference(outpoint),
+                        "wallet_reference": .reference(walletId),
+                    ]
+                )
+            }
+            guard counts.inserted + counts.healedSpent == 0
+                || reconcileSave(operation: "txo_reconcile_heal", walletId: walletId)
+            else {
+                return .failed
+            }
+            return .done(counts)
+        }
+    }
+
+    /// Classify pass, read half: the wallet's `isSpent == false` rows from
+    /// `offset`, at most `limit`, each with the query the engine classifies
+    /// it by. Rows without an account or a well-formed txid are skipped:
+    /// the engine could not name their account, and a spend it cannot
+    /// attribute is not a verdict. Rows of other wallets are read past
+    /// (`fetched` counts them) — the walk is an offset walk over every
+    /// unspent row, ordered by creation, because the outpoint key is not
+    /// comparable in a SwiftData predicate; rows flipped by the apply half
+    /// leave the predicate, and the caller advances by `fetched - flipped`.
+    func reconcileUnspentTxoPage(
+        walletId: Data,
+        offset: Int,
+        limit: Int
+    ) -> CoreTxoReconcileStep<CoreTxoStoreUnspentPage> {
+        onQueue {
+            guard !inChangeset else { return .retryLater }
+            var descriptor = FetchDescriptor<PersistentTxo>(
+                predicate: #Predicate { $0.isSpent == false },
+                sortBy: [SortDescriptor(\.createdAt)]
+            )
+            descriptor.fetchOffset = offset
+            descriptor.fetchLimit = limit
+            descriptor.relationshipKeyPathsForPrefetching = [\.account]
+            let fetched: [PersistentTxo]
+            do {
+                fetched = try modelFetcher.fetch(descriptor, in: backgroundContext)
+            } catch {
+                SDKLogger.event(
+                    "persistence_txo_reconcile_read_failed",
+                    category: .persistence,
+                    severity: .error,
+                    fields: ["wallet_reference": .reference(walletId)],
+                    error: error
+                )
+                return .failed
+            }
+            var rows: [CoreTxoStoreUnspentRow] = []
+            for txo in fetched {
+                guard Self.resolvedWalletId(of: txo) == walletId,
+                      let account = txo.account,
+                      let typeTag = UInt8(exactly: account.accountType)
+                else { continue }
+                let txid = txo.txid
+                guard txid.count == 32 else { continue }
+                let key = CoreAccountKey(
+                    typeTag: typeTag,
+                    standardTag: account.standardTag,
+                    index: account.accountIndex,
+                    registrationIndex: account.registrationIndex,
+                    keyClass: account.keyClass,
+                    userIdentityId: account.userIdentityId,
+                    friendIdentityId: account.friendIdentityId
+                )
+                rows.append(CoreTxoStoreUnspentRow(
+                    outpoint: txo.outpoint,
+                    amount: txo.amount,
+                    query: CoreOutpointOwnershipQuery(
+                        account: key,
+                        txid: txid,
+                        vout: txo.vout,
+                        scriptPubKey: txo.scriptPubKey
+                    )
+                ))
+            }
+            return .done(CoreTxoStoreUnspentPage(
+                rows: rows,
+                fetched: fetched.count,
+                hasMore: fetched.count == limit,
+                generation: committedRoundGeneration
+            ))
+        }
+    }
+
+    /// Classify pass, write half: apply the engine's verdicts to the rows
+    /// they were asked about. Only `knownUncredited` writes: the row is
+    /// marked spent with no spender link (the spender may never have been
+    /// recorded — rust-dashcore#992), any pending-input claims on it are
+    /// dropped, and `isSpent` is monotonic so a row already spent is left
+    /// alone. `unspent`, `unknown` and `notOwned` are counted, never acted
+    /// on: absence of a coin from the engine proves nothing, and a spent
+    /// row is never un-marked by anything here. A verdict is applied only
+    /// against the store it was read from: the engine was asked off this
+    /// queue, and a round committed since the rows were read
+    /// (`expectedGeneration`) may have re-credited one of them, so then
+    /// nothing is written and the caller classifies the page again.
+    func reconcileApplyEngineClasses(
+        walletId: Data,
+        rows: [CoreTxoStoreUnspentRow],
+        classes: [CoreOutpointClass],
+        expectedGeneration: UInt64
+    ) -> CoreTxoReconcileStep<CoreTxoFlipCounts> {
+        onQueue {
+            guard !inChangeset else { return .retryLater }
+            guard committedRoundGeneration == expectedGeneration else {
+                var stale = CoreTxoFlipCounts()
+                stale.staleGeneration = true
+                return .done(stale)
+            }
+            var counts = CoreTxoFlipCounts()
+            for (row, verdict) in zip(rows, classes) {
+                switch verdict {
+                case .unspent:
+                    counts.unspent += 1
+                case .unknown:
+                    counts.unknown += 1
+                case .notOwned:
+                    counts.notOwned += 1
+                case .knownUncredited:
+                    let current: PersistentTxo?
+                    do {
+                        current = try fetchTxoRowChecked(outpoint: row.outpoint)
+                    } catch {
+                        return reconcileReadFailed(walletId: walletId, error: error)
+                    }
+                    guard let txo = current, !txo.isSpent else {
+                        counts.stale += 1
+                        continue
+                    }
+                    txo.isSpent = true
+                    txo.lastUpdated = Date()
+                    removePendingInputs(for: row.outpoint)
+                    counts.flipped += 1
+                    counts.flippedDuffs = counts.flippedDuffs.addingReportingOverflow(txo.amount).0
+                    SDKLogger.event(
+                        "persistence_txo_reconcile_item",
+                        category: .persistence,
+                        fields: [
+                            "action": .publicText("flipped_spent"),
+                            "outpoint_reference": .reference(row.outpoint),
+                            "wallet_reference": .reference(walletId),
+                        ]
+                    )
+                }
+            }
+            guard counts.flipped == 0 || reconcileSave(operation: "txo_reconcile_flip", walletId: walletId) else {
+                return .failed
+            }
+            return .done(counts)
+        }
+    }
+
+    /// Non-creating lookup of the store's account row for an engine
+    /// account key — the same tuple match `applyAccountChangeset` performs,
+    /// minus the insert on miss. `nil` is a successful miss; a read that
+    /// fails throws, so the caller can tell the two apart.
+    private func findAccountRow(walletId: Data, key: CoreAccountKey) throws -> PersistentAccount? {
+        let typeTag = UInt32(key.typeTag)
+        let accountIndex = key.index
+        let descriptor = FetchDescriptor<PersistentAccount>(
+            predicate: #Predicate {
+                $0.wallet.walletId == walletId
+                    && $0.accountType == typeTag
+                    && $0.accountIndex == accountIndex
+            }
+        )
+        let rows = try modelFetcher.fetch(descriptor, in: backgroundContext)
+        // A row that predates the identity columns carries `Data()` where
+        // the engine projects 32 zero bytes; both mean "no identity".
+        func identity(_ data: Data) -> Data {
+            data.isEmpty ? Data(count: 32) : data
+        }
+        return rows.first { row in
+            row.standardTag == key.standardTag
+                && row.registrationIndex == key.registrationIndex
+                && row.keyClass == key.keyClass
+                && identity(row.userIdentityId) == identity(key.userIdentityId)
+                && identity(row.friendIdentityId) == identity(key.friendIdentityId)
+        }
+    }
+
+    /// A store read failed inside a reconcile step: log it, drop whatever
+    /// the step had staged so the next Rust round starts on a clean
+    /// context, and fail the step — the run stops and counts a store
+    /// failure. A failed read is never a miss.
+    private func reconcileReadFailed<T>(walletId: Data, error: Error) -> CoreTxoReconcileStep<T> {
+        SDKLogger.event(
+            "persistence_txo_reconcile_read_failed",
+            category: .persistence,
+            severity: .error,
+            fields: ["wallet_reference": .reference(walletId)],
+            error: error
+        )
+        backgroundContext.rollback()
+        return .failed
+    }
+
+    /// Save one reconcile step's writes, or roll them back so the next
+    /// Rust round starts on a clean context (`beginChangeset` runs a dirty
+    /// round unindexed). Returns whether the save landed.
+    private func reconcileSave(operation: String, walletId: Data) -> Bool {
+        do {
+            try backgroundContext.save()
+            return true
+        } catch {
+            backgroundContext.rollback()
+            SDKLogger.event(
+                "persistence_txo_reconcile_save_failed",
+                category: .persistence,
+                severity: .error,
+                fields: [
+                    "operation": .publicText(operation),
+                    "wallet_reference": .reference(walletId),
+                ],
+                error: error
+            )
+            return false
+        }
+    }
+}
+
+private func persistIdentityBalanceBlockTimeCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?,
+    identityId: UnsafePointer<UInt8>?, blockTime: UnsafePointer<BlockTime>?
+) -> Int32 {
+    guard let context, let walletId, let identityId else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        try handler.persistIdentityBalanceBlockTime(
+            walletId: Data(bytes: walletId, count: 32), identityId: Data(bytes: identityId, count: 32),
+            blockTime: blockTime?.pointee)
+        return 0
+    } catch { return -1 }
+}
+
+private func loadIdentityBalanceBlockTimeCallback(
+    context: UnsafeMutableRawPointer?, walletId: UnsafePointer<UInt8>?, identityId: UnsafePointer<UInt8>?,
+    outFound: UnsafeMutablePointer<Bool>?, outBlockTime: UnsafeMutablePointer<BlockTime>?
+) -> Int32 {
+    guard let context, let walletId, let identityId, let outFound, let outBlockTime else { return -1 }
+    outFound.pointee = false
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    do {
+        if let stamp = try handler.loadIdentityBalanceBlockTime(
+            walletId: Data(bytes: walletId, count: 32), identityId: Data(bytes: identityId, count: 32)) {
+            outBlockTime.pointee = stamp
+            outFound.pointee = true
+        }
+        return 0
+    } catch { return -1 }
 }

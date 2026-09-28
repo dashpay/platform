@@ -297,13 +297,15 @@ impl RequestSequenceValidator {
     }
 
     fn finish(&self) -> Result<(), Box<dyn Error>> {
-        if self.last_height.is_some() && (!self.saw_process || !self.saw_finalize) {
-            return Err(format!(
-                "log {} ended before height {} had both process_proposal and finalize_block",
-                self.path.display(),
-                self.last_height.unwrap()
-            )
-            .into());
+        if let Some(last_height) = self.last_height {
+            if !self.saw_process || !self.saw_finalize {
+                return Err(format!(
+                    "log {} ended before height {} had both process_proposal and finalize_block",
+                    self.path.display(),
+                    last_height
+                )
+                .into());
+            }
         }
         Ok(())
     }

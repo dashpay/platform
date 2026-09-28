@@ -6,7 +6,7 @@ use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::{
     Abstain, Lock, TowardsIdentity,
 };
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,9 @@ use std::fmt;
 /// In this case Malaka might have a bad connotation in Greek, hence some might votes to Lock
 /// the name.
 ///
-#[derive(Debug, Clone, Copy, Encode, Decode, Ord, Eq, PartialOrd, PartialEq, Default)]
+#[derive(
+    Debug, Clone, Copy, Encode, Decode, Ord, Eq, PartialOrd, PartialEq, Default, DecodeUntrusted,
+)]
 // Custom `Serialize` / `Deserialize` below — `derive(Serialize, Deserialize)`
 // can't produce the desired flat wire shape because the `TowardsIdentity`
 // variant wraps `Identifier` (a tuple struct that serializes as a base58

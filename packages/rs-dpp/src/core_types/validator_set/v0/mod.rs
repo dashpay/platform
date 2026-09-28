@@ -1,7 +1,7 @@
 use crate::bls_signatures::PublicKey as BlsPublicKey;
 use crate::core_types::validator::v0::ValidatorV0;
 #[cfg(feature = "core-types-serialization")]
-use bincode::de::{BorrowDecoder, Decoder};
+use bincode::de::BorrowDecoder;
 #[cfg(feature = "core-types-serialization")]
 use bincode::enc::Encoder;
 #[cfg(feature = "core-types-serialization")]
@@ -98,51 +98,61 @@ impl Encode for ValidatorSetV0 {
     }
 }
 
-#[cfg(feature = "core-types-serialization")]
-impl<C> Decode<C> for ValidatorSetV0 {
-    fn decode<D: Decoder<Context = C>>(
-        decoder: &mut D,
-    ) -> Result<Self, bincode::error::DecodeError> {
-        // Decode the quorum hash directly as a [u8; 32] array
-        let quorum_hash = <[u8; 32]>::decode(decoder)?;
-        let quorum_index = Option::<u32>::decode(decoder)?;
-        let core_height = u32::decode(decoder)?;
+// Share the wire schema and domain checks across both decoding APIs.
+macro_rules! impl_validator_set_v0_decode {
+    ($decode:ident, $decoder:ident, $method:ident, $untrusted:expr) => {
+        impl<C> bincode::$decode<C> for ValidatorSetV0 {
+            fn $method<D: bincode::de::$decoder<Context = C>>(
+                decoder: &mut D,
+            ) -> Result<Self, bincode::error::DecodeError> {
+                // Decode the quorum hash directly as a [u8; 32] array
+                let quorum_hash = <[u8; 32]>::$method(decoder)?;
+                let quorum_index = Option::<u32>::$method(decoder)?;
+                let core_height = u32::$method(decoder)?;
 
-        // Decode Vec<(Vec<u8>, ValidatorV0)> and convert it back to BTreeMap<ProTxHash, ValidatorV0>
-        let members_as_vec = Vec::<(Vec<u8>, ValidatorV0)>::decode(decoder)?;
-        let members: BTreeMap<ProTxHash, ValidatorV0> = members_as_vec
-            .into_iter()
-            .map(|(key_bytes, value)| {
-                let key = ProTxHash::from_slice(&key_bytes).map_err(|_| {
-                    bincode::error::DecodeError::OtherString(
-                        "Failed to decode ProTxHash".to_string(),
-                    )
-                })?;
-                Ok((key, value))
-            })
-            .collect::<Result<_, bincode::error::DecodeError>>()?;
+                // Decode Vec<(Vec<u8>, ValidatorV0)> and convert it back to BTreeMap<ProTxHash, ValidatorV0>
+                let members_as_vec = Vec::<(Vec<u8>, ValidatorV0)>::$method(decoder)?;
+                let members: BTreeMap<ProTxHash, ValidatorV0> = members_as_vec
+                    .into_iter()
+                    .map(|(key_bytes, value)| {
+                        let key = ProTxHash::from_slice(&key_bytes).map_err(|_| {
+                            bincode::error::DecodeError::OtherString(
+                                "Failed to decode ProTxHash".to_string(),
+                            )
+                        })?;
+                        Ok((key, value))
+                    })
+                    .collect::<Result<_, bincode::error::DecodeError>>()?;
 
-        // Decode the [u8; 48] directly
-        let mut public_key_bytes = [0u8; 48];
-        let bytes = <[u8; 48]>::decode(decoder)?;
-        public_key_bytes.copy_from_slice(&bytes);
-        let threshold_public_key =
-            BlsPublicKey::try_from(public_key_bytes.as_slice()).map_err(|e| {
-                bincode::error::DecodeError::OtherString(format!(
-                    "Failed to decode BlsPublicKey: {}",
-                    e
-                ))
-            })?;
+                // Decode the [u8; 48] directly
+                let mut public_key_bytes = [0u8; 48];
+                let bytes = <[u8; 48]>::$method(decoder)?;
+                public_key_bytes.copy_from_slice(&bytes);
+                let threshold_public_key = BlsPublicKey::try_from(public_key_bytes.as_slice())
+                    .map_err(|e| {
+                        bincode::error::DecodeError::OtherString(format!(
+                            "Failed to decode BlsPublicKey: {}",
+                            e
+                        ))
+                    })?;
 
-        Ok(ValidatorSetV0 {
-            quorum_hash: QuorumHash::from_byte_array(quorum_hash),
-            quorum_index,
-            core_height,
-            members,
-            threshold_public_key,
-        })
-    }
+                Ok(ValidatorSetV0 {
+                    quorum_hash: QuorumHash::from_byte_array(quorum_hash),
+                    quorum_index,
+                    core_height,
+                    members,
+                    threshold_public_key,
+                })
+            }
+        }
+    };
 }
+#[cfg(feature = "core-types-serialization")]
+impl_validator_set_v0_decode!(Decode, Decoder, decode, false);
+#[cfg(feature = "core-types-serialization")]
+impl_validator_set_v0_decode!(DecodeUntrusted, UntrustedDecoder, decode_untrusted, true);
+#[cfg(feature = "core-types-serialization")]
+bincode::impl_borrow_decode_untrusted!(ValidatorSetV0);
 
 #[cfg(feature = "core-types-serialization")]
 impl<'de, C> BorrowDecode<'de, C> for ValidatorSetV0 {

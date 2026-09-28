@@ -695,7 +695,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // checkpoints; matches the prior per-wallet default at
         // `PlatformWallet::bind_shielded`.
         let store = FileBackedShieldedStore::open_path(&db_path, 100)
-            .map_err(|e| crate::error::PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            .map_err(crate::error::PlatformWalletError::from)?;
 
         let coordinator = Arc::new(NetworkShieldedCoordinator::new(
             Arc::clone(&self.sdk),

@@ -331,7 +331,7 @@ impl Drive {
             );
 
             active_path_query.query.limit =
-                Some(platform_version.system_limits.max_contract_group_size);
+                Some(platform_version.system_limits.max_group_member_count);
 
             let signer_apply_type = if estimated_costs_only_with_layer_info.is_none() {
                 BatchMoveApplyType::StatefulBatchMove {

@@ -1,0 +1,58 @@
+{
+  "$formatVersion": "1",
+  "id": "4Bqs6itzfoDXzmgQibYZQABbqYsXmawVf7SKe3mKDQVd",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "message": {
+      "type": "object",
+      "documentsMutable": true,
+      "requiresIdentityEncryptionBoundedKey": 2,
+      "requiresIdentityDecryptionBoundedKey": 2,
+      "properties": {
+        "recipientId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0,
+          "refersTo": {
+            "type": "identityPublicKey",
+            "keyIdProperty": "recipientKeyId",
+            "keyRequirements": {
+              "purpose": "decryption",
+              "boundTo": "inbox"
+            }
+          }
+        },
+        "recipientKeyId": {
+          "type": "integer",
+          "position": 1,
+          "minimum": 0
+        },
+        "note": {
+          "type": "string",
+          "position": 2,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "inbox": {
+      "type": "object",
+      "requiresIdentityEncryptionBoundedKey": 2,
+      "requiresIdentityDecryptionBoundedKey": 2,
+      "properties": {
+        "label": {
+          "type": "string",
+          "position": 0,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

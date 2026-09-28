@@ -30,16 +30,22 @@ import DashSDKFFI
 
 /// Serves every read live except the one model type it is told to fault,
 /// and records the reads it saw so a test can prove which fetch failed.
-private final class FetchFaultInjector: ModelFetching, @unchecked Sendable {
+/// Shared by every test that needs one model's read to fail.
+final class FetchFaultInjector: ModelFetching, @unchecked Sendable {
     struct ReadFault: Error {}
 
     private let live = LiveModelFetcher()
     private let faulted: ObjectIdentifier
+    private let served: Int
     private let lock = NSLock()
     private var reads: [String] = []
+    private var faultedTypeReads = 0
 
-    init(faulting model: any PersistentModel.Type) {
+    /// Faults every read of `model` after the first `served` reads of it
+    /// have been answered live — `0` faults the first one.
+    init(faulting model: any PersistentModel.Type, afterServing served: Int = 0) {
         faulted = ObjectIdentifier(model)
+        self.served = served
     }
 
     /// Model names in the order they were read, the faulted one included.
@@ -55,8 +61,13 @@ private final class FetchFaultInjector: ModelFetching, @unchecked Sendable {
     ) throws -> [T] {
         lock.lock()
         reads.append(String(describing: T.self))
+        var fault = false
+        if ObjectIdentifier(T.self) == faulted {
+            faultedTypeReads += 1
+            fault = faultedTypeReads > served
+        }
         lock.unlock()
-        guard ObjectIdentifier(T.self) != faulted else { throw ReadFault() }
+        guard !fault else { throw ReadFault() }
         return try live.fetch(descriptor, in: context)
     }
 }

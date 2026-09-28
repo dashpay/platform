@@ -15,6 +15,7 @@ default = [
   "wallet-utils-contract",
   "token-history-contract",
   "keywords-contract",
+  "moderation-charters-contract",
   "mocks",
 ]
 
@@ -50,6 +51,10 @@ token-history-contract = [
 keywords-contract = [
   "dash-sdk/keywords-contract",
   "rs-sdk-trusted-context-provider/keywords-contract",
+]
+moderation-charters-contract = [
+  "dash-sdk/moderation-charters-contract",
+  "rs-sdk-trusted-context-provider/moderation-charters-contract",
 ]
 
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]

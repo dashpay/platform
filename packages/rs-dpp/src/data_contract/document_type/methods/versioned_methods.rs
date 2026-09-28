@@ -1,5 +1,11 @@
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::consensus::basic::document::DocumentPropertyConstraintViolatedError;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use crate::data_contract::document_type::property_constraints::{
+    DocumentSystemValues, PropertyConstraint, SystemChange,
+};
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -17,7 +23,10 @@ use crate::document::{Document, DocumentV0, DocumentV0Getters, INITIAL_REVISION}
 use crate::fee::Credits;
 use crate::identity::TimestampMillis;
 use crate::prelude::{BlockHeight, CoreBlockHeight};
-use crate::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use crate::validation::SimpleConsensusValidationResult;
+use crate::voting::vote_polls::contested_document_resource_vote_poll::{
+    required_vote_resolution_fund, ContestedDocumentResourceVotePoll,
+};
 use crate::voting::vote_polls::VotePoll;
 use crate::ProtocolError;
 use chrono::Utc;
@@ -357,14 +366,19 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     }
 
     /// Figures out the prefunded voting balance (v0) for a document in a document type
-    fn contested_vote_poll_for_document_v0(&self, document: &Document) -> Option<VotePoll> {
-        self.contested_vote_poll_for_document_properties_v0(document.properties())
+    fn contested_vote_poll_for_document_v0(
+        &self,
+        document: &Document,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
+        self.contested_vote_poll_for_document_properties_v0(document.properties(), platform_version)
     }
 
     fn contested_vote_poll_for_document_properties_v0(
         &self,
         document_properties: &BTreeMap<String, Value>,
-    ) -> Option<VotePoll> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<VotePoll>, ProtocolError> {
         self.indexes()
             .values()
             .find(|index| {
@@ -388,14 +402,24 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 }
             })
             .map(|index| {
-                let index_values = index.extract_values(document_properties);
-                VotePoll::ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll {
-                    contract_id: self.data_contract_id(),
-                    document_type_name: self.name().clone(),
-                    index_name: index.name.clone(),
-                    index_values,
-                })
+                // Identifier values are written one way from protocol version 14, so every
+                // contender of a contest names it with the same poll; before 14 they are taken
+                // as given, as they always were
+                let index_values = index.extract_contested_values(
+                    document_properties,
+                    self.flattened_properties(),
+                    platform_version,
+                )?;
+                Ok(VotePoll::ContestedDocumentResourceVotePoll(
+                    ContestedDocumentResourceVotePoll {
+                        contract_id: self.data_contract_id(),
+                        document_type_name: self.name().clone(),
+                        index_name: index.name.clone(),
+                        index_values,
+                    },
+                ))
             })
+            .transpose()
     }
 
     fn index_for_types_v0(
@@ -436,7 +460,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         let mut best_generic_difference = u16::MAX;
         let mut best_terminal: Option<(&Index, u16)> = None;
         let mut best_terminal_difference = u16::MAX;
-        for (_, index) in self.indexes().iter() {
+        for index in self.indexes().values() {
             if !filter(index) {
                 continue;
             }
@@ -474,7 +498,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
-        for (_, index) in self.indexes().iter() {
+        for index in self.indexes().values() {
             if !filter(index) {
                 continue;
             }
@@ -524,7 +548,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
-        for (_, index) in self.indexes().iter() {
+        for index in self.indexes().values() {
             if !filter(index) {
                 continue;
             }
@@ -560,7 +584,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         let mut best_generic_difference = u16::MAX;
         let mut best_terminal: Option<(&Index, u16)> = None;
         let mut best_terminal_difference = u16::MAX;
-        for (_, index) in self.indexes().iter() {
+        for index in self.indexes().values() {
             if !filter(index) {
                 continue;
             }
@@ -618,10 +642,26 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// Generation 0 plus the document serialization format 3
     /// contract-version stamp varint. Selected together with format 3 by
     /// the version table.
+    ///
+    /// Each property is sized by
+    /// [`DocumentPropertyType::saturating_middle_byte_size_ceil`]: a string
+    /// of 16384 or more characters without `maxBytes` has a byte bound past
+    /// `u16::MAX`, which generation 0 fails on with an overflow and this
+    /// generation holds at `u16::MAX`. Every other type is sized as
+    /// generation 0 sizes it, and the total saturates as generation 0's does.
     fn estimated_size_v1(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
-        Ok(self
-            .estimated_size_v0(platform_version)?
-            .saturating_add(CONTRACT_VERSION_STAMP_MAX_SIZE))
+        let mut total_size = 0u16;
+
+        for document_property in self.flattened_properties().values() {
+            if let Some(size) = document_property
+                .property_type
+                .saturating_middle_byte_size_ceil(platform_version)?
+            {
+                total_size = total_size.saturating_add(size);
+            }
+        }
+
+        Ok(total_size.saturating_add(CONTRACT_VERSION_STAMP_MAX_SIZE))
     }
 
     fn max_size_v0(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
@@ -670,12 +710,16 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 }
             })
             .map(|index| {
+                // A moderation election is prefunded with the moderation fund. Every schedule
+                // before protocol version 14 carries the contested document fund there, so
+                // the amount is unchanged wherever this ran before
                 (
                     index.name.clone(),
-                    platform_version
-                        .fee_version
-                        .vote_resolution_fund_fees
-                        .contested_document_vote_resolution_fund_required_amount,
+                    required_vote_resolution_fund(
+                        &self.data_contract_id(),
+                        self.name(),
+                        platform_version,
+                    ),
                 )
             })
     }
@@ -773,6 +817,136 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 property.property_type.decode_value_for_tree_keys(value)
             }
         }
+    }
+
+    /// `validate_distinct_from_properties` version 0: every property of the document type
+    /// that declares `distinctFrom` and has a value in `data` is compared with what it
+    /// must differ from, the document's `owner_id` or the named property, and the first
+    /// equal pair is reported. The declaring properties are read from the list the parser
+    /// built, so a type without declarations costs nothing. Each value is judged by
+    /// `DistinctFrom::violation`, so an array item can be judged by the same rule with
+    /// the item's value.
+    fn validate_distinct_from_properties_v0(
+        &self,
+        data: &BTreeMap<String, Value>,
+        owner_id: Identifier,
+    ) -> SimpleConsensusValidationResult
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for path in self.distinct_from_fields() {
+            let Some(property) = self.flattened_properties().get(path) else {
+                continue;
+            };
+            let Some(distinct_from) = property.distinct_from.as_ref() else {
+                continue;
+            };
+            // A lookup error (an intermediate that is not an object) is refused by the
+            // schema validation that precedes this check, so it reads as absent here.
+            let Ok(Some(value)) = data.get_optional_at_path(path) else {
+                continue;
+            };
+            // A typed array declares on its items: every element is judged on its own
+            let values: &[Value] = match (&property.property_type, value) {
+                (DocumentPropertyType::TypedArray(_), Value::Array(elements)) => elements,
+                (DocumentPropertyType::TypedArray(_), _) => continue,
+                _ => std::slice::from_ref(value),
+            };
+            for value in values {
+                if let Some(error) =
+                    distinct_from.violation(self.name(), path, value, data, owner_id)
+                {
+                    return SimpleConsensusValidationResult::new_with_error(error.into());
+                }
+            }
+        }
+        SimpleConsensusValidationResult::default()
+    }
+
+    /// `validate_property_constraints` version 0: every rule of the document type's
+    /// `propertyConstraints` is evaluated against `data` in name order, and the first one
+    /// broken is reported. A type without rules costs nothing. A rule reading a total
+    /// consensus did not read ([`PropertyConstraint::unread_aggregate`]) is an error.
+    fn validate_property_constraints_v0(
+        &self,
+        data: &Value,
+        system: &DocumentSystemValues,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for (name, constraint) in self.property_constraints() {
+            self.expect_every_aggregate_read(name, constraint, system)?;
+            if let Some(violation) = constraint.violation(data, system) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                ));
+            }
+        }
+        Ok(SimpleConsensusValidationResult::default())
+    }
+
+    /// An error when `system` holds consensus's totals and lacks one the rule `name`
+    /// reads, which would otherwise leave the rule unjudged.
+    fn expect_every_aggregate_read(
+        &self,
+        name: &str,
+        constraint: &PropertyConstraint,
+        system: &DocumentSystemValues,
+    ) -> Result<(), ProtocolError> {
+        match constraint.unread_aggregate(system) {
+            None => Ok(()),
+            Some(read) => Err(ProtocolError::CorruptedCodeExecution(format!(
+                "rule {name} of document type {} reads a {} of {} that consensus did not read: \
+                 {read:?}",
+                self.name(),
+                read.wire_name(),
+                read.document_type
+            ))),
+        }
+    }
+
+    /// `validate_property_constraints_for_system_change` version 0: every rule of the
+    /// document type's `propertyConstraints` that `change` can break is evaluated against
+    /// `data` with `system`, in name order, and the first one broken is reported. The data
+    /// is copied into a map value only when such a rule exists.
+    fn validate_property_constraints_for_system_change_v0(
+        &self,
+        data: &BTreeMap<String, Value>,
+        system: &DocumentSystemValues,
+        change: SystemChange,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        let mut changed_rules = self
+            .property_constraints()
+            .iter()
+            .filter(|(_, constraint)| constraint.reads_change(change))
+            .peekable();
+        if changed_rules.peek().is_none() {
+            return Ok(SimpleConsensusValidationResult::default());
+        }
+        let data = Value::from(data.clone());
+        for (name, constraint) in changed_rules {
+            self.expect_every_aggregate_read(name, constraint, system)?;
+            if let Some(violation) = constraint.violation(&data, system) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                ));
+            }
+        }
+        Ok(SimpleConsensusValidationResult::default())
     }
 }
 
