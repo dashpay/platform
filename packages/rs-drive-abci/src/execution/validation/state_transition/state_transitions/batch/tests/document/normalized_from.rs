@@ -44,8 +44,9 @@ mod normalized_from_tests {
 
     /// A mutable `handle` type shaped like DPNS's domain: a `label` and its
     /// required `normalizedLabel`, unique across handles, and an optional
-    /// `parent` with its optional `normalizedParent`. The patterns hold both
-    /// sides to ASCII, as DPNS's do; the transform refuses nothing.
+    /// `parent` with its optional `normalizedParent`. The sources' patterns
+    /// hold them to ASCII, as DPNS's do; the normalized properties need none of
+    /// their own, since each can only hold its source's normalized form.
     fn handle_schema() -> Value {
         platform_value!({
             "type": "object",
@@ -66,7 +67,6 @@ mod normalized_from_tests {
                 },
                 "normalizedLabel": {
                     "type": "string",
-                    "pattern": "^[a-hj-km-np-z0-9-]{1,32}$",
                     "maxLength": 32,
                     "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" },
                     "position": 1
@@ -79,7 +79,6 @@ mod normalized_from_tests {
                 },
                 "normalizedParent": {
                     "type": "string",
-                    "pattern": "^[a-hj-km-np-z0-9-]{1,32}$",
                     "maxLength": 32,
                     "normalizedFrom": { "property": "parent", "transform": "homographSafeASCII" },
                     "position": 3
@@ -108,7 +107,6 @@ mod normalized_from_tests {
                 "name": { "type": "string", "pattern": "^[a-zA-Z0-9-]{1,32}$", "maxLength": 32, "position": 0 },
                 "normalizedName": {
                     "type": "string",
-                    "pattern": "^[a-hj-km-np-z0-9-]{1,32}$",
                     "maxLength": 32,
                     "normalizedFrom": { "property": "name", "transform": "homographSafeASCII" },
                     "position": 1
@@ -143,7 +141,6 @@ mod normalized_from_tests {
                 "label": { "type": "string", "pattern": "^[a-zA-Z0-9-]{3,32}$", "maxLength": 32, "position": 0 },
                 "normalizedLabel": {
                     "type": "string",
-                    "pattern": "^[a-hj-km-np-z0-9-]{3,32}$",
                     "maxLength": 32,
                     "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" },
                     "position": 1
@@ -515,15 +512,15 @@ mod normalized_from_tests {
         assert_eq!(stored[0].get("normalizedParent"), None);
     }
 
-    /// "b1b" passes the pattern, so the JSON schema accepts it; it is not what
-    /// "Bob" normalizes to.
+    /// "bob" is "Bob" lowercased without the homograph mapping. The normalized
+    /// property declares no pattern, so the keyword is what refuses it.
     #[tokio::test]
     async fn should_refuse_a_supplied_normalized_property_that_differs() {
         let mut fixture = HandleFixture::new();
 
         let result = fixture
             .create(
-                platform_value!({ "label": "Bob", "normalizedLabel": "b1b" }),
+                platform_value!({ "label": "Bob", "normalizedLabel": "bob" }),
                 3,
             )
             .await;

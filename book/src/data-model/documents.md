@@ -684,13 +684,13 @@ Protocol version 14 adds the property keyword `normalizedFrom`: a string propert
 
 ```json
 "normalizedLabel": {
-  "type": "string", "pattern": "^[a-hj-km-np-z0-9-]{3,63}$", "maxLength": 63,
+  "type": "string", "maxLength": 63,
   "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" },
   "position": 1
 }
 ```
 
-The transform list is closed and has one value. `homographSafeASCII` maps `A` to `Z` to lowercase, then `o` to `0` and `i` and `l` to `1`, and keeps every other character. It is defined character by character with no Unicode table, because Unicode case mappings differ between releases of the standard library, and two nodes must never compute different forms of one value. On ASCII it equals `convert_to_homograph_safe_chars`, the function the DPNS trigger uses; a test pins that over every ASCII character and over strings from the DPNS alphabets. It refuses nothing: the characters a value may hold are the `pattern`'s to decide.
+The transform list is closed and has one value. `homographSafeASCII` maps `A` to `Z` to lowercase, then `o` to `0` and `i` and `l` to `1`, and keeps every other character. It is defined character by character with no Unicode table, because Unicode case mappings differ between releases of the standard library, and two nodes must never compute different forms of one value. On ASCII it equals `convert_to_homograph_safe_chars`, the function the DPNS trigger uses; a test pins that over every ASCII character and over strings from the DPNS alphabets. It refuses nothing: the characters a value may hold are the source's `pattern`'s to decide, and the normalized property needs no pattern of its own, since every value it holds is the normalized form of a source that passed it.
 
 The parser (generation 3, meta-schema v3, `apply_normalized_from`) reads the declaration onto `DocumentProperty::normalized_from` (`Option<NormalizedFrom>`, absent on every property parsed before protocol version 14) and `validate_normalized_from_declarations` checks it against the other properties on every parse: the source is another string property, not transient nor inside a transient object (and neither is the declaring property), declares no `normalizedFrom` itself, and sits inside every object that holds the declaring property. On contract update a changed, added or removed `normalizedFrom` is an incompatible schema change, and a property the update adds may declare it only over a source the update adds too (`validate_update` 1 refuses one over an existing source with `DocumentTypeUpdateError`, 40212: documents stored before the update were never filled).
 

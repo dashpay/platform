@@ -5,7 +5,8 @@
 //! The platform computes the property when a created or replaced document
 //! leaves it out and supplies its source, and checks it when the document
 //! supplies it. Which characters a value may hold is the job of the
-//! properties' own `pattern`: a transform never refuses a character.
+//! source's `pattern`: a transform never refuses a character, and the
+//! normalized property needs no pattern of its own.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -56,7 +57,7 @@ pub enum NormalizationTransform {
     /// then `o` becomes `0` and `i` and `l` become `1`. Every other
     /// character, ASCII or not, is kept as it is. On an ASCII value this is
     /// exactly `convert_to_homograph_safe_chars`; it resists homographs only
-    /// when the properties' `pattern` restricts them to ASCII, as DPNS does.
+    /// when the source's `pattern` restricts it to ASCII, as DPNS's does.
     #[serde(rename = "homographSafeASCII")]
     HomographSafeAscii,
 }

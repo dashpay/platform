@@ -25,7 +25,7 @@
       "position": 0
     },
     "normalizedLabel": {
-      "type": "string", "pattern": "^[a-hj-km-np-z0-9-]{3,63}$", "maxLength": 63,
+      "type": "string", "maxLength": 63,
       "normalizedFrom": { "property": "label", "transform": "homographSafeASCII" },
       "position": 1
     }
@@ -35,7 +35,9 @@
 }
 ```
 
-A client creates `{ "label": "Bob" }` and the stored document holds `{ "label": "Bob", "normalizedLabel": "b0b" }`. A second handle `{ "label": "B0B" }` normalizes to the same `b0b` and is refused by the unique index. A client that sends `{ "label": "Bob", "normalizedLabel": "b0b" }` gets the same result; one that sends `"normalizedLabel": "b1b"` is refused with `DocumentPropertyNotNormalizedError`.
+A client creates `{ "label": "Bob" }` and the stored document holds `{ "label": "Bob", "normalizedLabel": "b0b" }`. A second handle `{ "label": "B0B" }` normalizes to the same `b0b` and is refused by the unique index. A client that sends `{ "label": "Bob", "normalizedLabel": "b0b" }` gets the same result; one that sends `"normalizedLabel": "bob"` is refused with `DocumentPropertyNotNormalizedError`.
+
+The normalized property needs no `pattern` of its own. Every value it can hold is the normalized form of a source that passed the source's pattern: here `label` admits ASCII letters, digits and `-`, so `normalizedLabel` can only ever hold `a` to `z` without `i`, `l` and `o`, digits and `-`. It keeps `maxLength` because it is indexed, and an indexed string declares one of at most 63.
 
 This is the rule the DPNS `domain` type's data trigger checks today for `normalizedLabel` and `normalizedParentDomainName`, written into the schema.
 
@@ -45,11 +47,11 @@ This is the rule the DPNS `domain` type's data trigger checks today for `normali
 
 It uses no Unicode tables. Unicode case mappings change between releases of the tools a node is built with, and two nodes that lowercase a character differently would disagree about a document. On ASCII the transform is exactly what the DPNS trigger computes, and it keeps the byte length of the value.
 
-The transform refuses nothing. Which characters a value may hold is the job of the properties' `pattern`: the transform resists look-alike names only where the pattern admits ASCII alone, as DPNS's does. A contract that admits other scripts can hold two names that look alike but normalize differently.
+The transform refuses nothing. Which characters a value may hold is the job of the source's `pattern`: the transform resists look-alike names only where that pattern admits ASCII alone, as DPNS's does. A contract that admits other scripts can hold two names that look alike but normalize differently.
 
 ## How it works
 
-- **Filled on arrival.** When a document create or replace, or the values of an [index-only](index-only.md) delete, leaves the property out and supplies the source, the platform writes the normalized form into the document before anything reads it: contest detection, the schema validation, the indexes and the stored document all see it. A property the document sends is left as sent. A computed value then goes through the property's own schema like a sent one, so the property's `pattern` and `maxLength` should admit the normalized form of every value the source admits (the transform keeps the length).
+- **Filled on arrival.** When a document create or replace, or the values of an [index-only](index-only.md) delete, leaves the property out and supplies the source, the platform writes the normalized form into the document before anything reads it: contest detection, the schema validation, the indexes and the stored document all see it. A property the document sends is left as sent. A computed value then goes through the property's own schema like a sent one, so any bound it declares, such as `maxLength`, should admit the normalized form of every value the source admits (the transform keeps the length).
 - **Checked after the JSON schema.** Wherever a document's properties are validated, on every create and replace included and in a client that validates a document before sending it, the property must hold the source's normalized form, and must be absent when the source is. A property that breaks this refuses the transition with `DocumentPropertyNotNormalizedError` (10424), which names the document type, the property, its source and the transform. A schema error on either value is reported first.
 - **Absent source.** A property whose source is absent must be absent too. To make the source required in effect, list the normalized property in `required`: a document without the source then fails the schema.
 - **Replace.** A replace is judged on the whole new document. Leave the property out to have it computed from the new source; a stale value sent with a changed source is refused.
