@@ -530,10 +530,7 @@ mod tests {
         #[test]
         fn should_carry_the_code_of_a_consensus_error_platform_refused_the_transition_with() {
             let refused = refused_by_platform(&property_constraint_violated());
-            let expected_message = FFIError::SDKError(refused_by_platform(
-                &property_constraint_violated(),
-            ))
-            .to_string();
+            let expected_message = refused.to_string();
 
             let error = convert(FFIError::SDKError(refused));
 
