@@ -1,10 +1,12 @@
 //! Outpoints a wallet keeps out of coin selection, and their persistence.
 //!
 //! The lock set lives on `key_wallet`'s `ManagedWalletInfo` (see
-//! [`ManagedWalletInfo::locked_outpoints`]): every masternode registration
+//! [`ManagedWalletInfo::locked_outpoints`]): a masternode registration
 //! (ProRegTx) the wallet processes locks its collateral, because spending the
 //! collateral would end the registration, and coin selection, the asset-lock
-//! builder and special-transaction funding all skip a locked coin. This module
+//! builder and special-transaction funding all skip a locked coin. A
+//! collateral the ProRegTx names is locked once the ProRegTx is in a block; a
+//! collateral it creates, as its own output, from any sighting. This module
 //! carries that set to the persister and exposes explicit lock and unlock.
 //!
 //! Locks reach the persister through [`CoreChangeSet::outpoint_locks`] on two
@@ -24,7 +26,8 @@
 //!
 //! # Masternodes the wallet already knows
 //!
-//! A ProRegTx locks its collateral only when a transaction check sees it.
+//! A ProRegTx locks its collateral only when a transaction check sees it (in a
+//! block, for a collateral it names).
 //! Two kinds of registration can escape that: one restored into the
 //! transaction history without a check (the mobile restore stages provider
 //! transactions directly, and a wallet from before locks were kept has no
@@ -82,9 +85,10 @@ pub(crate) fn named_collateral(pro_tx_hash: &[u8; 32], (txid, vout): ([u8; 32], 
 }
 
 /// Lock, in every wallet `wallet_manager` holds, the collateral of each
-/// masternode registration in that wallet's transaction history and every
-/// outpoint in `tracked`, and queue the new locks for persistence. Returns
-/// how many locks were added across all wallets.
+/// masternode registration in that wallet's transaction history (see
+/// [`PlatformWalletInfo::lock_known_masternode_collaterals`] for which) and
+/// every outpoint in `tracked`, and queue the new locks for persistence.
+/// Returns how many locks were added across all wallets.
 ///
 /// A tracked collateral is locked in every wallet, whether or not the wallet
 /// holds the coin yet: an entry needs no coin behind it, so a collateral
@@ -105,9 +109,15 @@ pub(crate) async fn lock_known_masternode_collaterals(
 }
 
 impl PlatformWalletInfo {
-    /// Lock the collateral of every masternode registration in this wallet's
+    /// Lock the collateral of the masternode registrations in this wallet's
     /// transaction history, and every outpoint in `tracked`. The new locks
     /// are queued for persistence. Returns how many were added.
+    ///
+    /// The same rule as a transaction check: a collateral a registration
+    /// names is locked only when its record is in a block, since an
+    /// unconfirmed ProRegTx is not a registration yet; a collateral it
+    /// creates, as its own output, from any record. The check that confirms
+    /// an unconfirmed registration locks the collateral it names.
     pub(crate) fn lock_known_masternode_collaterals(
         &mut self,
         tracked: &BTreeSet<OutPoint>,
@@ -118,7 +128,11 @@ impl PlatformWalletInfo {
             .all_accounts()
             .iter()
             .flat_map(|account| account.transactions().values())
-            .filter_map(|record| registration_collateral(&record.transaction))
+            .filter_map(|record| {
+                let collateral = registration_collateral(&record.transaction)?;
+                let creates_it = collateral.txid == record.txid;
+                (creates_it || record.is_confirmed()).then_some(collateral)
+            })
             .collect();
         collaterals.extend(tracked.iter().copied());
         let added: Vec<OutPoint> = collaterals
@@ -180,8 +194,9 @@ impl PlatformWalletInfo {
 
 impl PlatformWallet {
     /// The outpoints this wallet keeps out of coin selection, in outpoint
-    /// order: the collateral of every masternode registration the wallet has
-    /// processed, and every outpoint locked with [`Self::lock_outpoint`].
+    /// order: the collateral of the masternode registrations the wallet has
+    /// processed (see the module docs for when), and every outpoint locked
+    /// with [`Self::lock_outpoint`].
     ///
     /// An entry does not need a coin behind it: a collateral whose ProRegTx
     /// arrived first, or an outpoint locked before its coin, is listed and
@@ -489,11 +504,17 @@ mod tests {
         );
     }
 
-    /// A registration restored into the history without a transaction check
-    /// (the mobile restore stages provider transactions directly) has its
-    /// collateral locked by the known-masternode pass, once.
-    #[tokio::test]
-    async fn should_lock_the_collateral_of_a_registration_restored_into_the_history() {
+    /// A wallet holding a 1,000 DASH collateral and 5 DASH, with a ProRegTx
+    /// naming the collateral restored into its history in `context` without a
+    /// transaction check (the mobile restore stages provider transactions
+    /// directly). Returns the manager, the wallet and the collateral.
+    async fn wallet_with_restored_registration(
+        context: TransactionContext,
+    ) -> (
+        Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        WalletId,
+        OutPoint,
+    ) {
         let (manager, wallet_id, _generation, _signer) = funded_wallet_manager_with_outputs(
             StandardAccountType::BIP44Account,
             &[MASTERNODE_COLLATERAL_DUFFS, 5 * DASH],
@@ -519,7 +540,7 @@ mod tests {
             let record = TransactionRecord::new(
                 registration.clone(),
                 account.managed_account_type().to_account_type(),
-                block(2),
+                context,
                 TransactionType::ProviderRegistration,
                 TransactionDirection::Internal,
                 Vec::new(),
@@ -531,6 +552,14 @@ mod tests {
                 .insert(registration.txid(), record);
             assert!(!info.core_wallet.is_outpoint_locked(&collateral));
         }
+        (manager, wallet_id, collateral)
+    }
+
+    /// A registration restored into the history without a transaction check
+    /// has its collateral locked by the known-masternode pass, once.
+    #[tokio::test]
+    async fn should_lock_the_collateral_of_a_registration_restored_into_the_history() {
+        let (manager, wallet_id, collateral) = wallet_with_restored_registration(block(2)).await;
 
         assert_eq!(
             lock_known_masternode_collaterals(&manager, &BTreeSet::new()).await,
@@ -553,6 +582,50 @@ mod tests {
             info.take_queued_outpoint_locks(),
             BTreeSet::from([collateral]),
             "the new lock is queued for persistence"
+        );
+    }
+
+    /// An unconfirmed ProRegTx in the history is not a registration yet: the
+    /// known-masternode pass leaves the collateral it names spendable, as a
+    /// transaction check does, and the block holding it locks the collateral.
+    #[tokio::test]
+    async fn should_lock_a_named_collateral_of_a_restored_registration_only_once_it_is_mined() {
+        let (manager, wallet_id, collateral) =
+            wallet_with_restored_registration(TransactionContext::Mempool).await;
+
+        assert_eq!(
+            lock_known_masternode_collaterals(&manager, &BTreeSet::new()).await,
+            0
+        );
+        {
+            let wm = manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("wallet");
+            assert!(!info.core_wallet.is_outpoint_locked(&collateral));
+            assert_eq!(
+                info.core_wallet.balance.spendable(),
+                MASTERNODE_COLLATERAL_DUFFS + 5 * DASH
+            );
+            assert!(info.take_queued_outpoint_locks().is_empty());
+        }
+
+        let mut wm = manager.write().await;
+        wm.check_transaction_in_all_wallets(
+            &masternode_registration(collateral),
+            block(3),
+            true,
+            true,
+        )
+        .await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet");
+        assert!(info.core_wallet.is_outpoint_locked(&collateral));
+        assert_eq!(
+            info.core_wallet.balance.locked(),
+            MASTERNODE_COLLATERAL_DUFFS
+        );
+        assert_eq!(
+            info.take_queued_outpoint_locks(),
+            BTreeSet::from([collateral]),
+            "the block's lock is queued for persistence"
         );
     }
 

@@ -103,8 +103,9 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
     }
 
     /// The outpoints this wallet keeps out of coin selection: the collateral
-    /// of every masternode registration the wallet has processed, and every
-    /// outpoint locked with `lockOutpoint`. An entry may name a coin the
+    /// of the masternode registrations the wallet has seen in a block (or
+    /// that created their collateral), and every outpoint locked with
+    /// `lockOutpoint`. An entry may name a coin the
     /// wallet does not hold yet; the coin arrives locked.
     public func lockedOutpoints() throws -> [Outpoint] {
         var entries: UnsafePointer<OutPointFFI>?
