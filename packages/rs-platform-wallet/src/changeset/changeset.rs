@@ -306,8 +306,9 @@ pub struct CoreChangeSet {
     /// Changes to the outpoints the wallet keeps out of coin selection:
     /// `true` locks the outpoint, `false` unlocks it.
     ///
-    /// The wallet locks the collateral of every masternode registration
-    /// (ProRegTx) it processes, since spending the collateral would end the
+    /// The wallet locks the collateral of the masternode registrations
+    /// (ProRegTx) it processes, a collateral a ProRegTx names once the
+    /// ProRegTx is in a block, since spending the collateral would end the
     /// registration, and the user can lock or unlock any outpoint by hand.
     /// The in-memory set is `ManagedWalletInfo::locked_outpoints`; this is
     /// its persistence delta. A lock does not need a coin behind it (the

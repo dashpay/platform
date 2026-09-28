@@ -299,8 +299,9 @@ pub struct PlatformWalletInfo {
     /// Outpoints `core_wallet` locked during a transaction check that are not
     /// persisted yet.
     ///
-    /// Every ProRegTx the wallet processes locks its collateral, relevant or
-    /// not, and no `WalletEvent` carries that lock. The check queues it here
+    /// A ProRegTx the wallet processes locks its collateral, relevant or not
+    /// (a collateral it names once it is in a block), and no `WalletEvent`
+    /// carries that lock. The check queues it here
     /// and the wallet-event adapter drains the queue into the next changeset
     /// it stores for this wallet. Interior mutability because the adapter
     /// projects under the manager's read lock; a poisoned mutex keeps its

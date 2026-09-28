@@ -1,8 +1,10 @@
 //! FFI bindings for a wallet's locked outpoints: the outpoints kept out of
 //! coin selection.
 //!
-//! The wallet locks the collateral of every masternode registration it
-//! processes, since spending the collateral would end the registration.
+//! The wallet locks the collateral of a masternode registration once the
+//! registration is in a block (a collateral the ProRegTx creates as its own
+//! output, from any sighting), since spending the collateral would end the
+//! registration.
 //! These calls list the locks and lock or unlock an outpoint by hand; a lock
 //! or unlock is persisted before the call returns (see
 //! `PlatformWallet::lock_outpoint`).
