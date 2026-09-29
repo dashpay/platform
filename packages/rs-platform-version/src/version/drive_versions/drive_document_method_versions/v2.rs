@@ -86,7 +86,8 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 1, // Changed
             validate_document_purchase_transition_action_uniqueness: 1, // Changed
             validate_document_update_price_transition_action_uniqueness: 1, // Changed
-            validate_restored_document_uniqueness: 0,
+            validate_moderated_document_uniqueness: 0,
+            validate_uniqueness_of_data: 1,
         },
         // FROZEN AT 0 for platform versions 10 and 11. Both protocol
         // versions select this table (`DRIVE_DOCUMENT_METHOD_VERSIONS_V2`)
@@ -121,6 +122,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
         // stop, so a future change to the v1 arm doesn't need to
         // re-prove v0 ≡ v1 for every pre-v12 corner case.
         primary_key_tree_type: 0,
+        fetch_property_constraint_aggregate: 0,
         expiration: DriveDocumentExpirationMethodVersions {
             insert_document_ttl_trees: 0,
             add_document_expiration_operations: 0,

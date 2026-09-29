@@ -94,6 +94,22 @@ pub enum DocumentOperationType<'a> {
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
     },
+    /// Adds a document and deletes the documents its create consumed: the commitments a
+    /// `refersTo` lookup found for a reference declaring `consume` (protocol version 14),
+    /// each a document of the same contract. One conversion builds the add first and then
+    /// each delete against the operations already built, so a tree the new document writes
+    /// into (an index bucket shared with a consumed document, an expirations tree of the
+    /// same millisecond) is not taken for empty and deleted from under the insert.
+    AddDocumentAndDeleteConsumed {
+        /// The document and contract info, also may contain the owner_id
+        owned_document_info: OwnedDocumentInfo<'a>,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+        /// The consumed documents, by id and document type name
+        consumed_documents: Vec<(Identifier, String)>,
+    },
     /// Deletes a document
     DeleteDocument {
         /// The document id
@@ -105,7 +121,7 @@ pub enum DocumentOperationType<'a> {
     },
     /// Deletes a document without consulting `canBeDeleted`, which rules what the document's
     /// own owner may do. Used for a deletion on behalf of the contract's moderators (the
-    /// caller has checked that the document type sets `canBeDeletedByModerators`) and for the
+    /// caller has checked that the document type sets `moderatorAbilities.delete`) and for the
     /// platform's deletion of a document whose type declares a `ttl` once it has passed
     /// (protocol version 14), which also removes the document's expirations tree entry. A
     /// document type that keeps history is still refused, as both keywords are on such a type.
@@ -261,6 +277,37 @@ impl DocumentOperationType<'_> {
                     drive.prepare_document_time_range_ttl(
                         document_operations.contract,
                         document_operations.document_type,
+                        block_info.time_ms,
+                        transaction,
+                        platform_version,
+                    )?;
+                }
+                Ok(())
+            }
+            // The new document's type and every consumed document's type
+            Self::AddDocumentAndDeleteConsumed {
+                contract_info,
+                document_type_info,
+                consumed_documents,
+                ..
+            } => {
+                let resolved = contract_info.clone().resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?;
+                let contract = resolved.as_ref();
+                let document_types = std::iter::once(document_type_info.clone()).chain(
+                    consumed_documents.iter().map(|(_, document_type_name)| {
+                        DocumentTypeInfo::DocumentTypeName(document_type_name.clone())
+                    }),
+                );
+                for document_type_info in document_types {
+                    drive.prepare_document_time_range_ttl(
+                        contract,
+                        document_type_info.resolve(contract)?,
                         block_info.time_ms,
                         transaction,
                         platform_version,
@@ -437,6 +484,58 @@ impl DocumentOperationType<'_> {
                     platform_version,
                 )?;
                 Ok(batch_operations)
+            }
+            DocumentOperationType::AddDocumentAndDeleteConsumed {
+                owned_document_info,
+                contract_info,
+                document_type_info,
+                consumed_documents,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                let mut operations = drive.add_document_for_contract_operations_without_ttl_drain(
+                    document_and_contract_info,
+                    false,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                drive_operations.append(&mut operations);
+                // Each delete sees the add and the earlier deletes as pending: a tree
+                // holding a pending insert is not empty
+                for (document_id, document_type_name) in consumed_documents {
+                    let consumed_document_type =
+                        DocumentTypeInfo::DocumentTypeName(document_type_name).resolve(contract)?;
+                    let mut operations = drive
+                        .delete_document_for_contract_operations_without_ttl_drain(
+                            document_id,
+                            contract,
+                            consumed_document_type,
+                            Some(&mut drive_operations),
+                            estimated_costs_only_with_layer_info,
+                            block_info.time_ms,
+                            transaction,
+                            platform_version,
+                        )?;
+                    drive_operations.append(&mut operations);
+                }
+                Ok(drive_operations)
             }
             DocumentOperationType::DeleteDocument {
                 document_id,

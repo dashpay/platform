@@ -451,7 +451,8 @@ struct ExpandableIndexRowView: View {
 }
 
 /// One `propertyConstraints` rule: its name, the rule as declared, what it
-/// reads, and whether an owner change is judged against it too.
+/// reads (properties, `$ownerId`, system times and heights, `countOf` and
+/// `sumOf` totals), and whether an owner change is judged against it too.
 struct PropertyConstraintRowView: View {
     let rule: DocumentPropertyConstraint
 
@@ -493,8 +494,32 @@ struct PropertyConstraintRowView: View {
                 .font(.caption2)
                 .foregroundColor(.purple)
             }
+
+            if !systemReadsText.isEmpty {
+                Label("Reads \(systemReadsText)", systemImage: "clock")
+                    .font(.caption2)
+                    .foregroundColor(.teal)
+                    .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsSystem")
+                Text("A price update is judged against the rules reading $updatedAt or its block heights, and a transfer or purchase against those reading $transferredAt or its block heights.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if !totalReadsText.isEmpty {
+                Label("Reads totals: \(totalReadsText)", systemImage: "sum")
+                    .font(.caption2)
+                    .foregroundColor(.indigo)
+                    .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsTotals")
+                Text("The platform reads these totals when the document is sent; the check before sending does not, so it cannot catch this rule.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 4)
+        // Keeps the row's identifier on the row and the readsSystem and
+        // readsTotals lines' on those lines, rather than the row's on every
+        // child
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name)")
     }
 
@@ -505,6 +530,38 @@ struct PropertyConstraintRowView: View {
             .filter { seen.insert($0).inserted }
             .map { "\($0.path) (\($0.kind.name))" }
             .joined(separator: ", ")
+    }
+
+    /// The system times and heights the rule reads, repeats dropped.
+    private var systemReadsText: String {
+        var seen = Set<String>()
+        return rule.readsSystem
+            .filter { seen.insert($0).inserted }
+            .joined(separator: ", ")
+    }
+
+    /// The `countOf` and `sumOf` totals the rule reads, repeats dropped, each
+    /// as `countOf <type>` or `sumOf <property> of <type>`, followed by
+    /// `by <filter keys>` when it filters: `countOf listing by $ownerId;
+    /// sumOf price of listing by category`. The Android example app builds the
+    /// same text, for cross-platform UAT: keep the two identical.
+    private var totalReadsText: String {
+        var seen = Set<String>()
+        return rule.readsTotals
+            .map { total in
+                // Only a `sumOf` names a property
+                var text = total.kind.name
+                if let property = total.property {
+                    text += " \(property) of"
+                }
+                text += " \(total.documentType)"
+                if !total.filter.isEmpty {
+                    text += " by \(total.filter.joined(separator: ", "))"
+                }
+                return text
+            }
+            .filter { seen.insert($0).inserted }
+            .joined(separator: "; ")
     }
 }
 

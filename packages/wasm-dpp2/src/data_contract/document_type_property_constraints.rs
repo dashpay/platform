@@ -2,8 +2,8 @@
 //! created or replaced document's properties to, from protocol version 14
 //! onward.
 //!
-//! A rule is a condition: a comparison of integer expressions, a membership
-//! test (`in`), a comparison of a string or an identifier property (or
+//! A rule is a condition: a comparison of integer expressions (sizes of
+//! strings and arrays included), a membership test (`in`), a comparison of a string or an identifier property (or
 //! `$ownerId`, the document's owner) with constants or with another property
 //! of its kind, a presence test (`present`, `absent`), or `anyOf`, `allOf` or
 //! `not` over conditions. Consensus evaluates every rule on each create and
@@ -18,9 +18,13 @@ use crate::error::{WasmDppError, WasmDppResult};
 use dpp::consensus::basic::document::PropertyConstraintViolation;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::property_constraints::PropertyRead;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::data_contract::document_type::property_constraints::{
+    AggregateKind, DocumentSystemValues, PropertyRead,
+};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
+use dpp::version::PlatformVersion;
 use js_sys::{Array, BigInt, Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -34,11 +38,23 @@ const DOCUMENT_PROPERTY_CONSTRAINTS_TS: &'static str = r#"
  *   (rules report such a literal as a `bigint`, exactly);
  * - a string: the dotted path of an integer or boolean property, whose value
  *   it takes (a boolean reads as 1 for true and 0 for false), 0 when the
- *   document leaves the property out;
+ *   document leaves the property out; or a system time or height the
+ *   document type records by listing it in `required`
+ *   (`PropertyConstraintSystemProperty`);
  * - `ifAbsent`: a property path and the integer it takes when left out;
- * - `add` and `multiply` over two or more operands, `subtract`, `divide`,
- *   `modulo` and `power` over exactly two. Arithmetic is exact over 128-bit
- *   integers; `divide` and `modulo` are Euclidean.
+ * - `add`, `multiply`, `min` and `max` over two or more operands,
+ *   `subtract`, `divide`, `modulo` and `power` over exactly two, `abs` over
+ *   one. Arithmetic is exact over 128-bit
+ *   integers; `divide` and `modulo` are Euclidean;
+ * - `length` and `byteLength`: the characters (as `maxLength` counts them)
+ *   and the UTF-8 bytes of a string property; `count`: the items of an array
+ *   property, or the bytes of a byte array property. Each is 0 when the
+ *   document leaves the property out;
+ * - `countOf` and `sumOf`: a total read from state, how many documents of a
+ *   type of the same contract match a filter, or the total of an integer
+ *   property over them, as the type's count or sum trees keep it once the
+ *   write is done. `checkDocumentPropertyConstraints` does not judge a rule
+ *   reading one.
  */
 export type PropertyConstraintExpression =
   | number
@@ -50,7 +66,30 @@ export type PropertyConstraintExpression =
   | { subtract: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { divide: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { modulo: [PropertyConstraintExpression, PropertyConstraintExpression] }
-  | { power: [PropertyConstraintExpression, PropertyConstraintExpression] };
+  | { power: [PropertyConstraintExpression, PropertyConstraintExpression] }
+  | { min: PropertyConstraintExpression[] }
+  | { max: PropertyConstraintExpression[] }
+  | { abs: PropertyConstraintExpression }
+  | { length: string }
+  | { byteLength: string }
+  | { count: string }
+  | { countOf: [documentType: string] | [documentType: string, filter: PropertyConstraintAggregateFilter] }
+  | {
+    sumOf:
+    | [documentType: string, property: string]
+    | [documentType: string, property: string, filter: PropertyConstraintAggregateFilter]
+  };
+
+/**
+ * Which documents a `countOf` or `sumOf` totals: each key, a property path of
+ * the counted type or `"$ownerId"`, mapped to the value its documents must
+ * take there, read from the document being written: a property path of it,
+ * `"$ownerId"`, an integer, or a `const` string or base58 identifier.
+ */
+export type PropertyConstraintAggregateFilter = Record<
+  string,
+  string | number | bigint | { const: string }
+>;
 
 /**
  * One side of a comparison of strings or identifiers.
@@ -76,9 +115,18 @@ export type PropertyConstraintEqualityOperand =
  * - `in`: an integer expression and two or more distinct integers, or a
  *   string or identifier property (or `$ownerId`) and two or more distinct
  *   strings or base58 identifiers;
+ * - `startsWith` / `endsWith`: two strings, a `const` or a string property
+ *   each, the first starting or ending with the second, byte for byte;
+ * - `contains`: a typed array property and the value one of its elements must
+ *   equal, an integer expression, a string or an identifier operand as its
+ *   elements are; an array the document leaves out holds nothing;
  * - `present` / `absent`: whether the document holds a property of any type;
- * - `anyOf` / `allOf` over two or more conditions, `not` over one. Conditions
- *   are checked in order and no further than the outcome needs.
+ * - `notIn`: what `in` lists, holding when the operand takes none of the values;
+ * - `anyOf` / `allOf` over two or more conditions, `not` over one, `ifThen`
+ *   over two (the second must hold when the first does) and `ifThenElse` over
+ *   three (the second must hold when the first does, the third when it does
+ *   not). Conditions are checked in order and no further than the outcome
+ *   needs.
  */
 export type PropertyConstraintCondition =
   | { equal: [PropertyConstraintExpression, PropertyConstraintExpression] | [PropertyConstraintEqualityOperand, PropertyConstraintEqualityOperand] }
@@ -88,18 +136,67 @@ export type PropertyConstraintCondition =
   | { greaterThan: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { greaterThanOrEqual: [PropertyConstraintExpression, PropertyConstraintExpression] }
   | { in: [PropertyConstraintExpression, Array<number | bigint>] | [string | { ifAbsent: [path: string, value: string] }, string[]] }
+  | { notIn: [PropertyConstraintExpression, Array<number | bigint>] | [string | { ifAbsent: [path: string, value: string] }, string[]] }
+  | { startsWith: [PropertyConstraintEqualityOperand, PropertyConstraintEqualityOperand] }
+  | { endsWith: [PropertyConstraintEqualityOperand, PropertyConstraintEqualityOperand] }
+  | { contains: [path: string, PropertyConstraintExpression | PropertyConstraintEqualityOperand] }
   | { present: string }
   | { absent: string }
   | { anyOf: PropertyConstraintCondition[] }
   | { allOf: PropertyConstraintCondition[] }
-  | { not: PropertyConstraintCondition };
+  | { not: PropertyConstraintCondition }
+  | { ifThen: [PropertyConstraintCondition, PropertyConstraintCondition] }
+  | { ifThenElse: [PropertyConstraintCondition, PropertyConstraintCondition, PropertyConstraintCondition] };
 
 /**
  * How a rule reads a property: `value` as an integer operand, `presence` in
  * `present` or `absent`, `text` compared with strings, `identifier` compared
- * with identifiers.
+ * with identifiers, `length` by the size of a string (`length` or
+ * `byteLength`), `count` by the items of an array or byte array, `elements`
+ * by the elements a `contains` looks among.
  */
-export type PropertyConstraintReadKind = 'value' | 'presence' | 'text' | 'identifier';
+export type PropertyConstraintReadKind =
+  | 'value'
+  | 'presence'
+  | 'text'
+  | 'identifier'
+  | 'length'
+  | 'count'
+  | 'elements';
+
+/**
+ * A system time or height a rule reads: the block time in milliseconds
+ * (`At`), the Platform block height (`AtBlockHeight`) or the Core block height
+ * (`AtCoreBlockHeight`) of the document's creation, its last update (a create,
+ * a replace or a price update) and its last transfer (a create, a transfer or
+ * a purchase).
+ */
+export type PropertyConstraintSystemProperty =
+  | '$createdAt'
+  | '$updatedAt'
+  | '$transferredAt'
+  | '$createdAtBlockHeight'
+  | '$updatedAtBlockHeight'
+  | '$transferredAtBlockHeight'
+  | '$createdAtCoreBlockHeight'
+  | '$updatedAtCoreBlockHeight'
+  | '$transferredAtCoreBlockHeight';
+
+/**
+ * A `countOf` or `sumOf` total a rule reads: how many documents of
+ * `documentType`, a type of the same contract, match the filter, or the total
+ * of their integer `property` (a `sumOf` only). `filter` lists the keys the
+ * documents are matched by, properties of that type or `$ownerId`; the values
+ * they must take are in the rule. The platform reads the total from state when
+ * the document is sent; `checkDocumentPropertyConstraints` cannot, and does
+ * not judge a rule reading one.
+ */
+export type PropertyConstraintTotalRead = {
+  kind: 'countOf' | 'sumOf';
+  documentType: string;
+  property?: string;
+  filter: string[];
+};
 
 /**
  * A single `propertyConstraints` rule of a document type.
@@ -111,8 +208,22 @@ export type DocumentPropertyConstraint = {
   rule: PropertyConstraintCondition;
   /** Every property the rule reads, in declared order; `$ownerId` is no property and is not listed. */
   reads: Array<{ path: string; kind: PropertyConstraintReadKind }>;
-  /** Whether the rule reads `$ownerId`: then a transfer or a purchase is judged against it too. */
+  /**
+   * Whether the rule reads `$ownerId`, or a total that depends on the owner:
+   * then a transfer or a purchase is judged against it too.
+   */
   readsOwner: boolean;
+  /**
+   * The system times and heights the rule reads, in declared order. A price
+   * update is judged against a rule reading the update's, and a transfer or a
+   * purchase against one reading the transfer's.
+   */
+  readsSystem: PropertyConstraintSystemProperty[];
+  /**
+   * The `countOf` and `sumOf` totals the rule reads, in declared order, one
+   * read twice listed twice. The pre-check does not judge a rule reading one.
+   */
+  readsTotals: PropertyConstraintTotalRead[];
 };
 
 /**
@@ -169,6 +280,9 @@ fn read_kind_name(read: PropertyRead) -> &'static str {
         PropertyRead::Presence => "presence",
         PropertyRead::Text => "text",
         PropertyRead::Identifier => "identifier",
+        PropertyRead::Length => "length",
+        PropertyRead::Count => "count",
+        PropertyRead::Elements(_) => "elements",
     }
 }
 
@@ -296,16 +410,65 @@ pub(crate) fn property_constraints_for_document_type(
             &JsValue::from_bool(constraint.reads_owner()),
             name,
         )?;
+        let reads_system = Array::new();
+        for property in constraint.system_reads() {
+            reads_system.push(&JsValue::from_str(property.name()));
+        }
+        set_field(&object, "readsSystem", &reads_system, name)?;
+        let reads_totals = Array::new();
+        for read in constraint.aggregate_reads() {
+            let entry = Object::new();
+            set_field(&entry, "kind", &JsValue::from_str(read.wire_name()), name)?;
+            set_field(
+                &entry,
+                "documentType",
+                &JsValue::from_str(&read.document_type),
+                name,
+            )?;
+            if let AggregateKind::Sum { property } = &read.kind {
+                set_field(&entry, "property", &JsValue::from_str(property), name)?;
+            }
+            let filter = Array::new();
+            for key in read.filter.keys() {
+                filter.push(&JsValue::from_str(key));
+            }
+            set_field(&entry, "filter", &filter, name)?;
+            reads_totals.push(&entry);
+        }
+        set_field(&object, "readsTotals", &reads_totals, name)?;
         rules.push(&object);
     }
 
     Ok(rules)
 }
 
+/// The system values a create or a replace of `document` will have, as far as
+/// a client can tell before its block: the owner, and the stored times and
+/// heights the write keeps, with the device clock standing in for the block
+/// time it records (its update, and its creation and transfer when the
+/// document has none yet). The block heights it records are unknown until the
+/// block, so a rule reading one is not judged, and so is a rule reading a
+/// `countOf` or `sumOf` total, which no client reads from state here.
+fn system_values_for_write(document: &Document) -> DocumentSystemValues {
+    // Milliseconds since the epoch, a whole number well inside a `u64`
+    let now = js_sys::Date::now() as u64;
+    let stored = DocumentSystemValues::of_document(document);
+    DocumentSystemValues {
+        created_at: stored.created_at.or(Some(now)),
+        updated_at: Some(now),
+        transferred_at: stored.transferred_at.or(Some(now)),
+        updated_at_block_height: None,
+        updated_at_core_block_height: None,
+        ..stored
+    }
+}
+
 /// The first rule of `document_type`'s `propertyConstraints` that `document`
 /// breaks, in name order, as consensus judges a create or replace: its
-/// properties, and its owner for `$ownerId`. `undefined` when it meets them
-/// all.
+/// properties with every `generatedFrom` property generated from its params,
+/// as the transition builders send them, its owner for `$ownerId`, and its
+/// system times and heights as [`system_values_for_write`] estimates them.
+/// `undefined` when it meets them all.
 pub(crate) fn check_property_constraints(
     document_type: DocumentTypeRef<'_>,
     document: &Document,
@@ -314,9 +477,12 @@ pub(crate) fn check_property_constraints(
     if constraints.is_empty() {
         return Ok(JsValue::UNDEFINED);
     }
-    let data = Value::from(document.properties().clone());
+    let mut properties = document.properties().clone();
+    document_type.regenerate_generated_properties(&mut properties, PlatformVersion::desired())?;
+    let data = Value::from(properties);
+    let system = system_values_for_write(document);
     for (name, constraint) in constraints {
-        if let Some(violation) = constraint.violation(&data, Some(document.owner_id())) {
+        if let Some(violation) = constraint.violation(&data, &system) {
             let object = Object::new();
             set_field(&object, "rule", &JsValue::from_str(name), name)?;
             set_field(

@@ -198,6 +198,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            generated_from: None,
+            revealed_reference: None,
             transient: false,
         }
     }
@@ -214,6 +216,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            generated_from: None,
+            revealed_reference: None,
             transient: false,
         }
     }
@@ -225,6 +229,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            generated_from: None,
+            revealed_reference: None,
             transient: false,
         }
     }
@@ -251,9 +257,11 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: Some(vec!["$ownerId".to_string()]),
             preallocated: true,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -380,6 +388,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byAuthor".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             },
         );

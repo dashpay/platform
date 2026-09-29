@@ -5,7 +5,10 @@ import Foundation
 /// version 14): a named condition every created or replaced document's
 /// properties must meet. Consensus checks every rule, in name order, and
 /// refuses a document breaking one with `DocumentPropertyConstraintViolatedError`
-/// (code 10422); a refused state transition is still paid for.
+/// (code 10422); a refused state transition is still paid for. A transfer or a
+/// purchase is judged against the rules reading `$ownerId` or the transfer's
+/// time or heights too, and a price update against the rules reading the
+/// update's (see `readsOwner` and `readsSystem`).
 ///
 /// Rust parses the rules and reports them
 /// (`dash_sdk_data_contract_get_property_constraints`); this type only carries
@@ -17,24 +20,77 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
 
     /// The rule exactly as the document type's schema declares it, as compact
     /// JSON text with sorted keys (every operator object has a single key, so
-    /// sorting changes nothing a reader would notice).
+    /// sorting changes nothing a reader would notice). Among its operators:
+    /// sizes (`{ "length": path }`, `{ "byteLength": path }`,
+    /// `{ "count": path }`), system times and heights as bare operands
+    /// (`"$createdAt"`), `{ "contains": [arrayPath, value] }`,
+    /// `{ "startsWith": [a, b] }`, `{ "endsWith": [a, b] }`,
+    /// `{ "notIn": [operand, [values]] }`, `{ "min": [a, b, ...] }`,
+    /// `{ "max": [a, b, ...] }`, `{ "abs": a }`, `{ "ifThen": [if, then] }`,
+    /// `{ "ifThenElse": [if, then, else] }`, and the totals
+    /// `{ "countOf": [documentType, filter] }` and
+    /// `{ "sumOf": [documentType, property, filter] }` (the filter optional).
     public let ruleJSON: String
 
     /// Every property the rule reads, in declared order, a property read twice
-    /// listed twice. `$ownerId` is no property and is not listed: see
-    /// `readsOwner`.
+    /// listed twice. The list describes the rule, not one document: it covers
+    /// every branch of an `ifThen` or `ifThenElse`, whichever one a document
+    /// takes. `$ownerId` is no property and is not listed: see `readsOwner`;
+    /// nor are the system times and heights: see `readsSystem`. A property a
+    /// total's filter takes a value from is listed (`category` in
+    /// `{ "sumOf": ["listing", "price", { "category": "category" }] }`), the
+    /// total itself is not: see `readsTotals`.
     public let reads: [PropertyConstraintRead]
 
-    /// Whether the rule compares the document's owner, `$ownerId`: then a
-    /// transfer or a purchase, which changes the owner, is judged against it
-    /// too.
+    /// Whether the rule reads the document's owner, `$ownerId`, in any branch,
+    /// as in `reads`: by comparing it, or through a total that depends on it
+    /// (a `countOf` or `sumOf` filtered by `$ownerId`, see `readsTotals`).
+    /// Then a transfer or a purchase, which changes the owner, is judged
+    /// against it too.
     public let readsOwner: Bool
 
-    public init(name: String, ruleJSON: String, reads: [PropertyConstraintRead], readsOwner: Bool) {
+    /// The system times and heights the rule reads, by name, in declared
+    /// order, one read twice listed twice, every branch included as in
+    /// `reads`: `$createdAt`, `$updatedAt` and `$transferredAt` (block times,
+    /// in milliseconds), each also with `BlockHeight` or `CoreBlockHeight`
+    /// appended (the Platform and Core block heights), the names of wasm-dpp2's
+    /// `PropertyConstraintSystemProperty`. Consensus judges a price update
+    /// against the rules reading `$updatedAt…`, and a transfer or a purchase
+    /// against the rules reading `$transferredAt…` (or `$ownerId`).
+    ///
+    /// Empty for a rule reading none, and for every rule reported by a library
+    /// built before the field existed.
+    public let readsSystem: [String]
+
+    /// The `countOf` and `sumOf` totals the rule reads, in declared order, one
+    /// read twice listed twice, every branch included as in `reads`: how many
+    /// documents of a type of the same contract match a filter, or the total
+    /// of an integer property over them, as the count and sum trees Drive
+    /// keeps hold them.
+    ///
+    /// The platform reads these totals from state when the document is sent.
+    /// The pre-check (`SDK.checkDocumentPropertyConstraints`) reads no state,
+    /// so it does not judge a rule reading one: such a rule can still refuse
+    /// a document the pre-check passes.
+    ///
+    /// Empty for a rule reading none, and for every rule reported by a library
+    /// built before the field existed.
+    public let readsTotals: [PropertyConstraintTotalRead]
+
+    public init(
+        name: String,
+        ruleJSON: String,
+        reads: [PropertyConstraintRead],
+        readsOwner: Bool,
+        readsSystem: [String] = [],
+        readsTotals: [PropertyConstraintTotalRead] = []
+    ) {
         self.name = name
         self.ruleJSON = ruleJSON
         self.reads = reads
         self.readsOwner = readsOwner
+        self.readsSystem = readsSystem
+        self.readsTotals = readsTotals
     }
 
     /// `ruleJSON` indented for display, or `ruleJSON` itself should it not
@@ -63,7 +119,9 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
                   let name = rule["name"] as? String,
                   let declaration = rule["rule"],
                   let reads = rule["reads"] as? [Any],
-                  let readsOwner = DocumentTypedArray.jsonBool(rule["readsOwner"])
+                  let readsOwner = DocumentTypedArray.jsonBool(rule["readsOwner"]),
+                  let readsSystem = systemReads(rule["readsSystem"]),
+                  let readsTotals = totalReads(rule["readsTotals"])
             else {
                 throw SDKError.serializationError("Malformed propertyConstraints rule: \(entry)")
             }
@@ -71,9 +129,134 @@ public struct DocumentPropertyConstraint: Equatable, Sendable {
                 name: name,
                 ruleJSON: try PropertyConstraintJSON.compactText(declaration),
                 reads: try reads.map(PropertyConstraintRead.init(jsonEntry:)),
-                readsOwner: readsOwner
+                readsOwner: readsOwner,
+                readsSystem: readsSystem,
+                readsTotals: readsTotals
             )
         }
+    }
+
+    /// A rule's `readsSystem` names, `[]` when the key is missing (a library
+    /// built before it), or `nil` for anything but an array of strings.
+    private static func systemReads(_ value: Any?) -> [String]? {
+        guard let value else {
+            return []
+        }
+        guard let entries = value as? [Any] else {
+            return nil
+        }
+        var names: [String] = []
+        names.reserveCapacity(entries.count)
+        for entry in entries {
+            guard let name = entry as? String else {
+                return nil
+            }
+            names.append(name)
+        }
+        return names
+    }
+
+    /// A rule's `readsTotals`, `[]` when the key is missing (a library built
+    /// before it), or `nil` for anything but an array of well-formed totals.
+    private static func totalReads(_ value: Any?) -> [PropertyConstraintTotalRead]? {
+        guard let value else {
+            return []
+        }
+        guard let entries = value as? [Any] else {
+            return nil
+        }
+        var totals: [PropertyConstraintTotalRead] = []
+        totals.reserveCapacity(entries.count)
+        for entry in entries {
+            guard let total = PropertyConstraintTotalRead(jsonEntry: entry) else {
+                return nil
+            }
+            totals.append(total)
+        }
+        return totals
+    }
+}
+
+/// A `countOf` or `sumOf` total a `propertyConstraints` rule reads: how many
+/// documents of `documentType`, a type of the same contract, match the
+/// filter, or the total of their integer `property` (a `sumOf` only). The
+/// fields mirror wasm-dpp2's `PropertyConstraintTotalRead` key for key.
+public struct PropertyConstraintTotalRead: Equatable, Sendable {
+    /// Which total a rule reads; the names are the operators', as wasm-dpp2's
+    /// `PropertyConstraintTotalRead.kind` gives them.
+    public enum Kind: Hashable, Sendable {
+        /// `countOf`: how many documents match.
+        case countOf
+        /// `sumOf`: the total of an integer property over the documents that
+        /// match.
+        case sumOf
+        /// A total this build does not know, by its name.
+        case other(String)
+
+        public init(name: String) {
+            switch name {
+            case "countOf": self = .countOf
+            case "sumOf": self = .sumOf
+            default: self = .other(name)
+            }
+        }
+
+        /// The total's name, as Rust reports it.
+        public var name: String {
+            switch self {
+            case .countOf: return "countOf"
+            case .sumOf: return "sumOf"
+            case let .other(name): return name
+            }
+        }
+    }
+
+    public let kind: Kind
+    /// The name of the type whose documents are counted or totalled.
+    public let documentType: String
+    /// The integer property of `documentType` a `sumOf` totals; `nil` for a
+    /// `countOf`.
+    public let property: String?
+    /// The keys the documents are matched by, in the order Rust gives them:
+    /// properties of `documentType`, or `$ownerId`. The values they must take
+    /// are in the rule (`ruleJSON`). Empty for a total over every document of
+    /// the type.
+    public let filter: [String]
+
+    public init(kind: Kind, documentType: String, property: String? = nil, filter: [String]) {
+        self.kind = kind
+        self.documentType = documentType
+        self.property = property
+        self.filter = filter
+    }
+
+    /// A `readsTotals` entry, or `nil` for one that is no object, lacks
+    /// `kind`, `documentType` or `filter`, or holds a value of the wrong type
+    /// (`property` included, when present).
+    init?(jsonEntry entry: Any) {
+        guard let total = entry as? [String: Any],
+              let kind = total["kind"] as? String,
+              let documentType = total["documentType"] as? String,
+              let keys = total["filter"] as? [Any]
+        else {
+            return nil
+        }
+        var property: String?
+        if let value = total["property"] {
+            guard let name = value as? String else {
+                return nil
+            }
+            property = name
+        }
+        var filter: [String] = []
+        filter.reserveCapacity(keys.count)
+        for key in keys {
+            guard let key = key as? String else {
+                return nil
+            }
+            filter.append(key)
+        }
+        self.init(kind: Kind(name: kind), documentType: documentType, property: property, filter: filter)
     }
 }
 
@@ -90,6 +273,16 @@ public struct PropertyConstraintRead: Hashable, Sendable {
         case text
         /// By its value, compared with identifiers: an identifier property.
         case identifier
+        /// By its size, in a `length` or `byteLength` operand: a string
+        /// property, measured in characters (as `maxLength` counts them) or
+        /// in UTF-8 bytes.
+        case length
+        /// By its size, in a `count` operand: the items of an array property,
+        /// or the bytes of a byte array property.
+        case count
+        /// By its elements, which a `contains` looks among: a typed array
+        /// property.
+        case elements
         /// A kind this build does not know, by its name.
         case other(String)
 
@@ -99,6 +292,9 @@ public struct PropertyConstraintRead: Hashable, Sendable {
             case "presence": self = .presence
             case "text": self = .text
             case "identifier": self = .identifier
+            case "length": self = .length
+            case "count": self = .count
+            case "elements": self = .elements
             default: self = .other(name)
             }
         }
@@ -110,6 +306,9 @@ public struct PropertyConstraintRead: Hashable, Sendable {
             case .presence: return "presence"
             case .text: return "text"
             case .identifier: return "identifier"
+            case .length: return "length"
+            case .count: return "count"
+            case .elements: return "elements"
             case let .other(name): return name
             }
         }
@@ -253,8 +452,8 @@ extension SDK {
     }
 
     /// The first `propertyConstraints` rule a document to create would break,
-    /// or `nil` when it meets them all (always so while this SDK's protocol
-    /// version is below 14).
+    /// or `nil` when it meets every rule judged (always so while this SDK's
+    /// protocol version is below 14).
     ///
     /// `propertiesJSON` is the properties JSON the document would be created
     /// with (the string handed to `ManagedPlatformWallet.createDocument`) and
@@ -263,6 +462,18 @@ extension SDK {
     /// with the check consensus runs; nothing but the rules is checked.
     /// `serializedContract` is as for `documentPropertyConstraints`. Bridges
     /// `dash_sdk_data_contract_check_property_constraints`.
+    ///
+    /// The block the create lands in is not known yet, so Rust estimates its
+    /// system values: the device clock stands in for the block time the create
+    /// records as `$createdAt`, `$updatedAt` and `$transferredAt`, and a rule
+    /// reading a block height (a `readsSystem` name ending in `BlockHeight`
+    /// or `CoreBlockHeight`) is not judged at all. Nor is a rule reading a
+    /// `countOf` or `sumOf` total (its `readsTotals` not empty): the platform
+    /// reads the total from state when the document is sent, and this check
+    /// reads no state. So `nil` does not promise consensus accepts the
+    /// document: a rule reading a block height or a total, or a time rule the
+    /// device clock judges differently from the block time, can still refuse
+    /// it.
     ///
     /// - Throws: `SDKError.invalidParameter` for an owner id that is not 32
     ///   bytes or properties that are not a JSON object, `SDKError.notFound` for

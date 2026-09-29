@@ -3552,6 +3552,7 @@ mod tests {
 
 #[cfg(test)]
 mod shielded_profile_schema_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
     use dpp::platform_value::{platform_value, Value};
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -3566,7 +3567,12 @@ mod shielded_profile_schema_tests {
                 let properties =
                     platform_value!({ "shieldedAddress": Value::Bytes(vec![0; length]) });
                 let result = contract
-                    .validate_document_properties("profile", properties, None, pv)
+                    .validate_document_properties(
+                        "profile",
+                        properties,
+                        &DocumentSystemValues::default(),
+                        pv,
+                    )
                     .unwrap();
                 assert_eq!(
                     result.is_valid(),
@@ -3578,7 +3584,7 @@ mod shielded_profile_schema_tests {
                 .validate_document_properties(
                     "profile",
                     platform_value!({"shieldedAddress": "not bytes"}),
-                    None,
+                    &DocumentSystemValues::default(),
                     pv,
                 )
                 .unwrap();
@@ -3587,7 +3593,7 @@ mod shielded_profile_schema_tests {
                 .validate_document_properties(
                     "profile",
                     platform_value!({"displayName": "Alice"}),
-                    None,
+                    &DocumentSystemValues::default(),
                     pv,
                 )
                 .unwrap();

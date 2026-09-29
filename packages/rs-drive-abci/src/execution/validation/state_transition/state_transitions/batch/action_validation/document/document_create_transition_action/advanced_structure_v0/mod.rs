@@ -1,3 +1,4 @@
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, InvalidDocumentTypeError};
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
@@ -109,7 +110,7 @@ impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTrans
             .validate_document_properties(
                 document_type_name,
                 self.data().into(),
-                Some(owner_id),
+                &DocumentSystemValues::created_in_block(owner_id, &self.block_info()),
                 platform_version,
             )
             .map_err(Error::Protocol)

@@ -23,7 +23,8 @@ use crate::consensus::state::contract_moderation::{
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserNotWarnedError,
     ContractUserSuspendedError, ContractUserWarningLimitReachedError,
     ContractDocumentAlreadyRestoredError, ContractDocumentRemovalNotFoundError,
-    DocumentModerationWindowElapsedError, DocumentRestoreHashMismatchError,
+    DocumentFieldNotChangeableByModeratorsError, DocumentModerationWindowElapsedError,
+    DocumentModeratorFieldNotWritableError, DocumentRestoreHashMismatchError,
     DocumentRestoreWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
     IdentityNotContractModeratorError,
 };
@@ -73,6 +74,7 @@ use crate::consensus::state::document::referenced_document_type_deletable_error:
 use crate::consensus::state::document::referenced_document_type_not_deletable_error::ReferencedDocumentTypeNotDeletableError;
 use crate::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use crate::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
+use crate::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use crate::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -633,6 +635,19 @@ pub enum StateError {
     // 14).
     #[error(transparent)]
     DocumentContestMaximumContendersReachedError(DocumentContestMaximumContendersReachedError),
+
+    // Fields of a document only the contract's moderators write, `moderatorAbilities.changeFields`
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentFieldNotChangeableByModeratorsError(DocumentFieldNotChangeableByModeratorsError),
+
+    #[error(transparent)]
+    DocumentModeratorFieldNotWritableError(DocumentModeratorFieldNotWritableError),
+
+    // The commitment a `refersTo` lookup with a computed key found does not meet the lookup's
+    // `minimumAgeBlocks` (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentRequirementNotMetError(ReferencedDocumentRequirementNotMetError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -728,6 +743,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             }),
             6
@@ -755,6 +772,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             }),
             10
@@ -1322,7 +1341,7 @@ mod tests {
             151
         );
         // A contest holding the most contenders a contest accepts refuses another (protocol
-        // version 14): the tail of the enum.
+        // version 14).
         assert_eq!(
             discriminant_of(StateError::DocumentContestMaximumContendersReachedError(
                 DocumentContestMaximumContendersReachedError::new(
@@ -1331,6 +1350,42 @@ mod tests {
                 )
             )),
             152
+        );
+        // Fields only the contract's moderators write (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentFieldNotChangeableByModeratorsError(
+                DocumentFieldNotChangeableByModeratorsError::new(
+                    group_id,
+                    "report".to_string(),
+                    "status".to_string(),
+                )
+            )),
+            153
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentModeratorFieldNotWritableError(
+                DocumentModeratorFieldNotWritableError::new(
+                    group_id,
+                    "report".to_string(),
+                    identity_id,
+                    "status".to_string(),
+                    identity_id,
+                )
+            )),
+            154
+        );
+        // A commitment a computed lookup key found that does not meet the lookup's
+        // `minimumAgeSeconds` (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentRequirementNotMetError(
+                ReferencedDocumentRequirementNotMetError::new(
+                    identity_id,
+                    "minimumAgeSeconds".to_string(),
+                    "60".to_string(),
+                    "$creatorId".to_string(),
+                )
+            )),
+            155
         );
     }
 }

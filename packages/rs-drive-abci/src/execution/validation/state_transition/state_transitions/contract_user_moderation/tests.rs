@@ -14,6 +14,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dash_to_credits;
+use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
@@ -73,6 +74,8 @@ use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod deletion_options;
+mod moderator_fields;
 mod seated_team;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
@@ -482,7 +485,7 @@ impl Setup {
     /// Proves the committed state for a document deletion or restore and checks the proof
     /// shows its record. A restore's verifier reads the document's id out of the bytes under
     /// the contract's document type, so it is given the contract, as a client holding it is;
-    /// a deletion's needs none.
+    /// a deletion's needs it only for a type that keeps no records.
     fn assert_removal_proved(&self, transition: &StateTransition) -> ContractDocumentRemoval {
         let platform_version = PlatformVersion::latest();
         let proof = self
@@ -2206,7 +2209,7 @@ fn post_schema(deletable_by_moderators: bool) -> Value {
         },
         "required": ["text"],
         "additionalProperties": false,
-        "canBeDeletedByModerators": deletable_by_moderators,
+        "moderatorAbilities": { "delete": deletable_by_moderators },
     })
 }
 
@@ -2556,7 +2559,10 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
         .schema()
         .clone();
     nice_document_schema
-        .insert("canBeDeletedByModerators".to_string(), Value::Bool(true))
+        .insert(
+            "moderatorAbilities".to_string(),
+            platform_value!({ "delete": true }),
+        )
         .expect("expected to set the keyword");
     add_document_type(&mut flipped, DOCUMENT_TYPE, nice_document_schema);
     let update = setup.contract_update(flipped).await;
@@ -2885,7 +2891,10 @@ async fn setup_with_a_moderation_window() -> Setup {
                 contract,
                 POST,
                 post_schema_with(platform_value!({
-                    "canBeDeletedByModeratorsFor": MODERATION_WINDOW_SECONDS,
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteWithin": MODERATION_WINDOW_SECONDS,
+                    },
                     "documentsMutable": true,
                     "required": ["text", "$updatedAt"],
                 })),
@@ -2985,7 +2994,10 @@ async fn should_measure_the_window_from_the_creation_of_a_post_that_never_change
                 contract,
                 POST,
                 post_schema_with(platform_value!({
-                    "canBeDeletedByModeratorsFor": MODERATION_WINDOW_SECONDS,
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteWithin": MODERATION_WINDOW_SECONDS,
+                    },
                     "documentsMutable": false,
                     "required": ["text", "$createdAt"],
                 })),
@@ -3038,20 +3050,13 @@ async fn should_fix_the_window_of_a_document_type() {
             .expect("expected the post type")
             .schema()
             .clone();
-        match window {
-            Some(seconds) => {
-                schema
-                    .insert("canBeDeletedByModeratorsFor".to_string(), seconds.into())
-                    .expect("expected to set the window");
-            }
-            None => {
-                if let Value::Map(map) = &mut schema {
-                    map.retain(|(key, _)| {
-                        key != &Value::Text("canBeDeletedByModeratorsFor".to_string())
-                    });
-                }
-            }
-        }
+        let abilities = match window {
+            Some(seconds) => platform_value!({ "delete": true, "deleteWithin": seconds }),
+            None => platform_value!({ "delete": true }),
+        };
+        schema
+            .insert("moderatorAbilities".to_string(), abilities)
+            .expect("expected to set the window");
         add_document_type(&mut changed, POST, schema);
         let update = setup.contract_update(changed).await;
         assert_paid_with_code(&setup.process(&update, &transaction), DOCUMENT_TYPE_UPDATE);
@@ -3330,12 +3335,12 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
     };
     for (moderation, what) in [
         (
-            with(|d| d.join_window = 86_399),
-            "a join window under a day",
+            with(|d| d.join_window = 2_419_201),
+            "a join window over four weeks",
         ),
         (
-            with(|d| d.vote_window = 86_399),
-            "a vote window under a day",
+            with(|d| d.vote_window = 2_419_201),
+            "a vote window over four weeks",
         ),
         (
             with(|d| d.challenge_cool_down = Some(94_608_001)),
@@ -3380,7 +3385,23 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
             "expected {what} to name the declaration, got {execution:?}"
         );
     }
-    // The bounds hold: the same declaration at its minimums is accepted.
+    // The bounds hold: the same declaration at its maximums is accepted, and off mainnet
+    // (the test platform runs on testnet) so are windows of 0.
+    for windows in [2_419_200, 0] {
+        let mut declaration = with(|_| {});
+        if let ContractModerators::Elected(elected) = &mut declaration.moderators {
+            elected.join_window = windows;
+            elected.vote_window = windows;
+        }
+        setup
+            .contract
+            .set_config(contract.config().clone().with_moderation(Some(declaration)));
+        let create = setup
+            .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+            .await;
+        assert_success(&setup.process(&create, &transaction));
+    }
+    // The same declaration at the mainnet minimum is accepted.
     setup
         .contract
         .set_config(contract.config().clone().with_moderation(Some(with(|d| {
@@ -3417,6 +3438,53 @@ async fn should_refuse_an_elected_declaration_the_contract_can_not_back() {
         &setup.process(&update, &transaction),
         "entering elected moderation",
     );
+}
+
+/// On mainnet an elected declaration's windows are at least a day: a window of 86,399
+/// seconds is refused, unpaid, at the create, and 86,400 is accepted. The floor is read from
+/// the network the node runs, so every other network takes 0.
+#[tokio::test]
+async fn should_floor_the_election_windows_at_a_day_on_mainnet() {
+    let mut setup = Setup::new(None).await;
+    setup.platform.platform.config.network = Network::Mainnet;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let contract = setup.contract.clone();
+    let with_windows = |join_window: u32, vote_window: u32| {
+        let mut moderation = elected(InterimModerators::ContractOwner, &[DOCUMENT_TYPE]);
+        if let ContractModerators::Elected(declaration) = &mut moderation.moderators {
+            declaration.join_window = join_window;
+            declaration.vote_window = vote_window;
+        }
+        moderation
+    };
+    for (moderation, what) in [
+        (with_windows(86_399, 86_400), "join window of 86399 seconds"),
+        (with_windows(86_400, 86_399), "vote window of 86399 seconds"),
+        (with_windows(0, 0), "join window of 0 seconds"),
+    ] {
+        setup
+            .contract
+            .set_config(contract.config().clone().with_moderation(Some(moderation)));
+        let create = setup
+            .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+            .await;
+        let execution = setup.process(&create, &transaction);
+        assert_unpaid_with_code(&execution, INVALID_CONTRACT_MODERATION_CONFIG);
+        assert!(
+            matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.to_string().contains(what)),
+            "expected the {what} to be refused, got {execution:?}"
+        );
+    }
+    setup.contract.set_config(
+        contract
+            .config()
+            .clone()
+            .with_moderation(Some(with_windows(86_400, 86_400))),
+    );
+    let create = setup
+        .contract_create(setup.owner.identity_nonce(), PlatformVersion::latest())
+        .await;
+    assert_success(&setup.process(&create, &transaction));
 }
 /// How long after a moderator's deletion a document can be restored: the protocol's week.
 fn restore_window_ms() -> TimestampMillis {

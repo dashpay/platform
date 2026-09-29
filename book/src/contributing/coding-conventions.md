@@ -84,7 +84,15 @@ dpp method whose own gate is `None` there), or the edit is a pure refactor with
 identical output. "Probably inert" is not enough. If the argument takes more
 than a sentence, or rests on a runtime check inside the shipped module, add a
 generation instead. Inside a new generation the capability is a constant fact
-(`Index::try_from_value_map(map, true)`), not a runtime check.
+(`Index::try_from_value_map(map, true)`), not a runtime check. For new
+changes, the patterns that compare `protocol_version` on purpose are the
+protocol upgrade ladder, the `is_allowed` gate for new transition kinds, and
+chain-creation content (`create_genesis_state` v1 and the Drive helpers that
+build the initial state structure); the [Versioned
+Dispatch](../versioning/versioned-dispatch.md) chapter describes them. Older
+comparisons elsewhere (for example the pre-version-9 arithmetic in
+`DocumentPropertyType`) stay because history replays through them; they are not
+a pattern to copy.
 
 Why: replay safety is structural when a shipped file stays byte-identical, and
 becomes a proof the reviewer has to check the moment it does not. An in-place
@@ -257,7 +265,8 @@ Rules that fall out of the table:
 - Preserve mempool coverage. `Batch` runs advanced structure with state during
   `check_tx`, while full state validation is skipped there
   (`validates_full_state_on_check_tx` defaults to `false`; masternode votes
-  are the one transition that opts in, because they are unpaid). Moving a
+  are the one transition that opts in, because a block refuses them unpaid,
+  and they run advanced structure with state there too). Moving a
   contract-dependent structural check into state validation would remove that
   rejection from mempool admission.
 - Validation outcomes are `ConsensusValidationResult`, returned as `Ok`. A

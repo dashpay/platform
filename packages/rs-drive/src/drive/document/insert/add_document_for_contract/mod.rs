@@ -64,4 +64,6 @@ impl Drive {
 }
 
 #[cfg(test)]
+mod integer_range_index_e2e_tests;
+#[cfg(test)]
 mod time_range_index_e2e_tests;

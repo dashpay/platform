@@ -90,7 +90,7 @@ The flat level is registration-time structure, created with the
 property-name trees and kept when the last entry goes (the prune stops at
 its `0` bucket, as on a preallocated index), so every entry costs the same.
 There is no prefix level for an aggregate, a ranking, a time grid, a skip
-trigger or a preallocation to apply to, so a flat index admits none of
+set or a preallocation to apply to, so a flat index admits none of
 those keywords. A clause-free query on a type with a flat index scans the
 flat level (every other indexOnly type refuses the by-id shape). Non-proof
 responses require this index to cover every property, including optional
@@ -162,8 +162,8 @@ Each entry's 32-byte payload is
 `hash_double(owner ‖ (name ‖ length ‖ raw index bytes)* ‖ [$createdAt])`
 over the document's PRESENT properties in sorted-name order
 (`index_only_row_commitment`) — every required property must be present,
-and an optional property (a `skipIfAbsent` trigger, the only optional
-kind) contributes nothing when absent, not even its name. It binds the
+and an optional property (a skip property of a `skipIfAbsent` index, the
+only optional kind) contributes nothing when absent, not even its name. It binds the
 independently stored index projections of one document back into one
 logical row: a delete recomputes the commitment from its submitted
 values, and every probed entry must carry it. A values tuple spliced from
@@ -183,60 +183,75 @@ aggregate keywords follow:
 
 | Constraint | Why |
 |---|---|
-| every property in `required` — except a `skipIfAbsent` index's trigger; every ancestor of an indexed dotted path required | the index path is the storage; no null layout exists — the one sanctioned hole removes the whole entry instead |
-| every non-trigger property appears in ≥ 1 **non-skip** index (prefix or terminal) | only indexed values exist, and a skip index carries no value for trigger-absent documents — covered only there, a property would be validated and committed yet written nowhere |
+| every property in `required` — except a skip property of a `skipIfAbsent` index; every ancestor of an indexed dotted path required | the index path is the storage; no null layout exists — the one sanctioned hole removes the whole entry instead |
+| every index holding an optional property skips on it (its skip set is all of its optional properties) | an absent value that did not skip would need the null layout this mode has no equivalent of |
+| every required property appears in ≥ 1 **non-skip** index (prefix or terminal); every optional property appears in a skip index whose skip set is that property alone | only indexed values exist, and a skip index carries no value for a document it skips — covered only there, a property would be validated and committed yet written nowhere |
 | **every index embeds `$ownerId`** (prefix or terminal) | entries are self-authorizing: a delete computed with owner = signer can only ever address the signer's own entries |
 | ≥ 1 index is `$createdAt`-free AND non-`skipIfAbsent` — the **proof index** | executed-transition proofs locate entries from the transition's values alone: they can neither reproduce a block timestamp nor anchor on an entry that may not exist |
 | every terminal component is `$ownerId` or a schema property passing the indexed-shape limits (no arrays or objects; byte arrays ≤ 255 bytes, strings ≤ 63 characters); every component but the last is fixed width; the whole key ≤ 255 bytes | the member key is the components' tree-key encodings concatenated, derived by the same functions the prefix levels use; a leading component must be splittable back and rangeable; grovedb caps keys at 255 bytes; other system properties are refused because the `$createdAt` rules walk the prefix properties |
-| a flat index (no `properties`) admits no countable / summable / ranked / `timeRange` / `skipIfAbsent` / `preallocated` keyword | there is no prefix level for them to apply to |
+| no index declares `integerRange` | an entry is keyed by the index's values and terminal, and a bucketed level holds window starts: rows differing only in the bucketed integer would claim the same entry in every window they share |
+| a flat index (no `properties`) admits no countable / summable / ranked / `timeRange` / `integerRange` / `skipIfAbsent` / `preallocated` keyword | there is no prefix level for them to apply to |
 | every `entryPayload` property is a required, bounded, top-level scalar in no index | the entry value has no representation for an absent property, estimation sizes the item by the bounds, and a property is either a key or a value |
 | indexed `$createdAt` requires `$createdAt` in `required` | creation only assigns timestamps for required system times |
 | `documentsMutable: false`, no transfers/trading/history/transient | no stored row, no revision |
 | non-unique, non-contested, `nullSearchable` default | v1 scope |
 | `preallocated` requires a fully reference-determined, non-bucketed path | see [Preallocated index paths](#preallocated-index-paths) |
-| `skipIfAbsent` requires its first property to be an optional, top-level schema property | see [Conditional participation](#conditional-participation-skipifabsent) |
+| a skip property is an optional, top-level schema property; no ranking sits above the index's deepest skip property | see [Conditional participation](#conditional-participation-skipifabsent) |
 
 `indexOnly` and the index set (terminals included, `preallocated` and
 `skipIfAbsent` flags included) are immutable across contract updates — a
 later-added index could never be backfilled, and the walkers derive the
-skip from `required` membership, which therefore cannot drift from
-historical entries either.
+skip from each index's skip set, which therefore cannot drift from
+historical entries either. (Respelling `skipIfAbsent: true` as the array of
+the same properties is no change: both parse to the same skip set.)
 
 ## Conditional participation (skipIfAbsent)
 
-An index may declare `skipIfAbsent: true`: a document that omits the
-index's FIRST property — the **skip trigger** — writes no entry into that
-index at all, and a delete recomputes the same skip from its carried
-values. The trigger is the one property that may leave `required`, and
-the rules keep three views provably equivalent: the write walkers skip a
-top-level branch keyed by an unrequired property (every index through
-such a branch is a skip index — the parser admits an optional property
-only at position 0 of skip indexes, never as a terminal), the probes
-derive zero entry paths from the parsed flag, and the row commitment
-pins the exact present-set so a delete with a different absence pattern
-fails every probe — a skip index can neither be force-pruned nor left
-with an orphan entry.
+An index may declare `skipIfAbsent`: a document that omits a property of
+the index's **skip set** writes no entry into that index at all, and a
+delete recomputes the same skip from its carried values. `true` makes the
+skip set every optional property of the index (on an indexOnly type it
+must be that set anyway, so the array spelling, naming it, parses to the
+same index); a skip property may sit at any position, a `timeRange` window
+included. The skip properties are the only properties that may leave
+`required`, and the rules keep three views provably equivalent: the write
+walkers write an index's entry only for a document carrying its skip set
+(`document_takes_part_in_index`), the probes derive zero entry paths for
+the same documents, and the row commitment pins the exact present-set so
+a delete with a different absence pattern fails every probe — a skip
+index can neither be force-pruned nor left with an orphan entry.
 
-Why the FIRST property: the merged index structure shares prefix levels
-across indexes and prunes empty trees only upward from a terminal. A
-deeper skip would leave the prefix levels above the absent property
-inserted but unterminated — silently charged, never reclaimed. At the
-top of the branch, absence writes nothing at all. (This also makes
-`skipIfAbsent` + `timeRange` structurally impossible: a bucketed source
-is `$createdAt`, which is required whenever indexed.)
+**No stranded trees.** The merged index structure shares levels across
+indexes and prunes empty trees only upward from an entry, so the walkers
+build a level only when an index the document takes part in ends at or
+below it (`level_reaches_entry`). An untagged like under
+`[$createdAt window, hashtag, postId]` still builds the day window shared
+with `byDayPost`, but no `hashtag` branch under it; under a grid that only
+a skip index uses, it builds no window at all. On an indexOnly type every
+index holding an optional property skips on it, so a level keyed by an
+absent value is never reached.
 
 The semantics are a **sparse projection**: the index holds exactly the
-documents carrying its trigger. Counts, ranked reads and absence proofs
-over it answer "among documents with this property" — a proved empty
+documents carrying its skip set. Counts, ranked reads and absence proofs
+over it answer "among documents with these properties" — a proved empty
 position means "no *tagged* like", not "no like". The query router makes
-that opt-in: a skip index is admissible only when the query binds its
-trigger (equality, `in`, range or order-by); the generic matcher alone
-would admit a trigger-unbound query within its difference budget and
-silently omit every trigger-absent row. Structural uniqueness still
-spans the skip boundary — a trigger-absent and a trigger-present
-document colliding on any shared non-skip entry cannot coexist. An
-absent trigger is distinct from a present-but-empty value, which indexes
-normally under its (possibly empty) encoded key.
+that opt-in (`index_admissible_for_skip_if_absent`, in every index picker,
+compiled into the verifier too): a skip index is admissible only when the
+query binds every skip property (equality, `in`, range, order-by, or the
+ranked property); the generic matcher alone would admit an unbound query
+within its difference budget, and an aggregate picker's prefix match could
+stop above a deep skip property, silently omitting every skipped row. A
+ranking never sits above a skip property (refused at registration: no
+query could read it). Structural uniqueness still spans the skip boundary
+— a skipped and a taking-part document colliding on any shared non-skip
+entry cannot coexist. An absent skip property is distinct from a
+present-but-empty value, which indexes normally under its encoded key.
+
+**Coverage.** A document carrying one optional property but missing
+another skips every index holding both, so each optional property needs a
+skip index whose skip set is that property alone: its value is then
+written whenever the document carries it, and the document stays
+deletable by values.
 
 The economics are the point: each ranked index costs roughly the same on
 every write, so a per-hashtag ranked index on a like doctype used to tax
@@ -262,7 +277,7 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
   side absent is the same mismatch a differing value would be — a like may
   omit its hashtag exactly when its post has none (anything laxer would
   let likes on tagged posts silently deflate per-tag aggregates), which is
-  what lets an agreement key double as a `skipIfAbsent` trigger with both
+  what lets an agreement key double as a `skipIfAbsent` skip property with both
   sides of the reference optional. The referenced side of a pair may also
   name the referenced document's `$ownerId` or `$creatorId` (the referring
   side must then be an identifier property): `{ "authorId": "$ownerId" }`
@@ -384,11 +399,26 @@ the terminal (`terminal > <last seen>`, with a limit) walks the entries
 page by page — **keyset pagination**, the indexOnly replacement for
 id-shaped `startAt` cursors, which cannot address a position whose
 synthesized id is a one-way hash. Mixed shapes are served through a
-**prefix pivot**: one range or `in` clause may sit on a prefix property
-instead of the terminal (`hashtag == h AND postId > p AND $ownerId ==
-me`), with everything above the pivot equality-bound, everything below
-it unconstrained, and the terminal clause an equality. All shapes prove
-and verify through the same shared path-query builder.
+**prefix pivot**: one `in` clause may sit on the index's last prefix
+property instead of the terminal (`hashtag == h AND postId IN [p, q] AND
+$ownerId == me`), with everything above it equality-bound, the terminal
+clause an equality, and a limit of at least the number of `in` values.
+
+A range pivot (`postId > p` in the same query), or an `in` pivot with
+prefix properties below it, is refused, and the error names the index
+shape that serves the query: one that lists the equality-bound
+properties, the terminal's included, before the ranged property. A
+pivot walk opens one branch per pivot value, and grovedb charges a
+branch that holds no row one slot of the limit, so a page of such a
+query could hold fewer rows than exist, and the response carries no
+cursor to say where it stopped. These shapes stay refused until the
+storage layer can report where a page stopped. An `in` pivot on the last
+prefix property opens at most one branch per value, so a limit that
+covers its values is never used up early. When another index serves the
+same query without an incomplete pivot, index selection prefers it over
+a pivot index that would win the name-order tie-break.
+
+All shapes prove and verify through the same shared path-query builder.
 
 Not supported on the read surface: by-`$id` fetches (no primary tree —
 rejected with guidance) and `startAt` cursors (rejected with the keyset

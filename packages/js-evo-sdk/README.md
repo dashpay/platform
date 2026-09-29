@@ -19,6 +19,8 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Building a document create transition by hand](#building-a-document-create-transition-by-hand)
 - [Immutable properties (`immutable`)](#immutable-properties-immutable)
 - [Property constraints (`propertyConstraints`)](#property-constraints-propertyconstraints)
+- [How a document type is stored (`documentTypeLayout`)](#how-a-document-type-is-stored-documenttypelayout)
+- [What a document costs (`documentCreateCost`)](#what-a-document-costs-documentcreatecost)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
 - [Contributing](#contributing)
@@ -247,13 +249,23 @@ try {
 import { Document, DocumentCreateTransition, BatchTransition } from '@dashevo/evo-sdk';
 
 const document = new Document({ properties, documentTypeName, dataContractId, ownerId });
-const transition = new DocumentCreateTransition({ document, identityContractNonce: nonce });
+// undefined unless the document enters a contest (a DPNS name, a moderation charter)
+const prefundedVotingBalance = await sdk.documents.contestFundToJoin(document);
+const transition = new DocumentCreateTransition({
+  document,
+  identityContractNonce: nonce,
+  prefundedVotingBalance,
+});
 const batch = BatchTransition.fromBatchedTransitions([transition.toDocumentTransition()], ownerId, 0); // userFeeIncrease
 const stateTransition = batch.toStateTransition();
 // sign, then sdk.stateTransitions.broadcast(stateTransition)
 ```
 
 From protocol version 14 the id of a new document commits to the identity contract nonce of its create transition. `new DocumentCreateTransition(...)` derives that id from the document's entropy and `identityContractNonce`, puts it on the transition and writes it back onto `document`, so `document.id` is final once the transition exists and equals `transition.base.id`. Before that the `Document` carries a placeholder. To know the id earlier, `document.setIdForCreation(nonce)` or `Document.generateId(type, owner, contract, entropy, nonce)`, or pass `identityContractNonce` to the `Document` constructor. Pass `platformVersion` (defaults to latest) to any of them for a network on an earlier protocol version. No app needs to reimplement the hash.
+
+A document whose values fall under a contested index enters a contest, and its create must state the most it pays into the contest's fund: without it, or stating less than the fund to join, Platform refuses the create with error 40114 and still charges its fees. From protocol version 14 that fund doubles once the contest holds 250 contenders and again for every 50 more. `sdk.documents.create` states it itself. For a transition built by hand, `sdk.documents.contestFundToJoin(document)` reads the contest's contenders (one proved query per 100) and returns the `PrefundedVotingBalance` to pass, the contested index's name and the fund to join now, or `undefined` for a document that joins no contest. Without the SDK, pass the document's contract as `dataContract` to `new DocumentCreateTransition(...)`: a contested document then states the contest's fund on its contested index, what joining costs below 250 contenders, and `contestFund` replaces that amount.
+
+From protocol version 14 a create may state more, as headroom for contenders joining before it lands: `new PrefundedVotingBalance({ indexName: prefundedVotingBalance.indexName, credits: 2n * prefundedVotingBalance.credits })`. Platform charges only the fund to join, but the identity must hold what the create states. Before 14 the stated amount must be exactly the contest's fund, and a create stating more is refused.
 
 ## Encrypted properties (`encryptedFor`)
 
@@ -425,7 +437,7 @@ From protocol version 14 a document type can declare rules its documents' proper
 }
 ```
 
-The comparisons are `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` and `greaterThanOrEqual`, and the operators `add` and `multiply` (two or more operands) and `subtract`, `divide`, `modulo` and `power` (exactly two). `{ "in": [expression, [values]] }` holds if the expression takes one of two or more distinct integer values. A string property (an enum, say) is compared with `{ "equal": ["status", { "const": "closed" }] }` or `notEqual`, with another string property (`{ "notEqual": ["fromCurrency", "toCurrency"] }`), or listed with `{ "in": ["status", ["open", "pending"]] }`; a constant must be one of the property's `enum` values, and a string the document leaves out equals none, unless `{ "ifAbsent": ["status", "open"] }` gives it a default. Identifier properties compare the same way, with base58 constants: `{ "equal": ["paymentToken", { "const": "<base58>" }] }`, `{ "notEqual": ["buyerId", "sellerId"] }`, or `{ "in": ["paymentToken", ["<base58>", "<base58>"]] }`. `$ownerId`, the document's owner, is an identifier operand as well (`{ "equal": ["authorId", "$ownerId"] }`), and a transfer or purchase that would break such a rule is refused. `anyOf` holds if at least one of two or more conditions holds, `allOf` if every one does, and `not` if its one condition does not; conditions are checked in order and `anyOf` stops at the first that holds, so `{ "anyOf": [{ "equal": ["b", 0] }, { "equal": [{ "divide": ["a", "b"] }, 2] }] }` never divides by zero. An operand may read an integer or a boolean property (true as 1, false as 0). A property the document leaves out counts as 0, or as the value of an `ifAbsent` operand naming it; `{ "present": path }` and `{ "absent": path }` tell a property left out from one set to 0, and may name a property of any type. The arithmetic is exact over 128-bit integers, and `divide` and `modulo` are Euclidean, so a remainder is never negative. The rules are fixed when the document type is created.
+The comparisons are `equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan` and `greaterThanOrEqual`, and the operators `add` and `multiply` (two or more operands) and `subtract`, `divide`, `modulo` and `power` (exactly two). `{ "in": [expression, [values]] }` holds if the expression takes one of two or more distinct integer values. A string property (an enum, say) is compared with `{ "equal": ["status", { "const": "closed" }] }` or `notEqual`, with another string property (`{ "notEqual": ["fromCurrency", "toCurrency"] }`), or listed with `{ "in": ["status", ["open", "pending"]] }`; a constant must be one of the property's `enum` values, and a string the document leaves out equals none, unless `{ "ifAbsent": ["status", "open"] }` gives it a default. Identifier properties compare the same way, with base58 constants: `{ "equal": ["paymentToken", { "const": "<base58>" }] }`, `{ "notEqual": ["buyerId", "sellerId"] }`, or `{ "in": ["paymentToken", ["<base58>", "<base58>"]] }`. `$ownerId`, the document's owner, is an identifier operand as well (`{ "equal": ["authorId", "$ownerId"] }`), and a transfer or purchase that would break such a rule is refused. `{ "startsWith": ["url", { "const": "https://" }] }` and `endsWith` test a string property's start or end, byte for byte, against a constant or another string property. `{ "contains": ["participants", "$ownerId"] }` holds when a typed array property has an element equal to the value, looked for as the array's elements are (an integer expression, a string or an identifier), so `{ "not": { "contains": ["labels", { "const": "used" }] } }` refuses a label; the array is reported as a read of kind `elements`. `anyOf` holds if at least one of two or more conditions holds, `allOf` if every one does, `not` if its one condition does not, `{ "ifThen": [a, b] }` if `b` holds whenever `a` does (evaluating `b` only then), and `{ "ifThenElse": [a, b, c] }` if `b` holds when `a` does and `c` when it does not; `{ "notIn": [expression, [values]] }` is an `in` negated, and `min`, `max` (two or more operands) and `abs` (one) join the arithmetic; conditions are checked in order and `anyOf` stops at the first that holds, so `{ "anyOf": [{ "equal": ["b", 0] }, { "equal": [{ "divide": ["a", "b"] }, 2] }] }` never divides by zero. An operand may read an integer or a boolean property (true as 1, false as 0), or a size: `{ "length": path }` and `{ "byteLength": path }` give the characters and UTF-8 bytes of a string property, and `{ "count": path }` the items of an array or the bytes of a byte array, so `{ "lessThanOrEqual": [{ "count": "tags" }, "maxTags"] }` holds a list to its own limit (a size read is reported with kind `length` or `count`). A type that lists `$createdAt`, `$updatedAt` or `$transferredAt` (or any of them with `BlockHeight` or `CoreBlockHeight` appended) in `required` may read it too: `{ "lessThanOrEqual": [{ "subtract": ["endsAt", "$createdAt"] }, 604800000] }` keeps a listing to a week, and since a price update sets `$updatedAt` and a transfer or purchase `$transferredAt`, each is judged against the rules reading those. `{ "countOf": [type, filter] }` and `{ "sumOf": [type, property, filter] }` read a total from state, how many documents of a type of the same contract match the filter or what an integer property adds up to over them, as the type's count or sum trees keep it once the write is done: `{ "lessThanOrEqual": [{ "countOf": ["listing", { "$ownerId": "$ownerId" }] }, 10] }` on `listing` keeps every owner at ten listings or fewer. The filter maps keys of the counted type (or `$ownerId`) to values read from the document being written, and may be left out for a whole-type total; the type needs `documentsCountable` or `documentsSummable` for a whole-type total, and an index whose properties are exactly the filter's keys (countable, or summing the property) otherwise. A property the document leaves out counts as 0, or as the value of an `ifAbsent` operand naming it; `{ "present": path }` and `{ "absent": path }` tell a property left out from one set to 0, and may name a property of any type. The arithmetic is exact over 128-bit integers, and `divide` and `modulo` are Euclidean, so a remainder is never negative. The rules are fixed when the document type is created.
 
 Consensus checks every rule on each create and replace, and rejects a document that breaks one, or whose rule overflows, divides by zero or raises to a negative power. The code reaches JS as `error.code`, and the message names the rule:
 
@@ -441,13 +453,13 @@ try {
 }
 ```
 
-To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema, and reads the document's owner for `$ownerId`:
+To find a broken rule before paying for a refused transition, a contract lists a document type's rules and checks a document against them with the code consensus runs. The check covers the rules alone, not the JSON schema. It reads the document's owner for `$ownerId`, and the device clock for the times the write will record (`readsSystem` lists the ones a rule reads); a rule reading a block height is not checked, since the height is unknown until the block, and neither is a rule reading a `countOf` or `sumOf` total, which only the platform reads from state (`readsTotals` lists the ones a rule reads, each with its `kind`, `documentType`, the summed `property` of a `sumOf` and the `filter` keys):
 
 ```ts
 contract.documentTypePropertyConstraints('offer');
 // [{ name: 'discountBelowPrice', rule: { lessThan: ['discount', 'price'] },
 //    reads: [{ path: 'discount', kind: 'value' }, { path: 'price', kind: 'value' }],
-//    readsOwner: false }, ...]
+//    readsOwner: false, readsSystem: [], readsTotals: [] }, ...]
 
 const broken = contract.checkDocumentPropertyConstraints(document);
 if (broken) {
@@ -456,6 +468,46 @@ if (broken) {
 ```
 
 Rules come back in name order, the order consensus checks them in; `contract.documentPropertyConstraints` maps every document type that declares rules to its list. The `PropertyConstraintCondition`, `PropertyConstraintExpression` and `PropertyConstraintEqualityOperand` types spell out the rule grammar, and `violation` is one of `NotMet`, `Overflow`, `DivisionByZero`, `NegativeExponent` or `NotAnInteger`, the reason consensus would report.
+
+## How a document type is stored (`documentTypeLayout`)
+
+`documentTypeLayout(contract, documentTypeName, platformVersion)` returns the GroveDB layout of a document type as Drive writes it: the document type tree, the documents by id and, for each index, the property and value trees down to where the index ends. Each layer carries the tree or element type Drive writes there (a count or sum tree, a ranked indexed tree, a reference, an indexOnly item), the wrapper a continuation tree gets under an aggregating value tree, the indexes that use it, and conditions such as the tree a unique index falls back to when a value is null. It runs locally with Drive's own rules, those of protocol version 14 on (an earlier version is refused), so it needs no connection:
+
+```ts
+import { documentTypeLayout, PlatformVersion } from '@dashevo/evo-sdk';
+
+const { root } = documentTypeLayout(contract, 'review', new PlatformVersion(14));
+// root.children: the documents by id ([0]) and one tree per first index property;
+// each node: { key, role, element, wrapper?, rankedAxes, indexes, notes, alternative?, children, structureNode }
+// (wrapper and alternative are left out when there is none)
+```
+
+`structureNode` names the layer of Drive's GroveDB structure description it is an instance of, as the [GroveDB structure viewer](https://dashpay.github.io/grovedb-structure-viewer/) shows it (`#/<structureNode>`).
+
+## What a document costs (`documentCreateCost`)
+
+`documentCreateCost(contract, documentTypeName, options, platformVersion)` returns what creating a document of a type costs, in credits (`creditsPerDash` of them make one Dash), computed locally by Drive from the contract:
+
+- `storage`: the bytes the insert writes and their fee, exact, under two scenarios: `newValues` (the first document with these index values creates their trees) and `knownValues` (a later document with the same values adds only its own entries);
+- `indexes`: per index, the bytes of the layers it shares with other indexes and of its own, so its cost on its own is `sharedBytes + ownBytes`;
+- `processing`: the signature and identity fetch (exact) and the work of the writes (estimated for `existingDocuments` stored documents);
+- `contractCharges`: the create's action fee, token cost and contest fund, when the type has them (a contested create is stored in the vote poll until the contest ends; that storage is not priced);
+- `refund`: what a delete refunds, in the same epoch and a year later;
+- `fields`: how the priced document was filled.
+
+The document is built from sizes, not values: by default each variable-size field is at the middle of its bounds and each optional field is present. Pass `fields` to change that:
+
+```ts
+import { documentCreateCost, PlatformVersion } from '@dashevo/evo-sdk';
+
+const cost = documentCreateCost(contract, 'note', {
+  fields: { text: { length: 200 }, mood: { present: false } },
+  existingDocuments: 10_000,
+}, PlatformVersion.latest());
+const dash = cost.totalCredits.newValues / cost.creditsPerDash;
+```
+
+It follows protocol version 14 on; an earlier version is refused. A type whose documents have a `ttl` is priced by lifetime, with no refund.
 
 ## Chained queries (provable semi-join)
 

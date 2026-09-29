@@ -84,9 +84,11 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 0,
             validate_document_purchase_transition_action_uniqueness: 0,
             validate_document_update_price_transition_action_uniqueness: 0,
-            validate_restored_document_uniqueness: 0,
+            validate_moderated_document_uniqueness: 0,
+            validate_uniqueness_of_data: 0,
         },
         primary_key_tree_type: 0,
+        fetch_property_constraint_aggregate: 0,
         expiration: DriveDocumentExpirationMethodVersions {
             insert_document_ttl_trees: 0,
             add_document_expiration_operations: 0,

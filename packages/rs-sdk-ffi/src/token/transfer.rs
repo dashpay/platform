@@ -181,7 +181,7 @@ pub unsafe extern "C" fn dash_sdk_token_transfer(
             .token_transfer(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!("Failed to transfer token and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to transfer token and wait", e)
             })?;
 
         Ok(result)

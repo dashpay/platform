@@ -13,6 +13,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 
+use crate::drive::document::index_only_row_commitment;
 use crate::drive::Drive;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
@@ -162,11 +163,8 @@ impl Drive {
                 platform_version,
             )?;
         } else {
-            let expected_commitment = crate::drive::document::index_only_row_commitment(
-                &document,
-                document_type,
-                platform_version,
-            )?;
+            let expected_commitment =
+                index_only_row_commitment(&document, document_type, platform_version)?;
             for index in document_type.indexes().values() {
                 let matches = self.index_only_entry_commitment_matches(
                     contract.id(),

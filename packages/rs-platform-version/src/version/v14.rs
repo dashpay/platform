@@ -16,7 +16,7 @@ use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
-use crate::version::drive_abci_versions::drive_abci_query_versions::v3::DRIVE_ABCI_QUERY_VERSIONS_V3;
+use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
@@ -181,7 +181,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   moderation election (an `electedCharter` contest) runs on its target
 ///   contract's join and vote windows, which the document create join check
 ///   and the contested insert read.
-/// * `DRIVE_ABCI_QUERY_VERSIONS_V3` bumps
+/// * `DRIVE_ABCI_QUERY_VERSIONS_V2` bumps
 ///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 2,
 ///   opening two routes on the v1 document-query handler: the ranked path
 ///   (a grouped aggregate whose single `order_by` names the selected
@@ -438,7 +438,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     argument, `setIdForCreation` and the `identityContractNonce`
 ///     constructor option.
 /// 19. **Document deletion by moderators**: a document type of a contract
-///     that declares moderation may set `canBeDeletedByModerators` (meta-schema
+///     that declares moderation may set `moderatorAbilities.delete` (meta-schema
 ///     v3, fixed when the type is created, refused on a type that keeps
 ///     history, is indexOnly or restricts creation; for references such a type
 ///     is deletable, so a permanentDocument reference refuses it and a
@@ -461,7 +461,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     fee is charged.
 ///     The moderation method table, the verify table and the query table gain
 ///     the document removal methods (`getContractDocumentRemovals`).
-///     `canBeDeletedByModeratorsFor` bounds the deletion in time: so many
+///     `moderatorAbilities.deleteWithin` bounds the deletion in time: so many
 ///     seconds after a document's last modification (`$updatedAt`, or
 ///     `$createdAt` on a type whose documents never change; the type must
 ///     require its clock), past which no moderator deletes it, the
@@ -505,7 +505,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     deleted; a restored document deleted again gets a fresh record in place
 ///     of the marked one, which the deletion transform reads to know. Neither
 ///     the type's creation token cost nor its `actionFees` creation fee is
-///     charged, and no fee agreement is asked. `canBeDeletedByModerators` is
+///     charged, and no fee agreement is asked. `moderatorAbilities.delete` is
 ///     now also refused on a type with a contested index, whose deletions
 ///     could never be undone. The record grows on the wire
 ///     (`getContractDocumentRemovals`: `document_hash`, `restoration`).
@@ -514,8 +514,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     contract may declare, when it is created, that its moderators are a team
 ///     elected by masternodes and evonodes (`ContractModerators::Elected`, a third kind
 ///     beside the owner and an appointed set, in the same config V2). The
-///     declaration is frozen: the join and vote windows (one day to four weeks,
-///     one week by default), in seconds and bounded by `SYSTEM_LIMITS_V4`;
+///     declaration is frozen: the join and vote windows (at most four weeks, at
+///     least one day on mainnet and 0 elsewhere, one week by default), in
+///     seconds and bounded by `SYSTEM_LIMITS_V4`;
 ///     whether the seat can be contested again once a team is seated
 ///     (`seatContestable`, required with no default), and for a contestable
 ///     seat the challenge cool-down (`challengeCoolDown`, in seconds, two weeks
@@ -1047,65 +1048,116 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     document's properties must meet, each a condition: a comparison
 ///     (`equal`, `notEqual`, `lessThan`, `lessThanOrEqual`, `greaterThan`,
 ///     `greaterThanOrEqual`) of two integer expressions built from integer
-///     literals, paths of integer or boolean properties (a boolean reading as
-///     1 for true and 0 for false) and `add`, `subtract`, `multiply`,
-///     `divide`, `modulo` and `power`; `in`, whether an integer expression
-///     takes one of two or more distinct integer values; `equal` or `notEqual`
-///     of a string property and a `{ "const": string }` or of two bare paths
-///     naming string properties, or `in` of a string property and two or more
-///     distinct strings, a string the document leaves out equalling no
-///     constant and no other string unless an `ifAbsent` gives it a string
-///     default (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum`
-///     must list too); `equal`, `notEqual` or `in` of an identifier property
-///     or of `$ownerId`, the document's owner, likewise, with base58
-///     identifier constants or another identifier operand and no default, an
-///     identifier the document leaves out equalling none; `present` or
-///     `absent` naming a property of any type, whether the document holds it
-///     (the one way to tell a property left out from one set to 0); `anyOf` or
-///     `allOf` over two or more conditions; or `not` over one. In an operand, a
-///     property the document leaves out counts as 0, or as the value of an
-///     `ifAbsent` operand naming it. Arithmetic is exact `i128`: `divide` and
-///     `modulo` are Euclidean (the remainder is never negative), and an
-///     overflow, a zero divisor, a negative exponent or a value that is not an
-///     integer refuses the document rather than wrapping. Conditions are
-///     checked in declared order and no further than the outcome needs
-///     (`anyOf` stops at the first that holds, `allOf` at the first that
-///     fails), a fault in one that is checked refuses the document whatever the
-///     others say, and `not` never turns a fault into a pass, so an earlier
-///     condition guards a later one. The parser checks that every path an
-///     operand reads names an integer or boolean property, every path compared
-///     with identifiers an identifier property, every path compared with
-///     strings a string property (whose `enum`, if it declares one, lists every
-///     constant it is compared with), and every path `present` or `absent`
-///     tests a property of any type, none transient nor inside a transient
-///     object; that every comparison and `in` reads a property or the owner;
-///     that nothing is compared with itself; that strings and identifiers are
-///     only compared for equality, and never with each other; that no `in`
-///     lists a value twice; that an `anyOf` or `allOf` holds none directly of
-///     its own kind and a `not` no `not`; that an indexOnly type, whose deletes
-///     carry no owner, reads no `$ownerId`; and that no condition or operand
-///     nests deeper than `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every
-///     parse. Under full validation it holds the limits
-///     `SystemLimits::max_property_constraints` (16 rules) and
-///     `max_property_constraint_nodes` (32 per rule, every comparison, `in`,
-///     listed value, `const`, presence test and logical operator counting as
-///     one), and that no `anyOf` or `allOf` lists the same condition twice.
-///     `DataContract::validate_document_properties` 0 (extended in place, inert
-///     before this version, and taking the document's owner for `$ownerId`)
-///     calls `validate_property_constraints` (`validate_property_constraints`
-///     0) after the schema validation, so document create and replace, and any
-///     client validating a document, refuse a broken rule with
-///     `DocumentPropertyConstraintViolatedError` (10422), naming the rule and
-///     why. A transfer and a purchase, which give the document a new owner,
-///     are judged against the rules reading `$ownerId` with that owner
-///     (`validate_property_constraints_for_new_owner`, beside `distinctFrom` in
-///     their structure validation, in place and inert before this version).
-///     The rules read no state and change nothing stored. They are fixed when
-///     the document type is created: a changed `propertyConstraints` is an
-///     incompatible schema change on update. The moderation charters contract
-///     declares its first one: a `submittedCharter`'s `rewardSplit` members add
-///     up to 100, replacing the charter-specific check, whose error 11001
-///     keeps its place in `BasicError` but is never produced.
+///     literals, paths of integer or boolean properties (a boolean reading as 1
+///     for true and 0 for false), `add`, `subtract`, `multiply`, `divide`,
+///     `modulo` and `power`, `min` and `max` over two or more operands and
+///     `abs` over one, and sizes: `length` and `byteLength`, the characters and
+///     UTF-8 bytes of a string property, and `count`, the items
+///     of an array or byte array property, each 0 for a property the document
+///     leaves out, and the system times and heights `$createdAt`, `$updatedAt`
+///     and `$transferredAt` (block times in milliseconds), each also with
+///     `BlockHeight` or `CoreBlockHeight` appended, of the document's creation,
+///     last update (create, replace, price update) and last transfer (create,
+///     transfer, purchase), which a rule may read only on a type listing them
+///     in `required`; `in`, whether an integer expression takes one of two or
+///     more distinct integer values; `equal` or `notEqual` of a string property
+///     and a `{ "const": string }` or of two bare paths naming string
+///     properties, or `in` of a string property and two or more distinct
+///     strings, a string the document leaves out equalling no constant and no
+///     other string unless an `ifAbsent` gives it a string default
+///     (`{ "ifAbsent": ["status", "open"] }`, whose default an `enum` must list
+///     too); `equal`, `notEqual` or `in` of an identifier property (one
+///     declaring `refersTo` included) or of `$ownerId`, the document's owner,
+///     likewise, with base58 identifier constants or another identifier operand
+///     and no default, an identifier the document leaves out equalling none;
+///     `startsWith` or `endsWith`, whether a string (a constant or a string
+///     property, at least one a property) starts or ends with another, byte for
+///     byte; `contains`, whether a typed array property holds an element equal
+///     to an integer expression, a string or an identifier operand (a constant,
+///     a property, or `$ownerId`), as its elements are, an array the document
+///     leaves out holding nothing; `present` or `absent` naming a property of
+///     any type, whether the document holds it (the one way to tell a property
+///     left out from one set to 0); `anyOf` or `allOf` over two or more
+///     conditions; `not` over one; `ifThen` over two (the second holding
+///     whenever the first does, evaluated only then) or `ifThenElse` over three
+///     (the second when the first holds, the third when it does not, only the
+///     branch taken evaluated), no two alike; `notIn`, an `in` negated in as
+///     many nodes. In an operand, a property the document leaves out counts as
+///     0, or as the value of an `ifAbsent` operand naming it. `countOf` and
+///     `sumOf` operands read a total from state: how many documents of a type
+///     of the same contract match a filter (keys of that type or `$ownerId`,
+///     values read from the document written), or an integer property's total
+///     over them, as the count or sum tree will keep it once the write is done;
+///     the batch transformer reads them into the action
+///     (`Drive::fetch_property_constraint_aggregate`, billed; in place in
+///     transformer 0, reading nothing before this version), a transfer or
+///     purchase reads again those depending on the owner, a price update those
+///     of the rules it judges, and a rule reading one it is not given is not
+///     judged by an SDK pre-check and an error in consensus, which reads them
+///     all.
+///     Arithmetic is exact `i128`: `divide` and `modulo` are Euclidean (the
+///     remainder is never negative), and an overflow, a zero divisor, a
+///     negative exponent or a value that is not an integer refuses the document
+///     rather than wrapping. Conditions are checked in declared order and no
+///     further than the outcome needs (`anyOf` stops at the first that holds,
+///     `allOf` at the first that fails), a fault in one that is checked refuses
+///     the document whatever the others say, and `not` never turns a fault into
+///     a pass, so an earlier condition guards a later one. The parser checks
+///     that every path an operand reads names an integer or boolean property,
+///     every path a `length` or `byteLength` measures a string property, every
+///     path a `count` counts an array or byte array property, every string
+///     `startsWith` or `endsWith` tests a string property (a constant tested
+///     against one with an `enum` starting or ending one of its values), every
+///     array a `contains` looks in a typed array of the kind it looks for (a
+///     string constant in the elements' `enum` when they declare one), every
+///     system time or height a rule reads one the type lists in `required`
+///     (none on an indexOnly type), every path compared with identifiers an
+///     identifier property, every path compared with strings a string property
+///     (whose `enum`, if it declares one, lists every constant it is compared
+///     with), and every path `present` or `absent` tests a property of any
+///     type, none transient nor inside a transient object; that every
+///     comparison and `in` reads a property or the owner; that nothing is
+///     compared with itself; that strings and identifiers are only compared for
+///     equality, and never with each other; that no `in` lists a value twice;
+///     that an `anyOf` or `allOf` holds none directly of its own kind and a
+///     `not` no `not` or `notIn`; that an indexOnly type, whose deletes carry
+///     no owner, reads no `$ownerId`; and that no condition or operand nests
+///     deeper than
+///     `MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH` (64), on every parse. Under full
+///     validation it holds the limits `SystemLimits::max_property_constraints`
+///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
+///     comparison, `in`, listed value, `const`, presence test and logical
+///     operator counting as one), and that no `anyOf` or `allOf` lists the same
+///     condition twice, and at most `max_property_constraint_aggregates` (4)
+///     distinct totals per type; once every type is parsed, that a tree keeps
+///     each total (`documentsCountable` or `documentsSummable`, or an index
+///     whose properties are exactly the filter's keys) and that no type with a
+///     contested index totals its own documents, in
+///     `create_document_types_from_document_schemas` 1, in place and inert
+///     before this version. `DataContract::validate_document_properties` 0
+///     (extended in place, inert before this version, and taking the document's
+///     owner for `$ownerId`) calls `validate_property_constraints`
+///     (`validate_property_constraints` 0) after the schema validation, so
+///     document create and replace, and any client validating a document,
+///     refuse a broken rule with `DocumentPropertyConstraintViolatedError`
+///     (10422), naming the rule and why. A transfer and a purchase, which give
+///     the document a new owner, are judged against the rules reading
+///     `$ownerId` or the transfer's time and heights, with the new values, and
+///     a price update, which sets the update's time and heights, against the
+///     rules reading those (`validate_property_constraints_for_system_change`,
+///     in their structure validation, in place and inert before this version;
+///     the price update's call is new there). `validate_document_properties`
+///     takes the document version's system values (`DocumentSystemValues`):
+///     consensus gives the writer and the block's time and heights on create,
+///     and on replace the stored creation and transfer values with the block's
+///     as the update. The rules change nothing stored and read no state but
+///     their totals. They
+///     are fixed when the document type is created: a changed
+///     `propertyConstraints` is an incompatible schema change on update. The
+///     moderation charters contract declares its first one: a
+///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
+///     charter-specific check, whose error 11001 keeps its place in
+///     `BasicError` but is never produced.
 ///
 /// 40. **Elected moderation teams moderate from their stored charter**: seating
 ///     writes nothing. Awarding the contest of item 37 writes the winning
@@ -1319,6 +1371,259 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     create structure validation 1 leaves the amount to state validation;
 ///     version 0 wants exactly the contest's fund.
 ///
+/// 52. **Property constraints judge what is stored, and read `$defs`**: to
+///     `present` and `absent` (item 39), an object none of whose members is
+///     present (`{}`, or `{ "inner": {} }` around one) is absent, since a
+///     stored document reads it back as no object at all. A create or replace
+///     carrying `meta: {}` was judged with `meta` present, and a later
+///     transfer, purchase or price update, judged on the stored document, with
+///     it absent. The parser (generation 3) reads the schema of a property
+///     given as a `$ref` to the contract's `$defs` from the definition, as the
+///     core parse does, when it checks a rule's string constants and defaults
+///     against the property's `enum` and an `encryptedFor` key id's bounds; it
+///     refused every such contract with a decoding error before.
+///
+/// 53. **Properties the platform generates (`generatedFrom`)**: the property
+///     keyword (meta-schema v3, `apply_generated_from` 0, `GeneratedFrom` on
+///     `DocumentProperty`) names a built-in `function` and its `params`,
+///     properties of the same document type, as
+///     `{ "function": "sys.stringTransformations.homographSafeASCII", "params": ["label"] }`.
+///     System functions are named under `sys.`, leaving other names to
+///     functions a contract may bring later. The `sys.stringTransformations`
+///     functions take one string and change ASCII characters only, keeping
+///     every other character, without Unicode tables: `lowercase`,
+///     `uppercase`, `capitalize`, `camelCase`, `snakeCase`, and
+///     `homographSafeASCII`, which lowercases, then maps `o` to `0` and `i`
+///     and `l` to `1`, DPNS's label normalization over ASCII. The parser
+///     checks at registration and update that `params` holds as many
+///     properties as the function takes, each another string property that
+///     is not generated itself, that neither the property nor a param is
+///     transient or inside a transient object, and that every param sits
+///     inside every object holding the property; a changed declaration is an
+///     incompatible schema change, and `validate_update` 1 refuses a property
+///     an update adds over params that all already existed
+///     (`DocumentTypeUpdateError`, 40212); meta-schema v3 refuses the keyword
+///     beside `$ref`, whose definition would replace it.
+///     `fill_generated_properties` (0) writes a declared property a document
+///     leaves out, from its params, in the action transformers of document
+///     create, replace and index-only delete, before the contest resolution
+///     and every check read the data, in `Document::try_from_create_transition`
+///     and `try_from_replace_transition`, and in
+///     `index_only_transition_entry_path_query`, the builder the prover and
+///     the verifier share, with which proofs are built and checked. The client
+///     transition builders, the SDK's contest fund lookup and the JS and FFI
+///     property-constraint pre-checks call `regenerate_generated_properties`
+///     (same slot) instead, which replaces a value the document holds and
+///     removes it when a param is absent, so a transition built from a
+///     fetched and edited document carries the value of its new params and
+///     its contest is detected from it.
+///     `DataContract::validate_document_properties` 0 calls
+///     `validate_generated_from_properties` (`validate_generated_from` 0)
+///     after the schema and `maxBytes`, and refuses a supplied value that is
+///     not what the function generates, one without its params, or a document
+///     repeating a key on the way to the property or a param, with
+///     `DocumentPropertyNotGeneratedError` (10424). Every call site was
+///     extended in place and is inert before this version, where the three
+///     slots are `None` and the meta-schemas refuse the keyword.
+///
+/// 54. **An aggregate keyword names a top-level property**: `summable` and
+///     `averageable` on an index, and `documentsSummable` and
+///     `documentsAverageable` on a document type, name the integer property
+///     each document adds to the sum. Drive reads its value from the top level
+///     of the document, but the parser resolves the name among the flattened
+///     properties and required fields, which also hold the dotted path of a
+///     property nested in an object, and meta-schemas v1 and v2 bound only the
+///     name's length. A contract naming `payment.amount` registered, and every
+///     document create of the type then failed in Drive as an internal error.
+///     Meta-schema v3 (`CONTRACT_VERSIONS_V6`) gives the four keywords the
+///     property-name pattern `^[a-zA-Z0-9_]{1,64}$`, so a create or an update
+///     carrying a dotted name is refused under full validation
+///     (`JsonSchemaError`, 10101, paid in a block; `check_tx` does not fully
+///     validate a contract). A contract stored with one still loads, since a
+///     stored contract is parsed without full validation, but can no longer be
+///     updated; no contract on mainnet or testnet names one.
+/// 55. **A preallocated index's agreement source fits a tree key**: contract
+///     create and update state validation 1 refuse, paid, a
+///     `propertyAgreement` pair through which a preallocated index is keyed
+///     when its referenced property can hold a value over 255 bytes
+///     (`ReferencedDocumentPropertyAgreementInvalidError`, 40126): creating a
+///     referenced document writes that value as a tree key, which failed with
+///     an internal error for a value over 255 bytes, and for any value once
+///     the property's midway size, which sized the estimate, passed 255
+///     bytes. `add_document_for_contract_operations` 1 now estimates that
+///     layer from the referring property, as an entry insert does, and
+///     preallocates nothing for a referenced value wider than the referring
+///     property can hold, which no referring document can agree with.
+///
+/// 56. **A `propertyAgreement` pair compares values, not index keys**:
+///     document reference validation 0 judges each pair as two single values
+///     (`Value::same_scalar_data`): strings as text, byte arrays and
+///     identifiers as bytes, integers as numbers at any width, floats by
+///     their `f64` bits (an integer against a float read as the float it
+///     converts to, as a `number` carried as an integer is stored), booleans
+///     as booleans. An identifier or byte array carried as an array of
+///     `U8`s is the bytes it lists, as before; any other array agrees with
+///     nothing. It compared the two sides' index key encodings, under which
+///     `""` agreed with `"\0"`, and two equal values over 255 bytes, which
+///     an unindexed string of 64 characters or more can hold, were refused
+///     (`ReferencedDocumentPropertyMismatchError`, 40127).
+///
+/// 57. **Moderator abilities, and fields only moderators write**: the two
+///     doctype keywords of moderator deletion (19) become one object,
+///     `moderatorAbilities` (meta-schema v3): `delete` for
+///     `canBeDeletedByModerators`, `deleteWithin` for
+///     `canBeDeletedByModeratorsFor`, and `changeFields`, the top-level
+///     properties only the contract's moderators write. The whole object is
+///     fixed with the type (40212). `deleteKeepsRecord` (default true) says
+///     whether a moderator's deletion leaves its removal record: without one the
+///     type has no records tree, the query refuses it, a restore is refused
+///     (41119) and the deletion is proved by the document's absence, which the
+///     verifier learns from the contract. `deleteRefundsOwner` (default false)
+///     says whether the owner is refunded its storage instead of forfeiting it
+///     (the batch then carries no `ForfeitStorageRefunds`). A listed property must be declared,
+///     optional, stored, not immutable, neither a reference nor read by one,
+///     neither generated nor a generation parameter, and in no contested index,
+///     on a type that is not indexOnly; a type listing any keeps `$revision` even
+///     when `documentsMutable` is false, and a lookup key or a list element's
+///     list may not read such a field of the type it refers to.
+///     `ContractUserModeration` gains the `ChangeDocumentFields` action: a
+///     moderator (for a seated team, holding the new `changeDocumentFields`
+///     ability, appended to `ModerationAbility`, on the type, and citing a
+///     listed reason) sets or removes those fields on any document of the type,
+///     whoever owns it. The changed document is judged as a replace judges one
+///     (schema, `propertyConstraints` with their totals, `distinctFrom`,
+///     `encryptedFor` shapes, unique indexes through
+///     `validate_moderated_document_uniqueness`, the restore's check
+///     generalized and renamed), its references are not checked again, and it
+///     is stored with the replace's update, `$revision` one higher and
+///     `$updatedAt` untouched; the moderator pays, refunds of what the change
+///     frees stay the owner's. A change that changes nothing is refused (10905),
+///     and a seated team's change does not count toward its action share. An
+///     elected declaration must give its team `changeDocumentFields` on every
+///     type that lists fields. The proof
+///     is the document as it now stands. The batch transformer (in place,
+///     inert before 14) refuses a document's owner who sets, changes or removes
+///     such a field without moderating the contract, in the mempool too. New errors:
+///     `InvalidContractModerationDocumentFieldsError` (10905),
+///     `DocumentFieldNotChangeableByModeratorsError` (41123) and
+///     `DocumentModeratorFieldNotWritableError` (41124), appended.
+/// 58. **The last moderator's stamp (`$moderatedAt`, `$moderatedBy`)**: two
+///     system properties of a document whose type keeps fields for its
+///     moderators (57), the block time and the identity of the last moderator
+///     to write them. A `changeDocumentFields` sets both, and so does the batch
+///     transformer (in place, inert before 14) for a create or replace whose
+///     signer moderates the contract and writes such a field; a replace that
+///     leaves the fields alone carries them over, and transfers, purchases,
+///     price updates and restores keep them. Document serialization format 3
+///     (this version's) records them behind bits 512 and 1024 of its time
+///     field flags, so a document without them is written as before. Parser
+///     generation 3 lets an index name either on such a type, never in a
+///     unique index (10231); the shipped index key, query value and size
+///     arms for the two names (`get_raw_for_document_type` v0,
+///     `serialize_value_for_key` v0, Drive's estimated key sizes) are reached
+///     only through such an index.
+///
+/// 59. **`skipIfAbsent` at any position, `true` or an array, on every type**:
+///     document meta-schema v3 and the generation-3 parser take
+///     `skipIfAbsent: true` (skip on every optional property of the index)
+///     or an array naming the skip set, and a skip property may sit at any
+///     position of the index, under a `timeRange` window too. A stored type
+///     may declare it (the array may then leave some optional properties on
+///     the null key), except on a contested index or next to
+///     `nullSearchable: false`; on an indexOnly type the skip set is every
+///     optional property of the index and each optional property needs a
+///     skip index of its own, without a `timeRange`. No `rankedCountable`
+///     `at` level may sit above a skip property; on a stored type a ranking
+///     at a skip property may not share its level with an index keeping the
+///     null layout for it, and a skip property that is a byte array needs
+///     `minItems` of at least 1. The v2 insert and delete walkers write an index's
+///     entry only for a document carrying its skip set and build a level
+///     only when an entry of the document sits at or below it; update 1
+///     moves a replaced document into or out of a skip index; every index
+///     picker (server and verifier) admits a skip index only for a query
+///     binding each skip property, on a stored type with a constraint no
+///     missing value can meet. A contract valid before keeps its layout and
+///     queries: it could only skip on an indexOnly index's first property,
+///     where both rules agree.
+///
+/// 60. **Integer-range indexes**: an index can declare an `integerRange`
+///     transform (`on`, `range`, `step`, optional `phase < step`) that
+///     buckets a required user integer property of at most 64 bits into
+///     windows starting at `phase + k * step`; a start below the lowest
+///     value of the property's integer type is clamped to it, so every
+///     value is in at least one window. It shares the time-range machinery:
+///     the grid-qualified level key, the walkers' fan-out (the insert, delete
+///     and update walkers read one `IndexBucketing`), the overlap cap
+///     (`SystemLimits::max_time_range_overlap_factor`) and the resolution
+///     provenance that keeps raw queries off a bucketed index. The v1
+///     `getDocuments` handler resolves the new `IN_INTEGER_RANGE` operator,
+///     a typed `IntegerRangeSelection` naming one window by its start, to a
+///     window-start equality from the query alone. `unique: true` needs
+///     non-overlapping windows; the uniqueness probe (v1) looks in the
+///     candidate's window and lets a document change its value within its
+///     own window. An indexOnly type cannot declare one (its entries would
+///     collide across rows that share a window); neither kind of bucketed
+///     index can be a `refersTo` lookup target or a `propertyConstraints`
+///     answering index; a nested source must sit in required objects and
+///     the grid-qualified level key fits 255 bytes; and a document `ttl`
+///     prices every window an integer-range index writes.
+///
+/// 61. **A `refersTo` may find its document by a hash the document reveals**:
+///     a `propertyAgreement` pair may be a function, keyed by the referenced
+///     property, `"<referenced property>": { "function": "sys.hash.sha256d",
+///     "params": [...] }` (meta-schema v3 `agreementFunction`, parser
+///     generation 3, `apply_property_reference` 0): the referenced property
+///     holds the SHA-256 of the SHA-256 of the params' bytes joined in order, a
+///     property path of the document (the property carrying the reference
+///     included), `{ "const": text }`, or `"."` for a value without a path (each
+///     element of a typed array, the writer, the creator), a string counting as
+///     its UTF-8, a byte array as its bytes, an identifier as its 32 bytes. That
+///     property must be in the reference's `lookup` index, whose `keys` may then
+///     leave it out: the parser holds the function as the lookup's computed key
+///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
+///     `sys.hash` namespace beside the string transformations of
+///     `generatedFrom`, which refuses it. A string or byte array property may
+///     now carry a `refersTo` whose function reads its value
+///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`);
+///     the property keeps its type. The document such a key finds is a
+///     commitment made earlier, so the lookup is judged when the document is
+///     created only: its params may be transient or optional, every stored value
+///     it reads must be fixed once written, and a replace leaves it alone.
+///     Document create structure validation 1 refuses a create missing a param,
+///     repeating a key on the way to one, or whose variable-length param holds
+///     the one-byte separator that must follow it
+///     (`DocumentReferencePreimageInvalidError`, 10423). Beside such a lookup,
+///     on the `refersTo` (refused inside the lookup), the reference may
+///     declare `minimumAgeBlocks`, judged by document create state
+///     validation 2 against the found document's `$createdAtBlockHeight`
+///     (`ReferencedDocumentRequirementNotMetError`, 40142), and `consume`, which
+///     deletes the found document with the create
+///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
+///     it elsewhere refused with 40120). The hash is computed once per key and
+///     billed as `ValidationOperation::DoubleSha256` by the blocks it hashes,
+///     beside the lookup's document fetch. Such a `deletableDocument` lookup,
+///     judged on the create alone, may sit on an `immutable` property, which
+///     `validate_no_immutable_deletable_element_references` otherwise refuses.
+///     A plain pair `{"$ownerId": "$ownerId"}`
+///     makes the commitment the writer's own, and `consume` requires it, into
+///     the declaring contract, on a type whose owners may delete, that declares
+///     no delete token cost or delete action fee and requires no stricter
+///     signature security level than the declaring type; batch advanced
+///     structure 1 refuses a contract-bound key whose bounds leave out a type
+///     the created type may consume (`ContractBoundedKeyOutOfBoundsError`,
+///     20014). The consumed deletes are converted with the create's own
+///     operations pending, so a type may consume its own documents. The plain
+///     pairs beside a function are judged with it, on the create alone, so the
+///     properties they name must be fixed once written or transient; on a
+///     mutable type such a lookup may not be an `anyOf` operand; and no
+///     property a function reads may be listed under
+///     `moderatorAbilities.changeFields` (57).
+///     `creatorRefersTo` takes a `deletableDocument` target through a function,
+///     and an `ownerRefersTo` or `creatorRefersTo` lookup may leave the value
+///     out beside one. The declaration reproduces the DPNS preorder hash of a
+///     name under a parent byte for byte; the DPNS contract and its create
+///     trigger are unchanged. See `book/src/data-model/documents.md`.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -1350,9 +1655,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
 /// `offset`; the ranked response is an additive `ResultData.ranked`
 /// variant, whose `skipped` field is likewise additive; and the v1
-/// where-clause operator enum gains `IN_TIME_RANGE = 11`, which pre-v14
-/// servers reject as an unknown operator rather than misread (the v0 wire
-/// has no time-range operator at all).
+/// where-clause operator enum gains `IN_TIME_RANGE = 11` and
+/// `IN_INTEGER_RANGE = 12`, which pre-v14 servers reject as unknown
+/// operators rather than misread (the v0 wire has neither).
 /// Contract-bound authentication keys activate through contract-bounds validation v2,
 /// identity-signature validation v1 and batch advanced-structure v1. Identity creation
 /// validates key bounds (state v1) and identity-update state v1 retains the contract
@@ -1383,13 +1688,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody unless its type sets `deleteRefundsOwner`; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
-        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
+        query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
@@ -1524,8 +1829,6 @@ mod tests {
         );
     }
 
-    /// The ranked index keywords are gated by the meta-schema version, so v14
-    /// must select meta-schema v3 while v13 stays on v2.
     /// Contested indexes without a Lock choice (item 23): the three method
     /// versions that read the resolution are selected by v14 only, so a v13
     /// replay keeps the shipped rules (a full poll for every contest, ties to
@@ -1586,6 +1889,8 @@ mod tests {
         );
     }
 
+    /// The ranked index keywords are gated by the meta-schema version, so v14
+    /// must select meta-schema v3 while v13 stays on v2.
     #[test]
     fn ranked_index_keywords_are_gated_by_meta_schema_v3() {
         assert_eq!(
@@ -1650,46 +1955,6 @@ mod tests {
                 .class_method_versions
                 .try_from_schema,
             3
-        );
-    }
-
-    /// v14 introduces the slots but activates none of them yet. If a later
-    /// change flips one of these, it must do so deliberately — and update this
-    /// test — rather than by inheriting a default.
-    #[test]
-    fn ranked_feature_slots_exist_but_are_dormant() {
-        assert_eq!(
-            PLATFORM_V14.drive.methods.document.query.detect_ranked_mode,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14.drive.methods.document.query.detect_having_mode,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14
-                .drive
-                .methods
-                .verify
-                .document_ranked
-                .verify_ranked_top_k_proof,
-            0
-        );
-        assert_eq!(
-            PLATFORM_V14
-                .drive
-                .methods
-                .verify
-                .document_ranked
-                .verify_having_range_proof,
-            0
-        );
-        let grove = &PLATFORM_V14.drive.grove_methods.batch;
-        assert_eq!(grove.batch_insert_empty_provable_count_indexed_tree, 0);
-        assert_eq!(grove.batch_insert_empty_provable_sum_indexed_tree, 0);
-        assert_eq!(
-            grove.batch_insert_empty_provable_count_provable_sum_indexed_tree,
-            0
         );
     }
 

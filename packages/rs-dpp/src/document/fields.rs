@@ -17,6 +17,8 @@ pub mod property_names {
     pub const CREATED_AT_CORE_BLOCK_HEIGHT: &str = "$createdAtCoreBlockHeight";
     pub const UPDATED_AT_CORE_BLOCK_HEIGHT: &str = "$updatedAtCoreBlockHeight";
     pub const TRANSFERRED_AT_CORE_BLOCK_HEIGHT: &str = "$transferredAtCoreBlockHeight";
+    pub const MODERATED_AT: &str = "$moderatedAt";
+    pub const MODERATED_BY: &str = "$moderatedBy";
 }
 
 pub const IDENTIFIER_FIELDS: [&str; 3] = [

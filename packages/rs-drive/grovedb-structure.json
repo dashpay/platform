@@ -2812,7 +2812,7 @@
                             "type": "any"
                           },
                           "encoding": "utf8",
-                          "description": "The name of an index's next property; a time range property appends its grid as #range#step"
+                          "description": "The name of an index's next property; a time or integer range property appends its grid as #range#step"
                         },
                         "kinds": [
                           "Tree",
@@ -2845,7 +2845,7 @@
                                 "type": "any"
                               },
                               "encoding": "serialized_value",
-                              "description": "The property's value serialized for ordering; empty for null; a bucket start for a time range property"
+                              "description": "The property's value serialized for ordering; empty for null; a window start for a time or integer range property"
                             },
                             "kinds": [
                               "Tree",
@@ -3015,7 +3015,7 @@
                     "since": 14,
                     "presence": "lazy",
                     "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                    "description": "The records of the documents the contract's moderators deleted. Created with the first document type that sets canBeDeletedByModerators, by the contract's creation or by an update. Read by clients, never by a document transition, so it sorts below the rest.",
+                    "description": "The records of the documents the contract's moderators deleted. Created with the first document type whose moderators' deletions keep records, by the contract's creation or by an update. Read by clients, never by a document transition, so it sorts below the rest.",
                     "children": [
                       {
                         "id": "contracts.contract.other.document_removals.document_type",
@@ -3039,7 +3039,7 @@
                         "since": 14,
                         "presence": "always",
                         "source": "packages/rs-drive/src/drive/contract/paths.rs",
-                        "description": "The removed documents of one document type that sets canBeDeletedByModerators. Created with the document type, by the contract's creation or by the update that adds the type.",
+                        "description": "The removed documents of one document type whose moderators' deletions keep records. Created with the document type, by the contract's creation or by the update that adds the type.",
                         "children": [
                           {
                             "id": "contracts.contract.other.document_removals.document_type.document",

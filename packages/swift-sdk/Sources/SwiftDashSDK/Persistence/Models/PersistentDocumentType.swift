@@ -177,9 +177,12 @@ extension PersistentDocumentType {
 
     /// The first `propertyConstraints` rule a document of this type, created
     /// with `propertiesJSON` and owned by `ownerId`, would break, or `nil`
-    /// when it meets them all: what
+    /// when it meets every rule judged: what
     /// `SDK.checkDocumentPropertyConstraints(serializedContract:documentType:propertiesJSON:ownerId:)`
-    /// reports for the parent contract's stored platform serialization.
+    /// reports for the parent contract's stored platform serialization. As
+    /// there, the device clock stands in for the create's block time, and a
+    /// rule reading a block height or a `countOf` or `sumOf` total is not
+    /// judged.
     ///
     /// - Throws: `SDKError.invalidState` when the parent contract has no
     ///   stored serialization, or what the SDK call throws.
