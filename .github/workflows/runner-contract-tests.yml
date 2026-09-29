@@ -1,0 +1,31 @@
+name: Runner image contract tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/runner-requirements*.json'
+      - '.github/scripts/runner-image.py'
+      - '.github/scripts/kotlin-instrumented-tests.sh'
+      - '.github/scripts/tests/**'
+      - '.github/actions/rust/**'
+      - '.github/workflows/runner-contract-tests.yml'
+      - '.github/workflows/runner-image-candidate.yml'
+      - '.github/workflows/kotlin-sdk-build.yml'
+      - '.github/workflows/tests-rs-workspace.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-contract-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test image contracts, selection and workflow boundaries
+        run: |
+          python3 -m unittest discover -s .github/scripts/tests -v
+          bash -n .github/scripts/kotlin-instrumented-tests.sh
