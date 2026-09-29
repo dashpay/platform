@@ -1,6 +1,3 @@
-// Used by the user-driven cancel of a proven-dead send, which lands separately.
-#[allow(dead_code)]
-pub(crate) mod abandon_plan;
 pub mod balance;
 pub mod balance_handler;
 mod broadcast;

@@ -7,7 +7,7 @@
 //! landed. This module re-asks the network through
 //! [`AcceptanceProbe`](crate::broadcast_probe::AcceptanceProbe) and publishes
 //! the verdict; it **changes nothing** in the wallet. Cancelling a dead send is
-//! a separate, user-driven decision (see `abandon_plan`).
+//! a separate, user-driven decision.
 //!
 //! What is probed: every *root* of an unsettled chain the wallet itself
 //! signed — a transaction that spends this wallet's coins, is not in a block,
