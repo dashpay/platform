@@ -2,10 +2,13 @@ use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::{Document, FetchMany};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
+use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0Getters;
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
-use drive::query::{OrderClause, WhereClause, WhereOperator};
+use dpp::version::PlatformVersion;
+use drive::query::{OrderClause, SelectProjection, WhereClause, WhereOperator};
+use std::sync::Arc;
 
 use super::convert_to_homograph_safe_chars;
 
@@ -86,10 +89,23 @@ impl Sdk {
     ///
     /// Returns the usernames and whether the set is known to be complete:
     /// `true` once a page comes back shorter than `page_limit`, `false` when
-    /// `max_pages` full pages were read without reaching the end (the caller
-    /// must then treat the result as a lower bound, not the owned set).
-    /// Documents that do not parse as DPNS domains are skipped, as in
+    /// the end was not provably reached (the caller must then treat the
+    /// result as a lower bound, not the owned set). Documents that do not
+    /// parse as DPNS domains are skipped, as in
     /// [`Self::get_dpns_usernames_by_identity`].
+    ///
+    /// # When `true` can be trusted
+    ///
+    /// Continuing a page relies on `startAfter` inside the `records.identity`
+    /// equality bucket, which only the query lowering introduced with
+    /// protocol version 14 (`non_primary_key_path_query: 1`) serves. The
+    /// earlier lowering drops the rest of the bucket after any cursor, so a
+    /// second page would come back empty and read as the end. On such a
+    /// platform version (the one the SDK runs at once the first page has
+    /// answered) the loop reads only the first page: `true` then means the
+    /// identity has fewer than `page_limit` names, and a full first page
+    /// returns `false`. Otherwise `false` means `max_pages` full pages were
+    /// read without reaching the end.
     pub async fn get_all_dpns_usernames_by_identity(
         &self,
         identity_id: Identifier,
@@ -113,13 +129,16 @@ impl Sdk {
             // moves the cursor past it.
             let page_len = documents.len();
             let last_id = documents.keys().last().copied();
+            // Read after the fetch: the response has already moved an
+            // auto-detecting SDK to the network's protocol version.
+            let cursor_continues = start_after_continues_an_equality_bucket(self.version());
             usernames.extend(
                 documents
                     .into_values()
                     .flatten()
                     .filter_map(Self::document_to_dpns_username),
             );
-            match next_dpns_page(page_len, page_limit, last_id) {
+            match next_dpns_page(page_len, page_limit, last_id, cursor_continues) {
                 DpnsPageStep::Complete => return Ok((usernames, true)),
                 DpnsPageStep::Continue(cursor) => start_after = Some(cursor),
                 DpnsPageStep::Unknown => return Ok((usernames, false)),
@@ -253,13 +272,13 @@ impl Sdk {
 /// One page of `domain` documents whose `records.identity` is `identity_id`,
 /// resuming after `start_after` when set.
 fn identity_domains_page_query(
-    dpns_contract: std::sync::Arc<dpp::data_contract::DataContract>,
+    dpns_contract: Arc<DataContract>,
     identity_id: Identifier,
     page_limit: u32,
     start_after: Option<Identifier>,
 ) -> DocumentQuery {
     DocumentQuery {
-        select: drive::query::SelectProjection::documents(),
+        select: SelectProjection::documents(),
         data_contract: dpns_contract,
         document_type_name: "domain".to_string(),
         where_clauses: vec![WhereClause {
@@ -285,18 +304,41 @@ enum DpnsPageStep {
     Complete,
     /// A full page: continue after this document id.
     Continue(Identifier),
-    /// A full page without a cursor: completeness cannot be established.
+    /// A full page that cannot be continued (no cursor, or a platform
+    /// version whose lowering drops the rest of the bucket after one):
+    /// completeness cannot be established.
     Unknown,
 }
 
-fn next_dpns_page(page_len: usize, page_limit: u32, last_id: Option<Identifier>) -> DpnsPageStep {
+fn next_dpns_page(
+    page_len: usize,
+    page_limit: u32,
+    last_id: Option<Identifier>,
+    cursor_continues: bool,
+) -> DpnsPageStep {
     if page_len < page_limit as usize {
         DpnsPageStep::Complete
-    } else if let Some(id) = last_id {
+    } else if let (Some(id), true) = (last_id, cursor_continues) {
         DpnsPageStep::Continue(id)
     } else {
         DpnsPageStep::Unknown
     }
+}
+
+/// Whether `startAfter` a document inside an equality bucket (no `orderBy`)
+/// returns the rest of that bucket. The v0 non-primary-key lowering
+/// (protocol versions <= 13) hands the exclusive cursor to the equality
+/// key itself and so drops the whole bucket; the v1 lowering continues on
+/// the document-id level. Pinned in Drive by the
+/// `dpns_identity_records_paging` tests in `rs-drive/tests/query_tests.rs`.
+fn start_after_continues_an_equality_bucket(platform_version: &PlatformVersion) -> bool {
+    platform_version
+        .drive
+        .methods
+        .document
+        .query
+        .non_primary_key_path_query
+        != 0
 }
 
 #[cfg(test)]
@@ -305,25 +347,52 @@ mod paging_tests {
 
     #[test]
     fn a_short_page_completes_the_set() {
-        assert_eq!(next_dpns_page(0, 100, None), DpnsPageStep::Complete);
-        assert_eq!(
-            next_dpns_page(99, 100, Some(Identifier::from([1u8; 32]))),
-            DpnsPageStep::Complete
-        );
+        for cursor_continues in [true, false] {
+            assert_eq!(
+                next_dpns_page(0, 100, None, cursor_continues),
+                DpnsPageStep::Complete
+            );
+            assert_eq!(
+                next_dpns_page(99, 100, Some(Identifier::from([1u8; 32])), cursor_continues),
+                DpnsPageStep::Complete
+            );
+        }
     }
 
     #[test]
     fn a_full_page_continues_after_its_last_document() {
         let last = Identifier::from([7u8; 32]);
         assert_eq!(
-            next_dpns_page(100, 100, Some(last)),
+            next_dpns_page(100, 100, Some(last), true),
             DpnsPageStep::Continue(last)
         );
     }
 
     #[test]
     fn a_full_page_without_a_cursor_is_not_complete() {
-        assert_eq!(next_dpns_page(100, 100, None), DpnsPageStep::Unknown);
+        assert_eq!(next_dpns_page(100, 100, None, true), DpnsPageStep::Unknown);
+    }
+
+    #[test]
+    fn a_full_page_on_a_lowering_that_drops_the_bucket_is_not_complete() {
+        assert_eq!(
+            next_dpns_page(100, 100, Some(Identifier::from([7u8; 32])), false),
+            DpnsPageStep::Unknown
+        );
+    }
+
+    #[test]
+    fn only_the_v1_lowering_continues_an_equality_bucket() {
+        for protocol_version in 1..=13 {
+            let version = PlatformVersion::get(protocol_version).expect("released version");
+            assert!(
+                !start_after_continues_an_equality_bucket(version),
+                "protocol version {protocol_version} uses the v0 lowering"
+            );
+        }
+        assert!(start_after_continues_an_equality_bucket(
+            PlatformVersion::latest()
+        ));
     }
 }
 
@@ -453,9 +522,17 @@ mod paging_loop_tests {
     /// Mock SDK serving the DPNS contract, with one expectation per
     /// `(start_after, page)`; requests without an expectation fail.
     async fn sdk_with_pages(pages: Vec<(Option<Identifier>, Documents)>) -> crate::Sdk {
+        sdk_with_pages_at(PlatformVersion::latest(), pages).await
+    }
+
+    /// [`sdk_with_pages`] pinned to `version`.
+    async fn sdk_with_pages_at(
+        version: &'static PlatformVersion,
+        pages: Vec<(Option<Identifier>, Documents)>,
+    ) -> crate::Sdk {
         let contract = dpns_contract();
         let mut sdk = SdkBuilder::new_mock()
-            .with_version(PlatformVersion::latest())
+            .with_version(version)
             .with_context_provider(DpnsOnlyContextProvider(Arc::clone(&contract)))
             .build()
             .expect("mock sdk");
@@ -570,6 +647,42 @@ mod paging_loop_tests {
             .expect("both pages answer");
 
         assert_eq!(labels(&usernames), ["alice", "carol"]);
+        assert!(complete);
+    }
+
+    /// Protocol version 13 cannot continue inside the equality bucket, so a
+    /// full first page is all the loop reads, and it is not complete. Only
+    /// the first page has an expectation: a continuation would fail.
+    #[tokio::test]
+    async fn a_full_page_on_the_v0_lowering_stops_and_is_not_complete() {
+        let v13 = PlatformVersion::get(13).expect("protocol version 13");
+        let sdk = sdk_with_pages_at(
+            v13,
+            vec![(None, page(vec![domain(1, "alice"), domain(2, "bob")]))],
+        )
+        .await;
+
+        let (usernames, complete) = sdk
+            .get_all_dpns_usernames_by_identity(identity(), PAGE, 10)
+            .await
+            .expect("only the first page is requested");
+
+        assert_eq!(labels(&usernames), ["alice", "bob"]);
+        assert!(!complete, "a v0 continuation would drop the rest");
+    }
+
+    /// A short first page needs no cursor, so it is complete on any version.
+    #[tokio::test]
+    async fn a_short_first_page_on_the_v0_lowering_is_complete() {
+        let v13 = PlatformVersion::get(13).expect("protocol version 13");
+        let sdk = sdk_with_pages_at(v13, vec![(None, page(vec![domain(1, "alice")]))]).await;
+
+        let (usernames, complete) = sdk
+            .get_all_dpns_usernames_by_identity(identity(), PAGE, 10)
+            .await
+            .expect("the one page answers");
+
+        assert_eq!(labels(&usernames), ["alice"]);
         assert!(complete);
     }
 }
