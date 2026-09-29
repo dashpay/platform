@@ -1308,11 +1308,10 @@ impl PlatformWalletPersistence for SqlitePersister {
         // transaction. The current schema also has lossless token balances,
         // invitations, account pools, tracked asset locks, and
         // deferred-contact-crypto queue rows.
-        // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
-        // token balances and the DashPay overlay have no load readers, so a
-        // full restore remains lossy. Shielded viewing keys are native when
-        // compiled in; notes, nullifiers, and sync state use ShieldedStore.
+        // WALLET_RESTORE covers the Core snapshot; auxiliary token, profile,
+        // invitation, and deferred-contact readback remains separate.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::WALLET_RESTORE)
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
@@ -1515,7 +1514,11 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        let conn = self.conn().map_err(PersistenceError::from)?;
+        let mut connection = self.conn().map_err(PersistenceError::from)?;
+        let conn = connection
+            .transaction()
+            .map_err(WalletStorageError::from)
+            .map_err(PersistenceError::from)?;
         let ctx = LoadCtx::new(self.config.load_policy);
         // Cleared up front so a failed load never leaves the previous load's
         // snapshot behind, masquerading as this one's verdict.
@@ -1605,6 +1608,9 @@ impl PlatformWalletPersistence for SqlitePersister {
             unimplemented_rows = degradation.unimplemented_rows,
             "load() summary"
         );
+        conn.commit()
+            .map_err(WalletStorageError::from)
+            .map_err(PersistenceError::from)?;
         self.replace_load_degradation(degradation);
         Ok(state)
     }
@@ -1802,12 +1808,7 @@ fn load_one_wallet(
             key_wallet::account::account_collection::AccountCollection::new(),
         )
     } else {
-        build_wallet(network, wallet_id, &account_manifest).map_err(|e| {
-            PersistenceError::backend(format!(
-                "watch-only wallet rebuild failed for {}: {e}",
-                hex::encode(wallet_id)
-            ))
-        })?
+        build_wallet(network, wallet_id, &account_manifest).map_err(PersistenceError::from)?
     };
     // TODO(insert-wallet-id-recompute): confirm whether key_wallet's
     // insert_wallet recomputes wallet_id — see PR's existing Deferred
@@ -1830,25 +1831,17 @@ fn load_one_wallet(
         &used_core_addresses,
         ctx,
     )
-    .map_err(|e| {
-        PersistenceError::backend(format!(
-            "core-state rehydration failed for {}: {e}",
-            hex::encode(wallet_id)
-        ))
-    })?;
+    .map_err(PersistenceError::from)?;
     if account_manifest
         .provider
         .iter()
         .any(|entry| entry.account_type == key_wallet::account::AccountType::ProviderPlatformKeys)
     {
         restore_provider_platform_node_pool(&mut wallet_info, conn, &wallet_id, network, ctx)
-            .map_err(|e| {
-                PersistenceError::backend(format!(
-                    "platform-node pool rehydration failed for {}: {e}",
-                    hex::encode(wallet_id)
-                ))
-            })?;
+            .map_err(PersistenceError::from)?;
     }
+    schema::core_pool::restore_pools(conn, &wallet_id, &mut wallet_info, ctx)
+        .map_err(PersistenceError::from)?;
     let mut wallet = wallet;
     super::rehydrate::restore_recorded_transactions(
         &mut wallet_info,
