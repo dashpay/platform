@@ -296,3 +296,95 @@ async fn should_restore_persisted_finality_before_advancing_sync_checkpoint() {
     info.update_synced_height(300);
     fixture.redeliver(&mut wallet, &mut info).await;
 }
+
+#[tokio::test]
+async fn should_keep_replayed_output_only_in_its_owning_account() {
+    let mut wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+    let xpub = wallet.accounts.standard_bip32_accounts[&0].account_xpub;
+    let address = info
+        .accounts
+        .standard_bip32_accounts
+        .get_mut(&0)
+        .unwrap()
+        .next_receive_address(Some(&xpub), true)
+        .unwrap();
+    let funding = Transaction {
+        version: 1,
+        lock_time: 0,
+        input: vec![TxIn {
+            previous_output: OutPoint::new(Txid::from_byte_array([14; 32]), 0),
+            ..Default::default()
+        }],
+        output: vec![TxOut {
+            value: 70_000,
+            script_pubkey: address.script_pubkey(),
+        }],
+        special_transaction_payload: None,
+    };
+    let coin = OutPoint::new(funding.txid(), 0);
+    let result = info
+        .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+        .await;
+    let coins: Vec<_> = info.accounts.standard_bip32_accounts[&0]
+        .utxos
+        .values()
+        .cloned()
+        .collect();
+    assert_eq!(coins.len(), 1);
+    let (persister, _dir, _) = common::fresh_persister();
+    persister
+        .store(
+            wallet.wallet_id,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: Network::Testnet,
+                    wallet_group_id: [0; 32],
+                    birth_height: 0,
+                }),
+                account_registrations: wallet
+                    .accounts
+                    .all_accounts()
+                    .into_iter()
+                    .map(|account| AccountRegistrationEntry {
+                        account_type: account.account_type,
+                        account_xpub: account.account_xpub,
+                    })
+                    .collect(),
+                core: Some(CoreChangeSet {
+                    records: result.new_records,
+                    new_utxos: coins,
+                    last_processed_height: Some(300),
+                    synced_height: Some(300),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // Without its pool row the loader cannot attribute the coin and parks it
+    // in the first funds account; replay then finds the real owner.
+    persister
+        .lock_conn_for_test()
+        .execute(
+            "DELETE FROM core_address_pool WHERE script = ?1",
+            [address.script_pubkey().as_bytes()],
+        )
+        .unwrap();
+
+    let mut state = persister.load().unwrap();
+    let info = state.wallets.remove(&wallet.wallet_id).unwrap().wallet_info;
+    let holders = info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .filter(|account| account.utxos.contains_key(&coin))
+        .count();
+    assert_eq!(holders, 1, "one outpoint must live in exactly one account");
+    assert!(info.accounts.standard_bip32_accounts[&0]
+        .utxos
+        .contains_key(&coin));
+    assert_eq!(info.balance.total(), 70_000);
+    assert_eq!(info.get_spendable_utxos().len(), 1);
+}
