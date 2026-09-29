@@ -314,6 +314,50 @@ pub(crate) struct DpnsMarketplaceSyncProgress {
     pub(crate) pending_departures: VecDeque<DpnsNameInfo>,
 }
 
+/// Names that left `identity_id` since the last completed ownership scan:
+/// every label the identity carries, plus every `Owned` marketplace row
+/// tracked for it, whose normalized label the scan did not see.
+///
+/// The rows matter because the label list is not a stable trigger on its
+/// own: a complete username fetch (`apply_fetched_dpns_names`) already
+/// drops a departed label, so a sweep that ran afterwards would otherwise
+/// never classify the departure, update its row, or refresh a seller's
+/// balance. Each normalized label is queued once, the label list first.
+fn departure_candidates(
+    identity_id: &Identifier,
+    previous_labels: &[DpnsNameInfo],
+    previous_rows: &BTreeMap<Identifier, DpnsNameStateEntry>,
+    seen_normalized_labels: &BTreeSet<String>,
+) -> VecDeque<DpnsNameInfo> {
+    let mut queued: BTreeSet<String> = BTreeSet::new();
+    let mut departures = VecDeque::new();
+    let from_labels = previous_labels
+        .iter()
+        .map(|name| (convert_to_homograph_safe_chars(&name.label), name.clone()));
+    let from_rows = previous_rows
+        .values()
+        .filter(|row| {
+            row.wallet_identity_id == *identity_id
+                && matches!(row.status, DpnsNameSaleStatus::Owned)
+        })
+        .map(|row| {
+            (
+                row.normalized_label.clone(),
+                DpnsNameInfo {
+                    label: row.label.clone(),
+                    acquired_at: row.transferred_at_ms.or(row.created_at_ms),
+                },
+            )
+        });
+    for (normalized, name) in from_labels.chain(from_rows) {
+        if seen_normalized_labels.contains(&normalized) || !queued.insert(normalized) {
+            continue;
+        }
+        departures.push_back(name);
+    }
+    departures
+}
+
 // ---------------------------------------------------------------------------
 // System contracts
 // ---------------------------------------------------------------------------
@@ -1647,15 +1691,12 @@ impl IdentityWallet {
 
                 if complete {
                     progress.cursor = None;
-                    progress.pending_departures = previous_labels
-                        .iter()
-                        .filter(|name| {
-                            !progress
-                                .seen_normalized_labels
-                                .contains(&convert_to_homograph_safe_chars(&name.label))
-                        })
-                        .cloned()
-                        .collect();
+                    progress.pending_departures = departure_candidates(
+                        &identity_id,
+                        &previous_labels,
+                        &previous_rows,
+                        &progress.seen_normalized_labels,
+                    );
                     progress.seen_normalized_labels.clear();
                 } else {
                     progress.cursor = next_cursor;
@@ -3543,6 +3584,71 @@ mod tests {
             mirror.stored_dpns_removals(),
             vec![document_id],
             "the removal delta must finally reach the durable mirror"
+        );
+    }
+
+    /// A complete username fetch (`apply_fetched_dpns_names`) can drop a
+    /// departed label before the marketplace sweep runs. The sweep must still
+    /// discover the departure from the `Owned` row it tracks for the
+    /// identity, resolve it, and retire the row — otherwise the sale/transfer
+    /// is never classified and the stale row stays.
+    #[tokio::test]
+    async fn sync_pass_resolves_a_departure_whose_label_was_already_pruned() {
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::Identity;
+
+        let document_id = Identifier::from([0xC1; 32]);
+        let identity_id = Identifier::from([0xC2; 32]);
+        let row = mirrored_row(document_id, identity_id);
+        let mirror = Arc::new(MirrorPersister::hydrated(vec![row.clone()]));
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&mirror),
+            sdk_for_departed_identity_sync(&identity_id, DEPARTED_LABEL).await,
+        );
+
+        // The identity no longer carries the label (a username sync pruned
+        // it); only the tracked marketplace row remembers the name.
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: identity_id,
+                        public_keys: BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet.wallet_id,
+                    &wallet.persister,
+                )
+                .expect("add identity");
+            info.dpns_name_states.insert(document_id, row);
+        }
+        assert!(dpns_labels(&wallet, &identity_id).await.is_empty());
+
+        let summary = wallet
+            .sync_dpns_marketplace()
+            .await
+            .expect("sync pass must succeed");
+
+        assert_eq!(
+            summary.names_departed,
+            vec![DepartedDpnsName {
+                identity_id,
+                label: DEPARTED_LABEL.to_string(),
+                document_id: Some(document_id),
+                status: None,
+            }],
+            "the departure must be discovered from the tracked row"
+        );
+        assert_eq!(
+            mirror.stored_dpns_removals(),
+            vec![document_id],
+            "the departed row must be retired"
         );
     }
 
