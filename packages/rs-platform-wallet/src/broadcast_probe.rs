@@ -156,6 +156,12 @@ pub(crate) async fn probe_with(
 
     for _ in 0..MAX_SUBMISSIONS_PER_PROBE {
         let (node, verdict) = submitter.submit(transaction).await;
+        tracing::debug!(
+            txid = %transaction.txid(),
+            node = node.as_deref().unwrap_or("unidentified"),
+            ?verdict,
+            "broadcast probe: node answered"
+        );
         match verdict {
             NodeVerdict::Accepted => return ProbeVerdict::Accepted,
             NodeVerdict::Dead { reason } => {
