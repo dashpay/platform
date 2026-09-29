@@ -83,7 +83,7 @@ What may be indexed:
 
 - **A top-level property** of the type, by its name.
 - **A property inside an object**, by its dotted path. DPNS indexes `records.identity`, the `identity` property of a domain's `records` object.
-- **System properties**: `$ownerId`, `$createdAt`, `$updatedAt`, `$transferredAt`, their `*BlockHeight` and `*CoreBlockHeight` variants, and `$creatorId` on a type that records it (see [System Properties](system-properties.md)). A timestamp or block height is only recorded when the type lists it in `required`; an index on one that is not required holds every document under null.
+- **System properties**: `$ownerId`, `$createdAt`, `$updatedAt`, `$transferredAt`, their `*BlockHeight` and `*CoreBlockHeight` variants, `$creatorId` on a type that records it, and `$moderatedAt` and `$moderatedBy` on a type that lists `moderatorAbilities.changeFields`, in a non-unique index, from protocol version 14 (see [System Properties](system-properties.md)). A timestamp or block height is only recorded when the type lists it in `required`; an index on one that is not required holds every document under null.
 - **Not `$id`**, which the document type's primary tree already indexes (`SystemPropertyIndexAlreadyPresentError`, 10208).
 
 What each indexed property must be, because its value becomes a GroveDB key of at most 255 bytes:

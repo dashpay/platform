@@ -41,13 +41,20 @@ pub struct DocumentCreateTransitionActionV0 {
         Option<(ContestedDocumentResourceVotePollWithContractInfo, Credits)>,
     /// We store contest info only in the case of a new contested document that creates a new contest
     pub current_store_contest_info: Option<ContestedDocumentVotePollStoredInfo>,
-    /// We store contest info only in the case of a new contested document that creates a new contest
-    pub should_store_contest_info: Option<ContestedDocumentVotePollStoredInfo>,
+    /// We store contest info only in the case of a new contested document that creates a new
+    /// contest. Boxed, since only such a create holds one and the action is the largest variant
+    /// of a large enum.
+    pub should_store_contest_info: Option<Box<ContestedDocumentVotePollStoredInfo>>,
     /// The `countOf` and `sumOf` totals the document type's `propertyConstraints` rules
     /// read, each as it will be once this write is done, read from state when the action is
     /// built; `None` when the rules judging the write read none, and boxed, since only
     /// such a write holds any and the action is one variant of a large enum.
     pub property_constraint_aggregates: Option<Box<BTreeMap<AggregateRead, i128>>>,
+    /// Whether the batch transformer judged the create a moderator's write of fields the
+    /// document type keeps for its moderators: its owner moderates the contract and sets one.
+    /// The document is then stamped `$moderatedAt` the block's time and `$moderatedBy` the
+    /// owner; `false` for any other create.
+    pub moderated: bool,
 }
 
 /// document create transition action accessors v0
@@ -82,7 +89,7 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     fn set_prefunded_voting_fund(&mut self, fund: Credits);
 
     /// Get the should store contest info (if it should be stored)
-    fn should_store_contest_info(&self) -> &Option<ContestedDocumentVotePollStoredInfo>;
+    fn should_store_contest_info(&self) -> Option<&ContestedDocumentVotePollStoredInfo>;
 
     /// Take the should store contest info (if it should be stored) and replace it with None.
     fn take_should_store_contest_info(&mut self) -> Option<ContestedDocumentVotePollStoredInfo>;
@@ -99,6 +106,14 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
 
     /// Sets the totals the rules judging this write read, once they are read from state
     fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>);
+
+    /// Whether the document is stamped as its owner's, a moderator's, write of the fields
+    /// only moderators write
+    fn moderated(&self) -> bool;
+
+    /// Stamps the document as its owner's, a moderator of the contract whose create sets
+    /// fields only moderators write
+    fn set_moderated(&mut self);
 }
 
 /// documents from create transition v0
@@ -149,6 +164,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
             base,
             block_info,
             mut data,
+            moderated,
             ..
         } = v0;
 
@@ -255,6 +271,8 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                                 None
                             },
                         creator_id,
+                        moderated_at: moderated.then_some(block_info.time_ms),
+                        moderated_by: moderated.then_some(owner_id),
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
@@ -276,6 +294,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
             base,
             block_info,
             data,
+            moderated,
             ..
         } = v0;
 
@@ -384,6 +403,8 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                                 None
                             },
                         creator_id,
+                        moderated_at: (*moderated).then_some(block_info.time_ms),
+                        moderated_by: (*moderated).then_some(owner_id),
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {

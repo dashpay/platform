@@ -3210,6 +3210,9 @@ fn verify_contract_document_change_execution(
         document_type,
         platform_version,
     )?;
+    // The document as changed holds every value set and none removed. Its moderation stamp is
+    // not compared: a later moderator's write to another field of the document moves it,
+    // without undoing this change.
     let changed = document.filter(|document| {
         fields.iter().all(|(field, value)| {
             let stored = document.properties().get(field);

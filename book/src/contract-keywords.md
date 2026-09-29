@@ -295,6 +295,7 @@ Expressions:
 | `$createdAtBlockHeight`, `$updatedAtBlockHeight`, `$transferredAtBlockHeight` | Platform block heights of the same events. | when listed in `required` | 1 | [Block heights](contract-keywords/system-properties.md#block-heights) |
 | `$createdAtCoreBlockHeight`, `$updatedAtCoreBlockHeight`, `$transferredAtCoreBlockHeight` | Core chain block heights of the same events. | when listed in `required` | 1 | [Block heights](contract-keywords/system-properties.md#block-heights) |
 | `$creatorId` | The identity that created the document. | on transferable or tradeable types of format-1 contracts | 10 | [$creatorId](contract-keywords/system-properties.md#creatorid) |
+| `$moderatedAt`, `$moderatedBy` | Block time and moderator of the last write of the fields only moderators write. | on types listing `moderatorAbilities.changeFields`, once a moderator writes them | 14 | [$moderatedAt and $moderatedBy](contract-keywords/system-properties.md#moderatedat-and-moderatedby) |
 
 ## Limits
 

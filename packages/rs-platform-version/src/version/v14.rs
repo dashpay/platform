@@ -1507,6 +1507,21 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `InvalidContractModerationDocumentFieldsError` (10905),
 ///     `DocumentFieldNotChangeableByModeratorsError` (41123) and
 ///     `DocumentModeratorFieldNotWritableError` (41124), appended.
+/// 58. **The last moderator's stamp (`$moderatedAt`, `$moderatedBy`)**: two
+///     system properties of a document whose type keeps fields for its
+///     moderators (57), the block time and the identity of the last moderator
+///     to write them. A `changeDocumentFields` sets both, and so does the batch
+///     transformer (in place, inert before 14) for a create or replace whose
+///     signer moderates the contract and writes such a field; a replace that
+///     leaves the fields alone carries them over, and transfers, purchases,
+///     price updates and restores keep them. Document serialization format 3
+///     (this version's) records them behind bits 512 and 1024 of its time
+///     field flags, so a document without them is written as before. Parser
+///     generation 3 lets an index name either on such a type, never in a
+///     unique index (10231); the shipped index key, query value and size
+///     arms for the two names (`get_raw_for_document_type` v0,
+///     `serialize_value_for_key` v0, Drive's estimated key sizes) are reached
+///     only through such an index.
 ///
 /// 58. **`skipIfAbsent` at any position, `true` or an array, on every type**:
 ///     document meta-schema v3 and the generation-3 parser take
