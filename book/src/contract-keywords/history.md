@@ -47,7 +47,7 @@ Every edit of a profile adds a version, and every earlier version stays readable
 All refusals below are `InvalidContractStructure` (10231).
 
 - From protocol version 14, the type must set `canBeDeleted: false`. A contract registered earlier with both flags on stays readable, and its next update must turn `canBeDeleted` off on that type. See [Deletion](deletion.md).
-- Refused together with `ttl`, with `canBeDeletedByModerators` and with `indexOnly`.
+- Refused together with `ttl`, with `moderatorAbilities.delete` and with `indexOnly`.
 
 ## `keepsTransferHistory`
 

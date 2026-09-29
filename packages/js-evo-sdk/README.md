@@ -19,6 +19,8 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Building a document create transition by hand](#building-a-document-create-transition-by-hand)
 - [Immutable properties (`immutable`)](#immutable-properties-immutable)
 - [Property constraints (`propertyConstraints`)](#property-constraints-propertyconstraints)
+- [How a document type is stored (`documentTypeLayout`)](#how-a-document-type-is-stored-documenttypelayout)
+- [What a document costs (`documentCreateCost`)](#what-a-document-costs-documentcreatecost)
 - [Chained queries (provable semi-join)](#chained-queries-provable-semi-join)
 - [Composite queries (a page plus its sub-queries)](#composite-queries-a-page-plus-its-sub-queries)
 - [Contributing](#contributing)
@@ -247,13 +249,23 @@ try {
 import { Document, DocumentCreateTransition, BatchTransition } from '@dashevo/evo-sdk';
 
 const document = new Document({ properties, documentTypeName, dataContractId, ownerId });
-const transition = new DocumentCreateTransition({ document, identityContractNonce: nonce });
+// undefined unless the document enters a contest (a DPNS name, a moderation charter)
+const prefundedVotingBalance = await sdk.documents.contestFundToJoin(document);
+const transition = new DocumentCreateTransition({
+  document,
+  identityContractNonce: nonce,
+  prefundedVotingBalance,
+});
 const batch = BatchTransition.fromBatchedTransitions([transition.toDocumentTransition()], ownerId, 0); // userFeeIncrease
 const stateTransition = batch.toStateTransition();
 // sign, then sdk.stateTransitions.broadcast(stateTransition)
 ```
 
 From protocol version 14 the id of a new document commits to the identity contract nonce of its create transition. `new DocumentCreateTransition(...)` derives that id from the document's entropy and `identityContractNonce`, puts it on the transition and writes it back onto `document`, so `document.id` is final once the transition exists and equals `transition.base.id`. Before that the `Document` carries a placeholder. To know the id earlier, `document.setIdForCreation(nonce)` or `Document.generateId(type, owner, contract, entropy, nonce)`, or pass `identityContractNonce` to the `Document` constructor. Pass `platformVersion` (defaults to latest) to any of them for a network on an earlier protocol version. No app needs to reimplement the hash.
+
+A document whose values fall under a contested index enters a contest, and its create must state the most it pays into the contest's fund: without it, or stating less than the fund to join, Platform refuses the create with error 40114 and still charges its fees. From protocol version 14 that fund doubles once the contest holds 250 contenders and again for every 50 more. `sdk.documents.create` states it itself. For a transition built by hand, `sdk.documents.contestFundToJoin(document)` reads the contest's contenders (one proved query per 100) and returns the `PrefundedVotingBalance` to pass, the contested index's name and the fund to join now, or `undefined` for a document that joins no contest. Without the SDK, pass the document's contract as `dataContract` to `new DocumentCreateTransition(...)`: a contested document then states the contest's fund on its contested index, what joining costs below 250 contenders, and `contestFund` replaces that amount.
+
+From protocol version 14 a create may state more, as headroom for contenders joining before it lands: `new PrefundedVotingBalance({ indexName: prefundedVotingBalance.indexName, credits: 2n * prefundedVotingBalance.credits })`. Platform charges only the fund to join, but the identity must hold what the create states. Before 14 the stated amount must be exactly the contest's fund, and a create stating more is refused.
 
 ## Encrypted properties (`encryptedFor`)
 
@@ -456,6 +468,46 @@ if (broken) {
 ```
 
 Rules come back in name order, the order consensus checks them in; `contract.documentPropertyConstraints` maps every document type that declares rules to its list. The `PropertyConstraintCondition`, `PropertyConstraintExpression` and `PropertyConstraintEqualityOperand` types spell out the rule grammar, and `violation` is one of `NotMet`, `Overflow`, `DivisionByZero`, `NegativeExponent` or `NotAnInteger`, the reason consensus would report.
+
+## How a document type is stored (`documentTypeLayout`)
+
+`documentTypeLayout(contract, documentTypeName, platformVersion)` returns the GroveDB layout of a document type as Drive writes it: the document type tree, the documents by id and, for each index, the property and value trees down to where the index ends. Each layer carries the tree or element type Drive writes there (a count or sum tree, a ranked indexed tree, a reference, an indexOnly item), the wrapper a continuation tree gets under an aggregating value tree, the indexes that use it, and conditions such as the tree a unique index falls back to when a value is null. It runs locally with Drive's own rules, those of protocol version 14 on (an earlier version is refused), so it needs no connection:
+
+```ts
+import { documentTypeLayout, PlatformVersion } from '@dashevo/evo-sdk';
+
+const { root } = documentTypeLayout(contract, 'review', new PlatformVersion(14));
+// root.children: the documents by id ([0]) and one tree per first index property;
+// each node: { key, role, element, wrapper?, rankedAxes, indexes, notes, alternative?, children, structureNode }
+// (wrapper and alternative are left out when there is none)
+```
+
+`structureNode` names the layer of Drive's GroveDB structure description it is an instance of, as the [GroveDB structure viewer](https://dashpay.github.io/grovedb-structure-viewer/) shows it (`#/<structureNode>`).
+
+## What a document costs (`documentCreateCost`)
+
+`documentCreateCost(contract, documentTypeName, options, platformVersion)` returns what creating a document of a type costs, in credits (`creditsPerDash` of them make one Dash), computed locally by Drive from the contract:
+
+- `storage`: the bytes the insert writes and their fee, exact, under two scenarios: `newValues` (the first document with these index values creates their trees) and `knownValues` (a later document with the same values adds only its own entries);
+- `indexes`: per index, the bytes of the layers it shares with other indexes and of its own, so its cost on its own is `sharedBytes + ownBytes`;
+- `processing`: the signature and identity fetch (exact) and the work of the writes (estimated for `existingDocuments` stored documents);
+- `contractCharges`: the create's action fee, token cost and contest fund, when the type has them (a contested create is stored in the vote poll until the contest ends; that storage is not priced);
+- `refund`: what a delete refunds, in the same epoch and a year later;
+- `fields`: how the priced document was filled.
+
+The document is built from sizes, not values: by default each variable-size field is at the middle of its bounds and each optional field is present. Pass `fields` to change that:
+
+```ts
+import { documentCreateCost, PlatformVersion } from '@dashevo/evo-sdk';
+
+const cost = documentCreateCost(contract, 'note', {
+  fields: { text: { length: 200 }, mood: { present: false } },
+  existingDocuments: 10_000,
+}, PlatformVersion.latest());
+const dash = cost.totalCredits.newValues / cost.creditsPerDash;
+```
+
+It follows protocol version 14 on; an earlier version is refused. A type whose documents have a `ttl` is priced by lifetime, with no refund.
 
 ## Chained queries (provable semi-join)
 

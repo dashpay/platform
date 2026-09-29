@@ -4,6 +4,7 @@
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
+#[cfg(feature = "server")]
 use crate::fees::op::EphemeralPricing;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -19,35 +20,14 @@ use platform_version::version::fee::FeeVersion;
 /// The price never decreases with the lifetime, which keeps an estimate made at an earlier
 /// block time (a longer remaining lifetime) an upper bound of the price at execution. The
 /// epochs only decide which epochs the pools pay the amount to.
+#[cfg(feature = "server")]
 pub fn document_ttl_pricing(
     remaining_lifetime_ms: u64,
     epoch_time_length_s: u64,
     epochs_per_era: u16,
     fee_version: &FeeVersion,
 ) -> Result<EphemeralPricing, Error> {
-    let schedule = &fee_version.document_ttl;
-    let tier_price = schedule
-        .tiers
-        .iter()
-        .find(|tier| remaining_lifetime_ms <= u64::from(tier.max_ttl_seconds) * 1000)
-        .map(|tier| tier.credit_per_byte);
-    let credit_per_byte = match tier_price {
-        Some(credit_per_byte) => credit_per_byte,
-        None => {
-            let period_ms = u64::from(schedule.pricing_period_seconds) * 1000;
-            if period_ms == 0 {
-                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "the document ttl pricing period must be a positive number of seconds",
-                )));
-            }
-            schedule
-                .credit_per_byte_per_period
-                .checked_mul(remaining_lifetime_ms.div_ceil(period_ms))
-                .ok_or(Error::Fee(FeeError::Overflow(
-                    "overflow pricing the periods a document with a time to live spans",
-                )))?
-        }
-    };
+    let credit_per_byte = document_ttl_credit_per_byte(remaining_lifetime_ms, fee_version)?;
     let epoch_ms = epoch_time_length_s
         .checked_mul(1000)
         .filter(|epoch_ms| *epoch_ms > 0)
@@ -61,6 +41,39 @@ pub fn document_ttl_pricing(
         credit_per_byte,
         lifetime_epochs,
     })
+}
+
+/// What a byte of a document with `remaining_lifetime_ms` left to live costs: the first tier
+/// covering that lifetime, or past the last tier the schedule's price per pricing period times
+/// the periods it spans, rounded up. Shared by [`document_ttl_pricing`] and
+/// `drive::document::cost`.
+pub fn document_ttl_credit_per_byte(
+    remaining_lifetime_ms: u64,
+    fee_version: &FeeVersion,
+) -> Result<Credits, Error> {
+    let schedule = &fee_version.document_ttl;
+    let tier_price = schedule
+        .tiers
+        .iter()
+        .find(|tier| remaining_lifetime_ms <= u64::from(tier.max_ttl_seconds) * 1000)
+        .map(|tier| tier.credit_per_byte);
+    match tier_price {
+        Some(credit_per_byte) => Ok(credit_per_byte),
+        None => {
+            let period_ms = u64::from(schedule.pricing_period_seconds) * 1000;
+            if period_ms == 0 {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "the document ttl pricing period must be a positive number of seconds",
+                )));
+            }
+            schedule
+                .credit_per_byte_per_period
+                .checked_mul(remaining_lifetime_ms.div_ceil(period_ms))
+                .ok_or(Error::Fee(FeeError::Overflow(
+                    "overflow pricing the periods a document with a time to live spans",
+                )))
+        }
+    }
 }
 
 /// When a document created at `created_at` expires under a time to live of `ttl_seconds`:

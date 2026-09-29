@@ -86,7 +86,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 1, // Changed
             validate_document_purchase_transition_action_uniqueness: 1, // Changed
             validate_document_update_price_transition_action_uniqueness: 1, // Changed
-            validate_restored_document_uniqueness: 0,
+            validate_moderated_document_uniqueness: 0,
             validate_uniqueness_of_data: 1,
         },
         // FROZEN AT 0 for platform versions 10 and 11. Both protocol

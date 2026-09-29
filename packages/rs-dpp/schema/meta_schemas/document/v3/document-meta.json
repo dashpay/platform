@@ -2021,8 +2021,23 @@
             "description": "Only on indexOnly document types whose index path is fully determined by a same-contract permanentDocument refersTo declaration: every index property must be either the referring property itself (its value is the referenced document's $id) or a key of that declaration's propertyAgreement (consensus-equal to a referenced-document property). When true, creating a referenced document also creates this index's dynamic trees for entries referencing it — paid by the referenced document's creator — and deleting the last entry keeps them, so every entry insert costs the same as the first. Available from protocol version 14."
           },
           "skipIfAbsent": {
-            "type": "boolean",
-            "description": "Only on indexOnly document types: when true, a document that omits this index's first property writes no entry into this index (and a delete recomputes the same skip), so the index holds only documents carrying the property. The first property is the skip trigger: it must be a top-level schema property NOT listed in `required` (making it the only way an indexOnly property may be optional), and every index involving an optional property must be skipIfAbsent with that property first. Every other property that is not a skip trigger must still appear in at least one non-skipIfAbsent index, and at least one $createdAt-free index must remain non-skipIfAbsent (the executed-transition proof index). An absent trigger is distinct from an empty value: absence skips the index, while any present value — empty included — indexes normally. Available from protocol version 14."
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "minItems": 1,
+                "maxItems": 10,
+                "uniqueItems": true
+              }
+            ],
+            "description": "Conditional participation: a document that omits a property of this index's skip set writes no entry into this index (and a delete, or on a stored type a replace, recomputes the same skip), so the index holds only documents carrying every skip property. `true` makes the skip set every optional property of the index; an array names the skip set (each must be one of the index's properties; an index has at most 10, hence maxItems). A skip property may sit at any position of the index, and must be a top-level schema property NOT listed in `required` (system properties are never optional). On an indexOnly type the skip set must hold every optional property of the index (an index path has no representation for an absent value), every optional property needs a skip index whose skip set is that property alone, and at least one $createdAt-free index must remain non-skipIfAbsent (the executed-transition proof index); on a stored type the array may name a subset, the index's other optional properties keeping the null layout, and a skip index cannot be contested or set nullSearchable: false. No rankedCountable `at` level may sit above the deepest skip property. An absent property is distinct from an empty value: absence skips the index, while any present value — empty included — indexes normally. Available from protocol version 14."
           }
         },
         "required": [
@@ -2180,15 +2195,41 @@
       "type": "boolean",
       "description": "Syntactic sugar: `rangeAverageable: true` is shorthand for `rangeCountable: true` + `rangeSummable: true`. Requires `documentsAverageable` to be set. Same caveat as `rangeSummable` — rarely useful on the primary key; per-index `rangeAverageable` is what most callers want."
     },
-    "canBeDeletedByModerators": {
-      "type": "boolean",
-      "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract. Independent of `canBeDeleted`, which rules what a document's own owner may do. Requires the contract to declare `moderation` in its config, and is refused on a type that keeps history, is indexOnly, or restricts document creation. Fixed when the document type is created. For references a type carrying it is deletable: a permanentDocument reference refuses it and a deletableDocument reference accepts it. `canBeDeletedByModeratorsFor` limits it to a window after a document's last modification. Available from protocol version 14."
-    },
-    "canBeDeletedByModeratorsFor": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 4294967295,
-      "description": "For how many seconds after a document's last modification the contract's moderators may still delete it. The last modification is the document's `$updatedAt`, or its `$createdAt` on a type that carries no `$updatedAt`. Once block time is later than that plus this many seconds the document is settled: no moderator can delete it any more, the contract owner included. A replace or a price update moves `$updatedAt` and opens the window again; a transfer or a purchase does not. Absent means no limit. Requires `canBeDeletedByModerators: true` and `$updatedAt` in `required`; a type with `documentsMutable: false`, whose documents never change after their creation, may list `$createdAt` instead. Fixed when the document type is created. Says nothing about what a document's own owner may do. Available from protocol version 14."
+    "moderatorAbilities": {
+      "type": "object",
+      "properties": {
+        "delete": {
+          "type": "boolean",
+          "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints, or its seated team) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract, and restore them. Independent of `canBeDeleted`, which rules what a document's own owner may do. Refused on a type that keeps history, is indexOnly, restricts document creation or has a contested index. For references a type carrying it is deletable: a permanentDocument reference refuses it and a deletableDocument reference accepts it."
+        },
+        "deleteWithin": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "For how many seconds after a document's last modification the moderators may still delete it. The last modification is the document's `$updatedAt`, or its `$createdAt` on a type that carries no `$updatedAt`. Once block time is later than that plus this many seconds the document is settled: no moderator can delete it any more, the contract owner included. A replace or a price update moves `$updatedAt` and opens the window again; a transfer, a purchase or a moderator's field change does not. Absent means no limit. Requires `delete: true` and `$updatedAt` in `required`; a type with `documentsMutable: false`, whose documents never change after their creation, may list `$createdAt` instead. Says nothing about what a document's own owner may do."
+        },
+        "deleteKeepsRecord": {
+          "type": "boolean",
+          "description": "Whether a moderator's deletion leaves a removal record under the contract: whose document it was, the moderator, the reason, the block time and a hash of the document, readable with getContractDocumentRemovals and never deleted. A deleted document can only be restored from its record, so false also means a deletion can not be undone, and the type has no removal records tree. Default true. Requires `delete: true`."
+        },
+        "deleteRefundsOwner": {
+          "type": "boolean",
+          "description": "Whether the owner of a document a moderator deletes is refunded the part of its storage fee not yet paid out to past epochs, as an owner deleting it themselves is. Default false: the owner forfeits it, and the credits stay in the storage pools. A type with a `ttl` refunds nothing either way. Requires `delete: true`."
+        },
+        "changeFields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Top-level properties only the moderators write. A moderator sets or removes them with a contract user moderation transition (changeDocumentFields), which bumps `$revision` and leaves `$updatedAt` and every other property as it was. A document's owner can neither set them in a create nor change or remove them in a replace (DocumentModeratorFieldNotWritableError, code 41124), unless the owner moderates the contract. Every entry must name a declared top-level property that is optional, not transient, not listed under `immutable`, neither a reference nor read by one (a propertyAgreement, a lookup key, a key id), neither generated nor read by a generated property, and in no contested index; refused on an indexOnly type. A type listing any keeps `$revision` on its documents even when `documentsMutable` is false."
+        }
+      },
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "What the contract's moderators may do to documents of this type with a contract user moderation transition: delete them (`delete`, within `deleteWithin` seconds of their last modification when given, leaving a removal record unless `deleteKeepsRecord` is false, refunding the owner when `deleteRefundsOwner` is true), and write the fields only they write (`changeFields`). Requires the contract to declare `moderation` in its config. Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
     },
     "ttl": {
       "type": "integer",
@@ -2198,7 +2239,7 @@
     },
     "indexOnly": {
       "type": "boolean",
-      "description": "When true, documents of this type are never written to primary storage: the index entries are the rows, each terminating in an Item keyed by the index's `terminal` property instead of a Reference keyed by the document id. Only what is in the indexes exists and is recoverable. Requires: every property required and appearing in at least one index (except a `skipIfAbsent` index's optional first property), $ownerId in at least one index (as a property or terminal), documentsMutable: false, no transfers/trading/history/transient properties, and no doctype-level aggregate keywords (use the index-level count flags). Available from protocol version 14."
+      "description": "When true, documents of this type are never written to primary storage: the index entries are the rows, each terminating in an Item keyed by the index's `terminal` property instead of a Reference keyed by the document id. Only what is in the indexes exists and is recoverable. Requires: every property required and appearing in at least one index (except a skip property of a `skipIfAbsent` index, which may be optional), $ownerId in at least one index (as a property or terminal), documentsMutable: false, no transfers/trading/history/transient properties, and no doctype-level aggregate keywords (use the index-level count flags). Available from protocol version 14."
     },
     "entryPayload": {
       "type": "array",

@@ -276,6 +276,7 @@ impl ErrorWithCode for BasicError {
             Self::DocumentActionFeesWithoutModerationError(_) => 10902,
             Self::ContractModerationReasonTooLongError(_) => 10903,
             Self::InvalidContractModerationReasonDocumentsError(_) => 10904,
+            Self::InvalidContractModerationDocumentFieldsError(_) => 10905,
 
             // Moderation Team Errors: 11000-11099
             Self::ModerationCharterMalformedFieldError(_) => 11000,
@@ -493,6 +494,8 @@ impl ErrorWithCode for StateError {
             Self::DocumentRestoreWindowElapsedError(_) => 41120,
             Self::DocumentRestoreHashMismatchError(_) => 41121,
             Self::ContractDocumentAlreadyRestoredError(_) => 41122,
+            Self::DocumentFieldNotChangeableByModeratorsError(_) => 41123,
+            Self::DocumentModeratorFieldNotWritableError(_) => 41124,
 
             // Contract moderation team errors: 41200-41299
             Self::ContractModeratedDocumentTypeNotYetUsableError(_) => 41200,

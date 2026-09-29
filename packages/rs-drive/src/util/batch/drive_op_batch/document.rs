@@ -121,7 +121,7 @@ pub enum DocumentOperationType<'a> {
     },
     /// Deletes a document without consulting `canBeDeleted`, which rules what the document's
     /// own owner may do. Used for a deletion on behalf of the contract's moderators (the
-    /// caller has checked that the document type sets `canBeDeletedByModerators`) and for the
+    /// caller has checked that the document type sets `moderatorAbilities.delete`) and for the
     /// platform's deletion of a document whose type declares a `ttl` once it has passed
     /// (protocol version 14), which also removes the document's expirations tree entry. A
     /// document type that keeps history is still refused, as both keywords are on such a type.

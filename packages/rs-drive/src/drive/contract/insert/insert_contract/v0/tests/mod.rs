@@ -39,3 +39,4 @@ mod range_summable_index_e2e_tests;
 mod ranked_index_e2e_tests;
 mod reference_join_tests;
 mod shared_prefix_aggregation_e2e_tests;
+mod skip_if_absent_e2e_tests;

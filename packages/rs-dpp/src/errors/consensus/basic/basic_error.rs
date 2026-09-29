@@ -14,7 +14,7 @@ use crate::consensus::basic::contract_group::{
 use crate::consensus::basic::contract_moderation::{
     ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
     DocumentActionFeesWithoutModerationError, InvalidContractModerationConfigError,
-    InvalidContractModerationReasonDocumentsError,
+    InvalidContractModerationDocumentFieldsError, InvalidContractModerationReasonDocumentsError,
 };
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
@@ -842,6 +842,10 @@ pub enum BasicError {
     #[error(transparent)]
     DocumentPropertyNotGeneratedError(DocumentPropertyNotGeneratedError),
 
+    // The fields a moderator's document change sets (protocol version 14).
+    #[error(transparent)]
+    InvalidContractModerationDocumentFieldsError(InvalidContractModerationDocumentFieldsError),
+
     // A create that cannot assemble the preimage of a `refersTo` lookup key it reveals
     // (protocol version 14).
     #[error(transparent)]
@@ -1012,8 +1016,15 @@ mod tests {
             )),
             200
         );
+        // The fields a moderator's document change sets (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidContractModerationDocumentFieldsError(
+                InvalidContractModerationDocumentFieldsError::new("no field".to_string())
+            )),
+            201
+        );
         // A create that cannot assemble the preimage of a `refersTo` lookup key it reveals
-        // (protocol version 14).
+        // (protocol version 14): the tail of the enum.
         assert_eq!(
             discriminant_of(BasicError::DocumentReferencePreimageInvalidError(
                 DocumentReferencePreimageInvalidError::new(
@@ -1023,7 +1034,7 @@ mod tests {
                     "reason".to_string(),
                 )
             )),
-            201
+            202
         );
     }
 

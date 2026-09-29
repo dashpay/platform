@@ -73,7 +73,7 @@ The value is the id of a token. The check reads the token's record, which is wri
 
 ### `permanentDocument`
 
-The value is the id of a document of `documentType`, in this contract or in the one `contractId` names. The referenced type must be one whose documents can never disappear: `canBeDeleted: false`, no `canBeDeletedByModerators` and no `ttl`. None of those can change on a contract update and document types are never removed, so a validated permanent reference never dangles.
+The value is the id of a document of `documentType`, in this contract or in the one `contractId` names. The referenced type must be one whose documents can never disappear: `canBeDeleted: false`, no `moderatorAbilities.delete` and no `ttl`. None of those can change on a contract update and document types are never removed, so a validated permanent reference never dangles.
 
 ```json
 "reasons": {
@@ -91,7 +91,7 @@ This is the moderation charters contract's `submittedCharter.reasons`: every ele
 
 ### `deletableDocument`
 
-The same for a type whose documents can disappear: deleted by their owner (`canBeDeleted`), removed by the contract's moderators (`canBeDeletedByModerators`), or removed by the platform when their `ttl` passes. Any one of the three makes a type deletable for references. The document must exist when the referring document is written, and may be deleted afterwards.
+The same for a type whose documents can disappear: deleted by their owner (`canBeDeleted`), removed by the contract's moderators (`moderatorAbilities.delete`), or removed by the platform when their `ttl` passes. Any one of the three makes a type deletable for references. The document must exist when the referring document is written, and may be deleted afterwards.
 
 Because the target may be gone, every replace of the referring document checks the reference again, whether or not the replace touched it. Once the target is deleted, the replace has to point the property at a document that exists or remove it. A required property cannot be removed, so a document whose required reference has lost its target can be replaced only after it is repointed; it can still be deleted. A single `deletableDocument` reference held by an `immutable` top-level property may be removed by a replace once its target is gone, an exception to the immutability rule.
 

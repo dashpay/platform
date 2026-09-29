@@ -48,7 +48,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::{IndexLevel, IndexLevelTypeInfo};
 use grovedb::element::IndexAxis;
-use grovedb::TreeType;
+use grovedb_merk::tree_type::TreeType;
 
 /// The ranking axes an index level declares, in grovedb's canonical TLV order
 /// (Count < Sum < Avg, no duplicates).
@@ -243,6 +243,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             flat: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 

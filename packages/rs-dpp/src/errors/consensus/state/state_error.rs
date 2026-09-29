@@ -23,7 +23,8 @@ use crate::consensus::state::contract_moderation::{
     ContractUserNotBannedError, ContractUserNotSuspendedError, ContractUserNotWarnedError,
     ContractUserSuspendedError, ContractUserWarningLimitReachedError,
     ContractDocumentAlreadyRestoredError, ContractDocumentRemovalNotFoundError,
-    DocumentModerationWindowElapsedError, DocumentRestoreHashMismatchError,
+    DocumentFieldNotChangeableByModeratorsError, DocumentModerationWindowElapsedError,
+    DocumentModeratorFieldNotWritableError, DocumentRestoreHashMismatchError,
     DocumentRestoreWindowElapsedError, DocumentTypeNotDeletableByModeratorsError,
     IdentityNotContractModeratorError,
 };
@@ -634,6 +635,14 @@ pub enum StateError {
     // 14).
     #[error(transparent)]
     DocumentContestMaximumContendersReachedError(DocumentContestMaximumContendersReachedError),
+
+    // Fields of a document only the contract's moderators write, `moderatorAbilities.changeFields`
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentFieldNotChangeableByModeratorsError(DocumentFieldNotChangeableByModeratorsError),
+
+    #[error(transparent)]
+    DocumentModeratorFieldNotWritableError(DocumentModeratorFieldNotWritableError),
 
     // The commitment a `refersTo` lookup with a computed key found does not meet the lookup's
     // `minimumAgeBlocks` (protocol version 14).
@@ -1342,6 +1351,29 @@ mod tests {
             )),
             152
         );
+        // Fields only the contract's moderators write (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentFieldNotChangeableByModeratorsError(
+                DocumentFieldNotChangeableByModeratorsError::new(
+                    group_id,
+                    "report".to_string(),
+                    "status".to_string(),
+                )
+            )),
+            153
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentModeratorFieldNotWritableError(
+                DocumentModeratorFieldNotWritableError::new(
+                    group_id,
+                    "report".to_string(),
+                    identity_id,
+                    "status".to_string(),
+                    identity_id,
+                )
+            )),
+            154
+        );
         // A commitment a computed lookup key found that does not meet the lookup's
         // `minimumAgeSeconds` (protocol version 14): the tail of the enum.
         assert_eq!(
@@ -1353,7 +1385,7 @@ mod tests {
                     "$creatorId".to_string(),
                 )
             )),
-            153
+            155
         );
     }
 }

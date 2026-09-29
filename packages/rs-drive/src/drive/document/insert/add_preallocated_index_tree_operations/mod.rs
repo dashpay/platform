@@ -36,10 +36,11 @@
 //! this code. The delete-side counterpart is versioned the same way
 //! (`remove_reference_for_index_level_for_contract_operations_v1`).
 
+use crate::drive::document::bound_value_fits_referring_property;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, terminal_member_tree_type,
-    terminal_value_tree_type,
+    continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
+    level_counts_continuations, terminal_member_tree_type, terminal_value_tree_type,
 };
 use crate::drive::document::index_only::index_only_terminal_max_key_size;
 use crate::drive::document::index_only_item_estimated_value_size;
@@ -58,11 +59,7 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::{
-    DocumentPropertyType, DocumentTypeRef, Index, PreallocatedKeySource,
-};
-use dpp::document::{Document, DocumentV0Getters};
-use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use dpp::data_contract::document_type::{DocumentTypeRef, Index, PreallocatedKeySource};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
@@ -340,9 +337,11 @@ impl Drive {
                     // may itself be the plain sibling): its branch tree is
                     // zero-wrapped even under a chain level that counts its
                     // own continuation — matching the entry-insert walkers.
-                    if !matches!(parent_value_tree_type, TreeType::NormalTree)
-                        && (!parent_counts_continuations || sub_level.count_exempt_branch())
-                    {
+                    if continuation_contributes_zero(
+                        parent_value_tree_type,
+                        parent_counts_continuations,
+                        sub_level,
+                    ) {
                         self.batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists(
                             path_key_info,
                             parent_value_tree_type,
@@ -452,8 +451,7 @@ impl Drive {
 
             index_path_info = Some(path_info);
             parent_value_tree_type = value_tree_type;
-            parent_counts_continuations =
-                sub_level.ranked_count_grouping() || sub_level.count_propagating();
+            parent_counts_continuations = level_counts_continuations(sub_level);
         }
 
         let mut path_info = index_path_info.ok_or(Error::Drive(
@@ -528,37 +526,4 @@ impl Drive {
 
         Ok(())
     }
-}
-
-/// Whether `document`'s value of `referenced_property`, which a
-/// `propertyAgreement` binds to a referring index property of
-/// `referring_property_type`, is no wider as a tree key than a value of that
-/// property can be. A wider value equals no referring document's value, so no
-/// entry would ever sit under trees keyed by it, and past 255 bytes it is no
-/// tree key at all. An absent value fits (the caller skips it on its own), as
-/// do the referenced document's `$ownerId` and `$creatorId`, 32-byte
-/// identifiers that registration pairs with an identifier.
-fn bound_value_fits_referring_property(
-    document: &Document,
-    referenced_property: &str,
-    referring_property_type: &DocumentPropertyType,
-    platform_version: &PlatformVersion,
-) -> Result<bool, Error> {
-    if referenced_property.starts_with('$') {
-        return Ok(true);
-    }
-    let Some(value) = document
-        .properties()
-        .get_optional_at_path(referenced_property)?
-    else {
-        return Ok(true);
-    };
-    let Some(max_width) = referring_property_type.saturating_max_byte_size(platform_version)?
-    else {
-        return Ok(true);
-    };
-    let width = referring_property_type
-        .encode_value_for_tree_keys(value)?
-        .len();
-    Ok(width <= usize::from(max_width))
 }

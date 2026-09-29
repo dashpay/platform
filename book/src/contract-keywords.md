@@ -123,8 +123,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `immutable` | array of top-level names | Properties frozen at creation on a mutable type. | 14 | [immutable](contract-keywords/mutability.md#immutable) · [internals](data-model/documents.md#immutable-properties-on-mutable-document-types) |
 | `immutableAllowSetting` | array of names from `immutable` | Immutable properties a replace may still set once, while they have no value. | 14 | [immutableAllowSetting](contract-keywords/mutability.md#immutableallowsetting) |
 | `canBeDeleted` | boolean, default `true` | `false`: a document's owner cannot delete it. | 1 | [canBeDeleted](contract-keywords/deletion.md#canbedeleted) |
-| `canBeDeletedByModerators` | boolean | The contract's moderators may delete documents of the type. | 14 | [canBeDeletedByModerators](contract-keywords/deletion.md#canbedeletedbymoderators) · [internals](data-model/contract-moderation.md#deleting-documents) |
-| `canBeDeletedByModeratorsFor` | seconds | Limits moderator deletion to this long after a document's last change. | 14 | [canBeDeletedByModeratorsFor](contract-keywords/deletion.md#canbedeletedbymoderatorsfor) |
+| `moderatorAbilities` | object: `delete`, `deleteWithin` (seconds), `deleteKeepsRecord`, `deleteRefundsOwner`, `changeFields` (array of top-level names) | What the contract's moderators may do to documents of the type: delete them, within a window after their last change, with or without a removal record and a refund to the owner, and write the fields only they write. | 14 | [Moderator Abilities](contract-keywords/moderator-abilities.md) · [delete](contract-keywords/deletion.md#moderatorabilitiesdelete) · [internals](data-model/contract-moderation.md#changing-document-fields) |
 | `ttl` | seconds, 3600 to 31536000 | The platform deletes each document this long after its creation. | 14 | [Time To Live](contract-keywords/ttl.md) · [internals](data-model/document-ttl.md) |
 | `creationRestrictionMode` | `0` anyone, `1` contract owner, `2` nobody | Who may create documents. | 1 | [creationRestrictionMode](contract-keywords/ownership-and-trading.md#creationrestrictionmode) |
 | `transferable` | `0` never, `1` always | Whether an owner may give a document to another identity. | 1 | [transferable](contract-keywords/ownership-and-trading.md#transferable) |
@@ -286,7 +285,7 @@ Expressions:
 | `timeRange.ttl` | seconds, at most one week | Expires the index's entries after their window; on an index-only type, the rows leave this index. | 14 | [The keys](contract-keywords/time-range.md#the-keys) · [internals](drive/time-range-ttl.md#cleanup) |
 | `terminal` | property name or list | On an index-only type, what keys each entry in place of the document id. | 14 | [terminal](contract-keywords/index-only.md#terminal) |
 | `preallocated` | boolean | On an index-only type, creates the index's trees with the referenced document. | 14 | [preallocated](contract-keywords/index-only.md#preallocated) · [internals](drive/index-only-document-types.md#preallocated-index-paths) |
-| `skipIfAbsent` | boolean | On an index-only type, a document without the first property writes no entry. | 14 | [skipIfAbsent](contract-keywords/index-only.md#skipifabsent) · [internals](drive/index-only-document-types.md#conditional-participation-skipifabsent) |
+| `skipIfAbsent` | `true` or property names | A document missing a property of the skip set writes no entry into the index. | 14 | [skipIfAbsent](contract-keywords/indexes.md#skipifabsent) · [internals](drive/index-only-document-types.md#conditional-participation-skipifabsent) |
 
 ### System properties
 

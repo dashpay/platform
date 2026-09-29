@@ -93,7 +93,8 @@ use dpp::consensus::basic::contract_group::{
     InvalidContractGroupAdminsError, RedundantContractGroupMembershipError,
 };
 use dpp::consensus::basic::contract_moderation::{
-    ContractModerationReasonTooLongError, InvalidContractModerationReasonDocumentsError, ContractModerationSelfTargetError,
+    ContractModerationReasonTooLongError, InvalidContractModerationDocumentFieldsError,
+    InvalidContractModerationReasonDocumentsError, ContractModerationSelfTargetError,
     DocumentActionFeesWithoutModerationError,
     InvalidContractModerationConfigError,
 };
@@ -112,7 +113,8 @@ use dpp::consensus::state::contract_moderation::{
     ContractUserAlreadyBannedError, ContractUserBannedError, ContractUserNotBannedError,
     ContractUserNotSuspendedError, ContractUserNotWarnedError, ContractUserSuspendedError,
     ContractUserWarningLimitReachedError, ContractDocumentAlreadyRestoredError,
-    ContractDocumentRemovalNotFoundError, DocumentModerationWindowElapsedError,
+    ContractDocumentRemovalNotFoundError, DocumentFieldNotChangeableByModeratorsError,
+    DocumentModerationWindowElapsedError, DocumentModeratorFieldNotWritableError,
     DocumentRestoreHashMismatchError, DocumentRestoreWindowElapsedError,
     DocumentTypeNotDeletableByModeratorsError, IdentityNotContractModeratorError,
 };
@@ -726,6 +728,12 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::DocumentContestMaximumContendersReachedError(e) => {
             generic_consensus_error!(DocumentContestMaximumContendersReachedError, e).into()
         }
+        StateError::DocumentFieldNotChangeableByModeratorsError(e) => {
+            generic_consensus_error!(DocumentFieldNotChangeableByModeratorsError, e).into()
+        }
+        StateError::DocumentModeratorFieldNotWritableError(e) => {
+            generic_consensus_error!(DocumentModeratorFieldNotWritableError, e).into()
+        }
         StateError::ReferencedDocumentRequirementNotMetError(e) => {
             generic_consensus_error!(ReferencedDocumentRequirementNotMetError, e).into()
         }
@@ -1326,6 +1334,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DocumentPropertyNotGeneratedError(e) => {
             generic_consensus_error!(DocumentPropertyNotGeneratedError, e).into()
+        }
+        BasicError::InvalidContractModerationDocumentFieldsError(e) => {
+            generic_consensus_error!(InvalidContractModerationDocumentFieldsError, e).into()
         }
         BasicError::DocumentReferencePreimageInvalidError(e) => {
             generic_consensus_error!(DocumentReferencePreimageInvalidError, e).into()

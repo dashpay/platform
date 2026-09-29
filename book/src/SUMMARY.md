@@ -34,6 +34,7 @@
 - [Fee System Overview](fees/overview.md)
 - [Platform Address Fees](fees/platform-address-fees.md)
 - [Shielded Transaction Fees](fees/shielded-fees.md)
+- [What a Document Costs](fees/document-cost.md)
 
 # Error Handling
 
@@ -73,6 +74,7 @@
 - [transient](contract-keywords/transient.md)
 - [Mutability](contract-keywords/mutability.md)
 - [Deletion](contract-keywords/deletion.md)
+- [Moderator Abilities](contract-keywords/moderator-abilities.md)
 - [Time To Live (ttl)](contract-keywords/ttl.md)
 - [Creation, Transfers and Trading](contract-keywords/ownership-and-trading.md)
 - [History](contract-keywords/history.md)

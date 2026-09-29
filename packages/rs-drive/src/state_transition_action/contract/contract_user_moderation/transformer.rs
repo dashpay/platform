@@ -1,6 +1,6 @@
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
-    ContractDocumentDeletionContext, ContractDocumentRestorationContext,
-    ContractUserModerationTransitionActionV0,
+    ContractDocumentChangeContext, ContractDocumentDeletionContext,
+    ContractDocumentRestorationContext, ContractUserModerationTransitionActionV0,
 };
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
 use dpp::data_contract::config::moderation::ContractModerationStatus;
@@ -56,6 +56,23 @@ impl ContractUserModerationTransitionAction {
                 ContractUserModerationTransitionActionV0::from_borrowed_transition_with_document_restoration(
                     v0,
                     document_restoration,
+                )
+                .into()
+            }
+        }
+    }
+
+    /// The action of a borrowed transition that changes fields of a document, carrying what
+    /// the validation read and built: the contract and the changed document
+    pub fn from_borrowed_transition_with_document_change(
+        value: &ContractUserModerationTransition,
+        document_change: ContractDocumentChangeContext,
+    ) -> Self {
+        match value {
+            ContractUserModerationTransition::V0(v0) => {
+                ContractUserModerationTransitionActionV0::from_borrowed_transition_with_document_change(
+                    v0,
+                    document_change,
                 )
                 .into()
             }

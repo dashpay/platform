@@ -696,7 +696,7 @@ mod fixtures {
                                 "text": { "type": "string", "maxLength": 50, "position": 0 },
                             },
                             "additionalProperties": false,
-                            "canBeDeletedByModerators": true,
+                            "moderatorAbilities": { "delete": true },
                         }),
                         true,
                         &mut vec![],

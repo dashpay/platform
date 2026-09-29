@@ -126,6 +126,35 @@ pub(super) fn attach_property_constraint_aggregates(
     Ok(())
 }
 
+/// Reads the `countOf` and `sumOf` totals the `propertyConstraints` rules of the document type
+/// `document_type_name` read for a moderator's field change, which stores `written` in place of
+/// `stored`, the same document under the same owner: judged as a replace is, by every rule.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn read_property_constraint_aggregates_for_moderator_change(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type_name: &str,
+    written: &Document,
+    stored: &Document,
+    block_info: &BlockInfo,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<BTreeMap<AggregateRead, i128>, Error> {
+    read_property_constraint_aggregates(
+        drive,
+        contract,
+        document_type_name,
+        DocumentVersion::of(written),
+        Some(DocumentVersion::of(stored)),
+        None,
+        block_info,
+        execution_context,
+        transaction,
+        platform_version,
+    )
+}
+
 /// Reads from state the `countOf` and `sumOf` totals the `propertyConstraints` rules of
 /// the document type `document_type_name` read, for a write storing `written` in place of
 /// `stored` (`None` for a create), each as it will be once the write is done: the total the

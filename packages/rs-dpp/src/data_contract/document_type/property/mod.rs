@@ -1355,6 +1355,11 @@ pub fn is_referenced_system_agreement_property(name: &str) -> bool {
 /// validation separately.
 pub const REFERRING_SYSTEM_AGREEMENT_PROPERTIES: [&str; 1] = [OWNER_ID];
 
+/// The top-level property a dotted property path is in: the path itself when it has no dot.
+pub(crate) fn top_level_property(path: &str) -> &str {
+    path.split('.').next().unwrap_or(path)
+}
+
 /// Whether `name` is one of [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
 pub fn is_referring_system_agreement_property(name: &str) -> bool {
     REFERRING_SYSTEM_AGREEMENT_PROPERTIES.contains(&name)

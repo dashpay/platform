@@ -105,22 +105,25 @@ pub const TERMINAL: &str = "terminal";
 /// `permanentDocument` reference; the doc-type-level validation rejects every
 /// other shape. See [`preallocation`]. Meta-schema v3+ (protocol version 14).
 pub const PREALLOCATED: &str = "preallocated";
-/// Index-level keyword opting the index into **conditional participation**
-/// on an `indexOnly` document type: when `true`, a document that omits the
-/// index's first property writes no entry into this index, and a delete
-/// recomputes the same skip from its carried values. The first property is
-/// the *skip trigger*: it must be a top-level (non-dotted) schema property
-/// NOT listed in `required` — the only way an indexOnly property may be
-/// optional — and every index involving an optional property must be
-/// `skipIfAbsent` with that property first, which is what keeps the write
-/// walkers' required-derived skip and the probes' flag-derived skip
-/// provably equivalent. Every non-trigger property must still appear in at
-/// least one non-skip index (only indexed values exist on an indexOnly
-/// type, and a skip index cannot carry a value for every document), and at
+/// Index-level keyword opting the index into **conditional participation**:
+/// a document that omits any property of the index's *skip set* writes no
+/// entry into this index, and a delete (or, on a stored type, a replace)
+/// recomputes the same skip from the document's values. The value is `true`
+/// (the skip set is every optional property of the index) or an array naming
+/// the skip set. A skip property may sit at any position of the index; it
+/// must be a top-level (non-dotted), non-system property that is NOT listed
+/// in `required`.
+///
+/// On an `indexOnly` type the skip set is always every optional property of
+/// the index (an index path has no representation for an absent value, so an
+/// optional property that did not skip would have nothing to write), every
+/// optional property needs a skip index whose skip set is that property
+/// alone (so its value is stored whenever the document carries it), and at
 /// least one `$createdAt`-free index must remain non-skip to serve as the
-/// executed-transition proof index. Only allowed on indexOnly document
-/// types; the doc-type-level validation rejects every other shape.
-/// Meta-schema v3+ (protocol version 14).
+/// executed-transition proof index. On a stored type the array may name any
+/// subset of the index's optional properties; the others keep the null
+/// layout. The doc-type-level validation enforces all of this. Meta-schema
+/// v3+ (protocol version 14).
 pub const SKIP_IF_ABSENT: &str = "skipIfAbsent";
 
 #[repr(u8)]
@@ -745,19 +748,29 @@ pub struct Index {
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub preallocated: bool,
-    /// On an indexOnly document type: when `true`, a document that omits this
-    /// index's first property — the skip trigger, which must be an optional
-    /// top-level schema property (see [`SKIP_IF_ABSENT`]) — writes no entry
-    /// into this index, and a delete recomputes the same skip from the
-    /// carried values. The index then holds exactly the documents carrying
-    /// the trigger. An absent trigger is distinct from a present-but-empty
-    /// value, which indexes normally.
+    /// Whether the index skips documents that omit a property of its skip
+    /// set ([`Self::skip_if_absent_properties`]; see [`SKIP_IF_ABSENT`]).
+    /// `true` for both spellings of the keyword. A present-but-empty value is
+    /// present, and indexes normally.
     //
     // `serde(default)`: added after the struct's serde shape was in the wild
     // (see the note on `countable` above), so pre-existing JSON must still
     // deserialize.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub skip_if_absent: bool,
+    /// The skip set of a `skipIfAbsent` index, in index-property order: a
+    /// document takes part in the index exactly when it carries every one of
+    /// these properties. On a parsed document type this is empty exactly when
+    /// `skip_if_absent` is `false`. The index parser alone cannot resolve
+    /// `skipIfAbsent: true` (the set is the index's optional properties, and
+    /// optionality is a document-type fact), so it leaves the set empty for
+    /// that spelling and the document type parser fills it in before the
+    /// index structure is built. Both spellings of one skip set therefore
+    /// parse to equal indexes.
+    //
+    // `serde(default)`: see `skip_if_absent`.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub skip_if_absent_properties: Vec<String>,
 }
 
 /// Which grammar keywords a document meta-schema generation admits for
@@ -1454,6 +1467,10 @@ impl Index {
         let mut terminal: Option<Vec<String>> = None;
         let mut preallocated = false;
         let mut skip_if_absent = false;
+        // The array form of `skipIfAbsent`, held raw until after the loop:
+        // checking that each name is one of the index's properties, and
+        // sorting the set into index order, needs the parsed property list.
+        let mut skip_if_absent_properties: Vec<String> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -1960,19 +1977,46 @@ impl Index {
                 // `skipIfAbsent` is guarded the same way as `terminal` and
                 // `preallocated` above: it joined the grammar at meta-schema
                 // v3, so below that the key falls through to the
-                // unknown-property arm. Whether the declaring document type
-                // is indexOnly and the first property is a legal skip
-                // trigger are doc-type facts this parser cannot see;
-                // `apply_index_only` in `try_from_schema::common` enforces
-                // both.
-                SKIP_IF_ABSENT if skip_if_absent_allowed => {
-                    skip_if_absent =
-                        value_value
-                            .as_bool()
-                            .ok_or(DataContractError::ValueWrongType(
-                                "skipIfAbsent value must be a boolean".to_string(),
-                            ))?;
-                }
+                // unknown-property arm. Whether each skip property is
+                // optional, top-level and not a system property are doc-type
+                // facts this parser cannot see; `apply_index_only` in
+                // `try_from_schema::common` enforces them, and
+                // `parse_indices` resolves the `true` spelling.
+                SKIP_IF_ABSENT if skip_if_absent_allowed => match value_value {
+                    Value::Bool(flag) => {
+                        // A repeated key keeps its last value, as the
+                        // meta-schema's JSON view does: the flag and the set
+                        // are replaced together, so they can never disagree.
+                        skip_if_absent = *flag;
+                        skip_if_absent_properties.clear();
+                    }
+                    Value::Array(names) => {
+                        if names.is_empty() {
+                            return Err(DataContractError::InvalidContractStructure(
+                                "skipIfAbsent must name at least one property, or be a boolean"
+                                    .to_string(),
+                            ));
+                        }
+                        skip_if_absent = true;
+                        skip_if_absent_properties = names
+                            .iter()
+                            .map(|name| {
+                                name.as_text().map(str::to_string).ok_or(
+                                    DataContractError::ValueWrongType(
+                                        "skipIfAbsent array items must be property names"
+                                            .to_string(),
+                                    ),
+                                )
+                            })
+                            .collect::<Result<_, _>>()?;
+                    }
+                    _ => {
+                        return Err(DataContractError::ValueWrongType(
+                            "skipIfAbsent value must be a boolean or an array of property names"
+                                .to_string(),
+                        ));
+                    }
+                },
                 "properties" => {
                     let properties =
                         value_value
@@ -2004,6 +2048,41 @@ impl Index {
             return Err(DataContractError::InvalidContractStructure(
                 "contest supported only for unique indexes".to_string(),
             ));
+        }
+
+        // Resolve the array form of `skipIfAbsent` against the property list:
+        // every name is one of the index's own properties (a terminal
+        // component is a member key and can never be absent), named once, and
+        // the set is sorted into index-property order so every spelling of one
+        // set parses identically.
+        if !skip_if_absent_properties.is_empty() {
+            for (position, skip_property) in skip_if_absent_properties.iter().enumerate() {
+                if skip_if_absent_properties[..position].contains(skip_property) {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "skipIfAbsent names \"{}\" twice",
+                        skip_property
+                    )));
+                }
+            }
+            let mut skip_positions: Vec<(usize, String)> = Vec::new();
+            for skip_property in skip_if_absent_properties.drain(..) {
+                let Some(position) = index_properties
+                    .iter()
+                    .position(|property| property.name == skip_property)
+                else {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "skipIfAbsent names \"{}\", which is not one of the index's \
+                         properties",
+                        skip_property
+                    )));
+                };
+                skip_positions.push((position, skip_property));
+            }
+            skip_positions.sort_by_key(|(position, _)| *position);
+            skip_if_absent_properties = skip_positions
+                .into_iter()
+                .map(|(_, skip_property)| skip_property)
+                .collect();
         }
 
         // Resolve the object form of `rankedCountable` against the property
@@ -2590,6 +2669,7 @@ impl Index {
             terminal,
             preallocated,
             skip_if_absent,
+            skip_if_absent_properties,
         })
     }
 }
@@ -2665,6 +2745,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -6372,6 +6453,7 @@ mod json_convertible_tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -6406,6 +6488,7 @@ mod json_convertible_tests {
                 "terminal": serde_json::Value::Null,
                 "preallocated": false,
                 "skip_if_absent": false,
+                "skip_if_absent_properties": serde_json::json!([]),
             })
         );
         let recovered = Index::from_json(json).expect("from_json");

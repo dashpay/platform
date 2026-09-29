@@ -58,10 +58,20 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         }
     }
 
+    /// Whether the type lists fields only its contract's moderators write
+    /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator's
+    /// change is stored as an update, so such a type keeps a `$revision` on its
+    /// documents even when their owners can not replace them. False on every
+    /// generation before the keyword.
+    fn has_moderator_changeable_fields(&self) -> bool {
+        false
+    }
+
     fn requires_revision(&self) -> bool {
         self.documents_mutable()
             || self.documents_transferable().is_transferable()
             || self.trade_mode().seller_sets_price()
+            || self.has_moderator_changeable_fields()
     }
 
     /// Checks the shape of every `encryptedFor` property `properties` supplies
