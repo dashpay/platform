@@ -484,9 +484,9 @@ async fn tc010b_recovered_from_chain_lock_roundtrip() {
 
     let (persister, tmp, path) = fresh_persister();
     assert!(
-        persister
-            .persistence_capabilities()
-            .supports_asset_lock_reconciliation(),
+        persister.persistence_capabilities().contains(
+            platform_wallet::changeset::PersistenceCapabilities::ASSET_LOCK_RECONCILIATION
+        ),
         "SQLite must support reconciliation of the asset-lock rows it restores"
     );
     assert!(!persister

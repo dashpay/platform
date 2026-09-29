@@ -900,11 +900,11 @@ mod tests {
             let writes = PersistenceCapabilities::ATOMIC_CHANGESETS
                 .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
             if self.omit_reconciliation_capabilities.load(Ordering::SeqCst) {
-                writes
+                PersistenceCapabilities::ATOMIC_CHANGESETS
             } else if self.use_full_wallet_restore.load(Ordering::SeqCst) {
-                PersistenceCapabilities::ASSET_LOCK_RECONCILIATION
+                writes.union(PersistenceCapabilities::WALLET_RESTORE)
             } else {
-                writes.union(PersistenceCapabilities::TRACKED_ASSET_LOCK_RESTORE)
+                writes
             }
         }
 

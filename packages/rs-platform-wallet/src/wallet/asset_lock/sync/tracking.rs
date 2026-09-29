@@ -327,19 +327,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
 
         let capabilities = self.persister.persistence_capabilities();
-        if !capabilities.supports_asset_lock_reconciliation() {
-            let restore = if capabilities.contains(PersistenceCapabilities::WALLET_RESTORE) {
-                PersistenceCapabilities::WALLET_RESTORE
-            } else {
-                PersistenceCapabilities::TRACKED_ASSET_LOCK_RESTORE
-            };
-            let required = PersistenceCapabilities::ATOMIC_CHANGESETS
-                .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
-                .union(restore);
+        let required = PersistenceCapabilities::ASSET_LOCK_RECONCILIATION;
+        if !capabilities.contains(required) {
             let missing = capabilities.missing(required);
             return Err(PlatformWalletError::Persistence(format!(
                 "asset-lock reconciliation requires persistence capabilities {:?} \
-                 (missing mask 0x{:x}; wallet_restore also satisfies tracked_asset_lock_restore)",
+                 (missing mask 0x{:x})",
                 missing.names(),
                 missing.bits(),
             )));
