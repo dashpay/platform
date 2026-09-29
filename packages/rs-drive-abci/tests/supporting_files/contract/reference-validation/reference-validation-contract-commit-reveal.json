@@ -368,6 +368,59 @@
         "label"
       ],
       "additionalProperties": false
+    },
+    "nestedClaim": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "meta": {
+          "type": "object",
+          "position": 1,
+          "properties": {
+            "salt": {
+              "type": "array",
+              "byteArray": true,
+              "minItems": 32,
+              "maxItems": 32,
+              "position": 0,
+              "refersTo": {
+                "type": "deletableDocument",
+                "documentType": "preorder",
+                "lookup": {
+                  "index": "saltedHash",
+                  "consume": true
+                },
+                "propertyAgreement": {
+                  "$ownerId": "$ownerId",
+                  "saltedDomainHash": {
+                    "function": "sys.hash.sha256d",
+                    "params": [
+                      "meta.salt",
+                      "label"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "required": [
+            "salt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "label",
+        "meta"
+      ],
+      "additionalProperties": false
     }
   }
 }

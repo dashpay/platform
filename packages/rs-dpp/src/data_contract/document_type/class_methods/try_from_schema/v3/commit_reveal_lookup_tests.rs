@@ -830,6 +830,18 @@ fn should_hold_an_identifier_reference_with_a_function_pair_beside_its_value() {
         )),
         "immutableAllowSetting",
     );
+    // On a mutable type the carrier is listed under immutable, which a
+    // deletable lookup re-validated on every replace could not be, but a
+    // function's lookup is judged on the create alone
+    contract(committer_reveal(
+        json!({ "committerId": "." }),
+        json!({ "hash": hash.clone() }),
+        json!({
+            "documentsMutable": true,
+            "immutable": ["label", "committerId"]
+        }),
+    ))
+    .expect("an immutable identifier carrier on a mutable type holds a function's lookup");
     let parsed = contract(committer_reveal(
         json!({ "committerId": "." }),
         json!({ "hash": hash }),

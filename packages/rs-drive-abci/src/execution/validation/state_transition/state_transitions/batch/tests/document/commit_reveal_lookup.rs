@@ -13,7 +13,8 @@
 //! reveal, which consumes, and of the writer's `membership`, a deletable
 //! lookup every replace asks for again. `saltedNote` is a mutable type whose
 //! transient salt reveals the sha256d of `preorderSalt ++ label ++ "/" ++
-//! secret`, `secret` transient too, and consumes it.
+//! secret`, `secret` transient too, and consumes it. `nestedClaim` reveals
+//! through a salt inside an object, `meta.salt`.
 
 use super::*;
 
@@ -742,6 +743,68 @@ mod commit_reveal_lookup_tests {
         );
     }
 
+    /// A salt inside an object is read the way the key reads it: a create whose
+    /// object holds `salt` twice is refused before any read, since the key
+    /// would hash one value and storage keep the other, and consumes nothing.
+    #[tokio::test]
+    async fn should_refuse_a_nested_salt_repeated_in_its_object() {
+        let mut fixture = CommitRevealFixture::new();
+        let committed_salt = [0x71; 32];
+        let preorder = fixture
+            .commit(Who::Alice, committed_salt, "nested", COMMIT_HEIGHT)
+            .await;
+        let meta = |salts: &[[u8; 32]]| {
+            Value::Map(
+                salts
+                    .iter()
+                    .map(|salt| (Value::Text("salt".to_string()), Value::Bytes32(*salt)))
+                    .collect(),
+            )
+        };
+
+        let (_, result) = fixture
+            .create(
+                Who::Alice,
+                "nestedClaim",
+                &[
+                    ("label", "nested".into()),
+                    ("meta", meta(&[committed_salt, [0x72; 32]])),
+                ],
+                &[],
+                COMMIT_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::BasicError(
+                    BasicError::DocumentReferencePreimageInvalidError(e)
+                ),
+                ..
+            } if e.path() == "meta.salt" && e.property() == "meta.salt"
+        );
+        assert!(fixture.preorder_exists(preorder.id()));
+
+        // The same salt once reveals and consumes the commitment
+        let (_, result) = fixture
+            .create(
+                Who::Alice,
+                "nestedClaim",
+                &[
+                    ("label", "nested".into()),
+                    ("meta", meta(&[committed_salt])),
+                ],
+                &[],
+                COMMIT_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(!fixture.preorder_exists(preorder.id()));
+    }
+
     /// A branch of an expression that fails consumes nothing, even when another
     /// branch lets the create through: `fallbackClaim` holds through
     /// `anyOf(allOf(<consuming reveal>, <membership>), identity)`, and a writer
@@ -770,9 +833,9 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.preorder_exists(preorder.id()));
     }
 
-    /// The lookup is billed as the document fetch it is, and a reveal that
-    /// consumes reports the commitment it consumes; the check runs on a create
-    /// only.
+    /// The key's hash is billed as the double SHA-256 it is, once, and the
+    /// lookup as the document fetch it is; a reveal that consumes reports the
+    /// commitment it consumes; the check runs on a create only.
     #[tokio::test]
     async fn should_bill_the_commitment_lookup_and_report_the_consumed_commitment() {
         let mut fixture = CommitRevealFixture::new();
@@ -839,10 +902,16 @@ mod commit_reveal_lookup_tests {
 
         let (result, execution_context, consumed) = validate(None);
         assert!(result.is_valid(), "{:?}", result.errors);
+        // The key is hashed once, billed by its blocks: 32 salt bytes and
+        // "al1ce.dash" pad to one block, plus the second pass over the digest.
+        // Then the commitment query
         assert_matches!(
             execution_context.operations_slice(),
-            [ValidationOperation::PrecalculatedOperation(fee)] if fee.processing_fee > 0,
-            "the commitment query is the one billed operation"
+            [
+                ValidationOperation::DoubleSha256(2),
+                ValidationOperation::PrecalculatedOperation(fee),
+            ] if fee.processing_fee > 0,
+            "the hash and the commitment query are the billed operations"
         );
         assert_matches!(
             consumed.as_slice(),

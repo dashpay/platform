@@ -345,13 +345,18 @@ fn validate_document_type_references_v0(
                         "a revealed reference is declared on a property of its document type",
                     )));
                 };
+                // Hashed once here, billed as the double SHA-256 it is, and
+                // handed to the lookup as its key
                 let referenced_id = match key.key_value(
                     document_type,
                     value,
                     &property.property_type,
                     document_data,
                 ) {
-                    Ok(Value::Bytes32(hash)) => hash,
+                    Ok((Value::Bytes32(hash), blocks)) => {
+                        execution_context.add_operation(ValidationOperation::DoubleSha256(blocks));
+                        hash
+                    }
                     // The create's structure validation refused a value it could not
                     // reveal, before any read
                     Ok(_) | Err(_) => {
@@ -1194,6 +1199,9 @@ fn validate_reference_target_v0(
                         ),
                         None => (&identifier_value, &identifier_type),
                     };
+                    // A revealed value's id is the key's hash, computed and
+                    // billed once already
+                    let computed_key = revealed_value.map(|_| Value::Bytes32(document_id));
                     looked_up_document = fetch_document_through_lookup(
                         platform.drive,
                         referenced_contract,
@@ -1204,6 +1212,7 @@ fn validate_reference_target_v0(
                         reference_type,
                         document_data,
                         owner_id,
+                        computed_key.as_ref(),
                         &block_info.epoch,
                         execution_context,
                         transaction,

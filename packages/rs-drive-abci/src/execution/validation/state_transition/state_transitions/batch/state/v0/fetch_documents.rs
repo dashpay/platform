@@ -432,8 +432,12 @@ fn fetch_document_with_id_v1(
 /// The query is billed exactly as [`fetch_document_with_id`] v1 bills an id
 /// fetch: an equality query over the index's properties (the shape the unique
 /// index conflict check builds), limit 1, whose processing cost is added to
-/// `execution_context`. Only reached from the document reference validation,
-/// which exists from protocol version 14, so it carries no version of its own.
+/// `execution_context`. A computed key hashes its preimage, billed as the
+/// double SHA-256 it is (`ValidationOperation::DoubleSha256`, by the blocks it
+/// hashed), unless the caller hashed it already and passes it as
+/// `computed_key`, having billed it. Only reached from the document reference
+/// validation, which exists from protocol version 14, so it carries no
+/// version of its own.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_document_through_lookup(
     drive: &Drive,
@@ -445,6 +449,7 @@ pub(crate) fn fetch_document_through_lookup(
     reference_type: &DocumentPropertyType,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
+    computed_key: Option<&Value>,
     epoch: &Epoch,
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
@@ -457,15 +462,19 @@ pub(crate) fn fetch_document_through_lookup(
     {
         return Ok(None);
     }
-    let Some(key_values) = lookup.key_values(
+    let Some((key_values, hashed_blocks)) = lookup.key_values(
         declaring_document_type,
         reference_value,
         reference_type,
         document_data,
         owner_id,
+        computed_key,
     ) else {
         return Ok(None);
     };
+    if hashed_blocks > 0 {
+        execution_context.add_operation(ValidationOperation::DoubleSha256(hashed_blocks));
+    }
     let equal_clauses = key_values
         .into_iter()
         .map(|(field, value)| {

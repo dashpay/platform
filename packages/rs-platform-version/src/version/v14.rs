@@ -1498,7 +1498,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`ReferencedDocumentRequirementNotMetError`, 40142), and `consume`, which
 ///     deletes the found document with the create
 ///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
-///     it elsewhere refused with 40120). A plain pair `{"$ownerId": "$ownerId"}`
+///     it elsewhere refused with 40120). The hash is computed once per key and
+///     billed as `ValidationOperation::DoubleSha256` by the blocks it hashes,
+///     beside the lookup's document fetch. Such a `deletableDocument` lookup,
+///     judged on the create alone, may sit on an `immutable` property, which
+///     `validate_no_immutable_deletable_element_references` otherwise refuses.
+///     A plain pair `{"$ownerId": "$ownerId"}`
 ///     makes the commitment the writer's own, and `consume` requires it, into
 ///     the declaring contract, on a type whose owners may delete.
 ///     `creatorRefersTo` takes a `deletableDocument` target through a function,

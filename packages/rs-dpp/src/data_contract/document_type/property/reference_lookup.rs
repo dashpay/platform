@@ -643,7 +643,10 @@ impl DocumentReferenceLookup {
     /// `reference_type`: an identifier, or the string or byte array a computed
     /// key's `"."` param reads), `owner_id` for
     /// `"$ownerId"`, the value at each source path in `document_data`, and
-    /// the hash of its preimage for a computed key. `None` when a source path
+    /// for a computed key `computed_key` when the caller already hashed it,
+    /// the hash of its preimage otherwise. Returned with how many SHA-256
+    /// blocks the hashing took, 0 when none was done, what the write is billed
+    /// for. `None` when a source path
     /// holds no value or does not resolve, or a computed key's preimage
     /// cannot be assembled. Registration admits required sources only, so a
     /// value is missing only on a document stamped before the property became
@@ -658,8 +661,11 @@ impl DocumentReferenceLookup {
         reference_type: &DocumentPropertyType,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
-    ) -> Option<BTreeMap<String, Value>> {
-        self.keys
+        computed_key: Option<&Value>,
+    ) -> Option<(BTreeMap<String, Value>, u16)> {
+        let mut hashed_blocks = 0;
+        let values = self
+            .keys
             .iter()
             .map(|(index_property, source)| {
                 let value = match source {
@@ -668,13 +674,19 @@ impl DocumentReferenceLookup {
                     LookupKeySource::Property(path) => {
                         document_data.get_optional_at_path(path).ok()??.clone()
                     }
-                    LookupKeySource::Hash(key) => key
-                        .key_value(declaring, reference_value, reference_type, document_data)
-                        .ok()?,
+                    LookupKeySource::Hash(_) if computed_key.is_some() => computed_key?.clone(),
+                    LookupKeySource::Hash(key) => {
+                        let (value, blocks) = key
+                            .key_value(declaring, reference_value, reference_type, document_data)
+                            .ok()?;
+                        hashed_blocks = blocks;
+                        value
+                    }
                 };
                 Some((index_property.clone(), value))
             })
-            .collect()
+            .collect::<Option<BTreeMap<String, Value>>>()?;
+        Some((values, hashed_blocks))
     }
 }
 
@@ -1159,12 +1171,16 @@ mod tests {
                 &Value::Identifier(member.to_buffer()),
                 &DocumentPropertyType::Identifier,
                 &data,
-                owner
+                owner,
+                None
             ),
-            Some(BTreeMap::from([
-                ("$ownerId".to_string(), Value::Identifier([3; 32])),
-                ("submittedCharterId".to_string(), Value::Identifier([5; 32])),
-            ]))
+            Some((
+                BTreeMap::from([
+                    ("$ownerId".to_string(), Value::Identifier([3; 32])),
+                    ("submittedCharterId".to_string(), Value::Identifier([5; 32])),
+                ]),
+                0
+            ))
         );
         assert_eq!(
             lookup.key_values(
@@ -1172,7 +1188,8 @@ mod tests {
                 &Value::Identifier(member.to_buffer()),
                 &DocumentPropertyType::Identifier,
                 &BTreeMap::new(),
-                owner
+                owner,
+                None
             ),
             None
         );

@@ -964,8 +964,10 @@ fn validate_no_immutable_contract_owner_requirements(
 /// replace state validation could not clear: a typed array of them, at the
 /// top level or inside an immutable object, a single one inside an immutable
 /// object, or one declared with a lookup, alone or as an operand of an
-/// expression, anywhere. Every replace re-validates such a reference, so once a
-/// target is deleted the property would have to change, which an immutable
+/// expression, anywhere, unless a `propertyAgreement` function computes its
+/// key: that lookup is judged when the document is created only. Every
+/// replace re-validates such a reference, so once a target is deleted the
+/// property would have to change, which an immutable
 /// property cannot: the document could never be replaced again. The one
 /// such reference that has a way out is a single one held by an immutable
 /// top-level property: a replace may remove it once its target is gone, an
@@ -995,11 +997,15 @@ fn validate_no_immutable_deletable_element_references(
         };
         // A deletableDocument found through a lookup, alone or as an operand of
         // an expression, is re-validated on every replace too, and the clearing
-        // exception reads a document id, which a lookup key is not
+        // exception reads a document id, which a lookup key is not. A lookup
+        // whose key a propertyAgreement function computes is judged on the
+        // create alone and never re-validated, so it may sit on an immutable
+        // property, which it requires
         let deletable_lookup = target.leaves().into_iter().any(|leaf| {
             matches!(
                 leaf,
-                DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. }
+                DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. }
+                    if !lookup.is_checked_on_create_only()
             )
         });
         if !deletable_lookup

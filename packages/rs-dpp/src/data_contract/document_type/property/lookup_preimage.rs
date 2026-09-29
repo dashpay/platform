@@ -329,16 +329,21 @@ impl LookupHashKey {
     }
 
     /// The value of the index property this key fills for a create of a
-    /// document of `declaring`: the hash of its preimage.
+    /// document of `declaring`, the hash of its preimage, with how many
+    /// SHA-256 blocks computing it took ([`HashFunction::block_count`]), what
+    /// the write is billed for.
     pub fn key_value(
         &self,
         declaring: DocumentTypeRef,
         reference_value: &Value,
         reference_type: &DocumentPropertyType,
         document_data: &BTreeMap<String, Value>,
-    ) -> Result<Value, LookupPreimageError> {
+    ) -> Result<(Value, u16), LookupPreimageError> {
         let preimage = self.preimage(declaring, reference_value, reference_type, document_data)?;
-        Ok(Value::Bytes32(self.function.digest(&preimage)))
+        Ok((
+            Value::Bytes32(self.function.digest(&preimage)),
+            self.function.block_count(preimage.len()),
+        ))
     }
 }
 
@@ -549,6 +554,7 @@ mod tests {
     use super::*;
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::property::LookupKeySource;
+    use crate::data_contract::document_type::DocumentReferenceLookup;
     use crate::data_contract::document_type::DocumentType;
     use crate::util::hash::hash_double;
     use platform_value::platform_value;
@@ -649,12 +655,58 @@ mod tests {
                     ("preorderSalt", salt_value.clone()),
                 ]);
                 assert_eq!(
-                    key.key_value(domain.as_ref(), &salt_value, &salt_type(&domain), &document),
+                    key.key_value(domain.as_ref(), &salt_value, &salt_type(&domain), &document)
+                        .map(|(value, _)| value),
                     Ok(trigger_hash(salt, normalized_label, parent)),
                     "{normalized_label} {parent}"
                 );
             }
         }
+    }
+
+    #[test]
+    fn should_report_the_blocks_a_lookup_hashed_and_none_for_a_key_already_hashed() {
+        let domain = domain();
+        let salt = Value::Bytes32([0x42; 32]);
+        let lookup = DocumentReferenceLookup::new(
+            "saltedHash".to_string(),
+            BTreeMap::from([(
+                "saltedDomainHash".to_string(),
+                LookupKeySource::Hash(dpns_key()),
+            )]),
+        );
+        let document = data(&[
+            ("normalizedLabel", "al1ce".into()),
+            ("parentDomainName", "dash".into()),
+            ("preorderSalt", salt.clone()),
+        ]);
+        let hash = trigger_hash([0x42; 32], "al1ce", "dash");
+        // 32 + 5 + 1 + 4 bytes pad to one block, plus the second pass
+        assert_eq!(
+            lookup.key_values(
+                domain.as_ref(),
+                &salt,
+                &salt_type(&domain),
+                &document,
+                Identifier::from([1; 32]),
+                None
+            ),
+            Some((
+                BTreeMap::from([("saltedDomainHash".to_string(), hash.clone())]),
+                2
+            ))
+        );
+        assert_eq!(
+            lookup.key_values(
+                domain.as_ref(),
+                &salt,
+                &salt_type(&domain),
+                &document,
+                Identifier::from([1; 32]),
+                Some(&hash)
+            ),
+            Some((BTreeMap::from([("saltedDomainHash".to_string(), hash)]), 0))
+        );
     }
 
     #[test]
