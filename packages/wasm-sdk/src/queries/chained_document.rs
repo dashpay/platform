@@ -135,6 +135,7 @@ async fn parse_chained_documents_query(
             start_at: None,
             group_by: None,
             time_range: None,
+            integer_range: None,
         },
     )
     .await?;

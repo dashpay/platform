@@ -3,6 +3,7 @@
 
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::where_clause_grouping::group_where_clauses;
 use crate::query::{QuerySyntaxSimpleValidationResult, QuerySyntaxValidationResult};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -573,7 +574,7 @@ impl<'a> WhereClause {
         where_clauses: &'a [WhereClause],
         platform_version: &PlatformVersion,
     ) -> Result<(BTreeMap<String, Self>, Option<Self>, Vec<Self>), Error> {
-        crate::query::where_clause_grouping::group_where_clauses(where_clauses, platform_version)
+        group_where_clauses(where_clauses, platform_version)
     }
 
     fn split_value_for_between(
@@ -1500,11 +1501,13 @@ fn is_numeric_value(value: &Value) -> bool {
 fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
     match field {
         // Identifiers
-        "$id" | "$ownerId" | "$dataContractId" | "$creatorId" => {
+        "$id" | "$ownerId" | "$dataContractId" | "$creatorId" | "$moderatedBy" => {
             Some(DocumentPropertyType::Identifier)
         }
         // Dates (millis since epoch)
-        "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
+        "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => {
+            Some(DocumentPropertyType::Date)
+        }
         // Block heights and core block heights
         "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
             Some(DocumentPropertyType::U64)
@@ -1565,6 +1568,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into()
     }

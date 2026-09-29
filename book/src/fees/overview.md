@@ -52,6 +52,12 @@ Storage fees are **refundable**: when data is deleted, a portion of the original
 storage fee is returned to the identity that paid it (see [Refunds](#refunds)
 below).
 
+The documents of a type that declares a `ttl` (protocol version 14) are the exception: they
+carry no storage flags and refund nothing, their bytes are priced for the time they live, and
+their storage fees are paid out to the epochs they live in, through the lifetime storage fee
+pools, instead of over the perpetual distribution. See
+[Document Time To Live](../data-model/document-ttl.md).
+
 ### Processing Fees
 
 Processing fees pay for computation that does not leave a permanent trace in

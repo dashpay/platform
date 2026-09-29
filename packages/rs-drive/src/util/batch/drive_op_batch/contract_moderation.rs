@@ -104,7 +104,8 @@ pub enum ContractModerationOperationType {
     },
     /// Writes nothing: marks the batch it is in as one whose storage removals refund nobody
     /// (`Drive::apply_drive_operations` generation 1). A moderator's document deletion carries
-    /// it, so the deleted document's owner gets no storage refund.
+    /// it, so the deleted document's owner gets no storage refund, unless the document's type
+    /// refunds the owner (`moderatorAbilities.deleteRefundsOwner`).
     ForfeitStorageRefunds,
     /// Writes a seated moderation team member's count of moderation actions on an elected
     /// contract since the moderators pot was last settled.

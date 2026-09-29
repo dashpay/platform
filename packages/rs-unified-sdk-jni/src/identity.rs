@@ -839,6 +839,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_discov
 /// Register a DPNS name for an identity, signed via the external signer.
 /// Works on watch-only wallets (no seed Rust-side). Returns the full
 /// domain name (e.g. `"alice.dash"`).
+///
+/// `maxContestFund` is the most, in credits, the registration pays into
+/// the contest a contested name joins; `0` states the fund to join read
+/// just before the domain is submitted.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_registerDpnsName(
     mut env: JNIEnv,
@@ -846,9 +850,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
     wallet_handle: jlong,
     identity_id: JByteArray,
     label: JString,
+    max_contest_fund: jlong,
     signer_handle: jlong,
 ) -> jni::sys::jstring {
     guard(&mut env, ptr::null_mut(), |env| {
+        if max_contest_fund < 0 {
+            throw_sdk_exception(env, 1, "maxContestFund must be non-negative");
+            return ptr::null_mut();
+        }
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
@@ -874,6 +883,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
                 wallet_handle as Handle,
                 id.as_ptr(),
                 c_label.as_ptr(),
+                max_contest_fund as u64,
                 signer_handle as *mut SignerHandle,
                 &mut out_full as *mut *mut c_char,
             )

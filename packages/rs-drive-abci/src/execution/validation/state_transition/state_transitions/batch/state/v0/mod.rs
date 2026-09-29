@@ -35,9 +35,11 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_unfreeze_transition_action::TokenUnfreezeTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
 use crate::execution::validation::state_transition::batch::state::v0::added_moderator_cap::AddedModeratorCap;
+use crate::execution::validation::state_transition::batch::state::v0::consumed_documents::ConsumedDocuments;
 use crate::execution::validation::state_transition::batch::state::v0::index_only_batch_entries::IndexOnlyBatchEntries;
 use crate::execution::validation::state_transition::batch::state::v0::moderators_pot_settle::ModeratorsPotSettles;
 use crate::execution::validation::state_transition::batch::state::v0::seated_charter_reads::SeatedCharterReads;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::batch::transformer::v0::BatchTransitionTransformerV0;
@@ -45,6 +47,7 @@ use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 mod added_moderator_cap;
+mod consumed_documents;
 pub mod fetch_contender;
 pub mod fetch_documents;
 mod index_only_batch_entries;
@@ -115,15 +118,28 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         // The seated charters those two read, each read once per batch.
         let mut seated_charter_reads = SeatedCharterReads::default();
 
+        // The commitments this batch's creates consume, which no other write of the batch may
+        // touch. Only a create revealing a commitment through a `refersTo` lookup, the
+        // reference declaring `consume`, records one, and only the protocol version 14 parser
+        // produces such a lookup, so no earlier batch takes this path.
+        let mut consumed_documents =
+            ConsumedDocuments::for_batch(state_transition_action.transitions());
+
         // Next we need to validate the structure of all actions (this means with the data contract)
-        for transition in state_transition_action.transitions_take() {
-            let transition_validation_result = match &transition {
+        for mut transition in state_transition_action.transitions_take() {
+            // The commitments a create of this transition reveals and consumes
+            let mut create_consumptions = Vec::new();
+            // Borrowed mutably so a contested create's validation can settle the fund it pays
+            // (document create state validation 2, protocol version 14); earlier versions of
+            // every validation below read the action only
+            let transition_validation_result = match &mut transition {
                 BatchedTransitionAction::DocumentAction(document_action) => match document_action {
                     DocumentTransitionAction::CreateAction(create_action) => create_action
                         .validate_state(
                             platform,
                             owner_id,
                             block_info,
+                            &mut create_consumptions,
                             execution_context,
                             transaction,
                             platform_version,
@@ -386,6 +402,29 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                 DocumentTransitionAction::CreateAction(create_action),
             ) = &transition
             {
+                // A create consumes the commitments it revealed with it, unless another
+                // write of the batch touches one: the whole batch applies as one grove
+                // batch. Checked before the trackers below record the create, and
+                // recorded once they all accepted it, so a refused create claims nothing
+                if !create_consumptions.is_empty() {
+                    let consumed_result = consumed_documents.validate(
+                        create_action.base().data_contract_id(),
+                        &create_consumptions,
+                    );
+                    if !consumed_result.is_valid() {
+                        validation_result.add_errors(consumed_result.errors);
+                        validated_transitions
+                            .push(BatchedTransitionAction::BumpIdentityDataContractNonce(
+                                BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                                    create_action.base(),
+                                    owner_id,
+                                    state_transition_action.user_fee_increase(),
+                                ),
+                            ));
+                        continue;
+                    }
+                }
+
                 let batch_entries_result = index_only_batch_entries.validate_and_record_create(
                     create_action,
                     owner_id,
@@ -426,6 +465,26 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                             ),
                         ));
                     continue;
+                }
+            }
+
+            // The accepted create's consumptions, recorded for the rest of the batch and
+            // deleted with it
+            if !create_consumptions.is_empty() {
+                if let BatchedTransitionAction::DocumentAction(
+                    DocumentTransitionAction::CreateAction(create_action),
+                ) = &mut transition
+                {
+                    consumed_documents.record(
+                        create_action.base().data_contract_id(),
+                        &create_consumptions,
+                    );
+                    create_action.set_consumed_documents(
+                        create_consumptions
+                            .into_iter()
+                            .map(|consumption| consumption.document)
+                            .collect(),
+                    );
                 }
             }
 

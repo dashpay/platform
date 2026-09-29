@@ -13,6 +13,19 @@ impl Drive {
     /// document type: the ones of the ids named (an id with no record is proved absent), or
     /// one page in document id order. The document type must be one whose removal tree
     /// exists; the caller checks that against the contract.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_id`: The contract whose moderators deleted the documents.
+    /// * `query`: The document type and the selection: document ids, or a page.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<u8>)` with the GroveDB proof of the selected records.
+    /// * `Err(Error)` when the method version is unknown, the query names no ids, too many or a
+    ///   repeated id, or has a limit of zero or above the maximum, or proving fails.
     pub fn prove_contract_document_removals(
         &self,
         contract_id: Identifier,

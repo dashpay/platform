@@ -148,8 +148,16 @@ type Reference = {
   keyIdProperty?: string;
   keyRequirements?: { purpose?: string; boundTo?: string };
   identityProperty?: string;
-  propertyAgreement?: Record<string, string>;
-  lookup?: { index: string; keys: Record<string, string> };
+  propertyAgreement?: Record<
+    string,
+    string | { function: string; params: Array<string | { const: string }> }
+  >;
+  lookup?: {
+    index: string;
+    keys?: Record<string, string>;
+  };
+  minimumAgeBlocks?: number;
+  consume?: boolean;
   inList?: string;
 };
 
@@ -438,6 +446,80 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(other).to.not.have.property('lookup');
     });
 
+    it('should list a byte array revealing its value through a propertyAgreement function', () => {
+      const salt = {
+        type: 'array',
+        byteArray: true,
+        minItems: 32,
+        maxItems: 32,
+        position: 2,
+      };
+      const contract = new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas: {
+          preorder: {
+            type: 'object',
+            documentsMutable: false,
+            canBeDeleted: true,
+            properties: { saltedDomainHash: { ...salt, position: 0 } },
+            indices: [
+              { name: 'saltedHash', properties: [{ saltedDomainHash: 'asc' }], unique: true },
+            ],
+            required: ['$createdAtBlockHeight', 'saltedDomainHash'],
+            additionalProperties: false,
+          },
+          domain: {
+            type: 'object',
+            documentsMutable: false,
+            properties: {
+              normalizedLabel: { type: 'string', maxLength: 63, position: 0 },
+              parentDomainName: { type: 'string', maxLength: 63, position: 1 },
+              preorderSalt: {
+                ...salt,
+                refersTo: {
+                  type: 'deletableDocument',
+                  documentType: 'preorder',
+                  lookup: { index: 'saltedHash' },
+                  propertyAgreement: {
+                    $ownerId: '$ownerId',
+                    saltedDomainHash: {
+                      function: 'sys.hash.sha256d',
+                      params: ['preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
+                    },
+                  },
+                  minimumAgeBlocks: 1,
+                  consume: true,
+                },
+              },
+            },
+            required: ['normalizedLabel', 'parentDomainName', 'preorderSalt'],
+            transient: ['preorderSalt'],
+            additionalProperties: false,
+          },
+        },
+        definitions: null,
+        fullValidation: true,
+        platformVersion: new PlatformVersion(14),
+      });
+      const [salted] = contract.documentTypeReferences('domain') as Reference[];
+
+      // The function stays in the agreement, as declared; the lookup keeps
+      // the index, and what the commitment must be sits beside it
+      expect(salted.path).to.equal('preorderSalt');
+      expect(salted.type).to.equal('deletableDocument');
+      expect(salted.propertyAgreement).to.deep.equal({
+        $ownerId: '$ownerId',
+        saltedDomainHash: {
+          function: 'sys.hash.sha256d',
+          params: ['preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
+        },
+      });
+      expect(salted.lookup).to.deep.equal({ index: 'saltedHash' });
+      expect(salted.minimumAgeBlocks).to.equal(1);
+      expect(salted.consume).to.equal(true);
+    });
+
     it('should refuse a lookup into an index that is not unique', () => {
       const notUnique = structuredClone(lookupSchemas);
       delete (notUnique.joinRequest.indices[0] as { unique?: boolean }).unique;
@@ -578,13 +660,16 @@ describe('DataContract — refersTo declarations (v14)', () => {
       },
     };
 
-    function buildExpressionContract(documentSchemas: object) {
+    // Full validation runs the meta-schema first in this build (it has
+    // dpp's `validation` feature); the refusals below check the parser's own
+    // rule with full validation off, and that full validation refuses too.
+    function buildExpressionContract(documentSchemas: object, fullValidation = true) {
       return new wasm.DataContract({
         ownerId,
         identityNonce: BigInt(2),
         schemas: documentSchemas,
         definitions: null,
-        fullValidation: true,
+        fullValidation,
         platformVersion: new PlatformVersion(14),
       });
     }
@@ -694,9 +779,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
         anyOf: [{ type: 'identity' }, { type: 'contract' }],
       };
 
-      expect(() => buildExpressionContract(withContract)).to.throw(
+      expect(() => buildExpressionContract(withContract, false)).to.throw(
         /refersTo anyOf\[1\] is a reference of type contract, which a reference expression does not take/,
       );
+      expect(() => buildExpressionContract(withContract)).to.throw(/JsonSchemaError/);
     });
 
     it('should refuse an anyOf directly inside an anyOf', () => {
@@ -706,9 +792,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
         anyOf: [{ type: 'identity' }, { anyOf: memberId.refersTo.anyOf }],
       };
 
-      expect(() => buildExpressionContract(flat)).to.throw(
+      expect(() => buildExpressionContract(flat, false)).to.throw(
         /refersTo anyOf\[1\] is an anyOf directly inside an anyOf/,
       );
+      expect(() => buildExpressionContract(flat)).to.throw(/JsonSchemaError/);
     });
   });
 

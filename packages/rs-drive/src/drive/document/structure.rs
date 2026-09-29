@@ -4,10 +4,10 @@ use crate::structure::{ElementKind, FlagsKind, KeyEncoding, KeyMatcher, Structur
 const SOURCE: &str = "packages/rs-drive/src/drive/document/paths.rs";
 const DOCUMENT_FLAGS: &str =
     "The owner is the owner of the document, who is refunded when it is deleted. \
-     Documents the system writes carry no flags.";
+     Documents the system writes, and documents of a type declaring a `ttl`, carry no flags.";
 const LEVEL_FLAGS: &str = "The owner is the owner of the document that created this level of the \
      index. Levels created with the contract carry the contract owner, and levels of \
-     system data carry no flags.";
+     system data, or created by a document of a type declaring a `ttl`, carry no flags.";
 const DOCUMENT: &str = "contracts.contract.documents.document_type.primary_key.document";
 const REVISION: &str = "contracts.contract.documents.document_type.primary_key.document.revision";
 const INDEX_PROPERTY: &str = "contracts.contract.documents.document_type.index_property";
@@ -112,7 +112,8 @@ pub(crate) fn document_type() -> StructureNode {
             KeyMatcher::Any,
             KeyEncoding::Utf8,
             "The name of an index's next property; a time \
-                                    range property appends its grid as #range#step",
+                                    or integer range property appends its grid as \
+                                    #range#step",
         )
         .kinds(&INDEX_PROPERTY_TREES, INDEX_PROPERTY_NOTE)
         .flags(&[FlagsKind::EpochOwned, FlagsKind::None], LEVEL_FLAGS)
@@ -133,8 +134,8 @@ fn index_value() -> StructureNode {
         KeyMatcher::Any,
         KeyEncoding::SerializedValue,
         "The property's value serialized for ordering; \
-         empty for null; a bucket start for a time range \
-         property",
+         empty for null; a window start for a time or \
+         integer range property",
     )
     .kinds(
         &[
