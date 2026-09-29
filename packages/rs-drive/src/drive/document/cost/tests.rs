@@ -2,7 +2,7 @@ use super::*;
 use crate::drive::document::expiration::paths::documents_expirations_path_vec;
 use crate::drive::document::expiration::pricing::document_expiration_cleanup_fee;
 use crate::drive::document::fixture_contracts::{
-    leave_out_optional_unique_values, small_sums, CONTRACTS,
+    leave_out_optional_unique_values, leave_out_skip_properties, small_sums, CONTRACTS,
 };
 use crate::drive::document::make_document_reference;
 use crate::drive::{Drive, RootTree};
@@ -216,6 +216,11 @@ fn should_price_what_drive_charges() {
                 if seed <= 2 {
                     leave_out_optional_unique_values(&mut document, document_type);
                 }
+                // Seeds 3 and 4 leave out every skip property, so the
+                // `skipIfAbsent` indexes skip them.
+                if (3..=4).contains(&seed) {
+                    leave_out_skip_properties(&mut document, document_type);
+                }
                 // Seed 10 repeats the values of seed 9 under a new id, where
                 // no unique index forbids it.
                 if seed == 10 {
@@ -268,7 +273,8 @@ fn should_price_what_drive_charges() {
                 // A ranked tree's rows carry the entry's aggregate after the
                 // insert.
                 for (write, before) in writes.iter().zip(&entries_before) {
-                    if write.ranking.is_none() {
+                    // Rows under a ttl window are priced as processing.
+                    if write.ranking.is_none() || write.ephemeral {
                         continue;
                     }
                     let after = entry_of(write).expect("expected the ranked entry");
@@ -457,6 +463,69 @@ fn should_split_the_storage_into_primary_storage_and_each_index() {
     assert!(same_epoch.new_values < cost.storage_credits.new_values);
     assert!(same_epoch.new_values > cost.storage_credits.new_values * 99 / 100);
     assert!(after_one_year.new_values < same_epoch.new_values);
+}
+
+#[test]
+fn should_charge_no_layer_to_a_skip_index_that_skips_the_document() {
+    let platform_version = PlatformVersion::latest();
+    let contract = contract_with(platform_value!({ "post": {
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": true,
+        "properties": {
+            "language": { "type": "string", "maxLength": 8, "position": 0 },
+            "hashtag": { "type": "string", "maxLength": 20, "position": 1 },
+        },
+        "indices": [
+            { "name": "byLanguage", "properties": [{ "language": "asc" }] },
+            {
+                "name": "byLanguageHashtag",
+                "properties": [{ "language": "asc" }, { "hashtag": "asc" }],
+                "skipIfAbsent": ["hashtag"],
+            },
+        ],
+        "required": ["language"],
+        "additionalProperties": false,
+    }}));
+    let post = contract.document_type_for_name("post").expect("post");
+    let mut document = post
+        .random_document(Some(1), platform_version)
+        .expect("expected a random document");
+    document.set_properties(
+        [("language".to_string(), Value::Text("en".to_string()))]
+            .into_iter()
+            .collect(),
+    );
+    let cost = document_create_cost(
+        &contract,
+        post,
+        &document,
+        &CostAssumptions::new(platform_version),
+        platform_version,
+    )
+    .expect("expected a cost");
+
+    // The language's value tree is byLanguage's alone: byLanguageHashtag
+    // skips a post without a hashtag and adds no layer.
+    let shares = |name: &str| {
+        cost.indexes
+            .iter()
+            .find(|index| index.name == name)
+            .map(|index| {
+                (
+                    index.shared_with.clone(),
+                    index.shared_bytes.new_values,
+                    index.own_bytes.new_values,
+                )
+            })
+            .unwrap_or_default()
+    };
+    let (by_language_shared_with, by_language_shared_bytes, by_language_own_bytes) =
+        shares("byLanguage");
+    assert!(by_language_shared_with.is_empty());
+    assert_eq!(by_language_shared_bytes, 0);
+    assert!(by_language_own_bytes > 0);
+    assert_eq!(shares("byLanguageHashtag"), (vec![], 0, 0));
 }
 
 #[test]

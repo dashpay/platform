@@ -87,9 +87,9 @@ impl Drive {
     /// the index walkers write with, so probe and write paths cannot
     /// drift (including the edge rules: a pre-origin timestamp produces
     /// NO entries, so it produces no probe paths either). A `skipIfAbsent`
-    /// index whose trigger (first property) the document omits likewise
-    /// produces NO paths (and an empty member key) — the write walkers
-    /// skipped the branch, so there is nothing to probe; the zero-path
+    /// index that skips the document (it omits a property of the index's
+    /// skip set) likewise produces NO paths (and an empty member key) — the
+    /// write walkers wrote nothing for it, so there is nothing to probe; the zero-path
     /// case flows through both consumers with the correct semantics
     /// (vacuously consistent for the delete probe, no duplicate for the
     /// create probe).
@@ -120,20 +120,18 @@ impl Drive {
         };
 
         // A skipIfAbsent index participates only when the document carries
-        // its trigger — the first property, which the parser guarantees is
-        // the only one that may be absent. Mirror the write walkers' skip
-        // exactly: no trigger, no entries.
-        if index.skip_if_absent {
-            let trigger = &index
-                .properties
-                .first()
-                .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "a skipIfAbsent index has at least one property; the contract parser \
-                     enforces it",
-                )))?
-                .name;
+        // every property of its skip set (the parser guarantees those are the
+        // only properties of the index that may be absent). Mirror the write
+        // walkers' skip exactly (`document_takes_part_in_index`): a document
+        // the index skips has no entries in it.
+        for skip_property in index.skip_if_absent_properties.iter() {
             if document
-                .get_raw_for_document_type(trigger, document_type, owner_id, platform_version)?
+                .get_raw_for_document_type(
+                    skip_property,
+                    document_type,
+                    owner_id,
+                    platform_version,
+                )?
                 .is_none()
             {
                 return Ok((Vec::new(), Vec::new()));

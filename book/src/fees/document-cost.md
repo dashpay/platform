@@ -49,9 +49,12 @@ The storage depends on what is already stored, so it comes in two scenarios:
 The estimate also splits the storage by index: the layers an index shares with
 other indexes (a common prefix of properties, paid once for the document) and
 the layers only it uses, so an index's cost on its own is its shared layers
-plus its own.
+plus its own. A `skipIfAbsent` index that skips the document writes nothing,
+and adds no layer, just as Drive builds none for it; the rows of a ranked
+level under a time window with a `ttl` are priced like the window, as
+processing.
 
-The test `should_price_what_drive_charges` inserts documents into 19 contracts
+The test `should_price_what_drive_charges` inserts documents into 21 contracts
 covering every index shape and requires the estimate to equal the storage fee
 Drive charged, byte for byte, with the trees already stored read from GroveDB
 before each insert.

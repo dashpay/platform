@@ -10,7 +10,10 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
-use crate::drive::document::index_level_tree_types::index_level_tree_types_with_continuation_demotion;
+use crate::drive::document::index_level_tree_types::{
+    document_takes_part_in_index, index_level_tree_types_with_continuation_demotion,
+    level_reaches_entry,
+};
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::util::storage_flags::StorageFlags;
@@ -84,28 +87,43 @@ impl Drive {
             );
         }
 
-        if let Some(index_type) = index_level.has_index_with_type() {
-            self.remove_reference_for_index_level_for_contract_operations(
-                document_and_contract_info,
-                index_path_info.clone(),
-                index_type,
-                any_fields_null,
-                all_fields_null,
-                storage_flags,
-                previous_batch_operations,
-                estimated_costs_only_with_layer_info,
-                skip_missing_expired_entry,
-                event_id,
-                transaction,
-                batch_operations,
-                platform_version,
-            )?;
-        }
-
         let document_type = document_and_contract_info.document_type;
+
+        // Mirror of the insert walker: the index ending here holds an entry
+        // for the document only when it did not skip it.
+        if let Some(index_type) = index_level.has_index_with_type() {
+            if document_takes_part_in_index(
+                &index_type.skip_if_absent_properties,
+                &document_and_contract_info.owned_document_info.document_info,
+            )? {
+                self.remove_reference_for_index_level_for_contract_operations(
+                    document_and_contract_info,
+                    index_path_info.clone(),
+                    index_type,
+                    any_fields_null,
+                    all_fields_null,
+                    storage_flags,
+                    previous_batch_operations,
+                    estimated_costs_only_with_layer_info,
+                    skip_missing_expired_entry,
+                    event_id,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+            }
+        }
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            // A sub-level under which the document wrote no entry holds
+            // nothing of it to remove.
+            if !level_reaches_entry(
+                sub_level,
+                &document_and_contract_info.owned_document_info.document_info,
+            )? {
+                continue;
+            }
             // The delete walker writes nothing itself, but its
             // estimation layers must describe the tree the insert path
             // actually laid down — including the meta-schema-v3 ranked

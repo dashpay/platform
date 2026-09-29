@@ -91,7 +91,10 @@ That single property pays off three times:
   contract validation.
 - Composes with everything the grid already composes with: `countable`,
   the range axes, ranked levels below the bucket, `unique`
-  (`range == step`, `$createdAt`), indexOnly document types.
+  (`range == step`, `$createdAt`), indexOnly document types, and
+  `skipIfAbsent` on a property below the bucket (a skipped document builds
+  no window under a grid only skip indexes use, and no branch of its own in
+  a window it shares).
   `preallocated` stays banned with `timeRange` for the pre-existing
   structural reason.
 

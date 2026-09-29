@@ -16,7 +16,7 @@
 
 use crate::query::drive_document_sum_query::{is_indexable_for_sum, is_range_operator};
 use crate::query::ResolvedTimeRange;
-use crate::query::{index_admissible_for_resolved_time_range, WhereClause, WhereOperator};
+use crate::query::{index_admissible_for_query, SkipIfAbsentBinding, WhereClause, WhereOperator};
 use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -31,13 +31,17 @@ use std::collections::{BTreeMap, BTreeSet};
 /// `resolved_time_ranges` names the fields whose equality clause was
 /// produced by `IN_TIME_RANGE` resolution (see
 /// [`crate::query::resolve_time_range_bucket_clause`]) and gates which indexes
-/// are candidates — see [`index_admissible_for_resolved_time_range`].
+/// are candidates — see [`index_admissible_for_resolved_time_range`](crate::query::index_admissible_for_resolved_time_range).
 pub fn find_summable_index_for_where_clauses<'b>(
     indexes: &'b BTreeMap<String, Index>,
     where_clauses: &[WhereClause],
     sum_property: &str,
     resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
+    // A skip index serves only a query binding every skip property
+    // ([`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)): a prefix match may stop
+    // above a deep one.
+    let skip_bindings = SkipIfAbsentBinding::for_where_clauses(where_clauses);
     // Defense-in-depth: any non-indexable operator immediately disqualifies
     // — the sum point-lookup path can only serve Equal/In.
     if where_clauses
@@ -63,7 +67,7 @@ pub fn find_summable_index_for_where_clauses<'b>(
         // every document unless the query pins a single bucket, and only a
         // resolution-produced equality does that. Conversely a raw clause
         // must never bind to bucket keys.
-        if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+        if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
             continue;
         }
         // Skip if not summable OR if summable property doesn't match.
@@ -106,6 +110,10 @@ pub fn find_range_summable_index_for_where_clauses<'b>(
     sum_property: &str,
     resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
+    // A skip index serves only a query binding every skip property
+    // ([`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)): a prefix match may stop
+    // above a deep one.
+    let skip_bindings = SkipIfAbsentBinding::for_where_clauses(where_clauses);
     let range_clauses: Vec<&WhereClause> = where_clauses
         .iter()
         .filter(|wc| is_range_operator(wc.operator))
@@ -149,7 +157,7 @@ pub fn find_range_summable_index_for_where_clauses<'b>(
         // indexes store one entry per containing bucket, so only a query
         // pinned to a single bucket by a resolution-produced equality may
         // walk them, and raw clauses may never bind to bucket keys.
-        if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+        if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
             continue;
         }
         if !index.range_summable {

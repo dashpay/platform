@@ -1508,6 +1508,29 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `DocumentFieldNotChangeableByModeratorsError` (41123) and
 ///     `DocumentModeratorFieldNotWritableError` (41124), appended.
 ///
+/// 58. **`skipIfAbsent` at any position, `true` or an array, on every type**:
+///     document meta-schema v3 and the generation-3 parser take
+///     `skipIfAbsent: true` (skip on every optional property of the index)
+///     or an array naming the skip set, and a skip property may sit at any
+///     position of the index, under a `timeRange` window too. A stored type
+///     may declare it (the array may then leave some optional properties on
+///     the null key), except on a contested index or next to
+///     `nullSearchable: false`; on an indexOnly type the skip set is every
+///     optional property of the index and each optional property needs a
+///     skip index of its own, without a `timeRange`. No `rankedCountable`
+///     `at` level may sit above a skip property; on a stored type a ranking
+///     at a skip property may not share its level with an index keeping the
+///     null layout for it, and a skip property that is a byte array needs
+///     `minItems` of at least 1. The v2 insert and delete walkers write an index's
+///     entry only for a document carrying its skip set and build a level
+///     only when an entry of the document sits at or below it; update 1
+///     moves a replaced document into or out of a skip index; every index
+///     picker (server and verifier) admits a skip index only for a query
+///     binding each skip property, on a stored type with a constraint no
+///     missing value can meet. A contract valid before keeps its layout and
+///     queries: it could only skip on an indexOnly index's first property,
+///     where both rules agree.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

@@ -50,6 +50,7 @@ fn summable_index(name: &str, props: &[&str], summable: Option<&str>) -> Index {
         terminal: None,
         preallocated: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
     }
 }
 
@@ -74,6 +75,7 @@ fn range_summable_index(name: &str, props: &[&str], summable: &str) -> Index {
         terminal: None,
         preallocated: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
     }
 }
 
