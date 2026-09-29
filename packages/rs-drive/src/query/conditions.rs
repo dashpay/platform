@@ -1501,11 +1501,13 @@ fn is_numeric_value(value: &Value) -> bool {
 fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
     match field {
         // Identifiers
-        "$id" | "$ownerId" | "$dataContractId" | "$creatorId" => {
+        "$id" | "$ownerId" | "$dataContractId" | "$creatorId" | "$moderatedBy" => {
             Some(DocumentPropertyType::Identifier)
         }
         // Dates (millis since epoch)
-        "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
+        "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => {
+            Some(DocumentPropertyType::Date)
+        }
         // Block heights and core block heights
         "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
             Some(DocumentPropertyType::U64)
@@ -1566,6 +1568,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into()
     }

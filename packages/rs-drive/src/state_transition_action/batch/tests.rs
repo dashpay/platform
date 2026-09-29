@@ -255,6 +255,7 @@ fn make_create_v0() -> DocumentCreateTransitionActionV0 {
         current_store_contest_info: None,
         should_store_contest_info: None,
         property_constraint_aggregates: Default::default(),
+        moderated: false,
         consumed_documents: Vec::new(),
     }
 }
@@ -406,6 +407,8 @@ fn make_replace_v0() -> DocumentReplaceTransitionActionV0 {
         removed_identifier_fields: BTreeMap::new(),
         stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
+        moderated_at: None,
+        moderated_by: None,
         property_constraint_aggregates: Default::default(),
     }
 }
@@ -2956,6 +2959,7 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         current_store_contest_info: None,
         should_store_contest_info: None,
         property_constraint_aggregates: Default::default(),
+        moderated: false,
         consumed_documents: Vec::new(),
     })
 }
@@ -2989,6 +2993,8 @@ fn stamp_test_replace_action(protocol_version: u32) -> DocumentReplaceTransition
         removed_identifier_fields: BTreeMap::new(),
         stored_changed_values: BTreeMap::new(),
         creator_id: Some(Identifier::from([0xCC; 32])),
+        moderated_at: None,
+        moderated_by: None,
         property_constraint_aggregates: Default::default(),
     })
 }

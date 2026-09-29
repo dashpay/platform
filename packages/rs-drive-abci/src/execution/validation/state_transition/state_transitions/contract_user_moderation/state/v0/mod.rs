@@ -798,6 +798,9 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
         );
     }
     changed.set_revision(Some(next_revision));
+    // The document records the moderator who last wrote its moderator fields, and when.
+    changed.set_moderated_at(Some(block_info.time_ms));
+    changed.set_moderated_by(Some(moderator_id));
 
     // The changed document is judged as a replace judges one: the owner is the document's, the
     // times and heights are the ones it keeps, and the `countOf` and `sumOf` totals are read as

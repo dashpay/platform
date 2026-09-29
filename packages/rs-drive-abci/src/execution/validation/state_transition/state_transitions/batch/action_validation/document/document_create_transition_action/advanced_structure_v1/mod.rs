@@ -313,6 +313,7 @@ mod tests {
             current_store_contest_info: None,
             should_store_contest_info: None,
             property_constraint_aggregates: Default::default(),
+            moderated: false,
             consumed_documents: Vec::new(),
         })
     }
@@ -590,6 +591,7 @@ mod tests {
             current_store_contest_info: None,
             should_store_contest_info: None,
             property_constraint_aggregates: Default::default(),
+            moderated: false,
             consumed_documents: Vec::new(),
         })
     }

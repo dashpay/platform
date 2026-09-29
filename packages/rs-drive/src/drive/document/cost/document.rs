@@ -276,6 +276,8 @@ pub fn sized_document(
         updated_at_core_block_height: core_height("$updatedAtCoreBlockHeight"),
         transferred_at_core_block_height: core_height("$transferredAtCoreBlockHeight"),
         creator_id,
+        moderated_at: None,
+        moderated_by: None,
     };
     Ok((document.into(), fields))
 }

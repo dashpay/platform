@@ -27,7 +27,7 @@ mod moderator_fields;
 pub(crate) mod property_constraint_aggregates;
 
 use contract_moderation_gate::{BatchTransitionContractModerationGate, ContractModerationRefusal};
-use moderator_fields::moderator_field_refusal;
+use moderator_fields::judge_moderator_field_write;
 use property_constraint_aggregates::attach_property_constraint_aggregates;
 use std::borrow::Cow;
 use std::collections::btree_map::Entry;
@@ -819,11 +819,11 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
                 // A field only the contract's moderators write, set by a writer who does not
-                // moderate it
-                if let Some(error) = moderator_field_refusal(
+                // moderate it, refused; set by one who does, stamped as a moderator's
+                if let Some(error) = judge_moderator_field_write(
                     drive,
                     &data_contract_fetch_info.contract,
-                    &document_create_action,
+                    &mut document_create_action,
                     owner_id,
                     block_info,
                     execution_context,
@@ -924,11 +924,11 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
                 // A field only the contract's moderators write, changed, added or removed by a
-                // writer who does not moderate it
-                if let Some(error) = moderator_field_refusal(
+                // writer who does not moderate it, refused; by one who does, stamped
+                if let Some(error) = judge_moderator_field_write(
                     drive,
                     &data_contract_fetch_info.contract,
-                    &document_replace_action,
+                    &mut document_replace_action,
                     owner_id,
                     block_info,
                     execution_context,

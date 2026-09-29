@@ -98,6 +98,28 @@ pub struct DocumentV0 {
     /// The creator id.
     #[cfg_attr(feature = "serde-conversion", serde(rename = "$creatorId", default))]
     pub creator_id: Option<Identifier>,
+    /// The block time in milliseconds at which a moderator of the contract last wrote the
+    /// fields the document type keeps for its moderators (`moderatorAbilities.changeFields`).
+    /// `None` until one does, and on every document of a type that keeps no such fields.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(
+            rename = "$moderatedAt",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )
+    )]
+    pub moderated_at: Option<TimestampMillis>,
+    /// The moderator who last wrote those fields: set together with `moderated_at`.
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(
+            rename = "$moderatedBy",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )
+    )]
+    pub moderated_by: Option<Identifier>,
     /// The data contract version this document's bytes conform to — assigned
     /// by Drive when document content is (re-)supplied (create/replace) and
     /// preserved across server-side rewrites (transfer/purchase). Selects the
@@ -190,6 +212,13 @@ impl fmt::Display for DocumentV0 {
         if let Some(creator_id) = self.creator_id {
             write!(f, "creator_id:{} ", creator_id)?;
         }
+        if let Some(moderated_at) = self.moderated_at {
+            let datetime = DateTime::from_timestamp_millis(moderated_at as i64).unwrap_or_default();
+            write!(f, "moderated_at:{} ", datetime.format("%Y-%m-%d %H:%M:%S"))?;
+        }
+        if let Some(moderated_by) = self.moderated_by {
+            write!(f, "moderated_by:{} ", moderated_by)?;
+        }
 
         if self.properties.is_empty() {
             write!(f, "no properties")?;
@@ -226,6 +255,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 
