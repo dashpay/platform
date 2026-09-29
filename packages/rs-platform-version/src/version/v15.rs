@@ -14,7 +14,10 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 /// It is written as a struct update rather than a copy of `v14.rs` on purpose: when the real
 /// file arrives the add/add conflict is resolved by taking the incoming file, and because v16
 /// and v17 are struct updates over their predecessor every table the incoming version changes
-/// flows into them without a second edit.
+/// flows into them without a second edit, except the two tables v17 overrides (`fee_version`
+/// and `system_limits`, whose 5.0 generations are built on the tables current when they were
+/// written). If the incoming version changes either of those, rebase the 5.0 generation onto
+/// the incoming one and renumber it; the inheritance test in `system_limits` fails until then.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     ..PLATFORM_V14

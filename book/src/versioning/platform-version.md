@@ -120,7 +120,15 @@ struct updates over their predecessor
 (`PlatformVersion { protocol_version: PROTOCOL_VERSION_15, ..PLATFORM_V14 }`).
 A forward merge that brings the real file is resolved by taking the incoming
 file; because 16 and 17 are struct updates too, every table the incoming
-version changes flows into them without a second edit.
+version changes flows into them without a second edit, with one exception:
+`PLATFORM_V17` overrides `fee_version` and `system_limits` with its own
+generations (`FEE_VERSION4`, `SYSTEM_LIMITS_V5`), which are built on the
+tables that were current when they were written, not on whatever version 16
+carries. If the incoming version changes either of those two tables, rebase the
+5.0 generation onto the incoming one (`..FEE_VERSION<incoming>`,
+`..SYSTEM_LIMITS_V<incoming>`) and renumber it past the incoming constant. The
+test that pins version 17 to differ from version 16 only in the
+smart-contract computation tables fails until that is done.
 
 `system_limits` is a public module, so `SystemLimits` and the nested limit
 groups it holds (such as `SmartContractComputationLimits` and the
