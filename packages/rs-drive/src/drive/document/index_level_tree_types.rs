@@ -390,13 +390,87 @@ pub(crate) fn index_only_level_skips_when_absent(
 
 /// Whether a document takes part in an index whose skip set is `skip_set`
 /// (`Index::skip_if_absent_properties`): it carries every one of those
-/// properties. An index that does not skip has an empty set, so every
-/// document takes part in it.
+/// properties, as `carries` reports. An index that does not skip has an empty
+/// set, so every document takes part in it. The single definition the write,
+/// delete and replace walkers, the indexOnly delete probes and the SDK's
+/// document cost all apply.
+pub(crate) fn takes_part_in_index_by<F>(skip_set: &[String], carries: &mut F) -> Result<bool, Error>
+where
+    F: FnMut(&str) -> Result<bool, Error>,
+{
+    for skip_property in skip_set {
+        if !carries(skip_property)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Whether the document writes an entry at or below `level`: the index ending
+/// at `level` takes part ([`takes_part_in_index_by`]), or a level below
+/// reaches such an entry.
 ///
-/// A worst-case size carries every property: estimation then walks every
-/// index, which keeps it an upper bound. A create's dry run reads the real
-/// document, so it skips exactly where the apply does. The indexOnly delete
-/// probes (`index_only_entry_paths_and_key`) apply the same predicate.
+/// The walkers build a level (its property-name tree and value tree) only
+/// when this holds, so an index that skips a document leaves no tree of its
+/// own behind, while a level it shares with an index the document takes part
+/// in is built as usual. Skip sets only exist on protocol version 14 and
+/// later, so on a document type without a skipping index every level reaches
+/// an entry and this is not evaluated at all.
+pub(crate) fn level_reaches_entry_by<F>(
+    level: &IndexLevel,
+    document_type: DocumentTypeRef,
+    carries: &mut F,
+) -> Result<bool, Error>
+where
+    F: FnMut(&str) -> Result<bool, Error>,
+{
+    fn reaches<F>(level: &IndexLevel, carries: &mut F) -> Result<bool, Error>
+    where
+        F: FnMut(&str) -> Result<bool, Error>,
+    {
+        if let Some(index_type) = level.has_index_with_type() {
+            if takes_part_in_index_by(&index_type.skip_if_absent_properties, carries)? {
+                return Ok(true);
+            }
+        }
+        for sub_level in level.sub_levels().values() {
+            if reaches(sub_level, carries)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+    if !document_type
+        .indexes()
+        .values()
+        .any(|index| index.skip_if_absent)
+    {
+        return Ok(true);
+    }
+    reaches(level, carries)
+}
+
+/// Whether `document_info` carries `property`. A worst-case size carries every
+/// property: estimation then walks every index, which keeps it an upper
+/// bound. A create's dry run reads the real document, so it skips exactly
+/// where the apply does.
+#[cfg(feature = "server")]
+fn document_info_carries(
+    document_info: &DocumentInfo,
+    property: &str,
+    document_type: DocumentTypeRef,
+    owner_id: Option<[u8; 32]>,
+    platform_version: &PlatformVersion,
+) -> Result<bool, Error> {
+    match document_info.get_borrowed_document() {
+        Some(document) => Ok(document
+            .get_raw_for_document_type(property, document_type, owner_id, platform_version)?
+            .is_some()),
+        None => Ok(true),
+    }
+}
+
+/// [`takes_part_in_index_by`] for the document of `document_info`.
 #[cfg(feature = "server")]
 pub(crate) fn document_takes_part_in_index(
     skip_set: &[String],
@@ -405,29 +479,18 @@ pub(crate) fn document_takes_part_in_index(
     owner_id: Option<[u8; 32]>,
     platform_version: &PlatformVersion,
 ) -> Result<bool, Error> {
-    let Some(document) = document_info.get_borrowed_document() else {
-        return Ok(true);
-    };
-    for skip_property in skip_set {
-        if document
-            .get_raw_for_document_type(skip_property, document_type, owner_id, platform_version)?
-            .is_none()
-        {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    takes_part_in_index_by(skip_set, &mut |property| {
+        document_info_carries(
+            document_info,
+            property,
+            document_type,
+            owner_id,
+            platform_version,
+        )
+    })
 }
 
-/// Whether the document writes an entry at or below `level`: the index ending
-/// at `level` takes part, or a level below reaches such an entry.
-///
-/// The walkers build a level (its property-name tree and value tree) only
-/// when this holds, so an index that skips a document leaves no tree of its
-/// own behind, while a level it shares with an index the document takes part
-/// in is built as usual. Skip sets only exist on protocol version 14 and
-/// later, so on a document type without a skipping index every level reaches
-/// an entry and this is not evaluated at all.
+/// [`level_reaches_entry_by`] for the document of `document_info`.
 #[cfg(feature = "server")]
 pub(crate) fn level_reaches_entry(
     level: &IndexLevel,
@@ -436,36 +499,15 @@ pub(crate) fn level_reaches_entry(
     owner_id: Option<[u8; 32]>,
     platform_version: &PlatformVersion,
 ) -> Result<bool, Error> {
-    if !document_type
-        .indexes()
-        .values()
-        .any(|index| index.skip_if_absent)
-    {
-        return Ok(true);
-    }
-    if let Some(index_type) = level.has_index_with_type() {
-        if document_takes_part_in_index(
-            &index_type.skip_if_absent_properties,
+    level_reaches_entry_by(level, document_type, &mut |property| {
+        document_info_carries(
             document_info,
+            property,
             document_type,
             owner_id,
             platform_version,
-        )? {
-            return Ok(true);
-        }
-    }
-    for sub_level in level.sub_levels().values() {
-        if level_reaches_entry(
-            sub_level,
-            document_info,
-            document_type,
-            owner_id,
-            platform_version,
-        )? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+        )
+    })
 }
 
 /// The wrapper that makes an empty `inner_tree_type` tree contribute zero to
