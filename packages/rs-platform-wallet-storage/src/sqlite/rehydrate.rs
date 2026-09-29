@@ -4,8 +4,9 @@
 //! the manager consumes the carried snapshot directly, so no wrong-seed check
 //! runs here; that gate lives in the resolver-backed signing entrypoints.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
+use dashcore::OutPoint;
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
@@ -425,11 +426,16 @@ pub(crate) fn restore_confirmed_transactions(
     mut wallet: Wallet,
     records: Vec<TransactionRecord>,
 ) -> Result<(Wallet, ManagedWalletInfo), WalletStorageError> {
-    let unspent: HashSet<_> = wallet_info
+    // Where the load projection parked each unspent outpoint; its keys are
+    // the outputs persistence still considers unspent.
+    let placed: HashMap<OutPoint, AccountType> = wallet_info
         .accounts
         .all_funding_accounts()
         .into_iter()
-        .flat_map(|account| account.utxos.keys().copied())
+        .flat_map(|account| {
+            let owner = funds_account_type(account);
+            account.utxos.keys().map(move |outpoint| (*outpoint, owner))
+        })
         .collect();
     let mut confirmed: Vec<_> = records
         .into_iter()
@@ -463,10 +469,31 @@ pub(crate) fn restore_confirmed_transactions(
             .keys()
             .copied()
             .collect();
+        // Replay credits an output to the account whose pool derives it. When
+        // that differs from the load-time fallback, the fallback copy is a
+        // duplicate: drop it so each outpoint lives in exactly one account.
+        let misplaced: HashSet<(OutPoint, AccountType)> = wallet_info
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .flat_map(|account| {
+                let owner = funds_account_type(account);
+                let placed = &placed;
+                account.utxos.keys().filter_map(move |outpoint| {
+                    placed
+                        .get(outpoint)
+                        .filter(|parked| **parked != owner)
+                        .map(|parked| (*outpoint, *parked))
+                })
+            })
+            .collect();
         for account in wallet_info.accounts.all_funding_accounts_mut() {
-            account
-                .utxos
-                .retain(|outpoint, _| unspent.contains(outpoint) && !spent.contains(outpoint));
+            let owner = funds_account_type(account);
+            account.utxos.retain(|outpoint, _| {
+                placed.contains_key(outpoint)
+                    && !spent.contains(outpoint)
+                    && !misplaced.contains(&(*outpoint, owner))
+            });
         }
         // Finalize replayed records before a sync checkpoint can prune their spend guards.
         if let Some(chain_lock) = wallet_info.metadata.last_applied_chain_lock.clone() {
@@ -476,6 +503,14 @@ pub(crate) fn restore_confirmed_transactions(
         (wallet, wallet_info)
     })
     .map_err(WalletStorageError::CoreHistoryReplay)
+}
+
+/// Account identity of a funds account, stable across replay mutations.
+fn funds_account_type(
+    account: &key_wallet::managed_account::ManagedCoreFundsAccount,
+) -> AccountType {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    account.managed_account_type().to_account_type()
 }
 
 /// Resolve an owning account to its position among `account_keys`, or fall

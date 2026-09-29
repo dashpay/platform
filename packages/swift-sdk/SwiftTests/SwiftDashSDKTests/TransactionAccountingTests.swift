@@ -94,6 +94,51 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(fresh.fetch(FetchDescriptor<PersistentTxo>()).first).isSpent)
     }
 
+    func testShouldNotCommitOrDropOpenRoundWhenLoadRunsMidChangeset() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let walletId = Data(repeating: 1, count: 32)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        let funding = PersistentTransaction(txid: walletId, transactionData: Data())
+        let spender = PersistentTransaction(
+            txid: Data(repeating: 3, count: 32), transactionData: serializedSpend(inputs: [walletId]),
+            direction: 0, netAmount: 40
+        )
+        let coin = PersistentTxo(transaction: funding, vout: 0, amount: 100, address: "", height: 1)
+        coin.walletId = walletId
+        coin.isSpent = true
+        coin.spendingTransaction = spender
+        context.insert(funding)
+        context.insert(spender)
+        context.insert(coin)
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        let identityId = Data(repeating: 9, count: 32)
+        let fetchIdentity = {
+            try ModelContext(container).fetch(FetchDescriptor<PersistentIdentity>()).first { $0.identityId == identityId }
+        }
+
+        handler.beginChangeset(walletId: walletId)
+        handler.persistIdentities(
+            walletId: walletId,
+            upserts: [.init(
+                identityId: identityId, balance: 100, revision: 1, identityIndex: 0, label: nil,
+                status: 0, walletId: walletId, dpnsNames: [], dashpayProfile: nil, contactProfiles: []
+            )],
+            removed: []
+        )
+        XCTAssertFalse(handler.loadWalletList().errored)
+        XCTAssertNil(try fetchIdentity(), "load must not commit half of an open round")
+        XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
+        XCTAssertNotNil(try fetchIdentity(), "load must not roll back an open round")
+
+        // The skipped full pass runs on the next load outside any round.
+        XCTAssertFalse(handler.loadWalletList().errored)
+        let repaired = try ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
+            .first { $0.txid == spender.txid }
+        XCTAssertEqual(repaired?.netAmount, -100)
+    }
+
     func testShouldPreserveAccountingWhenSomePrevoutsAreMissing() throws {
         let container = try DashModelContainer.createInMemory()
         let context = container.mainContext
