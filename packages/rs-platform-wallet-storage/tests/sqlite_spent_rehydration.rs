@@ -3,8 +3,9 @@
 mod common;
 
 use dashcore::{
-    bls_sig_utils::BLSSignature, ephemerealdata::chain_lock::ChainLock, hashes::Hash, BlockHash,
-    Network, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid,
+    address::Payload, bls_sig_utils::BLSSignature, ephemerealdata::chain_lock::ChainLock,
+    hashes::Hash, Address, BlockHash, Network, OutPoint, PubkeyHash, ScriptBuf, Transaction, TxIn,
+    TxOut, Txid,
 };
 use key_wallet::{
     transaction_checking::{BlockInfo, TransactionContext, WalletTransactionChecker},
@@ -17,6 +18,7 @@ use key_wallet::{
         },
         ManagedWalletInfo, Wallet,
     },
+    Utxo,
 };
 use platform_wallet::changeset::{
     AccountRegistrationEntry, CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -297,6 +299,29 @@ async fn should_restore_persisted_finality_before_advancing_sync_checkpoint() {
     fixture.redeliver(&mut wallet, &mut info).await;
 }
 
+/// A foreign P2PKH address no account of the test wallet derives.
+fn foreign_address(marker: u8) -> Address {
+    Address::new(
+        Network::Testnet,
+        Payload::PubkeyHash(PubkeyHash::from_byte_array([marker; 20])),
+    )
+}
+
+/// The persisted UTXO for `funding`'s output `vout`, as a sync would store it.
+fn stored_utxo(funding: &Transaction, vout: u32, address: Address) -> Utxo {
+    Utxo {
+        outpoint: OutPoint::new(funding.txid(), vout),
+        txout: funding.output[vout as usize].clone(),
+        address,
+        height: 100,
+        is_coinbase: false,
+        is_confirmed: true,
+        is_instantlocked: false,
+        is_locked: false,
+        is_trusted: false,
+    }
+}
+
 #[tokio::test]
 async fn should_keep_replayed_output_only_in_its_owning_account() {
     let mut wallet =
@@ -310,6 +335,9 @@ async fn should_keep_replayed_output_only_in_its_owning_account() {
         .unwrap()
         .next_receive_address(Some(&xpub), true)
         .unwrap();
+    // vout 1: no pool row and no replay owner, so the first-account fallback
+    // must hold. vout 2: tracked only by a contact's watch-only chain.
+    let (unowned, contact) = (foreign_address(0x61), foreign_address(0x62));
     let funding = Transaction {
         version: 1,
         lock_time: 0,
@@ -317,22 +345,36 @@ async fn should_keep_replayed_output_only_in_its_owning_account() {
             previous_output: OutPoint::new(Txid::from_byte_array([14; 32]), 0),
             ..Default::default()
         }],
-        output: vec![TxOut {
-            value: 70_000,
-            script_pubkey: address.script_pubkey(),
-        }],
+        output: vec![
+            TxOut {
+                value: 70_000,
+                script_pubkey: address.script_pubkey(),
+            },
+            TxOut {
+                value: 5_000,
+                script_pubkey: unowned.script_pubkey(),
+            },
+            TxOut {
+                value: 9_000,
+                script_pubkey: contact.script_pubkey(),
+            },
+        ],
         special_transaction_payload: None,
     };
     let coin = OutPoint::new(funding.txid(), 0);
+    let fallback = OutPoint::new(funding.txid(), 1);
+    let contact_coin = OutPoint::new(funding.txid(), 2);
     let result = info
         .check_core_transaction(&funding, block(100), &mut wallet, true, true)
         .await;
-    let coins: Vec<_> = info.accounts.standard_bip32_accounts[&0]
+    let mut coins: Vec<_> = info.accounts.standard_bip32_accounts[&0]
         .utxos
         .values()
         .cloned()
         .collect();
     assert_eq!(coins.len(), 1);
+    coins.push(stored_utxo(&funding, 1, unowned));
+    coins.push(stored_utxo(&funding, 2, contact.clone()));
     let (persister, _dir, _) = common::fresh_persister();
     persister
         .store(
@@ -363,28 +405,56 @@ async fn should_keep_replayed_output_only_in_its_owning_account() {
             },
         )
         .unwrap();
-    // Without its pool row the loader cannot attribute the coin and parks it
-    // in the first funds account; replay then finds the real owner.
-    persister
-        .lock_conn_for_test()
-        .execute(
+    {
+        let conn = persister.lock_conn_for_test();
+        // Without its pool row the loader cannot attribute the coin and parks
+        // it in the first funds account; replay then finds the real owner.
+        conn.execute(
             "DELETE FROM core_address_pool WHERE script = ?1",
             [address.script_pubkey().as_bytes()],
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO core_address_pool (wallet_id, account_type, account_index, pool_type, address_index, script) \
+             VALUES (?1, 'dashpay_external', 0, 0, 0, ?2)",
+            rusqlite::params![&wallet.wallet_id[..], contact.script_pubkey().as_bytes()],
+        )
+        .unwrap();
+    }
 
     let mut state = persister.load().unwrap();
     let info = state.wallets.remove(&wallet.wallet_id).unwrap().wallet_info;
-    let holders = info
-        .accounts
-        .all_funding_accounts()
-        .into_iter()
-        .filter(|account| account.utxos.contains_key(&coin))
-        .count();
-    assert_eq!(holders, 1, "one outpoint must live in exactly one account");
+    let holders = |outpoint: &OutPoint| {
+        info.accounts
+            .all_funding_accounts()
+            .into_iter()
+            .filter(|account| account.utxos.contains_key(outpoint))
+            .count()
+    };
+    assert_eq!(
+        holders(&coin),
+        1,
+        "one outpoint must live in exactly one account"
+    );
     assert!(info.accounts.standard_bip32_accounts[&0]
         .utxos
         .contains_key(&coin));
-    assert_eq!(info.balance.total(), 70_000);
-    assert_eq!(info.get_spendable_utxos().len(), 1);
+    assert!(
+        info.accounts.standard_bip44_accounts[&0]
+            .utxos
+            .contains_key(&fallback),
+        "an output replay cannot attribute keeps the first-account fallback"
+    );
+    assert_eq!(holders(&contact_coin), 0, "a contact's coin is not ours");
+    assert_eq!(info.balance.total(), 75_000);
+    assert_eq!(info.get_spendable_utxos().len(), 2);
+    let stored: i64 = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT count(*) FROM core_utxos WHERE spent = 0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, 3, "load must not delete stored rows");
 }
