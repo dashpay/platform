@@ -284,11 +284,13 @@ together with the guarantee the proof gives (`guarantee()`, a
 values could only exist if this transition was applied. `AffectedState` means
 the proof authenticates the keys the transition affects as of the proof's
 block, but cannot bind them to this transition: balance top-ups, credit
-transfers and withdrawals, address funds movements, shields and no-history
-token operations all land here. The strict methods reject `AffectedState`
-with `Error::ExecutionNotProved`; the `*_affected_state` methods accept both
-tags. Which families produce which tag, and how contract-call receipts fit
-alongside the two, is in
+transfers and withdrawals, address funds movements, shields into the pool
+and no-history token operations are examples. The strict methods reject
+`AffectedState` with `Error::ExecutionNotProved`; the `*_affected_state`
+methods accept both tags. The exhaustive mapping is the verifier's
+classifier, `state_transition_proof_binds_execution`; the families that
+are easy to misjudge from their names, and how contract-call receipts fit
+alongside the two tags, are in
 [Results, Receipts and Proofs](results-receipts-and-proofs.md).
 
 From protocol version 14 the proof of an owned, fee-paying transition (document

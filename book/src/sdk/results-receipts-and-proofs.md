@@ -44,14 +44,30 @@ proof can give. The verifier returns a
 with one of two tags:
 
 - **`ExecutionProved`**: the verified values could only exist if this
-  specific transition was applied. Document creates, identity creates and
-  contract registrations fall here because the proved value carries the
-  transition's own identifier, entropy or nonce.
+  specific transition was applied. Identity creates, contract registrations
+  and document creates on ordinary document types are examples: the proved
+  value carries the transition's own identifier, entropy or nonce.
 - **`AffectedState`**: the proof authenticates the keys the transition
   affects, as of the proof's block, but cannot bind them to this
   transition's execution. Balance top-ups, credit transfers, address funds
-  movements, shields and no-history token operations fall here. The result
-  is a height-pinned snapshot.
+  movements and no-history token operations are examples. The result is a
+  height-pinned snapshot.
+
+These lists are examples, not the mapping. The authoritative classifier is
+the exhaustive match in `state_transition_proof_binds_execution` in
+`packages/rs-drive/src/verify/state_transition/verify_state_transition_was_executed_with_proof`,
+which every new transition family must be added to before it compiles. Two
+of its rulings are easy to get wrong from the family name alone. Creates
+and deletes on `indexOnly` document types are `AffectedState`, because the
+proved entry carries neither id, entropy nor nonce (see
+[Index-Only Document Types](../drive/index-only-document-types.md)). The
+shielded families split: `Unshield`, `ShieldedTransfer` and
+`ShieldedWithdrawal` bind the exact Orchard actions and are
+`ExecutionProved`, while `Shield`, `ShieldFromAssetLock`,
+`ShieldFromIdentity`, `IdentityCreateFromShieldedPool` and
+`IdentityTopUpFromShieldedPool` prove only the consumed outpoint, spent
+nullifier or resulting balance and are `AffectedState`. Token operations
+depend on the contract's history and group configuration.
 
 The tag lives on the verifier's return value as its `guarantee()`, a
 `StateTransitionProofGuarantee`, next to the result and, from protocol

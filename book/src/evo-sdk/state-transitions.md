@@ -180,8 +180,9 @@ const snapshot = await sdk.stateTransitions.waitForAffectedState(stateTransition
 `waitForResponse` and `broadcastAndWait` are strict: they resolve only when
 the proof shows this specific transition executed, and reject with an
 execution-not-proved error for the families whose proofs cannot show that
-(balance top-ups, credit transfers and withdrawals, address funds movements,
-shields, no-history token operations). `waitForAffectedState` and
+(for example balance top-ups, credit transfers and withdrawals, address
+funds movements, shields into the pool and no-history token operations; the
+verifier's classifier is the exhaustive list). `waitForAffectedState` and
 `broadcastAndWaitForAffectedState` accept those proofs too and return a
 verified, height-pinned snapshot of the keys the transition affects, not
 evidence that it executed. Both pairs return the same result type; the
