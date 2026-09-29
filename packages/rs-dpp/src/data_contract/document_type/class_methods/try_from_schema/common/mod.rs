@@ -22,7 +22,9 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
-use crate::data_contract::document_type::index::{Index, IndexGrammarAdmissions};
+use crate::data_contract::document_type::index::{
+    Index, IndexGrammarAdmissions, IntegerRangeKeyType,
+};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
@@ -201,6 +203,9 @@ pub(super) struct ParserGeneration {
     /// the key falls through to the unknown-key arm and is rejected as any
     /// pre-generation-3 node rejected it.
     pub admit_time_range: bool,
+    /// Whether the index grammar admits the `integerRange` keyword. Forwarded
+    /// to [`Index::try_from_value_map`] exactly like `admit_time_range`.
+    pub admit_integer_range: bool,
 
     // ---- INDEX ONLY: the third generation-3 addition ----
     /// Whether the index grammar admits the `terminal` keyword (indexOnly
@@ -868,7 +873,7 @@ fn parse_indices(
                     // produced — which is what `TryFrom<&[(Value, Value)]> for
                     // Index` does, so without generation 3 this whole call
                     // collapses back to `.as_slice().try_into()`.
-                    let index: Index = Index::try_from_value_map(
+                    let mut index: Index = Index::try_from_value_map(
                         index_value
                             .to_map()
                             .map_err(consensus_or_protocol_value_error)?
@@ -876,6 +881,7 @@ fn parse_indices(
                         IndexGrammarAdmissions {
                             ranked: ctx.generation.admit_ranked,
                             time_range: ctx.generation.admit_time_range,
+                            integer_range: ctx.generation.admit_integer_range,
                             terminal: ctx.generation.admit_index_terminal,
                             preallocated: ctx.generation.admit_index_preallocated,
                             skip_if_absent: ctx.generation.admit_index_skip_if_absent,
@@ -886,6 +892,32 @@ fn parse_indices(
                         },
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;
+
+                    // INTEGER RANGE: the index grammar cannot see property
+                    // types, so the source's key encoding is resolved here,
+                    // on every parse, validating or not: the write walkers,
+                    // the uniqueness probe and the query resolver all read
+                    // it, and a contract loaded from state must bucket
+                    // exactly as it did at registration. The source must be
+                    // a user integer property of at most 64 bits; a system
+                    // property is not in the flattened map, so it is refused
+                    // here too.
+                    if let Some(transform) = index.integer_range.as_mut() {
+                        transform.key_type = flattened_document_properties
+                            .get(transform.source.as_str())
+                            .and_then(|property| {
+                                IntegerRangeKeyType::from_property_type(&property.property_type)
+                            })
+                            .ok_or_else(|| {
+                                consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "integerRange.on (\"{}\") must name an integer \
+                                         property of the document type of at most 64 bits",
+                                        transform.source
+                                    )),
+                                )
+                            })?;
+                    }
 
                     #[cfg(feature = "validation")]
                     if ctx.full_validation {
@@ -1032,6 +1064,45 @@ fn parse_indices(
                                          user-defined properties are not supported as a \
                                          time-range source",
                                         source
+                                    )),
+                                ));
+                            }
+                        }
+
+                        // INTEGER RANGE: the checks that need the schema
+                        // or the platform version. The overlap factor is the
+                        // index's write amplification, capped by the same
+                        // versioned limit as a time-range grid's.
+                        if let Some(transform) = &index.integer_range {
+                            if let Some(max_overlap_factor) = ctx
+                                .platform_version
+                                .system_limits
+                                .max_time_range_overlap_factor
+                            {
+                                let overlap = transform.overlap_factor();
+                                if overlap > max_overlap_factor {
+                                    return Err(consensus_or_protocol_data_contract_error(
+                                        DataContractError::InvalidContractStructure(format!(
+                                            "integerRange overlap factor (range / step = {}) \
+                                             exceeds the maximum of {}; a smaller window or a \
+                                             larger step is required to bound per-document \
+                                             index entries",
+                                            overlap, max_overlap_factor
+                                        )),
+                                    ));
+                                }
+                            }
+                            // A required source keeps every document in the
+                            // windows: an optional one would leave documents
+                            // without the property under the null entry,
+                            // which no window selection reads.
+                            if !required_fields.contains(transform.source.as_str()) {
+                                return Err(consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "integerRange.on (\"{}\") names a property the \
+                                         document type does not require; add it to the \
+                                         document type's required fields",
+                                        transform.source
                                     )),
                                 ));
                             }
@@ -2754,14 +2825,15 @@ pub(super) fn apply_index_only(
                 || !index.ranked_countable_at.is_empty()
                 || index.ranked_summable
                 || index.ranked_averageable
-                || index.time_range.is_some()
+                || index.is_bucketed()
                 || index.skip_if_absent
                 || index.preallocated
             {
                 return Err(structure_error(format!(
                     "index \"{}\" on indexOnly document type \"{}\" has no properties (a \
                      flat index keyed by its terminal alone), so it admits no countable, \
-                     summable, ranked, timeRange, skipIfAbsent or preallocated keyword: \
+                     summable, ranked, timeRange, integerRange, skipIfAbsent or preallocated \
+                     keyword: \
                      there is no prefix level for them to apply to",
                     index_name, name,
                 )));
@@ -2854,7 +2926,10 @@ pub(super) fn apply_index_only(
         // below), so the carried value reproduces the exact bucket set
         // the create wrote. A bucketed index involves `$createdAt` and
         // therefore never counts as the required `$createdAt`-free
-        // proof index.
+        // proof index. `integerRange` is admitted the same way: the
+        // source is a required user property, so delete-by-values
+        // reproduces the create's bucket set from the carried value, and
+        // the proof-index rule below excludes every bucketed index.
         // The sum axes (summable / rangeSummable / rankedSummable /
         // rankedAverageable / the averageable sugar) are admitted: a
         // summable index's terminal entry is an
@@ -3078,12 +3153,12 @@ pub(super) fn apply_index_only(
         // timestamp, not by a stored property value the binding could
         // resolve — and its `$createdAt` source can never be
         // reference-bound anyway.
-        if index.preallocated && index.time_range.is_some() {
+        if index.preallocated && index.is_bucketed() {
             return Err(structure_error(format!(
                 "index \"{}\" on indexOnly document type \"{}\" declares `preallocated` \
-                 together with `timeRange`: a bucketed level is keyed by bucket starts \
-                 computed from a timestamp at write time, so its path cannot be \
-                 preallocated from a referenced document",
+                 together with `timeRange` or `integerRange`: a bucketed level is keyed by \
+                 window starts computed at write time, so its path cannot be preallocated \
+                 from a referenced document",
                 index_name, name,
             )));
         }
@@ -3127,9 +3202,12 @@ pub(super) fn apply_index_only(
     // If every index were time-keyed or skippable, creates and deletes of
     // the type would work while transition-proof requests failed. (Every
     // index already embeds `$ownerId`, so any `$createdAt`-free non-skip
-    // index qualifies as the proof index.)
+    // index qualifies as the proof index.) An `integerRange` index involves
+    // no `$createdAt` but stores window starts, not the transition's
+    // values, so it cannot anchor the proof either.
     let has_proof_index = document_type.indices.values().any(|index| {
         !index.skip_if_absent
+            && !index.is_bucketed()
             && !index.terminal_contains(CREATED_AT)
             && !index
                 .properties
@@ -3139,10 +3217,11 @@ pub(super) fn apply_index_only(
     if !has_proof_index {
         return Err(structure_error(format!(
             "indexOnly document type \"{}\" must declare at least one index that neither \
-             involves $createdAt nor sets skipIfAbsent: executed-transition proofs locate \
-             entries from the transition's values alone — they cannot reproduce the block \
-             timestamp a time-keyed entry was written with, and a skipIfAbsent index has \
-             no entry for documents that omit its trigger",
+             involves $createdAt nor sets skipIfAbsent, and does not bucket its first property \
+             (integerRange): executed-transition proofs locate entries from the transition's \
+             values alone — they cannot reproduce the block timestamp a time-keyed entry was \
+             written with, a bucketed index stores window starts rather than values, and a \
+             skipIfAbsent index has no entry for documents that omit its trigger",
             name,
         )));
     }

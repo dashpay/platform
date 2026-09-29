@@ -7,7 +7,7 @@ use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::index::IndexCountability;
-use crate::data_contract::document_type::index::TimeRangeTransform;
+use crate::data_contract::document_type::index::{IndexBucketing, TimeRangeTransform};
 use crate::data_contract::document_type::index_level::IndexType::{
     ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
 };
@@ -154,14 +154,15 @@ pub struct IndexLevel {
     sub_index_levels: BTreeMap<String, IndexLevel>,
     /// did an index terminate at this level
     has_index_with_type: Option<IndexLevelTypeInfo>,
-    /// When set, the property reached at this level is a timestamp that is
-    /// bucketed into time ranges (see [`TimeRangeTransform`]). Only ever set
-    /// on a *first-property* node (a direct child of the root), because a
-    /// time-range transform must be its index's leading property. At
-    /// insert/delete/update time the document's timestamp for this property
-    /// is expanded into one key per overlapping range bucket instead of a
-    /// single key. Immutable after contract creation.
-    time_range: Option<TimeRangeTransform>,
+    /// When set, the property reached at this level is bucketed into
+    /// windows: a timestamp by a `timeRange` grid (see [`TimeRangeTransform`])
+    /// or an integer by an `integerRange` grid. Only ever set on a
+    /// *first-property* node (a direct child of the root), because a grid
+    /// must bucket its index's leading property. At insert/delete/update
+    /// time the document's value for this property is expanded into one key
+    /// per containing window instead of a single key. Immutable after
+    /// contract creation.
+    bucketing: Option<IndexBucketing>,
     /// When `true`, the property-name tree materialized at this level is the
     /// prefix-level Count ranking tree of exactly one index — the one whose
     /// [`Index::ranked_countable_at`] names this level's property. The
@@ -219,7 +220,13 @@ impl IndexLevel {
     /// The time-range transform applied to the property reached at this
     /// level, if any. Only set on first-property nodes.
     pub fn time_range(&self) -> Option<&TimeRangeTransform> {
-        self.time_range.as_ref()
+        self.bucketing.as_ref().and_then(IndexBucketing::time_range)
+    }
+
+    /// The grid (time or integer) applied to the property reached at this
+    /// level, if any. Only set on first-property nodes.
+    pub fn bucketing(&self) -> Option<&IndexBucketing> {
+        self.bucketing.as_ref()
     }
 
     /// Whether this level hosts a prefix-level Count ranking — see the field
@@ -343,7 +350,7 @@ impl IndexLevel {
         let mut index_level = IndexLevel {
             sub_index_levels: Default::default(),
             has_index_with_type: None,
-            time_range: None,
+            bucketing: None,
             ranked_count_grouping: false,
             count_propagating: false,
             count_exempt_branch: false,
@@ -387,7 +394,7 @@ impl IndexLevel {
                                 level_identifier: counter,
                                 sub_index_levels: Default::default(),
                                 has_index_with_type: None,
-                                time_range: None,
+                                bucketing: None,
                                 ranked_count_grouping: false,
                                 count_propagating: false,
                                 count_exempt_branch: false,
@@ -427,7 +434,7 @@ impl IndexLevel {
                             level_identifier: counter,
                             sub_index_levels: Default::default(),
                             has_index_with_type: None,
-                            time_range: None,
+                            bucketing: None,
                             ranked_count_grouping: false,
                             count_propagating: false,
                             count_exempt_branch: false,
@@ -435,8 +442,8 @@ impl IndexLevel {
                     });
 
                 if position == 0 {
-                    if let Some(transform) = &index.time_range {
-                        current_level.time_range = Some(transform.clone());
+                    if let Some(bucketing) = index.bucketing() {
+                        current_level.bucketing = Some(bucketing);
                     }
                 }
 
@@ -657,8 +664,8 @@ impl IndexLevel {
             );
         }
 
-        // A time-range transform determines how many index entries each
-        // document produces and under which bucket keys. Changing it after
+        // A time-range or integer-range grid determines how many index
+        // entries each document produces and under which bucket keys. Changing it after
         // creation would leave already-stored documents indexed under stale
         // buckets, so it is immutable — reject any change.
         if let Some(time_range_change_path) = self.find_first_time_range_change(new_indices) {
@@ -719,6 +726,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -758,6 +766,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -782,6 +791,7 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
@@ -804,6 +814,7 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
@@ -852,6 +863,7 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
@@ -874,6 +886,7 @@ mod tests {
                 ranked_summable: false,
                 ranked_averageable: false,
                 time_range: None,
+                integer_range: None,
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
@@ -898,6 +911,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -944,6 +958,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -973,6 +988,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1025,6 +1041,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1048,6 +1065,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1094,6 +1112,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1117,6 +1136,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1163,6 +1183,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1186,6 +1207,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1232,6 +1254,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1278,6 +1301,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1301,6 +1325,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1347,6 +1372,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1370,6 +1396,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1422,6 +1449,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1451,6 +1479,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1503,6 +1532,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1532,6 +1562,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1592,6 +1623,7 @@ mod tests {
             ranked_summable,
             ranked_averageable,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1658,6 +1690,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -1731,6 +1764,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -2130,6 +2164,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -2183,6 +2218,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated,
             skip_if_absent: false,

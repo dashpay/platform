@@ -702,6 +702,7 @@ fn test_index(name: &str, properties: &[&str], summable: Option<&str>) -> Index 
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
+        integer_range: None,
         terminal: None,
         preallocated: false,
         skip_if_absent: false,

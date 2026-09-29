@@ -24,6 +24,7 @@ use super::*;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use crate::data_contract::document_type::index::IntegerRangeKeyType;
 use platform_value::platform_value;
 
 /// Parse through this generation with validation mode spelled out.
@@ -455,6 +456,78 @@ fn rejects_only_bucketed_indexes() {
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
         "neither involves $createdAt nor sets skipIfAbsent",
+    );
+}
+
+/// A `like` carrying a rating, the likes schema plus a required integer
+/// `stars` property (0..=5, so a `u8`).
+fn rated_likes_schema() -> Value {
+    let mut schema = likes_schema();
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .insert_at_end(
+            "stars".into(),
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 5, "position": 2 }),
+        )
+        .expect("the stars property applies");
+    schema
+        .set_value("required", platform_value!(["hashtag", "postId", "stars"]))
+        .expect("required applies");
+    schema
+}
+
+#[test]
+fn accepts_integer_range_bucketed_index() {
+    // Likes per rating band per post. The source is a required user
+    // property, so delete-by-values reproduces the create's windows.
+    let mut schema = rated_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byStarsPost",
+            "properties": [{ "stars": "asc" }, { "postId": "asc" }],
+            "terminal": "$ownerId",
+            "integerRange": { "on": "stars", "range": 2u64, "step": 2u64 },
+            "countable": true,
+            "rangeCountable": true
+        }));
+    let document_type =
+        parse_with(schema, PlatformVersion::latest(), true).expect("bucketed index admitted");
+    let bucketed = document_type
+        .indices
+        .values()
+        .find(|index| index.integer_range.is_some())
+        .expect("the bucketed index parsed");
+    let transform = bucketed.integer_range.as_ref().expect("transform set");
+    assert_eq!(transform.key_type, IntegerRangeKeyType::U8);
+}
+
+#[test]
+fn rejects_only_integer_bucketed_indexes() {
+    // An integer-bucketed index involves no $createdAt, but it stores
+    // window starts rather than the transition's values, so it cannot be
+    // the executed-transition proof index.
+    let mut schema = rated_likes_schema();
+    schema
+        .set_value(
+            "indices",
+            platform_value!([{
+                "name": "byStarsPost",
+                "properties": [{ "stars": "asc" }, { "hashtag": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId",
+                "integerRange": { "on": "stars", "range": 2u64, "step": 2u64 }
+            }]),
+        )
+        .expect("indices apply");
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "does not bucket its first property",
     );
 }
 

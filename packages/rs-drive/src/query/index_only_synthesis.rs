@@ -1080,7 +1080,8 @@ impl DriveDocumentQuery<'_> {
 
 /// The index an executed-transition proof (waitForStateTransitionResult)
 /// runs against: the first `$ownerId`-bearing index that involves no
-/// `$createdAt` AND is not `skipIfAbsent` — the verifier cannot know the
+/// `$createdAt`, buckets nothing (`integerRange`) AND is not `skipIfAbsent` —
+/// the verifier cannot know the
 /// block timestamp a time-keyed entry was written with, and a skipIfAbsent
 /// index has no entry at all for a trigger-absent document, so neither can
 /// anchor a proof that must exist for every create/delete. The parser
@@ -1097,7 +1098,7 @@ pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<
                 || index.properties.iter().any(|p| p.name == OWNER_ID);
             let carries_created_at = index.terminal_contains(CREATED_AT)
                 || index.properties.iter().any(|p| p.name == CREATED_AT);
-            carries_owner && !carries_created_at && !index.skip_if_absent
+            carries_owner && !carries_created_at && !index.skip_if_absent && !index.is_bucketed()
         })
         .ok_or(Error::Query(QuerySyntaxError::Unsupported(
             "executed-transition proofs for an indexOnly type need an \

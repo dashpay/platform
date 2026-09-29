@@ -1891,6 +1891,35 @@
             "additionalProperties": false,
             "description": "Buckets the first index property's timestamp into fixed-length, regularly-spaced (possibly overlapping) time ranges. The window parameters (`range`, `step`, `phase`) are declared in seconds, since a bucket is selected from block time and the target block interval is five seconds; the stored key is the range start as a u64 millisecond timestamp, so it stays directly comparable to the source timestamp it buckets. Enables trending/leaderboard queries within the newest/oldest active range. A system-timestamp source must be listed in the document type's required fields. Several indexes may bucket the same timestamp with different grids — each grid gets its own index subtree, keyed by the property name qualified with the grid parameters. Available from protocol version 14."
           },
+          "integerRange": {
+            "type": "object",
+            "properties": {
+              "on": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "description": "Name of the integer property to bucket. Must be this index's first property, an integer property of the document type of at most 64 bits, and listed in the document type's required fields. An integerRange index may be unique only when range equals step (non-overlapping windows)."
+              },
+              "range": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Length of each window, in the property's own units. Must be an exact multiple of `step`."
+              },
+              "step": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Interval between successive window starts. When `range` > `step` the windows overlap and a document is indexed under `range / step` window starts, bounded by a protocol-versioned cap (24 at protocol version 14)."
+              },
+              "phase": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Grid alignment: window starts are `phase + k * step` for every integer k. Must be strictly less than `step`. Defaults to 0."
+              }
+            },
+            "required": ["on", "range", "step"],
+            "additionalProperties": false,
+            "description": "Buckets the first index property's integer value into fixed-length, regularly-spaced (possibly overlapping) windows; a document is indexed under the start of every window containing its value, stored like a value of the property. A window that would start below the lowest value the property's integer type holds (0 for a property with a non-negative minimum) starts at that value instead, so every value is in at least one window. Queries select one window by its start with an IN_INTEGER_RANGE clause, and the index's counts, sums and rankings are then per window. Several indexes may bucket the same property with different grids; each grid gets its own index subtree. Cannot be combined with timeRange. Available from protocol version 14."
+          },
           "terminal": {
             "oneOf": [
               {

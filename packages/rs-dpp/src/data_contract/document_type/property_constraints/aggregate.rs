@@ -33,8 +33,9 @@ impl AggregateRead {
     /// total of the documents matching the filter: the first in name order
     /// whose properties are exactly the filter's keys, countable for a
     /// `countOf` and summing the property for a `sumOf`, and plain: not unique,
-    /// contested, ranked, over a time range or with an indexOnly terminal,
-    /// whose trees keep their totals elsewhere or not at all. `None` for an
+    /// contested, ranked, bucketed (a time or integer range) or with an
+    /// indexOnly terminal, whose trees keep their totals elsewhere or not at
+    /// all. `None` for an
     /// empty filter, and when no index answers, which registration refuses.
     pub fn answering_index<'a>(&self, counted: &'a DocumentTypeRef) -> Option<&'a Index> {
         if self.filter.is_empty() {
@@ -43,7 +44,7 @@ impl AggregateRead {
         counted.indexes().values().find(|index| {
             let plain = !index.unique
                 && index.contested_index.is_none()
-                && index.time_range.is_none()
+                && !index.is_bucketed()
                 && index.terminal.is_none()
                 && !index.ranked_countable
                 && index.ranked_countable_at.is_empty()

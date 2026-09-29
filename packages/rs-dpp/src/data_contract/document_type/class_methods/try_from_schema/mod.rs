@@ -3130,6 +3130,7 @@ mod tests {
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::index::{Index, IntegerRangeKeyType};
     use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
     use crate::data_contract::document_type::validate_required_since_within_contract_version;
     use crate::data_contract::DataContract;
@@ -6269,6 +6270,181 @@ mod tests {
                 .overlap_factor(),
             1
         );
+    }
+
+    /// A `listing` type with a required integer `price` (inferred from its
+    /// bounds) and a `category`, bucketed by `integerRange` on `price`.
+    fn price_band_schema(
+        price: serde_json::Value,
+        integer_range: serde_json::Value,
+        required: serde_json::Value,
+    ) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "price": price,
+                "category": { "type": "string", "maxLength": 63, "position": 1 }
+            },
+            "indices": [
+                {
+                    "name": "byPriceBand",
+                    "properties": [{ "price": "asc" }, { "category": "asc" }],
+                    "integerRange": integer_range,
+                    "countable": "countable"
+                }
+            ],
+            "required": required,
+            "additionalProperties": false
+        })
+    }
+
+    fn price_band_index(document_type: &DocumentType) -> Index {
+        document_type
+            .as_ref()
+            .indexes()
+            .get("byPriceBand")
+            .expect("the index should be registered")
+            .clone()
+    }
+
+    #[test]
+    fn should_resolve_the_integer_range_key_type_from_the_source_property() {
+        for (price, expected) in [
+            (
+                json!({ "type": "integer", "minimum": 0, "maximum": 1_000, "position": 0 }),
+                IntegerRangeKeyType::U16,
+            ),
+            (
+                json!({ "type": "integer", "minimum": -100, "maximum": 100, "position": 0 }),
+                IntegerRangeKeyType::I8,
+            ),
+            (
+                json!({ "type": "integer", "minimum": 0, "position": 0 }),
+                IntegerRangeKeyType::U64,
+            ),
+            (
+                json!({ "type": "integer", "position": 0 }),
+                IntegerRangeKeyType::I64,
+            ),
+        ] {
+            let schema = price_band_schema(
+                price,
+                json!({ "on": "price", "range": 300u64, "step": 100u64 }),
+                json!(["price", "category"]),
+            );
+            let document_type = try_document_type_from_schema_full_validation(schema.clone())
+                .expect("an integer source should register");
+            let transform = price_band_index(&document_type)
+                .integer_range
+                .expect("the transform should survive the schema parse");
+            assert_eq!(transform.key_type, expected);
+
+            // A contract loaded from state skips validation but must bucket
+            // exactly as it did at registration.
+            let platform_version = PlatformVersion::latest();
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("config should build");
+            let unvalidated = DocumentType::try_from_schema(
+                Identifier::random(),
+                0,
+                config.version(),
+                "msg",
+                platform_value::to_value(schema).expect("schema should convert"),
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("the unvalidated parse should succeed");
+            assert_eq!(
+                price_band_index(&unvalidated)
+                    .integer_range
+                    .expect("transform set")
+                    .key_type,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn should_reject_integer_range_on_a_non_integer_property() {
+        let err = try_document_type_from_schema_full_validation(price_band_schema(
+            json!({ "type": "string", "maxLength": 20, "position": 0 }),
+            json!({ "on": "price", "range": 100u64, "step": 100u64 }),
+            json!(["price", "category"]),
+        ))
+        .expect_err("a string source must be rejected");
+        assert!(
+            err.to_string().contains("must name an integer property"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn should_reject_integer_range_on_a_system_property() {
+        let err = try_document_type_from_schema_full_validation(json!({
+            "type": "object",
+            "properties": {
+                "category": { "type": "string", "maxLength": 63, "position": 0 }
+            },
+            "indices": [
+                {
+                    "name": "byRevisionBand",
+                    "properties": [{ "$createdAt": "asc" }, { "category": "asc" }],
+                    "integerRange": { "on": "$createdAt", "range": 100u64, "step": 100u64 }
+                }
+            ],
+            "required": ["$createdAt", "category"],
+            "additionalProperties": false
+        }))
+        .expect_err("a system property source must be rejected");
+        assert!(
+            err.to_string().contains("must name an integer property"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn should_reject_integer_range_on_an_optional_property() {
+        let err = try_document_type_from_schema_full_validation(price_band_schema(
+            json!({ "type": "integer", "minimum": 0, "maximum": 1_000, "position": 0 }),
+            json!({ "on": "price", "range": 100u64, "step": 100u64 }),
+            json!(["category"]),
+        ))
+        .expect_err("an optional source must be rejected");
+        assert!(err.to_string().contains("does not require"), "{err}");
+    }
+
+    #[test]
+    fn should_enforce_the_versioned_overlap_factor_cap_on_integer_ranges() {
+        let schema = |range: u64| {
+            price_band_schema(
+                json!({ "type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 0 }),
+                json!({ "on": "price", "range": range, "step": 10u64 }),
+                json!(["price", "category"]),
+            )
+        };
+        try_document_type_from_schema_full_validation(schema(240))
+            .expect("an overlap factor at the cap must register");
+        let err = try_document_type_from_schema_full_validation(schema(250))
+            .expect_err("an overlap factor over the cap must be rejected");
+        assert!(err.to_string().contains("overlap factor"), "{err}");
+    }
+
+    #[test]
+    fn should_reject_integer_range_before_protocol_version_14() {
+        let schema = price_band_schema(
+            json!({ "type": "integer", "minimum": 0, "maximum": 1_000, "position": 0 }),
+            json!({ "on": "price", "range": 100u64, "step": 100u64 }),
+            json!(["price", "category"]),
+        );
+        try_document_type_from_schema_on_version(
+            schema,
+            PlatformVersion::get(13).expect("protocol version 13 exists"),
+        )
+        .expect_err("integerRange is not part of the protocol version 13 grammar");
     }
 
     // ================================================================
