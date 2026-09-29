@@ -165,36 +165,46 @@ impl TokenMintToPoolTransitionActionStateValidationV0 for TokenMintToPoolTransit
             }
         }
 
-        if let Some(max_supply) = token_configuration.max_supply() {
-            let (token_total_supply, fee) = platform.drive.fetch_token_total_supply_with_cost(
-                token_id.to_buffer(),
-                block_info,
-                transaction,
-                platform_version,
-            )?;
-            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-            let Some(token_total_supply) = token_total_supply else {
-                return Err(Error::Drive(drive::error::Error::Drive(
-                    DriveError::CorruptedDriveState(format!(
-                        "token {} total supply not found",
-                        token_id
+        // A mint into the pool never saturates: the bundle proves exactly `amount` entering the
+        // pool, so a supply that stopped short would leave the pool holding value the supply does
+        // not record. The supply lives in a sum item, so `i64::MAX` is a ceiling of its own, and it
+        // bounds the mint even where the token configures no max supply. Without that bound the
+        // amount reaches the writer as an overflow and the node reports its own code as broken,
+        // dropping the mint from the block unpaid and leaving it resubmittable forever.
+        let max_supply = token_configuration
+            .max_supply()
+            .map_or(i64::MAX as u64, |max_supply| {
+                max_supply.min(i64::MAX as u64)
+            });
+
+        let (token_total_supply, fee) = platform.drive.fetch_token_total_supply_with_cost(
+            token_id.to_buffer(),
+            block_info,
+            transaction,
+            platform_version,
+        )?;
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+        let Some(token_total_supply) = token_total_supply else {
+            return Err(Error::Drive(drive::error::Error::Drive(
+                DriveError::CorruptedDriveState(format!(
+                    "token {} total supply not found",
+                    token_id
+                )),
+            )));
+        };
+        match token_total_supply.checked_add(self.amount()) {
+            Some(total_supply_after) if total_supply_after <= max_supply => {}
+            _ => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(
+                        TokenMintPastMaxSupplyError::new(
+                            token_id,
+                            self.amount(),
+                            token_total_supply,
+                            max_supply,
+                        ),
                     )),
-                )));
-            };
-            match token_total_supply.checked_add(self.amount()) {
-                Some(total_supply_after) if total_supply_after <= max_supply => {}
-                _ => {
-                    return Ok(SimpleConsensusValidationResult::new_with_error(
-                        ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(
-                            TokenMintPastMaxSupplyError::new(
-                                token_id,
-                                self.amount(),
-                                token_total_supply,
-                                max_supply,
-                            ),
-                        )),
-                    ));
-                }
+                ));
             }
         }
 

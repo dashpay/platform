@@ -10,7 +10,7 @@
 use super::{DocumentRankedMode, DriveDocumentRankedQuery, PrefixPin, RankedAxis};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::{index_admissible_for_resolved_time_range, ResolvedTimeRange};
+use crate::query::{index_admissible_for_query, ResolvedTimeRange, SkipIfAbsentBinding};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 use dpp::version::PlatformVersion;
@@ -46,7 +46,7 @@ use std::collections::BTreeMap;
 ///   A prefix-level Count ranking excludes both (the grammar rejects the
 ///   combination), so those arms never see an `at` index;
 /// - it is admissible for the request's resolved time-range selections
-///   ([`index_admissible_for_resolved_time_range`]): a request whose
+///   ([`index_admissible_for_resolved_time_range`](crate::query::index_admissible_for_resolved_time_range)): a request whose
 ///   leading pin was produced by `IN_TIME_RANGE` resolution may only be
 ///   served by the index bucketing that field with exactly that grid,
 ///   and a raw request never by a bucketed index — either mismatch
@@ -89,13 +89,29 @@ pub fn find_ranked_index_for_axis<'b>(
     aggregate_field: &str,
     resolved_time_ranges: &[ResolvedTimeRange],
 ) -> Option<&'b Index> {
+    // What the request binds, for the `skipIfAbsent` rule
+    // ([`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)): each pin and the grouping
+    // property. A pin excludes missing documents unless it names null,
+    // which `encode_prefix_branches` refuses on a stored skip property; the
+    // grouping property reads only the values the index holds. Registration
+    // refuses a ranked level above a skip property, so an admissible
+    // ranking binds every skip property through these.
+    let skip_bindings: Vec<SkipIfAbsentBinding<'_>> = equality_pin_fields
+        .iter()
+        .map(String::as_str)
+        .chain(std::iter::once(group_by_property))
+        .map(|field| SkipIfAbsentBinding {
+            field,
+            excludes_missing: true,
+        })
+        .collect();
     indexes.values().find(|index| {
         // Bucketed and raw indexes are never interchangeable, and one
         // grid's index never serves another grid's resolution — the same
         // provenance rule every other aggregate picker applies. This is
         // what keeps a raw request off bucketed indexes AND routes a
         // resolved request to exactly the grid it was resolved against.
-        if !index_admissible_for_resolved_time_range(index, resolved_time_ranges) {
+        if !index_admissible_for_query(index, resolved_time_ranges, &skip_bindings) {
             return false;
         }
         // The positions whose levels host this axis's secondaries — for
@@ -305,6 +321,26 @@ pub fn encode_prefix_branches(
     // and its terminal — the pin count singles one out; properties past
     // it are interior to the counted subtrees and never pinned).
     let (leading, _) = super::path::ranked_level_split(index, prefix_pins.len())?;
+    // A stored type's skip index holds no document missing a skip property,
+    // while an index that does not skip keeps such documents under the null
+    // key: a null pin on a skip property would read an empty ranking as if it
+    // were complete. (A ranking never sits above a skip property, so every
+    // skip property is either pinned here or the ranked property itself; an
+    // indexOnly type has no null values to pin.)
+    if index.skip_if_absent && index.terminal.is_none() {
+        if let Some(pin) = prefix_pins.iter().find(|pin| {
+            index.skip_if_absent_properties.contains(&pin.field)
+                && pin.values.iter().any(|value| value.is_null())
+        }) {
+            return Err(Error::Query(
+                QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                    "index \"{}\" skips documents missing \"{}\" (skipIfAbsent), so it \
+                     cannot rank documents pinned to a null \"{}\"",
+                    index.name, pin.field, pin.field
+                )),
+            ));
+        }
+    }
     // Enforced BEFORE any encoding: the ceiling bounds every downstream
     // cost (encode, sort, clone, walk, proof size), so an oversized pin
     // must not buy that work first. The post-product branch count check

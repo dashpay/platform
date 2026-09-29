@@ -2,6 +2,10 @@ use crate::data_contract::associated_token::token_distribution_key::{
     TokenDistributionType, TokenDistributionTypeWithResolvedRecipient,
 };
 use crate::errors::ProtocolError;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSerialize;
 use platform_value::Identifier;
@@ -79,8 +83,8 @@ impl<'de> Deserialize<'de> for TokenDistributionRecipient {
                 // 4.0.0-beta.4 used bare strings / externally-tagged maps, and
                 // this message is the only hint users get on ingest failure.
                 f.write_str(
-                    "TokenDistributionRecipient as a map with a `type` discriminator, \
-                     e.g. {\"type\": \"contractOwner\"} or {\"type\": \"identity\", \"identity\": \"<base58>\"} \
+                    "TokenDistributionRecipient as a map with a `$type` discriminator, \
+                     e.g. {\"$type\": \"contractOwner\"} or {\"$type\": \"identity\", \"identity\": \"<base58>\"} \
                      (the pre-4.0.0-beta.4 shapes \"ContractOwner\" / {\"Identity\": \"<base58>\"} are no longer accepted)",
                 )
             }
@@ -133,10 +137,10 @@ impl<'de> Deserialize<'de> for TokenDistributionRecipient {
 
 // Manual impls because TokenDistributionRecipient is a flat enum (not versioned V0/V1).
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionRecipient {}
+impl JsonConvertible for TokenDistributionRecipient {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionRecipient {}
+impl ValueConvertible for TokenDistributionRecipient {}
 
 impl TokenDistributionRecipient {
     /// Simple resolve matches the contract owner but does not try to resolve the evonodes
@@ -250,8 +254,8 @@ impl<'de> Deserialize<'de> for TokenDistributionResolvedRecipient {
 
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 f.write_str(
-                    "TokenDistributionResolvedRecipient as a map with a `type` discriminator, \
-                     e.g. {\"type\": \"identity\", \"identity\": \"<base58>\"} \
+                    "TokenDistributionResolvedRecipient as a map with a `$type` discriminator, \
+                     e.g. {\"$type\": \"identity\", \"identity\": \"<base58>\"} \
                      (the pre-4.0.0-beta.4 externally-tagged {\"Identity\": \"<base58>\"} shape is no longer accepted)",
                 )
             }
@@ -302,10 +306,10 @@ impl<'de> Deserialize<'de> for TokenDistributionResolvedRecipient {
 
 // Manual impls because TokenDistributionResolvedRecipient is a flat enum (not versioned V0/V1).
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenDistributionResolvedRecipient {}
+impl JsonConvertible for TokenDistributionResolvedRecipient {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenDistributionResolvedRecipient {}
+impl ValueConvertible for TokenDistributionResolvedRecipient {}
 
 impl From<TokenDistributionResolvedRecipient> for TokenDistributionRecipient {
     fn from(value: TokenDistributionResolvedRecipient) -> Self {

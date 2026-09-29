@@ -16,6 +16,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::array::{ArrayItemConstraints, TypedArrayProperty};
+use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
 use crate::data_contract::document_type::{
     ByteArrayPropertySizes, DocumentPropertyType, StringPropertySizes,
 };
@@ -766,6 +767,8 @@ fn should_round_trip_a_document_with_typed_arrays_through_serialization() {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 
@@ -986,7 +989,12 @@ fn should_refuse_a_document_whose_typed_array_breaks_its_schema() {
     let contract = charter_contract(platform_version);
 
     contract
-        .validate_document_properties("charter", charter_properties(), platform_version)
+        .validate_document_properties(
+            "charter",
+            charter_properties(),
+            &DocumentSystemValues::default(),
+            platform_version,
+        )
         .map(|result| assert!(result.is_valid(), "the base document is valid: {result:?}"))
         .expect("validation runs");
 
@@ -1023,7 +1031,12 @@ fn should_refuse_a_document_whose_typed_array_breaks_its_schema() {
             .expect("property applies");
 
         let result = contract
-            .validate_document_properties("charter", properties, platform_version)
+            .validate_document_properties(
+                "charter",
+                properties,
+                &DocumentSystemValues::default(),
+                platform_version,
+            )
             .expect("validation returns a consensus result, never an error");
 
         let Some(ConsensusError::BasicError(BasicError::JsonSchemaError(error))) =

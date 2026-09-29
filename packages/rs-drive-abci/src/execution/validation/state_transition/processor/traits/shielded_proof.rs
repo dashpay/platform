@@ -13,6 +13,7 @@ use dpp::consensus::basic::state_transition::{
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
+use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::{PlatformMessageSignable, Signable};
@@ -40,7 +41,6 @@ use dpp::state_transition::batch_transition::token_shielded_transfer_transition:
 use dpp::state_transition::batch_transition::token_unshield_transition::v0::v0_methods::TokenUnshieldTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_to_pool_transition::v0::v0_methods::TokenMintToPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_burn_from_pool_transition::v0::v0_methods::TokenBurnFromPoolTransitionV0Methods;
-use dpp::state_transition::batch_transition::token_claim_to_pool_transition::v0::v0_methods::TokenClaimToPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_direct_purchase_to_pool_transition::v0::v0_methods::TokenDirectPurchaseToPoolTransitionV0Methods;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -52,6 +52,7 @@ use dpp::state_transition::{StateTransition, StateTransitionOwned};
 use dpp::util::hash::hash_single;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::Drive;
 
 /// The (identity, nonce) pair CheckTx's `CheckTxProofVerifier` admits Orchard proof work under
 /// for identity-signed shielded transitions, so an identity cannot start unbounded verification
@@ -217,23 +218,10 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
             StateTransition::Batch(batch) => batch
                 .transitions_iter()
                 .map(|transition| match transition {
-                    BatchedTransitionRef::Token(TokenTransition::Shield(t)) => t.actions().len(),
-                    BatchedTransitionRef::Token(TokenTransition::Unshield(t)) => t.actions().len(),
-                    BatchedTransitionRef::Token(TokenTransition::ShieldedTransfer(t)) => {
-                        t.actions().len()
-                    }
-                    BatchedTransitionRef::Token(TokenTransition::MintToPool(t)) => {
-                        t.actions().len()
-                    }
-                    BatchedTransitionRef::Token(TokenTransition::BurnFromPool(t)) => {
-                        t.actions().len()
-                    }
-                    BatchedTransitionRef::Token(TokenTransition::ClaimToPool(t)) => {
-                        t.actions().len()
-                    }
-                    BatchedTransitionRef::Token(TokenTransition::DirectPurchaseToPool(t)) => {
-                        t.actions().len()
-                    }
+                    BatchedTransitionRef::Token(token_transition) => token_transition
+                        .shielded_pool_actions()
+                        .map(|actions| actions.len())
+                        .unwrap_or(0),
                     BatchedTransitionRef::Document(document_transition) => document_transition
                         .base()
                         .token_payment_info_ref()
@@ -241,7 +229,6 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                         .and_then(|info| info.shielded_payment())
                         .map(|payment| payment.actions.len())
                         .unwrap_or(0),
-                    _ => 0,
                 })
                 .sum(),
             _ => 0,
@@ -261,19 +248,15 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 batch
                     .transitions_iter()
                     .find_map(|transition| match transition {
-                        BatchedTransitionRef::Token(
-                            token_transition @ (TokenTransition::Shield(_)
-                            | TokenTransition::Unshield(_)
-                            | TokenTransition::ShieldedTransfer(_)
-                            | TokenTransition::MintToPool(_)
-                            | TokenTransition::BurnFromPool(_)
-                            | TokenTransition::ClaimToPool(_)
-                            | TokenTransition::DirectPurchaseToPool(_)),
-                        ) => Some(ShieldedProofAdmissionKey::IdentityContract {
-                            identity_id: owner_id,
-                            contract_id: token_transition.data_contract_id().to_buffer(),
-                            nonce: token_transition.identity_contract_nonce(),
-                        }),
+                        BatchedTransitionRef::Token(token_transition)
+                            if token_transition.shielded_pool_actions().is_some() =>
+                        {
+                            Some(ShieldedProofAdmissionKey::IdentityContract {
+                                identity_id: owner_id,
+                                contract_id: token_transition.data_contract_id().to_buffer(),
+                                nonce: token_transition.identity_contract_nonce(),
+                            })
+                        }
                         BatchedTransitionRef::Document(document_transition)
                             if document_transition
                                 .base()
@@ -921,6 +904,74 @@ fn key_not_allowed_in_shielded_creation(
                     .into()
             })
         })
+}
+
+/// Refuses a batch that names a token shielded pool nullifier the pool has already recorded.
+///
+/// CheckTx only. A batch's pool bundles are checked against the pool in block validation, inside
+/// each pool action's state validation, where a failure is a paid one — the identity contract
+/// nonce is consumed and the fee charged. Before this check, no mempool pass read the pool at all:
+/// a batch whose note had been spent was admitted, and the node paid for the Halo 2 verification of
+/// a bundle that block validation would refuse on a handful of key lookups. This is those lookups,
+/// run before the verification, so the free reason to refuse is found first.
+///
+/// It cannot change a consensus outcome. What it refuses is refused unpaid, and an unpaid refusal
+/// never reaches a committed block: a proposer leaves such a transition out and `process_proposal`
+/// rejects a block that carries one. Block validation reads the same record for itself and
+/// decides on its own, with no memory of what admission concluded.
+pub(crate) fn validate_batch_token_pool_nullifiers_unspent(
+    batch: &BatchTransition,
+    drive: &Drive,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let mut drive_operations = vec![];
+
+    for transition in batch.transitions_iter() {
+        let (token_id, actions) = match transition {
+            BatchedTransitionRef::Token(token_transition) => {
+                match token_transition.shielded_pool_actions() {
+                    Some(actions) => (token_transition.token_id().to_buffer(), actions),
+                    None => continue,
+                }
+            }
+            // A document whose token cost is paid out of the token's shielded pool spends pool
+            // notes exactly as an unshield does.
+            BatchedTransitionRef::Document(document_transition) => {
+                let base = document_transition.base();
+                let Some(token_payment_info) = base.token_payment_info_ref().as_ref() else {
+                    continue;
+                };
+                let Some(payment) = token_payment_info.shielded_payment() else {
+                    continue;
+                };
+                (
+                    token_payment_info
+                        .token_id(base.data_contract_id())
+                        .to_buffer(),
+                    payment.actions.as_slice(),
+                )
+            }
+        };
+
+        for action in actions {
+            if drive.has_token_pool_nullifier(
+                &token_id,
+                &action.nullifier,
+                None,
+                &mut drive_operations,
+                platform_version,
+            )? {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    StateError::NullifierAlreadySpentError(NullifierAlreadySpentError::new(
+                        action.nullifier,
+                    ))
+                    .into(),
+                ));
+            }
+        }
+    }
+
+    Ok(SimpleConsensusValidationResult::new())
 }
 
 /// Verifies every token shielded bundle a batch carries, statelessly.
@@ -2133,6 +2184,95 @@ mod tests {
                     "protocol version {protocol_version} allows ShieldFromIdentity unbound"
                 );
             }
+        }
+    }
+
+    mod validate_batch_token_pool_nullifiers_unspent_tests {
+        use super::*;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            create_dummy_serialized_action, setup_platform,
+        };
+        use crate::test::helpers::setup::TestPlatformBuilder;
+        use dpp::prelude::Identifier;
+        use dpp::version::feature_initial_protocol_versions::TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
+        use dpp::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
+        use dpp::state_transition::batch_transition::batched_transition::token_unshield_transition::v0::TokenUnshieldTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::token_unshield_transition::TokenUnshieldTransition;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use dpp::state_transition::batch_transition::BatchTransitionV1;
+
+        const TOKEN_ID: [u8; 32] = [0xcc; 32];
+
+        /// A batch whose only transition unshields from `TOKEN_ID`'s pool, spending `nullifier`.
+        /// Unsigned and unproven: this path reads neither.
+        fn pool_bearing_batch(nullifier: [u8; 32]) -> BatchTransition {
+            let mut action = create_dummy_serialized_action();
+            action.nullifier = nullifier;
+            BatchTransition::V1(BatchTransitionV1 {
+                owner_id: Identifier::new([1u8; 32]),
+                transitions: vec![BatchedTransition::Token(TokenTransition::Unshield(
+                    TokenUnshieldTransition::V0(TokenUnshieldTransitionV0 {
+                        base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                            identity_contract_nonce: 1,
+                            token_contract_position: 0,
+                            data_contract_id: Identifier::new([2u8; 32]),
+                            token_id: Identifier::new(TOKEN_ID),
+                            using_group_info: None,
+                        }),
+                        amount: 1,
+                        recipient_id: Identifier::new([3u8; 32]),
+                        actions: vec![action],
+                        ..Default::default()
+                    }),
+                ))],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            })
+        }
+
+        /// The token shielded pools root is only created by the version that introduced the
+        /// pools, so before it the whole subtree this reads under is absent. GroveDB answers some
+        /// reads of a subtree that is not there with an error rather than with "absent" — the
+        /// shielded note-count and encrypted-note queries were fixed for exactly that — and an
+        /// error here would turn a mempool decision into an internal error the node logs at error
+        /// level. A membership read is not one of those: it answers absent, which is the answer
+        /// this needs. That is a GroveDB behaviour rather than something this function arranges,
+        /// so it is pinned here.
+        #[test]
+        fn a_version_with_no_token_pools_root_reads_as_nothing_spent() {
+            let before_pools = TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION - 1;
+            let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(before_pools)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let platform_version =
+                PlatformVersion::get(before_pools).expect("the version before token pools");
+
+            let result = validate_batch_token_pool_nullifiers_unspent(
+                &pool_bearing_batch([9u8; 32]),
+                &platform.drive,
+                platform_version,
+            )
+            .expect("must answer rather than fail inside GroveDB");
+            assert!(result.is_valid(), "got {:?}", result.errors);
+        }
+
+        /// A token that never opted into a pool has no subtree under the root either. "There is
+        /// no such pool" must read as nothing spent and never as a spent nullifier, which would
+        /// refuse a batch for a note it has not spent.
+        #[test]
+        fn a_token_with_no_pool_holds_no_spent_nullifier() {
+            let platform = setup_platform();
+
+            let result = validate_batch_token_pool_nullifiers_unspent(
+                &pool_bearing_batch([9u8; 32]),
+                &platform.drive,
+                PlatformVersion::latest(),
+            )
+            .expect("must answer rather than fail inside GroveDB");
+            assert!(result.is_valid(), "got {:?}", result.errors);
         }
     }
 }

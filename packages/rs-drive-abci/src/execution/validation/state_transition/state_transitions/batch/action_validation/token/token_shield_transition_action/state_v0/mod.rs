@@ -45,9 +45,8 @@ impl TokenShieldTransitionActionStateValidationV0 for TokenShieldTransitionActio
     /// token can never freeze an account, so no frozen check is read or billed. It then
     /// verifies the outputs-only bundle.
     ///
-    /// Historical note: the pool
-    /// opt-in, then verifies the outputs-only bundle. The bundle's anchor is not checked
-    /// against the pool: with spends disabled the anchor is not consumed.
+    /// The bundle's anchor is not checked against the pool: with spends disabled the anchor is
+    /// not consumed.
     fn validate_state_v0(
         &self,
         platform: &PlatformStateRef,

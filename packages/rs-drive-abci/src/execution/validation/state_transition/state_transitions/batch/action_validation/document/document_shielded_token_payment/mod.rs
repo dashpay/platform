@@ -9,6 +9,7 @@
 //! unspent, the pool must hold the amount, and the spend bundle must verify with the token id,
 //! the batch owner, the document's contract and id and the amount bound into its sighash.
 
+use drive::util::grove_operations::DirectQueryType;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
@@ -199,6 +200,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
 
     let pool_balance = platform.drive.read_token_shielded_pool_total_balance(
         &token_id_bytes,
+        DirectQueryType::StatefulDirectQuery,
         transaction,
         &mut drive_operations,
         platform_version,

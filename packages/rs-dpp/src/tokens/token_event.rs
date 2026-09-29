@@ -10,6 +10,8 @@ use crate::fee::Credits;
 use crate::prelude::{
     DataContract, DerivationEncryptionKeyIndex, IdentityNonce, RootEncryptionKeyIndex,
 };
+#[cfg(feature = "serde-conversion")]
+use crate::serialization::json::safe_integer::{json_safe_option_encrypted_note, json_safe_u64};
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
@@ -228,15 +230,13 @@ impl serde::Serialize for TokenEvent {
         struct SafeU64<'a>(&'a u64);
         impl<'a> serde::Serialize for SafeU64<'a> {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                crate::serialization::json::safe_integer::json_safe_u64::serialize(self.0, s)
+                json_safe_u64::serialize(self.0, s)
             }
         }
         struct SafeOptEncNote<'a>(&'a Option<(u32, u32, Vec<u8>)>);
         impl<'a> serde::Serialize for SafeOptEncNote<'a> {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                crate::serialization::json::safe_integer::json_safe_option_encrypted_note::serialize(
-                    self.0, s,
-                )
+                json_safe_option_encrypted_note::serialize(self.0, s)
             }
         }
 
@@ -815,19 +815,31 @@ impl TokenEvent {
     }
 
     /// Returns a reference to the public note if the variant includes one.
+    ///
+    /// Every variant is listed: the co-signers of a pending group action read the proposer's
+    /// note here while deciding whether to sign, so a variant that carries one and is not
+    /// listed shows them nothing. Adding a variant is then a compile error rather than a note
+    /// that silently goes missing.
     pub fn public_note(&self) -> Option<&str> {
         match self {
-            TokenEvent::Mint(_, _, Some(note))
-            | TokenEvent::Burn(_, _, Some(note))
-            | TokenEvent::Freeze(_, Some(note))
-            | TokenEvent::Unfreeze(_, Some(note))
-            | TokenEvent::DestroyFrozenFunds(_, _, Some(note))
-            | TokenEvent::Transfer(_, Some(note), _, _, _)
-            | TokenEvent::Claim(_, _, Some(note))
-            | TokenEvent::EmergencyAction(_, Some(note))
-            | TokenEvent::ConfigUpdate(_, Some(note))
-            | TokenEvent::ChangePriceForDirectPurchase(_, Some(note)) => Some(note),
-            _ => None,
+            TokenEvent::Mint(_, _, note)
+            | TokenEvent::Burn(_, _, note)
+            | TokenEvent::Freeze(_, note)
+            | TokenEvent::Unfreeze(_, note)
+            | TokenEvent::DestroyFrozenFunds(_, _, note)
+            | TokenEvent::Transfer(_, note, _, _, _)
+            | TokenEvent::Claim(_, _, note)
+            | TokenEvent::EmergencyAction(_, note)
+            | TokenEvent::ConfigUpdate(_, note)
+            | TokenEvent::ChangePriceForDirectPurchase(_, note)
+            | TokenEvent::MintToPool(_, _, note)
+            | TokenEvent::BurnFromPool(_, _, note) => note.as_deref(),
+            TokenEvent::DirectPurchase(_, _)
+            | TokenEvent::Shield(_)
+            | TokenEvent::Unshield(_, _)
+            | TokenEvent::ShieldedTransfer
+            | TokenEvent::ClaimToPool(_)
+            | TokenEvent::DirectPurchaseToPool(_, _) => None,
         }
     }
 
@@ -1074,6 +1086,8 @@ impl TokenEvent {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 
@@ -1210,5 +1224,55 @@ mod tests {
     #[test]
     fn format_note_some_returns_formatted() {
         assert_eq!(format_note(&Some("hello".to_string())), " (note: hello)");
+    }
+}
+
+#[cfg(test)]
+mod public_note_tests {
+    use super::*;
+    use crate::group::action_event::GroupActionEvent;
+
+    fn actions_digest() -> Identifier {
+        Identifier::from([7u8; 32])
+    }
+
+    /// The co-signers of a pending group action read the proposer's note off the event to
+    /// decide whether to sign it. A pool mint or burn carries one like any other proposal.
+    #[test]
+    fn should_show_the_proposers_note_on_a_pool_mint_or_burn() {
+        let mint = TokenEvent::MintToPool(
+            100,
+            actions_digest(),
+            Some("quarterly issuance".to_string()),
+        );
+        assert_eq!(mint.public_note(), Some("quarterly issuance"));
+        assert_eq!(
+            GroupActionEvent::TokenEvent(mint).public_note(),
+            Some("quarterly issuance")
+        );
+
+        let burn = TokenEvent::BurnFromPool(
+            40,
+            actions_digest(),
+            Some("retiring treasury notes".to_string()),
+        );
+        assert_eq!(burn.public_note(), Some("retiring treasury notes"));
+        assert_eq!(
+            GroupActionEvent::TokenEvent(burn).public_note(),
+            Some("retiring treasury notes")
+        );
+    }
+
+    /// A pool mint or burn the proposer left unannotated reads as no note, not as an empty one.
+    #[test]
+    fn should_report_no_note_on_an_unannotated_pool_mint_or_burn() {
+        assert_eq!(
+            TokenEvent::MintToPool(100, actions_digest(), None).public_note(),
+            None
+        );
+        assert_eq!(
+            TokenEvent::BurnFromPool(40, actions_digest(), None).public_note(),
+            None
+        );
     }
 }

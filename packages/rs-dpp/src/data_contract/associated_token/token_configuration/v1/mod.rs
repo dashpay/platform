@@ -25,7 +25,12 @@ use std::fmt;
 /// Enabling a pool on an existing token is not supported by this version.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq, DecodeUntrusted)]
-#[serde(rename_all = "camelCase")]
+// An unknown key is refused rather than dropped: what a token can do is fixed when it is
+// created, so a misspelled `hasShieldedPool` would otherwise leave the token permanently
+// without the pool it was meant to have, and say nothing. Version 0 carries the same refusal,
+// but it cannot reach a key arriving here: `serde(flatten)` never offers an unrecognized key to
+// the flattened struct, so the attribute has to sit on the version that owns the flatten.
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TokenConfigurationV1 {
     /// The V0 configuration this version extends.
     #[serde(flatten)]

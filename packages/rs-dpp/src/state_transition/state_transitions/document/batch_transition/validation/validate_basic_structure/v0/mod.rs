@@ -251,6 +251,12 @@ impl BatchTransition {
                 ) => {
                     set_price_for_direct_purchase_transition.validate_structure(platform_version)?
                 }
+                // Released protocol versions cannot reach the token shielded pool arms below:
+                // the batch's `is_allowed` gate refuses each pool transition kind until the
+                // version that admits them. This generation is the only one there is, so the
+                // version that admits them runs these arms as its live path — they are the
+                // structure validation for a pool transition, not filler to keep the match
+                // exhaustive.
                 TokenTransition::Shield(shield_transition) => {
                     shield_transition.validate_structure(platform_version)?
                 }

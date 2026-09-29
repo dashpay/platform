@@ -15,6 +15,9 @@ impl Drive {
         &self,
         nullifiers: &[[u8; 32]],
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        // The pool's path is a parameter now, and the credit pool passes the very path this
+        // function used to build for itself: every protocol version that selects this
+        // generation sees the same operations against the same tree.
         Ok(Self::insert_nullifiers_in_pool_v0(
             shielded_credit_pool_nullifiers_path_vec(),
             nullifiers,

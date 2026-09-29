@@ -7,9 +7,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
-use dpp::state_transition::batch_transition::batched_transition::token_transition::{
-    TokenTransition, TokenTransitionV0Methods,
-};
+use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
@@ -204,6 +202,15 @@ where
 
                         // Remembered before the transition is consumed: the pools an applied
                         // batch touched get their anchor recorded at block end.
+                        //
+                        // Every protocol version selects this generation, so this has to be inert
+                        // at the ones that predate token pools, and it is twice over: the kinds
+                        // `token_shielded_pools_touched` reports are exactly the ones
+                        // `validate_is_allowed` refuses unpaid there before execution, so the set
+                        // stays empty, and the set's only consumer,
+                        // `record_token_shielded_pool_anchors`, is `None` in those versions'
+                        // tables and returns without touching state. The set lives on the
+                        // in-memory processing result, which is neither serialized nor hashed.
                         let token_shielded_pools_touched =
                             token_shielded_pools_touched(&state_transition);
 
@@ -403,20 +410,18 @@ fn error_to_internal_error_execution_result(
 /// The token shielded pools a state transition writes to: the token ids of every token pool
 /// transition in a batch, of every document whose token cost is paid from a pool, and of the
 /// identity-less token pool transitions.
+///
+/// Every kind matched here is one that `StateTransitionIsAllowedValidationV0::validate_is_allowed`
+/// refuses, unpaid and before execution, below the protocol version that introduces token pools,
+/// so this returns an empty list at every earlier version.
 fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 32]> {
     match state_transition {
         StateTransition::Batch(batch) => batch
             .transitions_iter()
             .filter_map(|transition| match transition {
-                BatchedTransitionRef::Token(
-                    token_transition @ (TokenTransition::Shield(_)
-                    | TokenTransition::Unshield(_)
-                    | TokenTransition::ShieldedTransfer(_)
-                    | TokenTransition::MintToPool(_)
-                    | TokenTransition::BurnFromPool(_)
-                    | TokenTransition::ClaimToPool(_)
-                    | TokenTransition::DirectPurchaseToPool(_)),
-                ) => Some(token_transition.token_id().to_buffer()),
+                BatchedTransitionRef::Token(token_transition) => token_transition
+                    .shielded_pool_actions()
+                    .map(|_| token_transition.token_id().to_buffer()),
                 BatchedTransitionRef::Document(document_transition) => {
                     let base = document_transition.base();
                     base.token_payment_info_ref()
@@ -424,7 +429,6 @@ fn token_shielded_pools_touched(state_transition: &StateTransition) -> Vec<[u8; 
                         .filter(|info| info.shielded_payment().is_some())
                         .map(|info| info.token_id(base.data_contract_id()).to_buffer())
                 }
-                _ => None,
             })
             .collect(),
         StateTransition::TokenShieldedTransferWithShieldedFee(st) => {

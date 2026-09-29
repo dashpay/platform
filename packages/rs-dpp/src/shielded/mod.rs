@@ -27,6 +27,10 @@ pub use compute_minimum_shielded_fee::{
 // Re-exported so the public paths stay `dpp::shielded::<name>` after moving the sighash preimage
 // builders into their own file. Both the version-dispatching wrappers and their `_v0` impls are
 // re-exported (callers use the wrappers; byte-layout tests use the `_v0` impls).
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 /// A digest of serialized Orchard actions in wire order: every field of every action, hashed
 /// once. A group action stores it so every signer commits to exactly the same notes, and a
 /// pool mint or burn folds it into its group action id.
@@ -180,6 +184,50 @@ pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 60;
 /// [`compute_minimum_shielded_fee::compute_shielded_identity_balance_write_fee`].
 pub const SHIELDED_IDENTITY_ACTION_WRITE_STORAGE_BYTES: u64 = 120;
 
+/// Flat component (in effective bytes at the per-byte storage rate) for the recipient's token
+/// balance item a `TokenUnshieldWithShieldedFee` writes on top of its per-action nullifier and
+/// note writes.
+///
+/// It prices the write as an INSERT, not a rewrite. A recipient who already holds the token has a
+/// balance sum item to replace, which adds no storage; a recipient who has never held it has no
+/// item, so the write creates one and it is real new storage. Measured at protocol version 14:
+/// 6,102,000 credits of storage, the same for the smallest balance and the widest, because the
+/// item is fixed-width — 223 effective bytes at 27,400 credits/byte, against 8 for the rewrite.
+/// 230 leaves headroom for the node layout gaining a few bytes without a fresh calibration.
+///
+/// The expensive case is priced unconditionally, and there are two independent reasons for that.
+///
+/// The first is that the component may never fall below what the write really costs.
+/// `execute_event` books a pool-paid transition as `storage = min(real_storage, carved_fee)` and
+/// pays the proposer only the remainder, so a component under the real cost comes out of the
+/// proposer's reward for the proof it verified and leaves the storage pool short of an item the
+/// chain then carries forever. Recipient state is not reachable where the number is needed in any
+/// case: the builder that fixes the fee takes no drive and no transaction, and the stateless
+/// `validate_minimum_shielded_fee` gate that re-derives it takes neither either, so no balance is
+/// reachable from where the number is decided. (That builder has no caller outside tests yet; the
+/// argument is about what it can read, not about who calls it.)
+///
+/// The second reason is decisive even where that state IS reachable, and it is why the cheap case
+/// must not be split out later as an optimisation: `credit_amount` is public and must equal this
+/// fee EXACTLY, so a fee that varied with the recipient's holdings would publish whether the
+/// recipient holds this token for the first time. That is precisely the fee fingerprint the
+/// shielded design exists to deny.
+///
+/// Pricing the worst case is the standing choice here, not an exception:
+/// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES` sizes an `AddBalanceToAddress` to its new-address
+/// worst case, and the estimation branch of `add_to_identity_token_balance_operations` assumes
+/// the insert for the same reason. See
+/// [`compute_minimum_shielded_fee::compute_token_unshield_with_shielded_fee_fee`].
+pub const SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES: u64 = 230;
+
+/// Creating a balance item costs more than rewriting one, so the unshield's allowance has to
+/// exceed the replace-only allowance the identity top-up keeps. Checked when the crate is built
+/// rather than when a test runs, because both sides are constants and a change to either should
+/// stop the build rather than wait for a test to notice.
+const _: () = assert!(
+    SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES > SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES
+);
+
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
 /// Groups the fields that every shielded transition carries identically:
@@ -274,10 +322,10 @@ pub struct SerializedAction {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for SerializedAction {}
+impl JsonConvertible for SerializedAction {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for SerializedAction {}
+impl ValueConvertible for SerializedAction {}
 
 #[cfg(all(
     test,

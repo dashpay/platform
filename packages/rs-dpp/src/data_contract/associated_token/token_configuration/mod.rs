@@ -716,3 +716,175 @@ mod minimum_pool_notes_json_tests {
         assert_eq!(decoded.minimum_pool_notes_for_outgoing(), 0);
     }
 }
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod unknown_configuration_key_tests {
+    use super::*;
+    use crate::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
+    use crate::serialization::{JsonConvertible, ValueConvertible};
+
+    /// A V0 configuration's JSON with `hasShieldedPool` bolted on: what a caller writes when
+    /// they ask for a pool but leave the format version at 0.
+    fn v0_json_asking_for_a_pool() -> serde_json::Value {
+        let mut json = TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
+            .to_json()
+            .expect("to_json");
+        json.as_object_mut()
+            .expect("configuration object")
+            .insert("hasShieldedPool".to_string(), serde_json::Value::Bool(true));
+        json
+    }
+
+    /// The same fixture on the Value wire, which is the path a contract is ingested through.
+    fn v0_value_asking_for_a_pool() -> platform_value::Value {
+        let mut value = TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
+            .to_object()
+            .expect("to_object");
+        value.as_map_mut().expect("configuration map").push((
+            platform_value::Value::Text("hasShieldedPool".to_string()),
+            platform_value::Value::Bool(true),
+        ));
+        value
+    }
+
+    #[test]
+    fn should_refuse_a_pool_asked_for_at_format_version_0_rather_than_drop_it() {
+        let json = v0_json_asking_for_a_pool();
+
+        // The control. Take the pool request back out and the very same configuration decodes,
+        // at format version 0 and without a pool. It is what makes the refusal below evidence
+        // about the pool request rather than about a fixture that stopped building a valid V0.
+        let mut without_the_request = json.clone();
+        without_the_request
+            .as_object_mut()
+            .expect("configuration object")
+            .remove("hasShieldedPool");
+        let control = TokenConfiguration::from_json(without_the_request)
+            .expect("the configuration decodes once the pool request is taken out");
+        assert_eq!(control.format_version(), 0);
+        assert!(!control.has_shielded_pool());
+
+        // A configuration asking for a pool must not decode as a token that can never have one,
+        // and the refusal has to name the key it refused: any other message means the decoder
+        // tripped over something else and the pool request was never the reason.
+        let error = TokenConfiguration::from_json(json).expect_err("the pool request is refused");
+        assert!(
+            error.to_string().contains("hasShieldedPool"),
+            "the refusal must name the key it refused, got {error}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_pool_asked_for_at_format_version_0_on_the_value_wire_too() {
+        let value = v0_value_asking_for_a_pool();
+
+        let mut without_the_request = value.clone();
+        without_the_request
+            .as_map_mut()
+            .expect("configuration map")
+            .retain(|(key, _)| key.as_text() != Some("hasShieldedPool"));
+        let control = TokenConfiguration::from_object(without_the_request)
+            .expect("the configuration decodes once the pool request is taken out");
+        assert_eq!(control.format_version(), 0);
+        assert!(!control.has_shielded_pool());
+
+        let error =
+            TokenConfiguration::from_object(value).expect_err("the pool request is refused");
+        assert!(
+            error.to_string().contains("hasShieldedPool"),
+            "the refusal must name the key it refused, got {error}"
+        );
+    }
+
+    /// Asking for a pool moves the configuration to format version 1, whose V0 fields sit at the
+    /// top level of the wire through `serde(flatten)`. Both wires have to read that shape back.
+    #[test]
+    fn should_still_decode_a_pooled_configuration_whose_v0_fields_are_flattened() {
+        let mut configuration =
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        configuration.set_has_shielded_pool(true);
+
+        let json = configuration.to_json().expect("to_json");
+        assert_eq!(
+            json.get("$formatVersion").and_then(|v| v.as_str()),
+            Some("1")
+        );
+        assert_eq!(
+            TokenConfiguration::from_json(json).expect("from_json"),
+            configuration
+        );
+
+        let value = configuration.to_object().expect("to_object");
+        assert_eq!(
+            TokenConfiguration::from_object(value).expect("from_object"),
+            configuration
+        );
+    }
+
+    /// Format version 1's field set is open where version 0's is closed: an unrecognized key is
+    /// dropped instead of refused, on both wires.
+    ///
+    /// `deny_unknown_fields` is what closes version 0, and it is declared on
+    /// `TokenConfigurationV0`. Version 1 reads that struct through `serde(flatten)`, which hands
+    /// it only the keys left over once the outer struct has claimed its own — so the attribute
+    /// governs what version 0 does with the leftovers it is given, and says nothing about the
+    /// outer struct. `TokenConfigurationV1` declares no refusal of its own, so a key neither
+    /// version names is accepted and dropped, and a caller's typo reaches the chain as a
+    /// configuration quietly missing whatever they meant to set.
+    ///
+    /// Pinned because it is the asymmetry a reader will not expect from the version 0 refusal
+    /// the tests above assert, and because closing it would change which configurations decode
+    /// at all — a decision to take deliberately, not as a side effect of tightening a struct.
+    /// A key no format version carries is refused at format version 1, as it is at 0.
+    ///
+    /// The refusal has to hold on both wires. `TokenConfigurationV1` takes version 0's fields
+    /// through `serde(flatten)`, and an unknown key arriving through a flattened field is not
+    /// offered to the inner struct at all, so version 0's own refusal cannot reach it — the
+    /// attribute has to sit on the version that owns the flatten.
+    #[test]
+    fn should_refuse_an_unrecognized_key_at_format_version_1() {
+        let mut configuration =
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        configuration.set_has_shielded_pool(true);
+
+        const UNRECOGNIZED_KEY: &str = "thisKeyIsInNoFormatVersion";
+
+        let mut json = configuration.to_json().expect("to_json");
+        json.as_object_mut()
+            .expect("configuration object")
+            .insert(UNRECOGNIZED_KEY.to_string(), serde_json::Value::Bool(true));
+        let error = TokenConfiguration::from_json(json)
+            .expect_err("an unrecognized key must be refused, not dropped")
+            .to_string();
+        assert!(
+            error.contains(UNRECOGNIZED_KEY),
+            "the refusal must name the key it refused, got {error}"
+        );
+
+        let mut value = configuration.to_object().expect("to_object");
+        value.as_map_mut().expect("configuration map").push((
+            platform_value::Value::Text(UNRECOGNIZED_KEY.to_string()),
+            platform_value::Value::Bool(true),
+        ));
+        let error = TokenConfiguration::from_object(value)
+            .expect_err("the contract ingest path must refuse it too")
+            .to_string();
+        assert!(
+            error.contains(UNRECOGNIZED_KEY),
+            "the refusal must name the key it refused, got {error}"
+        );
+
+        // The same configuration without the key still decodes, so the refusal is the key's
+        // doing and not a fixture that stopped building.
+        let clean = TokenConfiguration::from_json(configuration.to_json().expect("to_json"))
+            .expect("the configuration itself still decodes");
+        assert_eq!(clean, configuration);
+        assert_eq!(clean.format_version(), 1);
+        assert!(clean.has_shielded_pool());
+    }
+}

@@ -15,6 +15,9 @@ impl Drive {
     pub(in crate::drive) fn update_total_balance_op_v0(
         new_total_balance: u64,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        // The pool's path is a parameter now, and the credit pool passes the very path this
+        // function used to build for itself: every protocol version that selects this
+        // generation sees the same operations against the same tree.
         Self::update_total_balance_op_in_pool_v0(shielded_credit_pool_path_vec(), new_total_balance)
     }
 

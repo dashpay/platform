@@ -311,6 +311,7 @@ async fn build_composite_documents_query(
             start_at: None,
             group_by: None,
             time_range: None,
+            integer_range: None,
         },
     )
     .await?

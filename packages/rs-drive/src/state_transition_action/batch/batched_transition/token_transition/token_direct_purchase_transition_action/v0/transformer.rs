@@ -170,21 +170,16 @@ impl TokenDirectPurchaseTransitionActionV0 {
     }
 }
 
-/// Resolves the required total price for a `SetPrices` (tiered) direct purchase.
-///
-/// Returns the required total in credits on success, or the consensus error that must reject
-/// the purchase. This is a pure function so every rejection branch — in particular the
-/// empty-schedule case — can be unit-tested directly without standing up a `Drive`.
-///
-/// An empty `SetPrices` map is a representable, storable value, so this function must NOT
-/// assume the map is non-empty: the original inline code did
-/// `set_prices.keys().next().expect("Map is not empty")`, which panics on an empty map. That
-/// panic was uncaught during per-state-transition processing and would deterministically halt
-/// the chain across the quorum. Here an empty schedule resolves to `TokenNotForDirectSale`.
 /// Resolves the credits a direct purchase of `token_count` must pay right now, from the token's
 /// current pricing schedule: an error when the token is not for sale, the buyer agreed to too
 /// little, or the amount is under the minimum sale amount. Shared by `TokenDirectPurchase` and
 /// `TokenDirectPurchaseToPool`. Read costs are added to `fee_result`.
+///
+/// This action has a single version, so the body runs at every protocol version that accepts a
+/// direct purchase, and extracting it had to leave one alone. It does: the price fetch, the fee
+/// accumulation and the two rejections keep their order, the arithmetic is the same saturating
+/// multiply compared against the same required price, and each rejection carries the same single
+/// error as the site it replaced.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn resolve_direct_purchase_price(
     drive: &Drive,
@@ -269,6 +264,16 @@ pub fn required_direct_purchase_price(
     Ok(required_price)
 }
 
+/// Resolves the required total price for a `SetPrices` (tiered) direct purchase.
+///
+/// Returns the required total in credits on success, or the consensus error that must reject the
+/// purchase. Kept pure so every rejection branch — in particular the empty-schedule case — can be
+/// unit-tested without standing up a `Drive`.
+///
+/// An empty `SetPrices` map is a representable, storable value, so the schedule must never be
+/// assumed non-empty: taking a key unconditionally would panic, and a panic during
+/// per-state-transition processing deterministically halts the chain across the quorum. An empty
+/// schedule resolves to `TokenNotForDirectSale` instead.
 fn resolve_set_prices_direct_purchase_price(
     token_id: Identifier,
     set_prices: &BTreeMap<TokenAmount, Credits>,

@@ -31,6 +31,13 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetMostRecentShieldedAnchorResponseV0>, Error> {
+        // Protocol versions 1 through 13 select this generation as well, and the selector
+        // leaves a request any of them can make untouched: `token_id` is absent there,
+        // `from_request` maps that to the credit pool without consulting the version, the credit
+        // pool's path is the same one this handler used to build inline, and
+        // `validate_pool_exists` is a no-op for it. The query, the proof and the response
+        // therefore all stay as they were. A `token_id` is refused outright below the version
+        // that admits token pools.
         let pool = match ShieldedPoolSelector::from_request(token_id, platform_version) {
             Ok(pool) => pool,
             Err(error) => return Ok(QueryValidationResult::new_with_error(error)),
@@ -56,6 +63,10 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
+            check_validation_result_with_data!(
+                pool.validate_pool_exists(&self.drive, platform_version)?
+            );
+
             let (results, _) = self.drive.grove_get_raw_path_query(
                 &path_query,
                 None,

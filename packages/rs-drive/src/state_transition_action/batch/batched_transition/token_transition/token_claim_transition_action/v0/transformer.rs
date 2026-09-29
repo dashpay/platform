@@ -242,6 +242,14 @@ impl TokenClaimTransitionActionV0 {
 /// Shared by `TokenClaim` (`claim_up_to = None`, the current interval) and `TokenClaimToPool`,
 /// whose bundle must prove the exact amount, so the client names the cycle-aligned moment the
 /// perpetual claim pays out to. Read costs are added to `fee_result`.
+///
+/// This action has a single version, so the body runs at every protocol version that accepts a
+/// claim, and extracting it had to leave a plain claim's outcome alone. It does: the state reads
+/// and the fee accumulations keep their order and their position relative to every early return,
+/// each rejection carries the same single error as the site it replaced, and the caller rebuilds
+/// the same nonce bump from the same three arguments. `claim_up_to` is `None` for a plain claim,
+/// which rebinds the current interval to itself; only the claim-into-pool transition passes a
+/// value, and that transition is refused unpaid below the version admitting token pools.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn resolve_token_claim(
     drive: &Drive,
@@ -618,18 +626,19 @@ mod tests {
     //! These cover:
     //!   * the pre-programmed distribution filtering + "distribution after last paid" lookup
     //!   * the `wrong_claimant_error` resolution logic
-    //!   * `RewardRatio` computation used inside the `EvonodesByParticipation` closure
+    //!   * the `RewardRatio` arithmetic that `Drive::evonode_participation_rewards` applies for
+    //!     the `EvonodesByParticipation` branch, reproduced here
     //!   * recipient resolution for each `TokenDistributionInfo` variant
     //!   * the `From<TokenDistributionResolvedRecipient> for TokenDistributionRecipient` roundtrip
     //!   * `ClaimAction` variant dispatch / clone / enum wrapper accessors
     use dpp::balances::credits::TokenAmount;
-    use dpp::block::epoch::EpochIndex;
     use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
-    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
     use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{
         TokenDistributionRecipient, TokenDistributionResolvedRecipient,
     };
     use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
+    use dpp::block::epoch::EpochIndex;
     use dpp::identifier::Identifier;
     use dpp::prelude::TimestampMillis;
     use std::collections::BTreeMap;

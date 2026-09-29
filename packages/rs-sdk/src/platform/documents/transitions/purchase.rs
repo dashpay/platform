@@ -106,6 +106,8 @@ impl DocumentPurchaseTransitionBuilder {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         Self::new(

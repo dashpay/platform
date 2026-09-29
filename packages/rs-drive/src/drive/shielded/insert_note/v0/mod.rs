@@ -17,6 +17,9 @@ impl Drive {
         cv_net: [u8; 32],
         encrypted_note: Vec<u8>,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        // The pool's path is a parameter now, and the credit pool passes the very path this
+        // function used to build for itself: every protocol version that selects this
+        // generation sees the same operations against the same tree.
         Ok(Self::insert_note_op_in_pool_v0(
             shielded_credit_pool_notes_path_vec(),
             nullifier,

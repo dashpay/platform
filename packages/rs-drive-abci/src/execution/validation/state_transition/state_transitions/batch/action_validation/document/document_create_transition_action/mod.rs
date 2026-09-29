@@ -13,6 +13,7 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v2::DocumentCreateTransitionActionStateValidationV2;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v0::DocumentCreateTransitionActionStructureValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v1::DocumentCreateTransitionActionStructureValidationV1;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod advanced_structure_v0;
@@ -30,11 +31,19 @@ pub trait DocumentCreateTransitionActionValidation {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
+    /// Validates the create against state. From version 2 it also settles what a contested
+    /// create pays into its contest: the fund to join it, which may be less than the most the
+    /// contender stated. From version 2 (protocol version 14) too, the commitments the create
+    /// reveals through a `refersTo` lookup whose reference declares `consume` are pushed onto
+    /// `consumed_documents`, for the caller to delete with the create once it accepts it;
+    /// earlier versions push nothing.
+    #[allow(clippy::too_many_arguments)]
     fn validate_state(
-        &self,
+        &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -69,10 +78,11 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
     }
 
     fn validate_state(
-        &self,
+        &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -107,6 +117,7 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
                 platform,
                 owner_id,
                 block_info,
+                consumed_documents,
                 execution_context,
                 transaction,
                 platform_version,

@@ -1,6 +1,8 @@
 use super::*;
+use drive::util::grove_operations::DirectQueryType;
 
 mod minimum_pool_notes;
+mod pool_nullifier_admission;
 
 /// Token shielded pool transitions: shield, unshield and shielded transfer inside a batch.
 ///
@@ -35,11 +37,13 @@ mod token_shielded_pool_tests {
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use dpp::version::feature_initial_protocol_versions::TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION;
     use drive::drive::shielded::paths::token_shielded_pool_anchors_path_vec;
+    use drive::drive::Drive;
     use drive::grovedb::Element;
     use grovedb_commitment_tree::{
         Anchor, Authorized, Builder, Bundle, BundleType, ClientMemoryCommitmentTree, DashMemo,
@@ -48,6 +52,7 @@ mod token_shielded_pool_tests {
         SpendingKey,
     };
     use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
 
     /// The basic token fixture mints this much to the contract owner.
     pub(super) const OWNER_INITIAL_BALANCE: u64 = 100_000;
@@ -227,6 +232,7 @@ mod token_shielded_pool_tests {
             .drive
             .read_token_shielded_pool_total_balance(
                 &token_id.to_buffer(),
+                DirectQueryType::StatefulDirectQuery,
                 None,
                 &mut vec![],
                 PlatformVersion::latest(),
@@ -396,6 +402,97 @@ mod token_shielded_pool_tests {
             .with_latest_protocol_version()
             .build_with_mock_rpc()
             .set_genesis_state()
+    }
+
+    /// Proving a pool write and verifying that proof is how a wallet learns what the write left
+    /// behind, and no kind that writes into a pool had a test for it. Both halves of the path were
+    /// broken and nothing said so: the verifier asked the token history contract for a document
+    /// type these kinds do not have, and it read the proof strictly although the prover merges the
+    /// owner's balance into any batch's proof from protocol version 14.
+    #[tokio::test]
+    async fn should_prove_and_verify_a_token_shield() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9101);
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let shield_bundle = build_shield_bundle(
+            SHIELD_AMOUNT,
+            11,
+            TokenTransitionActionType::Shield,
+            token_id,
+            identity.id(),
+        );
+        let shield = BatchTransition::new_token_shield_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            SHIELD_AMOUNT,
+            shield_bundle,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+
+        let result = process(&platform, &shield);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        let proof = platform
+            .drive
+            .prove_state_transition(&shield, None, platform_version)
+            .expect("prove the shield")
+            .into_data()
+            .expect("proof bytes rather than an error");
+
+        let known_contracts: BTreeMap<Identifier, DataContract> =
+            BTreeMap::from([(contract.id(), contract.clone())]);
+        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
+            &shield,
+            &BlockInfo::default(),
+            &proof,
+            &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
+            platform_version,
+        )
+        .expect("verify the shield proof");
+
+        assert_ne!(root_hash, [0u8; 32], "the verified proof must carry a root");
+
+        // A shield's proof is an affected-state snapshot, not a proof that this transition ran:
+        // the pool write it leaves behind is not attributable to one transition. What it must
+        // carry is the owner's token balance after the write, and the owner's credit balance
+        // beside it — the prover merges that second query into any batch's proof from protocol
+        // version 14, so a verifier reading the proof strictly finds neither.
+        assert_matches!(
+            outcome.result(),
+            StateTransitionProofResult::VerifiedTokenBalance(owner, _)
+                if *owner == identity.id(),
+            "the proof must carry the shielding identity's token balance"
+        );
+        assert!(
+            outcome.owner_balance().is_some(),
+            "the owner's credit balance rides along in the same proof, got {:?}",
+            outcome.owner_balance()
+        );
     }
 
     #[tokio::test]
@@ -758,10 +855,16 @@ mod token_shielded_pool_tests {
             dpp::shielded::compute_shielded_verification_fee(PADDED_ACTIONS, platform_version)
                 .expect("shielded compute fee");
 
-        // Funded well past the preliminary batch minimum — which has no Orchard component — so
-        // the rejection has to come from the full fee estimate, and exactly one compute fee
-        // short of affording the batch.
-        let (identity, signer, key) = setup_identity(&mut platform, rng.gen(), compute_fee);
+        // Funded with exactly what the preliminary batch minimum asks of a bundle-carrying
+        // batch — the flat per-sub-transition minimum plus that same compute fee — so the
+        // identity clears admission's own floor and the rejection has to come from the full
+        // fee estimate, one compute fee short of affording the batch.
+        let batch_minimum = platform_version
+            .fee_version
+            .state_transition_min_fees
+            .document_batch_sub_transition;
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), compute_fee + batch_minimum);
         let (contract, token_id) = create_token_contract_with_owner_identity(
             &mut platform,
             identity.id(),
@@ -1155,6 +1258,97 @@ mod token_shielded_pool_tests {
         assert_eq!(pool_balance(&platform, token_b), 0);
         assert_eq!(pool_notes_count(&platform, token_b), 0);
         assert_tokens_conserved(&platform);
+    }
+
+    /// The sibling below pins the per-token namespace for a nullifier a *spend* reveals. The dummy
+    /// nullifiers an outputs-only bundle reveals travel the same two token-scoped functions today —
+    /// `token_shielded_pool_update_operations` writing, `has_token_pool_nullifier` reading, both
+    /// taking the token first — so the property holds for them by construction. Construction is
+    /// what one can say before a refactor, not after: give the outputs-only path a writer of its
+    /// own and the sibling stays green while dummies lose the namespace, which shows up either as
+    /// one token's pool refusing an honest operation in another, or as a cross-pool repeat nothing
+    /// rejects.
+    #[tokio::test]
+    async fn test_a_dummy_nullifier_recorded_in_one_token_pool_is_unrecorded_in_another() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9103);
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract_a, token_a) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        // A contract id derives from its owner, so a second owner is what makes the second pool a
+        // different pool rather than the same one again.
+        let (other_owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.1));
+        let (_contract_b, token_b) = create_token_contract_with_owner_identity(
+            &mut platform,
+            other_owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        assert_ne!(token_a, token_b, "the two tokens must own separate pools");
+
+        let bundle = build_shield_bundle(
+            SHIELD_AMOUNT,
+            29,
+            TokenTransitionActionType::Shield,
+            token_a,
+            identity.id(),
+        );
+        let dummy_nullifiers: Vec<[u8; 32]> = bundle
+            .actions
+            .iter()
+            .map(|action| action.nullifier)
+            .collect();
+        assert!(
+            !dummy_nullifiers.is_empty(),
+            "an outputs-only bundle reveals a dummy nullifier per action"
+        );
+
+        let shield = BatchTransition::new_token_shield_transition(
+            token_a,
+            identity.id(),
+            contract_a.id(),
+            0,
+            SHIELD_AMOUNT,
+            bundle,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+
+        let result = process(&platform, &shield);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        for nullifier in &dummy_nullifiers {
+            assert!(
+                nullifier_is_spent(&platform, token_a, nullifier),
+                "a shield records its dummy nullifiers in its own token's pool"
+            );
+            assert!(
+                !nullifier_is_spent(&platform, token_b, nullifier),
+                "recording a dummy nullifier in one token's pool must not mark it in another"
+            );
+        }
     }
 
     /// Spent nullifiers are namespaced by token id too: spending a note in one token's pool must
@@ -1629,15 +1823,20 @@ mod token_pool_mint_burn_claim_purchase_tests {
     use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+    use dpp::data_contract::DataContract;
+    use dpp::group::group_action_status::GroupActionStatus;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::shielded::{serialized_actions_digest, token_burn_from_pool_extra_sighash_data_v0};
+    use dpp::state_transition::proof_result::StateTransitionProofResult;
     use dpp::state_transition::batch_transition::batched_transition::token_transition_action_type::TokenTransitionActionType;
     use dpp::state_transition::batch_transition::{
         TokenBurnFromPoolTransition, TokenSetPriceForDirectPurchaseTransition,
     };
     use dpp::state_transition::StateTransition;
     use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+    use drive::drive::Drive;
     use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
 
     fn total_supply(platform: &TempPlatform<MockCoreRPCLike>, token_id: Identifier) -> u64 {
         platform
@@ -2356,6 +2555,305 @@ mod token_pool_mint_burn_claim_purchase_tests {
         assert_tokens_conserved(&platform);
     }
 
+    /// Proving a pool group action's proposal. A group action writes nothing into the pool until
+    /// the last required signature arrives: the operation converters push the pool write only
+    /// when the action closes, while the signer's power entry is recorded on every signature. A
+    /// proposal's proof therefore shows an untouched pool — no notes created, no nullifiers
+    /// spent — and the verifier has to read it as an open action rather than as a burn or mint
+    /// that failed to happen.
+    #[tokio::test]
+    async fn test_a_pool_group_action_proposal_proof_verifies_as_an_open_action() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9107);
+
+        let (proposer, proposer_signer, proposer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (confirmer, confirmer_signer, confirmer_key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            proposer.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                enable_shielded_pool(token_configuration);
+                let group_rules = |position| {
+                    ChangeControlRules::V0(ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(position),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    })
+                };
+                // Burning and minting are put under groups of their own so that the burn can
+                // close while the mint proposal is still open: a proof's action status is read
+                // from the group's active and closed action trees, so one group holding an open
+                // action and a closed one at the same time cannot be resolved to either.
+                token_configuration.set_manual_burning_rules(group_rules(0));
+                token_configuration.set_manual_minting_rules(group_rules(1));
+            }),
+            None,
+            Some(
+                [
+                    (
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(proposer.id(), 1), (confirmer.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    ),
+                    (
+                        1,
+                        Group::V0(GroupV0 {
+                            members: [(proposer.id(), 1), (confirmer.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    ),
+                ]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+        let token = token_id.to_buffer();
+        let known_contracts: BTreeMap<Identifier, DataContract> =
+            BTreeMap::from([(contract.id(), contract.clone())]);
+        let verify = |transition: &StateTransition| {
+            let proof = platform
+                .drive
+                .prove_state_transition(transition, None, platform_version)
+                .expect("prove the pool group transition")
+                .into_data()
+                .expect("proof bytes rather than an error");
+            Drive::verify_state_transition_was_executed_with_proof(
+                transition,
+                &BlockInfo::default(),
+                &proof,
+                &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
+                platform_version,
+            )
+        };
+
+        // Fund the pool so the burn below has a note to spend.
+        let shield = BatchTransition::new_token_shield_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            10_000,
+            build_shield_bundle(
+                10_000,
+                31,
+                TokenTransitionActionType::Shield,
+                token_id,
+                proposer.id(),
+            ),
+            &proposer_key,
+            2,
+            0,
+            &proposer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token shield transition");
+        assert_matches!(
+            process(&platform, &shield).execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        // --- A mint into the pool, proposed by one of two required signers.
+        let mint_amount = 2_000;
+        let mint_proposal = BatchTransition::new_token_mint_to_pool_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            mint_amount,
+            build_shield_bundle(
+                mint_amount,
+                34,
+                TokenTransitionActionType::MintToPool,
+                token_id,
+                proposer.id(),
+            ),
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(1)),
+            &proposer_key,
+            3,
+            0,
+            &proposer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token mint to pool proposal");
+        assert_matches!(
+            process(&platform, &mint_proposal)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        // One signature of two: the pool holds only what the shield put there.
+        assert_eq!(pool_balance(&platform, token_id), 10_000);
+
+        let (_root_hash, outcome) = verify(&mint_proposal).expect(
+            "an open mint-to-pool proposal's proof must verify: nothing was minted yet, so the \
+             proof can only show the group action and the pool as it stands",
+        );
+        assert_matches!(
+            outcome.result(),
+            StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedPoolBalance(
+                power,
+                status,
+                balance,
+            ) => {
+                assert_eq!(*power, 1, "one of the two required signatures is recorded");
+                assert_eq!(*status, GroupActionStatus::ActionActive);
+                assert_eq!(
+                    *balance,
+                    Some(10_000),
+                    "the mint has not run, so the pool still holds only the shielded amount"
+                );
+            },
+            "an open mint-to-pool proposal must be reported as a group action over the pool"
+        );
+        assert!(
+            outcome.is_execution_proved(),
+            "the signer's power entry sits under the action id derived from this transition, so \
+             the proof binds this proposal's execution"
+        );
+
+        // --- A burn out of the pool, proposed by one of two required signers.
+        let (note, anchor, merkle_path) = spendable_note(6_000, 32);
+        insert_token_pool_anchor(&platform, token_id, &anchor);
+        let burn_amount = 4_000;
+        let extra = token_burn_from_pool_extra_sighash_data_v0(
+            &token,
+            &proposer.id().to_buffer(),
+            burn_amount,
+        );
+        let (burn_bundle, _) =
+            build_spend_bundle(note, merkle_path, anchor, burn_amount, &extra, 33);
+        let proposer_nonce = 4;
+        let burn_proposal = BatchTransition::new_token_burn_from_pool_transition(
+            token_id,
+            proposer.id(),
+            contract.id(),
+            0,
+            burn_amount,
+            burn_bundle.clone(),
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &proposer_key,
+            proposer_nonce,
+            0,
+            &proposer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token burn from pool proposal");
+        assert_matches!(
+            process(&platform, &burn_proposal)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert!(!nullifier_is_spent(
+            &platform,
+            token_id,
+            &burn_bundle.actions[0].nullifier
+        ));
+
+        let (_root_hash, outcome) = verify(&burn_proposal).expect(
+            "an open burn-from-pool proposal's proof must verify: no nullifier is spent until \
+             the action closes, so demanding every nullifier spent rejects a valid proposal",
+        );
+        assert_matches!(
+            outcome.result(),
+            StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
+                power,
+                status,
+                statuses,
+            ) => {
+                assert_eq!(*power, 1, "one of the two required signatures is recorded");
+                assert_eq!(*status, GroupActionStatus::ActionActive);
+                assert_eq!(statuses.len(), burn_bundle.actions.len());
+                assert!(
+                    statuses.iter().all(|(_, spent)| !*spent),
+                    "an open action has spent nothing, got {statuses:?}"
+                );
+            },
+            "an open burn-from-pool proposal must be reported as a group action over the pool"
+        );
+
+        // --- The confirmation closes the action, and now the burn really has happened.
+        let action_id = TokenBurnFromPoolTransition::calculate_action_id_with_fields(
+            &token,
+            proposer.id().as_bytes(),
+            proposer_nonce,
+            burn_amount,
+            &serialized_actions_digest(&burn_bundle.actions),
+        );
+        let burn_confirmation = BatchTransition::new_token_burn_from_pool_transition(
+            token_id,
+            confirmer.id(),
+            contract.id(),
+            0,
+            burn_amount,
+            burn_bundle.clone(),
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &confirmer_key,
+            2,
+            0,
+            &confirmer_signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token burn from pool confirmation");
+        assert_matches!(
+            process(&platform, &burn_confirmation)
+                .execution_results()
+                .as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        assert!(nullifier_is_spent(
+            &platform,
+            token_id,
+            &burn_bundle.actions[0].nullifier
+        ));
+
+        let (_root_hash, outcome) =
+            verify(&burn_confirmation).expect("the closing signature's proof must verify");
+        assert_matches!(
+            outcome.result(),
+            StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
+                power,
+                status,
+                statuses,
+            ) => {
+                assert_eq!(*power, 2, "both required signatures are recorded");
+                assert_eq!(*status, GroupActionStatus::ActionClosed);
+                assert!(
+                    statuses.iter().all(|(_, spent)| *spent),
+                    "a closed burn has spent every nullifier it named, got {statuses:?}"
+                );
+            },
+            "the closing signature must still be reported as a group action over the pool"
+        );
+    }
+
     #[tokio::test]
     async fn test_token_claim_to_pool_pre_programmed() {
         assert_token_claim_to_pool(TokenDistributionType::PreProgrammed).await;
@@ -2751,6 +3249,164 @@ mod token_pool_mint_burn_claim_purchase_tests {
             );
         }
         assert_eq!(pool_balance(&platform, token_id), 445);
+    }
+
+    /// A claim into the pool that would push the supply past the sum item's ceiling is a paid
+    /// consensus error, even where the token configures no max supply.
+    ///
+    /// The supply lives in a sum item, so `i64::MAX` bounds it whether or not a max supply is
+    /// set, and a mint into the pool cannot absorb that bound by saturating: the bundle proves
+    /// exactly the claimed amount entering the pool, so a supply that stopped short would leave
+    /// the pool holding value the supply does not record. Reaching the ceiling therefore has to
+    /// be refused as a consensus error the claimant pays for. Reported as an internal error
+    /// instead, the claim is stripped from the block for free and can be resubmitted forever,
+    /// and the node blames its own code for a release it merely cannot honour.
+    #[tokio::test]
+    async fn should_charge_a_token_claim_to_pool_past_the_supply_ceiling_once_per_identity() {
+        assert_claim_to_pool_past_the_supply_ceiling_is_charged(
+            TokenDistributionType::OncePerIdentity,
+        )
+        .await;
+    }
+
+    /// A transparent claim lets a pre-programmed release saturate the supply, so only its
+    /// once-per-identity kind needs the ceiling. A claim into the pool never saturates, which
+    /// leaves every one of its kinds bounded by it.
+    #[tokio::test]
+    async fn should_charge_a_token_claim_to_pool_past_the_supply_ceiling_pre_programmed() {
+        assert_claim_to_pool_past_the_supply_ceiling_is_charged(
+            TokenDistributionType::PreProgrammed,
+        )
+        .await;
+    }
+
+    async fn assert_claim_to_pool_past_the_supply_ceiling_is_charged(
+        distribution_type: TokenDistributionType,
+    ) {
+        // The largest supply a sum item can hold: one more token of it overflows.
+        const SUPPLY_CEILING: u64 = i64::MAX as u64;
+        const RELEASE: u64 = 445;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9131);
+
+        let (owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (claimant, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let claimant_id = claimant.id();
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(move |configuration: &mut TokenConfiguration| {
+                configuration.set_has_shielded_pool(true);
+                configuration.set_base_supply(SUPPLY_CEILING);
+                configuration.set_max_supply(None);
+                if distribution_type == TokenDistributionType::OncePerIdentity {
+                    configuration
+                        .distribution_rules_mut()
+                        .set_once_per_identity_distribution(Some(
+                            TokenOncePerIdentityDistribution::V0(
+                                TokenOncePerIdentityDistributionV0 { amount: RELEASE },
+                            ),
+                        ));
+                } else {
+                    configuration
+                        .distribution_rules_mut()
+                        .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                            TokenPreProgrammedDistributionV0 {
+                                distributions: [(100, [(claimant_id, RELEASE)].into())].into(),
+                            },
+                        )));
+                }
+            }),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+        // Only the ceiling can refuse this release: the token sets no max supply of its own.
+        assert_eq!(
+            contract
+                .expected_token_configuration(0)
+                .expect("token configuration")
+                .max_supply(),
+            None
+        );
+        assert_eq!(total_supply(&platform, token_id), SUPPLY_CEILING);
+
+        fast_forward_to_block(&platform, 100, 40, 42, 1, false);
+        let platform_state = platform.state.load();
+        let block_info = BlockInfo {
+            time_ms: 200,
+            height: 41,
+            core_height: 42,
+            epoch: Epoch::new(1).unwrap(),
+        };
+
+        let claim = BatchTransition::new_token_claim_to_pool_transition(
+            token_id,
+            claimant_id,
+            contract.id(),
+            0,
+            distribution_type,
+            None,
+            build_shield_bundle(
+                RELEASE,
+                29,
+                TokenTransitionActionType::ClaimToPool,
+                token_id,
+                claimant_id,
+            ),
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("token claim to pool transition");
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[claim.serialize_to_bytes().expect("serialize")],
+                &platform_state,
+                &block_info,
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("process state transition");
+        let [StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
+            actual_fees,
+            ..
+        }] = result.execution_results().as_slice()
+        else {
+            panic!(
+                "a claim past the supply ceiling must be a paid TokenMintPastMaxSupplyError, got {:?}",
+                result.execution_results()
+            );
+        };
+        assert!(
+            actual_fees.processing_fee > 0,
+            "the claimant must pay for the refused claim, or it can be resubmitted for free"
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("commit");
+
+        // Nothing of the claim landed.
+        assert_eq!(total_supply(&platform, token_id), SUPPLY_CEILING);
+        assert_eq!(pool_balance(&platform, token_id), 0);
+        assert_eq!(pool_notes_count(&platform, token_id), 0);
     }
 
     #[tokio::test]
@@ -3492,6 +4148,7 @@ mod document_shielded_token_payment_tests {
 /// and a fee bundle in the credit pool, no identity anywhere. The test wallet owns notes in
 /// both pools; the credit pool is funded directly in state, the token pool through a shield.
 mod token_pool_paid_transitions_tests {
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::insert_dummy_encrypted_notes;
     use super::token_shielded_pool_tests::{
         assert_check_tx_accepts, assert_tokens_conserved, build_shield_bundle, dummy_bundle,
         enable_shielded_pool, identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
@@ -3804,6 +4461,101 @@ mod token_pool_paid_transitions_tests {
         assert_tokens_conserved(&platform);
     }
 
+    /// A token unshield's flat fee sets one storage component aside for the recipient's token
+    /// balance item, and that component has to cover the write in the shape it actually takes.
+    /// A recipient who has never held this token has no balance item, so the write INSERTS a sum
+    /// item instead of replacing one — an insert that costs two orders of magnitude more than a
+    /// rewrite of an existing item, because the item and its tree node are new storage rather
+    /// than replaced bytes.
+    ///
+    /// Underpricing it is not absorbed by the sender: `execute_event` books a pool-paid
+    /// transition as `storage = min(real_storage, carved_fee)` and hands the proposer only
+    /// `carved_fee - storage`, so a component below the real cost comes out of the proposer's
+    /// reward for the Halo 2 proof it verified, and the storage pool is left short of the cost
+    /// of an item the chain now carries forever.
+    ///
+    /// The allowance is read as the difference between the unshield's fee and the two bundle
+    /// bases it is built from, so this pins the component itself rather than any one constant.
+    #[tokio::test]
+    async fn test_token_unshield_with_shielded_fee_covers_a_first_time_holders_balance_insert() {
+        let platform_version = PlatformVersion::latest();
+        let mut platform = platform_with_latest_version();
+        let mut rng = StdRng::seed_from_u64(9412);
+        let block_info = BlockInfo::default();
+
+        let (owner, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (_, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            owner.id(),
+            Some(enable_shielded_pool),
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let credit = |holder: Identifier, amount: u64| {
+            platform
+                .drive
+                .add_to_identity_token_balance(
+                    token_id.to_buffer(),
+                    holder.to_buffer(),
+                    amount,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("credit a token balance")
+        };
+
+        // A holder the token has never seen: crediting them inserts the sum item. The balance
+        // rides in that item, so a wider balance is a wider insert. Balances live in a sum tree
+        // whose total may not exceed `i64::MAX`, so the widest one measurable here leaves room
+        // for the other holders this test credits.
+        const WIDEST_MEASURABLE_BALANCE: u64 = 1 << 62;
+        let smallest_insert = credit(Identifier::from(rng.gen::<[u8; 32]>()), 1);
+        let largest_insert = credit(
+            Identifier::from(rng.gen::<[u8; 32]>()),
+            WIDEST_MEASURABLE_BALANCE,
+        );
+        let worst_insert = smallest_insert.storage_fee.max(largest_insert.storage_fee);
+        // A holder who already has the item: this one only replaces bytes, so it adds no storage.
+        let existing_holder = Identifier::from(rng.gen::<[u8; 32]>());
+        credit(existing_holder, 1);
+        let replace = credit(existing_holder, 1);
+
+        let storage = &platform_version.fee_version.storage;
+        let per_byte_rate =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+        let allowance =
+            dpp::shielded::compute_token_unshield_with_shielded_fee_fee(1, 1, platform_version)
+                .expect("unshield fee")
+                - 2 * dpp::shielded::compute_minimum_shielded_fee(1, platform_version)
+                    .expect("bundle base");
+
+        assert!(
+            replace.storage_fee < worst_insert,
+            "a rewrite of an existing balance item must cost less storage than inserting one, \
+             otherwise this test is not measuring the insert: insert {worst_insert} vs replace {}",
+            replace.storage_fee
+        );
+        assert!(
+            allowance >= worst_insert,
+            "the unshield fee sets aside {allowance} credits ({} effective bytes) for the \
+             recipient's balance item, but inserting one for a first-time holder really costs up \
+             to {worst_insert} credits of storage ({} effective bytes: {} for the smallest \
+             balance, {} for the largest) — the shortfall of {} credits is taken out of the \
+             proposer's processing reward",
+            allowance / per_byte_rate,
+            worst_insert.div_ceil(per_byte_rate),
+            smallest_insert.storage_fee,
+            largest_insert.storage_fee,
+            worst_insert.saturating_sub(allowance),
+        );
+    }
+
     #[tokio::test]
     async fn test_token_purchase_from_shielded_pool() {
         let platform_version = PlatformVersion::latest();
@@ -3889,6 +4641,27 @@ mod token_pool_paid_transitions_tests {
             platform_version,
         )
         .expect("build transition");
+
+        // The agreed price leaves the credit pool for the seller's balance, so the purchase owes
+        // the same anonymity set as every other way credits leave that pool. The same transition
+        // is refused while the pool is too small and accepted once it is not; the refusal is
+        // unpaid, so it records nothing and the retry is the same bundle.
+        let result = process(&platform, &transition);
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::StateError(StateError::InsufficientPoolNotesError(_))
+            )],
+            "a purchase may not walk credits out of a pool too small to hide where they came from"
+        );
+        insert_dummy_encrypted_notes(
+            &platform,
+            platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants
+                .minimum_pool_notes_for_outgoing,
+        );
 
         let result = process(&platform, &transition);
         assert_matches!(
@@ -4295,6 +5068,7 @@ mod token_pool_paid_transitions_tests {
 /// bundle the verifier never accepted anywhere is refused for any reason at all. The repeat
 /// must then fail on the original's first dummy nullifier, and nothing it carries may move.
 mod token_pool_outputs_only_copy_tests {
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::insert_dummy_encrypted_notes;
     use super::token_pool_paid_transitions_tests::{
         credit_pool_balance, fund_credit_pool, spendable, wallet_address, Prover, CREDIT_NOTE,
     };
@@ -4429,12 +5203,17 @@ mod token_pool_outputs_only_copy_tests {
     /// Submits a bundle again after it has landed and returns what the submitter was charged for
     /// it.
     ///
-    /// CheckTx admits it: it does not read the pool. Where CheckTx verifies the kind's bundle and
-    /// the submitter is the bundle's owner, that admission also shows the bundle is valid as the
-    /// submitter's transition; a claim's bundle CheckTx does not verify at all. Block execution
-    /// must then refuse it on the original's first dummy nullifier, which it checks before the
-    /// proof, as a paid failure: the submitter's nonce advances to `nonce` and its fee is
-    /// charged, nothing else moves.
+    /// Both passes refuse it on the original's first dummy nullifier, which the pool now records,
+    /// and each reaches that for its own reasons:
+    ///
+    /// - CheckTx reads the pool's record before verifying any bundle the batch carries, so a
+    ///   repeat never reaches the mempool and no node pays for its Halo 2 verification.
+    /// - Block execution reads the record for itself, with no memory of what admission decided,
+    ///   and refuses the repeat as a paid failure: the submitter's nonce advances to `nonce` and
+    ///   its fee is charged, nothing else moves. This half is what holds if the repeat reaches a
+    ///   block anyway — a proposer of an older build, or one whose pool gained the nullifier
+    ///   between admitting the repeat and proposing it — so the block is driven directly rather
+    ///   than through CheckTx.
     fn assert_repeat_refused_in_block(
         platform: &TempPlatform<MockCoreRPCLike>,
         repeat: &StateTransition,
@@ -4444,13 +5223,17 @@ mod token_pool_outputs_only_copy_tests {
         original: &OrchardBundleParams,
         block_info: Option<&BlockInfo>,
     ) -> Credits {
-        assert_check_tx_accepts(platform, repeat);
+        let first = original.actions[0].nullifier;
+        assert_matches!(
+            assert_check_tx_rejects(platform, repeat).as_slice(),
+            [ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))]
+                if error.nullifier() == first
+        );
         let credits_before = credits(platform, submitter_id);
         let result = match block_info {
             Some(block_info) => process_at(platform, repeat, block_info),
             None => process(platform, repeat),
         };
-        let first = original.actions[0].nullifier;
         assert_matches!(
             result.execution_results().as_slice(),
             [StateTransitionExecutionResult::PaidConsensusError {
@@ -5790,8 +6573,15 @@ mod token_pool_outputs_only_copy_tests {
         )
         .await
         .expect("token mint to pool confirmation");
-        assert_check_tx_accepts(&platform, &close_first);
         let first_nullifier = bundle.actions[0].nullifier;
+        // Admission refuses it on the record the mint left, so no node verifies this bundle a
+        // second time. The block is driven directly, because that refusal is what has to hold if
+        // the signature reaches a block anyway.
+        assert_matches!(
+            assert_check_tx_rejects(&platform, &close_first).as_slice(),
+            [ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))]
+                if error.nullifier() == first_nullifier
+        );
         assert_matches!(
             process(&platform, &close_first)
                 .execution_results()
@@ -5812,9 +6602,10 @@ mod token_pool_outputs_only_copy_tests {
         assert_tokens_conserved(&platform);
     }
 
-    /// CheckTx cannot verify a claim's bundle, whose amount is only known against state, so it
-    /// admits another claimant's copy; in the block, the original's recorded dummy nullifier
-    /// refuses the copy before its proof is looked at.
+    /// CheckTx cannot verify a claim's bundle, whose amount is only known against state, so the
+    /// pool's record is all it has to go on for another claimant's copy — and once the original
+    /// has landed, that record refuses the copy. In the block, the same record refuses it again,
+    /// before its proof is looked at.
     #[tokio::test]
     async fn test_a_claim_to_pool_bundle_copied_by_another_claimant_after_it_landed_is_refused() {
         let platform_version = PlatformVersion::latest();
@@ -6174,6 +6965,7 @@ mod token_pool_outputs_only_copy_tests {
         .expect("client-built token shield");
         assert_check_tx_accepts(&platform, &shield);
         let bundle = proven_bundle(&shield);
+        let bundle_nullifier = bundle.actions[0].nullifier;
 
         let copy = BatchTransition::new_token_shield_transition(
             token_id,
@@ -6220,8 +7012,10 @@ mod token_pool_outputs_only_copy_tests {
             Some(OWNER_INITIAL_BALANCE - 2 * amount)
         );
 
-        // The bundle that just executed, offered again under the copier: CheckTx, which never
-        // reads the pool's record, still refuses it on the owner.
+        // The bundle that just executed, offered again under the copier. CheckTx now has two
+        // reasons to refuse it — the owner its sighash names, and the nullifiers the executed
+        // original left in the pool — and reports the pool's record, because reading it is what
+        // CheckTx does before verifying a bundle.
         let late_copy = BatchTransition::new_token_shield_transition(
             token_id,
             copier.id(),
@@ -6240,9 +7034,8 @@ mod token_pool_outputs_only_copy_tests {
         .expect("token shield transition");
         assert_matches!(
             assert_check_tx_rejects(&platform, &late_copy).as_slice(),
-            [ConsensusError::StateError(
-                StateError::InvalidShieldedProofError(_)
-            )]
+            [ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))]
+                if error.nullifier() == bundle_nullifier
         );
         assert_tokens_conserved(&platform);
     }
@@ -6565,6 +7358,19 @@ mod token_pool_outputs_only_copy_tests {
         assert_matches!(
             process(platform, &set_price).execution_results().as_slice(),
             [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        // A purchase moves the agreed price out of the credit pool to the seller, so it owes the
+        // same anonymity set as every other way credits leave that pool. Seeding it here keeps the
+        // tests below about what they are named for; the threshold itself is pinned by
+        // `test_token_purchase_from_shielded_pool`, which submits the same purchase on both sides
+        // of it.
+        insert_dummy_encrypted_notes(
+            platform,
+            platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants
+                .minimum_pool_notes_for_outgoing,
         );
         (seller.id(), contract.id(), token_id)
     }

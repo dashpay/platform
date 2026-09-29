@@ -17,6 +17,9 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<u64, Error> {
         let pool_path = shielded_credit_pool_path();
+        // The pool's path is a parameter now, and the credit pool passes the very path this
+        // function used to build for itself: every protocol version that selects this
+        // generation sees the same operations against the same tree.
         self.pool_notes_count_v0(&pool_path, transaction, drive_operations, platform_version)
     }
 

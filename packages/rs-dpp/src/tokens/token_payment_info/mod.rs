@@ -49,6 +49,10 @@
 //!
 use crate::balances::credits::TokenAmount;
 use crate::data_contract::TokenContractPosition;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::tokens::token_payment_info::methods::v0::TokenPaymentInfoMethodsV0;
 use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
@@ -111,10 +115,10 @@ pub enum TokenPaymentInfo {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenPaymentInfo {}
+impl JsonConvertible for TokenPaymentInfo {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenPaymentInfo {}
+impl ValueConvertible for TokenPaymentInfo {}
 
 impl TokenPaymentInfoMethodsV0 for TokenPaymentInfo {}
 
@@ -354,6 +358,34 @@ mod json_convertible_tests {
         // the manual map path (`$tokenPaymentInfo` inside a document map) parses V1 too
         let map = value.into_btree_string_map().expect("map");
         let recovered: TokenPaymentInfo = map.try_into().expect("try_into");
+        assert_eq!(original, recovered);
+    }
+
+    /// A client that holds the payment info as JSON hands its map to the map
+    /// parser. JSON carries raw byte fields as base64 strings — the shape
+    /// `to_json` writes for them — and a JSON string becomes `Value::Text`, so
+    /// the parser has to read `Value::Text` as base64 to agree with the JSON
+    /// the same type produces. Base58 is this repo's identifier encoding, not
+    /// its raw-byte encoding.
+    #[test]
+    fn v1_parses_a_map_whose_byte_fields_arrived_as_base64_json_text() {
+        use crate::serialization::JsonConvertible;
+        let original = v1_fixture();
+        let json = original.to_json().expect("to_json");
+        // Pin the JSON encoding the parser has to match: base64, padded.
+        assert_eq!(
+            json["shieldedPayment"]["anchor"],
+            json!("BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=")
+        );
+        assert_eq!(json["shieldedPayment"]["proof"], json!("CAgICAgICAgICA=="));
+        assert_eq!(
+            json["shieldedPayment"]["actions"][0]["nullifier"],
+            json!("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=")
+        );
+        let map = Value::from(json)
+            .into_btree_string_map()
+            .expect("the JSON object becomes a string-keyed map");
+        let recovered: TokenPaymentInfo = map.try_into().expect("the JSON map parses");
         assert_eq!(original, recovered);
     }
 

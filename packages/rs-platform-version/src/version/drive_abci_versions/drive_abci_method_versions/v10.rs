@@ -81,7 +81,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         verify_recent_signature_locally: 0,
     },
     fee_pool_inwards_distribution: DriveAbciFeePoolInwardsDistributionMethodVersions {
-        add_distribute_block_fees_into_pools_operations: 0,
+        add_distribute_block_fees_into_pools_operations: 1, // changed in v14: document ttl storage fees go to the lifetime storage fee pools
         add_distribute_storage_fee_to_epochs_operations: 1, // changed in v14: claws each pending refund back from the epochs it was priced for
     },
     fee_pool_outwards_distribution: DriveAbciFeePoolOutwardsDistributionMethodVersions {
@@ -143,6 +143,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         record_shielded_pool_anchor: Some(0),
         prune_shielded_pool_anchors: Some(0),
         record_token_shielded_pool_anchors: Some(0),
+        expire_documents: Some(0), // new in v14: document ttl cleanup
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 1, // changed: reads structure 1 records together with their masternode and validator set entries

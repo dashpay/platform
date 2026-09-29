@@ -25,6 +25,11 @@ pub(in crate::drive) const ANCHOR_KEY_SIZE: u8 = 32;
 /// Size of an anchor value (u64 big-endian block height = 8 bytes)
 pub(in crate::drive) const ANCHOR_VALUE_SIZE: u32 = 8;
 
+/// Size of a pool's total balance value (a u64 sum item = 8 bytes). Read by the stateless query
+/// that prices the total's read while a batch is being estimated, so it must stay at or above
+/// what the stored value occupies, and it is the same size the pool layer declares for the item.
+pub(in crate::drive) const TOTAL_BALANCE_VALUE_SIZE: u32 = 8;
+
 impl Drive {
     /// Adds estimation costs for shielded pool operations.
     ///

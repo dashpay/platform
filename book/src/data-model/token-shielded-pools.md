@@ -101,6 +101,19 @@ Outputs-only bundles (shield, mint, claim, purchase) have no spends, so their an
 checked against the pool; the client builds them against the empty tree. Spending bundles must
 name an anchor the pool has recorded.
 
+A group burn from the pool inherits a deadline from that requirement, and it is worth stating
+plainly because nothing in the group machinery announces it. The proposer's bundle spends notes,
+so it names an anchor, and the pool keeps an anchor only for `shielded_anchor_retention_blocks`.
+The bundle cannot be re-proved against a fresher anchor to buy more time: the action id covers
+the digest of the actions and the signatures are over a sighash that includes the anchor, so a
+bundle rebuilt on a new anchor is a different group action rather than the same one continued.
+Group actions have neither an expiry nor a cancellation, so a proposal that has not gathered
+enough signing power before its anchor is pruned can no longer close and no longer be withdrawn
+either — it simply remains open. A group intending to burn from a pool should therefore gather
+its signatures well inside the retention window, and an abandoned proposal should be treated as
+permanent. Closing this properly needs group actions to gain an expiry or a cancellation; until
+they do, the retention window is the real deadline.
+
 The preimage of an outputs-only bundle binds its owner — the batch owner, or for a group action
 mint its proposer, whose bundle every other signer submits unchanged — so nobody else's
 transition can land a bundle lifted out of the mempool ahead of its author. What the preimage

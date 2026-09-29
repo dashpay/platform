@@ -1,5 +1,6 @@
 pub mod transformer;
 
+use dpp::data_contract::document_type::property_constraints::AggregateRead;
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
@@ -61,6 +62,18 @@ pub struct DocumentReplaceTransitionActionV0 {
     pub stored_changed_values: BTreeMap<String, Value>,
     /// Creator id
     pub creator_id: Option<Identifier>,
+    /// When a moderator of the contract last wrote the fields the document type keeps for
+    /// its moderators: the stored document's, carried over, or the replace's block time when
+    /// its owner moderates the contract and changes one of them
+    pub moderated_at: Option<TimestampMillis>,
+    /// The moderator who last wrote those fields: the stored document's, or the owner's, as
+    /// `moderated_at`
+    pub moderated_by: Option<Identifier>,
+    /// The `countOf` and `sumOf` totals the document type's `propertyConstraints` rules
+    /// read, each as it will be once this write is done, read from state when the action is
+    /// built; `None` when the rules judging the write read none, and boxed, since only
+    /// such a write holds any and the action is one variant of a large enum.
+    pub property_constraint_aggregates: Option<Box<BTreeMap<AggregateRead, i128>>>,
 }
 
 /// document replace transition action accessors v0
@@ -113,6 +126,23 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
 
     /// creator id
     fn creator_id(&self) -> Option<Identifier>;
+
+    /// When a moderator last wrote the document's moderator fields
+    fn moderated_at(&self) -> Option<TimestampMillis>;
+
+    /// The moderator who last wrote the document's moderator fields
+    fn moderated_by(&self) -> Option<Identifier>;
+
+    /// Stamps the document as written at `moderated_at` by `moderator`, a moderator of the
+    /// contract whose replace changes fields only moderators write
+    fn set_moderated(&mut self, moderated_at: TimestampMillis, moderator: Identifier);
+
+    /// The `countOf` and `sumOf` totals the rules judging this write read, each as it will
+    /// be once the write is done
+    fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128>;
+
+    /// Sets the totals the rules judging this write read, once they are read from state
+    fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>);
 }
 
 /// document from replace transition v0
@@ -173,6 +203,8 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             transferred_at_core_block_height,
             data,
             creator_id,
+            moderated_at,
+            moderated_by,
             ..
         } = value;
 
@@ -199,6 +231,8 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
                 updated_at_core_block_height: *updated_at_core_block_height,
                 transferred_at_core_block_height: *transferred_at_core_block_height,
                 creator_id: *creator_id,
+                moderated_at: *moderated_at,
+                moderated_by: *moderated_by,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -228,6 +262,8 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             transferred_at_core_block_height,
             data,
             creator_id,
+            moderated_at,
+            moderated_by,
             ..
         } = value;
 
@@ -254,6 +290,8 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
                 creator_id,
+                moderated_at,
+                moderated_by,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

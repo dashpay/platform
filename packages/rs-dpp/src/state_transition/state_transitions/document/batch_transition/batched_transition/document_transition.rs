@@ -5,6 +5,10 @@ use derive_more::{Display, From};
 use serde::{Deserialize, Serialize};
 use bincode::{Encode, Decode, DecodeUntrusted};
 use crate::prelude::{IdentityNonce, Revision};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::state_transition::batch_transition::{DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition, TokenBurnTransition, TokenConfigUpdateTransition, TokenDestroyFrozenFundsTransition, TokenEmergencyActionTransition, TokenFreezeTransition, TokenMintTransition, TokenClaimTransition, TokenTransferTransition, TokenUnfreezeTransition, TokenDirectPurchaseTransition, TokenSetPriceForDirectPurchaseTransition, TokenShieldTransition, TokenMintToPoolTransition, TokenBurnFromPoolTransition,
     TokenClaimToPoolTransition, TokenDirectPurchaseToPoolTransition, TokenShieldedTransferTransition, TokenUnshieldTransition};
 use crate::state_transition::batch_transition::batched_transition::{DocumentIndexOnlyDeleteTransition, DocumentPurchaseTransition, DocumentTransferTransition, DocumentUpdatePriceTransition};
@@ -61,10 +65,10 @@ pub enum DocumentTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for DocumentTransition {}
+impl JsonConvertible for DocumentTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for DocumentTransition {}
+impl ValueConvertible for DocumentTransition {}
 
 #[cfg(all(
     test,

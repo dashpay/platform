@@ -78,27 +78,39 @@ impl TryFrom<BTreeMap<String, Value>> for TokenShieldedPayment {
     type Error = ProtocolError;
 
     fn try_from(mut map: BTreeMap<String, Value>) -> Result<Self, Self::Error> {
+        // These are raw cryptographic bytes, so they cross the JSON boundary as
+        // base64 — the encoding this type's own JSON form writes, and the one
+        // `Bytes32` / `BinaryData` use. `remove_bytes_32` and
+        // `remove_binary_data` decode base64 text and pass byte-valued
+        // `Value`s through, so both the JSON and the binary map shape parse.
+        // Base58 is this repo's identifier encoding and does not apply here.
         let actions = map
             .remove_inner_value_array::<Vec<Value>>("actions")?
             .into_iter()
             .map(|value| {
                 let mut action = value.into_btree_string_map()?;
                 Ok(SerializedAction {
-                    nullifier: action.remove_hash256_bytes("nullifier")?,
-                    rk: action.remove_hash256_bytes("rk")?,
-                    cmx: action.remove_hash256_bytes("cmx")?,
-                    encrypted_note: action.remove_bytes("encryptedNote")?,
-                    cv_net: action.remove_hash256_bytes("cvNet")?,
-                    spend_auth_sig: fixed_64(action.remove_bytes("spendAuthSig")?, "spendAuthSig")?,
+                    nullifier: action.remove_bytes_32("nullifier")?.to_buffer(),
+                    rk: action.remove_bytes_32("rk")?.to_buffer(),
+                    cmx: action.remove_bytes_32("cmx")?.to_buffer(),
+                    encrypted_note: action.remove_binary_data("encryptedNote")?.0,
+                    cv_net: action.remove_bytes_32("cvNet")?.to_buffer(),
+                    spend_auth_sig: fixed_64(
+                        action.remove_binary_data("spendAuthSig")?.0,
+                        "spendAuthSig",
+                    )?,
                 })
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?;
         Ok(TokenShieldedPayment {
             amount: map.remove_integer("amount")?,
             actions,
-            anchor: map.remove_hash256_bytes("anchor")?,
-            proof: map.remove_bytes("proof")?,
-            binding_signature: fixed_64(map.remove_bytes("bindingSignature")?, "bindingSignature")?,
+            anchor: map.remove_bytes_32("anchor")?.to_buffer(),
+            proof: map.remove_binary_data("proof")?.0,
+            binding_signature: fixed_64(
+                map.remove_binary_data("bindingSignature")?.0,
+                "bindingSignature",
+            )?,
         })
     }
 }

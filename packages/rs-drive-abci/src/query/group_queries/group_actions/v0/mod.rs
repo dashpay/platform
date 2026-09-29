@@ -224,6 +224,14 @@ impl<C> Platform<C> {
                                                 })),
                                             })
                                         }
+                                        // The pool events rendered here and refused below
+                                        // cannot be in the state a released protocol version
+                                        // reads. Each is appended at the tail of `TokenEvent`, so
+                                        // no stored event's discriminant moves and an event
+                                        // written by an earlier version still decodes as it did,
+                                        // and the batch transitions that record them are refused
+                                        // unpaid by the batch's `is_allowed` gate below the
+                                        // version that admits token pools.
                                         TokenEvent::MintToPool(amount, actions_digest, public_note) => {
                                             group_action_event::EventType::TokenEvent(TokenEventResponse {
                                                 r#type: Some(token_event::Type::MintToPool(MintToPoolEvent {

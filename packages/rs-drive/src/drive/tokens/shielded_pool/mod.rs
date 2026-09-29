@@ -21,6 +21,7 @@ mod shield;
 mod shielded_transfer;
 mod unshield;
 
+use crate::drive::shielded::estimated_costs::TOTAL_BALANCE_VALUE_SIZE;
 use crate::drive::tokens::paths::token_shielded_pools_root_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -28,10 +29,11 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::shielded::ShieldedActionNote;
 use crate::util::grove_operations::DirectQueryType;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use dpp::balances::credits::TokenAmount;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 /// How a pool operation moves the pool's total balance.
@@ -113,6 +115,23 @@ impl Drive {
 
         let apply = estimated_costs_only_with_layer_info.is_none();
 
+        // Moving the total means reading it, and fee validation quotes a batch without state
+        // while execution meters the same batch against it, so a read only the apply path books
+        // is charged to nobody. An estimate therefore books the read as well, as the stateless
+        // query every other estimated read in Drive is priced by: it prices the read from the
+        // pool's modelled layer instead of reading the value stored there. Pricing it from the
+        // model rather than from the value is also what keeps the fee from depending on how much
+        // of the token is shielded. A shielded transfer leaves the total alone and so reads
+        // nothing in either mode.
+        let direct_query_type = if apply {
+            DirectQueryType::StatefulDirectQuery
+        } else {
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type: TreeType::SumTree,
+                query_target: QueryTargetValue(TOTAL_BALANCE_VALUE_SIZE),
+            }
+        };
+
         // The total is read from state and written back as an absolute value, so two pool
         // operations on the same token in one batch would each start from the pre-batch
         // total and the second write would discard the first. Every state transition applies
@@ -122,16 +141,15 @@ impl Drive {
         let new_total_balance = match balance_change {
             TokenPoolBalanceChange::Unchanged => None,
             TokenPoolBalanceChange::Add(amount) => {
-                let current = if apply {
-                    self.read_token_shielded_pool_total_balance(
-                        &token_id,
-                        transaction,
-                        &mut drive_operations,
-                        platform_version,
-                    )?
-                } else {
-                    0
-                };
+                // A stateless read returns 0, which is also the balance an estimate assumes: a
+                // fresh pool is the worst case for the write.
+                let current = self.read_token_shielded_pool_total_balance(
+                    &token_id,
+                    direct_query_type,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
                 Some(current.checked_add(amount).ok_or_else(|| {
                     Error::Drive(DriveError::CorruptedDriveState(
                         "token shielded pool total balance overflow when shielding".to_string(),
@@ -139,16 +157,17 @@ impl Drive {
                 })?)
             }
             TokenPoolBalanceChange::Remove(amount) => {
-                let current = if apply {
-                    self.read_token_shielded_pool_total_balance(
-                        &token_id,
-                        transaction,
-                        &mut drive_operations,
-                        platform_version,
-                    )?
-                } else {
-                    amount
-                };
+                let current = self.read_token_shielded_pool_total_balance(
+                    &token_id,
+                    direct_query_type,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                // A stateless read returns 0, which would take the subtraction below negative,
+                // so an estimate prices the write of a pool holding exactly what leaves it. The
+                // sum item is a fixed width, so the value it carries does not change the cost.
+                let current = if apply { current } else { amount };
                 Some(current.checked_sub(amount).ok_or_else(|| {
                     Error::Drive(DriveError::CorruptedDriveState(
                         "token shielded pool total balance would go negative when unshielding"
@@ -285,6 +304,7 @@ mod tests {
         drive
             .read_token_shielded_pool_total_balance(
                 &TOKEN_ID,
+                DirectQueryType::StatefulDirectQuery,
                 None,
                 &mut vec![],
                 PlatformVersion::latest(),
@@ -665,6 +685,130 @@ mod tests {
         );
         assert_eq!(pool_balance(&drive), 0);
         assert_eq!(token_balance(&drive, identity_id), Some(1_000));
+    }
+
+    /// Fee validation quotes a batch with `apply = false` and execution meters the same batch
+    /// against state, so a read execution performs that the quote never booked is charged to
+    /// nobody. The worst-case layer information the estimate registers covers the batch's
+    /// writes, and that margin narrows as a pool fills towards the modelled depth, so it is not
+    /// what pays for a read: every read the apply path performs has to be metered on the
+    /// estimate path too.
+    ///
+    /// Only a change of the total reads it. A shielded transfer leaves the total alone and so
+    /// meters no read in either mode, which is what keeps what a transfer costs from revealing
+    /// how much of the token is shielded.
+    ///
+    /// What is asserted is that the read is booked, in credits, and not merely that both modes
+    /// count one read: the count is equal whenever the read happens at all, so it cannot speak
+    /// to what the quote covers.
+    ///
+    /// It does not yet assert that the quote covers the charge, because it does not. The two
+    /// modes price the same read differently — the estimate from the pool's modelled layer,
+    /// execution from the tree — and the estimate books less than execution charges: 7,460
+    /// credits against 14,180, for a shield and an unshield alike, a shortfall nobody pays.
+    /// Closing it sets what a pool operation costs, which is a decision about the fee schedule
+    /// and not one this test can make; `estimated_fee >= actual_fee` is the assertion that
+    /// belongs here once it is taken.
+    #[test]
+    fn should_meter_the_pool_total_read_when_estimating_as_well_as_when_applying() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, identity_id) = setup(1_000);
+
+        // Fill the pool first, so the total the apply path reads is a stored value rather than
+        // the absent key a fresh pool has: that read is the one the estimate has to cover.
+        let seed = drive
+            .token_shield_operations(
+                TOKEN_ID,
+                identity_id,
+                1_000,
+                &[note(1)],
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("seed shield operations");
+        apply(&drive, seed);
+
+        // What the pool update meters, apart from the grove operations of the batch: those are
+        // priced when the batch is applied, against the layer information when estimating and
+        // against the trees when applying, so they are no part of what a read costs.
+        let metered = |balance_change: TokenPoolBalanceChange, estimating: bool| {
+            let mut layer_info = estimating.then(HashMap::new);
+            let costs: Vec<LowLevelDriveOperation> = drive
+                .token_shielded_pool_update_operations(
+                    TOKEN_ID,
+                    balance_change,
+                    &[],
+                    &[note(3)],
+                    &mut layer_info,
+                    None,
+                    platform_version,
+                )
+                .expect("pool update operations")
+                .into_iter()
+                .filter(|operation| {
+                    matches!(
+                        operation,
+                        LowLevelDriveOperation::CalculatedCostOperation(_)
+                    )
+                })
+                .collect();
+            let reads = costs.len();
+            let fee = Drive::calculate_fee(
+                None,
+                Some(costs),
+                &BlockInfo::default().epoch,
+                drive.config.epochs_per_era,
+                platform_version,
+                None,
+            )
+            .expect("price the metered operations")
+            .processing_fee;
+            (reads, fee)
+        };
+
+        // A shield and a mint into the pool add to the total; an unshield and a burn remove from
+        // it. Either way the total is read, so either way the estimate has to meter that read.
+        for balance_change in [
+            TokenPoolBalanceChange::Add(1),
+            TokenPoolBalanceChange::Remove(1),
+        ] {
+            let (estimated_reads, estimated_fee) = metered(balance_change, true);
+            let (actual_reads, actual_fee) = metered(balance_change, false);
+
+            // One read of the total per pool update, in both modes: a pool update moves the
+            // total once, so it reads it once.
+            assert_eq!(
+                (estimated_reads, actual_reads),
+                (1, 1),
+                "{balance_change:?} must read the total exactly once in either mode"
+            );
+
+            // Execution charges for the read, so the quote has to book credits for it. Zero
+            // would mean the read reaches state on a path nobody was quoted for.
+            assert!(
+                actual_fee > 0,
+                "{balance_change:?} reads the total when applied but that read costs nothing, so \
+                 there is no charge for the estimate to cover"
+            );
+            assert!(
+                estimated_fee > 0,
+                "{balance_change:?} meters a read worth {actual_fee} credits when applied and \
+                 books {estimated_fee} when estimated, so the read is charged to nobody"
+            );
+        }
+
+        assert_eq!(
+            metered(TokenPoolBalanceChange::Unchanged, true),
+            (0, 0),
+            "a shielded transfer must meter no read while estimating"
+        );
+        assert_eq!(
+            metered(TokenPoolBalanceChange::Unchanged, false),
+            (0, 0),
+            "a shielded transfer must meter no read while applying, so that what it costs cannot \
+             reveal the pool total"
+        );
     }
 
     #[test]
