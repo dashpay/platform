@@ -104,4 +104,6 @@ runs:
             cacheToManifestNames.push('${{ inputs.name }}');
           }
 
-          core.setOutput('cache_to', `${settingsString},mode=${{ inputs.mode }},name=${cacheToManifestNames.join(';')}`);
+          // Cache export is an optimization, not a build/publication gate.
+          // Preserve build and registry failures; only tolerate cache upload outages.
+          core.setOutput('cache_to', `${settingsString},mode=${{ inputs.mode }},name=${cacheToManifestNames.join(';')},ignore-error=true`);
