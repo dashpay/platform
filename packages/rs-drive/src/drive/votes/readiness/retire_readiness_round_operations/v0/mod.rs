@@ -9,15 +9,19 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
-use crate::util::grove_operations::{BatchDeleteApplyType, DirectQueryType};
-use crate::util::type_constants::DEFAULT_HASH_SIZE_U32;
+use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
+use crate::util::type_constants::{DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8};
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use dpp::voting::readiness::round::ReadinessRound;
 use dpp::ProtocolError;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
+use grovedb::EstimatedLayerCount::ApproximateElements;
+use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
+use intmap::IntMap;
 use std::collections::HashMap;
 
 impl Drive {
@@ -60,9 +64,13 @@ impl Drive {
             Element::new_item(contract_id.to_vec()),
         )));
 
-        // 2. Drop the deadline entry of a crossed round. The per-time tree stays: another
-        //    round may share the time, and an empty time tree costs a delete-up-tree walk the
-        //    deferred cleanup is not asked to do; the block event skips stale entries.
+        // 2. Drop the deadline entry of a crossed round, and its per-time tree when that
+        //    entry was the last one: the due query walks the time keys in order under a
+        //    limit, and an empty time tree still spends it, so a run of emptied trees ahead
+        //    of a live deadline would hide that deadline from every block. The walk up stops
+        //    at the deadlines tree and deletes the time tree only when nothing else is in it
+        //    (another round sharing the time keeps it). It sees this batch's own operations
+        //    only, which the one retirement per batch rule already requires.
         if let Some(deadline_ms) = round.deadline_ms() {
             let deadline_path = readiness_deadline_tree_path_vec(deadline_ms);
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {
@@ -75,25 +83,49 @@ impl Drive {
                     &platform_version.drive,
                 )?;
                 if present {
-                    Some(BatchDeleteApplyType::StatefulBatchDelete {
+                    Some(BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                         is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
                     })
                 } else {
                     None
                 }
             } else {
-                Some(BatchDeleteApplyType::StatelessBatchDelete {
-                    in_tree_type: TreeType::NormalTree,
-                    estimated_key_size: DEFAULT_HASH_SIZE_U32,
-                    estimated_value_size: DEFAULT_HASH_SIZE_U32,
+                // Price both levels, keyed by the index of the deleted key in the path: the
+                // entry in the time tree (3), then the time key in the deadlines tree (2).
+                Some(BatchDeleteUpTreeApplyType::StatelessBatchDelete {
+                    estimated_layer_info: IntMap::from_iter([
+                        (
+                            3,
+                            EstimatedLayerInformation {
+                                tree_type: TreeType::NormalTree,
+                                estimated_layer_count: ApproximateElements(2),
+                                estimated_layer_sizes: AllItems(
+                                    DEFAULT_HASH_SIZE_U8,
+                                    DEFAULT_HASH_SIZE_U32,
+                                    None,
+                                ),
+                            },
+                        ),
+                        (
+                            2,
+                            EstimatedLayerInformation {
+                                tree_type: TreeType::NormalTree,
+                                estimated_layer_count: ApproximateElements(1_024),
+                                estimated_layer_sizes: AllSubtrees(U64_SIZE_U8, NoSumTrees, None),
+                            },
+                        ),
+                    ]),
                 })
             };
             if let Some(apply_type) = apply_type {
-                self.batch_delete(
-                    deadline_path.as_slice().into(),
+                self.batch_delete_up_tree_while_empty(
+                    KeyInfoPath::from_known_owned_path(deadline_path),
                     &contract_id,
+                    // Stop at the readiness tree's path (length 2): the deadlines tree stays.
+                    Some(2),
                     apply_type,
                     transaction,
+                    &None,
                     &mut drive_operations,
                     &platform_version.drive,
                 )?;

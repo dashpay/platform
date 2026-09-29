@@ -6,8 +6,9 @@ use crate::drive::prefunded_specialized_balances::{
     PREFUNDED_BALANCES_FOR_VOTING,
 };
 use crate::drive::votes::paths::{
-    readiness_contract_tree_path, readiness_deadline_tree_path_vec, readiness_round_tree_path,
-    vote_root_path, READINESS_CURRENT_ROUND_POINTER_KEY, READINESS_ROUND_RECORD_KEY,
+    readiness_contract_tree_path, readiness_deadline_tree_path_vec,
+    readiness_deadlines_tree_path_vec, readiness_round_tree_path, vote_root_path,
+    READINESS_CURRENT_ROUND_POINTER_KEY, READINESS_ROUND_RECORD_KEY,
     READINESS_ROUND_REPORTS_TREE_KEY, READINESS_ROUND_SCAN_CURSOR_KEY, READINESS_TREE_KEY,
 };
 use crate::drive::votes::readiness::{
@@ -17,6 +18,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::common::encode::encode_u64;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use crate::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
 use dpp::block::block_info::BlockInfo;
@@ -240,6 +242,40 @@ fn conservation_holds(drive: &Drive, transaction: TransactionArg) -> bool {
         .calculate_total_credits_balance(transaction, &PlatformVersion::latest().drive)
         .expect("totals");
     totals.ok().expect("verdict")
+}
+
+/// Whether the per-time deadline tree at `deadline_ms` exists.
+fn deadline_bucket_exists(drive: &Drive, deadline_ms: u64) -> bool {
+    let grove_version = &PlatformVersion::latest().drive.grove_version;
+    let deadlines_path = readiness_deadlines_tree_path_vec();
+    drive
+        .grove
+        .get(
+            deadlines_path.as_slice(),
+            &encode_u64(deadline_ms),
+            None,
+            grove_version,
+        )
+        .unwrap()
+        .is_ok()
+}
+
+/// Records a crossing at `crossing_ms` on `round` and returns its deadline.
+fn cross(drive: &Drive, round: &mut ReadinessRound, crossing_ms: u64) -> u64 {
+    let platform_version = PlatformVersion::latest();
+    let (deadline_ms, operations) = drive
+        .record_readiness_crossing_operations(
+            round,
+            crossing_ms,
+            MIN_WAIT_MS,
+            MAX_WAIT_MS,
+            &mut None,
+            None,
+            platform_version,
+        )
+        .expect("crossing");
+    apply(drive, operations, None, platform_version);
+    deadline_ms
 }
 
 mod genesis {
@@ -1102,13 +1138,14 @@ mod retirement {
                 contract_id
             })
         );
-        // The old deadline entry is gone.
+        // The old deadline entry is gone, with the time tree it was alone in.
         assert_eq!(
             drive
                 .fetch_readiness_rounds_due(first_deadline, 10, None, platform_version)
                 .expect("due"),
             vec![]
         );
+        assert!(!deadline_bucket_exists(&drive, first_deadline));
         // Old fund settled: cleanup reserve to the pool, the remainder netted against the new
         // funding in one balance write.
         assert_eq!(
@@ -1485,6 +1522,7 @@ mod retirement {
                 .expect("due"),
             vec![]
         );
+        assert!(!deadline_bucket_exists(&drive, deadline_ms));
         assert_eq!(
             payer_balance(&drive, payer, None),
             balance_before + INITIAL_FUNDING - CLEANUP_RESERVE
@@ -1797,5 +1835,70 @@ mod cleanup {
             .get(deadline_path.as_slice(), &[2u8; 32], None, grove_version)
             .unwrap()
             .is_ok());
+
+        // The last round at that time takes the time tree with it; the deadlines tree stays.
+        let (_, operations) = drive
+            .cancel_readiness_round_operations(
+                [2u8; 32],
+                CLEANUP_RESERVE,
+                &block_info(1_600_000, 17, 100),
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("cancel");
+        apply(&drive, operations, None, platform_version);
+        assert!(!deadline_bucket_exists(&drive, deadline_ms));
+        let readiness_path = crate::drive::votes::paths::readiness_tree_path_vec();
+        assert!(drive
+            .grove
+            .get(
+                readiness_path.as_slice(),
+                &[crate::drive::votes::paths::READINESS_DEADLINES_TREE_KEY],
+                None,
+                grove_version
+            )
+            .unwrap()
+            .is_ok());
+    }
+
+    /// The due query walks the time keys in order under its limit, and an empty time tree
+    /// spends that limit without yielding an entry. A retired round's emptied time tree
+    /// ahead of a live deadline must therefore not survive, or a block scanning with a
+    /// small limit would never reach the live one.
+    #[test]
+    fn should_find_a_later_due_round_with_limit_one_after_an_earlier_deadline_retires() {
+        let (drive, payer) = setup();
+        let platform_version = PlatformVersion::latest();
+        let (mut early, _) = open_round(&drive, [1u8; 32], payer, 10, None);
+        let (mut late, _) = open_round(&drive, [2u8; 32], payer, 10, None);
+        let early_deadline = cross(&drive, &mut early, 1_500_000);
+        let late_deadline = cross(&drive, &mut late, 1_700_000);
+        assert!(early_deadline < late_deadline);
+
+        let (_, operations) = drive
+            .cancel_readiness_round_operations(
+                [1u8; 32],
+                CLEANUP_RESERVE,
+                &block_info(1_800_000, 18, 100),
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("cancel");
+        apply(&drive, operations, None, platform_version);
+        assert!(!deadline_bucket_exists(&drive, early_deadline));
+        assert!(deadline_bucket_exists(&drive, late_deadline));
+
+        // Every block asks again and gets the live round, never an empty page.
+        for _ in 0..3 {
+            let due = drive
+                .fetch_readiness_rounds_due(late_deadline, 1, None, platform_version)
+                .expect("due");
+            assert_eq!(due.len(), 1);
+            assert_eq!(due[0].contract_id, [2u8; 32]);
+            assert_eq!(due[0].round_id, late.round_id());
+            assert_eq!(due[0].deadline_ms, late_deadline);
+        }
     }
 }
