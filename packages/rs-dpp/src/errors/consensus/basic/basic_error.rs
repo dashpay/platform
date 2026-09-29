@@ -1012,6 +1012,13 @@ mod tests {
             )),
             200
         );
+        // A contract-code capable envelope over its family cap (protocol version 17).
+        assert_eq!(
+            discriminant_of(BasicError::StateTransitionFamilyMaxSizeExceededError(
+                StateTransitionFamilyMaxSizeExceededError::new("dataContractCreate", 2, 1)
+            )),
+            201
+        );
     }
 
     /// The variants that shipped in 4.1 keep the discriminants they were released with, so an
