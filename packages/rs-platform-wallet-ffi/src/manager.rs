@@ -4,7 +4,8 @@ use crate::check_ptr;
 use crate::error::*;
 use crate::event_handler::{
     DpnsMarketplaceSyncCompletedFn, EventHandlerCallbacks, EventHandlerCallbacksExtension,
-    FFIEventHandler, PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
+    FFIEventHandler, OutgoingTransactionProbedFn,
+    PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::handle::*;
 use crate::persistence::{
@@ -80,6 +81,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         PersistenceCapabilities::NONE,
         PersistenceExtensionCallbacks::default(),
         None,
+        None,
         out_handle,
     )
 }
@@ -105,6 +107,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
         event_handler,
         declaration,
         PersistenceExtensionCallbacks::default(),
+        None,
         None,
         out_handle,
     )
@@ -139,6 +142,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensi
         declaration,
         extensions,
         None,
+        None,
         out_handle,
     )
 }
@@ -163,6 +167,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let persistence_extensions = persistence_extension_callbacks(persistence_extension);
     let dpns_event_callback = event_extension_dpns_callback(event_extension);
+    let outgoing_probe_callback = event_extension_outgoing_probe_callback(event_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         persistence,
@@ -170,6 +175,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
         declaration,
         persistence_extensions,
         dpns_event_callback,
+        outgoing_probe_callback,
         out_handle,
     )
 }
@@ -299,6 +305,25 @@ unsafe fn event_extension_dpns_callback(
     )
 }
 
+unsafe fn event_extension_outgoing_probe_callback(
+    extension: *const EventHandlerCallbacksExtension,
+) -> Option<OutgoingTransactionProbedFn> {
+    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
+    let version_end =
+        std::mem::offset_of!(EventHandlerCallbacksExtension, version) + std::mem::size_of::<u32>();
+    let version_ok = supplied_size >= version_end
+        && std::ptr::addr_of!((*extension).version).read()
+            == PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION;
+    negotiated_extension_slot!(
+        extension,
+        EventHandlerCallbacksExtension,
+        supplied_size,
+        version_ok,
+        on_outgoing_transaction_probed_fn,
+        OutgoingTransactionProbedFn
+    )
+}
+
 // The C entry point's own shape: every callback table and out-param the
 // hosts pass, threaded straight through. Splitting it would only move the
 // same arguments behind a struct the FFI cannot express.
@@ -310,6 +335,7 @@ unsafe fn platform_wallet_manager_create_impl(
     declared_capabilities: PersistenceCapabilities,
     persistence_extensions: PersistenceExtensionCallbacks,
     dpns_event_callback: Option<DpnsMarketplaceSyncCompletedFn>,
+    outgoing_probe_callback: Option<OutgoingTransactionProbedFn>,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(sdk_ptr);
@@ -355,6 +381,7 @@ unsafe fn platform_wallet_manager_create_impl(
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> = Arc::new(FFIEventHandler::new(
         std::ptr::read(event_handler),
         dpns_event_callback,
+        outgoing_probe_callback,
     ));
 
     // `PlatformWalletManager::new` spawns the wallet-event adapter
@@ -2113,5 +2140,93 @@ mod remove_wallet_lifecycle_tests {
 
             drop(in_flight_a);
         });
+    }
+}
+
+/// Turn automatic probing of unconfirmed sends on or off (off by default).
+///
+/// While on, every unconfirmed send whose broadcast outcome went quiet is
+/// resubmitted to evonodes over DAPI — right after SPV reports it uncertain,
+/// then once per block — and each verdict reaches the host through
+/// `EventHandlerCallbacksExtension::on_outgoing_transaction_probed_fn`.
+/// Nothing in the wallet changes.
+///
+/// # Safety
+/// `handle` must be a live manager handle.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_set_broadcast_probe_enabled(
+    handle: Handle,
+    enabled: bool,
+) -> PlatformWalletFFIResult {
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.set_broadcast_probe_enabled(enabled);
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod outgoing_probe_extension_tests {
+    use std::os::raw::{c_char, c_void};
+
+    use super::*;
+    use crate::event_handler::DpnsSyncWalletResultFFI;
+
+    unsafe extern "C" fn probed(
+        _context: *mut c_void,
+        _wallet_id: *const u8,
+        _txid: *const u8,
+        _verdict: u8,
+        _reason: *const c_char,
+    ) {
+    }
+
+    unsafe extern "C" fn dpns(
+        _context: *mut c_void,
+        _results: *const DpnsSyncWalletResultFFI,
+        _count: usize,
+        _sync_unix_seconds: u64,
+    ) {
+    }
+
+    fn both_slots() -> EventHandlerCallbacksExtension {
+        EventHandlerCallbacksExtension {
+            on_dpns_marketplace_sync_completed_fn: Some(dpns),
+            on_outgoing_transaction_probed_fn: Some(probed),
+            ..Default::default()
+        }
+    }
+
+    /// A host built before the probe slot existed declares a `struct_size`
+    /// that ends at the DPNS slot. Its bytes past that point are not its own,
+    /// so the probe slot must be refused while DPNS keeps working.
+    #[test]
+    fn should_not_read_the_probe_slot_from_a_host_whose_extension_ends_before_it() {
+        let mut ext = both_slots();
+        ext.struct_size = std::mem::offset_of!(
+            EventHandlerCallbacksExtension,
+            on_outgoing_transaction_probed_fn
+        );
+        unsafe {
+            assert!(event_extension_dpns_callback(&ext).is_some());
+            assert!(event_extension_outgoing_probe_callback(&ext).is_none());
+        }
+    }
+
+    #[test]
+    fn should_read_the_probe_slot_from_a_current_host() {
+        let ext = both_slots();
+        unsafe {
+            assert!(event_extension_outgoing_probe_callback(&ext).is_some());
+        }
+    }
+
+    #[test]
+    fn should_refuse_the_probe_slot_under_an_unknown_version() {
+        let mut ext = both_slots();
+        ext.version = PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION + 1;
+        unsafe {
+            assert!(event_extension_outgoing_probe_callback(&ext).is_none());
+        }
     }
 }

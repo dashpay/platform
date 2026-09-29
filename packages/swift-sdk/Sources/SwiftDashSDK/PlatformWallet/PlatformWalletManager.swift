@@ -455,6 +455,15 @@ public class PlatformWalletManager: ObservableObject {
     /// Rust. Every native pointer has been copied before publication.
     @Published public internal(set) var lastDpnsSyncEvent: DpnsSyncEvent?
 
+    /// The latest broadcast-probe verdict per unconfirmed send, keyed by the
+    /// txid in wire (internal) byte order. Filled only while
+    /// `setBroadcastProbeEnabled(true)` is on. See `OutgoingTransactionProbeEvent`.
+    @Published public internal(set) var outgoingTransactionVerdicts: [Data: OutgoingTransactionProbeEvent] = [:]
+
+    /// The most recent broadcast-probe verdict, for observers that react to
+    /// each one as it arrives.
+    @Published public internal(set) var lastOutgoingTransactionProbe: OutgoingTransactionProbeEvent?
+
     /// Cumulative number of encrypted notes scanned in the **current**
     /// in-flight shielded sync pass, published once per chunk (~every
     /// 2048 notes) via the Rust-side progress callback. Nil between
