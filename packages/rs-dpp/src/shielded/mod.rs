@@ -200,6 +200,14 @@ pub const SHIELDED_IDENTITY_BALANCE_WRITE_STORAGE_BYTES: u64 = 20;
 /// [`compute_minimum_shielded_fee::compute_token_unshield_with_shielded_fee_fee`].
 pub const SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES: u64 = 230;
 
+/// Creating a balance item costs more than rewriting one, so the unshield's allowance has to
+/// exceed the replace-only allowance the identity top-up keeps. Checked when the crate is built
+/// rather than when a test runs, because both sides are constants and a change to either should
+/// stop the build rather than wait for a test to notice.
+const _: () = assert!(
+    SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES > SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES
+);
+
 /// Common Orchard bundle parameters shared across all shielded transition types.
 ///
 /// Groups the fields that every shielded transition carries identically:

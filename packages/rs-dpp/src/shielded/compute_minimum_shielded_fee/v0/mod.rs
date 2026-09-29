@@ -616,13 +616,6 @@ mod tests {
             );
         }
 
-        assert!(
-            SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES
-                > SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES,
-            "creating a balance item costs more than rewriting one, so the unshield's allowance \
-             ({SHIELDED_TOKEN_BALANCE_INSERT_STORAGE_BYTES} bytes) must exceed the replace-only \
-             one ({SHIELDED_IDENTITY_TOP_UP_BALANCE_STORAGE_BYTES} bytes)"
-        );
         // The top-up tops up an identity that already exists, so it keeps the replace-only one.
         assert_eq!(
             compute_shielded_identity_top_up_fee_v0(2, platform_version).expect("top up fee"),
