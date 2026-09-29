@@ -887,9 +887,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         // Broadcast-probe state for the wallet's sends goes too, and the host
-        // is told to drop the verdicts it shows for them. After the inner
-        // removal, so no probe pass can read the wallet and rebuild that state;
-        // before the midpoint, so a same-id recreation's state is never touched.
+        // is told to drop the verdicts it shows for them (from the resolver's
+        // task). After the inner removal, so no later pass can read the wallet
+        // and rebuild that state; before the midpoint, so the removal is queued
+        // ahead of every event of a same-id recreation and never touches it.
         self.broadcast_resolver.wallet_removed(wallet_id);
 
         // Test-only rendezvous: the window a concurrent same-id registration can

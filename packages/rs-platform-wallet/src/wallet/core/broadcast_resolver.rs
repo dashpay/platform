@@ -28,8 +28,7 @@
 //! and Accepted and Mined count as the same. The host is told to drop a
 //! send's verdict (cleared) when the send settles or leaves the wallet, when
 //! its wallet is removed and, for every send, when probing is turned off;
-//! cleared says only "forget the verdict", not that the send settled. Events
-//! are queued under the state lock and delivered with no lock held.
+//! cleared says only "forget the verdict", not that the send settled.
 //!
 //! When: once as soon as dash-spv reports an `Uncertain` broadcast (the root
 //! of that transaction's chain), then on each advance of the wallet's synced
@@ -39,26 +38,32 @@
 //! A wallet whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
 //! InstantSend-locked transaction, a block or chainlock that changed records, a
-//! sweep) or an `Uncertain` result for one of its transactions wakes it. One
-//! worker per wallet drains a queue of merged requests. `Dead` and `Mined` end
+//! sweep) or an `Uncertain` result for one of its transactions wakes it. `Dead` and `Mined` end
 //! the probing of a root; `Accepted` does not — a mempool is not settlement.
 //! Probes run only while the SPV client delivers blocks, i.e. while the app is
 //! in the foreground.
+//!
+//! How: one task (the actor) owns all of this state and handles commands —
+//! from wallet and SPV events, the switch and wallet removal — and the
+//! results of its reads and probes one at a time, in order, so none of them
+//! race. At most one pass per wallet runs; requests that arrive meanwhile
+//! are merged into the next. Every host callback comes from that task, never
+//! from a caller that may hold its own locks.
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
-use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use dash_spv::sync::SyncEvent;
 use dash_spv::{BroadcastResult, EventHandler};
 use dashcore::{Transaction, Txid};
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
-use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
+use tokio::sync::{mpsc, RwLock};
+use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 
 use crate::broadcast_probe::{AcceptanceProbe, ProbeVerdict};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
@@ -341,7 +346,7 @@ fn same_for_host(a: &ProbeVerdict, b: &ProbeVerdict) -> bool {
     )
 }
 
-/// What a pass has to tell the host, per own send.
+/// What the host must hear, per own send.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ResolverEvent {
     /// A send's verdict changed.
@@ -352,81 +357,41 @@ pub(crate) enum ResolverEvent {
     Cleared(Txid),
 }
 
-/// One event waiting to reach the host, with what the log line needs.
-#[derive(Debug, Clone)]
-struct Outgoing {
+/// One event for the host, with what the log line needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Outgoing {
     wallet_id: WalletId,
     event: ResolverEvent,
     height: Option<u32>,
     trigger: &'static str,
 }
 
-/// Which clears and removals a pass started under. A pass compares it with
-/// the current one under the state lock before recording anything: a wallet
-/// removed, or probing turned off, since the pass read the wallet makes it
-/// stop instead of rebuilding state that was just dropped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Generation {
-    all: u64,
-    wallet: u64,
+/// What started a pass: dash-spv's `Uncertain` result for one of the
+/// wallet's transactions, or an advance of its synced height.
+fn trigger_of(forced: &HashSet<Txid>) -> &'static str {
+    if forced.is_empty() {
+        "height"
+    } else {
+        "uncertain"
+    }
 }
 
-/// Bookkeeping shared by every pass. Schedules and final verdicts are per
-/// probed root; published verdicts are per own send, which is what the host
-/// shows. Everything for a transaction is kept while it stays unsettled in the
-/// wallet, and dropped once it settles or leaves.
-///
-/// Events for the host are queued in `outbox` under the same lock that records
-/// them, so they reach the host in the order the state changed; they are
-/// delivered afterwards with no lock held (see [`deliver`]).
+/// Bookkeeping for every wallet. Schedules and final verdicts are per probed
+/// root; published verdicts are per own send, which is what the host shows.
+/// Everything for a transaction is kept while it stays unsettled in the
+/// wallet, and dropped once it settles or leaves. Owned by the resolver's
+/// actor, so every change happens in one sequence.
 #[derive(Debug, Default)]
 pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
     finished: HashMap<(WalletId, Txid), Final>,
     published: HashMap<(WalletId, Txid), ProbeVerdict>,
-    generation_all: u64,
-    /// Kept for removed wallets too: a wallet re-added under the same id must
-    /// not match a generation read before its removal.
-    generations: HashMap<WalletId, u64>,
-    /// Probing is off. Set under this lock together with the clears, so a
-    /// pass started after probing was turned off stops as surely as one that
-    /// started before.
-    off: bool,
-    outbox: VecDeque<Outgoing>,
 }
 
 impl ResolverState {
-    pub(crate) fn generation(&self, wallet_id: &WalletId) -> Generation {
-        Generation {
-            all: self.generation_all,
-            wallet: self.generations.get(wallet_id).copied().unwrap_or(0),
-        }
-    }
-
-    /// Whether a pass started under `started` may still probe and record.
-    fn is_current(&self, wallet_id: &WalletId, started: Generation) -> bool {
-        !self.off && self.generation(wallet_id) == started
-    }
-
-    fn enqueue(
-        &mut self,
-        wallet_id: WalletId,
-        event: ResolverEvent,
-        height: Option<u32>,
-        trigger: &'static str,
-    ) {
-        self.outbox.push_back(Outgoing {
-            wallet_id,
-            event,
-            height,
-            trigger,
-        });
-    }
-
-    /// Drop everything kept for `wallet_id` and queue a clear for every send
-    /// the host had a verdict for. Passes that started before are stopped.
-    fn forget_wallet(&mut self, wallet_id: &WalletId) {
-        *self.generations.entry(*wallet_id).or_insert(0) += 1;
+    /// Drop everything kept for `wallet_id`; a clear for every send the host
+    /// had a verdict for.
+    fn forget_wallet(&mut self, wallet_id: &WalletId) -> Vec<Outgoing> {
         self.schedules.retain(|(wallet, _), _| wallet != wallet_id);
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
         let mut cleared: Vec<Txid> = self
@@ -437,23 +402,33 @@ impl ResolverState {
             .collect();
         cleared.sort();
         self.published.retain(|(wallet, _), _| wallet != wallet_id);
-        for txid in cleared {
-            self.enqueue(*wallet_id, ResolverEvent::Cleared(txid), None, "removed");
-        }
+        cleared
+            .into_iter()
+            .map(|txid| Outgoing {
+                wallet_id: *wallet_id,
+                event: ResolverEvent::Cleared(txid),
+                height: None,
+                trigger: "removed",
+            })
+            .collect()
     }
 
-    /// Drop everything and queue a clear for every published send. Passes
-    /// that started before are stopped.
-    fn forget_all(&mut self) {
-        self.generation_all += 1;
+    /// Drop everything; a clear for every published send.
+    fn forget_all(&mut self) -> Vec<Outgoing> {
         self.schedules.clear();
         self.finished.clear();
         let mut cleared: Vec<(WalletId, Txid)> =
             self.published.drain().map(|(key, _)| key).collect();
         cleared.sort();
-        for (wallet_id, txid) in cleared {
-            self.enqueue(wallet_id, ResolverEvent::Cleared(txid), None, "disabled");
-        }
+        cleared
+            .into_iter()
+            .map(|(wallet_id, txid)| Outgoing {
+                wallet_id,
+                event: ResolverEvent::Cleared(txid),
+                height: None,
+                trigger: "disabled",
+            })
+            .collect()
     }
 
     /// Record `verdict` for `send`; returns whether the host must hear it.
@@ -476,8 +451,35 @@ impl ResolverState {
         changed
     }
 
-    fn take_outbox(&mut self) -> Vec<Outgoing> {
-        self.outbox.drain(..).collect()
+    /// Publish `verdict` for each of `sends`, collecting what changed.
+    fn publish_all(
+        &mut self,
+        wallet_id: WalletId,
+        sends: impl IntoIterator<Item = Txid>,
+        verdict: &ProbeVerdict,
+        height: u32,
+        trigger: &'static str,
+        out: &mut Vec<Outgoing>,
+    ) {
+        for send in sends {
+            if self.publish((wallet_id, send), verdict) {
+                out.push(Outgoing {
+                    wallet_id,
+                    event: ResolverEvent::Verdict(send, verdict.clone()),
+                    height: Some(height),
+                    trigger,
+                });
+            }
+        }
+    }
+
+    /// Roots of `wallet_id` a probe found in a block the wallet has not seen.
+    fn mined(&self, wallet_id: &WalletId) -> HashSet<Txid> {
+        self.finished
+            .iter()
+            .filter(|((wallet, _), result)| wallet == wallet_id && **result == Final::Mined)
+            .map(|((_, txid), _)| *txid)
+            .collect()
     }
 }
 
@@ -488,45 +490,29 @@ pub(crate) fn is_catch_up_step(previous: Option<u32>, height: u32) -> bool {
     previous.is_none_or(|previous| height.saturating_sub(previous) > CATCH_UP_STEP)
 }
 
-/// What a pass leaves behind besides the events it queued.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PassOutcome {
-    /// Nothing left to probe: no roots, or every root has a final verdict.
-    /// The wallet can go idle until something new happens.
-    pub nothing_to_probe: bool,
+/// The start of a pass: what the host must hear now, and the roots to probe.
+#[derive(Debug)]
+pub(crate) struct PassStart {
+    pub events: Vec<Outgoing>,
+    pub due: VecDeque<(Txid, Transaction)>,
 }
 
-/// One pass over one wallet at `height`: probe every due root, record and
-/// queue what the host must hear. The roots of every `forced` transaction's
-/// chain are due regardless of their schedule (dash-spv has just reported it
-/// `Uncertain`). `started` is the [`Generation`] the caller read the wallet
-/// under; once it is no longer current (wallet removed, probing turned off),
-/// the pass records nothing more and sends nothing more to the network.
-/// `flush` delivers what is queued so far; the pass calls it with no lock
-/// held after each locked stretch, so a clear or a verdict does not wait for
-/// the probes of other roots.
-///
-/// A root's verdict is published for the wallet's own sends: the root itself
-/// when it is one, and — when the root is dead — every own send built on it,
-/// on every pass, so a send built on a dead root's change later is covered
-/// too. A root found mined counts as settled when picking roots, so its
-/// children are probed next.
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn resolve_pass(
-    state: &Mutex<ResolverState>,
-    probe: &dyn AcceptanceProbe,
+/// Start a pass over one wallet at `height`: forget what settled or left
+/// (clearing the sends the host had a verdict for), re-publish every dead
+/// root to every own send built on it — a send built on its change after it
+/// was found dead is dead too — and pick the roots due for a probe. The
+/// roots of every `forced` transaction's chain are due regardless of their
+/// schedule (dash-spv has just reported it `Uncertain`). A root found mined
+/// counts as settled when picking roots, so its children are probed next.
+pub(crate) fn begin_pass(
+    state: &mut ResolverState,
     wallet_id: WalletId,
     height: u32,
     views: &[OutgoingView],
     forced: &HashSet<Txid>,
-    started: Generation,
-    flush: &(dyn Fn() + Sync),
-) -> PassOutcome {
-    let trigger = if forced.is_empty() {
-        "height"
-    } else {
-        "uncertain"
-    };
+) -> PassStart {
+    let trigger = trigger_of(forced);
+    let mut events = Vec::new();
     // What the wallet itself still holds unsettled — what state is kept for.
     let present: HashSet<Txid> = views.iter().map(|view| view.txid).collect();
     let own_present: HashSet<Txid> = views
@@ -534,53 +520,33 @@ pub(crate) async fn resolve_pass(
         .filter(|view| view.spends_own_coins)
         .map(|view| view.txid)
         .collect();
-    let stopped = PassOutcome {
-        nothing_to_probe: false,
-    };
+    let is_gone = |wallet: &WalletId, txid: &Txid| *wallet == wallet_id && !present.contains(txid);
+    state
+        .schedules
+        .retain(|(wallet, txid), _| !is_gone(wallet, txid));
+    state
+        .finished
+        .retain(|(wallet, txid), _| !is_gone(wallet, txid));
+    let mut cleared: Vec<Txid> = state
+        .published
+        .keys()
+        .filter(|(wallet, txid)| *wallet == wallet_id && !own_present.contains(txid))
+        .map(|(_, txid)| *txid)
+        .collect();
+    cleared.sort();
+    state
+        .published
+        .retain(|(wallet, txid), _| *wallet != wallet_id || own_present.contains(txid));
+    for txid in cleared {
+        events.push(Outgoing {
+            wallet_id,
+            event: ResolverEvent::Cleared(txid),
+            height: Some(height),
+            trigger,
+        });
+    }
 
-    // Each locked stretch is its own block: a guard must not live across the
-    // probes' awaits.
-    let mined: HashSet<Txid> = {
-        let mut guard = state.lock().expect("resolver state poisoned");
-        if !guard.is_current(&wallet_id, started) {
-            return stopped;
-        }
-        // Forget what settled or left the wallet; clear the sends the host had a
-        // verdict for.
-        let is_gone =
-            |wallet: &WalletId, txid: &Txid| *wallet == wallet_id && !present.contains(txid);
-        guard
-            .schedules
-            .retain(|(wallet, txid), _| !is_gone(wallet, txid));
-        guard
-            .finished
-            .retain(|(wallet, txid), _| !is_gone(wallet, txid));
-        let mut cleared: Vec<Txid> = guard
-            .published
-            .keys()
-            .filter(|(wallet, txid)| *wallet == wallet_id && !own_present.contains(txid))
-            .map(|(_, txid)| *txid)
-            .collect();
-        cleared.sort();
-        guard
-            .published
-            .retain(|(wallet, txid), _| *wallet != wallet_id || own_present.contains(txid));
-        for txid in cleared {
-            guard.enqueue(
-                wallet_id,
-                ResolverEvent::Cleared(txid),
-                Some(height),
-                trigger,
-            );
-        }
-
-        guard
-            .finished
-            .iter()
-            .filter(|((wallet, _), result)| *wallet == wallet_id && **result == Final::Mined)
-            .map(|((_, txid), _)| *txid)
-            .collect()
-    };
+    let mined = state.mined(&wallet_id);
     let graph = ChainGraph::new(views, &mined);
     let roots = graph.roots();
     let forced_roots: BTreeSet<Txid> = forced
@@ -588,157 +554,96 @@ pub(crate) async fn resolve_pass(
         .flat_map(|txid| graph.roots_of(txid))
         .collect();
 
-    let due = {
-        let mut guard = state.lock().expect("resolver state poisoned");
-        if !guard.is_current(&wallet_id, started) {
-            return stopped;
+    for view in &roots {
+        if let Some(Final::Dead { reason }) = state.finished.get(&(wallet_id, view.txid)).cloned() {
+            let verdict = ProbeVerdict::Dead { reason };
+            let sends = graph.own_in_chain(&view.txid);
+            state.publish_all(wallet_id, sends, &verdict, height, trigger, &mut events);
         }
-        // A dead root takes every own send built on it — including ones built on
-        // its change after it was found dead.
-        for view in &roots {
-            if let Some(Final::Dead { reason }) =
-                guard.finished.get(&(wallet_id, view.txid)).cloned()
-            {
-                let verdict = ProbeVerdict::Dead { reason };
-                for send in graph.own_in_chain(&view.txid) {
-                    if guard.publish((wallet_id, send), &verdict) {
-                        guard.enqueue(
-                            wallet_id,
-                            ResolverEvent::Verdict(send, verdict.clone()),
-                            Some(height),
-                            trigger,
-                        );
-                    }
-                }
-            }
-        }
-
-        let mut due = Vec::new();
-        for view in &roots {
-            let key = (wallet_id, view.txid);
-            if guard.finished.contains_key(&key) {
-                continue;
-            }
-            let schedule = guard
-                .schedules
-                .entry(key)
-                .or_insert_with(|| ProbeSchedule::new(height));
-            if forced_roots.contains(&view.txid) || schedule.is_due(height) {
-                schedule.probed_at(height);
-                due.push((view.txid, view.transaction.clone()));
-            }
-        }
-        due
-    };
-    flush();
-
-    for (root, transaction) in due {
-        if !state
-            .lock()
-            .expect("resolver state poisoned")
-            .is_current(&wallet_id, started)
-        {
-            return stopped;
-        }
-        let verdict = probe.probe(&transaction).await;
-        let key = (wallet_id, root);
-        {
-            let mut guard = state.lock().expect("resolver state poisoned");
-            if !guard.is_current(&wallet_id, started) {
-                return stopped;
-            }
-            // Dropped by a newer pass meanwhile (it settled or left): recording
-            // now would resurrect state that was cleared.
-            if !guard.schedules.contains_key(&key) {
-                continue;
-            }
-            match &verdict {
-                ProbeVerdict::Dead { reason } => {
-                    guard.finished.insert(
-                        key,
-                        Final::Dead {
-                            reason: reason.clone(),
-                        },
-                    );
-                }
-                ProbeVerdict::Mined => {
-                    guard.finished.insert(key, Final::Mined);
-                }
-                _ => {}
-            }
-            let sends: BTreeSet<Txid> = if matches!(verdict, ProbeVerdict::Dead { .. }) {
-                graph.own_in_chain(&root)
-            } else if graph.is_own(&root) {
-                BTreeSet::from([root])
-            } else {
-                BTreeSet::new()
-            };
-            for send in sends {
-                if guard.publish((wallet_id, send), &verdict) {
-                    guard.enqueue(
-                        wallet_id,
-                        ResolverEvent::Verdict(send, verdict.clone()),
-                        Some(height),
-                        trigger,
-                    );
-                }
-            }
-        }
-        flush();
     }
 
-    let guard = state.lock().expect("resolver state poisoned");
-    let nothing_to_probe = roots
-        .iter()
-        .all(|view| guard.finished.contains_key(&(wallet_id, view.txid)));
-    PassOutcome { nothing_to_probe }
+    let mut due = VecDeque::new();
+    for view in &roots {
+        let key = (wallet_id, view.txid);
+        if state.finished.contains_key(&key) {
+            continue;
+        }
+        let schedule = state
+            .schedules
+            .entry(key)
+            .or_insert_with(|| ProbeSchedule::new(height));
+        if forced_roots.contains(&view.txid) || schedule.is_due(height) {
+            schedule.probed_at(height);
+            due.push_back((view.txid, view.transaction.clone()));
+        }
+    }
+    PassStart { events, due }
 }
 
-/// Deliver queued events to the host, in order, with no lock held while a
-/// host callback runs — a callback may turn probing off or remove a wallet,
-/// which queues more events and returns at once; the running delivery sends
-/// those too. `delivering` makes sure only one thread delivers at a time.
-fn deliver(
-    state: &Mutex<ResolverState>,
-    delivering: &AtomicBool,
-    events: &Weak<PlatformEventManager>,
-) {
-    loop {
-        if delivering.swap(true, Ordering::SeqCst) {
-            return; // the thread already delivering will send ours
-        }
-        let events = events.upgrade();
-        loop {
-            let batch = state.lock().expect("resolver state poisoned").take_outbox();
-            if batch.is_empty() {
-                break;
-            }
-            for item in batch {
-                log_outgoing(&item);
-                if let Some(events) = &events {
-                    match &item.event {
-                        ResolverEvent::Verdict(txid, verdict) => {
-                            events.on_outgoing_transaction_probed(&item.wallet_id, txid, verdict)
-                        }
-                        ResolverEvent::Cleared(txid) => {
-                            events.on_outgoing_transaction_cleared(&item.wallet_id, txid)
-                        }
-                    }
-                }
-            }
-        }
-        delivering.store(false, Ordering::SeqCst);
-        // Something queued between the last empty check and the flag reset
-        // would otherwise wait for the next delivery.
-        if state
-            .lock()
-            .expect("resolver state poisoned")
-            .outbox
-            .is_empty()
-        {
-            return;
-        }
+/// Record one root's probe result: a final verdict ends its probing, and the
+/// verdict goes to the wallet's own sends — the root when it is one, and,
+/// when it is dead, every own send built on it. Nothing is recorded for a
+/// root a newer pass has dropped (it settled or left) or whose wallet was
+/// forgotten meanwhile.
+pub(crate) fn record_probe(
+    state: &mut ResolverState,
+    wallet_id: WalletId,
+    height: u32,
+    views: &[OutgoingView],
+    forced: &HashSet<Txid>,
+    root: Txid,
+    verdict: &ProbeVerdict,
+) -> Vec<Outgoing> {
+    let mut events = Vec::new();
+    let key = (wallet_id, root);
+    if !state.schedules.contains_key(&key) {
+        return events;
     }
+    match verdict {
+        ProbeVerdict::Dead { reason } => {
+            state.finished.insert(
+                key,
+                Final::Dead {
+                    reason: reason.clone(),
+                },
+            );
+        }
+        ProbeVerdict::Mined => {
+            state.finished.insert(key, Final::Mined);
+        }
+        _ => {}
+    }
+    let graph = ChainGraph::new(views, &HashSet::new());
+    let sends: BTreeSet<Txid> = if matches!(verdict, ProbeVerdict::Dead { .. }) {
+        graph.own_in_chain(&root)
+    } else if graph.is_own(&root) {
+        BTreeSet::from([root])
+    } else {
+        BTreeSet::new()
+    };
+    state.publish_all(
+        wallet_id,
+        sends,
+        verdict,
+        height,
+        trigger_of(forced),
+        &mut events,
+    );
+    events
+}
+
+/// Nothing left to probe for the wallet: no roots, or every root has a final
+/// verdict. The wallet can go idle until something new happens.
+pub(crate) fn nothing_to_probe(
+    state: &ResolverState,
+    wallet_id: WalletId,
+    views: &[OutgoingView],
+) -> bool {
+    let mined = state.mined(&wallet_id);
+    ChainGraph::new(views, &mined)
+        .roots()
+        .iter()
+        .all(|view| state.finished.contains_key(&(wallet_id, view.txid)))
 }
 
 fn log_outgoing(item: &Outgoing) {
@@ -761,124 +666,481 @@ fn log_outgoing(item: &Outgoing) {
     }
 }
 
-/// Admission gate for probe tasks. A probe only reads the wallet and
-/// resubmits bytes that were already sent, so a task may be aborted at any
-/// point without losing anything.
-struct ProbeTasks {
-    state: Mutex<(bool, Vec<JoinHandle<()>>)>,
+// ---- The actor -------------------------------------------------------------
+
+/// What a pass reads from a wallet.
+pub(crate) struct WalletRead {
+    pub views: Vec<OutgoingView>,
+    pub synced_height: u32,
+    /// The requested `Uncertain` txids the wallet actually holds.
+    pub forced: HashSet<Txid>,
 }
 
-impl ProbeTasks {
-    fn new() -> Self {
-        Self {
-            state: Mutex::new((true, Vec::new())),
-        }
-    }
+/// An `Uncertain` result is queued for every wallet; only one holding the
+/// transaction acts on it. `None`: nothing to do for this wallet — no height
+/// asked for the pass and it holds none of `forced`.
+fn forced_held(
+    by_height: bool,
+    forced: HashSet<Txid>,
+    holds: impl Fn(&Txid) -> bool,
+) -> Option<HashSet<Txid>> {
+    let forced: HashSet<Txid> = forced.into_iter().filter(|txid| holds(txid)).collect();
+    (by_height || !forced.is_empty()).then_some(forced)
+}
 
-    fn spawn<F>(&self, future: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        let mut state = self.state.lock().expect("probe task mutex poisoned");
-        if !state.0 {
-            return;
-        }
-        state.1.retain(|handle| !handle.is_finished());
-        state.1.push(tokio::spawn(future));
-    }
+/// Where passes read wallets from.
+#[async_trait]
+pub(crate) trait WalletSource: Send + Sync {
+    /// `None`: no such wallet. `Some(None)`: nothing to do (see
+    /// [`forced_held`]) — decided without walking the records.
+    async fn read(
+        &self,
+        wallet_id: WalletId,
+        by_height: bool,
+        forced: HashSet<Txid>,
+    ) -> Option<Option<WalletRead>>;
+}
 
-    /// Close admission and stop every task, waiting at most `budget` for each
-    /// aborted task to unwind. Returns `false` if one outlived it.
-    async fn quiesce_within(&self, budget: Duration) -> bool {
-        let handles = {
-            let mut state = self.state.lock().expect("probe task mutex poisoned");
-            state.0 = false;
-            std::mem::take(&mut state.1)
+struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);
+
+#[async_trait]
+impl WalletSource for ManagerSource {
+    async fn read(
+        &self,
+        wallet_id: WalletId,
+        by_height: bool,
+        forced: HashSet<Txid>,
+    ) -> Option<Option<WalletRead>> {
+        let manager = self.0.read().await;
+        let info = manager.get_wallet_info(&wallet_id)?;
+        let forced = if forced.is_empty() {
+            by_height.then_some(forced)
+        } else {
+            let accounts = info.core_wallet.accounts.all_accounts();
+            forced_held(by_height, forced, |txid| {
+                accounts
+                    .iter()
+                    .any(|account| account.transactions().contains_key(txid))
+            })
         };
-        let deadline = tokio::time::Instant::now() + budget;
-        let mut clean = true;
-        for handle in &handles {
-            handle.abort();
-        }
-        for mut handle in handles {
-            if tokio::time::timeout_at(deadline, &mut handle)
-                .await
-                .is_err()
-            {
-                clean = false;
+        Some(forced.map(|forced| WalletRead {
+            views: collect_views(info),
+            synced_height: info.core_wallet.synced_height(),
+            forced,
+        }))
+    }
+}
+
+/// Where events for the host go.
+pub(crate) trait VerdictSink: Send + Sync {
+    fn deliver(&self, item: &Outgoing);
+}
+
+/// The host's event callbacks, reached through the event manager this
+/// resolver is registered with (weakly: the manager holds the resolver).
+#[derive(Default)]
+struct EventSink(Mutex<Weak<PlatformEventManager>>);
+
+impl VerdictSink for EventSink {
+    fn deliver(&self, item: &Outgoing) {
+        log_outgoing(item);
+        let Some(events) = self.0.lock().expect("event sink poisoned").upgrade() else {
+            return;
+        };
+        match &item.event {
+            ResolverEvent::Verdict(txid, verdict) => {
+                events.on_outgoing_transaction_probed(&item.wallet_id, txid, verdict)
+            }
+            ResolverEvent::Cleared(txid) => {
+                events.on_outgoing_transaction_cleared(&item.wallet_id, txid)
             }
         }
-        clean
     }
 }
 
-/// Which wallets have a pass running, what the next pass for each must do,
-/// and which have nothing to probe. A pass for a wallet never runs twice at
-/// once; requests that arrive while one runs are merged into the next.
-#[derive(Default)]
-struct PassQueue {
-    running: HashSet<WalletId>,
-    pending: HashMap<WalletId, PendingPass>,
-    /// Wallets whose last pass had nothing to probe: height advances skip
-    /// them (no scan of every record per block) until something wakes them.
-    idle: HashSet<WalletId>,
-    /// Bumped by every wake-up, so a pass that read the wallet before one
-    /// happened does not mark it idle after it.
-    wakes: HashMap<WalletId, u64>,
+fn deliver(sink: &Arc<dyn VerdictSink>, events: Vec<Outgoing>) {
+    for item in &events {
+        sink.deliver(item);
+    }
 }
 
-impl PassQueue {
-    fn wake(&mut self, wallet_id: &WalletId) {
-        self.idle.remove(wallet_id);
-        *self.wakes.entry(*wallet_id).or_insert(0) += 1;
-    }
+/// What the resolver is told. Sent from event handlers and the manager; the
+/// actor handles them one at a time, in order.
+#[derive(Debug)]
+enum Command {
+    Height {
+        wallet_id: WalletId,
+        height: u32,
+    },
+    /// Any other wallet event; `touched` when it may have left something new
+    /// to probe (see [`may_leave_work`]).
+    Seen {
+        wallet_id: WalletId,
+        touched: bool,
+    },
+    Uncertain(Txid),
+    SetEnabled(bool),
+    WalletRemoved(WalletId),
+}
 
-    fn wakes(&self, wallet_id: &WalletId) -> u64 {
-        self.wakes.get(wallet_id).copied().unwrap_or(0)
-    }
+/// What a finished job reports back to the actor.
+enum JobDone {
+    Read {
+        wallet_id: WalletId,
+        run: u64,
+        height: u32,
+        read: Option<Option<WalletRead>>,
+    },
+    Probed {
+        wallet_id: WalletId,
+        run: u64,
+        root: Txid,
+        verdict: ProbeVerdict,
+    },
 }
 
 #[derive(Default)]
 struct PendingPass {
     height: u32,
     /// A height advance asked for this pass; otherwise only `Uncertain`
-    /// results did, and a wallet that holds none of `forced` is skipped.
+    /// results did.
     by_height: bool,
     forced: HashSet<Txid>,
 }
 
-/// Whether any account of the wallet records `txid` — a map lookup per
-/// account, not a walk over the records.
-fn holds(info: &PlatformWalletInfo, txid: &Txid) -> bool {
-    info.core_wallet
-        .accounts
-        .all_accounts()
-        .iter()
-        .any(|account| account.transactions().contains_key(txid))
+/// A pass in flight: reading the wallet, then probing its due roots one at
+/// a time. Results carry the run id; a result for a run that was dropped
+/// (probing off, wallet removed) is ignored.
+struct Run {
+    id: u64,
+    /// The wallet's command count when the run started.
+    seq: u64,
+    /// Something touched the wallet during the run: do not mark it idle.
+    woken: bool,
+    abort: AbortHandle,
+    probing: Option<Probing>,
 }
 
-/// Runs probe passes off the wallet-event fan-out and delivers each change of
-/// a send's verdict as [`PlatformEventHandler::on_outgoing_transaction_probed`],
-/// and each verdict the host must drop as
-/// [`PlatformEventHandler::on_outgoing_transaction_cleared`].
+struct Probing {
+    views: Vec<OutgoingView>,
+    height: u32,
+    forced: HashSet<Txid>,
+    due: VecDeque<(Txid, Transaction)>,
+}
+
+#[derive(Default)]
+struct WalletEntry {
+    /// Last synced height reported, for telling catch-up from following.
+    height: Option<u32>,
+    /// The last pass had nothing to probe: height advances skip the wallet
+    /// (no walk over its records per block) until something wakes it.
+    idle: bool,
+    pending: Option<PendingPass>,
+    run: Option<Run>,
+    /// Commands seen for this wallet. A run that found the wallet gone drops
+    /// the entry only if none arrived since it started — a same-id wallet
+    /// added meanwhile keeps its entry.
+    seq: u64,
+}
+
+/// Owns all of the resolver's state. One task; commands and job results are
+/// handled one at a time, so no two of them race, and every host callback
+/// comes from this task — never from a caller holding its own locks.
+struct Actor {
+    enabled: bool,
+    state: ResolverState,
+    wallets: HashMap<WalletId, WalletEntry>,
+    next_run: u64,
+    probe: Arc<dyn AcceptanceProbe>,
+    source: Arc<dyn WalletSource>,
+    sink: Arc<dyn VerdictSink>,
+    jobs: JoinSet<JobDone>,
+}
+
+impl Actor {
+    fn new(
+        probe: Arc<dyn AcceptanceProbe>,
+        source: Arc<dyn WalletSource>,
+        sink: Arc<dyn VerdictSink>,
+    ) -> Self {
+        Self {
+            enabled: false,
+            state: ResolverState::default(),
+            wallets: HashMap::new(),
+            next_run: 0,
+            probe,
+            source,
+            sink,
+            jobs: JoinSet::new(),
+        }
+    }
+
+    async fn run(mut self, mut commands: mpsc::UnboundedReceiver<Command>) {
+        loop {
+            tokio::select! {
+                command = commands.recv() => match command {
+                    Some(command) => self.handle(command),
+                    None => return,
+                },
+                Some(done) = self.jobs.join_next(), if !self.jobs.is_empty() => {
+                    // An aborted job (its run was dropped) reports nothing.
+                    if let Ok(done) = done {
+                        self.job_done(done);
+                    }
+                }
+            }
+        }
+    }
+
+    /// The wallet's entry, created on first sight, with this command counted.
+    fn entry(&mut self, wallet_id: WalletId) -> &mut WalletEntry {
+        let entry = self.wallets.entry(wallet_id).or_default();
+        entry.seq += 1;
+        entry
+    }
+
+    fn handle(&mut self, command: Command) {
+        match command {
+            Command::Height { wallet_id, height } => {
+                let enabled = self.enabled;
+                let entry = self.entry(wallet_id);
+                let previous = entry.height.replace(height);
+                if !enabled || entry.idle || is_catch_up_step(previous, height) {
+                    return;
+                }
+                let pending = entry.pending.get_or_insert_with(PendingPass::default);
+                pending.height = pending.height.max(height);
+                pending.by_height = true;
+                self.start(wallet_id);
+            }
+            Command::Seen { wallet_id, touched } => {
+                let entry = self.entry(wallet_id);
+                if touched {
+                    entry.idle = false;
+                    if let Some(run) = entry.run.as_mut() {
+                        run.woken = true;
+                    }
+                }
+            }
+            Command::Uncertain(txid) => {
+                if !self.enabled {
+                    return;
+                }
+                let wallets: Vec<WalletId> = self.wallets.keys().copied().collect();
+                for wallet_id in wallets {
+                    if let Some(entry) = self.wallets.get_mut(&wallet_id) {
+                        let pending = entry.pending.get_or_insert_with(PendingPass::default);
+                        pending.height = pending.height.max(entry.height.unwrap_or(0));
+                        pending.forced.insert(txid);
+                    }
+                    self.start(wallet_id);
+                }
+            }
+            Command::SetEnabled(enabled) => {
+                if enabled == self.enabled {
+                    return;
+                }
+                self.enabled = enabled;
+                // Either way every wallet leaves idle, so turning probing
+                // back on re-publishes what turning it off cleared.
+                for entry in self.wallets.values_mut() {
+                    entry.idle = false;
+                    if !enabled {
+                        entry.pending = None;
+                        if let Some(run) = entry.run.take() {
+                            run.abort.abort();
+                        }
+                    }
+                }
+                if !enabled {
+                    let events = self.state.forget_all();
+                    deliver(&self.sink, events);
+                }
+            }
+            Command::WalletRemoved(wallet_id) => {
+                if let Some(run) = self.wallets.remove(&wallet_id).and_then(|entry| entry.run) {
+                    run.abort.abort();
+                }
+                let events = self.state.forget_wallet(&wallet_id);
+                deliver(&self.sink, events);
+            }
+        }
+    }
+
+    /// Start the wallet's pending pass unless one is already running.
+    fn start(&mut self, wallet_id: WalletId) {
+        let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+            return;
+        };
+        if entry.run.is_some() {
+            return; // the running pass takes it up when it ends
+        }
+        let Some(pending) = entry.pending.take() else {
+            return;
+        };
+        self.next_run += 1;
+        let run = self.next_run;
+        let source = Arc::clone(&self.source);
+        let abort = self.jobs.spawn(async move {
+            let read = source
+                .read(wallet_id, pending.by_height, pending.forced)
+                .await;
+            JobDone::Read {
+                wallet_id,
+                run,
+                height: pending.height,
+                read,
+            }
+        });
+        entry.run = Some(Run {
+            id: run,
+            seq: entry.seq,
+            woken: false,
+            abort,
+            probing: None,
+        });
+    }
+
+    fn job_done(&mut self, done: JobDone) {
+        match done {
+            JobDone::Read {
+                wallet_id,
+                run,
+                height,
+                read,
+            } => {
+                let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+                    return;
+                };
+                let Some(current) = entry.run.as_mut().filter(|current| current.id == run) else {
+                    return;
+                };
+                match read {
+                    None => {
+                        // Gone from the wallet manager (its removal clears),
+                        // or an id a late event brought back after removal.
+                        if current.seq == entry.seq {
+                            self.wallets.remove(&wallet_id);
+                        } else {
+                            entry.run = None;
+                            self.start(wallet_id);
+                        }
+                    }
+                    Some(None) => {
+                        entry.run = None;
+                        self.start(wallet_id);
+                    }
+                    Some(Some(read)) => {
+                        if !read.forced.is_empty() {
+                            entry.idle = false;
+                        }
+                        // A request queued before any height was reported
+                        // carries 0; the wallet's own synced height is better.
+                        let height = height.max(read.synced_height);
+                        let start = begin_pass(
+                            &mut self.state,
+                            wallet_id,
+                            height,
+                            &read.views,
+                            &read.forced,
+                        );
+                        current.probing = Some(Probing {
+                            views: read.views,
+                            height,
+                            forced: read.forced,
+                            due: start.due,
+                        });
+                        // Clears and re-published dead verdicts reach the host
+                        // before the pass goes out to the network.
+                        deliver(&self.sink, start.events);
+                        self.probe_next(wallet_id);
+                    }
+                }
+            }
+            JobDone::Probed {
+                wallet_id,
+                run,
+                root,
+                verdict,
+            } => {
+                let Some(probing) = self
+                    .wallets
+                    .get_mut(&wallet_id)
+                    .and_then(|entry| entry.run.as_mut())
+                    .filter(|current| current.id == run)
+                    .and_then(|current| current.probing.as_ref())
+                else {
+                    return;
+                };
+                let events = record_probe(
+                    &mut self.state,
+                    wallet_id,
+                    probing.height,
+                    &probing.views,
+                    &probing.forced,
+                    root,
+                    &verdict,
+                );
+                deliver(&self.sink, events);
+                self.probe_next(wallet_id);
+            }
+        }
+    }
+
+    /// Probe the run's next due root, or end the run.
+    fn probe_next(&mut self, wallet_id: WalletId) {
+        let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+            return;
+        };
+        let Some(run) = entry.run.as_mut() else {
+            return;
+        };
+        let Some(probing) = run.probing.as_mut() else {
+            return;
+        };
+        if let Some((root, transaction)) = probing.due.pop_front() {
+            let probe = Arc::clone(&self.probe);
+            let id = run.id;
+            run.abort = self.jobs.spawn(async move {
+                let verdict = probe.probe(&transaction).await;
+                JobDone::Probed {
+                    wallet_id,
+                    run: id,
+                    root,
+                    verdict,
+                }
+            });
+            return;
+        }
+        if !run.woken && nothing_to_probe(&self.state, wallet_id, &probing.views) {
+            entry.idle = true;
+        }
+        entry.run = None;
+        self.start(wallet_id);
+    }
+}
+
+enum ActorSlot {
+    /// Waiting for the first command sent from inside a Tokio runtime.
+    NotStarted(Box<Actor>, mpsc::UnboundedReceiver<Command>),
+    Running(JoinHandle<()>),
+    Closed,
+}
+
+/// Probes unconfirmed sends and delivers each change of a send's verdict as
+/// [`PlatformEventHandler::on_outgoing_transaction_probed`], and each verdict
+/// the host must drop as
+/// [`PlatformEventHandler::on_outgoing_transaction_cleared`] — always from
+/// the resolver's own task, asynchronously to whoever caused it.
 ///
 /// Off until the host turns it on with [`set_enabled`](Self::set_enabled): a
 /// probe sends the signed transaction to evonodes over DAPI, which is a
 /// product decision, not something a wallet should start doing on upgrade.
 pub(crate) struct BroadcastResolver {
     enabled: AtomicBool,
-    probe: Arc<dyn AcceptanceProbe>,
-    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    state: Arc<Mutex<ResolverState>>,
-    delivering: Arc<AtomicBool>,
-    /// Every wallet seen in an event, with its last synced height if one has
-    /// been reported: an SPV-level `Uncertain` carries no wallet id, so it is
-    /// queued for every known wallet. A worker that finds its wallet gone
-    /// drops the entry, so a late event for a removed wallet cannot keep it.
-    wallets: Arc<Mutex<HashMap<WalletId, Option<u32>>>>,
-    passes: Arc<Mutex<PassQueue>>,
-    events: Mutex<Weak<PlatformEventManager>>,
-    tasks: ProbeTasks,
+    commands: mpsc::UnboundedSender<Command>,
+    actor: Mutex<ActorSlot>,
+    sink: Arc<EventSink>,
 }
 
 impl BroadcastResolver {
@@ -886,58 +1148,51 @@ impl BroadcastResolver {
         probe: Arc<dyn AcceptanceProbe>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     ) -> Self {
+        let sink = Arc::new(EventSink::default());
+        let actor = Actor::new(
+            probe,
+            Arc::new(ManagerSource(wallet_manager)),
+            Arc::clone(&sink) as Arc<dyn VerdictSink>,
+        );
+        let (commands, receiver) = mpsc::unbounded_channel();
         Self {
             enabled: AtomicBool::new(false),
-            probe,
-            wallet_manager,
-            state: Arc::new(Mutex::new(ResolverState {
-                off: true,
-                ..ResolverState::default()
-            })),
-            delivering: Arc::new(AtomicBool::new(false)),
-            wallets: Arc::new(Mutex::new(HashMap::new())),
-            passes: Arc::new(Mutex::new(PassQueue::default())),
-            events: Mutex::new(Weak::new()),
-            tasks: ProbeTasks::new(),
+            commands,
+            actor: Mutex::new(ActorSlot::NotStarted(Box::new(actor), receiver)),
+            sink,
         }
     }
 
     /// Where verdicts are delivered. Weak: the event manager holds this
     /// resolver as one of its handlers.
     pub(crate) fn set_event_manager(&self, events: Weak<PlatformEventManager>) {
-        *self.events.lock().expect("events mutex poisoned") = events;
+        *self.sink.0.lock().expect("event sink poisoned") = events;
     }
 
-    fn deliver(&self) {
-        let events = self.events.lock().expect("events mutex poisoned").clone();
-        deliver(&self.state, &self.delivering, &events);
-    }
-
-    /// Turning probing off forgets every send and tells the host to drop every
-    /// verdict it holds: with no passes running, nothing would ever clear them.
-    /// Passes still running, and ones already queued, stop before their next
-    /// probe and record nothing. Either way every wallet leaves idle, so
-    /// turning probing back on re-publishes what was cleared.
-    ///
-    /// The clears are delivered on the calling thread before this returns.
-    pub(crate) fn set_enabled(&self, enabled: bool) {
-        let changed = {
-            let mut state = self.state.lock().expect("resolver state poisoned");
-            let was = self.enabled.swap(enabled, Ordering::SeqCst);
-            state.off = !enabled;
-            if was && !enabled {
-                state.forget_all();
-            }
-            was != enabled
-        };
-        if changed {
-            let mut passes = self.passes.lock().expect("pass queue poisoned");
-            passes.idle.clear();
-            if !enabled {
-                passes.pending.clear();
+    fn send(&self, command: Command) {
+        // Fails only once the actor is gone (shutdown); nothing to do then.
+        let _ = self.commands.send(command);
+        let mut slot = self.actor.lock().expect("resolver actor slot poisoned");
+        if matches!(*slot, ActorSlot::NotStarted(..)) {
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                if let ActorSlot::NotStarted(actor, receiver) =
+                    std::mem::replace(&mut *slot, ActorSlot::Closed)
+                {
+                    *slot = ActorSlot::Running(runtime.spawn(actor.run(receiver)));
+                }
             }
         }
-        self.deliver();
+    }
+
+    /// Turn probing on or off. Turning it off forgets every send and has the
+    /// host told to drop every verdict it holds — with no passes running,
+    /// nothing would ever clear them — and drops the passes in flight. Either
+    /// way every wallet leaves idle, so turning it back on re-publishes what
+    /// was cleared. Returns at once; the clears follow from the resolver's
+    /// task.
+    pub(crate) fn set_enabled(&self, enabled: bool) {
+        self.enabled.store(enabled, Ordering::SeqCst);
+        self.send(Command::SetEnabled(enabled));
     }
 
     pub(crate) fn is_enabled(&self) -> bool {
@@ -945,188 +1200,25 @@ impl BroadcastResolver {
     }
 
     /// Forget a removed wallet — call after it has left the wallet manager:
-    /// its queued pass, its entry and every verdict, each of which the host is
-    /// told to drop. A pass that read the wallet before the removal stops
-    /// before recording anything.
+    /// its pass in flight, its entry and every verdict, each of which the host
+    /// is told to drop (from the resolver's task, not the caller's).
     pub(crate) fn wallet_removed(&self, wallet_id: &WalletId) {
-        {
-            let mut passes = self.passes.lock().expect("pass queue poisoned");
-            passes.pending.remove(wallet_id);
-            // A wake, not a removal of the counter: a pass still running for
-            // the wallet must see it changed and not mark the wallet idle.
-            passes.wake(wallet_id);
-        }
-        self.wallets
-            .lock()
-            .expect("wallets mutex poisoned")
-            .remove(wallet_id);
-        self.state
-            .lock()
-            .expect("resolver state poisoned")
-            .forget_wallet(wallet_id);
-        self.deliver();
+        self.send(Command::WalletRemoved(*wallet_id));
     }
 
-    /// Stop admitting passes and stop the running ones. Idempotent.
+    /// Stop the resolver's task, and with it every probe, waiting at most
+    /// `budget` for it to end; after this no host callback comes from the
+    /// resolver. Returns `false` if the task outlived the budget. Idempotent.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
-        self.tasks.quiesce_within(budget).await
-    }
-
-    /// Queue a pass for `wallet_id`; start a worker for it unless one runs.
-    /// A height-driven request (no `force`) is dropped for an idle wallet; a
-    /// forced one is queued, and the worker skips it cheaply if the wallet
-    /// does not hold the transaction.
-    fn request_pass(&self, wallet_id: WalletId, height: u32, force: Option<Txid>) {
-        {
-            let mut passes = self.passes.lock().expect("pass queue poisoned");
-            if force.is_none() && passes.idle.contains(&wallet_id) {
-                return;
-            }
-            let pending = passes.pending.entry(wallet_id).or_default();
-            pending.height = pending.height.max(height);
-            pending.by_height |= force.is_none();
-            pending.forced.extend(force);
-            if !passes.running.insert(wallet_id) {
-                return; // the running worker picks it up
-            }
-        }
-        let wallet_manager = Arc::clone(&self.wallet_manager);
-        let probe = Arc::clone(&self.probe);
-        let state = Arc::clone(&self.state);
-        let passes = Arc::clone(&self.passes);
-        let wallets = Arc::clone(&self.wallets);
-        let delivering = Arc::clone(&self.delivering);
-        let events = self.events.lock().expect("events mutex poisoned").clone();
-        self.tasks.spawn(async move {
-            let mut running = Running {
-                passes: Arc::clone(&passes),
-                wallet_id,
-                armed: true,
-            };
-            let flush = || deliver(&state, &delivering, &events);
-            loop {
-                // Take the next request, or stop — under the same lock a
-                // request_pass would take, so a request can never land between
-                // "queue empty" and "no longer running" and be left unserved.
-                let (next, wakes) = {
-                    let mut queue = passes.lock().expect("pass queue poisoned");
-                    let next = queue.pending.remove(&wallet_id);
-                    if next.is_none() {
-                        queue.running.remove(&wallet_id);
-                    }
-                    (next, queue.wakes(&wallet_id))
-                };
-                let Some(PendingPass {
-                    height,
-                    by_height,
-                    forced,
-                }) = next
-                else {
-                    // Already left the running set under the lock; the guard
-                    // must not remove a marker a new worker may have set since.
-                    running.armed = false;
-                    break;
-                };
-                let started = state
-                    .lock()
-                    .expect("resolver state poisoned")
-                    .generation(&wallet_id);
-                // Read under the lock, probe without it: a probe is network I/O.
-                let read = {
-                    let manager = wallet_manager.read().await;
-                    manager.get_wallet_info(&wallet_id).map(|info| {
-                        // An `Uncertain` result is queued for every wallet;
-                        // only the one holding the transaction acts on it.
-                        let forced: HashSet<Txid> = forced
-                            .into_iter()
-                            .filter(|txid| holds(info, txid))
-                            .collect();
-                        if !by_height && forced.is_empty() {
-                            return None;
-                        }
-                        // A request queued before any height was reported
-                        // carries 0; the wallet's own synced height is better.
-                        let height = height.max(info.core_wallet.synced_height());
-                        Some((collect_views(info), height, forced))
-                    })
-                };
-                let (views, height, forced) = match read {
-                    Some(Some(pass)) => pass,
-                    Some(None) => continue, // not this wallet's transaction
-                    None => {
-                        // Removed (wallet_removed did the clearing), or an id a
-                        // late event brought back after the removal.
-                        wallets
-                            .lock()
-                            .expect("wallets mutex poisoned")
-                            .remove(&wallet_id);
-                        let mut queue = passes.lock().expect("pass queue poisoned");
-                        queue.idle.remove(&wallet_id);
-                        queue.wakes.remove(&wallet_id);
-                        continue;
-                    }
-                };
-                if !forced.is_empty() {
-                    passes
-                        .lock()
-                        .expect("pass queue poisoned")
-                        .idle
-                        .remove(&wallet_id);
-                }
-                let outcome = resolve_pass(
-                    &state,
-                    probe.as_ref(),
-                    wallet_id,
-                    height,
-                    &views,
-                    &forced,
-                    started,
-                    &flush,
-                )
-                .await;
-                if outcome.nothing_to_probe {
-                    let mut queue = passes.lock().expect("pass queue poisoned");
-                    if queue.wakes(&wallet_id) == wakes {
-                        queue.idle.insert(wallet_id);
-                    }
-                }
-                flush();
-            }
-        });
-    }
-}
-
-/// A handle that turns automatic probing on or off, usable after the lock that
-/// guards the manager is released: turning probing off delivers a clear per
-/// published send to the host on the calling thread.
-#[derive(Clone)]
-pub struct BroadcastProbeSwitch(pub(crate) Arc<BroadcastResolver>);
-
-impl BroadcastProbeSwitch {
-    /// See [`PlatformWalletManager::set_broadcast_probe_enabled`](crate::PlatformWalletManager::set_broadcast_probe_enabled).
-    pub fn set_enabled(&self, enabled: bool) {
-        self.0.set_enabled(enabled);
-    }
-}
-
-/// Takes a wallet's worker out of the running set if it ends without reaching
-/// its own exit — an abort at shutdown — so a later request is not refused
-/// forever. Disarmed on the normal exit, which leaves the set under the queue
-/// lock itself.
-struct Running {
-    passes: Arc<Mutex<PassQueue>>,
-    wallet_id: WalletId,
-    armed: bool,
-}
-
-impl Drop for Running {
-    fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
-        if let Ok(mut passes) = self.passes.lock() {
-            passes.running.remove(&self.wallet_id);
-        }
+        let slot = std::mem::replace(
+            &mut *self.actor.lock().expect("resolver actor slot poisoned"),
+            ActorSlot::Closed,
+        );
+        let ActorSlot::Running(handle) = slot else {
+            return true;
+        };
+        handle.abort();
+        tokio::time::timeout(budget, handle).await.is_ok()
     }
 }
 
@@ -1152,51 +1244,28 @@ fn may_leave_work(event: &WalletEvent) -> bool {
 impl EventHandler for BroadcastResolver {
     fn on_wallet_event(&self, event: &WalletEvent) {
         let wallet_id = event.wallet_id();
-        if let WalletEvent::SyncHeightAdvanced { height, .. } = event {
-            let previous = self
-                .wallets
-                .lock()
-                .expect("wallets mutex poisoned")
-                .insert(wallet_id, Some(*height))
-                .flatten();
-            if self.is_enabled() && !is_catch_up_step(previous, *height) {
-                self.request_pass(wallet_id, *height, None);
-            }
-            return;
-        }
-        self.wallets
-            .lock()
-            .expect("wallets mutex poisoned")
-            .entry(wallet_id)
-            .or_insert(None);
-        if may_leave_work(event) {
-            self.passes
-                .lock()
-                .expect("pass queue poisoned")
-                .wake(&wallet_id);
-        }
+        let command = match event {
+            WalletEvent::SyncHeightAdvanced { height, .. } => Command::Height {
+                wallet_id,
+                height: *height,
+            },
+            other => Command::Seen {
+                wallet_id,
+                touched: may_leave_work(other),
+            },
+        };
+        self.send(command);
     }
 
     fn on_sync_event(&self, event: &SyncEvent) {
-        let SyncEvent::TransactionBroadcastResult {
+        if let SyncEvent::TransactionBroadcastResult {
             txid,
             result: BroadcastResult::Uncertain,
         } = event
-        else {
-            return;
-        };
-        if !self.is_enabled() {
-            return;
-        }
-        let wallets: Vec<(WalletId, u32)> = self
-            .wallets
-            .lock()
-            .expect("wallets mutex poisoned")
-            .iter()
-            .map(|(wallet, height)| (*wallet, height.unwrap_or(0)))
-            .collect();
-        for (wallet_id, height) in wallets {
-            self.request_pass(wallet_id, height, Some(*txid));
+        {
+            if self.is_enabled() {
+                self.send(Command::Uncertain(*txid));
+            }
         }
     }
 }
@@ -1209,8 +1278,13 @@ mod tests {
     use std::sync::Mutex as StdMutex;
 
     use async_trait::async_trait;
+    use dashcore::bls_sig_utils::BLSSignature;
+    use dashcore::ephemerealdata::chain_lock::ChainLock;
     use dashcore::hashes::Hash;
-    use dashcore::{OutPoint, TxIn};
+    use dashcore::{BlockHash, OutPoint, TxIn};
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::transaction_record::TransactionRecord;
+    use key_wallet::WalletCoreBalance;
 
     use super::*;
 
@@ -1397,7 +1471,7 @@ mod tests {
         assert!(is_catch_up_step(Some(1_000 - CATCH_UP_STEP - 1), 1_000));
     }
 
-    // ---- resolve_pass -------------------------------------------------------
+    // ---- begin_pass / record_probe ------------------------------------------
 
     /// Answers per txid and records every probe it received.
     struct ScriptedProbe {
@@ -1448,8 +1522,32 @@ mod tests {
         }
     }
 
+    /// The resolver's bookkeeping plus what the host was sent, driven the way
+    /// the actor drives it but without the task.
+    #[derive(Default)]
+    struct Harness {
+        state: ResolverState,
+        sent: Vec<ResolverEvent>,
+    }
+
+    impl Harness {
+        fn push(&mut self, events: Vec<Outgoing>) {
+            self.sent.extend(events.into_iter().map(|item| item.event));
+        }
+
+        fn forget_wallet(&mut self, wallet_id: &WalletId) {
+            let events = self.state.forget_wallet(wallet_id);
+            self.push(events);
+        }
+
+        fn forget_all(&mut self) {
+            let events = self.state.forget_all();
+            self.push(events);
+        }
+    }
+
     async fn pass(
-        state: &Mutex<ResolverState>,
+        state: &Mutex<Harness>,
         probe: &dyn AcceptanceProbe,
         height: u32,
         views: &[OutgoingView],
@@ -1458,42 +1556,47 @@ mod tests {
         outbox(state)
     }
 
-    /// A pass started under the current generation, as the worker runs it.
+    /// One pass: begin, probe each due root with no lock held, record.
+    /// Returns whether nothing is left to probe.
     async fn run(
-        state: &Mutex<ResolverState>,
+        state: &Mutex<Harness>,
         probe: &dyn AcceptanceProbe,
         wallet_id: WalletId,
         height: u32,
         views: &[OutgoingView],
         forced: &HashSet<Txid>,
-    ) -> PassOutcome {
-        let started = state.lock().expect("state").generation(&wallet_id);
-        resolve_pass(
-            state,
-            probe,
-            wallet_id,
-            height,
-            views,
-            forced,
-            started,
-            &|| {},
-        )
-        .await
+    ) -> bool {
+        let due = {
+            let mut guard = state.lock().expect("state");
+            let start = begin_pass(&mut guard.state, wallet_id, height, views, forced);
+            guard.push(start.events);
+            start.due
+        };
+        for (root, transaction) in due {
+            let verdict = probe.probe(&transaction).await;
+            let mut guard = state.lock().expect("state");
+            let events = record_probe(
+                &mut guard.state,
+                wallet_id,
+                height,
+                views,
+                forced,
+                root,
+                &verdict,
+            );
+            guard.push(events);
+        }
+        let guard = state.lock().expect("state");
+        nothing_to_probe(&guard.state, wallet_id, views)
     }
 
-    fn outbox(state: &Mutex<ResolverState>) -> Vec<ResolverEvent> {
-        state
-            .lock()
-            .expect("state")
-            .take_outbox()
-            .into_iter()
-            .map(|item| item.event)
-            .collect()
+    fn outbox(state: &Mutex<Harness>) -> Vec<ResolverEvent> {
+        std::mem::take(&mut state.lock().expect("state").sent)
     }
 
     #[tokio::test]
     async fn should_probe_only_roots_and_report_each_verdict() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), unresolved())]);
         let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
 
@@ -1505,7 +1608,7 @@ mod tests {
 
     #[tokio::test]
     async fn should_stop_probing_a_root_proven_dead() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), dead())]);
         let views = [send(1, &[outpoint(90, 0)])];
 
@@ -1520,7 +1623,7 @@ mod tests {
     /// being asked until it settles, but the host hears about it only once.
     #[tokio::test]
     async fn should_keep_probing_an_accepted_root_but_publish_it_once() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]);
         let views = [send(1, &[outpoint(90, 0)])];
 
@@ -1540,7 +1643,7 @@ mod tests {
 
     #[tokio::test]
     async fn should_keep_probing_an_unresolved_root_on_each_new_block() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), unresolved())]);
         let views = [send(1, &[outpoint(90, 0)])];
 
@@ -1561,7 +1664,7 @@ mod tests {
     /// the same block as an earlier probe.
     #[tokio::test]
     async fn should_probe_a_forced_root_regardless_of_its_schedule() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), unresolved())]);
         let views = [send(1, &[outpoint(90, 0)])];
 
@@ -1583,7 +1686,7 @@ mod tests {
     /// earlier unsettled send. Forcing the child probes its root at once.
     #[tokio::test]
     async fn should_probe_the_root_when_a_child_is_forced() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), unresolved())]);
         let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
 
@@ -1601,38 +1704,11 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(1), txid(1)]);
     }
 
-    /// Probing turned off (or the wallet removed) after the worker read the
-    /// wallet: the pass sends nothing to the network and records nothing.
-    #[tokio::test]
-    async fn should_do_nothing_in_a_pass_started_before_a_clear() {
-        let state = Mutex::new(ResolverState::default());
-        let probe = ScriptedProbe::new(&[]);
-        let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])];
-        let started = state.lock().expect("state").generation(&wallet());
-        state.lock().expect("state").forget_all();
-
-        resolve_pass(
-            &state,
-            &probe,
-            wallet(),
-            100,
-            &views,
-            &none(),
-            started,
-            &|| {},
-        )
-        .await;
-
-        assert!(probe.probed().is_empty());
-        assert!(outbox(&state).is_empty());
-        assert!(state.lock().expect("state").schedules.is_empty());
-    }
-
     /// A send that settled or left the wallet is forgotten, and the host is
     /// told to drop the verdict it was shown.
     #[tokio::test]
     async fn should_clear_a_published_send_that_is_no_longer_unconfirmed() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]);
         let views = [send(1, &[outpoint(90, 0)])];
 
@@ -1641,28 +1717,28 @@ mod tests {
 
         assert_eq!(gone, vec![ResolverEvent::Cleared(txid(1))]);
         let guard = state.lock().expect("state");
-        assert!(guard.schedules.is_empty());
-        assert!(guard.finished.is_empty());
-        assert!(guard.published.is_empty());
+        assert!(guard.state.schedules.is_empty());
+        assert!(guard.state.finished.is_empty());
+        assert!(guard.state.published.is_empty());
     }
 
     #[tokio::test]
     async fn should_not_let_one_wallets_pass_forget_another_wallets_roots() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), unresolved())]);
         let views = [send(1, &[outpoint(90, 0)])];
 
         pass(&state, &probe, 100, &views).await;
         run(&state, &probe, [9u8; 32], 100, &[], &none()).await;
 
-        assert_eq!(state.lock().expect("state").schedules.len(), 1);
+        assert_eq!(state.lock().expect("state").state.schedules.len(), 1);
     }
 
     /// A mined transaction the wallet has not caught up with yet: nothing left
     /// to ask, so it is not probed again.
     #[tokio::test]
     async fn should_stop_probing_a_root_found_in_a_block() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined)]);
         let views = [send(1, &[outpoint(90, 0)])];
 
@@ -1677,7 +1753,7 @@ mod tests {
     /// built on a dead root is published dead, not just the root.
     #[tokio::test]
     async fn should_publish_a_dead_root_for_every_own_send_built_on_it() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), dead())]);
         let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
 
@@ -1701,7 +1777,7 @@ mod tests {
     /// about the wallet's own send — the only row it can attach a verdict to.
     #[tokio::test]
     async fn should_publish_a_dead_incoming_parent_on_the_own_send_only() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(5), dead())]);
         let views = [incoming(5, &[outpoint(80, 0)]), send(6, &[outpoint(5, 0)])];
 
@@ -1713,7 +1789,7 @@ mod tests {
 
     #[tokio::test]
     async fn should_publish_nothing_while_an_incoming_parent_is_only_accepted() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(5), ProbeVerdict::Accepted)]);
         let views = [incoming(5, &[outpoint(80, 0)]), send(6, &[outpoint(5, 0)])];
 
@@ -1724,7 +1800,7 @@ mod tests {
     /// settled for picking roots, so the send built on it is probed next.
     #[tokio::test]
     async fn should_probe_the_children_of_a_root_found_in_a_block() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined), (txid(2), dead())]);
         let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
 
@@ -1742,7 +1818,7 @@ mod tests {
     /// A probe that, while it is out on the network, lets a concurrent pass
     /// clear the root (it settled): the late verdict must not be published.
     struct ClearingProbe {
-        state: Arc<Mutex<ResolverState>>,
+        state: Arc<Mutex<Harness>>,
     }
 
     #[async_trait]
@@ -1755,7 +1831,7 @@ mod tests {
 
     #[tokio::test]
     async fn should_not_publish_a_verdict_for_a_root_cleared_during_the_probe() {
-        let state = Arc::new(Mutex::new(ResolverState::default()));
+        let state = Arc::new(Mutex::new(Harness::default()));
         let probe = ClearingProbe {
             state: Arc::clone(&state),
         };
@@ -1771,14 +1847,14 @@ mod tests {
         .await;
 
         assert!(outbox(&state).is_empty());
-        assert!(state.lock().expect("state").published.is_empty());
+        assert!(state.lock().expect("state").state.published.is_empty());
     }
 
     /// A send built on a dead root's change after the root was found dead is
     /// dead too, and hears it without the root being asked again.
     #[tokio::test]
     async fn should_publish_a_dead_root_to_a_send_built_on_it_later() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), dead())]);
 
         pass(&state, &probe, 100, &[send(1, &[outpoint(90, 0)])]).await;
@@ -1798,7 +1874,7 @@ mod tests {
     /// may go idle; one with a root still open may not.
     #[tokio::test]
     async fn should_report_nothing_to_probe_only_when_every_root_is_final() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), dead()), (txid(2), unresolved())]);
 
         let empty = run(&state, &probe, wallet(), 100, &[], &none()).await;
@@ -1821,16 +1897,16 @@ mod tests {
         )
         .await;
 
-        assert!(empty.nothing_to_probe);
-        assert!(dead_only.nothing_to_probe);
-        assert!(!open.nothing_to_probe);
+        assert!(empty);
+        assert!(dead_only);
+        assert!(!open);
     }
 
     // ---- ResolverState ------------------------------------------------------
 
     #[tokio::test]
     async fn should_forget_one_wallet_and_queue_a_clear_for_its_published_sends() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), unresolved()), (txid(2), unresolved())]);
         pass(&state, &probe, 100, &[send(1, &[outpoint(90, 0)])]).await;
         run(
@@ -1848,13 +1924,17 @@ mod tests {
 
         assert_eq!(outbox(&state), vec![ResolverEvent::Cleared(txid(1))]);
         let guard = state.lock().expect("state");
-        assert_eq!(guard.published.len(), 1, "the other wallet is untouched");
-        assert_eq!(guard.schedules.len(), 1);
+        assert_eq!(
+            guard.state.published.len(),
+            1,
+            "the other wallet is untouched"
+        );
+        assert_eq!(guard.state.schedules.len(), 1);
     }
 
     #[tokio::test]
     async fn should_forget_everything_and_queue_a_clear_for_every_published_send() {
-        let state = Mutex::new(ResolverState::default());
+        let state = Mutex::new(Harness::default());
         let probe = ScriptedProbe::new(&[(txid(1), unresolved()), (txid(2), unresolved())]);
         pass(&state, &probe, 100, &[send(1, &[outpoint(90, 0)])]).await;
         run(
@@ -1873,7 +1953,9 @@ mod tests {
         assert_eq!(outbox(&state).len(), 2);
         let guard = state.lock().expect("state");
         assert!(
-            guard.published.is_empty() && guard.schedules.is_empty() && guard.finished.is_empty()
+            guard.state.published.is_empty()
+                && guard.state.schedules.is_empty()
+                && guard.state.finished.is_empty()
         );
     }
 
@@ -1903,93 +1985,6 @@ mod tests {
         ));
     }
 
-    /// Probing off: a pass that read its generation after the switch stops
-    /// as surely as one that started before it.
-    #[tokio::test]
-    async fn should_do_nothing_while_probing_is_off() {
-        let state = Mutex::new(ResolverState {
-            off: true,
-            ..ResolverState::default()
-        });
-        let probe = ScriptedProbe::new(&[]);
-
-        run(
-            &state,
-            &probe,
-            wallet(),
-            100,
-            &[send(1, &[outpoint(90, 0)])],
-            &none(),
-        )
-        .await;
-
-        assert!(probe.probed().is_empty());
-        assert!(outbox(&state).is_empty());
-        assert!(state.lock().expect("state").schedules.is_empty());
-    }
-
-    /// A probe that records what the host had been told by the time it ran.
-    struct SnapshotProbe {
-        delivered: Arc<StdMutex<Vec<ResolverEvent>>>,
-        seen: StdMutex<Vec<ResolverEvent>>,
-    }
-
-    #[async_trait]
-    impl AcceptanceProbe for SnapshotProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
-            *self.seen.lock().expect("seen") = self.delivered.lock().expect("delivered").clone();
-            unresolved()
-        }
-    }
-
-    /// A clear reaches the host before the pass goes out to the network, not
-    /// after every root's probe.
-    #[tokio::test]
-    async fn should_deliver_clears_before_probing() {
-        let state = Mutex::new(ResolverState::default());
-        pass(
-            &state,
-            &ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]),
-            100,
-            &[send(1, &[outpoint(90, 0)])],
-        )
-        .await;
-        let delivered = Arc::new(StdMutex::new(Vec::new()));
-        let probe = SnapshotProbe {
-            delivered: Arc::clone(&delivered),
-            seen: StdMutex::new(Vec::new()),
-        };
-        let flush = || {
-            let batch = outbox(&state);
-            delivered.lock().expect("delivered").extend(batch);
-        };
-        let started = state.lock().expect("state").generation(&wallet());
-
-        resolve_pass(
-            &state,
-            &probe,
-            wallet(),
-            101,
-            &[send(2, &[outpoint(91, 0)])],
-            &none(),
-            started,
-            &flush,
-        )
-        .await;
-
-        assert_eq!(
-            *probe.seen.lock().expect("seen"),
-            vec![ResolverEvent::Cleared(txid(1))]
-        );
-        assert_eq!(
-            *delivered.lock().expect("delivered"),
-            vec![
-                ResolverEvent::Cleared(txid(1)),
-                ResolverEvent::Verdict(txid(2), unresolved()),
-            ]
-        );
-    }
-
     /// A long chain on one root: every own send in it, found in one walk.
     #[test]
     fn should_find_every_own_send_in_a_long_chain() {
@@ -2003,6 +1998,379 @@ mod tests {
         assert_eq!(
             graph.own_in_chain(&txid(1)),
             (1..=20u8).map(txid).collect::<BTreeSet<_>>()
+        );
+    }
+
+    // ---- the actor ----------------------------------------------------------
+
+    /// Unsettled views per wallet; records every walk over a wallet's records.
+    #[derive(Default)]
+    struct FakeSource {
+        views: StdMutex<HashMap<WalletId, Vec<OutgoingView>>>,
+        walks: StdMutex<Vec<WalletId>>,
+    }
+
+    #[async_trait]
+    impl WalletSource for FakeSource {
+        async fn read(
+            &self,
+            wallet_id: WalletId,
+            by_height: bool,
+            forced: HashSet<Txid>,
+        ) -> Option<Option<WalletRead>> {
+            let views = self.views.lock().expect("views").get(&wallet_id)?.clone();
+            let forced = forced_held(by_height, forced, |txid| {
+                views.iter().any(|view| view.txid == *txid)
+            });
+            Some(forced.map(|forced| {
+                self.walks.lock().expect("walks").push(wallet_id);
+                WalletRead {
+                    views,
+                    synced_height: 0,
+                    forced,
+                }
+            }))
+        }
+    }
+
+    #[derive(Default)]
+    struct CollectSink(StdMutex<Vec<ResolverEvent>>);
+
+    impl VerdictSink for CollectSink {
+        fn deliver(&self, item: &Outgoing) {
+            self.0.lock().expect("sink").push(item.event.clone());
+        }
+    }
+
+    struct Rig {
+        actor: Actor,
+        source: Arc<FakeSource>,
+        sink: Arc<CollectSink>,
+    }
+
+    impl Rig {
+        fn new(probe: Arc<dyn AcceptanceProbe>) -> Self {
+            Self::with_sink(probe, Arc::new(CollectSink::default()))
+        }
+
+        fn with_sink(probe: Arc<dyn AcceptanceProbe>, sink: Arc<CollectSink>) -> Self {
+            let source = Arc::new(FakeSource::default());
+            let actor = Actor::new(
+                probe,
+                Arc::clone(&source) as Arc<dyn WalletSource>,
+                Arc::clone(&sink) as Arc<dyn VerdictSink>,
+            );
+            Self {
+                actor,
+                source,
+                sink,
+            }
+        }
+
+        fn views(&self, wallet_id: WalletId, views: Vec<OutgoingView>) {
+            self.source
+                .views
+                .lock()
+                .expect("views")
+                .insert(wallet_id, views);
+        }
+
+        /// Handle `command`, then every job it caused, as the task would.
+        async fn send(&mut self, command: Command) {
+            self.actor.handle(command);
+            self.settle().await;
+        }
+
+        async fn settle(&mut self) {
+            while let Some(done) = self.actor.jobs.join_next().await {
+                if let Ok(done) = done {
+                    self.actor.job_done(done);
+                }
+            }
+        }
+
+        /// Two height steps: the first after launch is catch-up.
+        async fn follow(&mut self, wallet_id: WalletId, from: u32) {
+            self.send(Command::Height {
+                wallet_id,
+                height: from,
+            })
+            .await;
+            self.send(Command::Height {
+                wallet_id,
+                height: from + 1,
+            })
+            .await;
+        }
+
+        async fn height(&mut self, wallet_id: WalletId, height: u32) {
+            self.send(Command::Height { wallet_id, height }).await;
+        }
+
+        fn sent(&self) -> Vec<ResolverEvent> {
+            std::mem::take(&mut *self.sink.0.lock().expect("sink"))
+        }
+
+        fn walks(&self) -> usize {
+            self.source.walks.lock().expect("walks").len()
+        }
+    }
+
+    async fn enabled(probe: Arc<dyn AcceptanceProbe>) -> Rig {
+        let mut rig = Rig::new(probe);
+        rig.send(Command::SetEnabled(true)).await;
+        rig
+    }
+
+    #[tokio::test]
+    async fn should_ignore_heights_and_uncertain_results_while_off() {
+        let mut rig = Rig::new(Arc::new(ScriptedProbe::new(&[])));
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.follow(wallet(), 100).await;
+        rig.send(Command::Uncertain(txid(1))).await;
+
+        assert_eq!(rig.walks(), 0);
+        assert!(rig.sent().is_empty());
+    }
+
+    /// An `Uncertain` result carries no wallet id: every wallet hears it, but
+    /// only the one holding the transaction walks its records.
+    #[tokio::test]
+    async fn should_act_on_an_uncertain_result_only_in_the_wallet_that_holds_it() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        let other = [9u8; 32];
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.views(other, vec![send(2, &[outpoint(91, 0)])]);
+        for wallet_id in [wallet(), other] {
+            rig.send(Command::Seen {
+                wallet_id,
+                touched: false,
+            })
+            .await;
+        }
+
+        rig.send(Command::Uncertain(txid(1))).await;
+
+        assert_eq!(*rig.source.walks.lock().expect("walks"), vec![wallet()]);
+        assert_eq!(probe.probed(), vec![txid(1)]);
+        assert_eq!(
+            rig.sent(),
+            vec![ResolverEvent::Verdict(txid(1), unresolved())]
+        );
+    }
+
+    /// Once every root is final the wallet is idle: height advances do not walk
+    /// its records again until an event that touched them.
+    #[tokio::test]
+    async fn should_go_idle_when_every_root_is_final_until_a_touch() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.follow(wallet(), 100).await;
+        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), dead())]);
+        assert_eq!(rig.walks(), 1);
+
+        rig.height(wallet(), 102).await;
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: false,
+        })
+        .await;
+        rig.height(wallet(), 103).await;
+        assert_eq!(
+            rig.walks(),
+            1,
+            "idle: no walk, even after an untouching event"
+        );
+
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: true,
+        })
+        .await;
+        rig.height(wallet(), 104).await;
+        assert_eq!(rig.walks(), 2);
+    }
+
+    /// Something touched the wallet while its pass ran: the pass may have read
+    /// it before, so it must not leave the wallet idle.
+    #[tokio::test]
+    async fn should_not_leave_idle_a_wallet_touched_during_its_pass() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+
+        rig.actor.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        rig.actor.handle(Command::Seen {
+            wallet_id: wallet(),
+            touched: true,
+        });
+        rig.settle().await;
+        rig.height(wallet(), 102).await;
+
+        assert_eq!(rig.walks(), 2);
+    }
+
+    /// Off clears every verdict and wakes every wallet; back on, the next
+    /// height re-publishes what was cleared.
+    #[tokio::test]
+    async fn should_republish_after_probing_goes_off_and_on() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), dead())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.sent();
+
+        rig.send(Command::SetEnabled(false)).await;
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+
+        rig.send(Command::SetEnabled(true)).await;
+        rig.height(wallet(), 102).await;
+        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), dead())]);
+        assert_eq!(probe.probed(), vec![txid(1), txid(1)]);
+    }
+
+    /// Probing turned off while a pass is out on the network: its result is
+    /// dropped, nothing is published after the clears.
+    #[tokio::test]
+    async fn should_drop_a_pass_in_flight_when_probing_goes_off() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+
+        rig.actor.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        rig.actor.handle(Command::SetEnabled(false));
+        rig.settle().await;
+
+        assert!(rig.sent().is_empty());
+        assert!(rig.actor.state.published.is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_clear_a_removed_wallets_verdicts_and_forget_it() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.sent();
+
+        rig.send(Command::WalletRemoved(wallet())).await;
+
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+        assert!(!rig.actor.wallets.contains_key(&wallet()));
+    }
+
+    /// A late event can register an id the wallet manager no longer holds;
+    /// the first pass that finds it gone drops it.
+    #[tokio::test]
+    async fn should_drop_a_wallet_the_manager_no_longer_holds() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: false,
+        })
+        .await;
+
+        rig.send(Command::Uncertain(txid(1))).await;
+
+        assert!(!rig.actor.wallets.contains_key(&wallet()));
+    }
+
+    /// A probe that records what the host had been sent by the time it ran.
+    struct SnapshotProbe {
+        sink: Arc<CollectSink>,
+        seen: StdMutex<Vec<ResolverEvent>>,
+    }
+
+    #[async_trait]
+    impl AcceptanceProbe for SnapshotProbe {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
+            *self.seen.lock().expect("seen") = self.sink.0.lock().expect("sink").clone();
+            ProbeVerdict::Accepted
+        }
+    }
+
+    /// A clear reaches the host before the pass goes out to the network.
+    #[tokio::test]
+    async fn should_deliver_clears_before_probing() {
+        let sink = Arc::new(CollectSink::default());
+        let probe = Arc::new(SnapshotProbe {
+            sink: Arc::clone(&sink),
+            seen: StdMutex::new(Vec::new()),
+        });
+        let mut rig = Rig::with_sink(probe.clone(), sink);
+        rig.send(Command::SetEnabled(true)).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.sent();
+
+        rig.views(wallet(), vec![send(2, &[outpoint(91, 0)])]);
+        rig.height(wallet(), 102).await;
+
+        assert_eq!(
+            *probe.seen.lock().expect("seen"),
+            vec![ResolverEvent::Cleared(txid(1))]
+        );
+    }
+
+    fn chain_lock() -> ChainLock {
+        ChainLock {
+            block_height: 100,
+            block_hash: BlockHash::all_zeros(),
+            signature: BLSSignature::from([0u8; 96]),
+        }
+    }
+
+    /// A chainlock arrives about once per block for every wallet; only one that
+    /// locked something, or a block that changed records, may leave work.
+    #[test]
+    fn should_wake_only_on_events_that_touched_records() {
+        let block = |inserted: Vec<TransactionRecord>| WalletEvent::BlockProcessed {
+            wallet_id: wallet(),
+            height: 100,
+            chain_lock: None,
+            inserted,
+            updated: Vec::new(),
+            matured: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        };
+        let lock = |txids: Vec<Txid>| WalletEvent::ChainLockProcessed {
+            wallet_id: wallet(),
+            chain_lock: chain_lock(),
+            locked_transactions: BTreeMap::from([(AccountType::CoinJoin { index: 0 }, txids)]),
+        };
+
+        assert!(!may_leave_work(&block(Vec::new())));
+        assert!(!may_leave_work(&lock(Vec::new())));
+        assert!(may_leave_work(&lock(vec![txid(1)])));
+        assert!(!may_leave_work(&WalletEvent::SyncHeightAdvanced {
+            wallet_id: wallet(),
+            height: 100,
+        }));
+    }
+
+    #[test]
+    fn should_act_on_forced_txids_only_when_held() {
+        let held = |txid: &Txid| *txid == self::txid(1);
+        let forced = HashSet::from([txid(1), txid(2)]);
+
+        assert_eq!(
+            forced_held(false, forced.clone(), held),
+            Some(HashSet::from([txid(1)]))
+        );
+        assert_eq!(forced_held(false, HashSet::from([txid(2)]), held), None);
+        assert_eq!(
+            forced_held(true, HashSet::from([txid(2)]), held),
+            Some(HashSet::new())
         );
     }
 }

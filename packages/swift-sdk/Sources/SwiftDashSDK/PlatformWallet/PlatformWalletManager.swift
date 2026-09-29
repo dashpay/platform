@@ -931,6 +931,10 @@ public class PlatformWalletManager: ObservableObject {
         drainingNativeHandle = h
         handle = NULL_HANDLE
         isConfigured = false
+        // The native side forgets every probe verdict on teardown, and its
+        // clears are dropped once `shutdownRequested` is set: drop them here.
+        outgoingTransactionVerdicts = [:]
+        lastOutgoingTransactionProbe = nil
         // Poll/reconcile cancellation is independent of admitted local-read
         // generations. Stop remaining reads and reconcile persistence steps
         // before the blocking shielded stop.

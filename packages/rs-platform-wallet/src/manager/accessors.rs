@@ -20,7 +20,6 @@ use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
-use crate::wallet::core::broadcast_resolver::BroadcastProbeSwitch;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
 
@@ -531,18 +530,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// each change of a send's verdict is published as
     /// `on_outgoing_transaction_probed`, each send that no longer needs one
     /// as `on_outgoing_transaction_cleared`. Nothing in the wallet changes.
-    /// Off by default; turning it off clears every published verdict, and the
-    /// clears reach the host on the calling thread before this returns.
+    /// Off by default; turning it off clears every published verdict. Returns
+    /// at once: verdicts and clears reach the host from the resolver's own
+    /// task, never on the calling thread.
     pub fn set_broadcast_probe_enabled(&self, enabled: bool) {
         self.broadcast_resolver.set_enabled(enabled);
-    }
-
-    /// A handle for [`set_broadcast_probe_enabled`](Self::set_broadcast_probe_enabled)
-    /// that outlives a borrow of the manager — for callers that hold a lock
-    /// around it, since turning probing off calls the host once per published
-    /// send before it returns.
-    pub fn broadcast_probe_switch(&self) -> BroadcastProbeSwitch {
-        BroadcastProbeSwitch(Arc::clone(&self.broadcast_resolver))
     }
 
     /// Whether automatic probing of unconfirmed sends is on.

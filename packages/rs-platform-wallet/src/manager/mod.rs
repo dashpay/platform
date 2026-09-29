@@ -965,9 +965,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // they clone the FFI persister, so a straggler is exactly the
         // callback-after-destroy hazard the report exists to catch.
         //
-        // Broadcast-probe passes publish through the host's event callbacks
-        // too, so they must be gone before destroy returns; they are safe to
-        // abort. Both drains run concurrently under one shared budget.
+        // The broadcast resolver's task publishes through the host's event
+        // callbacks too, so it must be gone before destroy returns; it and its
+        // probes are safe to abort. Both drains run concurrently under one shared budget.
         let (payments_drained, probes_drained) = tokio::join!(
             self.dashpay_payment_handler
                 .quiesce_within(PAYMENT_DRAIN_BUDGET),
