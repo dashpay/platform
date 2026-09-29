@@ -26,7 +26,8 @@ RUN_PATH = f"actions/runs/{FIXTURE['publisher_run']['id']}"
 
 class SelectorTests(unittest.TestCase):
     def setUp(self):
-        self.manifest = runner.read_manifest(ROOT / runner.MANIFEST)
+        # Historical publisher fixtures bind the legacy contract, not a future branch default.
+        self.manifest = runner.read_manifest(Path(__file__).parent / "fixtures/legacy-runner-requirements.json")
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.event = Path(self.temp.name) / "event.json"

@@ -16,9 +16,10 @@ spec.loader.exec_module(runner)
 
 class OrdinaryImageRoutingTests(unittest.TestCase):
     def setUp(self):
-        self.legacy = runner.read_manifest(ROOT / runner.MANIFEST)
+        self.legacy = runner.read_manifest(Path(__file__).parent / 'fixtures/legacy-runner-requirements.json')
         self.new = copy.deepcopy(self.legacy)
         self.new['recipe_revision'] = '1be03edb7f4f18548d525b17dfac6ee31db17c99'
+        self.assertEqual(runner.fingerprint(self.legacy), 'd272d01bcf3dfa620bbab1e9f31c3e1987862d33ec876bbad83c80f29de41a58')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.event = Path(self.temp.name) / 'event.json'
