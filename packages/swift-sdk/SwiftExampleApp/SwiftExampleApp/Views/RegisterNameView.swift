@@ -26,7 +26,6 @@ struct RegisterNameView: View {
   @State private var errorMessage = ""
   @State private var showingError = false
   @State private var checkTimer: Timer? = nil
-  @State private var lastCheckedName = ""
   @State private var availabilityGate = AvailabilityRequestGate()
   @State private var isRegistering = false
   @State private var registrationSuccess = false
@@ -171,7 +170,7 @@ struct RegisterNameView: View {
 
               // Reset availability if name changed — and drop any lookup
               // still in flight for the old name, so it cannot land later.
-              if normalizedUsername != lastCheckedName {
+              if availabilityGate.needsLookup(for: normalizedUsername) {
                 availabilityGate.cancel()
                 isAvailable = nil
                 isChecking = false
@@ -182,7 +181,7 @@ struct RegisterNameView: View {
               isContested = isNameContested
 
               // Start new timer if name is valid
-              if isValidUsername && normalizedUsername != lastCheckedName {
+              if isValidUsername && availabilityGate.needsLookup(for: normalizedUsername) {
                 checkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
                   Task {
                     await checkAvailabilityAutomatically()
@@ -345,7 +344,6 @@ struct RegisterNameView: View {
     // Store the name we're checking, and tag this lookup: lookups run
     // concurrently, so an older one can finish after a newer one.
     let name = normalizedUsername
-    lastCheckedName = name
     let requestID = availabilityGate.begin(name: name)
 
     // Start showing the checking indicator
@@ -504,17 +502,30 @@ private struct UsernameChangeHandler: ViewModifier {
 struct AvailabilityRequestGate {
   private var nextID = 0
   private var current: (id: Int, name: String)?
+  /// The name the newest lookup was for, in flight or answered. Kept apart
+  /// from `current` because an answered lookup still means "no need to ask
+  /// again"; cleared on `cancel()`, since a cancelled lookup answers nothing.
+  private var checkedName = ""
 
   /// Start a lookup for `name`; any earlier lookup stops being accepted.
   mutating func begin(name: String) -> Int {
     nextID += 1
     current = (nextID, name)
+    checkedName = name
     return nextID
   }
 
-  /// The name changed: nothing in flight may land anymore.
+  /// The name changed: nothing in flight may land anymore, and the name it
+  /// was for must be asked about again if the user types it back.
   mutating func cancel() {
     current = nil
+    checkedName = ""
+  }
+
+  /// Whether `name` still needs a lookup — false only while the newest
+  /// lookup, in flight or answered, is for this exact name.
+  func needsLookup(for name: String) -> Bool {
+    name != checkedName
   }
 
   /// Whether a lookup's result still describes what the user is editing.

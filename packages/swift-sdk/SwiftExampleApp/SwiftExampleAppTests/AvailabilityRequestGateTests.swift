@@ -37,6 +37,26 @@ final class AvailabilityRequestGateTests: XCTestCase {
         XCTAssertFalse(gate.accepts(id: lookup, name: "alice"))
     }
 
+    func testEditingAwayAndBackBeforeTheDebounceAsksAgain() {
+        var gate = AvailabilityRequestGate()
+        _ = gate.begin(name: "alice")
+        XCTAssertFalse(gate.needsLookup(for: "alice"))
+
+        // Edited to another name (cancelling "alice"), then back before the
+        // debounce fired: "alice" must be looked up again, since the
+        // cancelled lookup will never land.
+        gate.cancel()
+        XCTAssertTrue(gate.needsLookup(for: "alice"))
+    }
+
+    func testAnsweredLookupNeedsNoRepeat() {
+        var gate = AvailabilityRequestGate()
+        let lookup = gate.begin(name: "alice")
+        XCTAssertTrue(gate.accepts(id: lookup, name: "alice"))
+        XCTAssertFalse(gate.needsLookup(for: "alice"))
+        XCTAssertTrue(gate.needsLookup(for: "bob"))
+    }
+
     func testCurrentLookupIsAccepted() {
         var gate = AvailabilityRequestGate()
         let lookup = gate.begin(name: "alice")
