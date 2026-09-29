@@ -157,8 +157,8 @@ Now compare with `PLATFORM_V14`, the latest at the time of writing. By
 convention, each sub-constant slot that was bumped carries a trailing
 `// changed:` comment saying what changed. The `protocol_version` field is the
 snapshot's identity and is never annotated. One bumped slot in this snapshot,
-`validation` (`DPP_VALIDATION_VERSIONS_V4` to `V5`), is missing its comment,
-which is exactly the omission the convention exists to prevent:
+`state_transitions` (`STATE_TRANSITION_VERSIONS_V3` to `V4`), is missing its
+comment, which is exactly the omission the convention exists to prevent:
 
 ```rust
 // packages/rs-platform-version/src/version/v14.rs
@@ -167,7 +167,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 (v2 index walkers, detect_ranked_mode slot)
     drive_abci: DriveAbciVersion {
-        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
+        structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo validation
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
@@ -176,22 +176,22 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
-        validation: DPP_VALIDATION_VERSIONS_V5,
+        validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: documentIndexOnlyDelete joins the wire
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
-        state_transitions: STATE_TRANSITION_VERSIONS_V3,
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
+        state_transitions: STATE_TRANSITION_VERSIONS_V4,
         contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema (ranked, refersTo, requiredSince, timeRange)
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
-        token_versions: TOKEN_VERSIONS_V2,
+        token_versions: TOKEN_VERSIONS_V3, // changed: deterministic libm for token reward math; epoch claim cap no longer wraps
         asset_lock_versions: DPP_ASSET_LOCK_VERSIONS_V1,
         methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 profile payment address fields
-    fee_version: FEE_VERSION2,
+    fee_version: FEE_VERSION3, // changed: contested document contribution, masternode vote cost, moderation election fund, distribution surcharge
     system_limits: SYSTEM_LIMITS_V4, // changed: relative daily withdrawal limit + time-range overlap cap
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
@@ -199,12 +199,13 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
 };
 ```
 
-Notice how only some subsystem versions change between V1 and V14. The ABCI
-structure versions and checkpoint parameters are still at V1 because nothing
-in them ever changed. The query versions stayed at V0 for the first eleven
-protocol versions, moved to V1 at V12 and to V2 at V14. The ABCI method
-versions, on the other hand, went from V1 to V10 -- ten revisions of the block
-processing logic.
+Notice how only some subsystem versions change between V1 and V14. The
+checkpoint parameters are still at V1 because nothing in them ever changed. The
+ABCI structure versions stayed at V1 through V13 and moved to V2 at V14, when the
+saved platform-state layout changed. The query versions stayed at V0 for the
+first eleven protocol versions, moved to V1 at V12 and to V2 at V14. The ABCI
+method versions, on the other hand, went from V1 to V10 -- ten revisions of the
+block processing logic.
 
 This is the power of the snapshot model: **each subsystem version evolves at
 its own pace.** A new protocol version does not require bumping everything. You

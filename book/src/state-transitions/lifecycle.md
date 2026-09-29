@@ -168,8 +168,8 @@ preventing partial replay attacks.
 
 ## Signatures and Authentication
 
-State transitions carry cryptographic signatures that prove authorization. There are
-two fundamentally different authentication models:
+State transitions carry cryptographic signatures that prove authorization. Several
+distinct authentication models exist:
 
 **Identity-signed transitions** -- The majority of transition types. The signer is an
 identity that already exists on the platform. The transition carries a
@@ -186,9 +186,12 @@ use platform address inputs with their own nonces and balances, rather than iden
 authentication.
 
 **Shielded transitions** -- The shielded-pool transitions are authorized by the
-zero-knowledge proof and the binding signature of their Orchard bundle. Only
-`ShieldFromAssetLock` also carries a transition-level ECDSA signature, made with the
-asset-lock key over the signable bytes; it commits to the optional surplus output.
+zero-knowledge proof and the binding signature of their Orchard bundle. Two of them
+also carry a transition-level signature. `ShieldFromIdentity` is identity-signed: it
+spends an identity balance, so it carries `signature_public_key_id` and a `signature`
+over the signable bytes, which binds the bundle to that identity and its nonce.
+`ShieldFromAssetLock` carries an ECDSA signature made with the asset-lock key; it
+commits to the optional surplus output.
 
 The `sign` method on `StateTransition` handles this:
 
