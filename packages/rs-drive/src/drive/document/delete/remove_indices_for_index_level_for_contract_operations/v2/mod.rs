@@ -4,6 +4,7 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::{IndexLevel, IndexType};
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
@@ -21,10 +22,10 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::object_size_info::DriveKeyInfo::KeyRef;
 
 use crate::drive::Drive;
-use crate::util::grove_operations::DirectQueryType;
 use crate::util::object_size_info::PathInfo::PathAsVec;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
+use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -52,7 +53,7 @@ impl Drive {
     /// `legacy_any_fields_null` is the null flag as walkers before protocol
     /// version 14 carried it: from one sibling sub-level into the next, so
     /// a missing value in one sibling marked every later sibling's path. It
-    /// only decides where to look for an entry written that way.
+    /// only decides whether to read how an entry is stored.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_indices_for_index_level_for_contract_operations_v2(
@@ -104,41 +105,60 @@ impl Drive {
                 &index_type.skip_if_absent_properties,
                 &document_and_contract_info.owned_document_info.document_info,
             )? {
-                // A unique index holds a document's entry as the bare
-                // reference at `[0]` when none of the index's own values is
-                // missing. The earlier rule could put it in the `[0]` tree
-                // instead; where the two disagree, the stored element says
-                // which, and an estimate assumes the tree, the larger
-                // delete. The all-null flag, carried the same way, could
-                // only add an entry to a `nullSearchable: false` index, and
-                // no stored contract has that shape.
-                let layout_any_fields_null = if legacy_any_fields_null
-                    && !any_fields_null
-                    && index_type.index_type == IndexType::UniqueIndex
+                // An entry written before protocol version 14 can sit in
+                // another layout than the rule gives (see
+                // `drive::document::stored_index_entry`): a unique index's
+                // entry in the `[0]` tree although none of its own values is
+                // missing (a carried sibling flag), or as the bare reference
+                // although one is (update v0), and a `nullSearchable: false`
+                // entry the rule skips. Where one could disagree, a stateful
+                // delete reads what is stored; the read is unbilled, and an
+                // estimate prices the rule. A type with a `ttl` exists only
+                // from version 14, so it holds none of these.
+                let mut layout_any_fields_null = any_fields_null;
+                let mut layout_all_fields_null = all_fields_null;
+                if estimated_costs_only_with_layer_info.is_none()
                     && index_type.terminal.is_none()
+                    && document_type.documents_ttl_seconds().is_none()
                 {
-                    match &index_path_info {
-                        PathAsVec(path) if estimated_costs_only_with_layer_info.is_none() => self
-                            .grove_get_raw_optional(
-                                path.as_slice().into(),
-                                &[0],
-                                DirectQueryType::StatefulDirectQuery,
+                    let PathAsVec(path) = &index_path_info else {
+                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "a stateful delete walks known index paths",
+                        )));
+                    };
+                    if all_fields_null && !index_type.should_insert_with_all_null {
+                        if let Some(document_id) = document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_document_id_as_slice()
+                        {
+                            if self.index_entry_in_tree_exists(
+                                path,
+                                document_id,
                                 transaction,
-                                batch_operations,
                                 &platform_version.drive,
-                            )?
-                            .is_some_and(|element| element.is_any_tree()),
-                        _ => true,
+                            )? {
+                                layout_any_fields_null = true;
+                                layout_all_fields_null = false;
+                            }
+                        }
+                    } else if index_type.index_type == IndexType::UniqueIndex
+                        && (any_fields_null || legacy_any_fields_null)
+                    {
+                        layout_any_fields_null = self.stored_index_entry_is_tree(
+                            path,
+                            any_fields_null,
+                            transaction,
+                            &platform_version.drive,
+                        )?;
                     }
-                } else {
-                    any_fields_null
-                };
+                }
                 self.remove_reference_for_index_level_for_contract_operations(
                     document_and_contract_info,
                     index_path_info.clone(),
                     index_type,
                     layout_any_fields_null,
-                    all_fields_null,
+                    layout_all_fields_null,
                     storage_flags,
                     previous_batch_operations,
                     estimated_costs_only_with_layer_info,

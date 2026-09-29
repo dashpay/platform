@@ -113,6 +113,11 @@ pub(crate) mod time_range_ttl;
 #[cfg(feature = "server")]
 pub mod index_only;
 
+/// Unbilled reads of how an index entry is stored, for the walkers that
+/// remove or refresh entries earlier protocol versions laid out otherwise
+#[cfg(feature = "server")]
+pub(crate) mod stored_index_entry;
+
 /// The indexOnly row commitment: the payload every indexOnly terminal item
 /// stores, binding one document's index projections into one logical row
 #[cfg(any(feature = "server", feature = "verify"))]

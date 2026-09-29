@@ -82,6 +82,23 @@ impl Drive {
     /// `ranked_axes` is empty for every pre-v14 contract, making the
     /// indexed path a bit-identical no-op for them.
     ///
+    /// Two more differences from v1, also from platform v14:
+    ///
+    /// - **`skipIfAbsent`**: the index ending at a level writes its entry
+    ///   only for a document carrying its skip set
+    ///   (`document_takes_part_in_index`), and a sub-level is built only
+    ///   when an entry of the document sits at or below it
+    ///   (`level_reaches_entry`).
+    /// - **Null flags follow each sub-level's own path**: a sub-level gets
+    ///   its parent's `any_fields_null` / `all_fields_null` combined with
+    ///   its own value. v1 updated them in place across the sibling loop,
+    ///   so a missing value in one branch marked every later sibling's
+    ///   path: a unique index there took the `[0]` tree layout with none of
+    ///   its own values missing, and a `nullSearchable: false` index got an
+    ///   entry for a document missing all of its values because a sibling
+    ///   had one. The v2 delete walker still finds entries written that way
+    ///   (see `drive::document::stored_index_entry`).
+    ///
     /// See v1's docs for the underlying value-tree / property-name-tree
     /// design (what "countable" gates versus "range_countable", etc.);
     /// everything not listed above matches v1.

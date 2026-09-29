@@ -105,6 +105,70 @@
         }
       },
       "additionalProperties": false
+    },
+    "offer": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwnerCategory",
+          "properties": [{ "$ownerId": "asc" }, { "category": "asc" }]
+        },
+        {
+          "name": "byOwnerSkuSize",
+          "properties": [{ "$ownerId": "asc" }, { "sku": "asc" }, { "size": "asc" }],
+          "unique": true
+        }
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 0
+        },
+        "sku": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 1
+        },
+        "size": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8,
+          "position": 2
+        }
+      },
+      "required": ["sku", "size"],
+      "additionalProperties": false
+    },
+    "badge": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwnerCodeVariant",
+          "properties": [{ "$ownerId": "asc" }, { "code": "asc" }, { "variant": "asc" }],
+          "unique": true
+        }
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16,
+          "position": 0
+        },
+        "variant": {
+          "type": "string",
+          "maxLength": 16,
+          "position": 1
+        }
+      },
+      "required": ["code"],
+      "additionalProperties": false
     }
   }
 }
