@@ -167,8 +167,9 @@ fn v2_elected() -> DataContractConfigV2 {
             moderators: ContractModerators::Elected(Box::new(ElectedModerators {
                 join_window: 86_400,
                 vote_window: 172_800,
-                challenge_cool_down: 1_209_600,
+                challenge_cool_down: Some(1_209_600),
                 election_delay: Some(3_600),
+                max_added_moderators: 2,
                 moderated_document_types: BTreeMap::from([(
                     "note".to_string(),
                     BTreeSet::from([ModerationAbility::Ban, ModerationAbility::Warn]),
@@ -678,8 +679,10 @@ fn should_pin_the_v0_v1_and_v2_config_key_sets() {
             "$type",
             "joinWindow",
             "voteWindow",
+            "seatContestable",
             "challengeCoolDown",
             "electionDelay",
+            "maxAddedModerators",
             "moderatedDocumentTypes",
             "interim",
             "ownerProtected",

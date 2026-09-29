@@ -76,8 +76,8 @@ type CorpusElected = Extract<CorpusModeration['moderators'], { interim: unknown 
 type DeclaredElected = Extract<ContractModerators, { $type: 'elected' }>;
 export type ElectedMirrorsCorpus = Check<Equal<keyof Shape<DeclaredElected>, keyof CorpusElected>>;
 export type ElectedWindowsAreSeconds = Check<Equal<
-  Pick<Shape<DeclaredElected>, 'joinWindow' | 'voteWindow' | 'challengeCoolDown' | 'electionDelay' | 'ownerProtected'>,
-  Pick<CorpusElected, 'joinWindow' | 'voteWindow' | 'challengeCoolDown' | 'electionDelay' | 'ownerProtected'>
+  Pick<Shape<DeclaredElected>, 'joinWindow' | 'voteWindow' | 'challengeCoolDown' | 'electionDelay' | 'maxAddedModerators' | 'ownerProtected'>,
+  Pick<CorpusElected, 'joinWindow' | 'voteWindow' | 'challengeCoolDown' | 'electionDelay' | 'maxAddedModerators' | 'ownerProtected'>
 >>;
 export type InterimMirrorsCorpus = Check<Equal<Exclude<KeysOfUnion<InterimModerators>, 'identities'>, keyof CorpusElected['interim']>>;
 export type AbilitiesAreNames = Check<CorpusElected['moderatedDocumentTypes'][keyof CorpusElected['moderatedDocumentTypes']][number] extends string ? true : false>;
@@ -145,10 +145,12 @@ dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: { $t
 // @ts-expect-error every list flag is declared
 dataContract.setConfig({ ...flags, moderation: { banlist: true, suspensions: false, moderators: { $type: 'contractOwner' } } }, 14);
 
-// An elected declaration: the cool-down, the moderated types and the interim
-// moderators are required, the windows, the delay and the flag optional.
+// An elected declaration: whether the seat is contestable (with its cool-down
+// when it is), the moderated types and the interim moderators are required,
+// the windows, the delay, the added members and the flag optional.
 const elected: ContractModerators = {
   $type: 'elected',
+  seatContestable: true,
   challengeCoolDown: 1209600,
   moderatedDocumentTypes: { note: ['ban', 'warn'] },
   interim: { $type: 'notYetUsable' },
@@ -159,13 +161,18 @@ dataContract.setConfig({
   moderation: {
     ...moderation,
     moderators: {
-      ...elected, joinWindow: 86400, voteWindow: 172800, electionDelay: 3600, ownerProtected: true,
+      ...elected, joinWindow: 86400, voteWindow: 172800, electionDelay: 3600, maxAddedModerators: 2, ownerProtected: true,
     },
   },
 }, 14);
-// @ts-expect-error the cool-down has no default
+dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: { $type: 'elected', seatContestable: false, moderatedDocumentTypes: { note: ['ban'] }, interim: { $type: 'noModeration' } } } }, 14);
+// @ts-expect-error whether the seat is contestable has no default
 dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: { $type: 'elected', moderatedDocumentTypes: {}, interim: { $type: 'noModeration' } } } }, 14);
-// @ts-expect-error an ability is one of the four
+// @ts-expect-error a contestable seat declares its cool-down
+dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: { $type: 'elected', seatContestable: true, moderatedDocumentTypes: {}, interim: { $type: 'noModeration' } } } }, 14);
+// @ts-expect-error a seat that can not be contested has no cool-down
+dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: { ...elected, seatContestable: false } } }, 14);
+// @ts-expect-error an ability is one of the five
 dataContract.setConfig({ ...flags, moderation: { ...moderation, moderators: { ...elected, moderatedDocumentTypes: { note: ['delete'] } } } }, 14);
 
 // A tag read back from JSON is a plain string; `setConfig` still accepts it.

@@ -807,8 +807,10 @@
               "$type": "elected",
               "joinWindow": 86400,
               "voteWindow": 172800,
+              "seatContestable": true,
               "challengeCoolDown": 1209600,
               "electionDelay": 3600,
+              "maxAddedModerators": 2,
               "moderatedDocumentTypes": {
                 "note": [
                   "ban",
@@ -870,8 +872,10 @@
               "$type": "elected",
               "joinWindow": 86400,
               "voteWindow": 172800,
+              "seatContestable": true,
               "challengeCoolDown": 1209600,
               "electionDelay": 3600,
+              "maxAddedModerators": 2,
               "moderatedDocumentTypes": {
                 "note": [
                   "ban",
@@ -930,8 +934,10 @@
             "$type": "elected",
             "joinWindow": 86400,
             "voteWindow": 172800,
+            "seatContestable": true,
             "challengeCoolDown": 1209600,
             "electionDelay": 3600,
+            "maxAddedModerators": 2,
             "moderatedDocumentTypes": {
               "note": [
                 "ban",
