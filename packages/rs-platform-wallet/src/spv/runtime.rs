@@ -325,18 +325,10 @@ impl SpvRuntime {
         tx: &Transaction,
         timeout: Option<Duration>,
     ) -> Result<BroadcastResult, BroadcastError> {
-        // Clone the client and release the read guard before the acceptance
-        // wait (as long as the caller's timeout): held across it, the guard
-        // would keep `stop` from taking the client for that long.
-        let client = {
-            let client_guard = self.client.read().await;
-            client_guard
-                .as_ref()
-                .ok_or(BroadcastError::Rejected {
-                    reason: "SPV broadcast not sent: client not started".to_string(),
-                })?
-                .clone()
-        };
+        let client_guard = self.client.read().await;
+        let client = client_guard.as_ref().ok_or(BroadcastError::Rejected {
+            reason: "SPV broadcast not sent: client not started".to_string(),
+        })?;
 
         client
             .broadcast_transaction_and_wait(tx, timeout)
@@ -393,16 +385,21 @@ impl SpvRuntime {
 
     /// Stop SPV sync gracefully. Unlocks the data dir safely.
     ///
-    /// **Every phase is bounded** — `stop` runs on the path
-    /// [`PlatformWalletManager::shutdown`](crate::manager::PlatformWalletManager::shutdown)
+    /// **Every phase after taking the client is bounded** — `stop` runs on the
+    /// path [`PlatformWalletManager::shutdown`](crate::manager::PlatformWalletManager::shutdown)
     /// and therefore the FFI's `destroy` must return through, so a wedged
     /// host callback has to surface as an error rather than hang teardown:
-    /// taking the client and stopping it share [`SPV_CLIENT_STOP_BUDGET`]
-    /// (taking it waits for the client's read guards), and the run-loop join
-    /// is capped at [`SPV_STOP_TIMEOUT`] with an [`SPV_ABORT_GRACE`] post-abort
+    /// the client stop is capped at [`SPV_CLIENT_STOP_BUDGET`], the run-loop
+    /// join at [`SPV_STOP_TIMEOUT`] with an [`SPV_ABORT_GRACE`] post-abort
     /// confirmation. A run loop that outlives all of that is **re-parked**,
     /// not detached, so a teardown retry re-joins it — and the error return
     /// keeps it out of a clean shutdown verdict.
+    ///
+    /// Taking the client is not bounded: it waits for the client's read
+    /// guards, and [`broadcast_transaction_and_wait`](Self::broadcast_transaction_and_wait)
+    /// holds one for its whole acceptance wait (the caller's timeout). That
+    /// keeps a broadcast on a live client and the data directory free once
+    /// `stop` returns, at the cost of a stop waiting for the broadcast.
     ///
     /// Idempotent. Stops run one at a time: a second call waits for the one
     /// in flight, then finds no client and re-joins whatever that one
@@ -411,33 +408,28 @@ impl SpvRuntime {
         let _stopping = StopInProgress::begin(&self.stops_in_progress);
         let _serial = self.stop_serial.lock().await;
 
-        let stop_result = match tokio::time::timeout(SPV_CLIENT_STOP_BUDGET, async {
-            let taken = self.client.write().await.take();
-            match taken {
-                Some(c) => c
-                    .stop()
-                    .await
-                    .map_err(|e| PlatformWalletError::SpvError(e.to_string())),
-                None => Ok(()),
-            }
-        })
-        .await
-        {
-            Ok(result) => result,
-            Err(_) => {
-                // Either the client lock stayed held by a reader, leaving the
-                // client in place for a retry, or the stop itself ran over and
-                // the client was dropped with the timed-out future. The
-                // data-dir lock may outlive this call, which is strictly
-                // better than never returning from `destroy`.
-                tracing::warn!(
-                    "SPV client stop did not complete within {:?}; abandoning it",
-                    SPV_CLIENT_STOP_BUDGET
-                );
-                Err(PlatformWalletError::SpvError(format!(
-                    "SPV client stop did not complete within {SPV_CLIENT_STOP_BUDGET:?}"
-                )))
-            }
+        let taken = {
+            let mut client = self.client.write().await;
+            client.take()
+        };
+
+        let stop_result = match taken {
+            Some(c) => match tokio::time::timeout(SPV_CLIENT_STOP_BUDGET, c.stop()).await {
+                Ok(result) => result.map_err(|e| PlatformWalletError::SpvError(e.to_string())),
+                Err(_) => {
+                    // The client is dropped with the timed-out future. The
+                    // data-dir lock may outlive this call, which is strictly
+                    // better than never returning from `destroy`.
+                    tracing::warn!(
+                        "SPV client stop did not complete within {:?}; abandoning it",
+                        SPV_CLIENT_STOP_BUDGET
+                    );
+                    Err(PlatformWalletError::SpvError(format!(
+                        "SPV client stop did not complete within {SPV_CLIENT_STOP_BUDGET:?}"
+                    )))
+                }
+            },
+            None => Ok(()),
         };
         self.peer_tracker.clear();
 
@@ -1104,22 +1096,6 @@ mod tests {
             .await
             .expect("the second stop task completes")
             .expect("the second stop finds nothing left to stop");
-    }
-
-    /// Taking the client waits for its read guards; that wait is bounded
-    /// like the rest of the stop instead of hanging behind a long reader.
-    #[tokio::test(start_paused = true)]
-    async fn should_bound_the_wait_for_the_client_lock() {
-        let runtime = unstarted_runtime();
-        let reader = runtime.client.read().await;
-
-        let result = runtime.stop().await;
-
-        assert!(
-            matches!(result, Err(PlatformWalletError::SpvError(_))),
-            "a stop blocked on the client lock must give up with an error, got {result:?}"
-        );
-        drop(reader);
     }
 
     /// Once the parked run loop has exited, the next start drops it and

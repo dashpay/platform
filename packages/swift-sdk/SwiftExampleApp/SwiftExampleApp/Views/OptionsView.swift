@@ -400,6 +400,9 @@ struct OptionsView: View {
                         }
                     } else {
                         Toggle("Use Custom SPV Peers", isOn: $customSpvPeersEnabled)
+                            // Its peer seed is network-specific, and during a
+                            // switch `currentNetwork` is still the old one.
+                            .disabled(isSwitchingNetwork)
                             .onChange(of: customSpvPeersEnabled) { _, isOn in
                                 // When enabling, seed the peers field with
                                 // the network's localhost default if the
