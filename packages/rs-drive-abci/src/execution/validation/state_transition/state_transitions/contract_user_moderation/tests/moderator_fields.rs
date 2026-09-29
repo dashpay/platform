@@ -54,18 +54,19 @@ fn report_schema() -> Value {
     })
 }
 
-/// A ticket its author may replace, whose `slot` only moderators write, no two tickets
-/// holding the same one
+/// A ticket its author may replace, whose `slot` and `weight` only moderators write, no two
+/// tickets holding the same slot
 fn ticket_schema() -> Value {
     platform_value!({
         "type": "object",
-        "moderatorAbilities": { "changeFields": ["slot"] },
+        "moderatorAbilities": { "changeFields": ["slot", "weight"] },
         "indices": [
             { "name": "bySlot", "properties": [{ "slot": "asc" }], "unique": true },
         ],
         "properties": {
             "title": { "type": "string", "minLength": 1, "maxLength": 50, "position": 0 },
             "slot": { "type": "integer", "minimum": 0, "maximum": 100, "position": 1 },
+            "weight": { "type": "number", "minimum": 0, "position": 2 },
         },
         "required": ["title"],
         "additionalProperties": false,
@@ -1131,4 +1132,24 @@ async fn should_keep_the_stamp_through_a_transfer_and_a_restore() {
         setup.stored_document(REPORT, report.id(), None),
         Some(handled)
     );
+}
+
+#[tokio::test]
+async fn should_prove_a_whole_number_set_on_a_number_field() {
+    // The transition carries the integer a client sends for a whole number; the document stores
+    // the `number` property as a float. The proof still shows the change.
+    let setup = setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (ticket, create) = create_ticket(&setup, &setup.user, "printer", platform_value!({})).await;
+    assert_success(&setup.process(&create, &transaction));
+    let weigh = setup
+        .moderate(
+            &setup.moderator,
+            change_action(TICKET, ticket.id(), platform_value!({ "weight": 2u64 })),
+        )
+        .await;
+    assert_success(&setup.process(&weigh, &transaction));
+    setup.commit(transaction);
+    let proved = setup.assert_change_proved(&weigh);
+    assert_eq!(proved.get("weight"), Some(&Value::Float(2.0)));
 }

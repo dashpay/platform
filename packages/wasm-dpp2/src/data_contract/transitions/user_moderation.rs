@@ -364,13 +364,35 @@ pub struct ContractUserModerationActionParts {
     pub reason: Option<ContractModerationReason>,
 }
 
-/// The fields of a changeDocumentFields as JavaScript gives them: an object of top-level
-/// property names to values, each converted as it is (a bigint to an integer, a Uint8Array to
-/// bytes, `null` to a removal) rather than through JSON, which turns a bigint into a string.
+/// A change's `fields` from JavaScript: each own property of the object a field name, its value
+/// converted as a document property is (a whole number or bigint an integer, 32 bytes an
+/// identifier) and put in the canonical form the transition signs
+/// ([`ContractUserModerationAction::canonical_field_value`]). An `undefined` value is left out,
+/// as JSON leaves it out: only an explicit `null` removes a field.
 pub fn fields_from_js(value: &JsValue) -> WasmDppResult<BTreeMap<String, Value>> {
-    js_value_to_platform_value(value)?
-        .into_btree_string_map()
-        .map_err(|error| WasmDppError::invalid_argument(format!("`fields`: {error}")))
+    if !value.is_object() || js_sys::Array::is_array(value) {
+        return Err(WasmDppError::invalid_argument(
+            "`fields` must be an object of field names to their new values",
+        ));
+    }
+    let mut fields = BTreeMap::new();
+    for entry in js_sys::Object::entries(&js_sys::Object::from(value.clone())).iter() {
+        let entry = js_sys::Array::from(&entry);
+        let Some(name) = entry.get(0).as_string() else {
+            continue;
+        };
+        let field_value = entry.get(1);
+        if field_value.is_undefined() {
+            continue;
+        }
+        let field_value = js_value_to_platform_value(&field_value)
+            .map_err(|error| WasmDppError::invalid_argument(format!("`fields.{name}`: {error}")))?;
+        fields.insert(
+            name,
+            ContractUserModerationAction::canonical_field_value(field_value),
+        );
+    }
+    Ok(fields)
 }
 
 /// The action for a name and its parts: an identity for the actions on an identity, with
@@ -733,9 +755,23 @@ impl ContractUserModerationWasm {
                 Value::Null => JsValue::NULL,
                 value => platform_value_to_object(value)?,
             };
-            js_sys::Reflect::set(&object, &JsValue::from_str(name), &value).map_err(|_| {
-                WasmDppError::serialization(format!("failed to set field `{name}`"))
-            })?;
+            // Defined as an own data property, so a field named like an inherited accessor
+            // (`__proto__`) is a field, not a call to the accessor
+            let descriptor = js_sys::Object::new();
+            for (key, flag) in [
+                ("value", value),
+                ("writable", JsValue::TRUE),
+                ("enumerable", JsValue::TRUE),
+                ("configurable", JsValue::TRUE),
+            ] {
+                js_sys::Reflect::set(&descriptor, &JsValue::from_str(key), &flag).map_err(
+                    |_| WasmDppError::serialization(format!("failed to describe field `{name}`")),
+                )?;
+            }
+            js_sys::Reflect::define_property(&object, &JsValue::from_str(name), &descriptor)
+                .map_err(|_| {
+                    WasmDppError::serialization(format!("failed to set field `{name}`"))
+                })?;
         }
         Ok(object.into())
     }

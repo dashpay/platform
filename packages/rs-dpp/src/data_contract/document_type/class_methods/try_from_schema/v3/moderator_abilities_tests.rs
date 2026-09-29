@@ -911,3 +911,27 @@ fn should_refuse_to_index_the_stamp_before_protocol_version_14() {
         "expected UndefinedIndexPropertyError, got {error:?}"
     );
 }
+
+#[test]
+fn should_refuse_fields_only_moderators_write_beside_a_required_transient_property() {
+    // The salt is checked when a report is filed and never stored: a moderator's change, judged
+    // against the schema, would find it missing on every report.
+    let schema = platform_value!({
+        "type": "object",
+        "moderatorAbilities": { "changeFields": ["status"] },
+        "transient": ["salt"],
+        "properties": {
+            "salt": { "type": "string", "maxLength": 32, "position": 0 },
+            "status": { "type": "integer", "minimum": 0, "maximum": 3, "position": 1 },
+        },
+        "required": ["salt"],
+        "additionalProperties": false,
+    });
+    assert_refused_naming(
+        parse_moderated(schema),
+        &[
+            "transient property \\\"salt\\\"",
+            "moderatorAbilities.changeFields",
+        ],
+    );
+}

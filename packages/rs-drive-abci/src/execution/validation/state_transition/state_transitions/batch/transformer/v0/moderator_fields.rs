@@ -49,15 +49,9 @@ pub(super) fn judge_moderator_field_write(
         return Ok(None);
     };
     let refusal = {
-        let (base, mut written) = match &*action {
-            DocumentTransitionAction::CreateAction(action) => (
-                action.base(),
-                Box::new(action.data().keys()) as Box<dyn Iterator<Item = &String>>,
-            ),
-            DocumentTransitionAction::ReplaceAction(action) => (
-                action.base(),
-                Box::new(action.changed_data_fields().iter()) as Box<dyn Iterator<Item = &String>>,
-            ),
+        let base = match &*action {
+            DocumentTransitionAction::CreateAction(action) => action.base(),
+            DocumentTransitionAction::ReplaceAction(action) => action.base(),
             _ => return Ok(None),
         };
         let document_type_name = base.document_type_name();
@@ -65,8 +59,23 @@ pub(super) fn judge_moderator_field_write(
         else {
             return Ok(None);
         };
+        // Every type before protocol version 14, and most after, keeps no such field
         let moderator_fields = document_type.moderator_changeable_fields();
-        let Some(field) = written.find(|field| moderator_fields.contains(*field)) else {
+        if moderator_fields.is_empty() {
+            return Ok(None);
+        }
+        let written = match &*action {
+            DocumentTransitionAction::CreateAction(action) => action
+                .data()
+                .keys()
+                .find(|field| moderator_fields.contains(*field)),
+            DocumentTransitionAction::ReplaceAction(action) => action
+                .changed_data_fields()
+                .iter()
+                .find(|field| moderator_fields.contains(*field)),
+            _ => None,
+        };
+        let Some(field) = written else {
             return Ok(None);
         };
         moderator_field_write_refusal(

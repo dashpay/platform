@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io::BufReader;
 use crate::drive::balances::balance_path_vec;
 use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::PathQuery;
@@ -11,6 +12,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
@@ -2984,8 +2986,10 @@ fn verify_contract_document_deletion_execution(
         )));
     };
     // A provider that does not hold the contract, or holds a version without the type, leaves
-    // the record to prove the deletion.
-    let contract = known_contracts_provider_fn(&contract_id).ok().flatten();
+    // the record to prove the deletion. What it answered is kept: when no record proves it
+    // either, that is what the caller needs to hear.
+    let lookup = known_contracts_provider_fn(&contract_id);
+    let contract = lookup.as_ref().ok().cloned().flatten();
     let no_record_type = contract
         .as_deref()
         .and_then(|contract| contract.document_type_optional_for_name(document_type_name))
@@ -3017,39 +3021,66 @@ fn verify_contract_document_deletion_execution(
             VerifiedDocuments(BTreeMap::from([(*document_id, None)])),
         ));
     }
-    let (root_hash, mut entries) = Drive::verify_contract_document_removals(
-        proof,
-        contract_id,
-        &ContractDocumentRemovalsQuery {
-            document_type_name: document_type_name.clone(),
-            selection: ContractDocumentRemovalsSelection::DocumentIds(vec![*document_id]),
-        },
-        verify_subset_of_proof,
-        platform_version,
-    )?;
-    match (entries.pop(), entries.is_empty()) {
-        (Some(entry), true)
-            if entry.document_id == *document_id
-                && entry.removal.moderator_id == transition.owner_id()
-                && entry.removal.reason == *reason =>
-        {
-            Ok((
-                root_hash,
-                VerifiedContractDocumentRemoval(
-                    contract_id,
-                    document_type_name.clone(),
-                    *document_id,
-                    entry.removal,
-                ),
-            ))
-        }
-        _ => Err(Error::Proof(ProofError::IncorrectProof(format!(
-            "proof of state transition execution does not show the {} on contract {} by {}",
-            transition.action(),
+    let proved_by_record = (|| {
+        let (root_hash, mut entries) = Drive::verify_contract_document_removals(
+            proof,
             contract_id,
-            transition.owner_id()
-        )))),
-    }
+            &ContractDocumentRemovalsQuery {
+                document_type_name: document_type_name.clone(),
+                selection: ContractDocumentRemovalsSelection::DocumentIds(vec![*document_id]),
+            },
+            verify_subset_of_proof,
+            platform_version,
+        )?;
+        match (entries.pop(), entries.is_empty()) {
+            (Some(entry), true)
+                if entry.document_id == *document_id
+                    && entry.removal.moderator_id == transition.owner_id()
+                    && entry.removal.reason == *reason =>
+            {
+                Ok((
+                    root_hash,
+                    VerifiedContractDocumentRemoval(
+                        contract_id,
+                        document_type_name.clone(),
+                        *document_id,
+                        entry.removal,
+                    ),
+                ))
+            }
+            _ => Err(Error::Proof(ProofError::IncorrectProof(format!(
+                "proof of state transition execution does not show the {} on contract {} by {}",
+                transition.action(),
+                contract_id,
+                transition.owner_id()
+            )))),
+        }
+    })();
+    // No record proves it: a deletion of a type that keeps none is proved by the document's
+    // absence, which only the contract's type can read. Without the contract, or its type, that
+    // is the failure to report, not the proof.
+    proved_by_record.map_err(|record_error| match lookup {
+        Err(lookup_error) => lookup_error,
+        Ok(None) => Error::Proof(ProofError::UnknownContract(format!(
+            "no removal record proves the {} on contract {}, and the contract, needed to read a \
+             deletion of a type that keeps no records, is unknown",
+            transition.action(),
+            contract_id
+        ))),
+        Ok(Some(contract))
+            if contract
+                .document_type_optional_for_name(document_type_name)
+                .is_none() =>
+        {
+            Error::Proof(ProofError::UnknownContract(format!(
+                "no removal record proves the {} on contract {}, and the contract known has no \
+                 document type \"{document_type_name}\"",
+                transition.action(),
+                contract_id
+            )))
+        }
+        Ok(Some(_)) => record_error,
+    })
 }
 
 /// A moderator's document restore is proved by the document's removal record, now marked
@@ -3125,6 +3156,27 @@ fn verify_contract_document_restore_execution(
 /// exists, and each field the transition names holds the value it set, or is absent where it
 /// set `null`. Its other properties are the owner's and are not compared; the revision the
 /// change bumped is the block's to say.
+/// `value` as a document of `document_type` stores its top-level property `field`: written with
+/// the property's own encoding and read back, nested values included. `None` when the type
+/// has no such property or it can not hold the value, which no executed change could have set.
+fn stored_form(document_type: DocumentTypeRef, field: &str, value: &Value) -> Option<Value> {
+    let property = document_type.properties().get(field)?;
+    // Written as an optional property is: a presence byte, then the value
+    let mut bytes = vec![1];
+    bytes.extend(
+        property
+            .property_type
+            .encode_value_ref_with_size(value, false)
+            .ok()?,
+    );
+    let mut reader = BufReader::new(bytes.as_slice());
+    property
+        .property_type
+        .read_optionally_from(&mut reader, false)
+        .ok()?
+        .0
+}
+
 fn verify_contract_document_change_execution(
     proof: &[u8],
     transition: &ContractUserModerationTransition,
@@ -3164,11 +3216,15 @@ fn verify_contract_document_change_execution(
     let changed = document.filter(|document| {
         fields.iter().all(|(field, value)| {
             let stored = document.properties().get(field);
-            // The document is read back under its type, so an integer comes back at the
-            // width the type stores it in, whichever the transition carried it in.
+            // The document is read back under its type, so each value set is compared in the
+            // form the type stores it in: an integer at the property's width, a whole number
+            // written to a `number` property as the float it reads back as.
             match value {
                 Value::Null => stored.is_none(),
-                value => stored.is_some_and(|stored| stored.equal_underlying_data(value)),
+                value => stored.is_some_and(|stored| {
+                    stored_form(document_type, field, value)
+                        .is_some_and(|expected| stored.equal_underlying_data(&expected))
+                }),
             }
         })
     });
