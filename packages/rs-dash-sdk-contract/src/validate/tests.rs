@@ -1000,8 +1000,20 @@ fn should_accept_a_flat_index_keyed_by_its_terminal_and_reject_one_without_eithe
         .unwrap();
     assert!(index.properties.is_empty());
     assert_eq!(index.index_only.as_ref().unwrap().terminal.len(), 2);
-    let diagnostics =
-        expect_diagnostics(&ContractDeclaration::new().collection(likes(vec![], vec![])));
+    // On an index-only collection an omitted terminal is `$ownerId`, so a
+    // flat index with no terminal is valid there.
+    let implicit = expect_manifest(&ContractDeclaration::new().collection(likes(vec![], vec![])));
+    assert!(implicit
+        .collection("likes")
+        .unwrap()
+        .index("by_post_owner")
+        .unwrap()
+        .properties
+        .is_empty());
+    let diagnostics = expect_diagnostics(
+        &ContractDeclaration::new()
+            .collection(minimal("stored").index(IndexSpec::new(index_name("flat"), vec![]))),
+    );
     assert_eq!(kinds(&diagnostics), ["IndexWithoutProperties"]);
 }
 
@@ -1947,6 +1959,26 @@ fn should_promote_omitted_options_but_keep_explicit_true_next_to_average_sugar()
     let i = c.index("i").unwrap();
     assert_eq!(i.count, Countability::Countable);
     assert!(i.range_count && i.range_sum);
+}
+
+#[test]
+fn should_promote_collection_range_count_into_count() {
+    let manifest =
+        expect_manifest(&ContractDeclaration::new().collection(minimal("c").range_count(true)));
+    let c = manifest.collection("c").unwrap();
+    assert!(c.count && c.range_count);
+}
+
+#[test]
+fn should_carry_an_optional_token_cost_into_the_manifest() {
+    let manifest = expect_manifest(&ContractDeclaration::new().collection(
+        minimal("c").token_cost(ActionScope::Create, TokenCost::new(0, 5).optional(true)),
+    ));
+    assert!(
+        manifest.collection("c").unwrap().token_costs[0]
+            .cost
+            .optional
+    );
 }
 
 #[test]
