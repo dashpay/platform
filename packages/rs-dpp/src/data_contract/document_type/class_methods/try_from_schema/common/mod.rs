@@ -26,17 +26,25 @@ use crate::data_contract::document_type::index::{Index, IndexGrammarAdmissions};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
+use crate::data_contract::document_type::property::{
+    top_level_property, DocumentPropertyReferenceTarget, KeyIdReference,
+    KeyReferenceIdentityProperty, PropertyReference, ReferenceHolder,
+};
+use crate::data_contract::document_type::property_names::moderator_abilities::{
+    CHANGE_FIELDS, DELETE, DELETE_KEEPS_RECORD, DELETE_REFUNDS_OWNER, DELETE_WITHIN,
+};
 use crate::data_contract::document_type::property_names::{
-    CAN_BE_DELETED, CAN_BE_DELETED_BY_MODERATORS, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE,
-    DOCUMENTS_COUNTABLE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE,
-    RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
+    CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
+    DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE, DOCUMENTS_SUMMABLE, INDEX_ONLY,
+    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, MODERATOR_ABILITIES,
+    RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
 use crate::data_contract::document_type::token_costs::TokenCosts;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
@@ -2028,108 +2036,8 @@ pub(super) fn parse_index_only_keyword(schema: &Value) -> Result<bool, ProtocolE
         .unwrap_or(false))
 }
 
-/// Reads the doctype-level `canBeDeletedByModerators` flag before the core
-/// parse consumes `schema`, same shape as [`parse_index_only_keyword`]. Only
-/// the generation-3 driver calls this; earlier generations predate the keyword
-/// and their meta-schemas reject it under `full_validation`.
-pub(super) fn parse_can_be_deleted_by_moderators_keyword(
-    schema: &Value,
-) -> Result<bool, ProtocolError> {
-    let schema_map_opt = schema.to_map().ok();
-
-    Ok(schema_map_opt
-        .as_ref()
-        .and_then(|schema_map| {
-            Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED_BY_MODERATORS)
-                .map_err(consensus_or_protocol_value_error)
-                .transpose()
-        })
-        .transpose()?
-        .unwrap_or(false))
-}
-
-/// Applies the `canBeDeletedByModerators` flag and checks what it requires.
-///
-/// The flag lets the contract's moderators delete documents of the type, so:
-/// - the contract must declare moderation, or there would be nobody to delete
-///   anything (moderation can not be switched on by a later update);
-/// - the type must not keep history: Drive refuses to delete such documents;
-/// - the type must not be indexOnly: such a document has no stored row a
-///   moderator could name by id;
-/// - the type must not restrict creation: its documents are the contract
-///   owner's, which no moderator may delete.
-///
-/// The rules hold for every contract that could be stored (the keyword and
-/// the moderation config both arrive with protocol version 14), so they are
-/// not skipped when a stored contract is read back.
-pub(super) fn apply_can_be_deleted_by_moderators(
-    document_type: &mut DocumentTypeV2,
-    can_be_deleted_by_moderators: bool,
-    data_contract_config: &DataContractConfig,
-    name: &str,
-) -> Result<(), ProtocolError> {
-    if !can_be_deleted_by_moderators {
-        return Ok(());
-    }
-    let structure_error = |message: String| {
-        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
-            message,
-        ))
-    };
-
-    if data_contract_config.moderation().is_none() {
-        return Err(structure_error(format!(
-            "document type \"{}\" sets `canBeDeletedByModerators: true`, but the contract \
-             declares no `moderation` in its config, so nobody could delete its documents \
-             (moderation can only be declared when the contract is created)",
-            name,
-        )));
-    }
-    if document_type.documents_keep_history {
-        return Err(structure_error(format!(
-            "document type \"{}\" sets both `documentsKeepHistory: true` and \
-             `canBeDeletedByModerators: true`, but the storage layer refuses to delete a \
-             document whose type keeps history",
-            name,
-        )));
-    }
-    if document_type.index_only {
-        return Err(structure_error(format!(
-            "indexOnly document type \"{}\" must not set `canBeDeletedByModerators`: there \
-             is no stored row a moderator could name by id",
-            name,
-        )));
-    }
-    if document_type.creation_restriction_mode != CreationRestrictionMode::NoRestrictions {
-        return Err(structure_error(format!(
-            "document type \"{}\" restricts document creation and must not set \
-             `canBeDeletedByModerators`: its documents belong to the contract owner, whose \
-             documents no moderator may delete",
-            name,
-        )));
-    }
-    // A moderator's restore puts the document back through the ordinary insert, unique
-    // indexes checked; a contested index awards its value by a vote, which no restore can go
-    // through, so such a type would have deletions that can not be undone.
-    if document_type
-        .indices
-        .values()
-        .any(|index| index.contested_index.is_some())
-    {
-        return Err(structure_error(format!(
-            "document type \"{}\" has a contested index and must not set \
-             `canBeDeletedByModerators`: a document a moderator deleted is restored by \
-             an ordinary insert, and a contested index only takes a document through a vote",
-            name,
-        )));
-    }
-
-    document_type.documents_can_be_deleted_by_moderators = true;
-    Ok(())
-}
-
-/// Reads a doctype-level keyword holding a number of seconds (`canBeDeletedByModeratorsFor`,
-/// `ttl`) before the core parse consumes `schema`. Its shape is enforced here and not left
+/// Reads a doctype-level keyword holding a number of seconds (`ttl`) before the core parse
+/// consumes `schema`. Its shape is enforced here and not left
 /// to the meta-schema: a stored contract is read without one, and no doctype-level keyword
 /// of this generation is read more leniently there.
 pub(super) fn parse_seconds_keyword(
@@ -2149,10 +2057,127 @@ pub(super) fn parse_seconds_keyword(
         .map_err(consensus_or_protocol_value_error)
 }
 
-/// Applies the `canBeDeletedByModeratorsFor` window and checks what it
-/// requires.
+/// What a document type's `moderatorAbilities` object says (protocol version
+/// 14), read before the core parse consumes `schema`. The default is a type
+/// its moderators can do nothing to.
+#[derive(Debug, Default)]
+pub(super) struct ModeratorAbilitiesKeyword {
+    /// `delete`: the moderators may delete documents of the type.
+    pub(super) delete: bool,
+    /// `deleteWithin`: for how many seconds after a document's last
+    /// modification they may.
+    pub(super) delete_within: Option<u32>,
+    /// `deleteKeepsRecord`: whether their deletion leaves a removal record,
+    /// `None` when left out.
+    pub(super) delete_keeps_record: Option<bool>,
+    /// `deleteRefundsOwner`: whether the owner of a document they delete is
+    /// refunded its storage, `None` when left out.
+    pub(super) delete_refunds_owner: Option<bool>,
+    /// `changeFields`: the top-level properties only they write.
+    pub(super) change_fields: BTreeSet<String>,
+}
+
+/// Reads the doctype-level `moderatorAbilities` object. Its shape is enforced
+/// here and not left to the meta-schema, as for every doctype-level keyword of
+/// this generation: a stored contract is read without one. An object, with
+/// only the keys `delete`, `deleteKeepsRecord` and `deleteRefundsOwner`
+/// (booleans), `deleteWithin` (seconds, a u32) and `changeFields` (a non-empty
+/// list of property names), saying something.
+pub(super) fn parse_moderator_abilities_keyword(
+    schema: &Value,
+    name: &str,
+) -> Result<ModeratorAbilitiesKeyword, ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+
+    // A schema that is not an object carries no keyword: the core parser refuses it as an
+    // invalid contract structure, and no error here may replace that refusal.
+    let Ok(schema_map) = schema.to_map() else {
+        return Ok(ModeratorAbilitiesKeyword::default());
+    };
+    let Some(abilities) = Value::get_optional_from_map(schema_map, MODERATOR_ABILITIES) else {
+        return Ok(ModeratorAbilitiesKeyword::default());
+    };
+    let Ok(abilities_map) = abilities.to_map() else {
+        return Err(structure_error(format!(
+            "document type \"{name}\": `{MODERATOR_ABILITIES}` must be an object"
+        )));
+    };
+    if let Some(unknown) = abilities_map
+        .iter()
+        .find_map(|(key, _)| match key.as_text() {
+            Some(
+                DELETE | DELETE_WITHIN | DELETE_KEEPS_RECORD | DELETE_REFUNDS_OWNER | CHANGE_FIELDS,
+            ) => None,
+            Some(other) => Some(other.to_string()),
+            None => Some(key.to_string()),
+        })
+    {
+        return Err(structure_error(format!(
+            "document type \"{name}\": `{MODERATOR_ABILITIES}` has no key \"{unknown}\", only \
+             `{DELETE}`, `{DELETE_WITHIN}`, `{DELETE_KEEPS_RECORD}`, `{DELETE_REFUNDS_OWNER}` \
+             and `{CHANGE_FIELDS}`"
+        )));
+    }
+
+    let delete = Value::inner_optional_bool_value(abilities_map, DELETE)
+        .map_err(consensus_or_protocol_value_error)?
+        .unwrap_or(false);
+    let delete_within = Value::inner_optional_integer_value::<u32>(abilities_map, DELETE_WITHIN)
+        .map_err(consensus_or_protocol_value_error)?;
+    let delete_keeps_record = Value::inner_optional_bool_value(abilities_map, DELETE_KEEPS_RECORD)
+        .map_err(consensus_or_protocol_value_error)?;
+    let delete_refunds_owner =
+        Value::inner_optional_bool_value(abilities_map, DELETE_REFUNDS_OWNER)
+            .map_err(consensus_or_protocol_value_error)?;
+    let change_fields = match Value::get_optional_from_map(abilities_map, CHANGE_FIELDS) {
+        None => BTreeSet::new(),
+        Some(_) => {
+            let fields = parse_property_name_list_keyword(abilities, name, CHANGE_FIELDS)?;
+            if fields.is_empty() {
+                return Err(structure_error(format!(
+                    "document type \"{name}\": `{MODERATOR_ABILITIES}.{CHANGE_FIELDS}` lists no \
+                     property (leave it out for a type whose moderators change nothing)"
+                )));
+            }
+            fields
+        }
+    };
+    if abilities_map.is_empty() {
+        return Err(structure_error(format!(
+            "document type \"{name}\": `{MODERATOR_ABILITIES}` is empty (leave it out for a \
+             type its moderators can do nothing to)"
+        )));
+    }
+
+    Ok(ModeratorAbilitiesKeyword {
+        delete,
+        delete_within,
+        delete_keeps_record,
+        delete_refunds_owner,
+        change_fields,
+    })
+}
+
+/// Applies the `moderatorAbilities` object and checks what each of its keys
+/// requires. Anything it grants needs a contract that declares moderation, or
+/// there would be nobody to use it (moderation can only be declared when the
+/// contract is created).
 ///
-/// The window limits how long after a document's last modification the
+/// `delete` lets the contract's moderators delete documents of the type, so:
+/// - the type must not keep history: Drive refuses to delete such documents;
+/// - the type must not be indexOnly: such a document has no stored row a
+///   moderator could name by id;
+/// - the type must not restrict creation: its documents are the contract
+///   owner's, which no moderator may delete;
+/// - the type must have no contested index: a document a moderator deleted is
+///   restored by an ordinary insert, and a contested index only takes a
+///   document through a vote.
+///
+/// `deleteWithin` limits how long after a document's last modification the
 /// moderators may delete it, so:
 /// - the type must let moderators delete its documents at all, or the window
 ///   would limit nothing;
@@ -2164,59 +2189,320 @@ pub(super) fn parse_seconds_keyword(
 ///   moderator can remove any more. A type whose documents never change has
 ///   no modification after the creation, so `$createdAt` says as much;
 /// - it lasts at least a second: a window of none would be a type moderators
-///   can never delete from, which is said by not setting the flag.
+///   can never delete from, which is said by leaving `delete` out.
 ///
-/// Runs after `apply_can_be_deleted_by_moderators`, which sets the flag read
-/// here.
-pub(super) fn apply_can_be_deleted_by_moderators_for(
+/// `deleteKeepsRecord` (default `true`) and `deleteRefundsOwner` (default
+/// `false`) say what a deletion leaves: a removal record under the contract,
+/// which is also what a restore brings the document back from, and the owner's
+/// storage refund, forfeited unless the type gives it back. Each describes the
+/// moderators' deletion, so each needs `delete: true`.
+///
+/// `changeFields` names the properties only the moderators write. A
+/// moderator's change is stored as an update that touches nothing else, and is
+/// not checked against the type's references, so each property must be:
+/// - declared at the top level of the type: a change sets whole top-level
+///   values, as a replace compares them;
+/// - optional: a document's owner can not set it when creating the document,
+///   so it starts absent;
+/// - stored, so not transient;
+/// - not listed under `immutable`, which would freeze what the moderators are
+///   to change;
+/// - neither a reference nor read by one (a `propertyAgreement`, a lookup key,
+///   a key id): a reference is checked when the document is written by its
+///   owner, and a moderator's change must leave every reference as it was
+///   checked;
+/// - neither generated (`generatedFrom`) nor read by a generated property,
+///   whose value the change would leave stale;
+/// - in no contested index, whose values are awarded by a vote.
+///
+/// The type must not be indexOnly either: there is no stored row to change.
+///
+/// The rules hold for every contract that could be stored (the keyword and
+/// the moderation config both arrive with protocol version 14), so they are
+/// not skipped when a stored contract is read back. Runs after
+/// `apply_index_only`, `apply_immutable_fields` and the parse of the
+/// references and generated properties, which it reads.
+pub(super) fn apply_moderator_abilities(
     document_type: &mut DocumentTypeV2,
-    can_be_deleted_by_moderators_for: Option<u32>,
+    abilities: ModeratorAbilitiesKeyword,
+    data_contract_config: &DataContractConfig,
     name: &str,
 ) -> Result<(), ProtocolError> {
-    let Some(seconds) = can_be_deleted_by_moderators_for else {
-        return Ok(());
-    };
+    let ModeratorAbilitiesKeyword {
+        delete,
+        delete_within,
+        delete_keeps_record,
+        delete_refunds_owner,
+        change_fields,
+    } = abilities;
     let structure_error = |message: String| {
         consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
             message,
         ))
     };
-
-    if !document_type.documents_can_be_deleted_by_moderators {
-        return Err(structure_error(format!(
-            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which limits \
-             `canBeDeletedByModerators: true` and means nothing without it",
-            name,
-        )));
-    }
-    if seconds == 0 {
-        return Err(structure_error(format!(
-            "document type \"{}\" sets `canBeDeletedByModeratorsFor: 0`: a window lasts at \
-             least one second (leave `canBeDeletedByModerators` out for a type moderators can \
-             not delete from)",
-            name,
-        )));
-    }
-    let requires_updated_at = document_type.required_fields.contains(UPDATED_AT);
-    if document_type.documents_mutable && !requires_updated_at {
-        return Err(structure_error(format!(
-            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which is measured from \
-             a document's last modification, and its documents can be replaced: list \
-             `$updatedAt` in `required`",
-            name,
-        )));
-    }
-    if !requires_updated_at && !document_type.required_fields.contains(CREATED_AT) {
-        return Err(structure_error(format!(
-            "document type \"{}\" sets `canBeDeletedByModeratorsFor`, which is measured from \
-             a document's last modification: list `$updatedAt`, or `$createdAt` for documents \
-             that never change, in `required`",
-            name,
-        )));
+    if !delete
+        && delete_within.is_none()
+        && delete_keeps_record.is_none()
+        && delete_refunds_owner.is_none()
+        && change_fields.is_empty()
+    {
+        return Ok(());
     }
 
-    document_type.documents_can_be_deleted_by_moderators_for = Some(seconds);
+    if data_contract_config.moderation().is_none() {
+        return Err(structure_error(format!(
+            "document type \"{name}\" sets `{MODERATOR_ABILITIES}`, but the contract declares \
+             no `moderation` in its config, so there are no moderators to use them \
+             (moderation can only be declared when the contract is created)",
+        )));
+    }
+    let has_contested_index = document_type
+        .indices
+        .values()
+        .any(|index| index.contested_index.is_some());
+
+    if delete {
+        if document_type.documents_keep_history {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets both `documentsKeepHistory: true` and \
+                 `{MODERATOR_ABILITIES}.{DELETE}: true`, but the storage layer refuses to \
+                 delete a document whose type keeps history",
+            )));
+        }
+        if document_type.index_only {
+            return Err(structure_error(format!(
+                "indexOnly document type \"{name}\" must not set \
+                 `{MODERATOR_ABILITIES}.{DELETE}`: there is no stored row a moderator could \
+                 name by id",
+            )));
+        }
+        if document_type.creation_restriction_mode != CreationRestrictionMode::NoRestrictions {
+            return Err(structure_error(format!(
+                "document type \"{name}\" restricts document creation and must not set \
+                 `{MODERATOR_ABILITIES}.{DELETE}`: its documents belong to the contract owner, \
+                 whose documents no moderator may delete",
+            )));
+        }
+        // A moderator's restore puts the document back through the ordinary insert, unique
+        // indexes checked; a contested index awards its value by a vote, which no restore can
+        // go through, so such a type would have deletions that can not be undone.
+        if has_contested_index {
+            return Err(structure_error(format!(
+                "document type \"{name}\" has a contested index and must not set \
+                 `{MODERATOR_ABILITIES}.{DELETE}`: a document a moderator deleted is restored by \
+                 an ordinary insert, and a contested index only takes a document through a vote",
+            )));
+        }
+        document_type.documents_can_be_deleted_by_moderators = true;
+        document_type.moderator_deletions_keep_records = delete_keeps_record.unwrap_or(true);
+        document_type.moderator_deletions_refund_owner = delete_refunds_owner.unwrap_or(false);
+    }
+
+    // What a deletion leaves is only said of a type moderators delete from
+    for (key, given) in [
+        (DELETE_KEEPS_RECORD, delete_keeps_record.is_some()),
+        (DELETE_REFUNDS_OWNER, delete_refunds_owner.is_some()),
+    ] {
+        if given && !delete {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{key}`, which says what a \
+                 moderator's deletion leaves and means nothing without `{DELETE}: true`",
+            )));
+        }
+    }
+
+    if let Some(seconds) = delete_within {
+        if !delete {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_WITHIN}`, which \
+                 limits `{DELETE}: true` and means nothing without it",
+            )));
+        }
+        if seconds == 0 {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_WITHIN}: 0`: a \
+                 window lasts at least one second (leave `{DELETE}` out for a type moderators \
+                 can not delete from)",
+            )));
+        }
+        let requires_updated_at = document_type.required_fields.contains(UPDATED_AT);
+        if document_type.documents_mutable && !requires_updated_at {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_WITHIN}`, which is \
+                 measured from a document's last modification, and its documents can be \
+                 replaced: list `$updatedAt` in `required`",
+            )));
+        }
+        if !requires_updated_at && !document_type.required_fields.contains(CREATED_AT) {
+            return Err(structure_error(format!(
+                "document type \"{name}\" sets `{MODERATOR_ABILITIES}.{DELETE_WITHIN}`, which is \
+                 measured from a document's last modification: list `$updatedAt`, or \
+                 `$createdAt` for documents that never change, in `required`",
+            )));
+        }
+        document_type.documents_can_be_deleted_by_moderators_for = Some(seconds);
+    }
+
+    if change_fields.is_empty() {
+        return Ok(());
+    }
+    if document_type.index_only {
+        return Err(structure_error(format!(
+            "indexOnly document type \"{name}\" must not set \
+             `{MODERATOR_ABILITIES}.{CHANGE_FIELDS}`: there is no stored row a moderator could \
+             change",
+        )));
+    }
+    // A transient value is dropped before the document is stored, and a moderator's change is
+    // judged against the schema: a required transient property would be missing from every
+    // stored document, and no moderator can supply it.
+    if let Some((path, _)) = document_type
+        .flattened_properties
+        .iter()
+        .find(|(_, property)| {
+            property.transient && (property.required || property.required_since.is_some())
+        })
+    {
+        return Err(structure_error(format!(
+            "document type \"{name}\" requires the transient property \"{path}\" and sets \
+             `{MODERATOR_ABILITIES}.{CHANGE_FIELDS}`: a transient value is never stored, so \
+             every moderator's change, judged against the schema without it, would be refused",
+        )));
+    }
+    let read_by_references = properties_read_by_references(DocumentTypeRef::V2(document_type));
+    let read_by_generated = document_type
+        .generated_from_fields
+        .iter()
+        .flat_map(|(path, generated_from)| {
+            std::iter::once(path.as_str()).chain(generated_from.property_params())
+        })
+        .map(top_level_property)
+        .collect::<BTreeSet<_>>();
+    for field in &change_fields {
+        let refusal = if !document_type.properties.contains_key(field) {
+            let hint = if field.contains('.') && !field.starts_with('$') {
+                ": a moderator sets whole top-level values, so list the object around a nested \
+                 property"
+            } else {
+                ""
+            };
+            Some(format!(
+                "it is not a top-level property of the document type{hint}"
+            ))
+        } else if document_type.required_fields.contains(field) {
+            Some(
+                "it is required, and a document's owner can not set it, so it must start absent"
+                    .to_string(),
+            )
+        } else if document_type.transient_fields.contains(field) {
+            Some("it is transient, so no stored document holds it".to_string())
+        } else if document_type.immutable_fields.contains(field) {
+            Some("it is listed under `immutable`, which would freeze it".to_string())
+        } else if read_by_references.contains(field.as_str()) {
+            Some(
+                "it holds a reference or is read by one, and a moderator's change leaves every \
+                 reference as it was checked"
+                    .to_string(),
+            )
+        } else if read_by_generated.contains(field.as_str()) {
+            Some(
+                "it is generated or read by a generated property, which a moderator's change \
+                 would leave stale"
+                    .to_string(),
+            )
+        } else if document_type.indices.values().any(|index| {
+            index.contested_index.is_some()
+                && index
+                    .properties
+                    .iter()
+                    .any(|property| top_level_property(&property.name) == field)
+        }) {
+            Some("it is in a contested index, whose values are awarded by a vote".to_string())
+        } else {
+            None
+        };
+        if let Some(refusal) = refusal {
+            return Err(structure_error(format!(
+                "document type \"{name}\" can not list \"{field}\" under \
+                 `{MODERATOR_ABILITIES}.{CHANGE_FIELDS}`: {refusal}",
+            )));
+        }
+    }
+    document_type.moderator_changeable_fields = change_fields;
     Ok(())
+}
+
+/// The top-level properties of `document_type` that a reference declared on it
+/// reads when a document is written: each property holding a reference, and
+/// the referring side of every `propertyAgreement`, lookup key and key id
+/// property, for every leaf of every reference expression, the
+/// `ownerRefersTo` and `creatorRefersTo` declarations included. System
+/// properties (`$ownerId`) are left out: they are no property a moderator can
+/// name.
+fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet<&str> {
+    let mut read = BTreeSet::new();
+    for (holder, reference) in document_type.reference_declarations() {
+        if let ReferenceHolder::Property(path) = holder {
+            read.insert(top_level_property(path));
+        }
+        // A key id property reads the identity property whose key it names
+        if let PropertyReference::KeyId(KeyIdReference {
+            identity_property: KeyReferenceIdentityProperty::Property(path),
+            ..
+        }) = reference
+        {
+            read.insert(top_level_property(path));
+        }
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        for leaf in target.leaves() {
+            let agreement = match leaf {
+                DocumentPropertyReferenceTarget::PermanentDocument {
+                    property_agreement, ..
+                }
+                | DocumentPropertyReferenceTarget::DeletableDocument {
+                    property_agreement, ..
+                } => Some(property_agreement),
+                DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+                    property_agreement,
+                    lookup,
+                    ..
+                }
+                | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                    property_agreement,
+                    lookup,
+                    ..
+                } => {
+                    read.extend(lookup.referring_properties().map(top_level_property));
+                    Some(property_agreement)
+                }
+                DocumentPropertyReferenceTarget::ListElement(list_element) => {
+                    Some(&list_element.property_agreement)
+                }
+                DocumentPropertyReferenceTarget::IdentityPublicKey {
+                    key_id_property, ..
+                } => {
+                    read.insert(top_level_property(key_id_property));
+                    None
+                }
+                DocumentPropertyReferenceTarget::Identity
+                | DocumentPropertyReferenceTarget::Contract { .. }
+                | DocumentPropertyReferenceTarget::Token
+                | DocumentPropertyReferenceTarget::AnyOf(_)
+                | DocumentPropertyReferenceTarget::AllOf(_) => None,
+            };
+            if let Some(agreement) = agreement {
+                read.extend(
+                    agreement
+                        .keys()
+                        .filter(|property| !property.starts_with('$'))
+                        .map(|property| top_level_property(property)),
+                );
+            }
+        }
+    }
+    read
 }
 
 /// Applies the `ttl` keyword and checks what it requires.

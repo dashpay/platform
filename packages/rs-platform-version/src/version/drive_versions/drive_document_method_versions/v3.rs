@@ -105,7 +105,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 1,
             validate_document_purchase_transition_action_uniqueness: 1,
             validate_document_update_price_transition_action_uniqueness: 1,
-            validate_restored_document_uniqueness: 0,
+            validate_moderated_document_uniqueness: 0,
             validate_uniqueness_of_data: 1,
         },
         // Bumped to 1 vs V2's frozen 0: this is the v12-gated entry

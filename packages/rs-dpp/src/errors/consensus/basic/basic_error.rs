@@ -14,7 +14,7 @@ use crate::consensus::basic::contract_group::{
 use crate::consensus::basic::contract_moderation::{
     ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
     DocumentActionFeesWithoutModerationError, InvalidContractModerationConfigError,
-    InvalidContractModerationReasonDocumentsError,
+    InvalidContractModerationDocumentFieldsError, InvalidContractModerationReasonDocumentsError,
 };
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
@@ -841,6 +841,10 @@ pub enum BasicError {
     // (protocol version 14).
     #[error(transparent)]
     DocumentPropertyNotGeneratedError(DocumentPropertyNotGeneratedError),
+
+    // The fields a moderator's document change sets (protocol version 14).
+    #[error(transparent)]
+    InvalidContractModerationDocumentFieldsError(InvalidContractModerationDocumentFieldsError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1006,6 +1010,14 @@ mod tests {
                 )
             )),
             200
+        );
+        // The fields a moderator's document change sets (protocol version 14): the tail of
+        // the enum.
+        assert_eq!(
+            discriminant_of(BasicError::InvalidContractModerationDocumentFieldsError(
+                InvalidContractModerationDocumentFieldsError::new("no field".to_string())
+            )),
+            201
         );
     }
 

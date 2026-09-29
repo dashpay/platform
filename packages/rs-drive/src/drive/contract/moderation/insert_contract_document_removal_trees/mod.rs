@@ -16,7 +16,7 @@ impl Drive {
     /// and under it one tree per document type of `document_type_names`.
     ///
     /// A contract insertion calls it with the root and every document type that sets
-    /// `canBeDeletedByModerators`, when there is one. A contract update calls it for the
+    /// `moderatorAbilities.delete`, when there is one. A contract update calls it for the
     /// document types it adds that set the keyword, with the root when they are the
     /// contract's first: an existing document type never changes the keyword, so whether the
     /// root exists is read off the stored contract, and a type's tree is created exactly

@@ -12,7 +12,7 @@ const DOCUMENT_ID = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
 const DOCUMENT_TYPE_NAME = 'post';
 
 interface ModerationOptions {
-  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'warn' | 'clearWarnings' | 'deleteDocument' | 'restoreDocument';
+  action?: 'ban' | 'unban' | 'suspend' | 'unsuspend' | 'warn' | 'clearWarnings' | 'deleteDocument' | 'restoreDocument' | 'changeDocumentFields';
   /** `null` leaves the identity out; left undefined, every action but a deleteDocument or a restoreDocument gets `TARGET_ID` */
   identityId?: string | null;
   /** `null` leaves it out; left undefined, a deleteDocument or a restoreDocument gets `DOCUMENT_TYPE_NAME` */
@@ -21,6 +21,8 @@ interface ModerationOptions {
   documentId?: string | null;
   /** `null` leaves it out; left undefined, a restoreDocument gets `DOCUMENT_BYTES` */
   document?: Uint8Array | null;
+  /** `null` leaves them out; left undefined, a changeDocumentFields gets `FIELDS` */
+  fields?: Record<string, unknown> | null;
   until?: bigint;
   /** `null` leaves the reason out; left undefined, a ban, a suspend and a warn get `REASON` */
   reason?: {
@@ -36,6 +38,8 @@ interface ModerationOptions {
 const REASON = { text: 'spam' };
 /** What a restore carries: the document as it was serialized when it was deleted */
 const DOCUMENT_BYTES = new Uint8Array(70).fill(7);
+/** What a field change sets: a status, and a resolution removed */
+const FIELDS = { status: 2, resolution: null };
 
 function createTransition(options: ModerationOptions = {}) {
   const action = options.action ?? 'ban';
@@ -44,23 +48,29 @@ function createTransition(options: ModerationOptions = {}) {
   if (reason === undefined && addsAnEntry) {
     reason = REASON;
   }
-  // A deletion and a restore name a document and every other action an identity.
+  // A deletion, a restore and a field change name a document and every other action an
+  // identity.
   const deletesADocument = action === 'deleteDocument';
   const restoresADocument = action === 'restoreDocument';
+  const changesADocument = action === 'changeDocumentFields';
+  const namesADocument = deletesADocument || restoresADocument || changesADocument;
   let {
-    identityId, documentTypeName, documentId, document,
+    identityId, documentTypeName, documentId, document, fields,
   } = options;
-  if (identityId === undefined && !deletesADocument && !restoresADocument) {
+  if (identityId === undefined && !namesADocument) {
     identityId = TARGET_ID;
   }
-  if (documentTypeName === undefined && (deletesADocument || restoresADocument)) {
+  if (documentTypeName === undefined && namesADocument) {
     documentTypeName = DOCUMENT_TYPE_NAME;
   }
-  if (documentId === undefined && deletesADocument) {
+  if (documentId === undefined && (deletesADocument || changesADocument)) {
     documentId = DOCUMENT_ID;
   }
   if (document === undefined && restoresADocument) {
     document = DOCUMENT_BYTES;
+  }
+  if (fields === undefined && changesADocument) {
+    fields = FIELDS;
   }
 
   return new wasm.ContractUserModeration({
@@ -72,6 +82,7 @@ function createTransition(options: ModerationOptions = {}) {
     documentTypeName: documentTypeName ?? undefined,
     documentId: documentId ?? undefined,
     document: document ?? undefined,
+    fields: fields ?? undefined,
     until: options.until,
     reason: reason ?? undefined,
     userFeeIncrease: options.userFeeIncrease,
@@ -153,6 +164,72 @@ describe('ContractUserModeration', () => {
       expect(() => createTransition({ action: 'restoreDocument', reason: REASON })).to.throw();
       expect(() => createTransition({ action: 'restoreDocument', until: BigInt(5) })).to.throw();
       expect(() => createTransition({ action: 'deleteDocument', document: DOCUMENT_BYTES })).to.throw();
+    });
+
+    it('should create a field change, which names a document and the fields it sets', () => {
+      const transition = createTransition({
+        action: 'changeDocumentFields',
+        reason: { code: 4, text: 'handled' },
+      });
+
+      expect(transition.action).to.equal('changeDocumentFields');
+      expect(transition.documentTypeName).to.equal(DOCUMENT_TYPE_NAME);
+      expect(transition.documentId?.toString()).to.equal(DOCUMENT_ID);
+      // Read back as a document's properties are, integers as bigints; a removal stays null.
+      expect(transition.fields).to.deep.equal({ status: BigInt(2), resolution: null });
+      expect(transition.identityId).to.equal(undefined);
+      expect(transition.document).to.equal(undefined);
+      expect(transition.reason).to.deep.equal({ code: 4, text: 'handled' });
+    });
+
+    it('should create a field change without a reason, stored as no code and an empty text', () => {
+      const transition = createTransition({ action: 'changeDocumentFields' });
+
+      expect(transition.reason).to.deep.equal({ code: null, text: '' });
+    });
+
+    it('should refuse a field change without what it names, and fields beside another action', () => {
+      expect(() => createTransition({ action: 'changeDocumentFields', fields: null })).to.throw();
+      expect(() => createTransition({ action: 'changeDocumentFields', documentId: null })).to.throw();
+      expect(() => createTransition({ action: 'changeDocumentFields', documentTypeName: null })).to.throw();
+      expect(() => createTransition({ action: 'changeDocumentFields', identityId: TARGET_ID })).to.throw();
+      expect(() => createTransition({ action: 'changeDocumentFields', document: DOCUMENT_BYTES })).to.throw();
+      expect(() => createTransition({ action: 'deleteDocument', fields: FIELDS })).to.throw();
+      expect(() => createTransition({ action: 'ban', fields: FIELDS })).to.throw();
+      expect(createTransition({ action: 'ban' }).fields).to.equal(undefined);
+    });
+
+    it('should leave out a field set to undefined, and remove only one set to null', () => {
+      const transition = createTransition({
+        action: 'changeDocumentFields',
+        fields: { status: 2, resolution: undefined, note: null },
+      });
+
+      expect(transition.fields).to.deep.equal({ status: BigInt(2), note: null });
+    });
+
+    it('should give back a field named __proto__ as a field', () => {
+      const fields = JSON.parse('{"__proto__":{"status":1},"resolution":"done"}');
+      const transition = createTransition({ action: 'changeDocumentFields', fields });
+
+      const returned = transition.fields as Record<string, unknown>;
+      expect(Object.keys(returned)).to.have.members(['__proto__', 'resolution']);
+      expect(Object.getPrototypeOf(returned)).to.equal(Object.prototype);
+    });
+
+    it('should sign the same bytes once read back from its object', () => {
+      const transition = createTransition({
+        action: 'changeDocumentFields',
+        fields: {
+          status: 2,
+          reviewer: new Uint8Array(32).fill(7),
+          attachment: new Uint8Array([1, 2, 3]),
+        },
+      });
+
+      const restored = wasm.ContractUserModeration.fromObject(transition.toObject());
+
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
     });
 
     it('should create a warning and its clearing, which name an identity', () => {
@@ -291,6 +368,7 @@ describe('ContractUserModeration', () => {
         createTransition({ action: 'clearWarnings' }),
         createTransition({ action: 'deleteDocument', reason: { code: 9, text: 'spam' } }),
         createTransition({ action: 'deleteDocument' }),
+        createTransition({ action: 'changeDocumentFields', reason: { text: 'handled' } }),
       ]) {
         const bytes = transition.toBytes();
         expect(wasm.ContractUserModeration.fromBytes(bytes).toBytes()).to.deep.equal(bytes);
@@ -335,6 +413,18 @@ describe('ContractUserModeration', () => {
       expect(json.userFeeIncrease).to.equal(4);
       expect(json.signature).to.equal('');
       expect(json.signaturePublicKeyId).to.equal(0);
+    });
+
+    it('should tag a field change and name its document and its fields', () => {
+      const json = createTransition({ action: 'changeDocumentFields', reason: { code: 4, text: 'handled' } }).toJSON();
+
+      expect(json.action).to.deep.equal({
+        $type: 'changeDocumentFields',
+        documentTypeName: DOCUMENT_TYPE_NAME,
+        documentId: DOCUMENT_ID,
+        fields: FIELDS,
+        reason: { code: 4, text: 'handled' },
+      });
     });
 
     it('should tag a document deletion and name its document', () => {
