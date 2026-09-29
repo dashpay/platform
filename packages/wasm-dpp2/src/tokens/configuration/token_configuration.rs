@@ -40,6 +40,8 @@ struct TokenConfigurationOptions {
     description: Option<String>,
     #[serde(default)]
     has_shielded_pool: bool,
+    #[serde(default)]
+    minimum_pool_notes_for_outgoing: Option<u64>,
 }
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -71,6 +73,21 @@ export interface TokenConfigurationOptions {
      * (no action takers and no admins): shielded notes cannot be frozen or destroyed.
      */
     hasShieldedPool?: boolean;
+    /**
+     * The fewest notes the token's shielded pool must hold before tokens may leave it for a
+     * visible destination: unshielding to an identity, burning from the pool, or paying a
+     * document's token cost out of the pool. Transfers that stay inside the pool are never
+     * held back. Requires hasShieldedPool.
+     *
+     * What is counted is note commitments, not depositors, and one bundle carries several of
+     * them, so a single depositor can reach a threshold alone: it says how busy the pool
+     * should be before anyone leaves it, and guarantees no anonymity set. Omitted, or
+     * undefined, means no threshold, which is the default because any threshold above 0 keeps
+     * a new pool's first depositors from leaving until enough notes accumulate. A contract
+     * create refuses a threshold above the protocol's maximum of 250. The issuer changes it
+     * afterwards with a TokenConfigUpdate, under its own change control rules.
+     */
+    minimumPoolNotesForOutgoing?: bigint;
 }
 "#;
 
@@ -97,6 +114,32 @@ impl From<TokenConfigurationWasm> for TokenConfiguration {
 }
 
 impl_try_from_js_value!(TokenConfigurationWasm, "TokenConfiguration");
+
+/// Writes the shielded pool's outgoing notes threshold, which only a configuration that has a
+/// pool carries at all.
+///
+/// A threshold asked for on a token without a pool is refused rather than stored. The only
+/// place to keep it would be a format-version-1 configuration with no pool, which contradicts
+/// how the two are kept canonical — a token without a pool serializes as format version 0, so
+/// that every protocol version accepts it — and which nothing would ever read. Dropping it
+/// quietly is worse still: the caller asked for a guard and would get none.
+fn write_minimum_pool_notes_for_outgoing(
+    configuration: &mut TokenConfiguration,
+    minimum_pool_notes_for_outgoing: Option<u64>,
+) -> WasmDppResult<()> {
+    match configuration {
+        TokenConfiguration::V1(v1) => {
+            v1.minimum_pool_notes_for_outgoing = minimum_pool_notes_for_outgoing;
+            Ok(())
+        }
+        // Clearing a threshold a pool-less token never had leaves it as it already is.
+        TokenConfiguration::V0(_) if minimum_pool_notes_for_outgoing.is_none() => Ok(()),
+        TokenConfiguration::V0(_) => Err(WasmDppError::invalid_argument(
+            "'minimumPoolNotesForOutgoing' needs 'hasShieldedPool': a token without a shielded \
+             pool holds no notes to count",
+        )),
+    }
+}
 
 #[wasm_bindgen(js_class = TokenConfiguration)]
 impl TokenConfigurationWasm {
@@ -158,6 +201,12 @@ impl TokenConfigurationWasm {
         if opts.has_shielded_pool {
             configuration.set_has_shielded_pool(true);
         }
+
+        // After the pool, since only a pooled configuration has somewhere to keep a threshold.
+        write_minimum_pool_notes_for_outgoing(
+            &mut configuration,
+            opts.minimum_pool_notes_for_outgoing,
+        )?;
 
         Ok(TokenConfigurationWasm(configuration))
     }
@@ -222,6 +271,13 @@ impl TokenConfigurationWasm {
     #[wasm_bindgen(getter = "formatVersion")]
     pub fn format_version(&self) -> u16 {
         self.0.format_version()
+    }
+
+    /// The fewest notes the shielded pool must hold before tokens may leave it. 0 means no
+    /// threshold, which is also what every token without a pool reports.
+    #[wasm_bindgen(getter = "minimumPoolNotesForOutgoing")]
+    pub fn minimum_pool_notes_for_outgoing(&self) -> u64 {
+        self.0.minimum_pool_notes_for_outgoing()
     }
 
     #[wasm_bindgen(getter = "manualMintingRules")]
@@ -332,9 +388,33 @@ impl TokenConfigurationWasm {
     }
 
     /// Enabling upgrades a format-version-0 configuration to version 1 in place.
+    ///
+    /// Disabling downgrades it back to version 0 and takes any
+    /// `minimumPoolNotesForOutgoing` with it, since a token without a pool keeps no threshold.
     #[wasm_bindgen(setter = "hasShieldedPool")]
     pub fn set_has_shielded_pool(&mut self, has_shielded_pool: bool) {
         self.0.set_has_shielded_pool(has_shielded_pool)
+    }
+
+    /// `undefined` or `null` removes the threshold. Throws for a token that has no shielded
+    /// pool, which has no threshold to hold.
+    #[wasm_bindgen(setter = "minimumPoolNotesForOutgoing")]
+    pub fn set_minimum_pool_notes_for_outgoing(
+        &mut self,
+        minimum_pool_notes_for_outgoing: JsValue,
+    ) -> WasmDppResult<()> {
+        let minimum_pool_notes_for_outgoing = if minimum_pool_notes_for_outgoing.is_undefined()
+            || minimum_pool_notes_for_outgoing.is_null()
+        {
+            None
+        } else {
+            Some(try_to_u64(
+                &minimum_pool_notes_for_outgoing,
+                "minimumPoolNotesForOutgoing",
+            )?)
+        };
+
+        write_minimum_pool_notes_for_outgoing(&mut self.0, minimum_pool_notes_for_outgoing)
     }
 
     #[wasm_bindgen(setter = "manualMintingRules")]
