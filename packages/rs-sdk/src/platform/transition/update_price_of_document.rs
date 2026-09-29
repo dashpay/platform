@@ -115,10 +115,124 @@ impl<S: Signer<IdentityPublicKey>> UpdatePriceOfDocument<S> for Document {
                 identity_public_key,
                 token_payment_info,
                 signer,
-                None,
+                settings,
             )
             .await?;
 
         Self::wait_for_response(sdk, state_transition, settings).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::SdkBuilder;
+    use dpp::address_funds::AddressWitness;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::action_fees::agreement::v0::DocumentActionFeeAgreementV0;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contract::DataContract;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::version::PlatformVersion;
+    use dpp::ProtocolError;
+
+    /// Signs nothing: the call under test is refused before anything is signed.
+    #[derive(Debug)]
+    struct UnusedSigner;
+
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for UnusedSigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "not signing in this test".to_string(),
+            ))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "not signing in this test".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// The settings of the waiting call must reach the transition it builds. Before protocol
+    /// version 14 no document base carries an action fee agreement, so one is refused before
+    /// any nonce work, which only happens when the settings holding it were passed on.
+    #[tokio::test]
+    async fn should_build_the_transition_with_the_settings_it_waits_with() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+        let sdk = SdkBuilder::new_mock()
+            .with_version(platform_version)
+            .build()
+            .expect("mock sdk");
+        let contract: DataContract =
+            load_system_data_contract(SystemDataContract::DPNS, platform_version)
+                .expect("the DPNS contract");
+        let document_type = contract
+            .document_type_cloned_for_name("domain")
+            .expect("the domain document type");
+        let document = document_type
+            .random_document(Some(1), platform_version)
+            .expect("a random domain");
+        let identity_public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![1; 33]),
+            disabled_at: None,
+        });
+        let settings = PutSettings {
+            state_transition_creation_options: Some(StateTransitionCreationOptions {
+                action_fee_agreement: Some(
+                    DocumentActionFeeAgreementV0 {
+                        owner: 1,
+                        moderators: 2,
+                        fee_multiplier: None,
+                    }
+                    .into(),
+                ),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let error = document
+            .update_price_of_document_and_wait_for_response(
+                10,
+                &sdk,
+                document_type,
+                identity_public_key,
+                None,
+                &UnusedSigner,
+                Some(settings),
+            )
+            .await
+            .expect_err("an agreement is refused before protocol version 14");
+
+        assert!(
+            error
+                .to_string()
+                .contains("validate_base_carries_action_fee_agreement"),
+            "unexpected error: {error}"
+        );
     }
 }
