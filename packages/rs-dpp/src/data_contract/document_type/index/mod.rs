@@ -883,6 +883,151 @@ fn bucketed_integers_conflict(
     }
 }
 
+/// The grid a bucketing keyword (`timeRange` or `integerRange`) declares,
+/// in its own units, for the rules both kinds share.
+struct BucketGridDeclaration<'a> {
+    keyword: &'static str,
+    source: &'a str,
+    range: u64,
+    step: u64,
+    phase: u64,
+}
+
+/// What of the declaring index the shared bucketing rules read.
+struct BucketedIndexShape<'a> {
+    unique: bool,
+    contested: bool,
+    any_ranked_axis: bool,
+    ranked_countable_at: &'a [String],
+    null_searchable: bool,
+    index_properties: &'a [IndexProperty],
+}
+
+/// The structural rules every bucketing grid obeys, whatever it buckets:
+/// one definition, so the `timeRange` and `integerRange` grammars cannot
+/// drift apart. Each keyword's parse adds its own rules on top (the time
+/// grid's `$createdAt`-only uniqueness, `ttl`, millisecond scaling and phase
+/// cap). The rules that need the schema or the platform version (the source
+/// property, the overlap cap) live in `try_from_schema`.
+fn validate_bucket_grid(
+    grid: BucketGridDeclaration,
+    index: &BucketedIndexShape,
+) -> Result<(), DataContractError> {
+    let keyword = grid.keyword;
+    // Uniqueness and bucketing only compose when the windows *partition* the
+    // values. With `range == step` (overlap factor 1) every document lands
+    // in exactly one window, so "at most one document per window per
+    // remaining key tuple" is a coherent constraint — one report per author
+    // per day, one bid per owner per price band. With `range > step` a single
+    // document is indexed under `range / step` window keys at once, so it
+    // would occupy the unique slot of several windows while two documents
+    // with different values would collide in the windows they happen to
+    // share: there is no constraint left to enforce.
+    //
+    // Compared before the zero-step / multiple checks below because it only
+    // reads the declared numbers; a malformed grid still gets its own, more
+    // specific rejection there.
+    if index.unique && grid.range != grid.step {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "a {keyword} index cannot be unique unless range equals step (non-overlapping \
+             windows): with overlapping windows one document is indexed under several bucket \
+             keys at once, which uniqueness cannot express"
+        )));
+    }
+    if index.contested {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "a {keyword} index cannot be a contested resource"
+        )));
+    }
+    // Ranked axes compose with bucketing BELOW the bucketed level: a ranked
+    // level's per-prefix secondaries live inside their prefix's subtree, and
+    // a window start is just another prefix value — within any single
+    // window's subtree a document appears exactly once, so per-window
+    // rankings are exact regardless of window overlap (a document in several
+    // windows raises each window's own honest aggregate; that is the meaning
+    // of overlapping windows, not double counting). Ranked queries pin the
+    // window the same way they pin every other leading property — through a
+    // resolved window selection.
+    //
+    // What has no designed semantics yet is ranking the bucketed level
+    // ITSELF — ordering the windows by their aggregates. That needs its own
+    // routing shape (no prefix pin above the first level, a grid named by
+    // the query), so exactly that is still rejected, in its two spellings:
+    // - every ranked flag ranks the terminal level, so on a single-property
+    //   bucketed index the only rankable level IS the bucketed one;
+    // - an `at` chain naming the grid's source ranks the bucketed level
+    //   explicitly.
+    if index.any_ranked_axis && index.index_properties.len() == 1 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "a single-property {keyword} index cannot be ranked: its only level is the bucketed \
+             one, and ranking the windows themselves (ordering bucket starts by their \
+             aggregates) is not supported yet — add the property to rank below the bucketed \
+             property, e.g. [bucketed property, hashtag]"
+        )));
+    }
+    if index.ranked_countable_at.iter().any(|at| at == grid.source) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "rankedCountable.at cannot name \"{}\", a {keyword} index's bucketed source: \
+             ranking the windows themselves (ordering bucket starts by their aggregates) is not \
+             supported yet — rank the levels below the bucketed property instead",
+            grid.source
+        )));
+    }
+    // Same reasoning as the ranked `nullSearchable` rejection, plus a
+    // write-path invariant: the insert, delete and update walkers all agree
+    // that a null source keeps a single ordinary null entry with its real
+    // reference. `nullSearchable: false` would suppress that reference on
+    // insert while the set-diff update path maintains it, so the combination
+    // is rejected.
+    if !index.null_searchable {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "a {keyword} index is not supported with nullSearchable: false: documents with a \
+             null source keep a single ordinary null entry; leave nullSearchable at its default \
+             (true)"
+        )));
+    }
+    if grid.step == 0 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.step must be greater than zero"
+        )));
+    }
+    // The phase is a pure alignment offset: shifting the grid by a whole
+    // number of steps reproduces the identical grid, so any value >= step is
+    // a second spelling of a smaller phase. One grid, one spelling — reject
+    // rather than normalize, so the contract, the transform and the storage
+    // key all carry the same number.
+    if grid.phase >= grid.step {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.phase ({}) must be less than {keyword}.step ({}): the phase only aligns \
+             the grid within one step, and a larger value would be a redundant spelling of \
+             phase % step",
+            grid.phase, grid.step
+        )));
+    }
+    if grid.range == 0 {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.range must be greater than zero"
+        )));
+    }
+    if !grid.range.is_multiple_of(grid.step) {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.range must be an exact multiple of {keyword}.step so the number of \
+             overlapping windows per document is deterministic"
+        )));
+    }
+    match index.index_properties.first() {
+        Some(first) if first.name == grid.source => Ok(()),
+        Some(first) => Err(DataContractError::InvalidContractStructure(format!(
+            "{keyword}.on (\"{}\") must name the first index property (\"{}\"); the windows \
+             partition the index by the bucketed property, so it has to be the leading one",
+            grid.source, first.name
+        ))),
+        None => Err(DataContractError::InvalidContractStructure(format!(
+            "an index declaring {keyword} must have at least one property"
+        ))),
+    }
+}
+
 impl Index {
     /// Check to see if two objects are conflicting
     pub fn objects_are_conflicting(&self, object1: &ValueMap, object2: &ValueMap) -> bool {
@@ -2481,34 +2626,35 @@ impl Index {
             ));
         }
 
-        // A time-range transform buckets the index's *first* property. Validate
-        // the structural constraints that don't need document-type context here
-        // (the source must be a timestamp/Date field — which does need the
-        // schema — is checked in `try_from_schema`). Uniqueness is admitted
-        // only for the narrow shape where it has a meaning: non-overlapping
-        // windows over an immutable timestamp.
+        let any_ranked_axis = ranked_countable
+            || !ranked_countable_at.is_empty()
+            || ranked_summable
+            || ranked_averageable;
+        let bucketed_index_shape = BucketedIndexShape {
+            unique,
+            contested: contested_index.is_some(),
+            any_ranked_axis,
+            ranked_countable_at: &ranked_countable_at,
+            null_searchable,
+            index_properties: &index_properties,
+        };
+
+        // A time-range transform buckets the index's *first* property. The
+        // rules every bucketing grid shares run in `validate_bucket_grid`;
+        // the ones below are the time grid's own. The rule that needs the
+        // schema (the source is a required system timestamp) is checked in
+        // `try_from_schema`.
         if let Some(transform) = &time_range {
-            // Uniqueness and bucketing only compose when the windows
-            // *partition* time. With `range == step` (overlap factor 1) every
-            // document lands in exactly one bucket, so "at most one document
-            // per window per remaining key tuple" is a coherent constraint —
-            // one report per author per day. With `range > step` a single
-            // document is indexed under `range / step` bucket keys at once, so
-            // it would occupy the unique slot of several windows while two
-            // documents with different timestamps would collide in the windows
-            // they happen to share: there is no constraint left to enforce.
-            //
-            // Compared before the zero-step / multiple checks below because it
-            // only reads the declared numbers; a malformed transform still
-            // gets its own, more specific rejection there.
-            if unique && transform.range_seconds != transform.step_seconds {
-                return Err(DataContractError::InvalidContractStructure(
-                    "a timeRange index cannot be unique unless range equals step \
-                     (non-overlapping windows): with overlapping ranges one document is indexed \
-                     under several bucket keys at once, which uniqueness cannot express"
-                        .to_string(),
-                ));
-            }
+            validate_bucket_grid(
+                BucketGridDeclaration {
+                    keyword: TIME_RANGE,
+                    source: &transform.source,
+                    range: transform.range_seconds,
+                    step: transform.step_seconds,
+                    phase: transform.phase_seconds,
+                },
+                &bucketed_index_shape,
+            )?;
             // Non-overlapping windows are still only safe over an *immutable*
             // source. Uniqueness validation probes the bucket the candidate
             // document's timestamp falls into and leans on `allow_original`:
@@ -2537,54 +2683,6 @@ impl Index {
                     property_names::CREATED_AT
                 )));
             }
-            if contested_index.is_some() {
-                return Err(DataContractError::InvalidContractStructure(
-                    "a timeRange index cannot be a contested resource".to_string(),
-                ));
-            }
-            // Ranked axes compose with bucketing BELOW the bucketed level:
-            // a ranked level's per-prefix secondaries live inside their
-            // prefix's subtree, and a bucket start is just another prefix
-            // value — within any single bucket's subtree a document appears
-            // exactly once, so per-window rankings are exact regardless of
-            // window overlap (a document in several windows raises each
-            // window's own honest aggregate; that is the meaning of
-            // overlapping windows, not double counting). Ranked queries pin
-            // the bucket the same way they pin every other leading property
-            // — through a resolved time-range selection.
-            //
-            // What has no designed semantics yet is ranking the bucketed
-            // level ITSELF — ordering the windows by their aggregates. That
-            // needs its own routing shape (no prefix pin above the first
-            // level, a grid named by the query), so exactly that is still
-            // rejected, in its two spellings:
-            // - every ranked flag ranks the terminal level, so on a
-            //   single-property bucketed index the only rankable level IS
-            //   the bucketed one;
-            // - an `at` chain naming the transform's source ranks the
-            //   bucketed level explicitly.
-            let any_ranked_axis = ranked_countable
-                || !ranked_countable_at.is_empty()
-                || ranked_summable
-                || ranked_averageable;
-            if any_ranked_axis && index_properties.len() == 1 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "a single-property timeRange index cannot be ranked: its only level is \
-                     the bucketed one, and ranking the windows themselves (ordering bucket \
-                     starts by their aggregates) is not supported yet — add the property to \
-                     rank below the bucketed timestamp, e.g. [timestamp, hashtag]"
-                        .to_string(),
-                ));
-            }
-            if ranked_countable_at.iter().any(|at| at == &transform.source) {
-                return Err(DataContractError::InvalidContractStructure(format!(
-                    "rankedCountable.at cannot name \"{}\", a timeRange index's bucketed \
-                     source: ranking the windows themselves (ordering bucket starts by \
-                     their aggregates) is not supported yet — rank the levels below the \
-                     bucketed timestamp instead",
-                    transform.source
-                )));
-            }
             // A TTL below the window length would expire a bucket that can
             // still receive writes: `$createdAt` is consensus-assigned from
             // block time, so a document entering the grid lands in every
@@ -2603,20 +2701,6 @@ impl Index {
                         ttl_seconds, transform.range_seconds
                     )));
                 }
-            }
-            // Same reasoning as the ranked `nullSearchable` rejection above,
-            // plus a write-path invariant: the insert, delete and update
-            // walkers all agree that a null timestamp keeps a single ordinary
-            // null entry with its real reference. `nullSearchable: false`
-            // would suppress that reference on insert while the set-diff
-            // update path maintains it, so the combination is rejected.
-            if !null_searchable {
-                return Err(DataContractError::InvalidContractStructure(
-                    "a timeRange index is not supported with nullSearchable: false: documents \
-                     with a null timestamp keep a single ordinary null entry; leave \
-                     nullSearchable at its default (true)"
-                        .to_string(),
-                ));
             }
             // The window is declared in seconds but every quantity it is
             // measured against — the source timestamps, the bucket starts, the
@@ -2637,25 +2721,6 @@ impl Index {
                         field, seconds
                     )));
                 }
-            }
-            if transform.step_seconds == 0 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "timeRange.step must be greater than zero".to_string(),
-                ));
-            }
-            // The phase is a pure alignment offset: shifting the grid by a
-            // whole number of steps reproduces the identical grid, so any
-            // value >= step is a second spelling of a smaller phase. One
-            // grid, one spelling — reject rather than normalize, so the
-            // contract, the transform and the storage key all carry the same
-            // number.
-            if transform.phase_seconds >= transform.step_seconds {
-                return Err(DataContractError::InvalidContractStructure(format!(
-                    "timeRange.phase ({} seconds) must be less than timeRange.step ({} \
-                     seconds): the phase only aligns the grid within one step, and a larger \
-                     value would be a redundant spelling of phase % step",
-                    transform.phase_seconds, transform.step_seconds
-                )));
             }
             // `phase < step` alone is not enough: the region `[0, phase)` is
             // outside every window (bucket starts are `phase + k*step`,
@@ -2679,48 +2744,23 @@ impl Index {
                     transform.phase_seconds, MAX_TIME_RANGE_PHASE_SECONDS
                 )));
             }
-            if transform.range_seconds == 0 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "timeRange.range must be greater than zero".to_string(),
-                ));
-            }
-            if transform.range_seconds % transform.step_seconds != 0 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "timeRange.range must be an exact multiple of timeRange.step so the number \
-                     of overlapping ranges per document is deterministic"
-                        .to_string(),
-                ));
-            }
             // The overlap-factor cap is NOT checked here: it is a versioned
             // system limit (`SystemLimits::max_time_range_overlap_factor`),
             // and this parser has no platform version. It is enforced at
             // contract registration in `try_from_schema`, like the other
             // versioned index limits; this function keeps only the structural
             // rules that hold at every version.
-            match index_properties.first() {
-                Some(first) if first.name == transform.source => {}
-                Some(first) => {
-                    return Err(DataContractError::InvalidContractStructure(format!(
-                        "timeRange.on (\"{}\") must name the first index property (\"{}\"); a \
-                         time range partitions the index by time, so it has to be the leading \
-                         property",
-                        transform.source, first.name
-                    )));
-                }
-                None => {
-                    return Err(DataContractError::InvalidContractStructure(
-                        "an index with a timeRange must have at least one property".to_string(),
-                    ));
-                }
-            }
         }
 
         // An integer-range transform buckets the index's first property by
-        // value. The structural rules mirror the time-range ones above; the
-        // rules that need the document schema (the source is a required
-        // integer property of at most 64 bits) or the platform version (the
-        // overlap cap) live in `try_from_schema`. There is no `ttl`: windows
-        // over values never age.
+        // value. The rules that need the document schema (the source is a
+        // required integer property of at most 64 bits) or the platform
+        // version (the overlap cap) live in `try_from_schema`. There is no
+        // `ttl`: windows over values never age. Unlike a time-range source, a
+        // mutable integer source may be unique: the uniqueness probe reads
+        // the document's new value, and a document found alone in its new
+        // window is the one being updated (see `validate_uniqueness_of_data`
+        // v1).
         if let Some(transform) = &integer_range {
             if time_range.is_some() {
                 return Err(DataContractError::InvalidContractStructure(
@@ -2729,107 +2769,16 @@ impl Index {
                         .to_string(),
                 ));
             }
-            // Same reasoning as the time-range rule: uniqueness means "at most
-            // one document per window per remaining key tuple", which only
-            // holds when the windows partition the values. Unlike a time-range
-            // source, a mutable integer source is fine: the uniqueness probe
-            // reads the document's new value, and a document found alone in
-            // its new window is the one being updated (see
-            // `validate_uniqueness_of_data` v1).
-            if unique && transform.range != transform.step {
-                return Err(DataContractError::InvalidContractStructure(
-                    "an integerRange index cannot be unique unless range equals step \
-                     (non-overlapping windows): with overlapping windows one document is indexed \
-                     under several bucket keys at once, which uniqueness cannot express"
-                        .to_string(),
-                ));
-            }
-            if contested_index.is_some() {
-                return Err(DataContractError::InvalidContractStructure(
-                    "an integerRange index cannot be a contested resource".to_string(),
-                ));
-            }
-            // Ranked levels compose with bucketing below the bucketed level,
-            // exactly as on a time-range index; ranking the windows
-            // themselves has no designed semantics yet.
-            let any_ranked_axis = ranked_countable
-                || !ranked_countable_at.is_empty()
-                || ranked_summable
-                || ranked_averageable;
-            if any_ranked_axis && index_properties.len() == 1 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "a single-property integerRange index cannot be ranked: its only level is \
-                     the bucketed one, and ranking the windows themselves (ordering bucket \
-                     starts by their aggregates) is not supported yet — add the property to \
-                     rank below the bucketed integer, e.g. [price, category]"
-                        .to_string(),
-                ));
-            }
-            if ranked_countable_at.iter().any(|at| at == &transform.source) {
-                return Err(DataContractError::InvalidContractStructure(format!(
-                    "rankedCountable.at cannot name \"{}\", an integerRange index's bucketed \
-                     source: ranking the windows themselves (ordering bucket starts by their \
-                     aggregates) is not supported yet — rank the levels below the bucketed \
-                     integer instead",
-                    transform.source
-                )));
-            }
-            // The write walkers agree that a null source keeps a single
-            // ordinary null entry with its real reference; `nullSearchable:
-            // false` would suppress it on insert only.
-            if !null_searchable {
-                return Err(DataContractError::InvalidContractStructure(
-                    "an integerRange index is not supported with nullSearchable: false; leave \
-                     nullSearchable at its default (true)"
-                        .to_string(),
-                ));
-            }
-            if transform.step == 0 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "integerRange.step must be greater than zero".to_string(),
-                ));
-            }
-            // One grid, one spelling: shifting by whole steps reproduces the
-            // same grid, so a phase of `step` or more is refused rather than
-            // normalized. Unlike a time grid there is no upper cap: the
-            // grid covers every integer (k runs over negative values too),
-            // and the key type's minimum clamps the bottom window.
-            if transform.phase >= transform.step {
-                return Err(DataContractError::InvalidContractStructure(format!(
-                    "integerRange.phase ({}) must be less than integerRange.step ({}): the \
-                     phase only aligns the grid within one step, and a larger value would be a \
-                     redundant spelling of phase % step",
-                    transform.phase, transform.step
-                )));
-            }
-            if transform.range == 0 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "integerRange.range must be greater than zero".to_string(),
-                ));
-            }
-            if transform.range % transform.step != 0 {
-                return Err(DataContractError::InvalidContractStructure(
-                    "integerRange.range must be an exact multiple of integerRange.step so the \
-                     number of overlapping windows per document is deterministic"
-                        .to_string(),
-                ));
-            }
-            match index_properties.first() {
-                Some(first) if first.name == transform.source => {}
-                Some(first) => {
-                    return Err(DataContractError::InvalidContractStructure(format!(
-                        "integerRange.on (\"{}\") must name the first index property (\"{}\"); \
-                         the windows partition the index by value, so the bucketed property has \
-                         to be the leading one",
-                        transform.source, first.name
-                    )));
-                }
-                None => {
-                    return Err(DataContractError::InvalidContractStructure(
-                        "an index with an integerRange must have at least one property".to_string(),
-                    ));
-                }
-            }
+            validate_bucket_grid(
+                BucketGridDeclaration {
+                    keyword: INTEGER_RANGE,
+                    source: &transform.source,
+                    range: transform.range,
+                    step: transform.step,
+                    phase: transform.phase,
+                },
+                &bucketed_index_shape,
+            )?;
         }
 
         // If the index didn't have a name, derive one deterministically from
@@ -6742,6 +6691,7 @@ mod json_convertible_tests {
                 "ranked_summable": false,
                 "ranked_averageable": true,
                 "time_range": serde_json::Value::Null,
+                "integer_range": serde_json::Value::Null,
                 "terminal": serde_json::Value::Null,
                 "preallocated": false,
                 "skip_if_absent": false,

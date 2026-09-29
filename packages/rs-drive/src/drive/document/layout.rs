@@ -31,7 +31,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
-    is_flat_level_key, DocumentTypeRef, IndexLevel, IndexLevelTypeInfo, IndexType,
+    is_flat_level_key, DocumentTypeRef, IndexBucketing, IndexLevel, IndexLevelTypeInfo, IndexType,
 };
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
@@ -109,6 +109,18 @@ pub enum LayoutKey {
         step_seconds: u64,
         /// The shift of the window boundaries in seconds.
         phase_seconds: u64,
+    },
+    /// One key per integer window start of `property` that holds a
+    /// document: the window start, encoded like the property.
+    IntegerRangeBucket {
+        /// The integer property the windows bucket.
+        property: String,
+        /// The length of a window.
+        range: u64,
+        /// The distance between window starts.
+        step: u64,
+        /// The shift of the window boundaries.
+        phase: u64,
     },
     /// One key per entry of an indexOnly document type: the values of the
     /// index's terminal components concatenated (32 bytes for `$ownerId`).
@@ -307,6 +319,12 @@ pub enum LayoutNote {
         /// Seconds an entry is kept after its window.
         ttl_seconds: u64,
     },
+    /// An integer window level: a document lands in every window that
+    /// contains its value, up to this many.
+    IntegerRangeOverlap {
+        /// The most windows one value falls in.
+        windows: u64,
+    },
 }
 
 impl LayoutNote {
@@ -320,6 +338,7 @@ impl LayoutNote {
             LayoutNote::Preallocated => "preallocated",
             LayoutNote::TimeRangeOverlap { .. } => "timeRangeOverlap",
             LayoutNote::TimeRangeTtl { .. } => "timeRangeTtl",
+            LayoutNote::IntegerRangeOverlap { .. } => "integerRangeOverlap",
         }
     }
 
@@ -354,6 +373,9 @@ impl LayoutNote {
                 "entries expire {ttl_seconds} seconds after their window: written without \
                  storage flags and removed by a later cleanup"
             ),
+            LayoutNote::IntegerRangeOverlap { windows } => {
+                format!("a document lands in every window containing its value: up to {windows}")
+            }
         }
     }
 }
@@ -558,8 +580,8 @@ fn top_index_node(
     }
 
     let mut notes = Vec::new();
-    let property = match level.time_range() {
-        Some(transform) => transform.source.clone(),
+    let property = match level.bucketing() {
+        Some(bucketing) => bucketing.source().to_string(),
         None => level_key.to_string(),
     };
     // The walkers' skip rule, for a property that can be absent: a system
@@ -603,8 +625,8 @@ fn value_node(
     index_paths: &[(String, Vec<String>)],
 ) -> Result<LayoutNode, Error> {
     let mut notes = Vec::new();
-    let key = match level.time_range().filter(|_| top) {
-        Some(transform) => {
+    let key = match level.bucketing().filter(|_| top) {
+        Some(IndexBucketing::Time(transform)) => {
             notes.push(LayoutNote::TimeRangeOverlap {
                 windows: transform.overlap_factor(),
             });
@@ -616,6 +638,17 @@ fn value_node(
                 range_seconds: transform.range_seconds,
                 step_seconds: transform.step_seconds,
                 phase_seconds: transform.phase_seconds,
+            }
+        }
+        Some(IndexBucketing::Integer(transform)) => {
+            notes.push(LayoutNote::IntegerRangeOverlap {
+                windows: transform.overlap_factor(),
+            });
+            LayoutKey::IntegerRangeBucket {
+                property: transform.source.clone(),
+                range: transform.range,
+                step: transform.step,
+                phase: transform.phase,
             }
         }
         None => LayoutKey::PropertyValue {
@@ -815,6 +848,18 @@ impl LayoutKey {
                 ("rangeSeconds", number(*range_seconds)),
                 ("stepSeconds", number(*step_seconds)),
                 ("phaseSeconds", number(*phase_seconds)),
+            ]),
+            LayoutKey::IntegerRangeBucket {
+                property,
+                range,
+                step,
+                phase,
+            } => map(vec![
+                ("kind", text("integerRangeBucket")),
+                ("property", text(property)),
+                ("range", number(*range)),
+                ("step", number(*step)),
+                ("phase", number(*phase)),
             ]),
             LayoutKey::MemberKey { components } => map(vec![
                 ("kind", text("memberKey")),

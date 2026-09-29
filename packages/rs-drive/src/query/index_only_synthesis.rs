@@ -188,7 +188,7 @@ impl DriveDocumentQuery<'_> {
         // all-unused match inside the difference budget could still slip
         // through (see [`index_admissible_for_skip_if_absent`]).
         let admissible = |index: &Index| {
-            index.time_range.is_none() && index_admissible_for_skip_if_absent(index, &bound_fields)
+            !index.is_bucketed() && index_admissible_for_skip_if_absent(index, &bound_fields)
         };
         let matching = |filter: &dyn Fn(&Index) -> bool| {
             self.document_type
@@ -911,6 +911,16 @@ impl DriveDocumentQuery<'_> {
                     .to_string(),
             )));
         }
+        if index.integer_range.is_some() {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "IN_INTEGER_RANGE document queries are not supported on an indexOnly type: \
+                     the bucketed entries carry window starts rather than the property's \
+                     values, so documents cannot be synthesized from them; use the count \
+                     aggregate surfaces over the bucketed index, or query the raw entries \
+                     through a non-bucketed index"
+                    .to_string(),
+            )));
+        }
         Ok(())
     }
 
@@ -1080,8 +1090,7 @@ impl DriveDocumentQuery<'_> {
 
 /// The index an executed-transition proof (waitForStateTransitionResult)
 /// runs against: the first `$ownerId`-bearing index that involves no
-/// `$createdAt`, buckets nothing (`integerRange`) AND is not `skipIfAbsent` —
-/// the verifier cannot know the
+/// `$createdAt` AND is not `skipIfAbsent` — the verifier cannot know the
 /// block timestamp a time-keyed entry was written with, and a skipIfAbsent
 /// index has no entry at all for a trigger-absent document, so neither can
 /// anchor a proof that must exist for every create/delete. The parser
@@ -1098,7 +1107,7 @@ pub fn index_only_proof_index<'a>(document_type: &'a DocumentTypeRef) -> Result<
                 || index.properties.iter().any(|p| p.name == OWNER_ID);
             let carries_created_at = index.terminal_contains(CREATED_AT)
                 || index.properties.iter().any(|p| p.name == CREATED_AT);
-            carries_owner && !carries_created_at && !index.skip_if_absent && !index.is_bucketed()
+            carries_owner && !carries_created_at && !index.skip_if_absent
         })
         .ok_or(Error::Query(QuerySyntaxError::Unsupported(
             "executed-transition proofs for an indexOnly type need an \
@@ -1145,10 +1154,11 @@ pub fn index_only_entry_path_and_key_from_values(
 
     // Bare property names are correct here because a bucketed index can
     // never reach this builder: it is used with the proof index (which by
-    // the contract-admission rule involves no $createdAt, so it cannot be
-    // bucketed) and with terminal-route indexes (which exclude bucketed
-    // indexes at selection). Guarded rather than assumed.
-    if index.time_range.is_some() {
+    // the contract-admission rule involves no $createdAt and no
+    // integerRange, so it cannot be bucketed) and with terminal-route
+    // indexes (which exclude bucketed indexes at selection). Guarded rather
+    // than assumed.
+    if index.is_bucketed() {
         return Err(Error::Drive(DriveError::CorruptedCodeExecution(
             "index_only_entry_path_and_key_from_values cannot address a bucketed index: \
              its levels are keyed by the grid-qualified storage key, not the property name",

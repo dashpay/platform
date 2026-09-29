@@ -2394,6 +2394,53 @@ mod tests {
         }
 
         #[test]
+        fn should_report_a_width_change_of_an_integer_range_source_as_an_integer_encoding_change() {
+            // The grid is the same declaration on both sides; only the
+            // source's width moves, so the refusal names the property's
+            // encoding, exactly as for a plain index on it.
+            let platform_version = PlatformVersion::latest();
+            let doc_type = |maximum: u64| {
+                let schema = platform_value!({
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": "integer", "minimum": 0, "maximum": maximum, "position": 0}
+                    },
+                    "required": ["score"],
+                    "indices": [{
+                        "name": "byBand",
+                        "properties": [{"score": "asc"}],
+                        "integerRange": {"on": "score", "range": 10u64, "step": 10u64}
+                    }],
+                    "additionalProperties": false,
+                });
+                let mut config = DataContractConfig::default_for_version(platform_version)
+                    .expect("should create a default config");
+                config.set_sized_integer_types_enabled(true);
+                DocumentType::try_from_schema(
+                    Identifier::new([1; 32]),
+                    1,
+                    config.version(),
+                    "test",
+                    schema,
+                    None,
+                    &BTreeMap::new(),
+                    &config,
+                    false,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("failed to create document type")
+            };
+
+            assert_rejected(
+                validate_update(&doc_type(100), &doc_type(1000), platform_version),
+                "score",
+                "u8",
+                "u16",
+            );
+        }
+
+        #[test]
         fn should_reject_lowering_minimum_below_zero() {
             // The same width with the other signedness: a stored u64 above
             // i64::MAX would read back negative

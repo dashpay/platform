@@ -107,8 +107,8 @@ pub fn document_remaining_lifetime_ms(
 }
 
 /// The index levels a document of this type writes and its deletion removes: every index
-/// counts its properties, and an index bucketing time into overlapping windows counts them
-/// once per window holding the document.
+/// counts its properties, and an index bucketing time or integers into overlapping windows
+/// counts them once per window holding the document.
 pub fn document_type_weighted_index_levels(document_type: DocumentTypeRef) -> u64 {
     document_type
         .indexes()
@@ -117,7 +117,12 @@ pub fn document_type_weighted_index_levels(document_type: DocumentTypeRef) -> u6
             let windows = index
                 .time_range
                 .as_ref()
-                .map_or(1, |transform| transform.overlap_factor().max(1));
+                .map(|transform| transform.overlap_factor())
+                .or(index
+                    .integer_range
+                    .as_ref()
+                    .map(|transform| transform.overlap_factor()))
+                .map_or(1, |windows| windows.max(1));
             (index.properties.len() as u64).saturating_mul(windows)
         })
         .fold(0u64, u64::saturating_add)

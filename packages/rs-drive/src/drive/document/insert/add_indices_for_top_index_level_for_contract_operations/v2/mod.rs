@@ -20,8 +20,8 @@ use dpp::version::PlatformVersion;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, index_only_level_skips_when_absent,
-    time_range_index_keys,
+    bucket_index_keys, index_level_tree_types_with_continuation_demotion,
+    index_only_level_skips_when_absent,
 };
 use crate::drive::document::paths::contract_document_type_path_vec;
 use grovedb::batch::KeyInfoPath;
@@ -213,12 +213,12 @@ impl Drive {
 
             // The level key is the path segment; the document value is read
             // from the *source property*. They coincide except on a
-            // time-range level, whose key is the property name qualified
-            // with the grid (`TimeRangeTransform::storage_key`) while the
-            // timestamp still lives under the bare property name.
+            // bucketed (time- or integer-range) level, whose key is the
+            // property name qualified with the grid (`storage_key`) while
+            // the value still lives under the bare property name.
             let property_name = sub_level
-                .time_range()
-                .map(|transform| transform.source.as_str())
+                .bucketing()
+                .map(|bucketing| bucketing.source())
                 .unwrap_or(name.as_str());
 
             // with the example of the dashpay contract's first index
@@ -310,16 +310,16 @@ impl Drive {
             let any_fields_null = document_top_field.is_empty();
             let all_fields_null = document_top_field.is_empty();
 
-            // A time-range first-property node expands the document's single
-            // timestamp into one index entry per overlapping range bucket (the
-            // bucket *start*, encoded exactly like the timestamp). A normal
-            // property keeps its single key. The entry-key rule (null keeps
-            // its single null entry, pre-origin timestamps produce no entries,
-            // undecodable values keep their raw key) lives in ONE place —
-            // [`TimeRangeTransform::entry_keys_for_raw`] — shared with the
+            // A bucketed (time- or integer-range) first-property node
+            // expands the document's single value into one index entry per
+            // containing window (the window *start*, encoded exactly like
+            // the value). A normal property keeps its single key. The
+            // entry-key rule (null keeps its single null entry, undecodable
+            // values keep their raw key) lives in ONE place —
+            // [`IndexBucketing::entry_keys_for_raw`] — shared with the
             // delete and update walkers so the three can never disagree.
-            let index_keys: Vec<DriveKeyInfo> = time_range_index_keys(
-                sub_level.time_range(),
+            let index_keys: Vec<DriveKeyInfo> = bucket_index_keys(
+                sub_level.bucketing(),
                 document_top_field,
                 // A validated contract cannot exceed this; the clamp only
                 // bounds estimation work for unvalidated transforms. The

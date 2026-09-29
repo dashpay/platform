@@ -110,7 +110,7 @@ A document that leaves any of the indexed properties out is not held to the inde
 
 Uniqueness is per index. `bySlug` above is unique over the pair (`$ownerId`, `slug`), so two authors may use the same slug; a unique index on `slug` alone would make each slug global.
 
-A unique index with a [`timeRange`](time-range.md) treats two documents in the same window as equal on the bucketed property. A unique index cannot carry a ranking.
+A unique index with a [`timeRange`](time-range.md) or an [`integerRange`](integer-range.md) treats two documents in the same window as equal on the bucketed property. A unique index cannot carry a ranking.
 
 ## `nullSearchable`
 
@@ -126,7 +126,7 @@ With the default, a document whose indexed properties are all missing is still e
 
 DPNS sets `"nullSearchable": false` on its `records.identity` index, so domains that point at no identity take no room in it.
 
-`nullSearchable: false` is refused on an index with a ranking or a `timeRange`, and on an index of an index-only type.
+`nullSearchable: false` is refused on an index with a ranking, a `timeRange` or an `integerRange`, and on an index of an index-only type.
 
 ## Null handling
 
@@ -166,11 +166,12 @@ An index entry may carry more keywords, each with its own chapter:
 - [Counts, Sums and Averages](aggregates.md): `countable`, `summable`, `averageable` and their `range*` forms keep totals per indexed value, so counts, sums and averages are read without walking the documents.
 - [Ranked Indexes](ranked.md): `rankedCountable`, `rankedSummable` and `rankedAverageable` order the indexed values by those totals, for "top 10" queries with proofs.
 - [Time-Range Indexes](time-range.md): `timeRange` groups documents into time windows, for "trending this hour" queries.
+- [Integer-Range Indexes](integer-range.md): `integerRange` groups documents into windows of an integer property, for counts and rankings per price or score band.
 - [Index-Only Types](index-only.md): `terminal`, `preallocated` and `skipIfAbsent` shape the indexes of a type whose documents live only in their indexes.
 
 ## See also
 
 - [Indexes](../drive/indexes.md) in the Drive part: the index trie, the GroveDB layout and the query picker.
-- [Contested Indexes](contested.md), [Counts, Sums and Averages](aggregates.md), [Ranked Indexes](ranked.md), [Time-Range Indexes](time-range.md), [Index-Only Types](index-only.md).
+- [Contested Indexes](contested.md), [Counts, Sums and Averages](aggregates.md), [Ranked Indexes](ranked.md), [Time-Range Indexes](time-range.md), [Integer-Range Indexes](integer-range.md), [Index-Only Types](index-only.md).
 - [System Properties](system-properties.md) for what `$ownerId`, `$createdAt` and the others hold.
 - [Contract Keywords](../contract-keywords.md) for the conventions of these chapters.

@@ -1,6 +1,9 @@
 use crate::data_contract::document_type::DocumentPropertyType;
+use platform_value::Value;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 
 /// The integer encoding an `integerRange` source is stored with: the width
 /// and signedness of the source property's [`DocumentPropertyType`], which
@@ -104,6 +107,22 @@ impl IntegerRangeKeyType {
         })
     }
 
+    /// `value` as the platform value a query equality on the source carries:
+    /// `I64` when it fits, `U64` above that. `None` when the key type cannot
+    /// hold it. Every window start the grid produces
+    /// ([`IntegerRangeTransform::containing_starts`]) or accepts
+    /// ([`IntegerRangeTransform::is_window_start`]) is held, so this is the
+    /// one conversion the query resolver and the uniqueness probe share.
+    pub fn value_of(self, value: i128) -> Option<Value> {
+        if !self.holds(value) {
+            return None;
+        }
+        match i64::try_from(value) {
+            Ok(value) => Some(Value::I64(value)),
+            Err(_) => u64::try_from(value).ok().map(Value::U64),
+        }
+    }
+
     /// Decodes a stored key of this type. Only an input of exactly this
     /// type's width decodes: the fixed-width decoders read a prefix of any
     /// longer input, and an empty input would index past its end.
@@ -152,8 +171,12 @@ impl IntegerRangeKeyType {
 // `phase`, see the `integerRange` entry in the v3 document meta-schema), so
 // a serialized `Index` round-trips into the key set a contract author
 // writes. `key_type` is not part of the grammar and is re-derived from the
-// schema on every parse.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+// schema on every parse, so it is also left out of equality, ordering and
+// hashing: two transforms are the same grid when the contract declares the
+// same `on` / `range` / `step` / `phase`. A change of the source's integer
+// width is the property's change, refused by the document type's integer
+// encoding check, not an index definition change.
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct IntegerRangeTransform {
     /// The integer index property this transform buckets. Must be the first
@@ -176,6 +199,39 @@ pub struct IntegerRangeTransform {
     /// reads it.
     #[cfg_attr(feature = "serde-conversion", serde(skip))]
     pub key_type: IntegerRangeKeyType,
+}
+
+impl IntegerRangeTransform {
+    /// The declared grid, the identity equality, ordering and hashing use.
+    fn grid(&self) -> (&str, u64, u64, u64) {
+        (self.source.as_str(), self.range, self.step, self.phase)
+    }
+}
+
+impl PartialEq for IntegerRangeTransform {
+    fn eq(&self, other: &Self) -> bool {
+        self.grid() == other.grid()
+    }
+}
+
+impl Eq for IntegerRangeTransform {}
+
+impl PartialOrd for IntegerRangeTransform {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for IntegerRangeTransform {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.grid().cmp(&other.grid())
+    }
+}
+
+impl Hash for IntegerRangeTransform {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.grid().hash(state);
+    }
 }
 
 impl IntegerRangeTransform {
@@ -249,6 +305,18 @@ impl IntegerRangeTransform {
             starts.push(start);
         }
         starts
+    }
+
+    /// A value in as many windows as the key type allows: `range` above the
+    /// key type's minimum, so no window it falls in reaches down to the
+    /// clamped bottom (or the key type's maximum, when the type is narrower
+    /// than that). Cost estimates price a typical document with it instead
+    /// of a value near the bottom, which sits in fewer windows.
+    pub fn full_fan_out_value(&self) -> i128 {
+        self.key_type
+            .min_value()
+            .saturating_add(self.range as i128)
+            .min(self.key_type.max_value())
     }
 
     /// Whether `start` names a window of this grid: a grid start the key
@@ -459,6 +527,39 @@ mod tests {
         assert_eq!(t.most_recent_start(5), None);
         assert!(t.containing_starts(5).is_empty());
         assert!(!t.is_window_start(0));
+    }
+
+    #[test]
+    fn should_pick_a_sample_value_in_every_window() {
+        let t = transform(300, 100, 0, IntegerRangeKeyType::U32);
+        assert_eq!(t.containing_starts(t.full_fan_out_value()).len(), 3);
+        let t = transform(300, 100, 50, IntegerRangeKeyType::I8);
+        assert_eq!(t.containing_starts(t.full_fan_out_value()).len(), 3);
+        // a type narrower than one window keeps what the type allows
+        let t = transform(1_000, 100, 0, IntegerRangeKeyType::U8);
+        assert_eq!(t.full_fan_out_value(), 255);
+    }
+
+    #[test]
+    fn should_compare_transforms_by_the_declared_grid_only() {
+        let narrow = transform(300, 100, 0, IntegerRangeKeyType::U16);
+        let wide = transform(300, 100, 0, IntegerRangeKeyType::U32);
+        assert_eq!(narrow, wide);
+        assert_ne!(narrow, transform(300, 100, 5, IntegerRangeKeyType::U16));
+    }
+
+    #[test]
+    fn should_convert_held_starts_to_query_values() {
+        assert_eq!(
+            IntegerRangeKeyType::I8.value_of(-128),
+            Some(Value::I64(-128))
+        );
+        assert_eq!(
+            IntegerRangeKeyType::U64.value_of(u64::MAX as i128),
+            Some(Value::U64(u64::MAX))
+        );
+        assert_eq!(IntegerRangeKeyType::U8.value_of(-1), None);
+        assert_eq!(IntegerRangeKeyType::U8.value_of(256), None);
     }
 
     #[test]

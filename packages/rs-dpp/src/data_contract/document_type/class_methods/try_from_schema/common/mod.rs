@@ -957,34 +957,59 @@ fn parse_indices(
                         // or the platform version, so they live here. A
                         // generation without the `timeRange` grammar never
                         // parses a transform, so this is a no-op there.
-                        if let Some(transform) = &index.time_range {
+                        if let Some(bucketing) = index.bucketing() {
                             // The overlap factor is the number of index
                             // entries a single document produces on this
                             // index — its write amplification — so its cap
                             // is a versioned system limit rather than a
                             // structural constant: retuning it is a
                             // protocol-version decision, not a code edit.
+                            // Both kinds of grid share the one limit.
                             // `None` means a protocol version predating
-                            // time-range indexes, which cannot reach here
-                            // because the keyword does not parse there.
+                            // bucketed indexes, which cannot reach here
+                            // because neither keyword parses there.
                             if let Some(max_overlap_factor) = ctx
                                 .platform_version
                                 .system_limits
                                 .max_time_range_overlap_factor
                             {
-                                let overlap = transform.overlap_factor();
+                                let overlap = bucketing.overlap_factor();
                                 if overlap > max_overlap_factor {
                                     return Err(consensus_or_protocol_data_contract_error(
                                         DataContractError::InvalidContractStructure(format!(
-                                            "timeRange overlap factor (range / step = {}) \
-                                             exceeds the maximum of {}; a smaller window or a \
-                                             larger step is required to bound per-document \
-                                             index entries",
-                                            overlap, max_overlap_factor
+                                            "{} overlap factor (range / step = {}) exceeds \
+                                             the maximum of {}; a smaller window or a larger \
+                                             step is required to bound per-document index \
+                                             entries",
+                                            bucketing.keyword(),
+                                            overlap,
+                                            max_overlap_factor
                                         )),
                                     ));
                                 }
                             }
+                            // The grid-qualified level key is a GroveDB key,
+                            // capped at 255 bytes like every other key; the
+                            // grid suffix makes a long property path reach
+                            // the cap sooner, so it is refused here instead
+                            // of failing when the contract's trees are made.
+                            let level_key = bucketing.storage_key(bucketing.source());
+                            if level_key.len() > usize::from(MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH)
+                            {
+                                return Err(consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "the {} level of index \"{}\" encodes to {} bytes, \
+                                         over the {}-byte key cap: shorten the property path \
+                                         or the grid numbers",
+                                        bucketing.keyword(),
+                                        index.name,
+                                        level_key.len(),
+                                        MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                                    )),
+                                ));
+                            }
+                        }
+                        if let Some(transform) = &index.time_range {
                             // The TTL cap is likewise a versioned system
                             // limit — it is what makes billing TTL'd bytes
                             // at a flat processing rate honest, so retuning
@@ -1069,33 +1094,27 @@ fn parse_indices(
                             }
                         }
 
-                        // INTEGER RANGE: the checks that need the schema
-                        // or the platform version. The overlap factor is the
-                        // index's write amplification, capped by the same
-                        // versioned limit as a time-range grid's.
+                        // INTEGER RANGE: the checks that need the schema.
+                        // (The overlap cap and level key cap ran above.)
                         if let Some(transform) = &index.integer_range {
-                            if let Some(max_overlap_factor) = ctx
-                                .platform_version
-                                .system_limits
-                                .max_time_range_overlap_factor
-                            {
-                                let overlap = transform.overlap_factor();
-                                if overlap > max_overlap_factor {
-                                    return Err(consensus_or_protocol_data_contract_error(
-                                        DataContractError::InvalidContractStructure(format!(
-                                            "integerRange overlap factor (range / step = {}) \
-                                             exceeds the maximum of {}; a smaller window or a \
-                                             larger step is required to bound per-document \
-                                             index entries",
-                                            overlap, max_overlap_factor
-                                        )),
-                                    ));
-                                }
-                            }
                             // A required source keeps every document in the
                             // windows: an optional one would leave documents
                             // without the property under the null entry,
-                            // which no window selection reads.
+                            // which no window selection reads. A nested
+                            // source is only always present when every
+                            // object above it is required too.
+                            if let Some(ancestor) =
+                                unrequired_ancestor(&transform.source, required_fields)
+                            {
+                                return Err(consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "integerRange.on (\"{}\") sits inside \"{}\", which \
+                                         is not listed in `required`: a valid document could \
+                                         omit the whole object, leaving it in no window",
+                                        transform.source, ancestor
+                                    )),
+                                ));
+                            }
                             if !required_fields.contains(transform.source.as_str()) {
                                 return Err(consensus_or_protocol_data_contract_error(
                                     DataContractError::InvalidContractStructure(format!(
@@ -2926,10 +2945,25 @@ pub(super) fn apply_index_only(
         // below), so the carried value reproduces the exact bucket set
         // the create wrote. A bucketed index involves `$createdAt` and
         // therefore never counts as the required `$createdAt`-free
-        // proof index. `integerRange` is admitted the same way: the
-        // source is a required user property, so delete-by-values
-        // reproduces the create's bucket set from the carried value, and
-        // the proof-index rule below excludes every bucketed index.
+        // proof index.
+        //
+        // `integerRange` is refused. An indexOnly index keeps one entry per
+        // (prefix values, terminal), and a bucketed level holds window
+        // starts, not values: two rows that differ only in the bucketed
+        // integer would claim the same entry in every window they share, so
+        // the index would silently act as a uniqueness constraint over
+        // overlapping value bands. (A `$createdAt` window cannot do this: the
+        // proof index, which involves no `$createdAt`, already keeps rows
+        // that differ only in `$createdAt` apart.)
+        if index.integer_range.is_some() {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" declares integerRange: an \
+                 indexOnly index keeps one entry per window and other values, so rows that \
+                 differ only in the bucketed integer would collide in the windows they share; \
+                 bucket integers on a document type that stores its documents",
+                index_name, name,
+            )));
+        }
         // The sum axes (summable / rangeSummable / rankedSummable /
         // rankedAverageable / the averageable sugar) are admitted: a
         // summable index's terminal entry is an
@@ -3202,12 +3236,9 @@ pub(super) fn apply_index_only(
     // If every index were time-keyed or skippable, creates and deletes of
     // the type would work while transition-proof requests failed. (Every
     // index already embeds `$ownerId`, so any `$createdAt`-free non-skip
-    // index qualifies as the proof index.) An `integerRange` index involves
-    // no `$createdAt` but stores window starts, not the transition's
-    // values, so it cannot anchor the proof either.
+    // index qualifies as the proof index.)
     let has_proof_index = document_type.indices.values().any(|index| {
         !index.skip_if_absent
-            && !index.is_bucketed()
             && !index.terminal_contains(CREATED_AT)
             && !index
                 .properties
@@ -3217,11 +3248,10 @@ pub(super) fn apply_index_only(
     if !has_proof_index {
         return Err(structure_error(format!(
             "indexOnly document type \"{}\" must declare at least one index that neither \
-             involves $createdAt nor sets skipIfAbsent, and does not bucket its first property \
-             (integerRange): executed-transition proofs locate entries from the transition's \
-             values alone — they cannot reproduce the block timestamp a time-keyed entry was \
-             written with, a bucketed index stores window starts rather than values, and a \
-             skipIfAbsent index has no entry for documents that omit its trigger",
+             involves $createdAt nor sets skipIfAbsent: executed-transition proofs locate \
+             entries from the transition's values alone — they cannot reproduce the block \
+             timestamp a time-keyed entry was written with, and a skipIfAbsent index has \
+             no entry for documents that omit its trigger",
             name,
         )));
     }
@@ -3339,22 +3369,34 @@ pub(super) fn apply_index_only(
         // unrequired `profile` lets a valid document omit the whole object.
         // Every ancestor path of an indexed dotted property must therefore
         // be required too, or the no-null invariant silently breaks.
-        let mut ancestor = String::new();
-        for segment in property_name.split('.') {
-            if !ancestor.is_empty() {
-                if !document_type.required_fields.contains(&ancestor) {
-                    return Err(structure_error(format!(
-                        "property \"{}\" on indexOnly document type \"{}\" sits inside \
-                         \"{}\", which is not listed in `required`: a valid document could \
-                         omit the whole object, leaving the indexed leaf absent",
-                        property_name, name, ancestor,
-                    )));
-                }
-                ancestor.push('.');
-            }
-            ancestor.push_str(segment);
+        if let Some(ancestor) = unrequired_ancestor(property_name, &document_type.required_fields) {
+            return Err(structure_error(format!(
+                "property \"{}\" on indexOnly document type \"{}\" sits inside \
+                 \"{}\", which is not listed in `required`: a valid document could \
+                 omit the whole object, leaving the indexed leaf absent",
+                property_name, name, ancestor,
+            )));
         }
     }
 
     Ok(())
+}
+
+/// The first object path above the dotted `property_name` that is not in
+/// `required_fields`, if any. `required_fields` lists a nested object's own
+/// `required` members under their full paths whether or not the object is
+/// itself required, so a required leaf is only always present when every
+/// ancestor path is required too.
+fn unrequired_ancestor(property_name: &str, required_fields: &BTreeSet<String>) -> Option<String> {
+    let mut ancestor = String::new();
+    for segment in property_name.split('.') {
+        if !ancestor.is_empty() {
+            if !required_fields.contains(&ancestor) {
+                return Some(ancestor);
+            }
+            ancestor.push('.');
+        }
+        ancestor.push_str(segment);
+    }
+    None
 }

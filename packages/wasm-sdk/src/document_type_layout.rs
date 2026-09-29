@@ -30,6 +30,7 @@ export interface DocumentTypeLayoutNode {
     | { kind: 'revisionTime' }
     | { kind: 'propertyValue'; property: string }
     | { kind: 'timeRangeBucket'; property: string; rangeSeconds: number; stepSeconds: number; phaseSeconds: number }
+    | { kind: 'integerRangeBucket'; property: string; range: number; step: number; phase: number }
     | { kind: 'memberKey'; components: string[] };
   role:
     | 'documentType' | 'primaryKey' | 'document' | 'latestRevision' | 'revision'

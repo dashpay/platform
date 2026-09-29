@@ -2812,7 +2812,7 @@
                             "type": "any"
                           },
                           "encoding": "utf8",
-                          "description": "The name of an index's next property; a time range property appends its grid as #range#step"
+                          "description": "The name of an index's next property; a time or integer range property appends its grid as #range#step"
                         },
                         "kinds": [
                           "Tree",
@@ -2845,7 +2845,7 @@
                                 "type": "any"
                               },
                               "encoding": "serialized_value",
-                              "description": "The property's value serialized for ordering; empty for null; a bucket start for a time range property"
+                              "description": "The property's value serialized for ordering; empty for null; a window start for a time or integer range property"
                             },
                             "kinds": [
                               "Tree",

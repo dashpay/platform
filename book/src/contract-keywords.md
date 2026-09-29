@@ -55,7 +55,7 @@ The document meta-schema has changed three times:
 | v0 | 1 to 11 | The original keywords. A document type key the meta-schema did not know was ignored. |
 | v1 | 12 | Unknown document type keys are refused. The count, sum and average keywords. |
 | v2 | 13 | `keepsTransferHistory`, `keepsPurchaseHistory`, `keepsPricingHistory`. |
-| v3 | 14 | References, typed arrays, `requiredSince`, `immutable`, `ttl`, `propertyConstraints`, `actionFees`, moderation deletion, ranked and time-range indexes, index-only types, and the rest marked 14 in these chapters. |
+| v3 | 14 | References, typed arrays, `requiredSince`, `immutable`, `ttl`, `propertyConstraints`, `actionFees`, moderation deletion, ranked, time-range and integer-range indexes, index-only types, and the rest marked 14 in these chapters. |
 
 Most keywords of v0 took effect at protocol version 1. The exceptions are `tokenCost` (9) and the index keyword `countable` (12).
 
@@ -281,6 +281,9 @@ Expressions:
 | `timeRange.range`, `.step` | seconds | Each window's length, and the time between window starts. | 14 | [The keys](contract-keywords/time-range.md#the-keys) |
 | `timeRange.phase` | seconds, default 0 | Shifts the window boundaries. | 14 | [The keys](contract-keywords/time-range.md#the-keys) |
 | `timeRange.ttl` | seconds, at most one week | Expires the index's entries after their window; on an index-only type, the rows leave this index. | 14 | [The keys](contract-keywords/time-range.md#the-keys) · [internals](drive/time-range-ttl.md#cleanup) |
+| `integerRange` | `{ "on", "range", "step", "phase" }` | Buckets an integer property into value windows, for counts and rankings per band. | 14 | [Integer-Range Indexes](contract-keywords/integer-range.md) |
+| `integerRange.on` | property name | The integer property to bucket: the index's first property, required. | 14 | [The keys](contract-keywords/integer-range.md#the-keys) |
+| `integerRange.range`, `.step`, `.phase` | integers, `phase` default 0 | Each window's length, the distance between window starts, and the shift of the window boundaries. | 14 | [The keys](contract-keywords/integer-range.md#the-keys) |
 | `terminal` | property name or list | On an index-only type, what keys each entry in place of the document id. | 14 | [terminal](contract-keywords/index-only.md#terminal) |
 | `preallocated` | boolean | On an index-only type, creates the index's trees with the referenced document. | 14 | [preallocated](contract-keywords/index-only.md#preallocated) · [internals](drive/index-only-document-types.md#preallocated-index-paths) |
 | `skipIfAbsent` | boolean | On an index-only type, a document without the first property writes no entry. | 14 | [skipIfAbsent](contract-keywords/index-only.md#skipifabsent) · [internals](drive/index-only-document-types.md#conditional-participation-skipifabsent) |

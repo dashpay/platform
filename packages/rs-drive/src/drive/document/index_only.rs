@@ -150,10 +150,11 @@ impl Drive {
         for (position, property) in index.properties.iter().enumerate() {
             let level_key = index.level_key(position, &property.name);
             let raw = raw_value_for(&property.name)?;
-            // Only a time-range index's first property fans out; every
-            // other level extends each path with its single value key.
-            let value_keys: Vec<Vec<u8>> = match index.time_range.as_ref() {
-                Some(transform) if position == 0 => transform.entry_keys_for_raw(&raw),
+            // Only a bucketed (time- or integer-range) index's first
+            // property fans out; every other level extends each path with
+            // its single value key.
+            let value_keys: Vec<Vec<u8>> = match index.bucketing() {
+                Some(bucketing) if position == 0 => bucketing.entry_keys_for_raw(&raw),
                 _ => vec![raw],
             };
             paths = paths

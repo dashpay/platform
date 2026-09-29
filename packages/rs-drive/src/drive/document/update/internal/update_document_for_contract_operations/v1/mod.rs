@@ -42,7 +42,7 @@ use crate::drive::document::paths::{
 };
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{
-    DocumentTypeRef, Index, IndexCountability, IndexLevel, TimeRangeTransform,
+    DocumentTypeRef, Index, IndexBucketing, IndexCountability, IndexLevel,
 };
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -326,15 +326,12 @@ impl Drive {
             let top_index_property = index.properties.first().ok_or(Error::Drive(
                 DriveError::CorruptedContractIndexes("invalid contract indices".to_string()),
             ))?;
-            // A time-range index's top level is keyed by the property name
-            // qualified with the grid (`TimeRangeTransform::storage_key`),
-            // so different grids over one timestamp live in sibling
+            // A bucketed (time- or integer-range) index's top level is keyed
+            // by the property name qualified with the grid (`storage_key`),
+            // so different grids over one property live in sibling
             // subtrees; a plain index keeps the bare name. The same key is
             // both the path segment and the `IndexLevel` lookup below.
-            let top_level_key = match index.time_range.as_ref() {
-                Some(transform) => transform.storage_key(&top_index_property.name),
-                None => top_index_property.name.clone(),
-            };
+            let top_level_key = index.level_key(0, &top_index_property.name);
             index_path.push(Vec::from(top_level_key.as_bytes()));
 
             // Mirror the insert path's IndexLevel descent. We
@@ -386,10 +383,11 @@ impl Drive {
                 document_reference.clone()
             };
 
-            // Time-range indexes store one entry per overlapping range bucket,
-            // so they need a set-diff update rather than the single old→new
-            // value transition below. `current_index_level` is still the
-            // top-level node and `index_path` is the base
+            // Bucketed (time- and integer-range) indexes store one entry per
+            // containing window, so they need a set-diff update rather than
+            // the single old→new value transition below.
+            // `current_index_level` is still the top-level node and
+            // `index_path` is the base
             // (…/<document_type>/<grid-qualified source>) at this point. The
             // transform is read off the `IndexLevel` node — the same source
             // the insert and delete walkers branch on — so all three walkers
@@ -397,11 +395,14 @@ impl Drive {
             // validation. (A level's key embeds its grid, so the node's
             // transform is exactly the grid every index sharing this level
             // declared.)
-            if let Some(transform) = current_index_level.time_range() {
+            if let Some(bucketing) = current_index_level.bucketing() {
                 // TTL'd (ephemeral) sub-levels ride their own op batch and carry
                 // no storage flags — same routing as the insert and delete
-                // walkers; see the ttl module's Billing section.
-                let index_is_ephemeral = transform.ttl_seconds.is_some();
+                // walkers; see the ttl module's Billing section. Only a time
+                // grid can declare a ttl.
+                let index_is_ephemeral = bucketing
+                    .time_range()
+                    .is_some_and(|transform| transform.ttl_seconds.is_some());
                 let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
                 let index_batch_operations: &mut Vec<LowLevelDriveOperation> = if index_is_ephemeral
                 {
@@ -414,9 +415,9 @@ impl Drive {
                 } else {
                     storage_flags
                 };
-                self.update_time_range_index_for_contract_operations_v1(
+                self.update_bucketed_index_for_contract_operations_v1(
                     index,
-                    transform,
+                    bucketing,
                     document,
                     &old_document_info,
                     owner_id,
@@ -947,11 +948,12 @@ impl Drive {
         Ok(batch_operations)
     }
 
-    /// Updates the index entries for a single **time-range** index.
+    /// Updates the index entries for a single **bucketed** (time- or
+    /// integer-range) index.
     ///
-    /// A time-range index stores one entry per overlapping range bucket the
-    /// document's timestamp falls into, so an update is a set diff rather than
-    /// the single old→new transition the normal-index path performs:
+    /// A bucketed index stores one entry per window the document's value
+    /// falls into, so an update is a set diff rather than the single old→new
+    /// transition the normal-index path performs:
     /// - entry keys present only in the old timestamp's set are removed,
     /// - entry keys present only in the new timestamp's set are inserted,
     /// - keys present in both are refreshed, or (when a later index property
@@ -977,9 +979,11 @@ impl Drive {
     ///
     /// (With a `$createdAt` source and overlap factor 1 the bucket set can
     /// never change on an update — the timestamp is immutable and yields
-    /// exactly one bucket — so on a unique index only the suffix-change arms
-    /// below are reachable. The layout dispatch is nonetheless applied to
-    /// every arm rather than reasoned away per arm: the arms are shared with
+    /// exactly one bucket — so on a unique time-range index only the
+    /// suffix-change arms below are reachable; a unique integer-range index
+    /// moves between windows when its value does. The layout dispatch is
+    /// nonetheless applied to every arm rather than reasoned away per arm:
+    /// the arms are shared with
     /// non-unique indexes, and a future relaxation of the uniqueness rules
     /// must not silently resurrect the wrong layout.)
     ///
@@ -987,10 +991,10 @@ impl Drive {
     /// method — it delegates to the insert path, which has its own bucket
     /// fan-out.
     #[allow(clippy::too_many_arguments)]
-    fn update_time_range_index_for_contract_operations_v1(
+    fn update_bucketed_index_for_contract_operations_v1(
         &self,
         index: &Index,
-        transform: &TimeRangeTransform,
+        bucketing: &IndexBucketing,
         document: &Document,
         old_document_info: &DocumentInfo,
         owner_id: Option<[u8; 32]>,
@@ -1016,14 +1020,17 @@ impl Drive {
 
         // New/old raw values for the bucketed source property → entry key
         // sets, mirroring the insert walker's fan-out (see the doc comment).
+        // Only a time grid can declare a ttl; an integer grid never expires.
+        let ttl_transform = bucketing.time_range();
+
         let new_raw = document.get_raw_for_document_type(
-            &transform.source,
+            bucketing.source(),
             document_type,
             owner_id,
             platform_version,
         )?;
         let old_raw = match old_document_info.get_raw_for_document_type(
-            &transform.source,
+            bucketing.source(),
             document_type,
             None, // We want to use the old owner id
             None,
@@ -1037,7 +1044,7 @@ impl Drive {
         // The entry-key rule (null → single null entry, pre-origin → no
         // entries, undecodable → raw key, decodable → containing buckets) is
         // shared with the insert and delete walkers via
-        // `TimeRangeTransform::entry_keys_for_raw` — one definition, so the
+        // `IndexBucketing::entry_keys_for_raw` — one definition, so the
         // three walkers can never disagree.
         // TTL: writes never target expired buckets — an update of a document
         // whose windows have all expired leaves it with no entries under
@@ -1045,12 +1052,12 @@ impl Drive {
         // NOT filtered: its expired keys flow to the delete loop below,
         // whose per-key removable check skips exactly the buckets the lazy
         // drop already took.
-        let new_entry_keys = live_time_range_entry_keys(
-            transform,
-            transform.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default()),
-            block_time_ms,
-        );
-        let old_entry_keys = transform.entry_keys_for_raw(old_raw.as_deref().unwrap_or_default());
+        let new_entry_keys = bucketing.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default());
+        let new_entry_keys = match ttl_transform {
+            Some(transform) => live_time_range_entry_keys(transform, new_entry_keys, block_time_ms),
+            None => new_entry_keys,
+        };
+        let old_entry_keys = bucketing.entry_keys_for_raw(old_raw.as_deref().unwrap_or_default());
 
         // Terminator-layout inputs, tracked separately for the new and the old
         // document and accumulated over the suffix properties in the loop
@@ -1351,10 +1358,12 @@ impl Drive {
             // bucket behaves exactly as before. This path is stateful-only
             // (estimation redirects to the insert walker at the top of the
             // v1 update), so the existence reads are always legal here.
-            let expired_entry = entry_key_bucket_start(entry_key)
-                .zip(transform.expiry_horizon_ms(block_time_ms))
-                .is_some_and(|(start, horizon)| start < horizon);
-            if expired_entry {
+            let expired_transform = ttl_transform.filter(|transform| {
+                entry_key_bucket_start(entry_key)
+                    .zip(transform.expiry_horizon_ms(block_time_ms))
+                    .is_some_and(|(start, horizon)| start < horizon)
+            });
+            if let Some(transform) = expired_transform {
                 if !self.time_range_entry_is_removable(
                     transform,
                     entry_key,

@@ -2030,7 +2030,8 @@ mod tests {
                     step_seconds: 7_200,
                     phase_seconds: 0,
                     ttl_seconds: None,
-                },
+                }
+                .into(),
             }],
         };
 

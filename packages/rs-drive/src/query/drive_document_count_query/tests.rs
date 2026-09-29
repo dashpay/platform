@@ -3589,7 +3589,8 @@ mod time_range_picker_tests {
                 step_seconds: 2 * HOUR_SECONDS,
                 phase_seconds: 0,
                 ttl_seconds: None,
-            },
+            }
+            .into(),
         }]
     }
 
@@ -3705,7 +3706,11 @@ mod time_range_picker_tests {
             equal("hashtag", Value::Text("ibiza".to_string())),
         ];
         let mut mismatched = source_resolution();
-        mismatched[0].transform.step_seconds /= 2;
+        if let dpp::data_contract::document_type::IndexBucketing::Time(transform) =
+            &mut mismatched[0].transform
+        {
+            transform.step_seconds /= 2;
+        }
         assert!(
             DriveDocumentCountQuery::find_countable_index_for_where_clauses(
                 &indexes,

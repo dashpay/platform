@@ -95,6 +95,7 @@
   - [Counts, Sums and Averages](contract-keywords/aggregates.md)
   - [Ranked Indexes](contract-keywords/ranked.md)
   - [Time-Range Indexes](contract-keywords/time-range.md)
+  - [Integer-Range Indexes](contract-keywords/integer-range.md)
   - [Index-Only Types](contract-keywords/index-only.md)
 - [Contract-Level Keys and config](contract-keywords/contract-config.md)
 

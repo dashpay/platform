@@ -6433,6 +6433,98 @@ mod tests {
         assert!(err.to_string().contains("overlap factor"), "{err}");
     }
 
+    /// A `listing` whose integerRange source sits inside the object `meta`;
+    /// `meta_required` decides whether the object itself is required.
+    fn nested_price_band_schema(meta_required: bool) -> serde_json::Value {
+        let required = if meta_required {
+            json!(["meta", "category"])
+        } else {
+            json!(["category"])
+        };
+        json!({
+            "type": "object",
+            "properties": {
+                "meta": {
+                    "type": "object",
+                    "properties": {
+                        "price": { "type": "integer", "minimum": 0, "maximum": 1_000, "position": 0 }
+                    },
+                    "required": ["price"],
+                    "additionalProperties": false,
+                    "position": 0
+                },
+                "category": { "type": "string", "maxLength": 63, "position": 1 }
+            },
+            "indices": [
+                {
+                    "name": "byPriceBand",
+                    "properties": [{ "meta.price": "asc" }, { "category": "asc" }],
+                    "integerRange": { "on": "meta.price", "range": 100u64, "step": 100u64 }
+                }
+            ],
+            "required": required,
+            "additionalProperties": false
+        })
+    }
+
+    #[test]
+    fn should_reject_integer_range_on_a_nested_property_under_an_optional_object() {
+        let err = try_document_type_from_schema_full_validation(nested_price_band_schema(false))
+            .expect_err("a document may omit the whole `meta` object");
+        assert!(err.to_string().contains("sits inside \"meta\""), "{err}");
+
+        try_document_type_from_schema_full_validation(nested_price_band_schema(true))
+            .expect("a nested source under a required object is always present");
+    }
+
+    #[test]
+    fn should_reject_an_integer_range_level_key_over_the_key_cap() {
+        // 64 + 1 + 64 + 1 + 64 = 194 bytes of path, plus `#R#S#P` with
+        // 19-20 digit numbers, is over 255 bytes.
+        let segment = |c: char| std::iter::repeat_n(c, 64).collect::<String>();
+        let (a, b, c) = (segment('a'), segment('b'), segment('c'));
+        let source = format!("{a}.{b}.{c}");
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                a.clone(): {
+                    "type": "object",
+                    "properties": {
+                        b.clone(): {
+                            "type": "object",
+                            "properties": {
+                                c.clone(): { "type": "integer", "minimum": 0, "position": 0 }
+                            },
+                            "required": [c],
+                            "additionalProperties": false,
+                            "position": 0
+                        }
+                    },
+                    "required": [b.clone()],
+                    "additionalProperties": false,
+                    "position": 0
+                }
+            },
+            "indices": [
+                {
+                    "name": "byBand",
+                    "properties": [{ source.clone(): "asc" }],
+                    "integerRange": {
+                        "on": source,
+                        "range": 10_000_000_000_000_000_000u64,
+                        "step": 10_000_000_000_000_000_000u64,
+                        "phase": 9_999_999_999_999_999_999u64
+                    }
+                }
+            ],
+            "required": [a],
+            "additionalProperties": false
+        });
+        let err = try_document_type_from_schema_full_validation(schema)
+            .expect_err("a 256-byte level key cannot be a GroveDB key");
+        assert!(err.to_string().contains("key cap"), "{err}");
+    }
+
     #[test]
     fn should_reject_integer_range_before_protocol_version_14() {
         let schema = price_band_schema(

@@ -112,7 +112,8 @@ pub(crate) fn document_type() -> StructureNode {
             KeyMatcher::Any,
             KeyEncoding::Utf8,
             "The name of an index's next property; a time \
-                                    range property appends its grid as #range#step",
+                                    or integer range property appends its grid as \
+                                    #range#step",
         )
         .kinds(&INDEX_PROPERTY_TREES, INDEX_PROPERTY_NOTE)
         .flags(&[FlagsKind::EpochOwned, FlagsKind::None], LEVEL_FLAGS)
@@ -133,8 +134,8 @@ fn index_value() -> StructureNode {
         KeyMatcher::Any,
         KeyEncoding::SerializedValue,
         "The property's value serialized for ordering; \
-         empty for null; a bucket start for a time range \
-         property",
+         empty for null; a window start for a time or \
+         integer range property",
     )
     .kinds(
         &[

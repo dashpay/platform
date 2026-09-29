@@ -24,7 +24,6 @@ use super::*;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::document_type::index::IntegerRangeKeyType;
 use platform_value::platform_value;
 
 /// Parse through this generation with validation mode spelled out.
@@ -479,9 +478,10 @@ fn rated_likes_schema() -> Value {
 }
 
 #[test]
-fn accepts_integer_range_bucketed_index() {
-    // Likes per rating band per post. The source is a required user
-    // property, so delete-by-values reproduces the create's windows.
+fn should_reject_integer_range_on_an_index_only_type() {
+    // An indexOnly entry is keyed by (prefix values, terminal); a bucketed
+    // level holds window starts, so two likes that differ only in `stars`
+    // would claim the same entry in every window they share.
     let mut schema = rated_likes_schema();
     schema
         .get_mut("indices")
@@ -497,37 +497,9 @@ fn accepts_integer_range_bucketed_index() {
             "countable": true,
             "rangeCountable": true
         }));
-    let document_type =
-        parse_with(schema, PlatformVersion::latest(), true).expect("bucketed index admitted");
-    let bucketed = document_type
-        .indices
-        .values()
-        .find(|index| index.integer_range.is_some())
-        .expect("the bucketed index parsed");
-    let transform = bucketed.integer_range.as_ref().expect("transform set");
-    assert_eq!(transform.key_type, IntegerRangeKeyType::U8);
-}
-
-#[test]
-fn rejects_only_integer_bucketed_indexes() {
-    // An integer-bucketed index involves no $createdAt, but it stores
-    // window starts rather than the transition's values, so it cannot be
-    // the executed-transition proof index.
-    let mut schema = rated_likes_schema();
-    schema
-        .set_value(
-            "indices",
-            platform_value!([{
-                "name": "byStarsPost",
-                "properties": [{ "stars": "asc" }, { "hashtag": "asc" }, { "postId": "asc" }],
-                "terminal": "$ownerId",
-                "integerRange": { "on": "stars", "range": 2u64, "step": 2u64 }
-            }]),
-        )
-        .expect("indices apply");
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "does not bucket its first property",
+        "declares integerRange",
     );
 }
 

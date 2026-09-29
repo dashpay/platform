@@ -79,7 +79,7 @@ use crate::error::Error;
 use crate::util::object_size_info::DriveKeyInfo;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 #[cfg(feature = "server")]
-use dpp::data_contract::document_type::TimeRangeTransform;
+use dpp::data_contract::document_type::IndexBucketing;
 use dpp::data_contract::document_type::{
     DocumentTypeRef, IndexCountability, IndexLevel, IndexLevelTypeInfo,
 };
@@ -155,17 +155,17 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
 }
 
 /// Expands a document's raw top-field key into the set of index-entry keys a
-/// time-range first-property node stores it under. For a node without a
-/// transform the single key passes through untouched.
+/// bucketed (time- or integer-range) first-property node stores it under.
+/// For a node without a grid the single key passes through untouched.
 ///
 /// Shared by the insert and delete v2 walkers (same must-not-drift contract
 /// as the tree-type derivation above); the entry-key rule itself — null keeps
 /// its single null entry, epoch-sliver timestamps produce no entries,
 /// undecodable values keep their raw key — lives in
-/// [`TimeRangeTransform::entry_keys_for_raw`], which the update walker also
+/// [`IndexBucketing::entry_keys_for_raw`], which the update walker also
 /// calls.
 ///
-/// On the estimated-cost path (`KeySize`) the real timestamp isn't available,
+/// On the estimated-cost path (`KeySize`) the real value isn't available,
 /// so this assumes the worst case of `overlap_factor` overlapping buckets —
 /// and makes each worst-case key **distinct** by suffixing an ordinal:
 /// identical `(path, key)` operations collapse inside grovedb's batch
@@ -178,8 +178,8 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
 /// built outside validation, and reading it from the version keeps the
 /// estimated fan-out in step with whatever a future protocol version allows.
 #[cfg(feature = "server")]
-pub(crate) fn time_range_index_keys<'a>(
-    transform: Option<&TimeRangeTransform>,
+pub(crate) fn bucket_index_keys<'a>(
+    transform: Option<&IndexBucketing>,
     document_top_field: DriveKeyInfo<'a>,
     max_overlap_factor: u64,
 ) -> Vec<DriveKeyInfo<'a>> {
@@ -941,7 +941,7 @@ mod tests {
         )
         .expect("the continuation must be insertable under the demoted value tree");
     }
-    /// The estimated-cost (`KeySize`) branch of [`time_range_index_keys`] is
+    /// The estimated-cost (`KeySize`) branch of [`bucket_index_keys`] is
     /// consensus-sensitive fee math: it must emit exactly the bounded
     /// overlap count, keep every synthetic key's `max_size` untouched, and
     /// make each `unique_id` distinct — grovedb's batch structure collapses
@@ -949,7 +949,7 @@ mod tests {
     /// would silently estimate a single bucket's cost.
     #[test]
     fn estimated_time_range_fan_out_emits_distinct_worst_case_keys() {
-        use super::time_range_index_keys;
+        use super::bucket_index_keys;
         use crate::util::object_size_info::DriveKeyInfo;
         use dpp::data_contract::document_type::TimeRangeTransform;
         use grovedb::batch::key_info::KeyInfo;
@@ -967,7 +967,7 @@ mod tests {
             max_size: 8,
         });
 
-        let keys = time_range_index_keys(Some(&transform), key.clone(), 24);
+        let keys = bucket_index_keys(Some(&transform.into()), key.clone(), 24);
         assert_eq!(keys.len(), 3, "one worst-case key per overlapping bucket");
         let mut unique_ids = Vec::new();
         for entry in &keys {
@@ -1002,7 +1002,7 @@ mod tests {
             ttl_seconds: None,
         };
         assert_eq!(oversized.overlap_factor(), 100);
-        let keys = time_range_index_keys(Some(&oversized), key, 24);
+        let keys = bucket_index_keys(Some(&oversized.into()), key, 24);
         assert_eq!(keys.len(), 24, "fan-out must clamp to the versioned cap");
     }
 }

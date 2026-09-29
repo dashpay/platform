@@ -443,8 +443,8 @@ impl Context<'_> {
         }
 
         let property = level
-            .time_range()
-            .map(|transform| transform.source.clone())
+            .bucketing()
+            .map(|bucketing| bucketing.source().to_string())
             .unwrap_or_else(|| level_key.to_string());
         let raw = match self.raw(&property)? {
             Some(raw) => raw,
@@ -454,8 +454,8 @@ impl Context<'_> {
             None => Vec::new(),
         };
         let null = raw.is_empty();
-        let keys = match level.time_range() {
-            Some(transform) => transform.entry_keys_for_raw(&raw),
+        let keys = match level.bucketing() {
+            Some(bucketing) => bucketing.entry_keys_for_raw(&raw),
             None => vec![raw],
         };
         // A time window with a ttl is ephemeral: no flags, priced as
