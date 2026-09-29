@@ -9,6 +9,17 @@ use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Proves a contract group's stored information (owner, name, description), or its absence.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_group_id`: The group's id.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<u8>)` with the GroveDB proof of the group's info item or of its absence.
+    /// * `Err(Error)` when the method version is unknown or proving fails.
     pub fn prove_contract_group_info(
         &self,
         contract_group_id: Identifier,

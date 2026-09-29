@@ -343,4 +343,48 @@ mod tests {
 
         assert!(result.is_valid(), "unexpected errors: {:?}", result.errors);
     }
+
+    /// The contract's `$defs` are diffed with the rules document types are, so
+    /// a change under a keyword the shared rule set has no rule for, such as
+    /// `maxProperties`, is an incompatible schema change and not an internal
+    /// error.
+    #[test]
+    fn should_refuse_a_defs_change_under_a_keyword_without_a_shared_rule() {
+        let platform_version = PlatformVersion::latest();
+        let defs = |max_properties: u64| {
+            platform_value!({
+                "lastName": { "type": "string" },
+                "address": { "type": "object", "maxProperties": max_properties },
+            })
+            .into_btree_string_map()
+            .expect("the definitions are a map")
+        };
+
+        let mut old_data_contract = get_data_contract_fixture(
+            None,
+            IdentityNonce::default(),
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        old_data_contract
+            .set_schema_defs(Some(defs(2)), false, &mut Vec::new(), platform_version)
+            .expect("failed to set schema defs");
+
+        let mut new_data_contract = old_data_contract.clone();
+        new_data_contract.set_version(old_data_contract.version() + 1);
+        new_data_contract
+            .set_schema_defs(Some(defs(3)), false, &mut Vec::new(), platform_version)
+            .expect("failed to set schema defs");
+
+        let result = old_data_contract
+            .validate_update(&new_data_contract, &BlockInfo::default(), platform_version)
+            .expect("a $defs change is judged, not an unsupported keyword");
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::IncompatibleDataContractSchemaError(e)
+            )] if e.operation() == "replace" && e.field_path() == "/$defs/address/maxProperties"
+        );
+    }
 }

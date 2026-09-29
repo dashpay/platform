@@ -16,6 +16,10 @@ use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::prelude::FeeMultiplier;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
 use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
@@ -77,10 +81,10 @@ pub enum DocumentActionFeeAgreement {
 impl JsonSafeFields for DocumentActionFeeAgreement {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for DocumentActionFeeAgreement {}
+impl JsonConvertible for DocumentActionFeeAgreement {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for DocumentActionFeeAgreement {}
+impl ValueConvertible for DocumentActionFeeAgreement {}
 
 impl DocumentActionFeeAgreement {
     /// The agreement to `fee` as a document type declares it under `pricing`.

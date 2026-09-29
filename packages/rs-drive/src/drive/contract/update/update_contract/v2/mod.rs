@@ -343,8 +343,8 @@ impl Drive {
             }
         }
 
-        // The removal records tree of every document type the update adds that moderators may
-        // delete documents of, as `insert_contract` creates it for the types of a new
+        // The removal records tree of every document type the update adds whose moderators'
+        // deletions keep records, as `insert_contract` creates it for the types of a new
         // contract. A document type the contract already had keeps the keyword it had, so its
         // tree, if any, exists: a document type is new exactly once. The tree they all go
         // under exists exactly when the stored contract already had such a document type,
@@ -353,7 +353,7 @@ impl Drive {
             .document_types()
             .iter()
             .filter(|(name, document_type)| {
-                document_type.documents_can_be_deleted_by_moderators()
+                document_type.moderator_deletions_keep_records()
                     && !original_contract.document_types().contains_key(*name)
             })
             .map(|(name, _)| name.as_str())
@@ -362,7 +362,7 @@ impl Drive {
             let has_removals_tree = original_contract
                 .document_types()
                 .values()
-                .any(|document_type| document_type.documents_can_be_deleted_by_moderators());
+                .any(|document_type| document_type.moderator_deletions_keep_records());
             let storage_flags = StorageFlags::new_single_epoch(
                 block_info.epoch.index,
                 Some(contract.owner_id().to_buffer()),

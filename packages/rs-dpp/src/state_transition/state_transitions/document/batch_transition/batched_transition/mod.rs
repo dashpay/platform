@@ -38,6 +38,10 @@ pub mod token_unfreeze_transition;
 pub mod token_unshield_transition;
 
 use crate::prelude::IdentityNonce;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use crate::state_transition::batch_transition::batched_transition::token_transition::TokenTransitionV0Methods;
 use derive_more::Display;
@@ -74,10 +78,10 @@ pub enum BatchedTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for BatchedTransition {}
+impl JsonConvertible for BatchedTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for BatchedTransition {}
+impl ValueConvertible for BatchedTransition {}
 
 #[cfg(all(
     test,

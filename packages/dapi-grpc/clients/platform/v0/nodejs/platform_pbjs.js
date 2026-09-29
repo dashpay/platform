@@ -36366,6 +36366,7 @@ $root.org = (function() {
                          * @property {number} IN=9 IN value
                          * @property {number} STARTS_WITH=10 STARTS_WITH value
                          * @property {number} IN_TIME_RANGE=11 IN_TIME_RANGE value
+                         * @property {number} IN_INTEGER_RANGE=12 IN_INTEGER_RANGE value
                          */
                         GetDocumentsRequest.WhereOperator = (function() {
                             var valuesById = {}, values = Object.create(valuesById);
@@ -36381,6 +36382,7 @@ $root.org = (function() {
                             values[valuesById[9] = "IN"] = 9;
                             values[valuesById[10] = "STARTS_WITH"] = 10;
                             values[valuesById[11] = "IN_TIME_RANGE"] = 11;
+                            values[valuesById[12] = "IN_INTEGER_RANGE"] = 12;
                             return values;
                         })();
 
@@ -37581,6 +37583,500 @@ $root.org = (function() {
                             return TimeRangeSelection;
                         })();
 
+                        GetDocumentsRequest.IntegerRangeSelection = (function() {
+
+                            /**
+                             * Properties of an IntegerRangeSelection.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @interface IIntegerRangeSelection
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue|null} [start] IntegerRangeSelection start
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.IGrid|null} [grid] IntegerRangeSelection grid
+                             */
+
+                            /**
+                             * Constructs a new IntegerRangeSelection.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @classdesc Represents an IntegerRangeSelection.
+                             * @implements IIntegerRangeSelection
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IIntegerRangeSelection=} [properties] Properties to set
+                             */
+                            function IntegerRangeSelection(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * IntegerRangeSelection start.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue|null|undefined} start
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @instance
+                             */
+                            IntegerRangeSelection.prototype.start = null;
+
+                            /**
+                             * IntegerRangeSelection grid.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.IGrid|null|undefined} grid
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @instance
+                             */
+                            IntegerRangeSelection.prototype.grid = null;
+
+                            /**
+                             * Creates a new IntegerRangeSelection instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IIntegerRangeSelection=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection} IntegerRangeSelection instance
+                             */
+                            IntegerRangeSelection.create = function create(properties) {
+                                return new IntegerRangeSelection(properties);
+                            };
+
+                            /**
+                             * Encodes the specified IntegerRangeSelection message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IIntegerRangeSelection} message IntegerRangeSelection message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            IntegerRangeSelection.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.start != null && Object.hasOwnProperty.call(message, "start"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.encode(message.start, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.grid != null && Object.hasOwnProperty.call(message, "grid"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid.encode(message.grid, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified IntegerRangeSelection message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IIntegerRangeSelection} message IntegerRangeSelection message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            IntegerRangeSelection.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an IntegerRangeSelection message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection} IntegerRangeSelection
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            IntegerRangeSelection.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.start = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.grid = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an IntegerRangeSelection message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection} IntegerRangeSelection
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            IntegerRangeSelection.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an IntegerRangeSelection message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            IntegerRangeSelection.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.start != null && message.hasOwnProperty("start")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.verify(message.start);
+                                    if (error)
+                                        return "start." + error;
+                                }
+                                if (message.grid != null && message.hasOwnProperty("grid")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid.verify(message.grid);
+                                    if (error)
+                                        return "grid." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates an IntegerRangeSelection message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection} IntegerRangeSelection
+                             */
+                            IntegerRangeSelection.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection();
+                                if (object.start != null) {
+                                    if (typeof object.start !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.start: object expected");
+                                    message.start = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.fromObject(object.start);
+                                }
+                                if (object.grid != null) {
+                                    if (typeof object.grid !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.grid: object expected");
+                                    message.grid = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid.fromObject(object.grid);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from an IntegerRangeSelection message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection} message IntegerRangeSelection
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            IntegerRangeSelection.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.start = null;
+                                    object.grid = null;
+                                }
+                                if (message.start != null && message.hasOwnProperty("start"))
+                                    object.start = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.toObject(message.start, options);
+                                if (message.grid != null && message.hasOwnProperty("grid"))
+                                    object.grid = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid.toObject(message.grid, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this IntegerRangeSelection to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            IntegerRangeSelection.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            IntegerRangeSelection.Grid = (function() {
+
+                                /**
+                                 * Properties of a Grid.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                                 * @interface IGrid
+                                 * @property {number|Long|null} [range] Grid range
+                                 * @property {number|Long|null} [step] Grid step
+                                 * @property {number|Long|null} [phase] Grid phase
+                                 */
+
+                                /**
+                                 * Constructs a new Grid.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection
+                                 * @classdesc Represents a Grid.
+                                 * @implements IGrid
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.IGrid=} [properties] Properties to set
+                                 */
+                                function Grid(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Grid range.
+                                 * @member {number|Long} range
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @instance
+                                 */
+                                Grid.prototype.range = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Grid step.
+                                 * @member {number|Long} step
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @instance
+                                 */
+                                Grid.prototype.step = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Grid phase.
+                                 * @member {number|Long} phase
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @instance
+                                 */
+                                Grid.prototype.phase = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * Creates a new Grid instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.IGrid=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid} Grid instance
+                                 */
+                                Grid.create = function create(properties) {
+                                    return new Grid(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Grid message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.IGrid} message Grid message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Grid.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.range != null && Object.hasOwnProperty.call(message, "range"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.range);
+                                    if (message.step != null && Object.hasOwnProperty.call(message, "step"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.step);
+                                    if (message.phase != null && Object.hasOwnProperty.call(message, "phase"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.phase);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Grid message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.IGrid} message Grid message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Grid.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Grid message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid} Grid
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Grid.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.range = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.step = reader.uint64();
+                                            break;
+                                        case 3:
+                                            message.phase = reader.uint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Grid message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid} Grid
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Grid.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Grid message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Grid.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.range != null && message.hasOwnProperty("range"))
+                                        if (!$util.isInteger(message.range) && !(message.range && $util.isInteger(message.range.low) && $util.isInteger(message.range.high)))
+                                            return "range: integer|Long expected";
+                                    if (message.step != null && message.hasOwnProperty("step"))
+                                        if (!$util.isInteger(message.step) && !(message.step && $util.isInteger(message.step.low) && $util.isInteger(message.step.high)))
+                                            return "step: integer|Long expected";
+                                    if (message.phase != null && message.hasOwnProperty("phase"))
+                                        if (!$util.isInteger(message.phase) && !(message.phase && $util.isInteger(message.phase.low) && $util.isInteger(message.phase.high)))
+                                            return "phase: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Grid message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid} Grid
+                                 */
+                                Grid.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid();
+                                    if (object.range != null)
+                                        if ($util.Long)
+                                            (message.range = $util.Long.fromValue(object.range)).unsigned = true;
+                                        else if (typeof object.range === "string")
+                                            message.range = parseInt(object.range, 10);
+                                        else if (typeof object.range === "number")
+                                            message.range = object.range;
+                                        else if (typeof object.range === "object")
+                                            message.range = new $util.LongBits(object.range.low >>> 0, object.range.high >>> 0).toNumber(true);
+                                    if (object.step != null)
+                                        if ($util.Long)
+                                            (message.step = $util.Long.fromValue(object.step)).unsigned = true;
+                                        else if (typeof object.step === "string")
+                                            message.step = parseInt(object.step, 10);
+                                        else if (typeof object.step === "number")
+                                            message.step = object.step;
+                                        else if (typeof object.step === "object")
+                                            message.step = new $util.LongBits(object.step.low >>> 0, object.step.high >>> 0).toNumber(true);
+                                    if (object.phase != null)
+                                        if ($util.Long)
+                                            (message.phase = $util.Long.fromValue(object.phase)).unsigned = true;
+                                        else if (typeof object.phase === "string")
+                                            message.phase = parseInt(object.phase, 10);
+                                        else if (typeof object.phase === "number")
+                                            message.phase = object.phase;
+                                        else if (typeof object.phase === "object")
+                                            message.phase = new $util.LongBits(object.phase.low >>> 0, object.phase.high >>> 0).toNumber(true);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Grid message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid} message Grid
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Grid.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.range = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.range = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.step = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.step = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.phase = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.phase = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.range != null && message.hasOwnProperty("range"))
+                                        if (typeof message.range === "number")
+                                            object.range = options.longs === String ? String(message.range) : message.range;
+                                        else
+                                            object.range = options.longs === String ? $util.Long.prototype.toString.call(message.range) : options.longs === Number ? new $util.LongBits(message.range.low >>> 0, message.range.high >>> 0).toNumber(true) : message.range;
+                                    if (message.step != null && message.hasOwnProperty("step"))
+                                        if (typeof message.step === "number")
+                                            object.step = options.longs === String ? String(message.step) : message.step;
+                                        else
+                                            object.step = options.longs === String ? $util.Long.prototype.toString.call(message.step) : options.longs === Number ? new $util.LongBits(message.step.low >>> 0, message.step.high >>> 0).toNumber(true) : message.step;
+                                    if (message.phase != null && message.hasOwnProperty("phase"))
+                                        if (typeof message.phase === "number")
+                                            object.phase = options.longs === String ? String(message.phase) : message.phase;
+                                        else
+                                            object.phase = options.longs === String ? $util.Long.prototype.toString.call(message.phase) : options.longs === Number ? new $util.LongBits(message.phase.low >>> 0, message.phase.high >>> 0).toNumber(true) : message.phase;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Grid to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.Grid
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Grid.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return Grid;
+                            })();
+
+                            return IntegerRangeSelection;
+                        })();
+
                         GetDocumentsRequest.WhereClause = (function() {
 
                             /**
@@ -37591,6 +38087,7 @@ $root.org = (function() {
                              * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator|null} [operator] WhereClause operator
                              * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue|null} [value] WhereClause value
                              * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.ITimeRangeSelection|null} [timeRange] WhereClause timeRange
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IIntegerRangeSelection|null} [integerRange] WhereClause integerRange
                              */
 
                             /**
@@ -37641,6 +38138,14 @@ $root.org = (function() {
                             WhereClause.prototype.timeRange = null;
 
                             /**
+                             * WhereClause integerRange.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.IIntegerRangeSelection|null|undefined} integerRange
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @instance
+                             */
+                            WhereClause.prototype.integerRange = null;
+
+                            /**
                              * Creates a new WhereClause instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
@@ -37672,6 +38177,8 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.encode(message.value, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                                 if (message.timeRange != null && Object.hasOwnProperty.call(message, "timeRange"))
                                     $root.org.dash.platform.dapi.v0.GetDocumentsRequest.TimeRangeSelection.encode(message.timeRange, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.integerRange != null && Object.hasOwnProperty.call(message, "integerRange"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.encode(message.integerRange, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
                                 return writer;
                             };
 
@@ -37717,6 +38224,9 @@ $root.org = (function() {
                                         break;
                                     case 4:
                                         message.timeRange = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.TimeRangeSelection.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        message.integerRange = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -37772,6 +38282,7 @@ $root.org = (function() {
                                     case 9:
                                     case 10:
                                     case 11:
+                                    case 12:
                                         break;
                                     }
                                 if (message.value != null && message.hasOwnProperty("value")) {
@@ -37783,6 +38294,11 @@ $root.org = (function() {
                                     var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.TimeRangeSelection.verify(message.timeRange);
                                     if (error)
                                         return "timeRange." + error;
+                                }
+                                if (message.integerRange != null && message.hasOwnProperty("integerRange")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.verify(message.integerRange);
+                                    if (error)
+                                        return "integerRange." + error;
                                 }
                                 return null;
                             };
@@ -37850,6 +38366,10 @@ $root.org = (function() {
                                 case 11:
                                     message.operator = 11;
                                     break;
+                                case "IN_INTEGER_RANGE":
+                                case 12:
+                                    message.operator = 12;
+                                    break;
                                 }
                                 if (object.value != null) {
                                     if (typeof object.value !== "object")
@@ -37860,6 +38380,11 @@ $root.org = (function() {
                                     if (typeof object.timeRange !== "object")
                                         throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.timeRange: object expected");
                                     message.timeRange = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.TimeRangeSelection.fromObject(object.timeRange);
+                                }
+                                if (object.integerRange != null) {
+                                    if (typeof object.integerRange !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.integerRange: object expected");
+                                    message.integerRange = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.fromObject(object.integerRange);
                                 }
                                 return message;
                             };
@@ -37882,6 +38407,7 @@ $root.org = (function() {
                                     object.operator = options.enums === String ? "EQUAL" : 0;
                                     object.value = null;
                                     object.timeRange = null;
+                                    object.integerRange = null;
                                 }
                                 if (message.field != null && message.hasOwnProperty("field"))
                                     object.field = message.field;
@@ -37891,6 +38417,8 @@ $root.org = (function() {
                                     object.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.toObject(message.value, options);
                                 if (message.timeRange != null && message.hasOwnProperty("timeRange"))
                                     object.timeRange = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.TimeRangeSelection.toObject(message.timeRange, options);
+                                if (message.integerRange != null && message.hasOwnProperty("integerRange"))
+                                    object.integerRange = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.IntegerRangeSelection.toObject(message.integerRange, options);
                                 return object;
                             };
 

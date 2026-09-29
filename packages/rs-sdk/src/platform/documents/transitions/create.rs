@@ -3,6 +3,7 @@ use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
@@ -252,6 +253,9 @@ impl Sdk {
     ///
     /// This method broadcasts a document creation transition to add a new document
     /// to the specified data contract. The result contains the created document.
+    /// For an indexOnly document type the proof shows the document's entry at the
+    /// proof's block, not that this create wrote it: no stronger proof exists for
+    /// such a document.
     ///
     /// # Arguments
     ///
@@ -279,6 +283,11 @@ impl Sdk {
         let platform_version = self.version();
 
         let put_settings = create_document_transition_builder.settings;
+        let index_only = create_document_transition_builder
+            .data_contract
+            .document_type_for_name(&create_document_transition_builder.document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?
+            .index_only();
 
         let state_transition = create_document_transition_builder
             .sign(self, signing_key, signer, platform_version)
@@ -289,9 +298,22 @@ impl Sdk {
         trace!(hex = %hex::encode(state_transition.serialize_to_bytes()?), "document_create: transition bytes");
         trace!(transition = ?state_transition, "document_create: transition details");
 
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
-            .await?;
+        // An indexOnly document keeps no row: its proof shows the entry the create leaves,
+        // which an earlier create with the same values would show too, so it cannot prove that
+        // this create executed. That is the strongest proof such a document has, so it is
+        // accepted rather than failing a create that landed.
+        let proof_result = if index_only {
+            state_transition
+                .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
+                    self,
+                    put_settings,
+                )
+                .await?
+        } else {
+            state_transition
+                .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+                .await?
+        };
 
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(documents) => {

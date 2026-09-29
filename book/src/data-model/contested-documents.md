@@ -84,8 +84,9 @@ An `electedCharter` contest of the moderation charters contract (protocol versio
 the target contract id, is a **moderation election** and does not take the generic parameters:
 
 - Its join window and vote window are the `joinWindow` and `voteWindow` of the target contract's
-  elected moderation declaration (one day to four weeks each, one week by default), on every
-  network. A single applicant wins when the join window closes; a second applicant moves the end
+  elected moderation declaration (at most four weeks each, one week by default; at least a day
+  on mainnet, while any other network takes 0), in place of the generic windows of the network.
+  A single applicant wins when the join window closes; a second applicant moves the end
   to the join window plus the vote window. A late applicant is refused with
   `DocumentContestNotJoinableError` naming the target's join window.
 - Each application prefunds the votes with the moderation fund, 0.5 Dash

@@ -12,6 +12,10 @@ use crate::fee::Credits;
 use crate::group::group_action_status::GroupActionStatus;
 use crate::identity::{Identity, PartialIdentity};
 use crate::prelude::AddressNonce;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::tokens::info::IdentityTokenInfo;
 use crate::tokens::status::TokenStatus;
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -370,10 +374,10 @@ mod json_safe_address_info_map {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for StateTransitionProofResult {}
+impl JsonConvertible for StateTransitionProofResult {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for StateTransitionProofResult {}
+impl ValueConvertible for StateTransitionProofResult {}
 
 #[cfg(all(
     test,

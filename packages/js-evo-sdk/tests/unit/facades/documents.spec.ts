@@ -24,6 +24,7 @@ describe('DocumentsFacade', () => {
   let getDocumentStub: SinonStub;
   let getDocumentWithProofInfoStub: SinonStub;
   let documentCreateStub: SinonStub;
+  let getContestFundToJoinStub: SinonStub;
   let documentReplaceStub: SinonStub;
   let documentDeleteStub: SinonStub;
   let documentTransferStub: SinonStub;
@@ -90,6 +91,7 @@ describe('DocumentsFacade', () => {
 
     // Stub transition methods
     documentCreateStub = this.sinon.stub(wasmSdk, 'documentCreate').resolves();
+    getContestFundToJoinStub = this.sinon.stub(wasmSdk, 'getContestFundToJoin').resolves(undefined);
     documentReplaceStub = this.sinon.stub(wasmSdk, 'documentReplace').resolves();
     documentDeleteStub = this.sinon.stub(wasmSdk, 'documentDelete').resolves();
     documentTransferStub = this.sinon.stub(wasmSdk, 'documentTransfer').resolves();
@@ -229,6 +231,28 @@ describe('DocumentsFacade', () => {
       await client.documents.create(options);
 
       expect(documentCreateStub).to.be.calledOnceWithExactly(options);
+    });
+  });
+
+  describe('contestFundToJoin()', () => {
+    it('should resolve to the prefunded voting balance the create states', async () => {
+      const prefundedVotingBalance = new wasmSDKPackage.PrefundedVotingBalance({
+        indexName: 'parentNameAndLabel',
+        credits: BigInt(20000000000),
+      });
+      getContestFundToJoinStub.resolves(prefundedVotingBalance);
+
+      const result = await client.documents.contestFundToJoin(document);
+
+      expect(getContestFundToJoinStub).to.be.calledOnceWithExactly(document);
+      expect(result).to.equal(prefundedVotingBalance);
+    });
+
+    it('should resolve to undefined for a document that joins no contest', async () => {
+      const result = await client.documents.contestFundToJoin(document);
+
+      expect(getContestFundToJoinStub).to.be.calledOnceWithExactly(document);
+      expect(result).to.be.undefined();
     });
   });
 

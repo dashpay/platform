@@ -48,8 +48,9 @@ use crate::version::system_limits::SystemLimits;
 ///   2^53 - 1 milliseconds of block time, the largest value JSON clients read exactly. The
 ///   text of the reason a ban or a suspension carries is at most 1024 bytes.
 /// * Elected moderation teams (protocol version 14): a contract that declares an elected
-///   moderation team sets its join window and vote window between one day and four weeks,
-///   and its challenge cool-down between two weeks and three years, all in seconds.
+///   moderation team sets its join window and vote window at most four weeks, and at least
+///   one day on mainnet (0 is allowed on every other network), and its challenge cool-down
+///   between two weeks and three years, all in seconds.
 /// * Typed array document properties (protocol version 14): a typed array property declares
 ///   `maxItems`, at most 1024 elements (`max_typed_array_items`, backfilled into the
 ///   earlier tables, whose parsers never read it).
@@ -65,9 +66,10 @@ use crate::version::system_limits::SystemLimits;
 ///   never read them; every leaf counts against `max_references_per_document`.
 /// * Property constraints (protocol version 14): a document type declares at most 16
 ///   `propertyConstraints` rules (`max_property_constraints`) of at most 32 nodes each
-///   (`max_property_constraint_nodes`), both backfilled into the earlier tables, whose
-///   parsers never read them. The rules read no state, so these two bound the arithmetic
-///   one document write causes.
+///   (`max_property_constraint_nodes`), reading at most 4 distinct `countOf` and `sumOf`
+///   totals (`max_property_constraint_aggregates`), all backfilled into the earlier tables,
+///   whose parsers never read them. The first two bound the arithmetic one document write
+///   causes, the third the count and sum trees it reads.
 /// * Document expiry (protocol version 14): a document type may declare a `ttl` of at least
 ///   one hour (`min_document_ttl_seconds`) and at most one year (`max_document_ttl_seconds`),
 ///   and the platform deletes at most 128 expired documents per block
@@ -100,7 +102,8 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_reference_expression_depth: 4, // refersTo anyOf / allOf (new in v14): contract registration caps how deep they nest
     max_property_constraints: 16, // propertyConstraints (new in v14): contract registration caps the rules one document type declares
     max_property_constraint_nodes: 32, // propertyConstraints (new in v14): contract registration caps the nodes (comparison, operators, properties, values) of one rule
-    max_state_transition_size: 20480,  //20 KiB
+    max_property_constraint_aggregates: 4, // propertyConstraints countOf / sumOf (new in v14): contract registration caps the distinct totals one document type's rules read
+    max_state_transition_size: 20480,      //20 KiB
     // Load-bearing for state correctness, not just for throughput — see
     // SystemLimits::max_transitions_in_documents_batch and SYSTEM_LIMITS_V1.
     max_transitions_in_documents_batch: 1,
@@ -122,11 +125,11 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_contract_moderation_reason_length: 1024,
     max_contract_warnings_per_identity: 16,
     max_contract_moderation_reason_documents: 16,
-    min_contract_moderation_election_window_seconds: 86_400, // one day
-    max_contract_moderation_election_window_seconds: 2_419_200, // four weeks
-    min_contract_moderation_challenge_cool_down_seconds: 1_209_600, // two weeks
+    min_mainnet_contract_moderation_election_window_seconds: 86_400, // one day
+    max_contract_moderation_election_window_seconds: 2_419_200,      // four weeks
+    min_contract_moderation_challenge_cool_down_seconds: 1_209_600,  // two weeks
     max_contract_moderation_challenge_cool_down_seconds: 94_608_000, // three years of 365 days
-    contract_document_restore_window_ms: 604_800_000,        // 7 days
+    contract_document_restore_window_ms: 604_800_000,                // 7 days
     max_contract_moderation_added_moderators: 15,
     max_contenders_per_contest: 1_000,
     max_token_redemption_cycles: 128,

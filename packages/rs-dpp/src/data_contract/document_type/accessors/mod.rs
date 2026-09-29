@@ -6,7 +6,7 @@ use crate::data_contract::document_type::action_fees::DocumentActionFees;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{
-    DocumentProperty, DocumentPropertyReferenceTarget,
+    DocumentProperty, DocumentPropertyReferenceTarget, GeneratedFrom,
 };
 use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, DocumentTypeRef};
 
@@ -949,6 +949,7 @@ impl DocumentTypeV1Getters for DocumentTypeMutRef<'_> {
 /// getter hands out a reference.
 static NO_IMMUTABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
 static NO_ENTRY_PAYLOAD: BTreeSet<String> = BTreeSet::new();
+static NO_MODERATOR_CHANGEABLE_FIELDS: BTreeSet<String> = BTreeSet::new();
 /// What `property_constraints` returns for the generations that predate the
 /// keyword, for the same reason.
 static NO_PROPERTY_CONSTRAINTS: BTreeMap<String, PropertyConstraint> = BTreeMap::new();
@@ -1019,6 +1020,30 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn moderator_deletions_keep_records(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.moderator_deletions_keep_records(),
+        }
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.moderator_deletions_refund_owner(),
+        }
+    }
+
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentType::V0(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentType::V1(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentType::V2(v2) => v2.moderator_changeable_fields(),
+        }
+    }
+
     fn documents_ttl_seconds(&self) -> Option<u32> {
         match self {
             DocumentType::V0(_) => None,
@@ -1040,6 +1065,14 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V0(_) => &[],
             DocumentType::V1(_) => &[],
             DocumentType::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)] {
+        match self {
+            DocumentType::V0(_) => &[],
+            DocumentType::V1(_) => &[],
+            DocumentType::V2(v2) => v2.generated_from_fields(),
         }
     }
 
@@ -1192,6 +1225,30 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn moderator_deletions_keep_records(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.moderator_deletions_keep_records(),
+        }
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.moderator_deletions_refund_owner(),
+        }
+    }
+
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentTypeRef::V1(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentTypeRef::V2(v2) => v2.moderator_changeable_fields(),
+        }
+    }
+
     fn documents_ttl_seconds(&self) -> Option<u32> {
         match self {
             DocumentTypeRef::V0(_) => None,
@@ -1213,6 +1270,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => &[],
             DocumentTypeRef::V1(_) => &[],
             DocumentTypeRef::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)] {
+        match self {
+            DocumentTypeRef::V0(_) => &[],
+            DocumentTypeRef::V1(_) => &[],
+            DocumentTypeRef::V2(v2) => v2.generated_from_fields(),
         }
     }
 
@@ -1331,6 +1396,30 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
         }
     }
 
+    fn moderator_deletions_keep_records(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_deletions_keep_records(),
+        }
+    }
+
+    fn moderator_deletions_refund_owner(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_deletions_refund_owner(),
+        }
+    }
+
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentTypeMutRef::V1(_) => &NO_MODERATOR_CHANGEABLE_FIELDS,
+            DocumentTypeMutRef::V2(v2) => v2.moderator_changeable_fields(),
+        }
+    }
+
     fn documents_ttl_seconds(&self) -> Option<u32> {
         match self {
             DocumentTypeMutRef::V0(_) => None,
@@ -1352,6 +1441,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => &[],
             DocumentTypeMutRef::V1(_) => &[],
             DocumentTypeMutRef::V2(v2) => v2.distinct_from_fields(),
+        }
+    }
+
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)] {
+        match self {
+            DocumentTypeMutRef::V0(_) => &[],
+            DocumentTypeMutRef::V1(_) => &[],
+            DocumentTypeMutRef::V2(v2) => v2.generated_from_fields(),
         }
     }
 

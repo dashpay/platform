@@ -23,6 +23,10 @@ use crate::state_transition::batch_transition::{DocumentCreateTransition, Docume
     TokenMintToPoolTransition, TokenBurnFromPoolTransition, TokenClaimToPoolTransition,
     TokenDirectPurchaseToPoolTransition,
 };
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::state_transition::batch_transition::batched_transition::{DocumentPurchaseTransition, DocumentTransferTransition};
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_unfreeze_transition::TokenUnfreezeTransition;
@@ -125,10 +129,10 @@ pub enum TokenTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for TokenTransition {}
+impl JsonConvertible for TokenTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for TokenTransition {}
+impl ValueConvertible for TokenTransition {}
 
 #[cfg(all(
     test,

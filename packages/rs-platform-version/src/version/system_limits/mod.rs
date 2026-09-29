@@ -47,19 +47,30 @@ pub struct SystemLimits {
     pub max_reference_expression_depth: u16,
     /// Maximum number of named rules one document type's `propertyConstraints` may
     /// declare. Every rule is evaluated on each create and replace of a document of the
-    /// type, and no rule reads state, so this and `max_property_constraint_nodes` are what
-    /// bound the arithmetic one document write causes. Refused under full validation only,
+    /// type, so this and `max_property_constraint_nodes` are what bound the arithmetic one
+    /// document write causes, and `max_property_constraint_aggregates` the state it reads. Refused under full validation only,
     /// like `max_typed_array_items`. Read by document type parser generation 3 (protocol
     /// version 14), the only generation that parses `propertyConstraints`, and never
     /// reached before.
     pub max_property_constraints: u16,
     /// Maximum number of nodes in one `propertyConstraints` rule: every comparison, every
-    /// `in` and each value it lists, every `present` or `absent` and every `anyOf`, `allOf` or
-    /// `not`, every arithmetic operator and every operand, an integer value, a string `const`
-    /// or a property. An `ifAbsent` operand is one node, the default it gives included.
+    /// `in` and each value it lists (a `notIn` costing what its `in` costs), every
+    /// `contains`, `startsWith`, `endsWith`, `present` or `absent`, every `anyOf`, `allOf`,
+    /// `not`, `ifThen` or `ifThenElse`, every arithmetic operator (`min`, `max` and `abs`
+    /// included) and every operand: an integer value, a `const`, a property, a size
+    /// (`length`, `byteLength`, `count`) or a system time or height. An `ifAbsent` operand
+    /// is one node, the default it gives included.
     /// Refused under full validation only, like `max_property_constraints`. Read by document
     /// type parser generation 3 (protocol version 14) and never reached before.
     pub max_property_constraint_nodes: u16,
+    /// Maximum number of distinct `countOf` and `sumOf` totals the `propertyConstraints`
+    /// rules of one document type read. Each is a billed read of a count or sum tree on
+    /// every create or replace of a document of the type, and on a transfer, a purchase or
+    /// a price update judged against a rule reading it, so this bounds the state one
+    /// document write reads for its rules. A total two rules read alike counts once. Refused under full validation
+    /// only, like `max_property_constraints`. Read by document type parser generation 3
+    /// (protocol version 14) and never reached before.
+    pub max_property_constraint_aggregates: u16,
     /// Max size of a state transition in bytes.
     ///
     /// NOTE: This must be equal to the `max-tx-bytes` in the Tenderdash config
@@ -205,9 +216,11 @@ pub struct SystemLimits {
     /// version 14) and never reached before.
     pub max_contract_moderation_reason_documents: u16,
     /// Shortest join window and vote window, in seconds, an elected moderation team
-    /// declaration (`ContractModerators::Elected`) may set: one day. Read by the contract's
-    /// `validate_moderation_config` v0 (protocol version 14) and never reached before.
-    pub min_contract_moderation_election_window_seconds: u32,
+    /// declaration (`ContractModerators::Elected`) may set on mainnet: one day. Every other
+    /// network has no floor, a window of 0 included, so test elections resolve at once. Read
+    /// by the contract's `validate_moderation_config` v0 (protocol version 14) and never
+    /// reached before.
+    pub min_mainnet_contract_moderation_election_window_seconds: u32,
     /// Longest join window and vote window, in seconds, such a declaration may set: four
     /// weeks.
     pub max_contract_moderation_election_window_seconds: u32,

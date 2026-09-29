@@ -192,6 +192,8 @@ GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1_SubQuery);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1_SubQuery_Binding);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingAggregate);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingClause);
+GPBObjCClassDeclaration(GetDocumentsRequest_IntegerRangeSelection);
+GPBObjCClassDeclaration(GetDocumentsRequest_IntegerRangeSelection_Grid);
 GPBObjCClassDeclaration(GetDocumentsRequest_OrderClause);
 GPBObjCClassDeclaration(GetDocumentsRequest_TimeRangeSelection);
 GPBObjCClassDeclaration(GetDocumentsRequest_TimeRangeSelection_Grid);
@@ -9675,7 +9677,8 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
         "Equal\000GreaterThan\000GreaterThanOrEquals\000Le"
         "ssThan\000LessThanOrEquals\000Between\000BetweenE"
         "xcludeBounds\000BetweenExcludeLeft\000BetweenE"
-        "xcludeRight\000In\000StartsWith\000InTimeRange\000";
+        "xcludeRight\000In\000StartsWith\000InTimeRange\000In"
+        "IntegerRange\000";
     static const int32_t values[] = {
         GetDocumentsRequest_WhereOperator_Equal,
         GetDocumentsRequest_WhereOperator_GreaterThan,
@@ -9689,6 +9692,7 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
         GetDocumentsRequest_WhereOperator_In,
         GetDocumentsRequest_WhereOperator_StartsWith,
         GetDocumentsRequest_WhereOperator_InTimeRange,
+        GetDocumentsRequest_WhereOperator_InIntegerRange,
     };
     GPBEnumDescriptor *worker =
         [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_WhereOperator)
@@ -9718,6 +9722,7 @@ BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value__) {
     case GetDocumentsRequest_WhereOperator_In:
     case GetDocumentsRequest_WhereOperator_StartsWith:
     case GetDocumentsRequest_WhereOperator_InTimeRange:
+    case GetDocumentsRequest_WhereOperator_InIntegerRange:
       return YES;
     default:
       return NO;
@@ -10088,6 +10093,131 @@ typedef struct GetDocumentsRequest_TimeRangeSelection_Grid__storage_ {
 
 @end
 
+#pragma mark - GetDocumentsRequest_IntegerRangeSelection
+
+@implementation GetDocumentsRequest_IntegerRangeSelection
+
+@dynamic hasStart, start;
+@dynamic hasGrid, grid;
+
+typedef struct GetDocumentsRequest_IntegerRangeSelection__storage_ {
+  uint32_t _has_storage_[1];
+  GetDocumentsRequest_DocumentFieldValue *start;
+  GetDocumentsRequest_IntegerRangeSelection_Grid *grid;
+} GetDocumentsRequest_IntegerRangeSelection__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "start",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_DocumentFieldValue),
+        .number = GetDocumentsRequest_IntegerRangeSelection_FieldNumber_Start,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_IntegerRangeSelection__storage_, start),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "grid",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_IntegerRangeSelection_Grid),
+        .number = GetDocumentsRequest_IntegerRangeSelection_FieldNumber_Grid,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_IntegerRangeSelection__storage_, grid),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_IntegerRangeSelection class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_IntegerRangeSelection__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetDocumentsRequest_IntegerRangeSelection_Grid
+
+@implementation GetDocumentsRequest_IntegerRangeSelection_Grid
+
+@dynamic range;
+@dynamic step;
+@dynamic phase;
+
+typedef struct GetDocumentsRequest_IntegerRangeSelection_Grid__storage_ {
+  uint32_t _has_storage_[1];
+  uint64_t range;
+  uint64_t step;
+  uint64_t phase;
+} GetDocumentsRequest_IntegerRangeSelection_Grid__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "range",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_IntegerRangeSelection_Grid_FieldNumber_Range,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_IntegerRangeSelection_Grid__storage_, range),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "step",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_IntegerRangeSelection_Grid_FieldNumber_Step,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_IntegerRangeSelection_Grid__storage_, step),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "phase",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_IntegerRangeSelection_Grid_FieldNumber_Phase,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_IntegerRangeSelection_Grid__storage_, phase),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_IntegerRangeSelection_Grid class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_IntegerRangeSelection_Grid__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest_IntegerRangeSelection)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetDocumentsRequest_WhereClause
 
 @implementation GetDocumentsRequest_WhereClause
@@ -10096,6 +10226,7 @@ typedef struct GetDocumentsRequest_TimeRangeSelection_Grid__storage_ {
 @dynamic operator_p;
 @dynamic hasValue, value;
 @dynamic hasTimeRange, timeRange;
+@dynamic hasIntegerRange, integerRange;
 
 typedef struct GetDocumentsRequest_WhereClause__storage_ {
   uint32_t _has_storage_[1];
@@ -10103,6 +10234,7 @@ typedef struct GetDocumentsRequest_WhereClause__storage_ {
   NSString *field;
   GetDocumentsRequest_DocumentFieldValue *value;
   GetDocumentsRequest_TimeRangeSelection *timeRange;
+  GetDocumentsRequest_IntegerRangeSelection *integerRange;
 } GetDocumentsRequest_WhereClause__storage_;
 
 // This method is threadsafe because it is initially called
@@ -10144,6 +10276,15 @@ typedef struct GetDocumentsRequest_WhereClause__storage_ {
         .number = GetDocumentsRequest_WhereClause_FieldNumber_TimeRange,
         .hasIndex = 3,
         .offset = (uint32_t)offsetof(GetDocumentsRequest_WhereClause__storage_, timeRange),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "integerRange",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_IntegerRangeSelection),
+        .number = GetDocumentsRequest_WhereClause_FieldNumber_IntegerRange,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_WhereClause__storage_, integerRange),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },

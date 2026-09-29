@@ -9,8 +9,10 @@
 //! warnings being a record it and everyone else can read.
 //!
 //! The same transition deletes one document of a document type that sets
-//! `canBeDeletedByModerators`, whoever owns it, and leaves a record of the deletion under the
-//! contract; and it restores such a document, as it was, within a week of its deletion.
+//! `moderatorAbilities.delete`, whoever owns it, and leaves a record of the deletion under the
+//! contract; it restores such a document, as it was, within a week of its deletion; and it
+//! sets or removes the fields a document type keeps for its moderators
+//! (`moderatorAbilities.changeFields`) on one of its documents, whoever owns it.
 //!
 //! ```ignore
 //! let reason = ContractModerationReason::from_text("spam");
@@ -37,12 +39,13 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel, TimestampMillis};
-use dpp::platform_value::Identifier;
+use dpp::platform_value::{Identifier, Value};
 use dpp::state_transition::contract_user_moderation_transition::methods::ContractUserModerationTransitionMethodsV0;
 use dpp::state_transition::contract_user_moderation_transition::{
     ContractUserModerationAction, ContractUserModerationTransition,
 };
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::platform::transition::broadcast::BroadcastStateTransition;
@@ -89,6 +92,31 @@ impl TryFrom<StateTransitionProofResult> for ModeratedUserStatus {
     }
 }
 
+/// The document a field change left, as its proof shows it: the document as it now stands.
+struct VerifiedChangedDocument(Document);
+
+impl TryFrom<StateTransitionProofResult> for VerifiedChangedDocument {
+    type Error = Error;
+
+    fn try_from(value: StateTransitionProofResult) -> Result<Self, Self::Error> {
+        match value {
+            StateTransitionProofResult::VerifiedDocuments(mut documents) => {
+                match (documents.pop_first(), documents.is_empty()) {
+                    (Some((_, Some(document))), true) => Ok(Self(document)),
+                    _ => Err(Error::Generic(
+                        "expected the proof of a document field change to show the one \
+                         document it changed"
+                            .to_string(),
+                    )),
+                }
+            }
+            other => Err(Error::Generic(format!(
+                "expected a document proof result, got {other}"
+            ))),
+        }
+    }
+}
+
 /// The record a document deletion left under the contract, as its proof shows it. The proof
 /// binds the record to the transition that wrote it, so only the record itself is kept here:
 /// the contract, the document type and the document id are the caller's own arguments.
@@ -101,6 +129,34 @@ impl TryFrom<StateTransitionProofResult> for VerifiedDocumentRemoval {
         match value {
             StateTransitionProofResult::VerifiedContractDocumentRemoval(_, _, _, removal) => {
                 Ok(Self(removal))
+            }
+            other => Err(Error::Generic(format!(
+                "expected a contract document removal proof result, got {other}"
+            ))),
+        }
+    }
+}
+
+/// What a document deletion left, as its proof shows it: the removal record, or nothing on a
+/// type whose moderators' deletions keep no record, whose proof shows the document gone.
+struct VerifiedDocumentDeletion(Option<ContractDocumentRemoval>);
+
+impl TryFrom<StateTransitionProofResult> for VerifiedDocumentDeletion {
+    type Error = Error;
+
+    fn try_from(value: StateTransitionProofResult) -> Result<Self, Self::Error> {
+        match value {
+            StateTransitionProofResult::VerifiedContractDocumentRemoval(_, _, _, removal) => {
+                Ok(Self(Some(removal)))
+            }
+            StateTransitionProofResult::VerifiedDocuments(mut documents) => {
+                match (documents.pop_first(), documents.is_empty()) {
+                    (Some((_, None)), true) => Ok(Self(None)),
+                    _ => Err(Error::Generic(
+                        "expected the proof of a document deletion to show the document gone"
+                            .to_string(),
+                    )),
+                }
             }
             other => Err(Error::Generic(format!(
                 "expected a contract document removal proof result, got {other}"
@@ -280,12 +336,17 @@ pub trait ModerateContractUser: Waitable {
 
     /// Deletes document `document_id` of `document_type_name` on `contract_id`, whoever owns
     /// it, for `reason` (as for a ban). The document type must set
-    /// `canBeDeletedByModerators`. Resolves with the record the deletion left under the
-    /// contract: whose the document was, who removed it, why and when.
+    /// `moderatorAbilities.delete`. Resolves with the record the deletion left under the
+    /// contract: whose the document was, who removed it, why and when; or with `None` on a
+    /// type whose moderators' deletions keep no record (`moderatorAbilities.deleteKeepsRecord:
+    /// false`), whose proof shows the document gone.
     ///
-    /// The document's owner gets no storage refund, and nothing ever deletes the record. The
+    /// The document's owner gets no storage refund unless the type gives it back
+    /// (`moderatorAbilities.deleteRefundsOwner`), and nothing ever deletes the record. The
     /// record holds a hash of the document as it was: keep the document (or its bytes) if the
-    /// deletion may have to be undone, since `restore_contract_document` needs it.
+    /// deletion may have to be undone, since `restore_contract_document` needs it. Which proof
+    /// to expect is read from the contract, which is registered with the SDK's context provider
+    /// when it holds none.
     #[allow(clippy::too_many_arguments)]
     async fn delete_contract_document<S: Signer<IdentityPublicKey> + Send>(
         &self,
@@ -297,7 +358,7 @@ pub trait ModerateContractUser: Waitable {
         signing_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
-    ) -> Result<ContractDocumentRemoval, Error>;
+    ) -> Result<Option<ContractDocumentRemoval>, Error>;
 
     /// Brings back `document`, of `document_type_name` on `contract`, that a moderator deleted:
     /// the document as it was when it was deleted, which must hash to what its removal record
@@ -320,6 +381,31 @@ pub trait ModerateContractUser: Waitable {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<ContractDocumentRemoval, Error>;
+
+    /// Sets the fields `fields` names on document `document_id` of `document_type_name` on
+    /// `contract_id`, whoever owns it, for `reason` (as for a ban): each a field the document
+    /// type keeps for its moderators (`moderatorAbilities.changeFields`), a `null` value
+    /// removing it. The document as changed must still be one of its type (its schema, its
+    /// `propertyConstraints`, its unique indexes). Resolves with the document as it now
+    /// stands: every other property as its owner wrote it, `$updatedAt` among them, and
+    /// `$revision` one higher, so a replace its owner built on the earlier revision is refused.
+    ///
+    /// The signer pays for the bytes the change adds; a refund of the document's storage stays
+    /// its owner's. The document is read back under the contract, which is registered with the
+    /// SDK's context provider when it holds none.
+    #[allow(clippy::too_many_arguments)]
+    async fn change_contract_document_fields<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+        fields: BTreeMap<String, Value>,
+        reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<Document, Error>;
 }
 
 #[async_trait::async_trait]
@@ -340,11 +426,13 @@ impl ModerateContractUser for Identity {
             action,
             ContractUserModerationAction::DeleteDocument { .. }
                 | ContractUserModerationAction::RestoreDocument { .. }
+                | ContractUserModerationAction::ChangeDocumentFields { .. }
         ) {
             return Err(Error::Generic(
-                "a document deletion or restore names no identity to report a status of: send \
-                 it with `delete_contract_document` or `restore_contract_document`, which \
-                 return the removal record"
+                "a document deletion, restore or field change names no identity to report a \
+                 status of: send it with `delete_contract_document`, \
+                 `restore_contract_document` or `change_contract_document_fields`, which \
+                 return what it left"
                     .to_string(),
             ));
         }
@@ -370,8 +458,8 @@ impl ModerateContractUser for Identity {
         signing_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
-    ) -> Result<ContractDocumentRemoval, Error> {
-        let VerifiedDocumentRemoval(removal) = broadcast_moderation(
+    ) -> Result<Option<ContractDocumentRemoval>, Error> {
+        let VerifiedDocumentDeletion(removal) = broadcast_moderation(
             self,
             sdk,
             contract_id,
@@ -427,6 +515,45 @@ impl ModerateContractUser for Identity {
         )
         .await?;
         Ok(removal)
+    }
+
+    async fn change_contract_document_fields<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+        fields: BTreeMap<String, Value>,
+        reason: ContractModerationReason,
+        signing_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<Document, Error> {
+        let VerifiedChangedDocument(document) = broadcast_moderation(
+            self,
+            sdk,
+            contract_id,
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name,
+                document_id,
+                // Signed in the form an object or JSON copy of the transition reads back in
+                fields: fields
+                    .into_iter()
+                    .map(|(name, value)| {
+                        (
+                            name,
+                            ContractUserModerationAction::canonical_field_value(value),
+                        )
+                    })
+                    .collect(),
+                reason,
+            },
+            signing_key_to_use,
+            signer,
+            settings,
+        )
+        .await?;
+        Ok(document)
     }
 }
 
@@ -485,13 +612,16 @@ where
     // would refuse a result the network already accepted, so before the nonce is taken and
     // anything is signed or paid for, the provider is asked, and only when it does not have
     // the contract (the lists never change, so whatever copy it holds will do) is the contract
-    // fetched and registered with it. A document deletion is proved by its own removal record
-    // and needs no contract; a restore's verifier decodes the document under the contract's
-    // document type, so it needs the contract too.
+    // fetched and registered with it. A document deletion's verifier reads from the contract
+    // whether the type keeps removal records, and so which proof to expect; a restore's
+    // verifier decodes the document under the contract's document type, and a field change's
+    // verifier reads the changed document back under it, so all three need the contract too.
     if matches!(
         action,
         ContractUserModerationAction::Ban { .. }
+            | ContractUserModerationAction::DeleteDocument { .. }
             | ContractUserModerationAction::RestoreDocument { .. }
+            | ContractUserModerationAction::ChangeDocumentFields { .. }
     ) {
         ensure_provider_resolves_contract(sdk, contract_id, false).await?;
     }

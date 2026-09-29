@@ -803,9 +803,11 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
         ranked_summable: false,
         ranked_averageable: true,
         time_range: None,
+        integer_range: None,
         terminal: None,
         preallocated: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
     };
     let index_structure =
         IndexLevel::try_from_indices([&compound_ranked_index], "dish", platform_version())
@@ -1023,9 +1025,11 @@ fn a_null_unsearchable_ranked_level_is_what_makes_a_phantom_group_possible() {
         ranked_summable: false,
         ranked_averageable: false,
         time_range: None,
+        integer_range: None,
         terminal: None,
         preallocated: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
     };
 
     for null_searchable in [false, true] {

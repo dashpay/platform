@@ -89,6 +89,10 @@ export interface DocumentObject {
   $createdAtCoreBlockHeight?: number;
   $updatedAtCoreBlockHeight?: number;
   $transferredAtCoreBlockHeight?: number;
+  /** When a moderator last wrote the fields the document type keeps for its moderators */
+  $moderatedAt?: bigint;
+  /** The moderator who last wrote them */
+  $moderatedBy?: Identifier;
   $dataContractId: Identifier;
   $type: string;
   [key: string]: unknown;
@@ -111,6 +115,10 @@ export interface DocumentJSON {
   $createdAtCoreBlockHeight?: number;
   $updatedAtCoreBlockHeight?: number;
   $transferredAtCoreBlockHeight?: number;
+  /** When a moderator last wrote the fields the document type keeps for its moderators */
+  $moderatedAt?: string;
+  /** The moderator who last wrote them */
+  $moderatedBy?: string;
   $dataContractId: string;
   $type: string;
   [key: string]: unknown;
@@ -342,6 +350,8 @@ impl DocumentWasm {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         Ok(DocumentWasm::new(
@@ -438,6 +448,20 @@ impl DocumentWasm {
     #[wasm_bindgen(getter = transferredAtCoreBlockHeight)]
     pub fn transferred_at_core_block_height(&self) -> Option<u32> {
         self.document.transferred_at_core_block_height()
+    }
+
+    /// The block time at which a moderator of the contract last wrote the fields the document
+    /// type keeps for its moderators (`moderatorAbilities.changeFields`); `undefined` until one
+    /// does.
+    #[wasm_bindgen(getter = moderatedAt)]
+    pub fn moderated_at(&self) -> Option<u64> {
+        self.document.moderated_at()
+    }
+
+    /// The moderator who last wrote those fields; `undefined` until one does.
+    #[wasm_bindgen(getter = moderatedBy)]
+    pub fn moderated_by(&self) -> Option<IdentifierWasm> {
+        self.document.moderated_by().map(Into::into)
     }
 
     #[wasm_bindgen(getter = documentTypeName)]

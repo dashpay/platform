@@ -1,5 +1,7 @@
 use crate::data_contract::document_type::action_fees::DocumentActionFees;
-use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
+use crate::data_contract::document_type::property::{
+    DocumentPropertyReferenceTarget, GeneratedFrom,
+};
 use crate::data_contract::document_type::property_constraints::PropertyConstraint;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -41,17 +43,37 @@ pub trait DocumentTypeV2Getters {
     fn entry_payload(&self) -> &BTreeSet<String>;
 
     /// Returns whether the contract's moderators may delete documents of this
-    /// type (the `canBeDeletedByModerators` keyword, protocol version 14).
-    /// Independent of `documents_can_be_deleted`, which rules what a document's
-    /// own owner may do. False on document types that predate the keyword.
+    /// type (`moderatorAbilities.delete`, protocol version 14). Independent of
+    /// `documents_can_be_deleted`, which rules what a document's own owner may
+    /// do. False on document types that predate the keyword.
     fn documents_can_be_deleted_by_moderators(&self) -> bool;
 
     /// For how many seconds after a document's last modification (`$updatedAt`,
     /// or `$createdAt` on a type that carries no `$updatedAt`)
-    /// the moderators may still delete it (the `canBeDeletedByModeratorsFor`
-    /// keyword, protocol version 14). `None` means no limit, and is what every
-    /// document type that predates the keyword answers.
+    /// the moderators may still delete it (`moderatorAbilities.deleteWithin`,
+    /// protocol version 14). `None` means no limit, and is what every document
+    /// type that predates the keyword answers.
     fn documents_can_be_deleted_by_moderators_for(&self) -> Option<u32>;
+
+    /// Whether a moderator's deletion of a document of this type leaves a removal record
+    /// under the contract (`moderatorAbilities.deleteKeepsRecord`, protocol version 14): the
+    /// type then has a removal records tree, and a deleted document can be restored. False on
+    /// a type whose documents moderators can not delete, and on those that predate the keyword.
+    fn moderator_deletions_keep_records(&self) -> bool;
+
+    /// Whether the owner of a document of this type a moderator deletes is refunded its
+    /// storage (`moderatorAbilities.deleteRefundsOwner`, protocol version 14). False, the owner
+    /// forfeiting it, when left out, on a type whose documents moderators can not delete, and
+    /// on those that predate the keyword.
+    fn moderator_deletions_refund_owner(&self) -> bool;
+
+    /// The top-level properties only the contract's moderators write
+    /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator
+    /// changes them with a `ContractUserModeration` transition, and a document's
+    /// owner sets, changes or removes them in a create or a replace only when it
+    /// moderates the contract. Empty on document types that list none and on
+    /// those that predate the keyword.
+    fn moderator_changeable_fields(&self) -> &BTreeSet<String>;
 
     /// How many seconds after its creation (`$createdAt`) the platform deletes each
     /// document of the type (the `ttl` keyword, protocol version 14). `None` means the
@@ -60,7 +82,7 @@ pub trait DocumentTypeV2Getters {
     fn documents_ttl_seconds(&self) -> Option<u32>;
 
     /// Whether a document of the type can stop existing once written: its owner may delete
-    /// it (`canBeDeleted`), the contract's moderators may (`canBeDeletedByModerators`), or
+    /// it (`canBeDeleted`), the contract's moderators may (`moderatorAbilities.delete`), or
     /// the platform deletes it when its `ttl` passes. A `permanentDocument` reference and a
     /// list element reference may only target a type for which this is false, and a
     /// `deletableDocument` reference only one for which it is true; a lookup follows the
@@ -79,6 +101,12 @@ pub trait DocumentTypeV2Getters {
     /// (protocol version 14), in schema order. Empty on generations that
     /// predate the keyword.
     fn distinct_from_fields(&self) -> &[String];
+
+    /// The dotted path of every property that declares `generatedFrom`
+    /// (protocol version 14) with its declaration, in schema order, so a
+    /// document write visits only them. Empty on generations that predate the
+    /// keyword.
+    fn generated_from_fields(&self) -> &[(String, GeneratedFrom)];
 
     /// The subset of [`Self::immutable_fields`] a replace may still set while
     /// the stored document has no value for them (the

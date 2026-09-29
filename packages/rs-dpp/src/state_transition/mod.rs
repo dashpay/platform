@@ -82,6 +82,10 @@ use crate::identity::Purpose;
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AddressNonce, AssetLockProof, UserFeeIncrease};
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::serialization::{PlatformDeserializableUntrusted, Signable};
 use crate::state_transition::address_credit_withdrawal_transition::{
     AddressCreditWithdrawalTransition, AddressCreditWithdrawalTransitionSignable,
@@ -618,10 +622,10 @@ pub enum StateTransition {
 }
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for StateTransition {}
+impl JsonConvertible for StateTransition {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for StateTransition {}
+impl ValueConvertible for StateTransition {}
 
 #[cfg(all(
     test,

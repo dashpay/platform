@@ -4,8 +4,8 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 use dpp::data_contract::document_type::{
     is_referenced_system_agreement_property, is_referring_system_agreement_property, is_transient,
     DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
-    DocumentReferenceDeclaration, DocumentTypeRef, KeyReferenceIdentityProperty, PropertyReference,
-    ReferenceHolder,
+    DocumentReferenceDeclaration, DocumentTypeRef, KeyReferenceIdentityProperty,
+    PreallocatedKeySource, PropertyReference, ReferenceHolder, MAX_INDEX_SIZE,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::property_names::CREATOR_ID;
@@ -53,6 +53,43 @@ fn stores_key_id_without_identity(
     is_transient(document_type, identity_path) && !is_transient(document_type, key_id_path)
 }
 
+/// The name of a preallocated index of `document_type` whose trees are keyed
+/// by the referenced document's `referenced_property` through the agreement
+/// pair naming it from `referring_property`, on the reference carried by
+/// `reference_property`: creating a referenced document then writes that
+/// property's value as a tree key of the index. `None` when no preallocated
+/// index is keyed through the pair.
+fn preallocated_index_keyed_by(
+    contract_id: Identifier,
+    document_type: DocumentTypeRef,
+    reference_property: &str,
+    referring_property: &str,
+    referenced_property: &str,
+) -> Option<String> {
+    document_type
+        .indexes()
+        .values()
+        .filter(|index| index.preallocated)
+        .find(|index| {
+            index
+                .preallocation_bindings(document_type.flattened_properties(), contract_id)
+                .iter()
+                .any(|binding| {
+                    binding.referring_property == reference_property
+                        && index.properties.iter().zip(&binding.key_sources).any(
+                            |(index_property, key_source)| {
+                                index_property.name == referring_property
+                                    && *key_source
+                                        == PreallocatedKeySource::ReferencedDocumentProperty(
+                                            referenced_property,
+                                        )
+                            },
+                        )
+                })
+        })
+        .map(|index| index.name.clone())
+}
+
 /// Checks every reference declaration of the given contract that carries
 /// declaration content.
 ///
@@ -74,6 +111,10 @@ fn stores_key_id_without_identity(
 /// that `inList` is a stored typed array of identifiers fixed once a document
 /// is written. One in the declaring contract was checked by the contract
 /// parse.
+///
+/// A pair through which a preallocated index of the declaring type is keyed
+/// needs a referenced property whose every value fits a tree key, at most
+/// 255 bytes: creating a referenced document writes the value as one.
 ///
 /// `identityPublicKey`: the declared key id property must exist in the same
 /// document type and be an integer. On either side of a key reference, a
@@ -236,7 +277,13 @@ pub(super) fn validate_data_contract_references_v0(
                     }
                     continue;
                 }
-                PropertyReference::Value(target) => (target, declaration_path),
+                // A string or byte array property revealed into a computed
+                // lookup key is judged as an identifier's reference is: the
+                // referenced type, its permanence, the agreement and the
+                // lookup. Only the protocol version 14 parser produces one
+                PropertyReference::Value(target) | PropertyReference::Revealed(target) => {
+                    (target, declaration_path)
+                }
                 // A typed array only parses from protocol version 14, whose
                 // contract create and update state validation are the only
                 // callers, so this arm is never reached before it
@@ -483,6 +530,22 @@ fn validate_reference_target_declaration_v0(
     // document type in hand.
     if let Some(lookup) = lookup {
         if effective_contract_id != contract.id() {
+            // Consuming deletes the found document with the create, an operation on the
+            // create's own contract: a commitment in another contract is only read. In place
+            // in generation 0, which every table selects: only the protocol version 14 parser
+            // produces a lookup, let alone one that consumes
+            if lookup.consume {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ReferencedDocumentLookupInvalidError::new(
+                        declaration_path,
+                        lookup.index.clone(),
+                        "consume deletes the document the lookup finds with the create, so it \
+                         is only allowed beside a lookup into the declaring contract"
+                            .to_string(),
+                    )
+                    .into(),
+                ));
+            }
             if let Some(reason) =
                 lookup.referenced_side_error(document_type, referenced_document_type)
             {
@@ -633,8 +696,8 @@ fn validate_reference_target_declaration_v0(
                 "agreement properties must be plain values, not object containers",
             ));
         }
-        // The write-time check compares index key encodings, which a
-        // list does not have, so an agreement on one would never hold
+        // The write-time check compares single values, which a list is
+        // not, so an agreement on one would never hold
         if matches!(referring_type, DocumentPropertyType::TypedArray(_))
             || matches!(
                 referenced.property_type,
@@ -650,6 +713,36 @@ fn validate_reference_target_declaration_v0(
                 "the two properties must share one value kind: a cross-kind \
                  equality could never be satisfied",
             ));
+        }
+        // A preallocated index keyed through this pair writes the referenced
+        // document's value as a tree key when that document is created, so
+        // every value the referenced property can hold must fit one; the
+        // referring side is an index property, bounded by the index rules. In
+        // place: inert before protocol version 14, which alone reaches this
+        // module (contract create and update state validation 1).
+        let keyed_index = reference_property.and_then(|reference_property| {
+            preallocated_index_keyed_by(
+                contract.id(),
+                document_type,
+                reference_property,
+                referring_property,
+                referenced_property,
+            )
+        });
+        if let Some(index_name) = keyed_index {
+            let max_width = referenced
+                .property_type
+                .saturating_max_byte_size(platform_version)
+                .ok()
+                .flatten();
+            if max_width.is_none_or(|width| usize::from(width) > MAX_INDEX_SIZE) {
+                return Ok(invalid(&format!(
+                    "the preallocated index {index_name} keys its trees by the referenced \
+                     property's value, and a tree key holds at most {MAX_INDEX_SIZE} bytes, but \
+                     the referenced property can hold values of up to {} bytes",
+                    max_width.unwrap_or(u16::MAX)
+                )));
+            }
         }
     }
 

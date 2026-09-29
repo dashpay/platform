@@ -208,6 +208,9 @@ pub(in crate::execution) mod tests {
     use crate::execution::types::block_execution_context::BlockExecutionContext;
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::expect_match;
+    use crate::execution::check_tx::CheckTxLevel;
+    use dpp::consensus::ConsensusError;
+    use crate::platform_types::platform::PlatformRef;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::platform_types::state_transitions_processing_result::{StateTransitionExecutionResult, StateTransitionsProcessingResult};
@@ -2391,6 +2394,29 @@ pub(in crate::execution) mod tests {
         .expect("expected to serialize the masternode vote")
     }
 
+    /// The errors check_tx refuses a serialized transition with when it is first broadcast
+    pub(in crate::execution) fn first_time_check_tx_errors(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_state: &PlatformState,
+        serialized_transition: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Vec<ConsensusError> {
+        platform
+            .check_tx(
+                serialized_transition,
+                CheckTxLevel::FirstTimeCheck,
+                &PlatformRef {
+                    drive: &platform.drive,
+                    state: platform_state,
+                    config: &platform.config,
+                    core_rpc: &platform.core_rpc,
+                },
+                platform_version,
+            )
+            .expect("expected check_tx to run")
+            .errors
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(in crate::execution) async fn perform_vote(
         platform: &mut TempPlatform<MockCoreRPCLike>,
@@ -2425,6 +2451,19 @@ pub(in crate::execution) mod tests {
                 platform,
                 &masternode_vote_serialized_transition,
                 "masternode vote",
+            );
+        } else {
+            // A block refuses a failed vote without charging anyone, and its proposer drops it
+            // silently, so check_tx must refuse it first or the voter never learns why.
+            assert!(
+                !first_time_check_tx_errors(
+                    platform,
+                    platform_state,
+                    &masternode_vote_serialized_transition,
+                    platform_version,
+                )
+                .is_empty(),
+                "check_tx must refuse a vote that a block refuses"
             );
         }
 

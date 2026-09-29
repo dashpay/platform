@@ -74,6 +74,14 @@ pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
                     .transferred_at_core_block_height()
                     .map(DocumentPropertyType::encode_u32))
             }
+            // Only a type keeping fields for its moderators indexes these (protocol version
+            // 14); before, the names fell through to the properties, where no `$` name is.
+            "$moderatedAt" => {
+                return Ok(self
+                    .moderated_at()
+                    .map(DocumentPropertyType::encode_date_timestamp))
+            }
+            "$moderatedBy" => return Ok(self.moderated_by().map(|id| id.to_vec())),
             _ => {}
         }
         self.properties()
@@ -111,6 +119,8 @@ mod tests {
             updated_at_core_block_height: Some(60),
             transferred_at_core_block_height: Some(70),
             creator_id: Some(Identifier::new([0xCC; 32])),
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 
@@ -189,6 +199,42 @@ mod tests {
             raw,
             Some(Vec::from(override_owner)),
             "explicit owner_id should override the document's owner_id"
+        );
+    }
+
+    #[test]
+    fn should_return_the_moderation_stamp_only_once_set() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected contract");
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected document type");
+
+        let mut doc = make_document_with_known_ids();
+        for key in ["$moderatedAt", "$moderatedBy"] {
+            let raw = doc
+                .get_raw_for_document_type_v0(key, document_type, None, platform_version)
+                .expect("should succeed");
+            assert_eq!(raw, None, "{key} is absent until a moderator writes");
+        }
+        doc.moderated_at = Some(1_700_000_300_000);
+        doc.moderated_by = Some(Identifier::new([0xDD; 32]));
+        assert_eq!(
+            doc.get_raw_for_document_type_v0("$moderatedAt", document_type, None, platform_version)
+                .expect("should succeed"),
+            Some(DocumentPropertyType::encode_date_timestamp(
+                1_700_000_300_000
+            ))
+        );
+        assert_eq!(
+            doc.get_raw_for_document_type_v0("$moderatedBy", document_type, None, platform_version)
+                .expect("should succeed"),
+            Some(vec![0xDD; 32])
         );
     }
 
@@ -415,6 +461,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
     }
 

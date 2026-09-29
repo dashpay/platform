@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
 use std::io::{BufReader, Cursor, Read};
@@ -41,12 +41,20 @@ use serde::{Deserialize, Serialize};
 
 pub mod array;
 pub mod encrypted_for;
+pub mod generated_from;
 pub mod list_element_reference;
+pub mod lookup_preimage;
 pub mod reference_expression;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
+pub use generated_from::{
+    GeneratedFrom, GenerationParam, HashFunction, StringTransformation, SystemFunction,
+};
 pub use list_element_reference::ListElementReference;
+pub use lookup_preimage::{
+    first_unrevealable_lookup_key, LookupHashKey, LookupKeyParam, LookupPreimageError,
+};
 pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
     MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
@@ -80,6 +88,20 @@ pub struct DocumentProperty {
     /// and only on contracts parsed from protocol version 14 on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encrypted_for: Option<EncryptedFor>,
+    /// The function the platform generates this property's value with, and
+    /// the properties it reads (`generatedFrom`). Only ever `Some` on a string
+    /// property, and only on contracts parsed from protocol version 14 on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated_from: Option<GeneratedFrom>,
+    /// The `refersTo` of a string or byte array property, whose value is not
+    /// an id but is revealed into a computed lookup key, a `propertyAgreement`
+    /// function naming the property by its path among its `params`, such as a
+    /// salt a commitment hashed. An identifier property's
+    /// `refersTo` is folded into its type instead
+    /// ([`DocumentPropertyType::IdentifierWithReference`]). Only ever `Some` on
+    /// contracts parsed from protocol version 14 on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revealed_reference: Option<DocumentPropertyReferenceTarget>,
 }
 
 /// What a `distinctFrom` identifier property must differ from.
@@ -917,6 +939,13 @@ pub enum DocumentPropertyReferenceTarget {
     /// dead one nor clear it), and it may be an operand of a reference
     /// expression, which is then re-validated on every replace as well.
     ///
+    /// A lookup whose key a `propertyAgreement` function computes
+    /// ([`DocumentReferenceLookup::is_checked_on_create_only`]) is the
+    /// exception: the document it finds is a commitment the create reveals, so
+    /// it is judged when the document is created only and holds on a replace
+    /// without a read. An immutable property may hold one, and on a type whose
+    /// documents can be replaced it may not be an operand of an `anyOf`.
+    ///
     /// Appended, so every earlier variant keeps its consensus encoding. It
     /// serializes under the `deletableDocument` tag, with a `lookup` field.
     #[serde(rename = "deletableDocument")]
@@ -1160,6 +1189,11 @@ pub enum PropertyReference<'a> {
     /// A key id property carrying an `identityPublicKey` declaration that
     /// names whose key it is ([`DocumentPropertyType::KeyIdWithReference`]).
     KeyId(&'a KeyIdReference),
+    /// A string or byte array property whose value is revealed into the
+    /// computed lookup key of its `refersTo` ([`DocumentProperty::revealed_reference`]):
+    /// not an id, so read only as a param of that key's `propertyAgreement`
+    /// function, which names the property by its path, on a create.
+    Revealed(&'a DocumentPropertyReferenceTarget),
 }
 
 impl<'a> PropertyReference<'a> {
@@ -1167,9 +1201,9 @@ impl<'a> PropertyReference<'a> {
     /// key reference on the key id, which has no identifier target.
     pub fn target(&self) -> Option<&'a DocumentPropertyReferenceTarget> {
         match self {
-            PropertyReference::Value(target) | PropertyReference::Elements { target, .. } => {
-                Some(target)
-            }
+            PropertyReference::Value(target)
+            | PropertyReference::Elements { target, .. }
+            | PropertyReference::Revealed(target) => Some(target),
             PropertyReference::KeyId(_) => None,
         }
     }
@@ -1181,7 +1215,9 @@ impl<'a> PropertyReference<'a> {
     pub fn max_references(&self) -> u32 {
         let values = match self {
             PropertyReference::Elements { max_items, .. } => u32::from(*max_items),
-            PropertyReference::Value(_) | PropertyReference::KeyId(_) => 1,
+            PropertyReference::Value(_)
+            | PropertyReference::KeyId(_)
+            | PropertyReference::Revealed(_) => 1,
         };
         let leaves = self.target().map_or(1, |target| target.leaves().len());
         values.saturating_mul(u32::try_from(leaves).unwrap_or(u32::MAX))
@@ -1256,8 +1292,34 @@ impl<'a> DocumentTypeRef<'a> {
                 property
                     .property_type
                     .reference()
+                    .or_else(|| {
+                        property
+                            .revealed_reference
+                            .as_ref()
+                            .map(PropertyReference::Revealed)
+                    })
                     .map(|reference| (ReferenceHolder::Property(path.as_str()), reference))
             }))
+    }
+
+    /// The names of the document types a create of this type may consume: those a
+    /// `refersTo` lookup finds where the reference declares `consume`, on any
+    /// holder and in any leaf of an expression, each a type of this type's own
+    /// contract. A create deletes such a document along with its own write, so
+    /// whatever may sign the create must be allowed to act on these types too.
+    pub fn consumable_document_type_names(self) -> BTreeSet<&'a str> {
+        self.reference_declarations()
+            .filter_map(|(_, reference)| reference.target())
+            .flat_map(|target| target.leaves())
+            .filter_map(|leaf| match leaf {
+                DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                    document_type_name,
+                    lookup,
+                    ..
+                } if lookup.consume => Some(document_type_name.as_str()),
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -1292,6 +1354,11 @@ pub fn is_referenced_system_agreement_property(name: &str) -> bool {
 /// than in the document data, which is why it is threaded into write-time
 /// validation separately.
 pub const REFERRING_SYSTEM_AGREEMENT_PROPERTIES: [&str; 1] = [OWNER_ID];
+
+/// The top-level property a dotted property path is in: the path itself when it has no dot.
+pub(crate) fn top_level_property(path: &str) -> &str {
+    path.split('.').next().unwrap_or(path)
+}
 
 /// Whether `name` is one of [`REFERRING_SYSTEM_AGREEMENT_PROPERTIES`].
 pub fn is_referring_system_agreement_property(name: &str) -> bool {
@@ -1527,6 +1594,14 @@ fn write_document_reference(
     }
     if let Some(lookup) = lookup {
         write!(f, ", found through unique index {}", lookup.index)?;
+        // A computed key: the document found is a commitment the write reveals
+        if let Some((index_property, key)) = lookup.hash_key() {
+            write!(
+                f,
+                ", {index_property} the {} of a revealed preimage",
+                key.function.as_str()
+            )?;
+        }
     }
     write!(f, ")")
 }
@@ -1569,6 +1644,21 @@ pub enum DocumentPropertyType {
     /// requirements when the document is written. Sized, encoded and queried
     /// exactly as [`Self::U32`].
     KeyIdWithReference(KeyIdReference),
+}
+
+/// Adds byte sizes the way summing `Option<u16>` does, `None` once any size is
+/// `None`, but saturating at `u16::MAX` instead of overflowing.
+fn saturating_sum(
+    sizes: impl Iterator<Item = Result<Option<u16>, ProtocolError>>,
+) -> Result<Option<u16>, ProtocolError> {
+    let mut total = 0u16;
+    for size in sizes {
+        let Some(size) = size? else {
+            return Ok(None);
+        };
+        total = total.saturating_add(size);
+    }
+    Ok(Some(total))
 }
 
 impl DocumentPropertyType {
@@ -1976,6 +2066,80 @@ impl DocumentPropertyType {
         } else {
             Ok(Some(min_size.wrapping_add(max_size).wrapping_add(1) / 2))
         }
+    }
+
+    /// [`Self::min_byte_size`], with a bound past `u16::MAX` held at
+    /// `u16::MAX` instead of refused with an overflow. A string counts four
+    /// bytes a character, so `minLength` 16384 or more does not fit. For size
+    /// estimates, which only need a bound.
+    pub fn saturating_min_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        match self {
+            DocumentPropertyType::String(StringPropertySizes {
+                min_length: Some(length),
+                ..
+            }) => Ok(Some(length.saturating_mul(4))),
+            DocumentPropertyType::Object(sub_fields) => {
+                saturating_sum(sub_fields.values().map(|sub_field| {
+                    sub_field
+                        .property_type
+                        .saturating_min_byte_size(platform_version)
+                }))
+            }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array
+                .saturating_min_encoded_size(platform_version)
+                .map(Some),
+            property_type => property_type.min_byte_size(platform_version),
+        }
+    }
+
+    /// [`Self::max_byte_size`], with a bound past `u16::MAX` held at
+    /// `u16::MAX` instead of refused with an overflow. A string without
+    /// `maxBytes` counts four bytes a character, so `maxLength` 16384 or more
+    /// does not fit; it then sizes like a string without `maxLength`. For size
+    /// estimates, which only need a bound.
+    pub fn saturating_max_byte_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        match self {
+            DocumentPropertyType::String(StringPropertySizes {
+                max_length: Some(length),
+                max_bytes: None,
+                ..
+            }) => Ok(Some(length.saturating_mul(4))),
+            DocumentPropertyType::Object(sub_fields) => {
+                saturating_sum(sub_fields.values().map(|sub_field| {
+                    sub_field
+                        .property_type
+                        .saturating_max_byte_size(platform_version)
+                }))
+            }
+            DocumentPropertyType::TypedArray(typed_array) => typed_array
+                .saturating_max_encoded_size(platform_version)
+                .map(Some),
+            property_type => property_type.max_byte_size(platform_version),
+        }
+    }
+
+    /// [`Self::middle_byte_size_ceil`] from [`Self::saturating_min_byte_size`]
+    /// and [`Self::saturating_max_byte_size`].
+    pub fn saturating_middle_byte_size_ceil(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<u16>, ProtocolError> {
+        let Some(min_size) = self.saturating_min_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        let Some(max_size) = self.saturating_max_byte_size(platform_version)? else {
+            return Ok(None);
+        };
+        // The mean of two `u16` values fits in a `u16`
+        Ok(Some(
+            ((min_size as u32 + max_size as u32).div_ceil(2)) as u16,
+        ))
     }
 
     pub fn random_size(&self, rng: &mut StdRng) -> u16 {
@@ -3725,6 +3889,16 @@ impl DocumentPropertyType {
         )
     }
 
+    /// Whether the value is one identifier, whether or not the property
+    /// carries its own `refersTo` reference. A typed array of identifiers is
+    /// not one.
+    pub fn is_identifier(&self) -> bool {
+        matches!(
+            self,
+            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+        )
+    }
+
     pub fn sanitize_value_mut(&self, value: &mut Value) {
         match (self, value.clone()) {
             // Convert hex or base64 strings to byte arrays for ByteArray fields
@@ -4463,6 +4637,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -4474,6 +4650,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -4763,6 +4941,107 @@ mod tests {
         // min_byte_size = 1*4 = 4, max_byte_size = 10*4 = 40
         // ceil((4+40)/2) = 22
         assert_eq!(s.middle_byte_size_ceil(pv).unwrap(), Some(22));
+    }
+
+    // -----------------------------------------------------------------------
+    // saturating_min_byte_size() / saturating_max_byte_size() tests
+    // -----------------------------------------------------------------------
+
+    fn string_sizes(
+        min_length: Option<u16>,
+        max_length: Option<u16>,
+        max_bytes: Option<u16>,
+    ) -> DocumentPropertyType {
+        DocumentPropertyType::String(StringPropertySizes {
+            min_length,
+            max_length,
+            max_bytes,
+        })
+    }
+
+    #[test]
+    fn should_hold_string_byte_bounds_past_u16_max_at_u16_max() {
+        let pv = PlatformVersion::latest();
+        // 20000 characters of up to four bytes each is 80000 bytes
+        let long = string_sizes(Some(20000), Some(20000), None);
+        assert!(matches!(
+            long.min_byte_size(pv),
+            Err(ProtocolError::Overflow(_))
+        ));
+        assert!(matches!(
+            long.max_byte_size(pv),
+            Err(ProtocolError::Overflow(_))
+        ));
+        assert_eq!(long.saturating_min_byte_size(pv).unwrap(), Some(u16::MAX));
+        assert_eq!(long.saturating_max_byte_size(pv).unwrap(), Some(u16::MAX));
+        assert_eq!(
+            long.saturating_middle_byte_size_ceil(pv).unwrap(),
+            Some(u16::MAX)
+        );
+
+        // Past 16383 characters the bound is the one a string without
+        // `maxLength` has
+        assert_eq!(
+            string_sizes(None, Some(20000), None)
+                .saturating_middle_byte_size_ceil(pv)
+                .unwrap(),
+            string_sizes(None, None, None)
+                .middle_byte_size_ceil(pv)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn should_size_bounds_that_fit_as_the_non_saturating_methods_do() {
+        let pv = PlatformVersion::latest();
+        for property_type in [
+            string_sizes(Some(1), Some(10), None),
+            string_sizes(None, Some(16383), None),
+            string_sizes(None, None, None),
+            // `maxBytes` bounds a long string below u16::MAX
+            string_sizes(None, Some(20000), Some(100)),
+            DocumentPropertyType::U64,
+            DocumentPropertyType::Identifier,
+            DocumentPropertyType::Array(ArrayItemType::Integer),
+        ] {
+            assert_eq!(
+                property_type.saturating_min_byte_size(pv).unwrap(),
+                property_type.min_byte_size(pv).unwrap(),
+                "{property_type:?}"
+            );
+            assert_eq!(
+                property_type.saturating_max_byte_size(pv).unwrap(),
+                property_type.max_byte_size(pv).unwrap(),
+                "{property_type:?}"
+            );
+            assert_eq!(
+                property_type.saturating_middle_byte_size_ceil(pv).unwrap(),
+                property_type.middle_byte_size_ceil(pv).unwrap(),
+                "{property_type:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_saturate_the_byte_bounds_of_a_typed_array_of_long_strings() {
+        let pv = PlatformVersion::latest();
+        let typed_array = DocumentPropertyType::TypedArray(TypedArrayProperty {
+            item_type: Box::new(string_sizes(None, Some(20000), None)),
+            item_constraints: Default::default(),
+            min_items: None,
+            max_items: 2,
+            unique_items: false,
+        });
+        assert!(matches!(
+            typed_array.max_byte_size(pv),
+            Err(ProtocolError::Overflow(_))
+        ));
+        // No element at least: the one byte count
+        assert_eq!(typed_array.saturating_min_byte_size(pv).unwrap(), Some(1));
+        assert_eq!(
+            typed_array.saturating_max_byte_size(pv).unwrap(),
+            Some(u16::MAX)
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -7200,6 +7479,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         inner_fields.insert(
@@ -7211,6 +7492,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7265,6 +7548,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7287,6 +7572,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         inner_fields.insert(
@@ -7298,6 +7585,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7735,6 +8024,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7772,6 +8063,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -7783,6 +8076,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -7803,6 +8098,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -7814,6 +8111,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -8109,6 +8408,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8120,6 +8421,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8183,6 +8486,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8194,6 +8499,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8283,6 +8590,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8294,6 +8603,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8565,6 +8876,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8596,6 +8909,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         // Second field is required
@@ -8608,6 +8923,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8728,6 +9045,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8748,6 +9067,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -9057,6 +9378,8 @@ mod tests {
                 required_since: None,
                 distinct_from: None,
                 encrypted_for: None,
+                generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -9323,6 +9646,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            generated_from: None,
+            revealed_reference: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
@@ -9346,6 +9671,8 @@ mod tests {
             required_since: None,
             distinct_from: None,
             encrypted_for: None,
+            generated_from: None,
+            revealed_reference: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
@@ -9992,6 +10319,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "bySubmittedCharter".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             }
             .to_string(),
@@ -10037,6 +10366,8 @@ mod tests {
         let lookup = DocumentReferenceLookup {
             index: "bySubmittedCharter".to_string(),
             keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+            minimum_age_blocks: None,
+            consume: false,
         };
         let target = DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id: None,
@@ -10369,6 +10700,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             },
             DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
@@ -10400,6 +10733,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             },
         ];
