@@ -92,8 +92,8 @@ impl Drive {
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
-        mut any_fields_null: bool,
-        mut all_fields_null: bool,
+        any_fields_null: bool,
+        all_fields_null: bool,
         parent_value_tree_type: TreeType,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
@@ -324,8 +324,10 @@ impl Drive {
                 &platform_version.drive,
             )?;
 
-            any_fields_null |= document_index_field.is_empty();
-            all_fields_null &= document_index_field.is_empty();
+            // The flags follow this sub-level's own path: a sibling's
+            // missing value says nothing about the indexes below this one.
+            let sub_level_any_fields_null = any_fields_null || document_index_field.is_empty();
+            let sub_level_all_fields_null = all_fields_null && document_index_field.is_empty();
 
             // we push the actual value of the index path
             sub_level_index_path_info.push(document_index_field)?;
@@ -338,8 +340,8 @@ impl Drive {
                 document_and_contract_info,
                 sub_level_index_path_info,
                 sub_level,
-                any_fields_null,
-                all_fields_null,
+                sub_level_any_fields_null,
+                sub_level_all_fields_null,
                 value_tree_type,
                 previous_batch_operations,
                 storage_flags,

@@ -56,7 +56,7 @@ const OWNER_1: [u8; 32] = [0x11; 32];
 const OWNER_2: [u8; 32] = [0x22; 32];
 const OWNER_3: [u8; 32] = [0x33; 32];
 
-fn setup(path: &str) -> (Drive, DataContract) {
+pub(super) fn setup(path: &str) -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let contract = json_document_to_contract(path, true, platform_version())
         .expect("expected to parse the fixture");
@@ -74,7 +74,7 @@ fn setup(path: &str) -> (Drive, DataContract) {
 }
 
 /// `[DataContractDocuments, contract_id, 1, <doctype>]`.
-fn doctype_path(contract: &DataContract, doctype: &str) -> Vec<Vec<u8>> {
+pub(super) fn doctype_path(contract: &DataContract, doctype: &str) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::DataContractDocuments as u8],
         contract.id().as_bytes().to_vec(),
@@ -86,9 +86,9 @@ fn doctype_path(contract: &DataContract, doctype: &str) -> Vec<Vec<u8>> {
 /// Every element at or below `path`, as (path, key, element kind, count).
 /// Kinds and counts, not whole elements: a merk's root key depends on the
 /// order its keys were inserted in, and storage flags on when.
-type Snapshot = BTreeSet<(Vec<Vec<u8>>, Vec<u8>, String, u64)>;
+pub(super) type Snapshot = BTreeSet<(Vec<Vec<u8>>, Vec<u8>, String, u64)>;
 
-fn snapshot(drive: &Drive, path: Vec<Vec<u8>>, skip_primary_key: bool) -> Snapshot {
+pub(super) fn snapshot(drive: &Drive, path: Vec<Vec<u8>>, skip_primary_key: bool) -> Snapshot {
     fn walk(drive: &Drive, path: Vec<Vec<u8>>, skip: Option<usize>, out: &mut Snapshot) {
         let mut query = Query::new();
         query.insert_all();
@@ -126,7 +126,7 @@ fn snapshot(drive: &Drive, path: Vec<Vec<u8>>, skip_primary_key: bool) -> Snapsh
 }
 
 /// The keys directly under `path`.
-fn keys_under(drive: &Drive, path: &[Vec<u8>]) -> Vec<Vec<u8>> {
+pub(super) fn keys_under(drive: &Drive, path: &[Vec<u8>]) -> Vec<Vec<u8>> {
     let mut query = Query::new();
     query.insert_all();
     let path_query = PathQuery::new(path.to_vec(), SizedQuery::new(query, None, None));
@@ -146,7 +146,7 @@ fn keys_under(drive: &Drive, path: &[Vec<u8>]) -> Vec<Vec<u8>> {
         .collect()
 }
 
-fn with_key(path: &[Vec<u8>], key: &[u8]) -> Vec<Vec<u8>> {
+pub(super) fn with_key(path: &[Vec<u8>], key: &[u8]) -> Vec<Vec<u8>> {
     let mut path = path.to_vec();
     path.push(key.to_vec());
     path
@@ -464,7 +464,7 @@ fn insert_document(
     )
 }
 
-fn replace_document(
+pub(super) fn replace_document(
     drive: &Drive,
     contract: &DataContract,
     doctype: &str,

@@ -1531,6 +1531,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     queries: it could only skip on an indexOnly index's first property,
 ///     where both rules agree.
 ///
+/// 59. **Null flags follow each index's own path**: the v2 index-level
+///     insert and delete walkers give each sub-level the null flags of its
+///     parent and its own value. They carried the flags from one sibling
+///     sub-level into the next, so a unique index could store its entry in
+///     the `[0]` tree meant for a missing value, and a `nullSearchable:
+///     false` index an entry for a document missing all of its values,
+///     because of another index's values; update 1 and the document cost
+///     model already judged each index alone. Where the earlier rule and
+///     this one disagree on a unique index, the v2 delete walker reads the
+///     stored `[0]`, so an entry written before still deletes.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

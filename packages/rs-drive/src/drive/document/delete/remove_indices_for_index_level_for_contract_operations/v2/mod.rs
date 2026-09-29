@@ -4,7 +4,7 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 
-use dpp::data_contract::document_type::IndexLevel;
+use dpp::data_contract::document_type::{IndexLevel, IndexType};
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
@@ -21,6 +21,8 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::object_size_info::DriveKeyInfo::KeyRef;
 
 use crate::drive::Drive;
+use crate::util::grove_operations::DirectQueryType;
+use crate::util::object_size_info::PathInfo::PathAsVec;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 
 use crate::error::fee::FeeError;
@@ -46,6 +48,11 @@ impl Drive {
     /// when deleting trees and subtracts the stored (zero) feature
     /// contribution, so only the tree-type derivation needs to mirror
     /// the insert side.
+    ///
+    /// `legacy_any_fields_null` is the null flag as walkers before protocol
+    /// version 14 carried it: from one sibling sub-level into the next, so
+    /// a missing value in one sibling marked every later sibling's path. It
+    /// only decides where to look for an entry written that way.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_indices_for_index_level_for_contract_operations_v2(
@@ -53,8 +60,9 @@ impl Drive {
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
-        mut any_fields_null: bool,
-        mut all_fields_null: bool,
+        any_fields_null: bool,
+        all_fields_null: bool,
+        mut legacy_any_fields_null: bool,
         parent_value_tree_type: TreeType,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
@@ -96,11 +104,40 @@ impl Drive {
                 &index_type.skip_if_absent_properties,
                 &document_and_contract_info.owned_document_info.document_info,
             )? {
+                // A unique index holds a document's entry as the bare
+                // reference at `[0]` when none of the index's own values is
+                // missing. The earlier rule could put it in the `[0]` tree
+                // instead; where the two disagree, the stored element says
+                // which, and an estimate assumes the tree, the larger
+                // delete. The all-null flag, carried the same way, could
+                // only add an entry to a `nullSearchable: false` index, and
+                // no stored contract has that shape.
+                let layout_any_fields_null = if legacy_any_fields_null
+                    && !any_fields_null
+                    && index_type.index_type == IndexType::UniqueIndex
+                    && index_type.terminal.is_none()
+                {
+                    match &index_path_info {
+                        PathAsVec(path) if estimated_costs_only_with_layer_info.is_none() => self
+                            .grove_get_raw_optional(
+                                path.as_slice().into(),
+                                &[0],
+                                DirectQueryType::StatefulDirectQuery,
+                                transaction,
+                                batch_operations,
+                                &platform_version.drive,
+                            )?
+                            .is_some_and(|element| element.is_any_tree()),
+                        _ => true,
+                    }
+                } else {
+                    any_fields_null
+                };
                 self.remove_reference_for_index_level_for_contract_operations(
                     document_and_contract_info,
                     index_path_info.clone(),
                     index_type,
-                    any_fields_null,
+                    layout_any_fields_null,
                     all_fields_null,
                     storage_flags,
                     previous_batch_operations,
@@ -183,8 +220,10 @@ impl Drive {
             // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
             // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
-            any_fields_null |= document_index_field.is_empty();
-            all_fields_null &= document_index_field.is_empty();
+            // The flags follow this sub-level's own path, as on insert.
+            let sub_level_any_fields_null = any_fields_null || document_index_field.is_empty();
+            let sub_level_all_fields_null = all_fields_null && document_index_field.is_empty();
+            legacy_any_fields_null |= document_index_field.is_empty();
 
             // we push the actual value of the index path
             sub_level_index_path_info.push(document_index_field)?;
@@ -194,8 +233,9 @@ impl Drive {
                 document_and_contract_info,
                 sub_level_index_path_info,
                 sub_level,
-                any_fields_null,
-                all_fields_null,
+                sub_level_any_fields_null,
+                sub_level_all_fields_null,
+                legacy_any_fields_null,
                 value_tree_type,
                 storage_flags,
                 previous_batch_operations,

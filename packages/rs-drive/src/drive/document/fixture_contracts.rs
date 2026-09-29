@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 /// ranked and chained indexes, time windows, indexOnly types with
 /// terminals, flat and preallocated indexes, and `skipIfAbsent` indexes
 /// skipping below their first property on indexOnly and stored types.
-pub(crate) const CONTRACTS: [&str; 21] = [
+pub(crate) const CONTRACTS: [&str; 22] = [
     "tests/supporting_files/contract/family/family-contract.json",
     "tests/supporting_files/contract/family/family-contract-fields-optional.json",
     "tests/supporting_files/contract/family/family-contract-countable.json",
@@ -36,6 +36,7 @@ pub(crate) const CONTRACTS: [&str; 21] = [
     "tests/supporting_files/contract/grades/grades-compound-ranked-contract.json",
     "tests/supporting_files/contract/skip-if-absent/skip-likes-contract.json",
     "tests/supporting_files/contract/skip-if-absent/skip-posts-contract.json",
+    "tests/supporting_files/contract/sibling-nulls/sibling-nulls-contract.json",
 ];
 
 /// Leaves out the optional properties of the type's unique indexes, so a
