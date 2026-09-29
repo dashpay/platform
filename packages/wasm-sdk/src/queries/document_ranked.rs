@@ -22,7 +22,8 @@
 
 use crate::error::WasmSdkError;
 use crate::queries::document::{
-    json_to_platform_value, parse_time_range_clause, parse_where_clause,
+    apply_integer_range_selections, json_to_platform_value, parse_time_range_clause,
+    parse_where_clause,
 };
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
@@ -218,6 +219,18 @@ export interface DocumentsRankedQuery {
     startMs?: number;
     grid?: { range: number; step: number; phase?: number };
   }[];
+
+  /**
+   * Optional integer-range window selection — at most one entry, pinning
+   * the covering bucketed index's window (same shape and semantics as
+   * `DocumentsQuery.integerRange`): the window starting at `start`.
+   * @default []
+   */
+  integerRange?: {
+    field: string;
+    start: number | string;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
 }
 
 /**
@@ -324,6 +337,18 @@ export interface DocumentsHavingQuery {
     field: string;
     selector: "newest" | "oldest" | "byStart";
     startMs?: number;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
+
+  /**
+   * Optional integer-range window selection — at most one entry, pinning
+   * the covering bucketed index's window (same shape and semantics as
+   * `DocumentsQuery.integerRange`): the window starting at `start`.
+   * @default []
+   */
+  integerRange?: {
+    field: string;
+    start: number | string;
     grid?: { range: number; step: number; phase?: number };
   }[];
 }
@@ -535,6 +560,10 @@ struct DocumentsRankedQueryInput {
     /// `timeRange` member (`{ field, selector, startMs?, grid? }`).
     #[serde(rename = "timeRange", default)]
     time_range: Option<Vec<JsonValue>>,
+    /// Integer-range window selections — same shape as `DocumentsQuery`'s
+    /// `integerRange` member (`{ field, start, grid? }`).
+    #[serde(rename = "integerRange", default)]
+    integer_range: Option<Vec<JsonValue>>,
 }
 
 #[derive(Deserialize)]
@@ -554,6 +583,10 @@ struct DocumentsHavingQueryInput {
     /// `timeRange` member (`{ field, selector, startMs?, grid? }`).
     #[serde(rename = "timeRange", default)]
     time_range: Option<Vec<JsonValue>>,
+    /// Integer-range window selections — same shape as `DocumentsQuery`'s
+    /// `integerRange` member (`{ field, start, grid? }`).
+    #[serde(rename = "integerRange", default)]
+    integer_range: Option<Vec<JsonValue>>,
 }
 
 /// Translate the JS aggregate union into rs-drive's `SELECT` projection.
@@ -847,6 +880,7 @@ fn apply_ranked_shape(
 
     let query = apply_index_pins(query, input.where_clauses.as_deref())?;
     let query = apply_time_range_selections(query, input.time_range.as_deref())?;
+    let query = apply_integer_range_selections(query, input.integer_range.as_deref())?;
 
     assert_ranked_shape(&query, platform_version)?;
     Ok(query)
@@ -886,6 +920,7 @@ fn apply_having_shape(
 
     let query = apply_index_pins(query, input.where_clauses.as_deref())?;
     let query = apply_time_range_selections(query, input.time_range.as_deref())?;
+    let query = apply_integer_range_selections(query, input.integer_range.as_deref())?;
 
     assert_having_shape(&query, platform_version)?;
     Ok(query)
@@ -1561,6 +1596,7 @@ mod tests {
     ) -> DocumentsRankedQueryInput {
         DocumentsRankedQueryInput {
             time_range: None,
+            integer_range: None,
             data_contract_id: any_contract_id(),
             document_type_name: DOC_TYPE.to_string(),
             group_by: group_by.to_string(),
@@ -1580,6 +1616,7 @@ mod tests {
     ) -> DocumentsHavingQueryInput {
         DocumentsHavingQueryInput {
             time_range: None,
+            integer_range: None,
             data_contract_id: any_contract_id(),
             document_type_name: DOC_TYPE.to_string(),
             group_by: GROUP_BY.to_string(),

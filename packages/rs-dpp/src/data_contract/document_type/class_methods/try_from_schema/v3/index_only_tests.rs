@@ -458,6 +458,51 @@ fn rejects_only_bucketed_indexes() {
     );
 }
 
+/// A `like` carrying a rating, the likes schema plus a required integer
+/// `stars` property (0..=5, so a `u8`).
+fn rated_likes_schema() -> Value {
+    let mut schema = likes_schema();
+    schema
+        .get_mut("properties")
+        .expect("properties accessible")
+        .expect("properties present")
+        .insert_at_end(
+            "stars".into(),
+            platform_value!({ "type": "integer", "minimum": 0, "maximum": 5, "position": 2 }),
+        )
+        .expect("the stars property applies");
+    schema
+        .set_value("required", platform_value!(["hashtag", "postId", "stars"]))
+        .expect("required applies");
+    schema
+}
+
+#[test]
+fn should_reject_integer_range_on_an_index_only_type() {
+    // An indexOnly entry is keyed by (prefix values, terminal); a bucketed
+    // level holds window starts, so two likes that differ only in `stars`
+    // would claim the same entry in every window they share.
+    let mut schema = rated_likes_schema();
+    schema
+        .get_mut("indices")
+        .expect("indices accessible")
+        .expect("indices present")
+        .as_array_mut()
+        .expect("indices is an array")
+        .push(platform_value!({
+            "name": "byStarsPost",
+            "properties": [{ "stars": "asc" }, { "postId": "asc" }],
+            "terminal": "$ownerId",
+            "integerRange": { "on": "stars", "range": 2u64, "step": 2u64 },
+            "countable": true,
+            "rangeCountable": true
+        }));
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "declares integerRange",
+    );
+}
+
 /// The "trending posts" contract shape: a like is an indexOnly entry, and
 /// trending means posts with many likes inside a time window — so the
 /// window timestamp is the LIKE's `$createdAt`, not the post's. Windowed

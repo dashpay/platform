@@ -1546,7 +1546,29 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     queries: it could only skip on an indexOnly index's first property,
 ///     where both rules agree.
 ///
-/// 60. **A `refersTo` may find its document by a hash the document reveals**:
+/// 60. **Integer-range indexes**: an index can declare an `integerRange`
+///     transform (`on`, `range`, `step`, optional `phase < step`) that
+///     buckets a required user integer property of at most 64 bits into
+///     windows starting at `phase + k * step`; a start below the lowest
+///     value of the property's integer type is clamped to it, so every
+///     value is in at least one window. It shares the time-range machinery:
+///     the grid-qualified level key, the walkers' fan-out (the insert, delete
+///     and update walkers read one `IndexBucketing`), the overlap cap
+///     (`SystemLimits::max_time_range_overlap_factor`) and the resolution
+///     provenance that keeps raw queries off a bucketed index. The v1
+///     `getDocuments` handler resolves the new `IN_INTEGER_RANGE` operator,
+///     a typed `IntegerRangeSelection` naming one window by its start, to a
+///     window-start equality from the query alone. `unique: true` needs
+///     non-overlapping windows; the uniqueness probe (v1) looks in the
+///     candidate's window and lets a document change its value within its
+///     own window. An indexOnly type cannot declare one (its entries would
+///     collide across rows that share a window); neither kind of bucketed
+///     index can be a `refersTo` lookup target or a `propertyConstraints`
+///     answering index; a nested source must sit in required objects and
+///     the grid-qualified level key fits 255 bytes; and a document `ttl`
+///     prices every window an integer-range index writes.
+///
+/// 61. **A `refersTo` may find its document by a hash the document reveals**:
 ///     a `propertyAgreement` pair may be a function, keyed by the referenced
 ///     property, `"<referenced property>": { "function": "sys.hash.sha256d",
 ///     "params": [...] }` (meta-schema v3 `agreementFunction`, parser
@@ -1632,9 +1654,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
 /// `offset`; the ranked response is an additive `ResultData.ranked`
 /// variant, whose `skipped` field is likewise additive; and the v1
-/// where-clause operator enum gains `IN_TIME_RANGE = 11`, which pre-v14
-/// servers reject as an unknown operator rather than misread (the v0 wire
-/// has no time-range operator at all).
+/// where-clause operator enum gains `IN_TIME_RANGE = 11` and
+/// `IN_INTEGER_RANGE = 12`, which pre-v14 servers reject as unknown
+/// operators rather than misread (the v0 wire has neither).
 /// Contract-bound authentication keys activate through contract-bounds validation v2,
 /// identity-signature validation v1 and batch advanced-structure v1. Identity creation
 /// validates key bounds (state v1) and identity-update state v1 retains the contract

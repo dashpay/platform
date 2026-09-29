@@ -139,7 +139,7 @@ A create missing a param, or with a value holding its separator, is refused befo
 
 **On the referenced side**, refused with `InvalidContractStructure` (10231) for a document type of the declaring contract and with `ReferencedDocumentLookupInvalidError` (40137) for one of another contract:
 
-- The index exists and is `unique`, so a key finds at most one document. It does not bucket its first property by a `timeRange`, the referenced type is not `indexOnly`, and no index property is `transient`.
+- The index exists and is `unique`, so a key finds at most one document. It does not bucket its first property by a `timeRange` or an `integerRange`, the referenced type is not `indexOnly`, and no index property is `transient`.
 - `keys` maps every property of the index exactly once, by its name on the referenced side (system properties such as `$ownerId` included), in any order, and nothing else.
 - Each source holds the same type of value as the index property it fills. `"."` and `"$ownerId"` are identifiers.
 - The key stays with the document it found. Every schema property of the index must be fixed once written: the referenced type is immutable (`documentsMutable: false`), or the property's top-level property is listed under `immutable`. `$ownerId` may be a key part only where the referenced documents can be neither transferred nor traded. `$updatedAt` and its block height forms may be one only where they can be neither replaced, transferred nor traded, and `$transferredAt` and its forms only where they can be neither transferred nor traded. `$id`, `$creatorId`, `$createdAt` and its forms never change.

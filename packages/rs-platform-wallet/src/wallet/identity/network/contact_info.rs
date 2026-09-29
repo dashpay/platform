@@ -114,6 +114,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     value: platform_value!(identity_id),
                 }],
                 time_range_clauses: vec![],
+                integer_range_clauses: vec![],
                 sub_queries: vec![],
                 group_by: vec![],
                 having: vec![],

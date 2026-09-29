@@ -439,8 +439,9 @@ impl DocumentReferenceLookup {
     /// Why this lookup, declared on a property of `declaring`, cannot resolve
     /// in `referenced`, the referenced document type; `None` when it can. The
     /// index must exist and be unique, so the key finds at most one document;
-    /// it may not bucket a timestamp (`timeRange`), since its first key part
-    /// is then a bucket start no referring value names; the referenced type
+    /// it may not bucket its first property (`timeRange`, `integerRange`),
+    /// since its first key part is then a window start no referring value
+    /// names; the referenced type
     /// may not be `indexOnly`; no index property may be transient, a value
     /// no stored document holds; `keys` must map every property of the index
     /// exactly once and nothing else; and each source must hold the same kind
@@ -466,12 +467,13 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
-        if index.time_range.is_some() {
+        if let Some(bucketing) = index.bucketing() {
             return Some(format!(
-                "index \"{}\" of \"{}\" buckets its first property by a timeRange, so no \
+                "index \"{}\" of \"{}\" buckets its first property by a {}, so no \
                  referring value could name a key of it",
                 self.index,
-                referenced.name()
+                referenced.name(),
+                bucketing.keyword()
             ));
         }
         if referenced.index_only() {

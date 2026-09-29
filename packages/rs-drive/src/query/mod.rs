@@ -1,6 +1,8 @@
 #[cfg(feature = "server")]
 use dpp::data_contract::document_type::DocumentPropertyType;
-use dpp::data_contract::document_type::TimeRangeTransform;
+use dpp::data_contract::document_type::{
+    IndexBucketing, IntegerRangeTransform, TimeRangeTransform,
+};
 use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -828,29 +830,135 @@ impl TimeRangeGridSpec {
     }
 }
 
-/// Resolution provenance for one `IN_TIME_RANGE` clause: the field the
-/// selector named and the exact grid the resolution used. Recorded by the
-/// resolver's caller on the query (see
-/// [`DriveDocumentQuery::resolved_time_ranges`]) and consumed by the index
-/// pickers through [`index_admissible_for_resolved_time_range`], which pins
-/// selection to the index carrying exactly this grid — a field may be
-/// bucketed by several grids, so the field name alone no longer identifies
-/// the index the resolution was computed against.
+/// Resolution provenance for one window selection — an `IN_TIME_RANGE` or
+/// an `IN_INTEGER_RANGE` clause: the field the selection named and the
+/// exact grid the resolution used. Recorded by the resolver's caller on the
+/// query (see [`DriveDocumentQuery::resolved_time_ranges`]) and consumed by
+/// the index pickers through [`index_admissible_for_resolved_time_range`],
+/// which pins selection to the index carrying exactly this grid — a field
+/// may be bucketed by several grids, so the field name alone no longer
+/// identifies the index the resolution was computed against.
+///
+/// Named for the first kind of grid; an `integerRange` resolution rides the
+/// same provenance, since both kinds store window starts under a
+/// grid-qualified level and every admissibility rule is shared.
 #[cfg(any(feature = "server", feature = "verify"))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedTimeRange {
-    /// The grid the bucket start was computed from. The transform carries its
-    /// own source field, so the provenance cannot name a field the grid does
-    /// not bucket — [`Self::field`] reads it from here.
-    pub transform: TimeRangeTransform,
+    /// The grid the window start was computed from. The grid carries its own
+    /// source field, so the provenance cannot name a field the grid does not
+    /// bucket — [`Self::field`] reads it from here.
+    pub transform: IndexBucketing,
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
 impl ResolvedTimeRange {
     /// The bucketed source field the resolved equality is on — always the
-    /// transform's own source.
+    /// grid's own source.
     pub fn field(&self) -> &str {
-        &self.transform.source
+        self.transform.source()
+    }
+
+    /// The kind of selection the equality was resolved from, as refusals
+    /// name it: `"time-range"` or `"integer-range"`.
+    pub fn kind(&self) -> &'static str {
+        match self.transform {
+            IndexBucketing::Time(_) => "time-range",
+            IndexBucketing::Integer(_) => "integer-range",
+        }
+    }
+
+    /// The where operator that selects a window of this kind.
+    pub fn operator(&self) -> &'static str {
+        match self.transform {
+            IndexBucketing::Time(_) => "IN_TIME_RANGE",
+            IndexBucketing::Integer(_) => "IN_INTEGER_RANGE",
+        }
+    }
+}
+
+/// How a window selection names its kind of grid in refusals.
+#[cfg(any(feature = "server", feature = "verify"))]
+struct SelectionGridKind {
+    /// `"time-range"` or `"integer-range"`.
+    kind: &'static str,
+    /// The where operator the selection rides.
+    operator: &'static str,
+    /// The unit note of the grid's parameters, e.g. `", in seconds,"`.
+    units: &'static str,
+}
+
+/// The grid a window selection on `field` resolves against, shared by the
+/// time and integer resolvers so they pick grids by the same rules: the
+/// distinct grids of `field` (indexes sharing a grid share its storage
+/// level too, so they dedupe), the named one when `spec` names one, else
+/// the only one — a bare selection on a field with several grids is
+/// ambiguous and refused.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn select_selection_grid<'a, T>(
+    document_type: &'a DocumentTypeRef<'_>,
+    field: &str,
+    grid_of: impl Fn(&'a Index) -> Option<&'a T>,
+    spec: Option<(impl Fn(&T) -> bool, String)>,
+    names: SelectionGridKind,
+) -> Result<&'a T, Error>
+where
+    T: BucketSource + PartialEq,
+{
+    let mut grids: Vec<&'a T> = Vec::new();
+    for index in document_type.indexes().values() {
+        if let Some(transform) = grid_of(index).filter(|transform| transform.source() == field) {
+            if !grids.contains(&transform) {
+                grids.push(transform);
+            }
+        }
+    }
+    let SelectionGridKind {
+        kind,
+        operator,
+        units,
+    } = names;
+    let Some(first) = grids.first().copied() else {
+        return Err(Error::Query(
+            QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                "no {kind} index is defined on field \"{field}\""
+            )),
+        ));
+    };
+    match spec {
+        Some((matches, described)) => grids
+            .into_iter()
+            .find(|transform| matches(transform))
+            .ok_or(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "no {kind} index on \"{field}\" declares the grid {described}"
+            )))),
+        None if grids.len() > 1 => Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "field \"{field}\" is bucketed by {} different {kind} grids; the {operator} \
+             selection must name one in its `grid` (range/step/phase{units} as the contract \
+             declares them)",
+            grids.len()
+        )))),
+        None => Ok(first),
+    }
+}
+
+/// The bucketed source field of a grid, for [`select_selection_grid`].
+#[cfg(any(feature = "server", feature = "verify"))]
+trait BucketSource {
+    fn source(&self) -> &str;
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl BucketSource for TimeRangeTransform {
+    fn source(&self) -> &str {
+        &self.source
+    }
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl BucketSource for IntegerRangeTransform {
+    fn source(&self) -> &str {
+        &self.source
     }
 }
 
@@ -889,50 +997,25 @@ pub fn resolve_time_range_bucket_clause(
     document_type: DocumentTypeRef,
     block_time_ms: u64,
 ) -> Result<(WhereClause, ResolvedTimeRange), Error> {
-    // Distinct grids bucketing `field` — several indexes may share one grid
-    // (they share the storage level too), so dedupe by transform.
-    let mut grids: Vec<&TimeRangeTransform> = Vec::new();
-    for index in document_type.indexes().values() {
-        if let Some(transform) = index
-            .time_range
-            .as_ref()
-            .filter(|transform| transform.source == field)
-        {
-            if !grids.contains(&transform) {
-                grids.push(transform);
-            }
-        }
-    }
-    if grids.is_empty() {
-        return Err(Error::Query(
-            QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
-                "no time-range index is defined on field \"{}\"",
-                field
-            )),
-        ));
-    }
-
-    let transform = match grid {
-        Some(spec) => *grids
-            .iter()
-            .find(|transform| spec.matches(transform))
-            .ok_or(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "no time-range index on \"{}\" declares the grid range={}s step={}s phase={}s",
-                field, spec.range_seconds, spec.step_seconds, spec.phase_seconds
-            ))))?,
-        None => {
-            if grids.len() > 1 {
-                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                    "field \"{}\" is bucketed by {} different grids; the IN_TIME_RANGE \
-                     selection must name one in its `grid` (range/step/phase, in seconds, \
-                     as the contract declares them)",
-                    field,
-                    grids.len()
-                ))));
-            }
-            grids[0]
-        }
-    };
+    let transform = select_selection_grid(
+        &document_type,
+        field,
+        |index| index.time_range.as_ref(),
+        grid.map(|spec| {
+            (
+                move |transform: &TimeRangeTransform| spec.matches(transform),
+                format!(
+                    "range={}s step={}s phase={}s",
+                    spec.range_seconds, spec.step_seconds, spec.phase_seconds
+                ),
+            )
+        }),
+        SelectionGridKind {
+            kind: "time-range",
+            operator: "IN_TIME_RANGE",
+            units: ", in seconds,",
+        },
+    )?;
 
     let bucket_start = match selector {
         TimeRangeSelector::Newest => transform.newest_active_start(block_time_ms),
@@ -990,18 +1073,125 @@ pub fn resolve_time_range_bucket_clause(
             value: Value::U64(bucket_start),
         },
         ResolvedTimeRange {
-            transform: transform.clone(),
+            transform: transform.clone().into(),
+        },
+    ))
+}
+
+/// A concrete integer grid, matching a contract's `integerRange`
+/// declaration verbatim (`range` / `step` / `phase`).
+///
+/// An `IN_INTEGER_RANGE` selection carries one when the queried field is
+/// bucketed by more than one grid; with a single grid it may be omitted.
+#[cfg(any(feature = "server", feature = "verify"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct IntegerRangeGridSpec {
+    /// Window length, as the contract declares it.
+    pub range: u64,
+    /// Interval between window starts, as the contract declares it.
+    pub step: u64,
+    /// Grid alignment (0 when the contract omits `phase`).
+    pub phase: u64,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl IntegerRangeGridSpec {
+    /// Whether this spec names exactly the given transform's grid.
+    pub fn matches(&self, transform: &IntegerRangeTransform) -> bool {
+        self.range == transform.range
+            && self.step == transform.step
+            && self.phase == transform.phase
+    }
+}
+
+/// Resolves an `IN_INTEGER_RANGE` selection on `field` — the window of an
+/// `integerRange` grid starting at `start` — into a concrete equality
+/// [`WhereClause`] on the bucketed source field, plus the
+/// [`ResolvedTimeRange`] provenance callers must record on the query (see
+/// [`DriveDocumentQuery::resolved_time_ranges`]).
+///
+/// The integer counterpart of [`resolve_time_range_bucket_clause`]'s
+/// `byStart`: the window is named absolutely, so the server and the proof
+/// verifier resolve it from the query alone, with no clock. `start` must be
+/// an integer that names a window of the grid (a grid start the property's
+/// type can hold, or the type's minimum for the clamped bottom window — see
+/// [`IntegerRangeTransform::is_window_start`]); anything else is rejected
+/// rather than snapped. An empty window is a provable empty answer.
+///
+/// `grid` selects among several integer-range indexes on the same field:
+/// `None` is accepted only while exactly one grid buckets the field.
+///
+/// The equality's value is the start as an integer; the query path
+/// serializes it through the schema exactly like a raw value of the field,
+/// which is how the walkers stored it.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn resolve_integer_range_bucket_clause(
+    field: &str,
+    start: &Value,
+    grid: Option<IntegerRangeGridSpec>,
+    document_type: DocumentTypeRef,
+) -> Result<(WhereClause, ResolvedTimeRange), Error> {
+    let transform = select_selection_grid(
+        &document_type,
+        field,
+        |index| index.integer_range.as_ref(),
+        grid.map(|spec| {
+            (
+                move |transform: &IntegerRangeTransform| spec.matches(transform),
+                format!(
+                    "range={} step={} phase={}",
+                    spec.range, spec.step, spec.phase
+                ),
+            )
+        }),
+        SelectionGridKind {
+            kind: "integer-range",
+            operator: "IN_INTEGER_RANGE",
+            units: "",
+        },
+    )?;
+
+    let start = start.as_integer::<i128>().ok_or(Error::Query(
+        QuerySyntaxError::InvalidWhereClauseComponents(
+            "an IN_INTEGER_RANGE selection's start must be an integer",
+        ),
+    ))?;
+    if !transform.is_window_start(start) {
+        return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "{} on \"{}\" is not a window start of the grid range={} step={} phase={}: starts \
+             are phase + k*step within the property's integer type (or the type's minimum, for \
+             the clamped bottom window), and an off-grid start is rejected rather than snapped",
+            start, field, transform.range, transform.step, transform.phase
+        ))));
+    }
+    // `is_window_start` checked the key type holds the start, so it always
+    // converts; the one conversion the uniqueness probe shares.
+    let value = transform.key_type.value_of(start).ok_or(Error::Drive(
+        DriveError::CorruptedCodeExecution("a window start is held by its key type"),
+    ))?;
+
+    Ok((
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::Equal,
+            value,
+        },
+        ResolvedTimeRange {
+            transform: transform.clone().into(),
         },
     ))
 }
 
 /// Whether `index` may serve a query whose equality clauses on
 /// `resolved_time_ranges` were produced by
-/// [`resolve_time_range_bucket_clause`].
+/// [`resolve_time_range_bucket_clause`] or
+/// [`resolve_integer_range_bucket_clause`].
 ///
-/// A time-range index does not store the source field's raw values: under its
-/// grid-qualified first level it stores bucket *starts*, and one document is
-/// stored once per bucket that contains its timestamp. So a bucketed index, a
+/// A bucketed (time- or integer-range) index does not store the source
+/// field's raw values: under its grid-qualified first level it stores window
+/// *starts*, and one document is stored once per window that contains its
+/// value. So a bucketed index, a
 /// raw index and another grid's bucketed index are never interchangeable, and
 /// every mismatch is silent — a validly-proven wrong answer rather than an
 /// error:
@@ -1027,17 +1217,14 @@ pub fn index_admissible_for_resolved_time_range(
     resolved_time_ranges: &[ResolvedTimeRange],
 ) -> bool {
     match resolved_time_ranges {
-        [] => index.time_range.is_none(),
-        // The provenance's transform must equal the candidate's — grid AND
-        // source field, since the transform carries its own source. The
+        [] => !index.is_bucketed(),
+        // The provenance's grid must equal the candidate's — kind, grid AND
+        // source field, since the grid carries its own source. The
         // provenance cannot name a field its grid does not bucket
-        // ([`ResolvedTimeRange::field`] is derived from the transform), so a
-        // fabricated field/transform pair is unrepresentable rather than
-        // guarded against.
-        [resolved] => index
-            .time_range
-            .as_ref()
-            .is_some_and(|transform| *transform == resolved.transform),
+        // ([`ResolvedTimeRange::field`] is derived from the grid), so a
+        // fabricated field/grid pair is unrepresentable rather than guarded
+        // against.
+        [resolved] => index.is_bucketed_by(&resolved.transform),
         _ => false,
     }
 }
@@ -1214,8 +1401,9 @@ pub fn validate_resolved_time_range_clause_shapes(
             } else {
                 return Err(Error::Query(
                     QuerySyntaxError::InvalidWhereClauseComponents(
-                        "a time-range-resolved field may only carry the single equality its \
-                         resolution produced, not a range or In clause",
+                        "a field resolved from a window selection (IN_TIME_RANGE or \
+                         IN_INTEGER_RANGE) may only carry the single equality its resolution \
+                         produced, not a range or In clause",
                     ),
                 ));
             }
@@ -1223,8 +1411,9 @@ pub fn validate_resolved_time_range_clause_shapes(
         if equalities != 1 {
             return Err(Error::Query(
                 QuerySyntaxError::InvalidWhereClauseComponents(
-                    "a time-range-resolved field must carry exactly one equality clause — the \
-                     one its resolution produced",
+                    "a field resolved from a window selection (IN_TIME_RANGE or \
+                     IN_INTEGER_RANGE) must carry exactly one equality clause — the one its \
+                     resolution produced",
                 ),
             ));
         }
@@ -2706,8 +2895,9 @@ impl<'a> DriveDocumentQuery<'a> {
         // before any routing so the multiple-`In` path cannot bypass it.
         if self.resolved_time_ranges.len() > 1 {
             return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "at most one time-range selection (IN_TIME_RANGE) is supported per query; this \
-                 one resolves {:?}, and no single index can bucket more than one field",
+                "at most one window selection (IN_TIME_RANGE or IN_INTEGER_RANGE) is \
+                 supported per query; this one resolves {:?}, and no single index can bucket \
+                 more than one field",
                 self.resolved_time_ranges
             ))));
         }
@@ -2764,7 +2954,7 @@ impl<'a> DriveDocumentQuery<'a> {
         else {
             return Ok(BestIndexOutcome::NoIndexMatches(
                 match self.resolved_time_ranges.first() {
-                    // A time-range query is only servable by the index that
+                    // A window query is only servable by the index that
                     // buckets the field with the resolved grid, so "no index"
                     // here is a narrower fact than the generic case: some index
                     // buckets the field (the clause could not have been resolved
@@ -2772,9 +2962,10 @@ impl<'a> DriveDocumentQuery<'a> {
                     // of the query.
                     Some(resolved) => {
                         Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
-                            "a time-range query on \"{}\" requires an index that buckets it with \
+                            "a {} query on \"{}\" requires an index that buckets it with \
                          the resolved grid AND covers the query's other where and order-by \
                          fields; valid indexes are: {:?}",
+                            resolved.kind(),
                             resolved.field(),
                             self.document_type.indexes()
                         )))
@@ -2789,14 +2980,15 @@ impl<'a> DriveDocumentQuery<'a> {
                             .document_type
                             .indexes()
                             .values()
-                            .any(|index| index.time_range.is_some());
+                            .any(|index| index.is_bucketed());
                         if has_bucketed_index {
                             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                                 format!(
                             "query must be for valid indexes, valid indexes are: {:?}; note: \
-                             this document type's time-range (timeRange) indexes only serve \
-                             IN_TIME_RANGE selections carrying their resolution — a raw clause \
-                             on the bucketed field never binds to them",
+                             this document type's bucketed (timeRange / integerRange) indexes \
+                             only serve IN_TIME_RANGE / IN_INTEGER_RANGE selections carrying \
+                             their resolution — a raw clause on the bucketed field never binds \
+                             to them",
                             self.document_type.indexes()
                         ),
                             ))
@@ -2843,13 +3035,10 @@ impl<'a> DriveDocumentQuery<'a> {
     /// its index directly, without going through `find_best_index`.
     #[cfg(any(feature = "server", feature = "verify"))]
     pub(crate) fn validate_resolved_source_shape(&self) -> Result<(), Error> {
-        let Some(source) = self
-            .resolved_time_ranges
-            .first()
-            .map(|resolved| resolved.field())
-        else {
+        let Some(resolved) = self.resolved_time_ranges.first() else {
             return Ok(());
         };
+        let source = resolved.field();
         let has_equality_on_source = self.internal_clauses.equal_clauses.contains_key(source);
         let range_or_in_on_source = self
             .internal_clauses
@@ -2863,9 +3052,11 @@ impl<'a> DriveDocumentQuery<'a> {
                 .any(|clause| clause.field == source);
         if !has_equality_on_source || range_or_in_on_source || self.order_by.contains_key(source) {
             return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "the index on \"{source}\" buckets it into time ranges: it can only be queried \
-                 through a time-range selection (IN_TIME_RANGE, which resolves to an exact \
-                 bucket equality), not with ranges, IN, or ordering on that property"
+                "the index on \"{source}\" buckets it into {kind} windows: it can only be \
+                 queried through a {kind} selection ({operator}, which resolves to an exact \
+                 window equality), not with ranges, IN, or ordering on that property",
+                kind = resolved.kind(),
+                operator = resolved.operator(),
             ))));
         }
         Ok(())
@@ -4067,7 +4258,8 @@ mod tests {
                 step_seconds: 7_200,
                 phase_seconds: 0,
                 ttl_seconds: None,
-            },
+            }
+            .into(),
         }];
         let equality = WhereClause {
             field: "$createdAt".to_string(),

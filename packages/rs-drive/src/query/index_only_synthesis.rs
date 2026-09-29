@@ -183,9 +183,9 @@ impl DriveDocumentQuery<'_> {
             .skip_if_absent_bindings(&order_by_keys);
 
         // Bucketed indexes never serve the terminal route: only resolved
-        // time ranges may bind to bucket keys, and those opted out above,
-        // so a raw query name-matching a bucketed index's properties must
-        // not walk its grid-keyed levels. A skipIfAbsent index
+        // window selections may bind to bucket keys, and those opted out
+        // above, so a raw query name-matching a bucketed index's properties
+        // must not walk its grid-keyed levels. A skipIfAbsent index
         // additionally requires every skip property bound: it is a sparse
         // projection, and an all-unused match inside the difference budget
         // could otherwise slip through (see
@@ -912,6 +912,16 @@ impl DriveDocumentQuery<'_> {
                     .to_string(),
             )));
         }
+        if index.integer_range.is_some() {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
+                "IN_INTEGER_RANGE document queries are not supported on an indexOnly type: \
+                     the bucketed entries carry window starts rather than the property's \
+                     values, so documents cannot be synthesized from them; use the count \
+                     aggregate surfaces over the bucketed index, or query the raw entries \
+                     through a non-bucketed index"
+                    .to_string(),
+            )));
+        }
         Ok(())
     }
 
@@ -1145,10 +1155,11 @@ pub fn index_only_entry_path_and_key_from_values(
 
     // Bare property names are correct here because a bucketed index can
     // never reach this builder: it is used with the proof index (which by
-    // the contract-admission rule involves no $createdAt, so it cannot be
-    // bucketed) and with terminal-route indexes (which exclude bucketed
-    // indexes at selection). Guarded rather than assumed.
-    if index.time_range.is_some() {
+    // the contract-admission rule involves no $createdAt and no
+    // integerRange, so it cannot be bucketed) and with terminal-route
+    // indexes (which exclude bucketed indexes at selection). Guarded rather
+    // than assumed.
+    if index.is_bucketed() {
         return Err(Error::Drive(DriveError::CorruptedCodeExecution(
             "index_only_entry_path_and_key_from_values cannot address a bucketed index: \
              its levels are keyed by the grid-qualified storage key, not the property name",
