@@ -855,6 +855,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .await;
         }
 
+        // Broadcast-probe state for the wallet's sends goes too, and the host
+        // is told to drop the verdicts it shows for them: a same-id recreation
+        // must not inherit them.
+        self.broadcast_resolver.wallet_removed(wallet_id);
+
         // Only now free the id in the inner manager — the LAST id-keyed step.
         // An identity registered on this wallet after the snapshot above (a
         // host racing an identity add against its own removal) is left as a

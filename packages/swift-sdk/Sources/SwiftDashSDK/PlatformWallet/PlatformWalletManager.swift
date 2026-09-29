@@ -2657,6 +2657,9 @@ public class PlatformWalletManager: ObservableObject {
         // with the same deterministic id doesn't inherit a stale banner (the
         // poller would also prune it, but not until the next tick).
         dashPayUnlockStatus.removeValue(forKey: walletId)
+        // Same for broadcast-probe verdicts: Rust forgets the wallet's sends
+        // on removal, and a restored wallet (same id) must start clean.
+        outgoingTransactionVerdicts = outgoingTransactionVerdicts.filter { $0.key.walletId != walletId }
         // A store reconcile in flight for any wallet stops between pages:
         // its next step would read rows `deleteWalletData` is about to
         // remove. Coarse on purpose — the cadence re-runs the others.

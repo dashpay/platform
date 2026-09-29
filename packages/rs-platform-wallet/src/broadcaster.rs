@@ -21,10 +21,10 @@ use async_trait::async_trait;
 use dash_sdk::dapi_client::transport::TransportError;
 use dash_sdk::dapi_client::{DapiClientError, DapiRequestExecutor, IntoInner, RequestSettings};
 use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
+use dash_sdk::dapi_grpc::tonic::Code;
 use dash_spv::BroadcastResult;
 use dashcore::{consensus, Transaction, Txid};
 
-use crate::broadcast_probe::{classify_failed_submission, NodeVerdict};
 use crate::error::PlatformWalletError;
 use crate::spv::SpvRuntime;
 
@@ -131,7 +131,7 @@ impl TransactionBroadcaster for DapiBroadcaster {
             bypass_limits: false,
         };
 
-        // A node that answers `AlreadyExists` has the transaction on chain,
+        // A node that answers `AlreadyExists` (-27) has the transaction in a block,
         // so that is success. Every other failure stays `MaybeSent`, including
         // Core's own rejections: one node's `missingorspent` is also what a
         // lagging node, a node that has not seen our unconfirmed parent, and
@@ -148,10 +148,7 @@ impl TransactionBroadcaster for DapiBroadcaster {
         {
             Ok(_response) => Ok(transaction.txid()),
             Err(DapiClientError::Transport(TransportError::Grpc(status)))
-                if matches!(
-                    classify_failed_submission(status.code(), status.message()),
-                    NodeVerdict::Accepted | NodeVerdict::Mined
-                ) =>
+                if status.code() == Code::AlreadyExists =>
             {
                 Ok(transaction.txid())
             }

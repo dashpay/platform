@@ -9,29 +9,33 @@
 //! the verdict; it **changes nothing** in the wallet. Cancelling a dead send is
 //! a separate, user-driven decision.
 //!
-//! What is probed: every *root* of an unsettled chain the wallet itself
-//! signed — a transaction that spends this wallet's coins, is not in a block,
-//! not InstantSend-locked, and does not spend the output of another such
-//! transaction. Probing a child is pointless and misleading: a node that has
-//! not seen the parent answers `missingorspent` for a perfectly valid child.
-//! A healthy send is IS-locked within seconds, so in practice only sends that
-//! went quiet are ever probed.
+//! What is probed: the *roots* of the chains the wallet signed into — its
+//! unsettled sends (not in a block, not InstantSend-locked) plus the unsettled
+//! ancestors they depend on, including someone else's incoming payment —
+//! taking only transactions that spend no output of an unsettled transaction.
+//! Probing a child is pointless and misleading: a node that has not seen the
+//! parent answers `missingorspent` for a perfectly valid child. A healthy send
+//! is IS-locked within seconds, so in practice only sends that went quiet are
+//! ever probed.
 //!
-//! A send that spends an unconfirmed coin of *someone else's* — an incoming
-//! payment not yet in a block or IS-locked — is not a root either, for the same
-//! reason: nodes that have not seen that parent refuse the send.
+//! What is published: verdicts per **own send**, which is what the host
+//! shows. A root's verdict goes to the root when it is the wallet's send; a
+//! dead root also takes every own send built on it (spending a dead
+//! transaction is dead too). A root found in a block that the wallet has not
+//! seen yet counts as settled, so the sends built on it are probed next.
+//! Only changes are published — Unresolved never replaces Accepted or Mined —
+//! and a send that settles or leaves the wallet after a verdict is published
+//! as cleared, as are all of a removed wallet's and, when probing is turned
+//! off, all of them.
 //!
 //! When: once as soon as dash-spv reports an `Uncertain` broadcast, then on
-//! every advance of the wallet's synced height (a filter batch: once per block
-//! at the tip, larger steps while catching up) while the root stays
-//! unsettled; after [`EVERY_BLOCK_WINDOW`] blocks, every [`SLOW_INTERVAL`]
-//! blocks. At most one height-driven pass per wallet runs at a time. Only
-//! `Dead` or `Mined` ends the probing — acceptance by one node's mempool is not
-//! settlement, so an `Accepted` root keeps being asked until it settles. A
-//! verdict is published only when it differs from the last one published for
-//! that root, and a root that settles or leaves the wallet after a verdict was
-//! published is published as cleared. Probes run only while the SPV client
-//! delivers blocks, i.e. while the app is in the foreground.
+//! each advance of the wallet's synced height that follows the tip (steps of
+//! more than [`CATCH_UP_STEP`] blocks, and the first step after launch, are
+//! catch-up and skipped), every block for [`EVERY_BLOCK_WINDOW`] blocks and
+//! every [`SLOW_INTERVAL`] blocks after. One worker per wallet drains a
+//! queue of merged requests. `Dead` and `Mined` end the probing of a root;
+//! `Accepted` does not — a mempool is not settlement. Probes run only while
+//! the SPV client delivers blocks, i.e. while the app is in the foreground.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::future::Future;
@@ -70,60 +74,113 @@ pub(crate) struct OutgoingView {
     pub transaction: Transaction,
 }
 
-/// The roots of this wallet's unsettled chains, one entry per txid.
+/// This wallet's unsettled transactions as chains.
 ///
-/// The chains that matter are the ones the wallet signed into: every unsettled
-/// transaction that spends its own coins, plus every unsettled ancestor such a
-/// transaction depends on — including someone else's incoming payment, whose
-/// fate decides the send built on it. A root is a member of that set that
-/// spends no output of any unsettled transaction, because a node that has not
-/// seen a parent refuses a perfectly valid child.
-pub(crate) fn ambiguous_roots(views: &[OutgoingView]) -> Vec<&OutgoingView> {
-    // One entry per transaction. A transaction recorded in several accounts is
-    // one transaction: settled if any account holds it settled, the wallet's
-    // own send if any account records it spending the wallet's coins (a
-    // transfer between accounts is "incoming" in the receiving one).
-    let mut by_txid: BTreeMap<Txid, (&OutgoingView, bool, bool)> = BTreeMap::new();
-    for view in views {
-        by_txid
-            .entry(view.txid)
-            .and_modify(|(_, settled, own)| {
-                *settled |= view.settled;
-                *own |= view.spends_own_coins;
-            })
-            .or_insert((view, view.settled, view.spends_own_coins));
-    }
-    let unsettled: BTreeSet<Txid> = by_txid
-        .iter()
-        .filter(|(_, (_, settled, _))| !*settled)
-        .map(|(txid, _)| *txid)
-        .collect();
+/// Built from the account views, merged per transaction: settled if any
+/// account holds it settled (or the caller knows it is mined), the wallet's own
+/// send if any account records it spending the wallet's coins — a transfer
+/// between accounts is "incoming" in the receiving one.
+pub(crate) struct ChainGraph<'a> {
+    by_txid: BTreeMap<Txid, (&'a OutgoingView, bool)>,
+    unsettled: BTreeSet<Txid>,
+}
 
-    // The wallet's unsettled sends and, transitively, their unsettled parents.
-    let mut relevant: BTreeSet<Txid> = unsettled
-        .iter()
-        .filter(|txid| by_txid[*txid].2)
-        .copied()
-        .collect();
-    let mut frontier: Vec<Txid> = relevant.iter().copied().collect();
-    while let Some(txid) = frontier.pop() {
-        for input in &by_txid[&txid].0.inputs {
-            if unsettled.contains(&input.txid) && relevant.insert(input.txid) {
-                frontier.push(input.txid);
+impl<'a> ChainGraph<'a> {
+    /// `mined` are transactions a probe found in a block that this wallet has
+    /// not seen yet: settled for the purpose of picking roots, so the sends
+    /// built on them become roots in turn.
+    pub(crate) fn new(views: &'a [OutgoingView], mined: &HashSet<Txid>) -> Self {
+        let mut merged: BTreeMap<Txid, (&OutgoingView, bool, bool)> = BTreeMap::new();
+        for view in views {
+            merged
+                .entry(view.txid)
+                .and_modify(|(_, settled, own)| {
+                    *settled |= view.settled;
+                    *own |= view.spends_own_coins;
+                })
+                .or_insert((view, view.settled, view.spends_own_coins));
+        }
+        let unsettled = merged
+            .iter()
+            .filter(|(txid, (_, settled, _))| !*settled && !mined.contains(*txid))
+            .map(|(txid, _)| *txid)
+            .collect();
+        let by_txid = merged
+            .into_iter()
+            .map(|(txid, (view, _, own))| (txid, (view, own)))
+            .collect();
+        Self { by_txid, unsettled }
+    }
+
+    fn is_own(&self, txid: &Txid) -> bool {
+        self.by_txid.get(txid).is_some_and(|(_, own)| *own)
+    }
+
+    /// The wallet's unsettled sends.
+    pub(crate) fn own_unsettled(&self) -> BTreeSet<Txid> {
+        self.unsettled
+            .iter()
+            .filter(|txid| self.is_own(txid))
+            .copied()
+            .collect()
+    }
+
+    /// The roots to probe: members of the chains the wallet signed into — its
+    /// unsettled sends plus every unsettled ancestor they depend on, including
+    /// someone else's incoming payment — that spend no output of an unsettled
+    /// transaction. A node that has not seen a parent refuses a valid child.
+    pub(crate) fn roots(&self) -> Vec<&'a OutgoingView> {
+        let mut relevant = self.own_unsettled();
+        let mut frontier: Vec<Txid> = relevant.iter().copied().collect();
+        while let Some(txid) = frontier.pop() {
+            for input in &self.by_txid[&txid].0.inputs {
+                if self.unsettled.contains(&input.txid) && relevant.insert(input.txid) {
+                    frontier.push(input.txid);
+                }
             }
         }
+        relevant
+            .iter()
+            .map(|txid| self.by_txid[txid].0)
+            .filter(|view| {
+                !view
+                    .inputs
+                    .iter()
+                    .any(|input| self.unsettled.contains(&input.txid))
+            })
+            .collect()
     }
 
-    relevant
-        .iter()
-        .map(|txid| by_txid[txid].0)
-        .filter(|view| {
-            !view
-                .inputs
-                .iter()
-                .any(|input| unsettled.contains(&input.txid))
-        })
-        .collect()
+    /// The wallet's own sends in `root`'s chain: `root` itself if it is one,
+    /// and every unsettled send built on it, transitively. A dead root takes
+    /// all of them with it.
+    pub(crate) fn own_in_chain(&self, root: &Txid) -> BTreeSet<Txid> {
+        let mut chain = BTreeSet::from([*root]);
+        loop {
+            let before = chain.len();
+            for txid in &self.unsettled {
+                if !chain.contains(txid)
+                    && self.by_txid[txid]
+                        .0
+                        .inputs
+                        .iter()
+                        .any(|input| chain.contains(&input.txid))
+                {
+                    chain.insert(*txid);
+                }
+            }
+            if chain.len() == before {
+                break;
+            }
+        }
+        chain.into_iter().filter(|txid| self.is_own(txid)).collect()
+    }
+}
+
+/// The roots of `views` with nothing known to be mined — see [`ChainGraph::roots`].
+#[cfg(test)]
+fn ambiguous_roots(views: &[OutgoingView]) -> Vec<&OutgoingView> {
+    ChainGraph::new(views, &HashSet::new()).roots()
 }
 
 /// When a root is next due for a probe.
@@ -155,32 +212,39 @@ impl ProbeSchedule {
     }
 }
 
-/// Per-root bookkeeping shared by every pass.
+/// A root's final verdict: nothing is left to ask.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Final {
+    Dead,
+    Mined,
+}
+
+/// Bookkeeping shared by every pass. Schedules and final verdicts are per
+/// probed root; published verdicts are per own send, which is what the host
+/// shows. Everything for a transaction is kept while it stays unsettled in the
+/// wallet, and dropped once it settles or leaves.
 #[derive(Debug, Default)]
 pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
-    /// Roots with a final verdict (dead or mined): never probed again while
-    /// they stay roots.
-    finished: HashSet<(WalletId, Txid)>,
-    /// The last verdict published per root, so only changes are published.
+    finished: HashMap<(WalletId, Txid), Final>,
     published: HashMap<(WalletId, Txid), ProbeVerdict>,
 }
 
-/// What a pass has to tell the host.
+/// What a pass has to tell the host, per own send.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ResolverEvent {
-    /// A root's verdict changed.
+    /// A send's verdict changed.
     Verdict(Txid, ProbeVerdict),
-    /// A root that had a published verdict settled or left the wallet.
+    /// A send that had a published verdict settled or left the wallet.
     Cleared(Txid),
 }
 
 impl ResolverState {
-    /// Drop everything kept for `wallet_id`; returns the roots the host had a
+    /// Drop everything kept for `wallet_id`; returns the sends the host had a
     /// verdict for, which it must now be told are cleared.
     fn forget_wallet(&mut self, wallet_id: &WalletId) -> Vec<Txid> {
         self.schedules.retain(|(wallet, _), _| wallet != wallet_id);
-        self.finished.retain(|(wallet, _)| wallet != wallet_id);
+        self.finished.retain(|(wallet, _), _| wallet != wallet_id);
         let mut cleared: Vec<Txid> = self
             .published
             .keys()
@@ -192,7 +256,7 @@ impl ResolverState {
         cleared
     }
 
-    /// Drop everything; returns every root the host had a verdict for.
+    /// Drop everything; returns every send the host had a verdict for.
     fn forget_all(&mut self) -> Vec<(WalletId, Txid)> {
         self.schedules.clear();
         self.finished.clear();
@@ -201,6 +265,29 @@ impl ResolverState {
         cleared.sort();
         cleared
     }
+
+    /// Record `verdict` for `send`; returns whether the host must hear it.
+    /// Unresolved never replaces an Accepted or Mined verdict — one probe that
+    /// only met transport errors says nothing new — and Unresolved reasons
+    /// vary between probes, so they all count as one.
+    fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict) -> bool {
+        let changed = match self.published.get(&key) {
+            None => true,
+            Some(ProbeVerdict::Unresolved { .. }) => {
+                !matches!(verdict, ProbeVerdict::Unresolved { .. })
+            }
+            Some(ProbeVerdict::Accepted | ProbeVerdict::Mined)
+                if matches!(verdict, ProbeVerdict::Unresolved { .. }) =>
+            {
+                false
+            }
+            Some(previous) => previous != verdict,
+        };
+        if changed {
+            self.published.insert(key, verdict.clone());
+        }
+        changed
+    }
 }
 
 /// How far a wallet's synced height may advance in one step and still count
@@ -208,13 +295,21 @@ impl ResolverState {
 /// scan itself settles most roots, so a height-driven pass waits for it.
 pub(crate) const CATCH_UP_STEP: u32 = 3;
 
+/// The first advance after launch has no previous height to compare with, and
+/// it is usually the stored tip from before the scan: treat it as catch-up
+/// too. Probing starts from the next step.
 pub(crate) fn is_catch_up_step(previous: Option<u32>, height: u32) -> bool {
-    previous.is_some_and(|previous| height.saturating_sub(previous) > CATCH_UP_STEP)
+    previous.is_none_or(|previous| height.saturating_sub(previous) > CATCH_UP_STEP)
 }
 
 /// One pass over one wallet at `height`: probe every due root and return what
 /// to publish. `forced` roots are due regardless of their schedule (the SPV
 /// broadcaster has just reported them `Uncertain`).
+///
+/// A root's verdict is published for the wallet's own sends: the root itself
+/// when it is one, and — when the root is dead — every own send built on it,
+/// since a transaction spending a dead one is dead too. A root found mined
+/// counts as settled when picking roots, so its children are probed next.
 pub(crate) async fn resolve_pass(
     state: &Mutex<ResolverState>,
     probe: &dyn AcceptanceProbe,
@@ -223,37 +318,52 @@ pub(crate) async fn resolve_pass(
     views: &[OutgoingView],
     forced: &HashSet<Txid>,
 ) -> Vec<ResolverEvent> {
-    let roots = ambiguous_roots(views);
-    let root_ids: HashSet<Txid> = roots.iter().map(|view| view.txid).collect();
+    // What the wallet itself still holds unsettled — what state is kept for.
+    let wallet_view = ChainGraph::new(views, &HashSet::new());
+    let present: HashSet<Txid> = wallet_view.unsettled.iter().copied().collect();
+    let own_present = wallet_view.own_unsettled();
 
-    // Decide what is due under the lock; probe without it.
     let mut events = Vec::new();
-    let due: Vec<(Txid, Transaction)> = {
+    let graph_mined: HashSet<Txid> = {
         let mut guard = state.lock().expect("resolver state poisoned");
         let ResolverState {
             schedules,
             finished,
             published,
         } = &mut *guard;
-        // Forget this wallet's roots that settled or left the wallet; tell the
-        // host about the ones it had a verdict for.
         let is_gone =
-            |wallet: &WalletId, txid: &Txid| *wallet == wallet_id && !root_ids.contains(txid);
+            |wallet: &WalletId, txid: &Txid| *wallet == wallet_id && !present.contains(txid);
         schedules.retain(|(wallet, txid), _| !is_gone(wallet, txid));
-        finished.retain(|(wallet, txid)| !is_gone(wallet, txid));
+        finished.retain(|(wallet, txid), _| !is_gone(wallet, txid));
         let mut cleared: Vec<Txid> = published
             .keys()
-            .filter(|(wallet, txid)| is_gone(wallet, txid))
+            .filter(|(wallet, txid)| *wallet == wallet_id && !own_present.contains(txid))
             .map(|(_, txid)| *txid)
             .collect();
         cleared.sort();
-        published.retain(|(wallet, txid), _| !is_gone(wallet, txid));
+        published.retain(|(wallet, txid), _| *wallet != wallet_id || own_present.contains(txid));
         events.extend(cleared.into_iter().map(ResolverEvent::Cleared));
 
-        let mut due = Vec::new();
-        for view in &roots {
+        let mined: HashSet<Txid> = finished
+            .iter()
+            .filter(|((wallet, _), result)| *wallet == wallet_id && **result == Final::Mined)
+            .map(|((_, txid), _)| *txid)
+            .collect();
+        mined
+    };
+
+    let graph = ChainGraph::new(views, &graph_mined);
+    let due: Vec<(Txid, Transaction)> = {
+        let mut guard = state.lock().expect("resolver state poisoned");
+        let ResolverState {
+            schedules,
+            finished,
+            ..
+        } = &mut *guard;
+        let mut due_now = Vec::new();
+        for view in graph.roots() {
             let key = (wallet_id, view.txid);
-            if finished.contains(&key) {
+            if finished.contains_key(&key) {
                 continue;
             }
             let schedule = schedules
@@ -261,36 +371,41 @@ pub(crate) async fn resolve_pass(
                 .or_insert_with(|| ProbeSchedule::new(height));
             if forced.contains(&view.txid) || schedule.is_due(height) {
                 schedule.probed_at(height);
-                due.push((view.txid, view.transaction.clone()));
+                due_now.push((view.txid, view.transaction.clone()));
             }
         }
-        due
+        due_now
     };
 
-    for (txid, transaction) in due {
+    for (root, transaction) in due {
         let verdict = probe.probe(&transaction).await;
-        let key = (wallet_id, txid);
+        let key = (wallet_id, root);
         let mut guard = state.lock().expect("resolver state poisoned");
         // A pass that ran meanwhile may have found this root settled or gone
-        // and cleared it; a verdict published now would resurrect it.
+        // and dropped it; a verdict published now would resurrect it.
         if !guard.schedules.contains_key(&key) {
             continue;
         }
-        if matches!(verdict, ProbeVerdict::Dead { .. } | ProbeVerdict::Mined) {
-            guard.finished.insert(key);
-        }
-        // Publish changes only. Unresolved reasons vary between probes
-        // (different nodes, different errors), so all Unresolved count as one.
-        let changed = match guard.published.get(&key) {
-            None => true,
-            Some(ProbeVerdict::Unresolved { .. }) => {
-                !matches!(verdict, ProbeVerdict::Unresolved { .. })
+        match verdict {
+            ProbeVerdict::Dead { .. } => {
+                guard.finished.insert(key, Final::Dead);
             }
-            Some(previous) => *previous != verdict,
+            ProbeVerdict::Mined => {
+                guard.finished.insert(key, Final::Mined);
+            }
+            _ => {}
+        }
+        let sends: BTreeSet<Txid> = if matches!(verdict, ProbeVerdict::Dead { .. }) {
+            graph.own_in_chain(&root)
+        } else if graph.is_own(&root) {
+            BTreeSet::from([root])
+        } else {
+            BTreeSet::new()
         };
-        if changed {
-            guard.published.insert(key, verdict.clone());
-            events.push(ResolverEvent::Verdict(txid, verdict));
+        for send in sends {
+            if guard.publish((wallet_id, send), &verdict) {
+                events.push(ResolverEvent::Verdict(send, verdict.clone()));
+            }
         }
     }
     events
@@ -303,26 +418,30 @@ pub(crate) async fn resolve_pass(
 /// on a healthy wallet there are none or a handful.
 pub(crate) fn collect_views(info: &PlatformWalletInfo) -> Vec<OutgoingView> {
     let accounts = info.core_wallet.accounts.all_accounts();
-    let mut merged: BTreeMap<Txid, (bool, bool, &Transaction)> = BTreeMap::new();
+    // Settled txids in a set; only unsettled records go into the map, so a
+    // wallet with nothing unconfirmed costs one walk and no ordering work.
+    let mut settled: HashSet<Txid> = HashSet::new();
+    let mut unsettled: HashMap<Txid, (bool, &Transaction)> = HashMap::new();
     for account in accounts.iter() {
         for record in account.transactions().values() {
-            let settled = record.is_confirmed()
+            if record.is_confirmed()
                 || matches!(record.context, TransactionContext::InstantSend(_))
-                || account.transaction_is_finalized(&record.txid);
+                || account.transaction_is_finalized(&record.txid)
+            {
+                settled.insert(record.txid);
+                continue;
+            }
             let own = !record.input_details.is_empty();
-            merged
+            unsettled
                 .entry(record.txid)
-                .and_modify(|(was_settled, was_own, _)| {
-                    *was_settled |= settled;
-                    *was_own |= own;
-                })
-                .or_insert((settled, own, &record.transaction));
+                .and_modify(|(was_own, _)| *was_own |= own)
+                .or_insert((own, &record.transaction));
         }
     }
-    merged
+    unsettled
         .into_iter()
-        .filter(|(_, (settled, _, _))| !*settled)
-        .map(|(txid, (_, own, transaction))| OutgoingView {
+        .filter(|(txid, _)| !settled.contains(txid))
+        .map(|(txid, (own, transaction))| OutgoingView {
             txid,
             inputs: transaction
                 .input
@@ -411,7 +530,7 @@ struct PendingPass {
 /// probe sends the signed transaction to evonodes over DAPI, which is a
 /// product decision, not something a wallet should start doing on upgrade.
 pub(crate) struct BroadcastResolver {
-    enabled: AtomicBool,
+    enabled: Arc<AtomicBool>,
     probe: Arc<dyn AcceptanceProbe>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     state: Arc<Mutex<ResolverState>>,
@@ -429,7 +548,7 @@ impl BroadcastResolver {
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     ) -> Self {
         Self {
-            enabled: AtomicBool::new(false),
+            enabled: Arc::new(AtomicBool::new(false)),
             probe,
             wallet_manager,
             state: Arc::new(Mutex::new(ResolverState::default())),
@@ -468,6 +587,30 @@ impl BroadcastResolver {
         self.enabled.load(Ordering::SeqCst)
     }
 
+    /// Forget a removed wallet: its queued pass, its last height and every
+    /// verdict, each of which the host is told is cleared.
+    pub(crate) fn wallet_removed(&self, wallet_id: &WalletId) {
+        self.passes
+            .lock()
+            .expect("pass queue poisoned")
+            .pending
+            .remove(wallet_id);
+        self.heights
+            .lock()
+            .expect("heights mutex poisoned")
+            .remove(wallet_id);
+        let cleared = self
+            .state
+            .lock()
+            .expect("resolver state poisoned")
+            .forget_wallet(wallet_id);
+        if let Some(events) = self.events.lock().expect("events mutex poisoned").upgrade() {
+            for txid in &cleared {
+                events.on_outgoing_transaction_cleared(wallet_id, txid);
+            }
+        }
+    }
+
     /// Stop admitting passes and stop the running ones. Idempotent.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
         self.tasks.quiesce_within(budget).await
@@ -489,6 +632,7 @@ impl BroadcastResolver {
         let state = Arc::clone(&self.state);
         let heights = Arc::clone(&self.heights);
         let passes = Arc::clone(&self.passes);
+        let enabled = Arc::clone(&self.enabled);
         let events = self.events.lock().expect("events mutex poisoned").clone();
         self.tasks.spawn(async move {
             let _running = Running {
@@ -496,12 +640,25 @@ impl BroadcastResolver {
                 wallet_id,
             };
             loop {
-                let Some(PendingPass { height, forced }) = passes
-                    .lock()
-                    .expect("pass queue poisoned")
-                    .pending
-                    .remove(&wallet_id)
-                else {
+                // Take the next request, or stop — under the same lock a
+                // request_pass would take, so a request can never land between
+                // "queue empty" and "no longer running" and be left unserved.
+                // Probing turned off meanwhile: drop what is queued, do not
+                // probe again (set_enabled already cleared the host's state).
+                let next = {
+                    let mut queue = passes.lock().expect("pass queue poisoned");
+                    let next = if enabled.load(Ordering::SeqCst) {
+                        queue.pending.remove(&wallet_id)
+                    } else {
+                        queue.pending.remove(&wallet_id);
+                        None
+                    };
+                    if next.is_none() {
+                        queue.running.remove(&wallet_id);
+                    }
+                    next
+                };
+                let Some(PendingPass { height, forced }) = next else {
                     break;
                 };
                 // Read under the lock, probe without it: a probe is network I/O.
@@ -581,8 +738,8 @@ fn publish(
     }
 }
 
-/// Marks a wallet's worker finished however it ends (including an abort), so
-/// the next request starts a new one.
+/// Marks a wallet's worker finished if it ends without reaching its own exit
+/// (an abort at shutdown), so a later request is not refused forever.
 struct Running {
     passes: Arc<Mutex<PassQueue>>,
     wallet_id: WalletId,
@@ -816,13 +973,13 @@ mod tests {
     #[tokio::test]
     async fn should_probe_only_roots_and_report_each_verdict() {
         let state = Mutex::new(ResolverState::default());
-        let probe = ScriptedProbe::new(&[(txid(1), dead())]);
+        let probe = ScriptedProbe::new(&[(txid(1), unresolved())]);
         let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
 
         let events = resolve_pass(&state, &probe, wallet(), 100, &views, &HashSet::new()).await;
 
         assert_eq!(probe.probed(), vec![txid(1)]);
-        assert_eq!(events, vec![ResolverEvent::Verdict(txid(1), dead())]);
+        assert_eq!(events, vec![ResolverEvent::Verdict(txid(1), unresolved())]);
     }
 
     #[tokio::test]
@@ -987,7 +1144,10 @@ mod tests {
 
     #[test]
     fn should_treat_only_large_height_steps_as_catch_up() {
-        assert!(!is_catch_up_step(None, 1_000));
+        assert!(
+            is_catch_up_step(None, 1_000),
+            "the first step after launch is catch-up"
+        );
         assert!(!is_catch_up_step(Some(999), 1_000));
         assert!(!is_catch_up_step(Some(1_000 - CATCH_UP_STEP), 1_000));
         assert!(is_catch_up_step(Some(1_000 - CATCH_UP_STEP - 1), 1_000));
@@ -1089,5 +1249,93 @@ mod tests {
 
         assert!(events.is_empty());
         assert!(state.lock().expect("state").published.is_empty());
+    }
+
+    fn incoming(n: u8, inputs: &[OutPoint]) -> OutgoingView {
+        OutgoingView {
+            spends_own_coins: false,
+            ..send(n, inputs)
+        }
+    }
+
+    /// Spending a dead transaction is dead too: the whole chain of own sends
+    /// built on a dead root is published dead, not just the root.
+    #[tokio::test]
+    async fn should_publish_a_dead_root_for_every_own_send_built_on_it() {
+        let state = Mutex::new(ResolverState::default());
+        let probe = ScriptedProbe::new(&[(txid(1), dead())]);
+        let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
+
+        let events = resolve_pass(&state, &probe, wallet(), 100, &views, &HashSet::new()).await;
+
+        assert_eq!(
+            events,
+            vec![
+                ResolverEvent::Verdict(txid(1), dead()),
+                ResolverEvent::Verdict(txid(2), dead()),
+            ]
+        );
+        let again = resolve_pass(&state, &probe, wallet(), 101, &views, &HashSet::new()).await;
+        assert!(
+            again.is_empty(),
+            "a dead child is not cleared for not being a root"
+        );
+    }
+
+    /// Someone else's incoming payment is probed, but the host hears only
+    /// about the wallet's own send — the only row it can attach a verdict to.
+    #[tokio::test]
+    async fn should_publish_a_dead_incoming_parent_on_the_own_send_only() {
+        let state = Mutex::new(ResolverState::default());
+        let probe = ScriptedProbe::new(&[(txid(5), dead())]);
+        let views = [incoming(5, &[outpoint(80, 0)]), send(6, &[outpoint(5, 0)])];
+
+        let events = resolve_pass(&state, &probe, wallet(), 100, &views, &HashSet::new()).await;
+
+        assert_eq!(probe.probed(), vec![txid(5)]);
+        assert_eq!(events, vec![ResolverEvent::Verdict(txid(6), dead())]);
+    }
+
+    #[tokio::test]
+    async fn should_publish_nothing_while_an_incoming_parent_is_only_accepted() {
+        let state = Mutex::new(ResolverState::default());
+        let probe = ScriptedProbe::new(&[(txid(5), ProbeVerdict::Accepted)]);
+        let views = [incoming(5, &[outpoint(80, 0)]), send(6, &[outpoint(5, 0)])];
+
+        let events = resolve_pass(&state, &probe, wallet(), 100, &views, &HashSet::new()).await;
+
+        assert!(events.is_empty());
+    }
+
+    /// A root found in a block that the wallet has not caught up with is
+    /// settled for picking roots, so the send built on it is probed next.
+    #[tokio::test]
+    async fn should_probe_the_children_of_a_root_found_in_a_block() {
+        let state = Mutex::new(ResolverState::default());
+        let probe = ScriptedProbe::new(&[(txid(1), ProbeVerdict::Mined), (txid(2), dead())]);
+        let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
+
+        let first = resolve_pass(&state, &probe, wallet(), 100, &views, &HashSet::new()).await;
+        let second = resolve_pass(&state, &probe, wallet(), 101, &views, &HashSet::new()).await;
+
+        assert_eq!(
+            first,
+            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Mined)]
+        );
+        assert_eq!(second, vec![ResolverEvent::Verdict(txid(2), dead())]);
+        assert_eq!(probe.probed(), vec![txid(1), txid(2)]);
+    }
+
+    /// One probe that met only transport errors says nothing new about a send
+    /// already seen accepted; the UI must not flicker back to "unknown".
+    #[test]
+    fn should_not_let_unresolved_replace_an_accepted_verdict() {
+        let mut state = ResolverState::default();
+        let key = (wallet(), txid(1));
+
+        assert!(state.publish(key, &ProbeVerdict::Accepted));
+        assert!(!state.publish(key, &unresolved()));
+        assert!(!state.publish(key, &ProbeVerdict::Accepted));
+        assert!(state.publish(key, &dead()));
     }
 }
