@@ -104,7 +104,7 @@ impl PlatformServiceImpl {
 
             // Attempt to broadcast the transaction; note that both Ok and Err can contain
             // information about the broadcast result, so we need to handle both.
-            let error_result = match self.tenderdash_client.broadcast_tx(tx_base64.clone()).await {
+            let error_result = match self.tenderdash_client.broadcast_tx(tx_base64).await {
                 Ok(broadcast_result) => {
                     if broadcast_result.code == 0 {
                         trace!(

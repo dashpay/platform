@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::StateTransition;
+use dpp::state_transition::envelope_kind::StateTransitionEnvelopeKind;
 use dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
@@ -110,8 +111,16 @@ fn last_forwarded_address(header: &str) -> Option<IpAddr> {
 
 /// Orchard actions whose proof Drive verifies before admitting the transition,
 /// or 0 for bytes without any (including bytes that do not decode, which Drive
-/// refuses before any proof work).
+/// refuses before any proof work). A contract-code capable envelope carries no
+/// Orchard actions and may be tens of megabytes, so its wire prefix answers
+/// without decoding it.
 pub(super) fn orchard_action_count(state_transition_bytes: &[u8]) -> usize {
+    if matches!(
+        StateTransition::peek_envelope_kind(state_transition_bytes),
+        StateTransitionEnvelopeKind::ContractCodeCapable { .. }
+    ) {
+        return 0;
+    }
     let Ok(state_transition) =
         StateTransition::deserialize_from_bytes_untrusted(state_transition_bytes)
     else {
@@ -584,5 +593,12 @@ mod tests {
         let bytes = transfer.serialize_to_bytes().unwrap();
         assert_eq!(orchard_action_count(&bytes), 3);
         assert_eq!(orchard_action_count(&[0xff, 0x00]), 0);
+    }
+
+    #[test]
+    fn should_count_no_actions_for_a_contract_code_capable_prefix() {
+        // Create generation 2 and update generation 1.
+        assert_eq!(orchard_action_count(&[0, 2]), 0);
+        assert_eq!(orchard_action_count(&[1, 1]), 0);
     }
 }
