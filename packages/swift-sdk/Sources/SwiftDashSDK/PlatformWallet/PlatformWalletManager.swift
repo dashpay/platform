@@ -457,7 +457,9 @@ public class PlatformWalletManager: ObservableObject {
 
     /// The latest broadcast-probe verdict per unconfirmed send (wallet + txid).
     /// Filled only while `setBroadcastProbeEnabled(true)` is on; an entry is
-    /// removed once its send settles or leaves the wallet. See
+    /// removed when its send settles or leaves the wallet, when its wallet is
+    /// deleted, and all entries when probing is turned off — a removal does
+    /// not mean the send settled. See
     /// `OutgoingTransactionProbeEvent`.
     @Published public internal(set) var outgoingTransactionVerdicts: [OutgoingTransactionKey: OutgoingTransactionProbeEvent] = [:]
 

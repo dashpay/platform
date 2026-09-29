@@ -55,8 +55,10 @@ pub type DpnsMarketplaceSyncCompletedFn = unsafe extern "C" fn(
 pub const OUTGOING_PROBE_VERDICT_ACCEPTED: u8 = 0;
 pub const OUTGOING_PROBE_VERDICT_DEAD: u8 = 1;
 pub const OUTGOING_PROBE_VERDICT_UNRESOLVED: u8 = 2;
-/// Not a verdict: the send is no longer unconfirmed (it settled or left the
-/// wallet); drop whatever was kept for its earlier verdict. `reason` is null.
+/// Not a verdict: drop whatever was kept for the send's earlier verdict. Sent
+/// when the send settled or left the wallet, when its wallet was removed, and
+/// for every send when probing is turned off — so it does not mean the send
+/// settled. `reason` is null.
 pub const OUTGOING_PROBE_VERDICT_CLEARED: u8 = 3;
 
 /// A verdict on an unconfirmed send whose broadcast outcome was unknown.
@@ -323,7 +325,9 @@ impl PlatformEventHandler for FFIEventHandler {
                 (OUTGOING_PROBE_VERDICT_UNRESOLVED, Some(reason))
             }
         };
-        let reason = reason.and_then(|reason| std::ffi::CString::new(reason.as_str()).ok());
+        // A reason is a node's text: strip interior NULs rather than lose it.
+        let reason =
+            reason.and_then(|reason| std::ffi::CString::new(reason.replace('\0', "")).ok());
         let txid_bytes: &[u8] = txid.as_ref();
         unsafe {
             callback(
@@ -740,6 +744,13 @@ mod outgoing_probe_callback_tests {
                 reason: "no quorum".to_string(),
             },
         );
+        with_callback.on_outgoing_transaction_probed(
+            &wallet,
+            &txid,
+            &ProbeVerdict::Unresolved {
+                reason: "odd\0node".to_string(),
+            },
+        );
         with_callback.on_outgoing_transaction_cleared(&wallet, &txid);
         // A host without the slot receives nothing.
         handler(None).on_outgoing_transaction_probed(&wallet, &txid, &ProbeVerdict::Accepted);
@@ -762,6 +773,12 @@ mod outgoing_probe_callback_tests {
                     wire,
                     OUTGOING_PROBE_VERDICT_UNRESOLVED,
                     Some("no quorum".to_string())
+                ),
+                (
+                    wallet,
+                    wire,
+                    OUTGOING_PROBE_VERDICT_UNRESOLVED,
+                    Some("oddnode".to_string())
                 ),
                 (wallet, wire, OUTGOING_PROBE_VERDICT_CLEARED, None),
             ]

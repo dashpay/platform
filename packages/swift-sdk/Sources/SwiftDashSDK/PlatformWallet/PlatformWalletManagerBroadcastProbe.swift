@@ -103,12 +103,16 @@ func outgoingTransactionProbedCallback(
 extension PlatformWalletManager {
     /// Turn automatic probing of unconfirmed sends on or off (off by default).
     ///
-    /// While on, the SDK resubmits every unconfirmed send whose broadcast
-    /// outcome went quiet to evonodes over DAPI — right after SPV reports it
-    /// uncertain, then every block for 24 blocks and every 10 after — and
-    /// publishes each *change* of
-    /// verdict in `outgoingTransactionVerdicts` / `lastOutgoingTransactionProbe`.
-    /// A send that settles or leaves the wallet is removed from the map.
+    /// While on, the SDK resubmits to evonodes over DAPI the root of every
+    /// chain of unconfirmed sends — the first unsettled transaction the chain
+    /// depends on, which may be an incoming payment the wallet spent — right
+    /// after SPV reports a broadcast uncertain, then every block for 24 blocks
+    /// and every 10 after. It publishes each *change* of verdict for the
+    /// wallet's own sends in `outgoingTransactionVerdicts` /
+    /// `lastOutgoingTransactionProbe`. An entry is removed when its send
+    /// settles or leaves the wallet, when its wallet is deleted, and every
+    /// entry when probing is turned off; a removal does not mean the send
+    /// settled.
     /// Resubmitting sends the same signed bytes: it can deliver a payment, it
     /// can never create a second one. Nothing in the wallet changes.
     public func setBroadcastProbeEnabled(_ enabled: Bool) throws {
@@ -125,7 +129,8 @@ extension PlatformWalletManager {
         lastOutgoingTransactionProbe = event
     }
 
-    /// The send settled or left the wallet: its verdict no longer applies.
+    /// Drop the send's verdict: the send settled or left the wallet, its wallet
+    /// was removed, or probing was turned off. Not a statement that it settled.
     @MainActor
     func handleOutgoingTransactionCleared(_ key: OutgoingTransactionKey) {
         guard !shutdownRequested, isConfigured else { return }

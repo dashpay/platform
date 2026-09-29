@@ -65,9 +65,10 @@ pub trait PlatformEventHandler: EventHandler {
     ) {
     }
 
-    /// Fired when a send that had a published verdict is no longer an
-    /// unconfirmed root — it settled (block or InstantSend lock) or left the
-    /// wallet. Hosts drop any state they kept for the verdict.
+    /// Fired when the host must drop a send's published verdict: the send
+    /// settled (block or InstantSend lock) or left the wallet, its wallet was
+    /// removed, or probing was turned off (then for every send). It does not
+    /// mean the send settled. Hosts drop any state they kept for the verdict.
     ///
     /// Default impl is a no-op so existing handlers don't have to care.
     fn on_outgoing_transaction_cleared(&self, _wallet_id: &WalletId, _txid: &Txid) {}
