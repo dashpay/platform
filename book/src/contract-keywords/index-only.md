@@ -80,6 +80,7 @@ Rules at registration:
 - At least one index. No index is `unique` or `contested`, and none sets `nullSearchable: false`.
 - Every index holds `$ownerId`, as a property or in its terminal.
 - The only system properties an index may list are `$ownerId` and `$createdAt`, and an indexed `$createdAt` must be in `required`.
+- No index declares [`integerRange`](integer-range.md): rows that differ only in the bucketed integer would claim the same entry in the windows they share.
 - At least one index involves no `$createdAt` and does not set `skipIfAbsent`: the proof index.
 - Every property is in `required`, except a skip property of a `skipIfAbsent` index. An object holding an indexed property is required too.
 - Every required property appears in at least one index that does not skip, as a property or a terminal component, except the `entryPayload` properties. Every optional property appears in a skip index without a `timeRange` whose skip set is that property alone.
@@ -134,7 +135,7 @@ Rules at registration:
 - Every component but the last has a fixed width: a byte array with `minItems` equal to `maxItems`, an identifier, an integer or a boolean. A string can only be last.
 - The whole member key is at most 255 bytes. On a flat index, the level key, the component names each preceded by a zero byte, is at most 255 bytes as well.
 - A component is not one of the index's `properties`, and not an optional property.
-- A flat index takes no count, sum, ranking, `timeRange`, `skipIfAbsent` or `preallocated` keyword.
+- A flat index takes no count, sum, ranking, `timeRange`, `integerRange`, `skipIfAbsent` or `preallocated` keyword.
 
 ## `preallocated`
 
@@ -155,7 +156,7 @@ Rules at registration:
 - Only on an `indexOnly` type.
 - Every index property is either a property with a `permanentDocument` reference to a type of the same contract, or a key of that reference's `propertyAgreement`. A `deletableDocument` reference does not qualify, since the trees would outlive a deleted target. `$ownerId` may only be the terminal.
 - The referenced property of each such agreement key holds at most 255 bytes, since creating a referenced document makes its value an index key (40126 when the contract is created or updated).
-- Not with `timeRange`.
+- Not with `timeRange` or `integerRange`.
 
 A referenced document whose agreed value takes more bytes than the referring property can hold preallocates nothing for that index, since no entry could agree with it.
 

@@ -254,6 +254,7 @@ mod tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: Some(vec!["$ownerId".to_string()]),
             preallocated: true,
             skip_if_absent: false,

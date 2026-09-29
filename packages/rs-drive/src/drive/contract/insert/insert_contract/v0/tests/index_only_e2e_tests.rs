@@ -2783,7 +2783,7 @@ fn beat_bucket_counts_serve_trending() {
         ttl_seconds: None,
     };
     let resolved = vec![ResolvedTimeRange {
-        transform: transform.clone(),
+        transform: transform.clone().into(),
     }];
     let bucket = BEAT_BUCKET_STARTS_MS[3];
     let count_in_bucket = |hashtag: &str, prove: bool| {
@@ -2924,7 +2924,8 @@ fn beat_synthesis_over_bucketed_index_is_refused() {
                 step_seconds: 900,
                 phase_seconds: 0,
                 ttl_seconds: None,
-            },
+            }
+            .into(),
         }],
         sub_queries: vec![],
     };

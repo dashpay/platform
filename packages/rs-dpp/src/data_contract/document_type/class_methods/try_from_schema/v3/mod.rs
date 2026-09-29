@@ -442,6 +442,7 @@ fn parse_generation_3(
             ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
             ranked_index_structure_check: validate_no_ranked_prefix_overlap,
             admit_time_range: IndexGrammarAdmissions::for_schema_generation(3).time_range,
+            admit_integer_range: IndexGrammarAdmissions::for_schema_generation(3).integer_range,
             // INDEX ONLY: the `terminal` index keyword, admitted from the
             // same shared generation → admission mapping as the two above.
             admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,

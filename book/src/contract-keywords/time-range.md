@@ -76,7 +76,7 @@ A `ttl` removes entries from this index only. The documents stay, and so do thei
 
 ## Rules at registration
 
-- `on` names `$createdAt`, `$updatedAt` or `$transferredAt`, which is the index's first property and is listed in `required`. A user property cannot be bucketed.
+- `on` names `$createdAt`, `$updatedAt` or `$transferredAt`, which is the index's first property and is listed in `required`. A user property cannot be bucketed by time; an integer one can be bucketed by value with [`integerRange`](integer-range.md).
 - `range` and `step` are at least 1, `range` is an exact multiple of `step`, and `range / step` is at most 24.
 - `phase` is less than `step` and less than 31536000.
 - `ttl`, when present, is at least `range` and at most 604800. Two indexes that bucket the same timestamp with the same `range`, `step` and `phase` share their storage and must declare the same `ttl`, or none.
@@ -91,6 +91,7 @@ A broken rule is refused as `InvalidContractStructure` (10231), or by the meta-s
 ## See also
 
 - [Time-Range Index TTL](../drive/time-range-ttl.md) for how expired windows are drained, the fee rate and the query gate.
+- [Integer-Range Indexes](integer-range.md) for the same windows over an integer property.
 - [Counts, Sums and Averages](aggregates.md) and [Ranked Indexes](ranked.md) for totals and leaderboards per window.
 - [Time To Live (ttl)](ttl.md) for expiring whole documents.
 - [Indexes](indexes.md) for the index keywords every index uses.
