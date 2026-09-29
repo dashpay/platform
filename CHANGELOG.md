@@ -2,9 +2,7 @@
 
 ### Fixed
 
-- **platform-wallet:** Require `TRACKED_ASSET_LOCKS` to cover persistence and nonterminal restart restore; allow SQLite reconciliation with atomic tracked-lock storage while retaining recovery state and typed consumption errors.
-- **platform-wallet-ffi:** Admit tracked-lock support only with persistence and paired restore callbacks; write-only hosts no longer attest this capability.
-- **swift-sdk:** Fail wallet restore when tracked asset-lock rows cannot be read.
+- **platform-wallet:** Allow reconciliation of already-loaded asset locks with atomic tracked-lock persistence without requiring unrelated wallet restore support; retain nonterminal recovery state and typed consumption errors.
 
 - **platform-wallet-storage:** Restore confirmed Core spend and finality state on SQLite load so old funding transactions cannot make already-spent outputs selectable again.
 

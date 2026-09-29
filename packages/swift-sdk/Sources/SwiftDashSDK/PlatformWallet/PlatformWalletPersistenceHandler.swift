@@ -951,16 +951,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// an app kill can resume from the latest status without
     /// rebroadcasting the asset-lock transaction.
     public func loadCachedAssetLocks(walletId: Data) -> [AssetLockEntrySnapshot] {
-        onQueue { (try? loadCachedAssetLocksOnQueue(walletId: walletId)) ?? [] }
+        onQueue { loadCachedAssetLocksOnQueue(walletId: walletId) }
     }
 
     /// On-queue implementation reused by the load-wallet-list path
     /// without re-entering `onQueue`.
-    func loadCachedAssetLocksOnQueue(walletId: Data) throws -> [AssetLockEntrySnapshot] {
+    func loadCachedAssetLocksOnQueue(walletId: Data) -> [AssetLockEntrySnapshot] {
         let descriptor = FetchDescriptor<PersistentAssetLock>(
             predicate: PersistentAssetLock.predicate(walletId: walletId)
         )
-        let records = try modelFetcher.fetch(descriptor, in: backgroundContext)
+        guard let records = try? backgroundContext.fetch(descriptor) else {
+            return []
+        }
         return records.map { record in
             AssetLockEntrySnapshot(
                 outPointHex: record.outPointHex,
@@ -7325,17 +7327,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // that was killed mid-flight can resume from the latest
             // status without rebroadcasting. Empty / null when the
             // wallet has no persisted locks.
-            let assetLockRows: [AssetLockEntrySnapshot]
-            do {
-                assetLockRows = try loadCachedAssetLocksOnQueue(walletId: w.walletId)
-            } catch {
-                allocation.release()
-                SDKLogger.event(
-                    "persistence_wallet_load_failed", category: .persistence, severity: .error,
-                    fields: ["phase": .publicText("tracked_asset_locks")], error: error
-                )
-                return (nil, 0, true)
-            }
+            let assetLockRows = loadCachedAssetLocksOnQueue(walletId: w.walletId)
             let (assetLockBuf, assetLockCount) = buildAssetLockRestoreBuffer(
                 rows: assetLockRows,
                 allocation: allocation

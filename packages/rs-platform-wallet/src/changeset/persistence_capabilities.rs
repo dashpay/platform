@@ -48,10 +48,8 @@ impl PersistenceCapabilities {
     pub const WALLET_RESTORE: Self = Self(1 << 7);
     /// DPNS name-state (username marketplace) rows can be persisted.
     pub const DPNS_NAME_STATES: Self = Self(1 << 8);
-    /// Tracked asset-lock rows, including status and proof updates, are persisted.
-    /// Nonterminal rows are restored through `load()` into the wallet manager
-    /// after restart with their exact status and proof. Consumed rows may be
-    /// excluded from restore; unrelated wallet fields are not covered.
+    /// Tracked asset-lock rows, including status and proof updates, can be
+    /// persisted. Restart hydration is the separate `WALLET_RESTORE` contract.
     pub const TRACKED_ASSET_LOCKS: Self = Self(1 << 9);
     /// Tracked (wallet-independent) masternodes are persisted AND restored
     /// across restarts
@@ -128,7 +126,8 @@ impl PersistenceCapabilities {
     pub const SHIELDED_FVK_RESTART: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::SHIELDED_VIEWING_KEYS.0);
 
-    /// Capabilities required for atomic asset-lock reconciliation across restarts.
+    /// Capabilities required to atomically persist reconciliation of an
+    /// already-loaded tracked asset lock.
     pub const ASSET_LOCK_RECONCILIATION: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0);
 
@@ -258,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn reconciliation_requires_atomic_tracked_asset_lock_round_trip() {
+    fn reconciliation_requires_atomic_tracked_asset_lock_persistence() {
         let required = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
         assert!(required.contains(PersistenceCapabilities::ASSET_LOCK_RECONCILIATION));

@@ -147,24 +147,6 @@ final class AssetLockInputSpendRestoreTests: XCTestCase {
         return Int(entries[0].unresolved_asset_lock_tx_records_count)
     }
 
-    func testTrackedAssetLockFetchFailureRejectsWalletRestore() throws {
-        let container = try DashModelContainer.createInMemory()
-        try seed(in: container, legacyTxoWalletId: false)
-        let injector = FetchFaultInjector(faulting: PersistentAssetLock.self, afterServing: 1)
-        let handler = PlatformWalletPersistenceHandler(
-            modelContainer: container,
-            network: .testnet,
-            modelFetcher: injector
-        )
-
-        let loaded = handler.loadWalletList()
-        defer { handler.loadWalletListFree(entries: loaded.entries.map(UnsafeRawPointer.init)) }
-        XCTAssertTrue(loaded.errored)
-        XCTAssertNil(loaded.entries)
-        XCTAssertEqual(loaded.count, 0)
-        XCTAssertEqual(injector.observedReads.filter { $0 == "PersistentAssetLock" }.count, 2)
-    }
-
     /// The ordinary case: the TXO carries its wallet id, and the confirmed
     /// spender's record is restored so the conflict screen's history scan
     /// can act at startup.

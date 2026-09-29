@@ -313,7 +313,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// marker is stored and flushed synchronously. A failure rolls back the
     /// in-memory mutation only when the backend has not committed the store and
     /// did not retain a transient retry buffer. Before mutating, the backend
-    /// must attest atomic tracked-asset-lock persistence and restart restore.
+    /// must attest atomic tracked-asset-lock persistence.
     pub(crate) async fn mark_asset_lock_consumption_unknown(
         &self,
         out_point: &OutPoint,

@@ -146,8 +146,6 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO: u64 =
     PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE: u64 = 1 << 7;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DPNS_NAME_STATES: u64 = 1 << 8;
-/// Tracked rows persist, and nonterminal rows restore with exact status and proof.
-/// Requires asset-lock persistence and both wallet-list load/free callbacks.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS: u64 = 1 << 9;
 /// Tracked (wallet-independent) masternodes are persisted AND restored
 /// across restarts. Requires the extension trio
@@ -1549,7 +1547,7 @@ impl FFIPersister {
         if wallet_restore {
             capabilities = capabilities.union(PersistenceCapabilities::WALLET_RESTORE);
         }
-        if self.callbacks.on_persist_asset_locks_fn.is_some() && wallet_restore {
+        if self.callbacks.on_persist_asset_locks_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
         }
         if self
@@ -8470,41 +8468,12 @@ mod tests {
     }
 
     #[test]
-    fn tracked_asset_locks_require_persist_and_complete_restore_callbacks() {
-        let required = PersistenceCapabilities::TRACKED_ASSET_LOCKS;
-        for (load, free) in [(false, false), (true, false), (false, true), (true, true)] {
-            let callbacks = PersistenceCallbacks {
-                on_persist_asset_locks_fn: Some(noop_asset_locks),
-                on_load_wallet_list_fn: load.then_some(noop_load_wallets),
-                on_load_wallet_list_free_fn: free.then_some(noop_free_wallets),
-                ..Default::default()
-            };
-            assert_eq!(
-                declared_persister(callbacks, required)
-                    .persistence_capabilities()
-                    .contains(required),
-                load && free
-            );
-        }
-        let callbacks = PersistenceCallbacks {
-            on_load_wallet_list_fn: Some(noop_load_wallets),
-            on_load_wallet_list_free_fn: Some(noop_free_wallets),
-            ..Default::default()
-        };
-        assert!(!declared_persister(callbacks, required)
-            .persistence_capabilities()
-            .contains(required));
-    }
-
-    #[test]
-    fn asset_lock_reconciliation_requires_every_callback_leg() {
+    fn asset_lock_reconciliation_requires_atomic_persistence_callbacks() {
         fn complete_callbacks() -> PersistenceCallbacks {
             PersistenceCallbacks {
                 on_changeset_begin_fn: Some(noop_begin),
                 on_changeset_end_fn: Some(noop_end),
                 on_persist_asset_locks_fn: Some(noop_asset_locks),
-                on_load_wallet_list_fn: Some(noop_load_wallets),
-                on_load_wallet_list_free_fn: Some(noop_free_wallets),
                 ..Default::default()
             }
         }
@@ -8520,18 +8489,8 @@ mod tests {
         missing_end.on_changeset_end_fn = None;
         let mut missing_asset_locks = complete_callbacks();
         missing_asset_locks.on_persist_asset_locks_fn = None;
-        let mut missing_load = complete_callbacks();
-        missing_load.on_load_wallet_list_fn = None;
-        let mut missing_load_free = complete_callbacks();
-        missing_load_free.on_load_wallet_list_free_fn = None;
 
-        for callbacks in [
-            missing_begin,
-            missing_end,
-            missing_asset_locks,
-            missing_load,
-            missing_load_free,
-        ] {
+        for callbacks in [missing_begin, missing_end, missing_asset_locks] {
             assert!(!declared_persister(callbacks, required)
                 .persistence_capabilities()
                 .contains(required));
