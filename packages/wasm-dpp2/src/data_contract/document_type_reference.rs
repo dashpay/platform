@@ -110,8 +110,10 @@ export type DocumentPropertyReferenceTarget =
        * only an identity equal to the referenced side may create the
        * document, and every replace re-checks it. At most one pair is a
        * function instead, keyed by the referenced property (see
-       * {@link DocumentReferenceAgreementFunction}). Absent — not
-       * `{}`-valued — when the declaration carries none.
+       * {@link DocumentReferenceAgreementFunction}); beside one the whole
+       * declaration is judged when the document is created only, so no
+       * replace re-checks its pairs. Absent — not `{}`-valued — when the
+       * declaration carries none.
        */
       propertyAgreement?: Record<string, string | DocumentReferenceAgreementFunction>;
       /**
@@ -202,7 +204,8 @@ export type DocumentPropertyReferenceTarget =
        * value is the referenced document's `$id`. With a lookup the
        * reference means "a document with this key exists now": once the one
        * it found is deleted the key may find another, and every replace
-       * re-validates it.
+       * re-validates it, unless a `propertyAgreement` function computes the
+       * key: that commitment is judged when the document is created only.
        */
       lookup?: DocumentReferenceLookup;
     }

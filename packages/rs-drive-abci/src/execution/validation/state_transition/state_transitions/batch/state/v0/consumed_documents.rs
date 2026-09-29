@@ -80,12 +80,12 @@ impl ConsumedDocuments {
 
     /// Refuses a create of `contract_id` consuming `consumptions` when one of
     /// them is written by another transition of the batch, consumed by a
-    /// create it already accepted, or consumed twice by this create, and
-    /// records them otherwise. Call it only for a create every other check
-    /// accepted: a refused create consumes nothing, so it must not block a
-    /// later one.
-    pub(super) fn validate_and_record(
-        &mut self,
+    /// create it already accepted, or consumed twice by this create. Records
+    /// nothing: run it before any tracker records the create, and
+    /// [`Self::record`] once every check accepted it, so a refused create
+    /// consumes nothing and claims nothing anywhere.
+    pub(super) fn validate(
+        &self,
         contract_id: Identifier,
         consumptions: &[ConsumedLookupDocument],
     ) -> SimpleConsensusValidationResult {
@@ -111,10 +111,37 @@ impl ConsumedDocuments {
                 );
             }
         }
-        // Claim only once every document is known to be free, so a refused
-        // create leaves the tracker exactly as it found it
-        self.consumed.extend(claimed);
         SimpleConsensusValidationResult::new()
+    }
+
+    /// Records the documents an accepted create of `contract_id` consumes, for
+    /// the rest of the batch.
+    pub(super) fn record(
+        &mut self,
+        contract_id: Identifier,
+        consumptions: &[ConsumedLookupDocument],
+    ) {
+        self.consumed.extend(consumptions.iter().map(|consumption| {
+            (
+                contract_id,
+                consumption.document.document_type_name.clone(),
+                consumption.document.document_id,
+            )
+        }));
+    }
+
+    /// [`Self::validate`], then [`Self::record`] when it holds.
+    #[cfg(test)]
+    fn validate_and_record(
+        &mut self,
+        contract_id: Identifier,
+        consumptions: &[ConsumedLookupDocument],
+    ) -> SimpleConsensusValidationResult {
+        let result = self.validate(contract_id, consumptions);
+        if result.is_valid() {
+            self.record(contract_id, consumptions);
+        }
+        result
     }
 }
 
@@ -210,5 +237,26 @@ mod tests {
         assert!(consumed
             .validate_and_record(Identifier::from([7; 32]), &[consumption([2; 32])])
             .is_valid());
+    }
+
+    #[test]
+    fn should_claim_nothing_until_the_accepted_create_is_recorded() {
+        let contract = contract();
+        let contract_id = contract.contract.id();
+        let mut consumed = ConsumedDocuments::for_batch(&[]);
+
+        // The check alone claims nothing: a create a later tracker refuses
+        // leaves the document free for the rest of the batch
+        assert!(consumed
+            .validate(contract_id, &[consumption([4; 32])])
+            .is_valid());
+        assert!(consumed
+            .validate(contract_id, &[consumption([4; 32])])
+            .is_valid());
+        // Recorded once every check accepted the create
+        consumed.record(contract_id, &[consumption([4; 32])]);
+        assert!(refused(
+            &consumed.validate(contract_id, &[consumption([4; 32])])
+        ));
     }
 }

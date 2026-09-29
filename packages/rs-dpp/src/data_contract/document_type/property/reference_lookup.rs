@@ -25,6 +25,7 @@
 //! registration state validation for a type of another contract) cannot drift.
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::property::lookup_preimage::LookupHashKey;
 use crate::data_contract::document_type::property::{is_transient, DocumentPropertyType};
@@ -71,6 +72,12 @@ pub enum LookupKeySource {
     Hash(LookupHashKey),
 }
 
+/// The source as the lookup holds it. A computed key serializes as its
+/// `{ "function", "params" }` under the index property it fills, the parsed
+/// model: the schema declares it as a `propertyAgreement` function pair
+/// instead, keyed by that property, and refuses it under `keys`. A consumer
+/// presenting a declaration as the schema spells it moves it back, as the
+/// wasm-dpp2 reference listing does.
 impl Serialize for LookupKeySource {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
@@ -274,21 +281,18 @@ impl DocumentReferenceLookup {
         &self,
         declaring: DocumentTypeRef,
         reference_path: &str,
-        reference_type: &DocumentPropertyType,
     ) -> Option<String> {
         let computed = self.is_checked_on_create_only();
         let on_the_document = reference_path == OWNER_ID || reference_path == CREATOR_ID;
+        let carrier_type = declaring
+            .flattened_properties()
+            .get(reference_path)
+            .map(|property| &property.property_type);
         // A single property carrying the reference has a path, which a param
         // names it by; `"."` stays for the values without one: each element of
         // a typed array, the writer and the creator
-        let named_by_path = !on_the_document
-            && !matches!(
-                declaring
-                    .flattened_properties()
-                    .get(reference_path)
-                    .map(|property| &property.property_type),
-                Some(DocumentPropertyType::TypedArray(_))
-            );
+        let named_by_path =
+            !on_the_document && !matches!(carrier_type, Some(DocumentPropertyType::TypedArray(_)));
         if named_by_path {
             if let Some((index_property, _)) = self
                 .hash_key()
@@ -300,9 +304,10 @@ impl DocumentReferenceLookup {
                 ));
             }
         }
-        let revealed = !matches!(
-            reference_type,
-            DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+        // A string or byte array carrying the reference is no identifier
+        let revealed = matches!(
+            carrier_type,
+            Some(DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_))
         );
         if revealed
             && self
@@ -348,7 +353,7 @@ impl DocumentReferenceLookup {
             let path = match source {
                 LookupKeySource::ReferenceValue => continue,
                 LookupKeySource::Hash(key) => {
-                    if let Some(reason) = key.referring_side_error(declaring, reference_type) {
+                    if let Some(reason) = key.referring_side_error(declaring) {
                         return Some(format!(
                             "propertyAgreement function \"{index_property}\" {reason}"
                         ));
@@ -586,6 +591,37 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
+        // Consuming deletes the found document without a delete transition of its
+        // own: no delete token cost is charged, no delete action fee, and the key
+        // signing the create is only held to the creating type's security level.
+        // A type whose delete costs something, or asks a stricter key than the
+        // creating type, may not be consumed
+        if self.consume
+            && (referenced.document_deletion_token_cost().is_some()
+                || referenced
+                    .action_fees()
+                    .is_some_and(|fees| fees.document_deletion_action_fee().is_some()))
+        {
+            return Some(format!(
+                "consume deletes the found document without a delete transition, so \"{}\" \
+                 may declare no delete token cost and no delete action fee: neither would be \
+                 charged",
+                referenced.name()
+            ));
+        }
+        if self.consume
+            && referenced.security_level_requirement() < declaring.security_level_requirement()
+        {
+            return Some(format!(
+                "consume deletes the found document with the key that signs the create, so \
+                 \"{}\" may not require a stricter signature security level ({:?}) than \"{}\" \
+                 ({:?})",
+                referenced.name(),
+                referenced.security_level_requirement(),
+                declaring.name(),
+                declaring.security_level_requirement()
+            ));
+        }
         if let Some((index_property, why)) = self.moving_key_part(referenced) {
             return Some(format!(
                 "index \"{}\" of \"{}\" keys documents by \"{index_property}\", which {why}: a \
@@ -637,56 +673,42 @@ impl DocumentReferenceLookup {
         })
     }
 
-    /// The equality values of the key the lookup assembles for one write of a
-    /// document of `declaring`, by index property name: `reference_value` for
-    /// `"."` (the property's value, or one array element's, of
-    /// `reference_type`: an identifier, or the string or byte array a computed
-    /// key's `"."` param reads), `owner_id` for
-    /// `"$ownerId"`, the value at each source path in `document_data`, and
-    /// for a computed key `computed_key` when the caller already hashed it,
-    /// the hash of its preimage otherwise. Returned with how many SHA-256
-    /// blocks the hashing took, 0 when none was done, what the write is billed
-    /// for. `None` when a source path
-    /// holds no value or does not resolve, or a computed key's preimage
-    /// cannot be assembled. Registration admits required sources only, so a
-    /// value is missing only on a document stamped before the property became
-    /// required (`requiredSince`) or one the schema validation refuses anyway;
-    /// a create whose preimage cannot be assembled is refused before any read
-    /// (`DocumentReferencePreimageInvalidError`). Either way a key with a
-    /// missing part finds no document.
+    /// The equality values of the key the lookup assembles for one write, by
+    /// index property name: `reference_value` for `"."` (the identifier
+    /// property's value, one array element, the writer or the creator),
+    /// `owner_id` for `"$ownerId"`, the value at each source path in
+    /// `document_data`, and `computed_key`, the hash the caller computed and
+    /// billed, for a computed key: this never hashes, so a hash is never taken
+    /// unbilled. `None` when a source path holds no value or does not resolve,
+    /// or a computed key has no `computed_key`. Registration admits required
+    /// sources only, so a value is missing only on a document stamped before
+    /// the property became required (`requiredSince`) or one the schema
+    /// validation refuses anyway; a create whose preimage cannot be assembled
+    /// is refused before any read (`DocumentReferencePreimageInvalidError`).
+    /// Either way a key with a missing part finds no document.
     pub fn key_values(
         &self,
-        declaring: DocumentTypeRef,
-        reference_value: &Value,
-        reference_type: &DocumentPropertyType,
+        reference_value: Identifier,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         computed_key: Option<&Value>,
-    ) -> Option<(BTreeMap<String, Value>, u16)> {
-        let mut hashed_blocks = 0;
-        let values = self
-            .keys
+    ) -> Option<BTreeMap<String, Value>> {
+        self.keys
             .iter()
             .map(|(index_property, source)| {
                 let value = match source {
-                    LookupKeySource::ReferenceValue => reference_value.clone(),
+                    LookupKeySource::ReferenceValue => {
+                        Value::Identifier(reference_value.to_buffer())
+                    }
                     LookupKeySource::OwnerId => Value::Identifier(owner_id.to_buffer()),
                     LookupKeySource::Property(path) => {
                         document_data.get_optional_at_path(path).ok()??.clone()
                     }
-                    LookupKeySource::Hash(_) if computed_key.is_some() => computed_key?.clone(),
-                    LookupKeySource::Hash(key) => {
-                        let (value, blocks) = key
-                            .key_value(declaring, reference_value, reference_type, document_data)
-                            .ok()?;
-                        hashed_blocks = blocks;
-                        value
-                    }
+                    LookupKeySource::Hash(_) => computed_key?.clone(),
                 };
                 Some((index_property.clone(), value))
             })
-            .collect::<Option<BTreeMap<String, Value>>>()?;
-        Some((values, hashed_blocks))
+            .collect()
     }
 }
 
@@ -881,11 +903,7 @@ mod tests {
         );
         let declaring = elected_charter();
         assert_eq!(
-            lookup.referring_side_error(
-                declaring.as_ref(),
-                "memberId",
-                &DocumentPropertyType::Identifier
-            ),
+            lookup.referring_side_error(declaring.as_ref(), "memberId",),
             None
         );
         assert_eq!(
@@ -960,11 +978,7 @@ mod tests {
                 "bySubmittedCharter",
                 &[("submittedCharterId", source), ("$ownerId", ".")],
             )
-            .referring_side_error(
-                declaring.as_ref(),
-                "memberId",
-                &DocumentPropertyType::Identifier,
-            )
+            .referring_side_error(declaring.as_ref(), "memberId")
             .expect("the source should be refused");
             assert!(error.contains(fragment), "{source}: {error}");
         }
@@ -1055,11 +1069,7 @@ mod tests {
             platform_value!({ "tradeMode": 1u8 }),
         ] {
             let error = lookup
-                .referring_side_error(
-                    elected_charter_with(extra.clone()).as_ref(),
-                    "memberId",
-                    &DocumentPropertyType::Identifier,
-                )
+                .referring_side_error(elected_charter_with(extra.clone()).as_ref(), "memberId")
                 .expect("a writer key part should be refused");
             assert!(
                 error.contains(
@@ -1072,11 +1082,7 @@ mod tests {
 
         // A type that can neither be transferred nor traded keeps its writer
         assert_eq!(
-            lookup.referring_side_error(
-                elected_charter().as_ref(),
-                "memberId",
-                &DocumentPropertyType::Identifier
-            ),
+            lookup.referring_side_error(elected_charter().as_ref(), "memberId",),
             None
         );
     }
@@ -1163,34 +1169,16 @@ mod tests {
         let member = Identifier::from([3; 32]);
         let owner = Identifier::from([4; 32]);
         let data = BTreeMap::from([("submittedCharterId".to_string(), Value::Identifier([5; 32]))]);
-        let declaring = elected_charter();
 
         assert_eq!(
-            lookup.key_values(
-                declaring.as_ref(),
-                &Value::Identifier(member.to_buffer()),
-                &DocumentPropertyType::Identifier,
-                &data,
-                owner,
-                None
-            ),
-            Some((
-                BTreeMap::from([
-                    ("$ownerId".to_string(), Value::Identifier([3; 32])),
-                    ("submittedCharterId".to_string(), Value::Identifier([5; 32])),
-                ]),
-                0
-            ))
+            lookup.key_values(member, &data, owner, None),
+            Some(BTreeMap::from([
+                ("$ownerId".to_string(), Value::Identifier([3; 32])),
+                ("submittedCharterId".to_string(), Value::Identifier([5; 32])),
+            ]))
         );
         assert_eq!(
-            lookup.key_values(
-                declaring.as_ref(),
-                &Value::Identifier(member.to_buffer()),
-                &DocumentPropertyType::Identifier,
-                &BTreeMap::new(),
-                owner,
-                None
-            ),
+            lookup.key_values(member, &BTreeMap::new(), owner, None),
             None
         );
         assert_eq!(

@@ -9,7 +9,8 @@ use crate::data_contract::document_type::property_constraints::{
     EqualityKind, PropertyConstraint, PropertyRead,
 };
 use crate::data_contract::document_type::reference_lookup::{
-    MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
+    schema_property_is_fixed_once_written, MAX_LOOKUP_INDEX_NAME_LENGTH, MAX_LOOKUP_KEYS,
+    MAX_LOOKUP_PATH_LENGTH,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -22,8 +23,7 @@ use crate::data_contract::document_type::{
     DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient, EncryptionScheme,
     GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements, KeyIdReference,
     KeyReferenceIdentityProperty, ListElementReference, LookupHashKey, LookupKeySource,
-    PropertyReference, ReferenceCombinator, ReferenceHolder, ReferenceOperands, SystemFunction,
-    COMBINABLE_REFERENCE_TARGET_TYPES,
+    ReferenceCombinator, ReferenceOperands, SystemFunction, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -716,11 +716,7 @@ fn apply_property_reference_v0(
     // with a lookup on one is read by `apply_revealed_reference`, which admits
     // only a value revealed into a computed lookup key. Every other
     // declaration on one is refused below
-    if matches!(
-        property_type,
-        DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_)
-    ) && declares_a_lookup(refers_to_value)
-    {
+    if is_revealed_declaration(&property_type, refers_to_value) {
         return Ok(property_type);
     }
 
@@ -804,31 +800,46 @@ fn apply_property_reference_v0(
 /// refuses.
 ///
 /// Versioned on `apply_property_reference`, the gate of the declaration it
+/// reads, and dispatched with it, so the declarations one skips the other
 /// reads: `None` ignores the keyword, as it does on an identifier.
 fn apply_revealed_reference(
     inner_properties: &BTreeMap<String, &Value>,
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<Option<DocumentPropertyReferenceTarget>, DataContractError> {
-    if platform_version
+    match platform_version
         .dpp
         .contract_versions
         .document_type_versions
         .schema
         .apply_property_reference
-        .is_none()
     {
-        return Ok(None);
+        None => Ok(None),
+        Some(0) => apply_revealed_reference_v0(inner_properties, property_type),
+        Some(version) => Err(DataContractError::Unsupported(format!(
+            "apply_property_reference version {version} is not supported"
+        ))),
     }
-    if !matches!(
+}
+
+/// Whether `property_type` carrying `refers_to_value` is a revealed reference:
+/// a string or byte array whose declaration has a `lookup`. Version 0 of
+/// `apply_property_reference` leaves exactly these to
+/// [`apply_revealed_reference_v0`], which parses exactly these.
+fn is_revealed_declaration(property_type: &DocumentPropertyType, refers_to_value: &Value) -> bool {
+    matches!(
         property_type,
         DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_)
-    ) {
-        return Ok(None);
-    }
+    ) && declares_a_lookup(refers_to_value)
+}
+
+fn apply_revealed_reference_v0(
+    inner_properties: &BTreeMap<String, &Value>,
+    property_type: &DocumentPropertyType,
+) -> Result<Option<DocumentPropertyReferenceTarget>, DataContractError> {
     let Some(refers_to_value) = inner_properties
         .get(property_names::REFERS_TO)
-        .filter(|refers_to_value| declares_a_lookup(refers_to_value))
+        .filter(|refers_to_value| is_revealed_declaration(property_type, refers_to_value))
     else {
         return Ok(None);
     };
@@ -1893,29 +1904,25 @@ pub(super) fn validate_reference_lookup_sources(
         let Some(target) = reference.target() else {
             continue;
         };
-        // What `"."` reads: the string or byte array a revealed reference
-        // carries, and otherwise an identifier (the property's, an element's,
-        // the writer's or the creator's)
-        let identifier = DocumentPropertyType::Identifier;
-        let reference_type = match (holder, reference) {
-            (ReferenceHolder::Property(path), PropertyReference::Revealed(_)) => document_type
-                .flattened_properties()
-                .get(path)
-                .map(|property| &property.property_type)
-                .unwrap_or(&identifier),
-            _ => &identifier,
-        };
         // Each leaf of a reference expression reads its key as it would
         // alone, and the error names the leaf (`refersTo anyOf[1] lookup`)
         for (leaf_path, leaf) in target.leaves_with_paths() {
-            let Some(lookup) = leaf
-                .as_any_document_reference()
-                .and_then(|declaration| declaration.lookup)
-            else {
+            let Some(declaration) = leaf.as_any_document_reference() else {
                 continue;
             };
-            if let Some(reason) =
-                lookup.referring_side_error(document_type, holder.path(), reference_type)
+            let Some(lookup) = declaration.lookup else {
+                continue;
+            };
+            if let Some(reason) = lookup
+                .referring_side_error(document_type, holder.path())
+                .or_else(|| {
+                    create_only_leaf_error(
+                        document_type,
+                        &leaf_path,
+                        lookup,
+                        declaration.property_agreement,
+                    )
+                })
             {
                 let at = if leaf_path.is_empty() {
                     String::new()
@@ -1930,6 +1937,60 @@ pub(super) fn validate_reference_lookup_sources(
         }
     }
     Ok(())
+}
+
+/// Why a `refersTo` leaf whose `lookup` key a `propertyAgreement` function
+/// computes, at `leaf_path` of its declaration on `document_type`, cannot be
+/// judged on the create alone; `None` when it can (or the lookup holds no
+/// computed key). Such a leaf holds on a replace without a read, so:
+///
+/// * on a document type whose documents can be replaced it may not be an
+///   operand of an `anyOf`, at any depth: the `anyOf` would hold on every
+///   replace whichever operand held on the create, and the operands a replace
+///   asks again would never be asked;
+/// * every plain `propertyAgreement` pair beside the function reads a
+///   referring property that is transient or fixed once written (and not
+///   listed under `immutableAllowSetting`), since no replace checks the pair
+///   again. `"$ownerId"` is exempt: it names the writer of the create, whose
+///   own commitment the reveal is.
+fn create_only_leaf_error(
+    document_type: DocumentTypeRef,
+    leaf_path: &str,
+    lookup: &DocumentReferenceLookup,
+    property_agreement: &BTreeMap<String, String>,
+) -> Option<String> {
+    if !lookup.is_checked_on_create_only() {
+        return None;
+    }
+    if document_type.documents_mutable()
+        && leaf_path.contains(ReferenceCombinator::AnyOf.wire_name())
+    {
+        return Some(
+            "a lookup whose key a propertyAgreement function computes is judged when the \
+             document is created only and holds on a replace without a read, so on a document \
+             type whose documents can be replaced it cannot be an operand of an anyOf: the \
+             anyOf would hold on every replace, whichever operand held on the create"
+                .to_string(),
+        );
+    }
+    property_agreement
+        .keys()
+        .filter(|referring| referring.as_str() != OWNER_ID)
+        .find(|referring| {
+            !is_transient(document_type, referring)
+                && (!schema_property_is_fixed_once_written(document_type, referring)
+                    || document_type
+                        .immutable_fields_allow_setting()
+                        .contains(referring.split('.').next().unwrap_or(referring)))
+        })
+        .map(|referring| {
+            format!(
+                "propertyAgreement pair \"{referring}\" sits beside a function, so it is judged \
+                 when the document is created only: \"{referring}\" must be fixed once written \
+                 (make the type immutable or list the property under `immutable`, and not under \
+                 `immutableAllowSetting`) or transient"
+            )
+        })
 }
 
 /// Reads a property's `encryptedFor` declaration: how the bytes of a byte

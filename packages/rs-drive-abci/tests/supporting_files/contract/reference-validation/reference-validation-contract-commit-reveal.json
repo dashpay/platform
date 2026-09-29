@@ -421,6 +421,70 @@
         "meta"
       ],
       "additionalProperties": false
+    },
+    "ticket": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "commitment": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0
+        },
+        "secret": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1,
+          "refersTo": {
+            "type": "deletableDocument",
+            "documentType": "ticket",
+            "lookup": {
+              "index": "byCommitment",
+              "consume": true
+            },
+            "propertyAgreement": {
+              "$ownerId": "$ownerId",
+              "commitment": {
+                "function": "sys.hash.sha256d",
+                "params": [
+                  "secret"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "indices": [
+        {
+          "name": "byCommitment",
+          "properties": [
+            {
+              "commitment": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "byOwner",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            }
+          ]
+        }
+      ],
+      "required": [
+        "commitment"
+      ],
+      "transient": [
+        "secret"
+      ],
+      "additionalProperties": false
     }
   }
 }

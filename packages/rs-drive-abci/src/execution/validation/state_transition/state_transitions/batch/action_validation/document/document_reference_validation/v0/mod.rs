@@ -53,13 +53,14 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use dpp::data_contract::document_type::methods::{read_data_at_path, RepeatedKey};
 use crate::execution::types::execution_operation::{RetrieveIdentityInfo, ValidationOperation};
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::{
-    fetch_document_through_lookup, fetch_document_with_id,
+    fetch_document_through_lookup, fetch_document_with_id, hash_lookup_key, BilledLookupKey,
 };
 use crate::platform_types::platform::PlatformStateRef;
 
@@ -327,9 +328,25 @@ fn validate_document_type_references_v0(
                 if !is_create {
                     continue;
                 }
-                let Ok(Some(value)) = document_data.get_optional_at_path(property_path) else {
-                    continue;
+                // Read as the stored document keeps it: a map on the way holding the
+                // property's key more than once is refused (the create's structure
+                // validation already refused it), never taken for an unset property
+                let preimage_invalid = || {
+                    Ok(SimpleConsensusValidationResult::new_with_error(
+                        DocumentReferencePreimageInvalidError::new(
+                            document_type.name().clone(),
+                            path.to_string(),
+                            path.to_string(),
+                            "the value cannot be revealed into its lookup key".to_string(),
+                        )
+                        .into(),
+                    ))
                 };
+                match read_data_at_path(document_data, property_path) {
+                    Ok(Some(_)) => {}
+                    Ok(None) => continue,
+                    Err(RepeatedKey) => return preimage_invalid(),
+                }
                 let Some((_, key)) = target
                     .as_any_document_reference()
                     .and_then(|declaration| declaration.lookup)
@@ -340,36 +357,14 @@ fn validate_document_type_references_v0(
                          parser enforces",
                     )));
                 };
-                let Some(property) = document_type.flattened_properties().get(property_path) else {
-                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "a revealed reference is declared on a property of its document type",
-                    )));
-                };
-                // Hashed once here, billed as the double SHA-256 it is, and
-                // handed to the lookup as its key
-                let referenced_id = match key.key_value(
-                    document_type,
-                    value,
-                    &property.property_type,
-                    document_data,
-                ) {
-                    Ok((Value::Bytes32(hash), blocks)) => {
-                        execution_context.add_operation(ValidationOperation::DoubleSha256(blocks));
-                        hash
-                    }
-                    // The create's structure validation refused a value it could not
-                    // reveal, before any read
-                    Ok(_) | Err(_) => {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            DocumentReferencePreimageInvalidError::new(
-                                document_type.name().clone(),
-                                path.to_string(),
-                                path.to_string(),
-                                "the value cannot be revealed into its lookup key".to_string(),
-                            )
-                            .into(),
-                        ))
-                    }
+                // Hashed and billed once here, the property named by its path in
+                // the key's params, and handed to the lookup as its key. The create's
+                // structure validation refused a value it could not reveal, before
+                // any read
+                let Some(billed_key) =
+                    hash_lookup_key(key, document_type, None, document_data, execution_context)
+                else {
+                    return preimage_invalid();
                 };
                 let result = validate_reference_v0(
                     contract,
@@ -377,8 +372,8 @@ fn validate_document_type_references_v0(
                     document_data,
                     owner_id,
                     target,
-                    referenced_id,
-                    Some(value),
+                    billed_key.digest(),
+                    Some(billed_key),
                     path,
                     &mut BTreeMap::new(),
                     &mut fetched_documents,
@@ -822,7 +817,7 @@ fn validate_reference_v0(
     owner_id: Identifier,
     reference_target: &DocumentPropertyReferenceTarget,
     referenced_id: [u8; 32],
-    revealed_value: Option<&Value>,
+    billed_key: Option<BilledLookupKey>,
     path: &str,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
     fetched_documents: &mut FetchedDocuments,
@@ -842,7 +837,7 @@ fn validate_reference_v0(
             owner_id,
             reference_target,
             referenced_id,
-            revealed_value,
+            billed_key,
             path,
             referenced_contracts,
             fetched_documents,
@@ -876,7 +871,7 @@ fn validate_reference_v0(
             owner_id,
             operand,
             referenced_id,
-            revealed_value,
+            billed_key,
             path,
             referenced_contracts,
             fetched_documents,
@@ -937,7 +932,7 @@ fn validate_reference_target_v0(
     owner_id: Identifier,
     reference_target: &DocumentPropertyReferenceTarget,
     referenced_id: [u8; 32],
-    revealed_value: Option<&Value>,
+    billed_key: Option<BilledLookupKey>,
     path: &str,
     referenced_contracts: &mut BTreeMap<Identifier, Option<Arc<DataContractFetchInfo>>>,
     fetched_documents: &mut FetchedDocuments,
@@ -1184,35 +1179,18 @@ fn validate_reference_target_v0(
             let referenced_document: Option<&Document> = match (lookup, document_id) {
                 (_, None) => None,
                 (Some(lookup), Some(document_id)) => {
-                    // The value the key reads for `"."`: the id, or the string or
-                    // byte array a revealed reference carries
-                    let identifier_type = DocumentPropertyType::Identifier;
-                    let identifier_value = Value::Identifier(document_id);
-                    let (reference_value, reference_type) = match revealed_value {
-                        Some(value) => (
-                            value,
-                            document_type
-                                .flattened_properties()
-                                .get(path)
-                                .map(|property| &property.property_type)
-                                .unwrap_or(&identifier_type),
-                        ),
-                        None => (&identifier_value, &identifier_type),
-                    };
-                    // A revealed value's id is the key's hash, computed and
-                    // billed once already
-                    let computed_key = revealed_value.map(|_| Value::Bytes32(document_id));
+                    // `"."` reads the id; a revealed value's key was hashed and billed
+                    // already, and its id is that hash
                     looked_up_document = fetch_document_through_lookup(
                         platform.drive,
                         referenced_contract,
                         referenced_document_type,
                         document_type,
                         lookup,
-                        reference_value,
-                        reference_type,
+                        Identifier::from(document_id),
                         document_data,
                         owner_id,
-                        computed_key.as_ref(),
+                        billed_key,
                         &block_info.epoch,
                         execution_context,
                         transaction,

@@ -981,8 +981,11 @@ fn validate_no_immutable_contract_owner_requirements(
 /// refused here rather than by refusing the clear at write time, since
 /// without the clear a document whose target is deleted could never be
 /// replaced again. Every other `deletableDocument` form is refused on any
-/// immutable property, and an `immutableAllowSetting` entry is always
-/// immutable, so no deletableDocument reference can be set once.
+/// immutable property, except a lookup whose key a `propertyAgreement`
+/// function computes, which is judged when the document is created only and
+/// never re-validated; an `immutableAllowSetting` entry is always immutable,
+/// and the referring-side rules refuse such a lookup's carrier there, so no
+/// deletableDocument reference can be set once.
 #[cfg(feature = "validation")]
 fn validate_no_immutable_deletable_element_references(
     document_type: &DocumentTypeV2,

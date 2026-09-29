@@ -140,7 +140,19 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                             also_insert_vote_poll_stored_info,
                         },
                     ));
-                } else {
+                    // The commitments the create revealed and consumes, each in the create's
+                    // own contract. A contested document sits in its contest's own trees, so
+                    // no tree its insert writes into is shared with these deletes
+                    for consumed in consumed_documents {
+                        ops.push(DocumentOperation(DocumentOperationType::DeleteDocument {
+                            document_id: consumed.document_id,
+                            contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
+                            document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                consumed.document_type_name,
+                            ),
+                        }));
+                    }
+                } else if consumed_documents.is_empty() {
                     // Just add the document
                     ops.push(DocumentOperation(DocumentOperationType::AddDocument {
                         owned_document_info: OwnedDocumentInfo {
@@ -154,18 +166,30 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                         document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
                         override_document: false,
                     }));
-                }
-
-                // The commitments the create revealed and consumes, deleted as their owner,
-                // the writer, would delete them: each is in the create's own contract
-                for consumed in consumed_documents {
-                    ops.push(DocumentOperation(DocumentOperationType::DeleteDocument {
-                        document_id: consumed.document_id,
-                        contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
-                        document_type_info: DocumentTypeInfo::DocumentTypeName(
-                            consumed.document_type_name,
-                        ),
-                    }));
+                } else {
+                    // The document and the commitments the create revealed and consumes, each
+                    // in the create's own contract, converted as one so the deletes see the
+                    // insert: a consumed document may share an index bucket or an
+                    // expirations tree with the new one
+                    ops.push(DocumentOperation(
+                        DocumentOperationType::AddDocumentAndDeleteConsumed {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentOwnedInfo((
+                                    document,
+                                    Some(Cow::Owned(storage_flags)),
+                                )),
+                                owner_id: Some(owner_id.into_buffer()),
+                            },
+                            contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
+                            document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                document_type_name,
+                            ),
+                            consumed_documents: consumed_documents
+                                .into_iter()
+                                .map(|consumed| (consumed.document_id, consumed.document_type_name))
+                                .collect(),
+                        },
+                    ));
                 }
 
                 Ok(ops)

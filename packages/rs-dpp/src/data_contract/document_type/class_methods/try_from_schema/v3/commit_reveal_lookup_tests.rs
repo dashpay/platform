@@ -970,3 +970,115 @@ fn should_refuse_an_update_changing_a_function_or_what_it_demands() {
         .expect("validate_update should not error");
     assert!(result.is_valid(), "{:?}", result.errors);
 }
+
+#[test]
+fn should_refuse_a_function_leaf_under_an_any_of_on_a_type_whose_documents_can_be_replaced() {
+    // On a replace a function's leaf holds without a read, so an anyOf holding
+    // one would hold on every replace, whichever operand held on the create
+    let creator_any_of = |domain_extra: serde_json::Value| {
+        let mut contract_value = dpns_contract_with_creator_reference(json!({
+            "anyOf": [
+                { "type": "identity" },
+                reveal_with(
+                    json!({ "function": "sys.hash.sha256d", "params": ["preorderSalt", "normalizedLabel"] }),
+                    json!({}),
+                    json!({}),
+                    json!({}),
+                )
+            ]
+        }));
+        merge(
+            &mut contract_value["documentSchemas"]["domain"],
+            domain_extra,
+        );
+        contract_value
+    };
+    assert_refused(
+        contract(creator_any_of(json!({
+            "documentsMutable": true,
+            "immutable": ["normalizedLabel", "parentDomainName"]
+        }))),
+        "cannot be an operand of an anyOf",
+    );
+    contract(creator_any_of(json!({})))
+        .expect("on a type whose documents are never replaced the anyOf is judged once");
+}
+
+#[test]
+fn should_refuse_a_plain_pair_beside_a_function_reading_a_property_a_replace_can_change() {
+    // The pair is judged on the create alone, so its referring side must stay
+    // what the create held
+    let with_label_pair = |domain_extra: serde_json::Value| {
+        dpns_contract_with(
+            salt_reveal(json!({}), json!({ "label": "tier" })),
+            domain_extra,
+            json!({
+                "properties": {
+                    "saltedDomainHash": {
+                        "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+                        "position": 0
+                    },
+                    "tier": { "type": "string", "maxLength": 63, "position": 1 }
+                }
+            }),
+        )
+    };
+    assert_refused(
+        contract(with_label_pair(json!({
+            "documentsMutable": true,
+            "immutable": ["normalizedLabel", "parentDomainName"]
+        }))),
+        "propertyAgreement pair \"label\" sits beside a function",
+    );
+    contract(with_label_pair(json!({
+        "documentsMutable": true,
+        "immutable": ["label", "normalizedLabel", "parentDomainName"]
+    })))
+    .expect("a pair whose referring property is fixed once written holds for good");
+}
+
+#[test]
+fn should_refuse_consuming_a_type_whose_delete_costs_something_or_asks_a_stricter_key() {
+    let consuming = |preorder_extra: serde_json::Value| {
+        contract(dpns_contract_with(
+            dpns_salt_reveal(),
+            json!({}),
+            preorder_extra,
+        ))
+    };
+    // A delete token cost is never charged when a create consumes
+    assert_refused(
+        consuming(json!({
+            "tokenCost": {
+                "delete": {
+                    "contractId": vec![9u8; 32],
+                    "tokenPosition": 0,
+                    "amount": 1000
+                }
+            }
+        })),
+        "may declare no delete token cost and no delete action fee",
+    );
+    // Nor is a key stricter than the creating type's asked for
+    assert_refused(
+        consuming(json!({ "signatureSecurityLevelRequirement": 1 })),
+        "may not require a stricter signature security level",
+    );
+    consuming(json!({})).expect("a plain commitment type may be consumed");
+}
+
+#[test]
+fn should_list_the_types_a_create_may_consume() {
+    let parsed = contract(dpns_contract(dpns_salt_reveal())).expect("the DPNS reveal should parse");
+    let names = |type_name: &str| {
+        parsed
+            .document_type_for_name(type_name)
+            .expect("the type")
+            .consumable_document_type_names()
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names("domain"), vec!["preorder".to_string()]);
+    assert!(names("preorder").is_empty());
+}

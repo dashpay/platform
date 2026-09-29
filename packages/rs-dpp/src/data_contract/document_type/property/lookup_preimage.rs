@@ -41,6 +41,7 @@
 //! parse, the registration checks and the write-time check read one grammar.
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::{read_data_at_path, RepeatedKey};
 use crate::data_contract::document_type::property::generated_from::{HashFunction, SystemFunction};
 use crate::data_contract::document_type::property::reference_lookup::schema_property_is_fixed_once_written;
 use crate::data_contract::document_type::property::{
@@ -49,10 +50,10 @@ use crate::data_contract::document_type::property::{
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use bincode::{Decode, DecodeUntrusted, Encode};
-use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::{Identifier, Value};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 /// The key of a computed lookup key naming its function.
@@ -208,10 +209,8 @@ impl LookupHashKey {
         })
     }
 
-    /// Why this key, declared on `declaring` for a value of `reference_type`
-    /// (the type of the property carrying the reference, an identifier for
-    /// the writer or the creator), cannot always be joined into a preimage that
-    /// splits back one way; `None` when it can. Every property a param reads
+    /// Why this key, declared on `declaring`, cannot always be joined into a
+    /// preimage that splits back one way; `None` when it can. Every property a param reads
     /// must exist and hold a single string, byte array or identifier. A param
     /// may be transient, since the key is read only from the create
     /// transition, where transient values are present, and optional, since a
@@ -219,11 +218,7 @@ impl LookupHashKey {
     /// written, so no replace can change the values a commitment was revealed
     /// for. Every variable-length param another variable-length param follows
     /// is followed directly by a one-byte `const`.
-    pub fn referring_side_error(
-        &self,
-        declaring: DocumentTypeRef,
-        reference_type: &DocumentPropertyType,
-    ) -> Option<String> {
+    pub fn referring_side_error(&self, declaring: DocumentTypeRef) -> Option<String> {
         for path in self.properties_read() {
             let Some(property) = declaring.flattened_properties().get(path) else {
                 return Some(format!(
@@ -253,12 +248,12 @@ impl LookupHashKey {
             }
         }
         for (position, param) in self.params.iter().enumerate() {
-            if !is_variable_length(param, declaring, reference_type) {
+            if !is_variable_length(param, declaring) {
                 continue;
             }
             let followed_by_variable = self.params[position + 1..]
                 .iter()
-                .any(|later| is_variable_length(later, declaring, reference_type));
+                .any(|later| is_variable_length(later, declaring));
             let separated = matches!(
                 self.params.get(position + 1),
                 Some(LookupKeyParam::Const(text)) if text.len() == 1
@@ -276,39 +271,45 @@ impl LookupHashKey {
         None
     }
 
-    /// The preimage a create of a document of `declaring` reveals: the bytes of
-    /// every param in order, `"."` reading `reference_value` (of
-    /// `reference_type`). An error names the first param whose value is
-    /// absent, of a kind a param cannot take, behind a repeated key, or a
-    /// variable-length value holding the separator that follows it.
-    pub fn preimage(
-        &self,
+    /// The bytes of every param of a create of a document of `declaring`, in
+    /// order, borrowed from the document where they can be: `"."` reads
+    /// `reference_id`, the identifier carrying the reference where it has no
+    /// path (an element's, the writer's or the creator's id; a property carrying
+    /// the reference is named by its path, so it passes `None`). An error names
+    /// the first param whose value is absent, of a kind a param cannot take,
+    /// behind a repeated key, or a variable-length value holding the separator
+    /// that follows it.
+    fn parts<'a>(
+        &'a self,
         declaring: DocumentTypeRef,
-        reference_value: &Value,
-        reference_type: &DocumentPropertyType,
-        document_data: &BTreeMap<String, Value>,
-    ) -> Result<Vec<u8>, LookupPreimageError> {
-        let mut preimage = Vec::new();
+        reference_id: Option<Identifier>,
+        document_data: &'a BTreeMap<String, Value>,
+    ) -> Result<Vec<Cow<'a, [u8]>>, LookupPreimageError> {
+        let mut parts = Vec::with_capacity(self.params.len());
         for (position, param) in self.params.iter().enumerate() {
             let bytes = match param {
                 LookupKeyParam::Const(text) => {
-                    preimage.extend_from_slice(text.as_bytes());
+                    parts.push(Cow::Borrowed(text.as_bytes()));
                     continue;
                 }
                 LookupKeyParam::ReferenceValue => {
-                    value_bytes(LOOKUP_KEY_REFERENCE_VALUE, reference_value)?
+                    let reference_id = reference_id.ok_or_else(|| LookupPreimageError {
+                        param: LOOKUP_KEY_REFERENCE_VALUE.to_string(),
+                        reason: "the value is absent".to_string(),
+                    })?;
+                    Cow::Owned(reference_id.to_buffer().to_vec())
                 }
                 LookupKeyParam::Property(path) => {
-                    let value = read_param(document_data, path)?;
-                    value_bytes(path, value)?
+                    value_bytes(path, read_param(document_data, path)?)?
                 }
             };
-            // A separator is required, and so checked, only where another
-            // variable-length param follows
-            let followed_by_variable = self.params[position + 1..]
-                .iter()
-                .any(|later| is_variable_length(later, declaring, reference_type));
-            if followed_by_variable && is_variable_length(param, declaring, reference_type) {
+            // A separator is required, and so checked, only after a variable-length
+            // param another variable-length param follows
+            if is_variable_length(param, declaring)
+                && self.params[position + 1..]
+                    .iter()
+                    .any(|later| is_variable_length(later, declaring))
+            {
                 if let Some(LookupKeyParam::Const(separator)) = self.params.get(position + 1) {
                     if let [separator_byte] = separator.as_bytes() {
                         if bytes.contains(separator_byte) {
@@ -323,9 +324,32 @@ impl LookupHashKey {
                     }
                 }
             }
-            preimage.extend_from_slice(&bytes);
+            parts.push(bytes);
         }
-        Ok(preimage)
+        Ok(parts)
+    }
+
+    /// Whether a create of a document of `declaring` can reveal this key, the
+    /// checks of [`Self::preimage`] without joining the bytes.
+    pub fn check_preimage(
+        &self,
+        declaring: DocumentTypeRef,
+        reference_id: Option<Identifier>,
+        document_data: &BTreeMap<String, Value>,
+    ) -> Result<(), LookupPreimageError> {
+        self.parts(declaring, reference_id, document_data)
+            .map(|_| ())
+    }
+
+    /// The preimage a create of a document of `declaring` reveals: the bytes of
+    /// every param in order, as [`Self::parts`] reads them.
+    pub fn preimage(
+        &self,
+        declaring: DocumentTypeRef,
+        reference_id: Option<Identifier>,
+        document_data: &BTreeMap<String, Value>,
+    ) -> Result<Vec<u8>, LookupPreimageError> {
+        Ok(self.parts(declaring, reference_id, document_data)?.concat())
     }
 
     /// The value of the index property this key fills for a create of a
@@ -335,13 +359,12 @@ impl LookupHashKey {
     pub fn key_value(
         &self,
         declaring: DocumentTypeRef,
-        reference_value: &Value,
-        reference_type: &DocumentPropertyType,
+        reference_id: Option<Identifier>,
         document_data: &BTreeMap<String, Value>,
-    ) -> Result<(Value, u16), LookupPreimageError> {
-        let preimage = self.preimage(declaring, reference_value, reference_type, document_data)?;
+    ) -> Result<([u8; 32], u16), LookupPreimageError> {
+        let preimage = self.preimage(declaring, reference_id, document_data)?;
         Ok((
-            Value::Bytes32(self.function.digest(&preimage)),
+            self.function.digest(&preimage),
             self.function.block_count(preimage.len()),
         ))
     }
@@ -403,17 +426,13 @@ fn param_name(param: &LookupKeyParam) -> &str {
 }
 
 /// Whether `param` has no fixed length: a string, or a byte array whose
-/// minimum and maximum sizes differ, read from a property of `declaring` or,
-/// for `"."`, from `reference_type`. A `const` and an identifier are fixed; a
-/// path naming no property is judged by [`LookupHashKey::referring_side_error`].
-fn is_variable_length(
-    param: &LookupKeyParam,
-    declaring: DocumentTypeRef,
-    reference_type: &DocumentPropertyType,
-) -> bool {
+/// minimum and maximum sizes differ, read from a property of `declaring`. A
+/// `const` is fixed, and so is `"."`, always an identifier (an element's, the
+/// writer's or the creator's id); a path naming no property is judged by
+/// [`LookupHashKey::referring_side_error`].
+fn is_variable_length(param: &LookupKeyParam, declaring: DocumentTypeRef) -> bool {
     let property_type = match param {
-        LookupKeyParam::Const(_) => return false,
-        LookupKeyParam::ReferenceValue => reference_type,
+        LookupKeyParam::Const(_) | LookupKeyParam::ReferenceValue => return false,
         LookupKeyParam::Property(path) => match declaring.flattened_properties().get(path) {
             Some(property) => &property.property_type,
             None => return false,
@@ -428,11 +447,12 @@ fn is_variable_length(
     }
 }
 
-/// The value at a dotted `path` of a document's data. A map on the way that
-/// holds the path's key more than once is refused, as the `generatedFrom`
-/// check refuses it: the schema validation and the stored document keep the
-/// last of repeated keys, where this read would find the first, so a commitment
-/// could be revealed for one value while another is stored.
+/// The value at a dotted `path` of a document's data, read through
+/// [`read_data_at_path`]: a map on the way that holds the path's key more than
+/// once is refused, as the `generatedFrom` check refuses it, since the schema
+/// validation and the stored document keep the last of repeated keys, so a
+/// commitment could otherwise be revealed for one value while another is
+/// stored.
 fn read_param<'a>(
     document_data: &'a BTreeMap<String, Value>,
     path: &str,
@@ -441,46 +461,32 @@ fn read_param<'a>(
         param: path.to_string(),
         reason: reason.to_string(),
     };
-    let mut segments = path.split('.');
-    let first = segments.next().unwrap_or(path);
-    let mut current = document_data
-        .get(first)
-        .ok_or_else(|| error("the value is absent"))?;
-    for segment in segments {
-        let Value::Map(map) = current else {
-            return Err(error("the value is absent"));
-        };
-        let mut matches = map
-            .iter()
-            .filter(|(key, _)| key.as_text() == Some(segment))
-            .map(|(_, value)| value);
-        let Some(value) = matches.next() else {
-            return Err(error("the value is absent"));
-        };
-        if matches.next().is_some() {
-            return Err(error("a map on the way holds the key more than once"));
-        }
-        current = value;
+    match read_data_at_path(document_data, path) {
+        Ok(Some(value)) => Ok(value),
+        Ok(None) => Err(error("the value is absent")),
+        Err(RepeatedKey) => Err(error(REPEATED_KEY_REASON)),
     }
-    Ok(current)
 }
+
+/// Why a value behind a repeated key is refused.
+const REPEATED_KEY_REASON: &str = "a map on the way holds the key more than once";
 
 /// The bytes a value contributes to a preimage: a string's UTF-8, or the bytes
 /// of a byte array or identifier. Schema validation has already refused a value
 /// of the wrong kind for its property, so the value is judged by its own shape.
-fn value_bytes(param: &str, value: &Value) -> Result<Vec<u8>, LookupPreimageError> {
+fn value_bytes<'a>(param: &str, value: &'a Value) -> Result<Cow<'a, [u8]>, LookupPreimageError> {
     let error = || LookupPreimageError {
         param: param.to_string(),
         reason: "the value is not a string or bytes".to_string(),
     };
     match value {
-        Value::Text(text) => Ok(text.as_bytes().to_vec()),
-        Value::Bytes(_)
-        | Value::Bytes20(_)
-        | Value::Bytes32(_)
-        | Value::Bytes36(_)
-        | Value::Identifier(_)
-        | Value::Array(_) => value.to_binary_bytes().map_err(|_| error()),
+        Value::Text(text) => Ok(Cow::Borrowed(text.as_bytes())),
+        Value::Bytes(bytes) => Ok(Cow::Borrowed(bytes)),
+        Value::Bytes20(bytes) => Ok(Cow::Borrowed(bytes)),
+        Value::Bytes32(bytes) | Value::Identifier(bytes) => Ok(Cow::Borrowed(bytes)),
+        Value::Bytes36(bytes) => Ok(Cow::Borrowed(bytes)),
+        // A byte array a JSON transition carries as an array of numbers
+        Value::Array(_) => value.to_binary_bytes().map(Cow::Owned).map_err(|_| error()),
         _ => Err(error()),
     }
 }
@@ -492,57 +498,71 @@ fn value_bytes(param: &str, value: &Value) -> Result<Vec<u8>, LookupPreimageErro
 /// variable-length value holds its separator. `None` when every such key can
 /// be joined.
 ///
-/// Only a single target is judged here, on the writer, on the creator (the
-/// writer, on a create), or on a property that holds a value, since an unset
-/// reference property is not validated. A computed key on the elements of a
-/// typed array, or that is a leaf of a reference expression, is left to the
-/// write-time check, where a key it cannot join finds no document: that value
-/// or that operand fails, and an expression's other operands still decide.
+/// A property carrying a computed key anywhere in its declaration (a single
+/// target, a leaf of a reference expression, on its elements) is first read
+/// through [`read_data_at_path`]: a map on the way holding the property's key
+/// more than once is refused, since the check would read the first of the
+/// repeated keys while the schema validation and the stored document keep the
+/// last, and could otherwise find the property unset and skip the reference.
+///
+/// Only a single target's preimage is judged here, on the writer, on the
+/// creator (the writer, on a create), or on a property that holds a value,
+/// since an unset reference property is not validated. A computed key on the
+/// elements of a typed array, or that is a leaf of a reference expression, is
+/// left to the write-time check, where a key it cannot join finds no
+/// document: that value or that operand fails, and an expression's other
+/// operands still decide.
 pub fn first_unrevealable_lookup_key(
     document_type: DocumentTypeRef,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
 ) -> Option<(String, LookupPreimageError)> {
     for (holder, reference) in document_type.reference_declarations() {
-        let Some(key) = reference
-            .target()
-            .and_then(|target| target.as_any_document_reference())
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        let carried = match holder {
+            ReferenceHolder::Property(path) => {
+                let computed = target.leaves().into_iter().any(|leaf| {
+                    leaf.as_any_document_reference()
+                        .and_then(|declaration| declaration.lookup)
+                        .is_some_and(|lookup| lookup.is_checked_on_create_only())
+                });
+                match read_data_at_path(document_data, path) {
+                    Err(RepeatedKey) if computed => {
+                        return Some((
+                            path.to_string(),
+                            LookupPreimageError {
+                                param: path.to_string(),
+                                reason: REPEATED_KEY_REASON.to_string(),
+                            },
+                        ))
+                    }
+                    Ok(Some(_)) => true,
+                    _ => false,
+                }
+            }
+            ReferenceHolder::Owner | ReferenceHolder::Creator => true,
+        };
+        let Some(key) = target
+            .as_any_document_reference()
             .and_then(|declaration| declaration.lookup)
             .and_then(|lookup| lookup.hash_key())
             .map(|(_, key)| key)
         else {
             continue;
         };
-        let identifier = DocumentPropertyType::Identifier;
-        let (reference_value, reference_type) = match (holder, reference) {
+        // An unset reference property is not validated
+        if !carried {
+            continue;
+        }
+        let reference_id = match (holder, reference) {
             (_, PropertyReference::Elements { .. } | PropertyReference::KeyId(_)) => continue,
-            (ReferenceHolder::Owner | ReferenceHolder::Creator, _) => {
-                (Value::Identifier(owner_id.to_buffer()), &identifier)
-            }
-            (ReferenceHolder::Property(path), _) => {
-                let Ok(Some(value)) = document_data.get_optional_at_path(path) else {
-                    continue;
-                };
-                let reference_type = match reference {
-                    PropertyReference::Revealed(_) => document_type
-                        .flattened_properties()
-                        .get(path)
-                        .map(|property| &property.property_type)
-                        .unwrap_or(&identifier),
-                    _ => &identifier,
-                };
-                (value.clone(), reference_type)
-            }
+            (ReferenceHolder::Owner | ReferenceHolder::Creator, _) => Some(owner_id),
+            // A property carrying the reference is named by its path
+            (ReferenceHolder::Property(_), _) => None,
         };
-        if let Err(mut error) = key.preimage(
-            document_type,
-            &reference_value,
-            reference_type,
-            document_data,
-        ) {
-            if error.param == LOOKUP_KEY_REFERENCE_VALUE {
-                error.param = holder.path().to_string();
-            }
+        if let Err(error) = key.check_preimage(document_type, reference_id, document_data) {
             return Some((holder.path().to_string(), error));
         }
     }
@@ -610,16 +630,6 @@ mod tests {
         .expect("the DPNS key should parse")
     }
 
-    fn salt_type(domain: &DocumentType) -> DocumentPropertyType {
-        domain
-            .as_ref()
-            .flattened_properties()
-            .get("preorderSalt")
-            .expect("the salt")
-            .property_type
-            .clone()
-    }
-
     fn data(entries: &[(&str, Value)]) -> BTreeMap<String, Value> {
         entries
             .iter()
@@ -655,8 +665,8 @@ mod tests {
                     ("preorderSalt", salt_value.clone()),
                 ]);
                 assert_eq!(
-                    key.key_value(domain.as_ref(), &salt_value, &salt_type(&domain), &document)
-                        .map(|(value, _)| value),
+                    key.key_value(domain.as_ref(), None, &document)
+                        .map(|(digest, _)| Value::Bytes32(digest)),
                     Ok(trigger_hash(salt, normalized_label, parent)),
                     "{normalized_label} {parent}"
                 );
@@ -665,9 +675,23 @@ mod tests {
     }
 
     #[test]
-    fn should_report_the_blocks_a_lookup_hashed_and_none_for_a_key_already_hashed() {
+    fn should_report_the_blocks_a_key_hashes_and_take_the_hash_the_caller_billed() {
         let domain = domain();
-        let salt = Value::Bytes32([0x42; 32]);
+        let document = data(&[
+            ("normalizedLabel", "al1ce".into()),
+            ("parentDomainName", "dash".into()),
+            ("preorderSalt", Value::Bytes32([0x42; 32])),
+        ]);
+        let hash = trigger_hash([0x42; 32], "al1ce", "dash");
+        // 32 + 5 + 1 + 4 bytes pad to one block, plus the second pass
+        assert_eq!(
+            dpns_key()
+                .key_value(domain.as_ref(), None, &document)
+                .map(|(digest, blocks)| (Value::Bytes32(digest), blocks)),
+            Ok((hash.clone(), 2))
+        );
+        // The lookup never hashes: its computed key is the hash the caller took
+        // and billed, and without one the key has a missing part
         let lookup = DocumentReferenceLookup::new(
             "saltedHash".to_string(),
             BTreeMap::from([(
@@ -675,37 +699,107 @@ mod tests {
                 LookupKeySource::Hash(dpns_key()),
             )]),
         );
-        let document = data(&[
-            ("normalizedLabel", "al1ce".into()),
-            ("parentDomainName", "dash".into()),
-            ("preorderSalt", salt.clone()),
-        ]);
-        let hash = trigger_hash([0x42; 32], "al1ce", "dash");
-        // 32 + 5 + 1 + 4 bytes pad to one block, plus the second pass
+        let owner = Identifier::from([1; 32]);
         assert_eq!(
-            lookup.key_values(
-                domain.as_ref(),
-                &salt,
-                &salt_type(&domain),
-                &document,
-                Identifier::from([1; 32]),
-                None
-            ),
-            Some((
-                BTreeMap::from([("saltedDomainHash".to_string(), hash.clone())]),
-                2
-            ))
+            lookup.key_values(owner, &document, owner, Some(&hash)),
+            Some(BTreeMap::from([("saltedDomainHash".to_string(), hash)]))
         );
-        assert_eq!(
-            lookup.key_values(
-                domain.as_ref(),
-                &salt,
-                &salt_type(&domain),
-                &document,
-                Identifier::from([1; 32]),
-                Some(&hash)
+        assert_eq!(lookup.key_values(owner, &document, owner, None), None);
+    }
+
+    #[test]
+    fn should_refuse_a_carrier_behind_a_repeated_key_before_it_is_taken_for_unset() {
+        // `a.b.salt` two objects deep: the first `b` holds no salt, the last does,
+        // and the stored document keeps the last
+        let platform_version = PlatformVersion::latest();
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+        let deep_claim = DocumentType::try_from_schema(
+            Identifier::from([1; 32]),
+            1,
+            config.version(),
+            "deepClaim",
+            platform_value!({
+                "type": "object",
+                "documentsMutable": false,
+                "properties": {
+                    "label": { "type": "string", "maxLength": 63u32, "position": 0u32 },
+                    "a": {
+                        "type": "object",
+                        "position": 1u32,
+                        "properties": {
+                            "b": {
+                                "type": "object",
+                                "position": 0u32,
+                                "properties": {
+                                    "salt": {
+                                        "type": "array",
+                                        "byteArray": true,
+                                        "minItems": 32u32,
+                                        "maxItems": 32u32,
+                                        "position": 0u32,
+                                        "refersTo": {
+                                            "type": "deletableDocument",
+                                            "documentType": "preorder",
+                                            "lookup": { "index": "saltedHash" },
+                                            "propertyAgreement": {
+                                                "saltedDomainHash": {
+                                                    "function": "sys.hash.sha256d",
+                                                    "params": ["a.b.salt", "label"]
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                "required": ["salt"],
+                                "additionalProperties": false
+                            }
+                        },
+                        "required": ["b"],
+                        "additionalProperties": false
+                    }
+                },
+                "required": ["label", "a"],
+                "additionalProperties": false
+            }),
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            platform_version,
+        )
+        .expect("the document type should parse");
+        let salted = |bs: Vec<Value>| {
+            data(&[
+                ("label", "deep".into()),
+                (
+                    "a",
+                    Value::Map(
+                        bs.into_iter()
+                            .map(|b| (Value::Text("b".to_string()), b))
+                            .collect(),
+                    ),
+                ),
+            ])
+        };
+        let salt = Value::Map(vec![(
+            Value::Text("salt".to_string()),
+            Value::Bytes32([0x44; 32]),
+        )]);
+        let owner = Identifier::from([2; 32]);
+        assert!(matches!(
+            first_unrevealable_lookup_key(
+                deep_claim.as_ref(),
+                &salted(vec![Value::Map(vec![]), salt.clone()]),
+                owner
             ),
-            Some((BTreeMap::from([("saltedDomainHash".to_string(), hash)]), 0))
+            Some((path, LookupPreimageError { reason, .. }))
+                if path == "a.b.salt" && reason == REPEATED_KEY_REASON
+        ));
+        assert_eq!(
+            first_unrevealable_lookup_key(deep_claim.as_ref(), &salted(vec![salt]), owner),
+            None
         );
     }
 
@@ -714,14 +808,13 @@ mod tests {
         let domain = domain();
         let key = dpns_key();
         let salt = Value::Bytes32([0x42; 32]);
-        let salt_type = salt_type(&domain);
 
         let missing_parent = data(&[
             ("normalizedLabel", "al1ce".into()),
             ("preorderSalt", salt.clone()),
         ]);
         assert!(matches!(
-            key.preimage(domain.as_ref(), &salt, &salt_type, &missing_parent),
+            key.preimage(domain.as_ref(), None, &missing_parent),
             Err(LookupPreimageError { param, .. }) if param == "parentDomainName"
         ));
 
@@ -732,7 +825,7 @@ mod tests {
             ("preorderSalt", salt.clone()),
         ]);
         assert!(matches!(
-            key.preimage(domain.as_ref(), &salt, &salt_type, &dotted_label),
+            key.preimage(domain.as_ref(), None, &dotted_label),
             Err(LookupPreimageError { param, .. }) if param == "normalizedLabel"
         ));
 
@@ -742,9 +835,7 @@ mod tests {
             ("parentDomainName", "b.c".into()),
             ("preorderSalt", salt.clone()),
         ]);
-        assert!(key
-            .preimage(domain.as_ref(), &salt, &salt_type, &dotted_parent)
-            .is_ok());
+        assert!(key.preimage(domain.as_ref(), None, &dotted_parent).is_ok());
     }
 
     #[test]
@@ -769,7 +860,9 @@ mod tests {
     }
 
     #[test]
-    fn should_serialize_a_computed_key_as_the_schema_spells_it() {
+    fn should_serialize_a_computed_key_as_its_function_and_params() {
+        // The shape of an `agreementFunction`; where it sits is the parsed
+        // model's, under the index property it fills (see `LookupKeySource`)
         let source = LookupKeySource::Hash(dpns_key());
         assert_eq!(
             serde_json::to_value(&source).expect("the key serializes"),

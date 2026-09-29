@@ -402,6 +402,29 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                 DocumentTransitionAction::CreateAction(create_action),
             ) = &transition
             {
+                // A create consumes the commitments it revealed with it, unless another
+                // write of the batch touches one: the whole batch applies as one grove
+                // batch. Checked before the trackers below record the create, and
+                // recorded once they all accepted it, so a refused create claims nothing
+                if !create_consumptions.is_empty() {
+                    let consumed_result = consumed_documents.validate(
+                        create_action.base().data_contract_id(),
+                        &create_consumptions,
+                    );
+                    if !consumed_result.is_valid() {
+                        validation_result.add_errors(consumed_result.errors);
+                        validated_transitions
+                            .push(BatchedTransitionAction::BumpIdentityDataContractNonce(
+                                BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                                    create_action.base(),
+                                    owner_id,
+                                    state_transition_action.user_fee_increase(),
+                                ),
+                            ));
+                        continue;
+                    }
+                }
+
                 let batch_entries_result = index_only_batch_entries.validate_and_record_create(
                     create_action,
                     owner_id,
@@ -445,29 +468,17 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                 }
             }
 
-            // A create consumes the commitments it revealed with it, unless another write of the
-            // batch touches one: the whole batch applies as one grove batch
+            // The accepted create's consumptions, recorded for the rest of the batch and
+            // deleted with it
             if !create_consumptions.is_empty() {
                 if let BatchedTransitionAction::DocumentAction(
                     DocumentTransitionAction::CreateAction(create_action),
                 ) = &mut transition
                 {
-                    let consumed_result = consumed_documents.validate_and_record(
+                    consumed_documents.record(
                         create_action.base().data_contract_id(),
                         &create_consumptions,
                     );
-                    if !consumed_result.is_valid() {
-                        validation_result.add_errors(consumed_result.errors);
-                        validated_transitions
-                            .push(BatchedTransitionAction::BumpIdentityDataContractNonce(
-                                BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
-                                    create_action.base(),
-                                    owner_id,
-                                    state_transition_action.user_fee_increase(),
-                                ),
-                            ));
-                        continue;
-                    }
                     create_action.set_consumed_documents(
                         create_consumptions
                             .into_iter()

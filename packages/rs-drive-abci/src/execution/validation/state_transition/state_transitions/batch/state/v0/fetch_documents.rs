@@ -5,9 +5,7 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{
-    DocumentPropertyType, DocumentReferenceLookup, DocumentTypeRef,
-};
+use dpp::data_contract::document_type::{DocumentReferenceLookup, DocumentTypeRef, LookupHashKey};
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
@@ -415,13 +413,44 @@ fn fetch_document_with_id_v1(
 // fetch_document_through_lookup
 // ============================================================================
 
+/// A computed lookup key's hash, billed: only [`hash_lookup_key`] builds one,
+/// after adding the hash to the execution context, so a key is never hashed
+/// unbilled or billed twice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BilledLookupKey([u8; 32]);
+
+impl BilledLookupKey {
+    /// The hash, the value of the index property the key fills.
+    pub(crate) fn digest(&self) -> [u8; 32] {
+        self.0
+    }
+}
+
+/// Hashes `key` for a create of a document of `declaring_document_type`
+/// carrying `document_data`, `"."` reading `reference_id` (an element's, the
+/// writer's or the creator's id; `None` for a property carrying the reference,
+/// which the key names by its path), and bills it as the double SHA-256 it is
+/// (`ValidationOperation::DoubleSha256`, by the blocks it hashes). `None`, with
+/// nothing hashed or billed, when the preimage cannot be assembled.
+pub(crate) fn hash_lookup_key(
+    key: &LookupHashKey,
+    declaring_document_type: DocumentTypeRef,
+    reference_id: Option<Identifier>,
+    document_data: &BTreeMap<String, Value>,
+    execution_context: &mut StateTransitionExecutionContext,
+) -> Option<BilledLookupKey> {
+    let (digest, blocks) = key
+        .key_value(declaring_document_type, reference_id, document_data)
+        .ok()?;
+    execution_context.add_operation(ValidationOperation::DoubleSha256(blocks));
+    Some(BilledLookupKey(digest))
+}
+
 /// The document a `refersTo` lookup resolves to for one value: the one the
 /// declared unique index of `document_type` finds for the key assembled from
-/// `reference_value` (the property's value, or one array element's, of
-/// `reference_type`: an identifier, or the string or byte array a computed
-/// key reveals), the writer `owner_id` and the sources in `document_data`, a
-/// document of `declaring_document_type` (whose property types tell a
-/// computed key's variable-length params). `None` when no
+/// `reference_value` (the identifier property's value, one array element, the
+/// writer or the creator), the writer `owner_id` and the sources in
+/// `document_data`, a document of `declaring_document_type`. `None` when no
 /// document matches, and when the key cannot be assembled or the index is
 /// missing or not unique. Contract registration and update refuse the last
 /// three (an optional source, a missing or non-unique index), and a referenced
@@ -432,12 +461,10 @@ fn fetch_document_with_id_v1(
 /// The query is billed exactly as [`fetch_document_with_id`] v1 bills an id
 /// fetch: an equality query over the index's properties (the shape the unique
 /// index conflict check builds), limit 1, whose processing cost is added to
-/// `execution_context`. A computed key hashes its preimage, billed as the
-/// double SHA-256 it is (`ValidationOperation::DoubleSha256`, by the blocks it
-/// hashed), unless the caller hashed it already and passes it as
-/// `computed_key`, having billed it. Only reached from the document reference
-/// validation, which exists from protocol version 14, so it carries no
-/// version of its own.
+/// `execution_context`. A computed key is `billed_key` when the caller hashed
+/// it already, and is otherwise hashed and billed here, by [`hash_lookup_key`].
+/// Only reached from the document reference validation, which exists from
+/// protocol version 14, so it carries no version of its own.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_document_through_lookup(
     drive: &Drive,
@@ -445,11 +472,10 @@ pub(crate) fn fetch_document_through_lookup(
     document_type: DocumentTypeRef,
     declaring_document_type: DocumentTypeRef,
     lookup: &DocumentReferenceLookup,
-    reference_value: &Value,
-    reference_type: &DocumentPropertyType,
+    reference_value: Identifier,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
-    computed_key: Option<&Value>,
+    billed_key: Option<BilledLookupKey>,
     epoch: &Epoch,
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
@@ -462,19 +488,26 @@ pub(crate) fn fetch_document_through_lookup(
     {
         return Ok(None);
     }
-    let Some((key_values, hashed_blocks)) = lookup.key_values(
-        declaring_document_type,
+    let billed_key = billed_key.or_else(|| {
+        lookup.hash_key().and_then(|(_, key)| {
+            hash_lookup_key(
+                key,
+                declaring_document_type,
+                Some(reference_value),
+                document_data,
+                execution_context,
+            )
+        })
+    });
+    let computed_key = billed_key.map(|key| Value::Bytes32(key.digest()));
+    let Some(key_values) = lookup.key_values(
         reference_value,
-        reference_type,
         document_data,
         owner_id,
-        computed_key,
+        computed_key.as_ref(),
     ) else {
         return Ok(None);
     };
-    if hashed_blocks > 0 {
-        execution_context.add_operation(ValidationOperation::DoubleSha256(hashed_blocks));
-    }
     let equal_clauses = key_values
         .into_iter()
         .map(|(field, value)| {

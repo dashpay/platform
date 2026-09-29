@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
 use std::io::{BufReader, Cursor, Read};
@@ -94,8 +94,9 @@ pub struct DocumentProperty {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generated_from: Option<GeneratedFrom>,
     /// The `refersTo` of a string or byte array property, whose value is not
-    /// an id but is revealed into a computed lookup key (`"."` among its
-    /// `params`), such as a salt a commitment hashed. An identifier property's
+    /// an id but is revealed into a computed lookup key, a `propertyAgreement`
+    /// function naming the property by its path among its `params`, such as a
+    /// salt a commitment hashed. An identifier property's
     /// `refersTo` is folded into its type instead
     /// ([`DocumentPropertyType::IdentifierWithReference`]). Only ever `Some` on
     /// contracts parsed from protocol version 14 on.
@@ -938,6 +939,13 @@ pub enum DocumentPropertyReferenceTarget {
     /// dead one nor clear it), and it may be an operand of a reference
     /// expression, which is then re-validated on every replace as well.
     ///
+    /// A lookup whose key a `propertyAgreement` function computes
+    /// ([`DocumentReferenceLookup::is_checked_on_create_only`]) is the
+    /// exception: the document it finds is a commitment the create reveals, so
+    /// it is judged when the document is created only and holds on a replace
+    /// without a read. An immutable property may hold one, and on a type whose
+    /// documents can be replaced it may not be an operand of an `anyOf`.
+    ///
     /// Appended, so every earlier variant keeps its consensus encoding. It
     /// serializes under the `deletableDocument` tag, with a `lookup` field.
     #[serde(rename = "deletableDocument")]
@@ -1183,7 +1191,8 @@ pub enum PropertyReference<'a> {
     KeyId(&'a KeyIdReference),
     /// A string or byte array property whose value is revealed into the
     /// computed lookup key of its `refersTo` ([`DocumentProperty::revealed_reference`]):
-    /// not an id, so read only through that key's `"."` param, on a create.
+    /// not an id, so read only as a param of that key's `propertyAgreement`
+    /// function, which names the property by its path, on a create.
     Revealed(&'a DocumentPropertyReferenceTarget),
 }
 
@@ -1291,6 +1300,26 @@ impl<'a> DocumentTypeRef<'a> {
                     })
                     .map(|reference| (ReferenceHolder::Property(path.as_str()), reference))
             }))
+    }
+
+    /// The names of the document types a create of this type may consume: those a
+    /// `refersTo` lookup declaring `consume` finds, on any holder and in any leaf of
+    /// an expression, each a type of this type's own contract. A create deletes such
+    /// a document along with its own write, so whatever may sign the create must be
+    /// allowed to act on these types too.
+    pub fn consumable_document_type_names(self) -> BTreeSet<&'a str> {
+        self.reference_declarations()
+            .filter_map(|(_, reference)| reference.target())
+            .flat_map(|target| target.leaves())
+            .filter_map(|leaf| match leaf {
+                DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                    document_type_name,
+                    lookup,
+                    ..
+                } if lookup.consume => Some(document_type_name.as_str()),
+                _ => None,
+            })
+            .collect()
     }
 }
 

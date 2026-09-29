@@ -14,7 +14,8 @@
 //! lookup every replace asks for again. `saltedNote` is a mutable type whose
 //! transient salt reveals the sha256d of `preorderSalt ++ label ++ "/" ++
 //! secret`, `secret` transient too, and consumes it. `nestedClaim` reveals
-//! through a salt inside an object, `meta.salt`.
+//! through a salt inside an object, `meta.salt`. `ticket` reveals, through its
+//! transient `secret`, an earlier ticket of its writer, and consumes it.
 
 use super::*;
 
@@ -26,14 +27,18 @@ mod commit_reveal_lookup_tests {
     };
     use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::DocumentReferenceValidation;
     use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::fetch_document_with_id;
+    use crate::execution::validation::state_transition::tests::setup_identity_without_adding_it;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TempPlatform;
     use dpp::consensus::basic::BasicError;
+    use dpp::consensus::signature::SignatureError;
     use dpp::data_contract::document_type::{
         DocumentPropertyReferenceTarget, DocumentTypeRef, PropertyReference, ReferenceHolder,
     };
     use dpp::document::Document;
+    use dpp::identity::accessors::IdentitySettersV0;
+    use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::prelude::{DataContract, IdentityNonce};
     use dpp::state_transition::StateTransition;
@@ -308,6 +313,11 @@ mod commit_reveal_lookup_tests {
 
         /// Whether the `preorder` with `id` is in state.
         fn preorder_exists(&self, id: Identifier) -> bool {
+            self.document_exists("preorder", id)
+        }
+
+        /// Whether the `type_name` document with `id` is in state.
+        fn document_exists(&self, type_name: &str, id: Identifier) -> bool {
             let platform_version = PlatformVersion::latest();
             let mut execution_context =
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
@@ -316,15 +326,15 @@ mod commit_reveal_lookup_tests {
                 &self.platform.drive,
                 &self.contract,
                 self.contract
-                    .document_type_for_name("preorder")
-                    .expect("expected the preorder type"),
+                    .document_type_for_name(type_name)
+                    .expect("expected the document type"),
                 id,
                 &BlockInfo::default().epoch,
                 &mut execution_context,
                 None,
                 platform_version,
             )
-            .expect("expected to fetch the preorder")
+            .expect("expected to fetch the document")
             .is_some()
         }
     }
@@ -926,6 +936,118 @@ mod commit_reveal_lookup_tests {
         assert!(result.is_valid(), "{:?}", result.errors);
         assert!(execution_context.operations_slice().is_empty());
         assert!(consumed.is_empty());
+    }
+
+    /// A `ticket` reveals an earlier ticket of its writer, of its own type,
+    /// and consumes it. Both sit in the owner's `byOwner` index bucket, which
+    /// the create adds to while the consumed ticket leaves it.
+    #[tokio::test]
+    async fn should_create_a_ticket_that_consumes_an_earlier_ticket_of_its_writer() {
+        let mut fixture = CommitRevealFixture::new();
+        let first_secret = [0x31; 32];
+        let (first, result) = fixture
+            .create(
+                Who::Alice,
+                "ticket",
+                &[("commitment", Value::Bytes32(hash_double(first_secret)))],
+                &["secret"],
+                COMMIT_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        let (second, result) = fixture
+            .create(
+                Who::Alice,
+                "ticket",
+                &[
+                    ("commitment", Value::Bytes32(hash_double([0x32; 32]))),
+                    ("secret", Value::Bytes32(first_secret)),
+                ],
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "expected the second ticket to consume the first"
+        );
+        assert!(!fixture.document_exists("ticket", first.id()));
+        assert!(fixture.document_exists("ticket", second.id()));
+    }
+
+    /// A key bound to the `domain` type signs a domain that reveals and
+    /// consumes a `preorder`: the consume deletes a document of a type outside
+    /// the key's bounds, so the batch is refused and the commitment stays.
+    #[tokio::test]
+    async fn should_refuse_a_reveal_consuming_outside_the_signing_keys_bounds() {
+        let mut fixture = CommitRevealFixture::new();
+        let platform_version = PlatformVersion::latest();
+        let (mut identity, mut signer, unbound_key) =
+            setup_identity_without_adding_it(4713, dash_to_credits!(0.5));
+        let (mut bound_key, private_key) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng(
+                2,
+                &mut StdRng::seed_from_u64(4714),
+                platform_version,
+            )
+            .expect("expected a key pair");
+        let IdentityPublicKey::V0(ref mut key) = bound_key else {
+            panic!("expected a version 0 key")
+        };
+        key.contract_bounds = Some(ContractBounds::SingleContractDocumentType {
+            id: fixture.contract.id(),
+            document_type_name: "domain".into(),
+        });
+        signer.add_identity_public_key(bound_key.clone(), private_key);
+        identity.add_public_key(bound_key.clone());
+        fixture
+            .platform
+            .drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add the identity");
+        fixture.mallory = Writer {
+            identity,
+            signer,
+            key: unbound_key,
+            next_nonce: 1,
+        };
+
+        let salt = [0x61; 32];
+        let preorder = fixture
+            .commit(Who::Mallory, salt, "b0und.dash", COMMIT_HEIGHT)
+            .await;
+        fixture.mallory.key = bound_key;
+        let result = fixture
+            .reveal_domain(
+                Who::Mallory,
+                subdomain("B0und", "b0und", "dash", salt),
+                &[],
+                REVEAL_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            PaidConsensusError {
+                error: ConsensusError::SignatureError(
+                    SignatureError::ContractBoundedKeyOutOfBoundsError(e)
+                ),
+                ..
+            } if *e.public_key_id() == 2,
+            "expected 20014 for the bound key"
+        );
+        assert!(fixture.preorder_exists(preorder.id()));
     }
 
     /// The type in the fixture reads what [`DocumentTypeRef`] reports: the
