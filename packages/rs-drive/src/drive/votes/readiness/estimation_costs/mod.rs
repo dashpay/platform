@@ -1,10 +1,14 @@
 mod v0;
 
-pub(crate) use v0::{ESTIMATED_READINESS_REPORT_RECORD_SIZE, ESTIMATED_READINESS_SCAN_CURSOR_SIZE};
+pub(crate) use v0::{
+    ESTIMATED_READINESS_REPORT_RECORD_SIZE, ESTIMATED_READINESS_ROUND_RECORD_SIZE,
+    ESTIMATED_READINESS_SCAN_CURSOR_SIZE,
+};
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
@@ -135,6 +139,50 @@ impl Drive {
             })),
             Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_readiness_fund_update".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Adds the layer estimation for a readiness credit to an epoch's processing fee pool:
+    /// the pools tree and the epoch's tree.
+    ///
+    /// # Parameters
+    ///
+    /// * `epoch` - The epoch whose pool is written.
+    /// * `estimated_costs_only_with_layer_info` - The estimation map to fill.
+    /// * `platform_version` - The platform version to use.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` on success.
+    /// * `Err(DriveError::VersionNotActive)` on a platform version without readiness.
+    pub(crate) fn add_estimation_costs_for_readiness_pool_credit(
+        epoch: &Epoch,
+        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        match platform_version
+            .drive
+            .methods
+            .vote
+            .readiness
+            .estimation_costs
+        {
+            Some(0) => {
+                Self::add_estimation_costs_for_readiness_pool_credit_v0(
+                    epoch,
+                    estimated_costs_only_with_layer_info,
+                );
+                Ok(())
+            }
+            None => Err(Error::Drive(DriveError::VersionNotActive {
+                method: "add_estimation_costs_for_readiness_pool_credit".to_string(),
+                known_versions: vec![0],
+            })),
+            Some(version) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "add_estimation_costs_for_readiness_pool_credit".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

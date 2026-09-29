@@ -9,8 +9,11 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchDeleteUpTreeApplyType, DirectQueryType};
-use crate::util::type_constants::{DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8, U64_SIZE_U8};
+use crate::util::type_constants::{
+    DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8, U64_SIZE_U32, U64_SIZE_U8,
+};
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
@@ -144,17 +147,31 @@ impl Drive {
         drive_operations.extend(fund_operations);
 
         // 4. Charge the cleanup reserve to the epoch's processing pool, capped at the fund.
+        //    An estimate read no fund, so it prices the charge of the whole reserve.
         let cleanup_charged = cleanup_reserve.min(fund_balance);
         let refund = fund_balance
             .checked_sub(cleanup_charged)
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                 "cleanup charge exceeds the fund it was capped at",
             )))?;
-        if cleanup_charged > 0 {
+        let priced_charge = if estimated_costs_only_with_layer_info.is_none() {
+            cleanup_charged
+        } else {
+            cleanup_reserve
+        };
+        if priced_charge > 0 {
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Self::add_estimation_costs_for_readiness_pool_credit(
+                    &block_info.epoch,
+                    estimated_costs_only_with_layer_info,
+                    platform_version,
+                )?;
+            }
             let mut read_operations = vec![];
             let pool_operation = self.add_readiness_pool_credit_operation(
                 block_info,
-                cleanup_charged,
+                priced_charge,
                 estimated_costs_only_with_layer_info.is_none(),
                 transaction,
                 &mut read_operations,
@@ -176,7 +193,8 @@ impl Drive {
 
     /// The operation that adds `amount` to the block epoch's processing fee pool, reading
     /// the current pool value in the same transaction. In estimation mode the read is
-    /// priced and the write is priced as an insert of a sum item.
+    /// priced without state and the write is priced as an insert of a sum item; the caller
+    /// describes the pool layers first.
     ///
     /// Readiness credits reach the pool this way (the cleanup reserve at retirement, the
     /// membership lookup fees of the block event) so that every credit leaving a readiness
@@ -205,25 +223,29 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<LowLevelDriveOperation, Error> {
         let epoch_tree_path = block_info.epoch.get_path();
-        let existing_value = if apply {
-            match self.grove_get_raw_optional(
-                (&epoch_tree_path).into(),
-                KEY_POOL_PROCESSING_FEES.as_slice(),
-                DirectQueryType::StatefulDirectQuery,
-                transaction,
-                drive_operations,
-                &platform_version.drive,
-            )? {
-                None => 0,
-                Some(Element::SumItem(existing_value, _)) => existing_value,
-                Some(_) => {
-                    return Err(Error::Drive(DriveError::UnexpectedElementType(
-                        "epochs processing fee must be a sum item",
-                    )))
-                }
-            }
+        let direct_query_type = if apply {
+            DirectQueryType::StatefulDirectQuery
         } else {
-            0
+            DirectQueryType::StatelessDirectQuery {
+                in_tree_type: TreeType::SumTree,
+                query_target: QueryTargetValue(U64_SIZE_U32),
+            }
+        };
+        let existing_value = match self.grove_get_raw_optional(
+            (&epoch_tree_path).into(),
+            KEY_POOL_PROCESSING_FEES.as_slice(),
+            direct_query_type,
+            transaction,
+            drive_operations,
+            &platform_version.drive,
+        )? {
+            None => 0,
+            Some(Element::SumItem(existing_value, _)) => existing_value,
+            Some(_) => {
+                return Err(Error::Drive(DriveError::UnexpectedElementType(
+                    "epochs processing fee must be a sum item",
+                )))
+            }
         };
         if amount > i64::MAX as u64 {
             return Err(Error::Protocol(Box::new(ProtocolError::Overflow(

@@ -18,6 +18,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::batch::drive_op_batch::ReadinessOperationType;
+use crate::util::batch::DriveOperation;
 use crate::util::common::encode::encode_u64;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use crate::util::test_helpers::test_utils::identities::create_test_identity_with_rng;
@@ -1445,6 +1447,95 @@ mod retirement {
         assert!(operations
             .iter()
             .all(|operation| !matches!(operation, LowLevelDriveOperation::GroveOperation(_))));
+    }
+
+    /// Cancels the contract's round through the generic batch path, first as an estimate
+    /// and then applied, and returns both fees.
+    fn estimate_then_cancel(
+        drive: &Drive,
+        contract_id: [u8; 32],
+        block_info: &BlockInfo,
+    ) -> (FeeResult, FeeResult) {
+        let platform_version = PlatformVersion::latest();
+        let cancel = || {
+            vec![DriveOperation::ReadinessOperation(
+                ReadinessOperationType::CancelRound {
+                    contract_id,
+                    cleanup_reserve: CLEANUP_RESERVE,
+                },
+            )]
+        };
+        let estimated = drive
+            .apply_drive_operations(cancel(), false, block_info, None, platform_version, None)
+            .expect("estimate");
+        let applied = drive
+            .apply_drive_operations(cancel(), true, block_info, None, platform_version, None)
+            .expect("apply");
+        (estimated, applied)
+    }
+
+    fn assert_estimate_covers(estimated: &FeeResult, applied: &FeeResult) {
+        assert!(applied.processing_fee > 0 && applied.storage_fee > 0);
+        assert!(
+            estimated.processing_fee >= applied.processing_fee,
+            "estimated processing {} < applied {}",
+            estimated.processing_fee,
+            applied.processing_fee
+        );
+        assert!(
+            estimated.storage_fee >= applied.storage_fee,
+            "estimated storage {} < applied {}",
+            estimated.storage_fee,
+            applied.storage_fee
+        );
+    }
+
+    #[test]
+    fn should_estimate_cancelling_a_funded_pending_round_at_no_less_than_it_costs() {
+        let (drive, payer) = setup();
+        let contract_id = [1u8; 32];
+        let (round, _) = open_round(&drive, contract_id, payer, 10, None);
+        insert_reports(&drive, &round, 0, 3, None);
+        let balance_before = payer_balance(&drive, payer, None);
+
+        let (estimated, applied) =
+            estimate_then_cancel(&drive, contract_id, &block_info(1_100_000, 11, 100));
+
+        // The applied run cancelled the round and settled its fund.
+        assert_eq!(
+            drive
+                .fetch_readiness_round(contract_id, None, PlatformVersion::latest())
+                .expect("fetch"),
+            None
+        );
+        assert_eq!(
+            payer_balance(&drive, payer, None),
+            balance_before + INITIAL_FUNDING - CLEANUP_RESERVE
+        );
+        assert_eq!(pool_credits(&drive, None), CLEANUP_RESERVE);
+        assert_estimate_covers(&estimated, &applied);
+    }
+
+    #[test]
+    fn should_estimate_cancelling_a_funded_crossed_round_at_no_less_than_it_costs() {
+        let (drive, payer) = setup();
+        let contract_id = [1u8; 32];
+        let (mut round, _) = open_round(&drive, contract_id, payer, 10, None);
+        insert_reports(&drive, &round, 0, 3, None);
+        let deadline_ms = cross(&drive, &mut round, 1_500_000);
+        let balance_before = payer_balance(&drive, payer, None);
+
+        let (estimated, applied) =
+            estimate_then_cancel(&drive, contract_id, &block_info(1_600_000, 12, 100));
+
+        // The applied run also dropped the deadline entry and its time tree.
+        assert!(!deadline_bucket_exists(&drive, deadline_ms));
+        assert_eq!(
+            payer_balance(&drive, payer, None),
+            balance_before + INITIAL_FUNDING - CLEANUP_RESERVE
+        );
+        assert_eq!(pool_credits(&drive, None), CLEANUP_RESERVE);
+        assert_estimate_covers(&estimated, &applied);
     }
 
     #[test]

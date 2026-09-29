@@ -22,14 +22,16 @@ impl Drive {
     /// * `contract_id` - The contract.
     /// * `cleanup_reserve` - The credits charged to the pool for the deferred cleanup.
     /// * `block_info` - The block the cancellation happens in.
-    /// * `estimated_costs_only_with_layer_info` - `Some` to estimate instead of read state.
+    /// * `estimated_costs_only_with_layer_info` - `Some` to estimate instead of read state:
+    ///   the operations then price the reads and the cancellation of a crossed, funded round.
     /// * `transaction` - The current transaction.
     /// * `platform_version` - The platform version to use.
     ///
     /// # Returns
     ///
-    /// * The cancelled round (`None` when the contract had none, with no operations) and the
-    ///   low level operations that perform the writes.
+    /// * The cancelled round (`None` when the contract had none, with no operations, and
+    ///   always `None` in estimation mode) and the low level operations that perform the
+    ///   writes.
     /// * `Err(DriveError::VersionNotActive)` on a platform version without readiness.
     pub fn cancel_readiness_round_operations(
         &self,
