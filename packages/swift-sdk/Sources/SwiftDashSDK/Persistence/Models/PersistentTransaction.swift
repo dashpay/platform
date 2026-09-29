@@ -287,10 +287,13 @@ public final class PersistentTransaction {
         guard let received = total(ownedOutputAmounts), let spent = total(inputs.map(\.amount)) else {
             return nil
         }
+        // Same rule as the Rust repair (`core_history::repaired_direction`):
+        // internal only when nothing leaves the wallet and something stays in
+        // it, or an asset lock burns into Platform. Both sides test one table.
         let direction: UInt32
         if previousDirection == 3 { direction = 3 }
         else if inputs.isEmpty { direction = 0 }
-        else if isAssetLock || allOutputsOwned { direction = 2 }
+        else if allOutputsOwned && (!ownedOutputAmounts.isEmpty || isAssetLock) { direction = 2 }
         else { direction = 1 }
         return (received - spent, direction)
     }

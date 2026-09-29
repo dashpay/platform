@@ -31,13 +31,37 @@ final class TransactionAccountingTests: XCTestCase {
             inputs: [spent], ownedOutputAmounts: [99], allOutputsOwned: true, previousDirection: 0, isAssetLock: false
         )?.direction, 2)
         let lock = PersistentTransaction.reconciledAccounting(
-            inputs: [spent], ownedOutputAmounts: [], allOutputsOwned: false, previousDirection: 2, isAssetLock: true
+            inputs: [spent], ownedOutputAmounts: [], allOutputsOwned: true, previousDirection: 2, isAssetLock: true
         )
         XCTAssertEqual(lock?.netAmount, -100)
         XCTAssertEqual(lock?.direction, 2)
         XCTAssertEqual(PersistentTransaction.reconciledAccounting(
             inputs: [spent], ownedOutputAmounts: [99], allOutputsOwned: false, previousDirection: 3, isAssetLock: false
         )?.direction, 3)
+    }
+
+    /// Same case table as the Rust repair's
+    /// `should_classify_repaired_direction_like_the_swift_sdk`.
+    func testShouldClassifyDirectionLikeTheRustRepair() {
+        let spent = input(100)
+        // (spends ours, owned output amounts, all outputs owned, asset lock, previous direction, expected)
+        let cases: [(Bool, [UInt64], Bool, Bool, UInt32, UInt32)] = [
+            (true, [99], true, false, 0, 2),
+            (true, [40], false, false, 0, 1),
+            (true, [], true, false, 0, 1),
+            (true, [], true, true, 0, 2),
+            (true, [40], true, true, 0, 2),
+            (true, [], false, true, 0, 1),
+            (false, [40], true, false, 0, 0),
+            (true, [99], true, false, 3, 3),
+        ]
+        for (index, (spendsOurs, owned, allOwned, isLock, previous, expected)) in cases.enumerated() {
+            let result = PersistentTransaction.reconciledAccounting(
+                inputs: spendsOurs ? [spent] : [], ownedOutputAmounts: owned,
+                allOutputsOwned: allOwned, previousDirection: previous, isAssetLock: isLock
+            )
+            XCTAssertEqual(result?.direction, expected, "case \(index)")
+        }
     }
 
     func testShouldRejectOverflowInsteadOfWrappingHistory() {

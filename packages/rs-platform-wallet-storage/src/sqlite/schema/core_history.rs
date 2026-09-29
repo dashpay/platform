@@ -330,15 +330,12 @@ fn repair_record(
                     )
                 })
         });
-    record.direction = if record.transaction_type == TransactionType::CoinJoin {
-        TransactionDirection::CoinJoin
-    } else if inputs.is_empty() {
-        TransactionDirection::Incoming
-    } else if !has_external && (has_ours || record.transaction_type == TransactionType::AssetLock) {
-        TransactionDirection::Internal
-    } else {
-        TransactionDirection::Outgoing
-    };
+    record.direction = repaired_direction(
+        record.transaction_type,
+        !inputs.is_empty(),
+        has_ours,
+        has_external,
+    );
     record.input_details = inputs.into_values().collect();
     record.output_details = outputs.into_values().collect();
     let repaired = blob::encode(&record)?;
@@ -361,4 +358,57 @@ fn repair_record(
         )?;
     }
     Ok(())
+}
+
+/// Direction of a repaired record. The Swift SDK's
+/// `PersistentTransaction.reconciledAccounting` applies the same rule; keep
+/// both in step (each side tests the same case table).
+///
+/// `has_external` counts every output that is neither ours nor an OP_RETURN
+/// burn, so an asset lock is internal only when nothing leaves the wallet.
+fn repaired_direction(
+    transaction_type: TransactionType,
+    spends_ours: bool,
+    has_ours: bool,
+    has_external: bool,
+) -> TransactionDirection {
+    if transaction_type == TransactionType::CoinJoin {
+        TransactionDirection::CoinJoin
+    } else if !spends_ours {
+        TransactionDirection::Incoming
+    } else if !has_external && (has_ours || transaction_type == TransactionType::AssetLock) {
+        TransactionDirection::Internal
+    } else {
+        TransactionDirection::Outgoing
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Shared with the Swift SDK's `TransactionAccountingTests` direction table.
+    #[test]
+    fn should_classify_repaired_direction_like_the_swift_sdk() {
+        use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
+        use TransactionType::{AssetLock, Standard};
+        // (type, spends ours, has owned output, has external output, expected)
+        let cases = [
+            (Standard, true, true, false, Internal),
+            (Standard, true, true, true, Outgoing),
+            (Standard, true, false, false, Outgoing),
+            (AssetLock, true, false, false, Internal),
+            (AssetLock, true, true, false, Internal),
+            (AssetLock, true, false, true, Outgoing),
+            (Standard, false, true, false, Incoming),
+            (TransactionType::CoinJoin, true, true, false, CoinJoin),
+        ];
+        for (kind, spends_ours, has_ours, has_external, expected) in cases {
+            assert_eq!(
+                repaired_direction(kind, spends_ours, has_ours, has_external),
+                expected,
+                "{kind:?} spends_ours={spends_ours} has_ours={has_ours} has_external={has_external}"
+            );
+        }
+    }
 }
