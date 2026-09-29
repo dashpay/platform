@@ -208,6 +208,8 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
             ),
             ("memberId".to_string(), LookupKeySource::ReferenceValue),
         ]),
+        minimum_age_blocks: None,
+        consume: false,
     };
     let agreement = BTreeMap::from([("$ownerId".to_string(), "memberId".to_string())]);
 
@@ -361,7 +363,7 @@ fn should_refuse_an_owner_lookup_without_the_reference_value() {
         for full_validation in [true, false] {
             assert_refused(
                 contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
-                "must fill exactly one index property from \".\"",
+                "must read \".\", the reference's own value, exactly once, found",
             );
         }
     }
@@ -596,6 +598,8 @@ fn should_parse_a_creator_reference_on_a_type_that_records_creator_ids() {
             ),
             ("memberId".to_string(), LookupKeySource::ReferenceValue),
         ]),
+        minimum_age_blocks: None,
+        consume: false,
     };
     for keyword in [("transferable", 1), ("tradeMode", 1)] {
         for (creator_refers_to, expected) in [
@@ -801,7 +805,8 @@ fn should_parse_an_owner_or_creator_reference_expression_of_identity_capable_lea
 /// deleting its addition, so the writer's membership may be a deletable document that exists
 /// now. `ownerRefersTo` takes a `deletableDocument` found through a lookup, alone or as an
 /// operand; `creatorRefersTo` does not, since the creator's document could be deleted after
-/// a transfer, leaving the new owner unable to replace theirs.
+/// a transfer, leaving the new owner unable to replace theirs, unless the lookup's key is
+/// computed, which is judged on the create alone (see `commit_reveal_lookup_tests`).
 #[test]
 fn should_parse_an_owner_reference_to_a_deletable_document_found_through_a_lookup() {
     let deletable_added_moderator = json!({
@@ -839,18 +844,16 @@ fn should_parse_an_owner_reference_to_a_deletable_document_found_through_a_looku
         }
     }
 
-    // The meta-schema refuses it on the creator at registration, and the parser on the
-    // stored path, alone or as an operand
+    // The parser refuses it on the creator, at registration and on the stored path, alone
+    // or as an operand: the meta-schema admits a deletableDocument there for a computed
+    // lookup key, which only the parser tells apart
     let schema = with_deletable_additions(creator_contract(deletable_added_moderator.clone()));
-    let error = contract(schema.clone()).expect_err("the meta-schema should refuse it");
-    assert!(
-        is_json_schema_error(&error),
-        "expected a meta-schema error, got {error}"
-    );
-    assert_refused(
-        contract_on(schema, false, PlatformVersion::latest()),
-        "creatorRefersTo does not take a deletableDocument reference",
-    );
+    for full_validation in [true, false] {
+        assert_refused(
+            contract_on(schema.clone(), full_validation, PlatformVersion::latest()),
+            "creatorRefersTo does not take a deletableDocument reference",
+        );
+    }
     assert_refused(
         contract_on(
             with_deletable_additions(creator_contract(json!({

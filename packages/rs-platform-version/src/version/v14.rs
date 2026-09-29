@@ -1568,6 +1568,62 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the grid-qualified level key fits 255 bytes; and a document `ttl`
 ///     prices every window an integer-range index writes.
 ///
+/// 61. **A `refersTo` may find its document by a hash the document reveals**:
+///     a `propertyAgreement` pair may be a function, keyed by the referenced
+///     property, `"<referenced property>": { "function": "sys.hash.sha256d",
+///     "params": [...] }` (meta-schema v3 `agreementFunction`, parser
+///     generation 3, `apply_property_reference` 0): the referenced property
+///     holds the SHA-256 of the SHA-256 of the params' bytes joined in order, a
+///     property path of the document (the property carrying the reference
+///     included), `{ "const": text }`, or `"."` for a value without a path (each
+///     element of a typed array, the writer, the creator), a string counting as
+///     its UTF-8, a byte array as its bytes, an identifier as its 32 bytes. That
+///     property must be in the reference's `lookup` index, whose `keys` may then
+///     leave it out: the parser holds the function as the lookup's computed key
+///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
+///     `sys.hash` namespace beside the string transformations of
+///     `generatedFrom`, which refuses it. A string or byte array property may
+///     now carry a `refersTo` whose function reads its value
+///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`);
+///     the property keeps its type. The document such a key finds is a
+///     commitment made earlier, so the lookup is judged when the document is
+///     created only: its params may be transient or optional, every stored value
+///     it reads must be fixed once written, and a replace leaves it alone.
+///     Document create structure validation 1 refuses a create missing a param,
+///     repeating a key on the way to one, or whose variable-length param holds
+///     the one-byte separator that must follow it
+///     (`DocumentReferencePreimageInvalidError`, 10423). Beside such a lookup,
+///     on the `refersTo` (refused inside the lookup), the reference may
+///     declare `minimumAgeBlocks`, judged by document create state
+///     validation 2 against the found document's `$createdAtBlockHeight`
+///     (`ReferencedDocumentRequirementNotMetError`, 40142), and `consume`, which
+///     deletes the found document with the create
+///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
+///     it elsewhere refused with 40120). The hash is computed once per key and
+///     billed as `ValidationOperation::DoubleSha256` by the blocks it hashes,
+///     beside the lookup's document fetch. Such a `deletableDocument` lookup,
+///     judged on the create alone, may sit on an `immutable` property, which
+///     `validate_no_immutable_deletable_element_references` otherwise refuses.
+///     A plain pair `{"$ownerId": "$ownerId"}`
+///     makes the commitment the writer's own, and `consume` requires it, into
+///     the declaring contract, on a type whose owners may delete, that declares
+///     no delete token cost or delete action fee and requires no stricter
+///     signature security level than the declaring type; batch advanced
+///     structure 1 refuses a contract-bound key whose bounds leave out a type
+///     the created type may consume (`ContractBoundedKeyOutOfBoundsError`,
+///     20014). The consumed deletes are converted with the create's own
+///     operations pending, so a type may consume its own documents. The plain
+///     pairs beside a function are judged with it, on the create alone, so the
+///     properties they name must be fixed once written or transient; on a
+///     mutable type such a lookup may not be an `anyOf` operand; and no
+///     property a function reads may be listed under
+///     `moderatorAbilities.changeFields` (57).
+///     `creatorRefersTo` takes a `deletableDocument` target through a function,
+///     and an `ownerRefersTo` or `creatorRefersTo` lookup may leave the value
+///     out beside one. The declaration reproduces the DPNS preorder hash of a
+///     name under a parent byte for byte; the DPNS contract and its create
+///     trigger are unchanged. See `book/src/data-model/documents.md`.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

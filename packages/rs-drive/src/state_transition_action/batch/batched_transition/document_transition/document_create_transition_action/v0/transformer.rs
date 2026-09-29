@@ -166,6 +166,7 @@ impl DocumentCreateTransitionActionV0 {
                     should_store_contest_info: should_store_contest_info.map(Box::new),
                     property_constraint_aggregates: Default::default(),
                     moderated: false,
+                    consumed_documents: Vec::new(),
                 }
                 .into(),
             ))

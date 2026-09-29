@@ -753,6 +753,51 @@ fn should_refuse_a_field_a_reference_agreement_reads() {
 }
 
 #[test]
+fn should_refuse_a_field_a_computed_lookup_key_hashes() {
+    // `label` is a param of the function computing the lookup's key: the key is judged when
+    // the document is created only, so a moderator changing `label` would leave a stored
+    // document that no longer hashes to the commitment it revealed. The type is immutable,
+    // which the lookup's own fixed-once-written rule would otherwise accept.
+    let schema = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "moderatorAbilities": { "changeFields": ["label"] },
+        "indices": [
+            { "name": "byHash", "properties": [{ "hash": "asc" }], "unique": true },
+        ],
+        "properties": {
+            "hash": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "position": 0,
+            },
+            "label": { "type": "string", "maxLength": 63, "position": 1 },
+            "salt": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "position": 2,
+                "refersTo": {
+                    "type": "permanentDocument",
+                    "documentType": "post",
+                    "lookup": { "index": "byHash" },
+                    "propertyAgreement": {
+                        "hash": { "function": "sys.hash.sha256d", "params": ["salt", "label"] },
+                    },
+                },
+            },
+        },
+        "required": ["hash"],
+        "transient": ["salt"],
+        "additionalProperties": false,
+    });
+    assert_refused_naming(parse_moderated(schema), &["label", "reference"]);
+}
+
+#[test]
 fn should_refuse_a_generated_field_and_what_a_generated_field_reads() {
     let schema = |field: &str| {
         platform_value!({

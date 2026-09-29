@@ -256,6 +256,7 @@ fn make_create_v0() -> DocumentCreateTransitionActionV0 {
         should_store_contest_info: None,
         property_constraint_aggregates: Default::default(),
         moderated: false,
+        consumed_documents: Vec::new(),
     }
 }
 
@@ -2959,6 +2960,7 @@ fn stamp_test_create_action(protocol_version: u32) -> DocumentCreateTransitionAc
         should_store_contest_info: None,
         property_constraint_aggregates: Default::default(),
         moderated: false,
+        consumed_documents: Vec::new(),
     })
 }
 

@@ -301,6 +301,12 @@ fn should_refuse_a_malformed_generated_from() {
             platform_value!({ "function": "homographSafeASCII", "params": ["label"] }),
             "function \"homographSafeASCII\" is unknown",
         ),
+        // A hash is a system function too, but one a refersTo lookup key
+        // computes, not one that generates a string
+        (
+            platform_value!({ "function": "sys.hash.sha256d", "params": ["label"] }),
+            "generatedFrom function sys.hash.sha256d does not generate a string",
+        ),
         (
             platform_value!({ "params": ["label"] }),
             "generatedFrom must be an object with a function",

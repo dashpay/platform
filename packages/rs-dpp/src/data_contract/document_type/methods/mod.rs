@@ -497,16 +497,38 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
 }
 
 /// A map on the way to a path holds the path's key more than once.
-#[cfg(feature = "validation")]
-struct RepeatedKey;
+pub struct RepeatedKey;
 
 /// The value at a dotted `path` of a document's properties: `Ok(None)` when it is absent or
 /// the path runs through a value that is not a map (the schema validation refuses that
-/// shape on its own), `Err` when a map on the way holds the path's key more than once.
+/// shape on its own), `Err` when a map on the way holds the path's key more than once. The
+/// schema validation and the stored document keep the last of repeated keys, where a plain
+/// path read finds the first, so a value checked through the first could differ from the
+/// one stored: every check that must read what is stored reads through here.
 #[cfg(feature = "validation")]
 fn read_at_path<'a>(properties: &'a Value, path: &str) -> Result<Option<&'a Value>, RepeatedKey> {
-    let mut current = properties;
-    for segment in path.split('.') {
+    read_path_segments(properties, path.split('.'))
+}
+
+/// The value at a dotted `path` of a document's data, read as [`read_at_path`] reads it.
+pub fn read_data_at_path<'a>(
+    data: &'a BTreeMap<String, Value>,
+    path: &str,
+) -> Result<Option<&'a Value>, RepeatedKey> {
+    let mut segments = path.split('.');
+    let Some(value) = segments.next().and_then(|first| data.get(first)) else {
+        return Ok(None);
+    };
+    read_path_segments(value, segments)
+}
+
+/// The value `segments` lead to from `current`, refusing a map that holds a segment's key
+/// more than once.
+fn read_path_segments<'a, 'p>(
+    mut current: &'a Value,
+    segments: impl Iterator<Item = &'p str>,
+) -> Result<Option<&'a Value>, RepeatedKey> {
+    for segment in segments {
         let Value::Map(map) = current else {
             return Ok(None);
         };

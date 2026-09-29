@@ -478,8 +478,84 @@ A document type whose documents can be transferred or traded declares `creatorRe
 }
 ```
 
-- It takes the same targets but a `deletableDocument` (the creator never changes, and a document a transfer handed on could not be replaced once the one a lookup found is deleted), with `"."` the creator in a lookup, and is refused where `ownerRefersTo` is admitted: only a document type that records creator ids may declare it, a transferable or tradeable type of a format-1 contract (`should_use_creator_id`), checked on every parse. A type therefore declares at most one of the two. A `"$ownerId"` key part in its lookup is refused, as in a property's lookup on such a type, since the owner moves.
+- It takes the same targets but a `deletableDocument` (the creator never changes, and a document a transfer handed on could not be replaced once the one a lookup found is deleted), except one found through a computed key, which is judged on the create alone (see [Commit and reveal](#commit-and-reveal-a-propertyagreement-function)), with `"."` the creator in a lookup, and is refused where `ownerRefersTo` is admitted: only a document type that records creator ids may declare it, a transferable or tradeable type of a format-1 contract (`should_use_creator_id`), checked on every parse. A type therefore declares at most one of the two. A `"$ownerId"` key part in its lookup is refused, as in a property's lookup on such a type, since the owner moves.
 - When a document is created its creator is the writer; on a replace, the value is the stored creator, whoever writes, and the replace rules are those of its target, as for the owner reference. A transfer or a purchase needs no check. A failure is the target's error at the path `$creatorId`, and registration names the declaration `<documentType>.$creatorId`. An `identity` target reads nothing: the creator existed when it wrote the document, and an identity is never removed. It counts one against `max_references_per_document`, and a change to it is an incompatible schema change on update.
+
+### Commit and reveal (a propertyAgreement function)
+
+A `propertyAgreement` pair may hold a function instead of a referenced property: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` says the referenced document's property holds a hash of values the document being created reveals. The pair is keyed by the referenced property, since a function cannot be a key, the reverse of a plain pair. That property must be a property of the lookup's index, and the platform fills it with the hash to find the referenced document, so the function computes a lookup key. The document it finds is a commitment made earlier, so the reference is a commit and reveal: the document may be created only while a commitment to values it carries exists. The function is a system function, as in [`generatedFrom`](#generated-properties-generatedfrom), from the `sys.hash` namespace; `sys.hash.sha256d`, the SHA-256 of the SHA-256, is the one there is. DPNS name registration is a commit and reveal of this kind, done today by its `domain` create trigger rather than by a declaration: a `preorder` holds `saltedDomainHash` under a unique index, and the trigger hashes what the domain reveals and looks for it. The same rule for a name under a parent, written as a declaration on the salt the domain reveals, reads:
+
+```json
+"preorder": {
+  "type": "object",
+  "documentsMutable": false,
+  "canBeDeleted": true,
+  "properties": {
+    "saltedDomainHash": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0
+    }
+  },
+  "indices": [
+    { "name": "saltedHash", "properties": [{ "saltedDomainHash": "asc" }], "unique": true }
+  ],
+  "required": ["$createdAtBlockHeight", "saltedDomainHash"],
+  "additionalProperties": false
+},
+"domain": {
+  "type": "object",
+  "properties": {
+    "preorderSalt": {
+      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 4,
+      "refersTo": {
+        "type": "deletableDocument",
+        "documentType": "preorder",
+        "lookup": { "index": "saltedHash" },
+        "propertyAgreement": {
+          "$ownerId": "$ownerId",
+          "saltedDomainHash": {
+            "function": "sys.hash.sha256d",
+            "params": ["preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
+          }
+        },
+        "minimumAgeBlocks": 1,
+        "consume": true
+      }
+    }
+  },
+  "transient": ["preorderSalt"]
+}
+```
+
+reads: the salt refers to a `preorder`, found through its `saltedHash` index, that the writer owns, created in an earlier block, whose `saltedDomainHash` is the sha256d of the salt, the normalized label, a dot and the parent; creating the domain deletes that preorder. The hash is byte for byte the one `create_domain_data_trigger_v1` computes for a name under a parent. The lookup's `keys` are left out: the function fills `saltedDomainHash`, the whole index. On an index of several properties, `keys` maps the others as usual, and the index property the function fills may not be in `keys`.
+
+A string or byte array property may carry a `refersTo` only this way: its value is not an id, so its declaration must be a `permanentDocument` or `deletableDocument` reference whose lookup key a function computes, and the property keeps its type (the meta-schema admits a `refersTo` with a `lookup` on a string or byte array). The value carrying the reference must fill the key exactly once: as a `"."` key or as a param of the function. A param names a single property carrying the reference by its path, as the salt above; `"."` in the params stands only for a value without a path of its own: each element of a typed array, the writer of an `ownerRefersTo`, the creator of a `creatorRefersTo`. The writer and the creator may also be left out beside a function, since the declaration applies to every create.
+
+The preimage is the bytes of the params joined in order with nothing between them:
+
+- a property path: that property of the document being created, a string's UTF-8, a byte array's bytes, an identifier's 32 bytes;
+- `{ "const": text }`: fixed UTF-8 text, 1 to 64 bytes;
+- `"."`: the value carrying the reference, where it has no path, read the same way.
+
+1 to 16 params. System values such as `"$ownerId"` are not params. Plain concatenation is ambiguous when two variable-length params meet (`"ab" + "c"` and `"a" + "bc"` are the same bytes), so every variable-length param (a string, or a byte array whose size is not fixed) with another variable-length param anywhere after it must be followed directly by a one-byte `const`, its separator, and a create whose value for that param holds the separator byte is refused. Each preimage then splits into its params one way only. Integers and other kinds are not params. A path that passes through a map holding a key more than once is refused, as for `generatedFrom`.
+
+The document such a key finds is judged once, when the document is created:
+
+- A param may be transient (the DPNS salt is), since it is read from the create transition, and optional, since a create missing one is refused. Every stored value the lookup reads, params and other key parts alike, must be fixed once written (the type is immutable or lists the property under `immutable`), and so must a stored property carrying the reference, set when the document is created (not listed under `immutableAllowSetting`). Such a `deletableDocument` lookup may sit on an `immutable` property, which a lookup re-validated on every replace may not. A replace leaves the reference alone: nothing it reads can have changed, and the commitment may be gone. The declaration's plain `propertyAgreement` pairs are judged with it, on the create alone, so each referring property they name must be fixed once written the same way, or transient. On a document type whose documents can be replaced, such a lookup may not be an operand of an `anyOf`: judged on the create alone, it would hold on every replace, whichever operand held on the create.
+- `creatorRefersTo` takes a `deletableDocument` target only through a function.
+- A reference holds at most one function pair. The index property it fills must be a byte array of exactly the hash's size, 32 bytes for `sys.hash.sha256d`. Beside the lookup, on the `refersTo`, the reference may then declare what it asks of the document the lookup finds (both are refused inside the lookup, and without a function):
+  - `minimumAgeBlocks`: the found document's `$createdAtBlockHeight` must be at least that many blocks below the height of the create. `1` means an earlier block, so a commitment and its reveal cannot share a block. The referenced type must list `$createdAtBlockHeight` in `required`; a document recording no creation height never meets it.
+  - `consume: true`: the create deletes the found document in the same state transition, its storage refunded to its owner as a delete by that owner would be. Only on a `deletableDocument` reference whose `propertyAgreement` pairs `"$ownerId"` with `"$ownerId"`, into a document type of the declaring contract whose owner may delete its documents (`canBeDeleted: true`). No delete transition is charged for the consumed document, so its type may declare no delete token cost and no delete action fee, and the key signing the create deletes it, so its type may not require a stricter signature security level than the declaring type.
+- Whose commitment it is, is the plain pair `"$ownerId": "$ownerId"` beside the function: the writer must own the document found. Without it anyone who learns a preimage may reveal it.
+
+What is refused, and where:
+
+- The shape, the params and the rules above: the contract parse on registration and update (meta-schema v3 `agreementFunction`, `apply_property_reference` 0, `DocumentReferenceLookup::referring_side_error` and `referenced_side_error`), and for a lookup into another contract the registration state validation (`ReferencedDocumentLookupInvalidError`, 40137), which also refuses `consume` there. A function pair on a reference without a lookup, or naming a property its index does not hold, is refused. Any change to a function, its `minimumAgeBlocks` or its `consume` is an incompatible schema change on update, like the rest of a `refersTo`.
+- A create missing a param, or whose variable-length value holds its separator: document create structure validation 1, before any read (`DocumentReferencePreimageInvalidError`, 10423). A function in a leaf of a reference expression is left to the write-time check, where a key it cannot assemble finds no document, so that operand fails and the others still decide.
+- No document for the key: `ReferencedEntityNotFoundError` (40120), whose entity id for a string or byte array carrier is the hash. The hash is computed once and billed as the double SHA-256 it is (`ValidationOperation::DoubleSha256`, by the blocks it hashes: the padded preimage and the second pass), the lookup as the document fetch it is. Another identity's commitment where the owner pair is declared: `ReferencedDocumentPropertyMismatchError` (40127). A commitment younger than `minimumAgeBlocks`: `ReferencedDocumentRequirementNotMetError` (40142). All paid, from document create state validation 2.
+- A create signed by a contract-bound key whose bounds leave out a document type the created type may consume: batch advanced structure validation 1, as a direct delete of that type would be (`ContractBoundedKeyOutOfBoundsError`, 20014, paid).
+- A batch in which a create consumes a document that another create of the batch consumes too, or that another transition of the batch deletes, replaces, transfers, reprices or buys, refuses that create with 40120 (`ConsumedDocuments` in the batch state validation). Today a batch holds one transition, so this only guards the day that cap is raised.
+
+In Rust the parser moves the function pair out of the agreement into the lookup, as the source of the index property it names: `LookupKeySource::Hash(LookupHashKey)`, appended to the key sources, with its `function` a `HashFunction` (the `SystemFunction::Hash` namespace, beside the string transformations `generatedFrom` takes) and its `params` `LookupKeyParam`s. The parsed `property_agreement` holds the plain pairs alone. A string or byte array property's declaration is `DocumentProperty::revealed_reference`, listed by `reference_declarations` as `PropertyReference::Revealed`. `DocumentReferenceLookup::is_checked_on_create_only` tells a lookup holding a computed key, and the parser holds the reference's `minimumAgeBlocks` and `consume` on the lookup as `minimum_age_blocks` and `consume`. `first_unrevealable_lookup_key` is the structure check. A create that consumes carries its commitments in `DocumentCreateTransitionAction::consumed_documents`, turned into delete operations with the create's own.
 
 ## Immutable Properties on Mutable Document Types
 

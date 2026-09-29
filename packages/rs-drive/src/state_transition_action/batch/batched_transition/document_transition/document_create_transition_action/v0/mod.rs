@@ -55,6 +55,25 @@ pub struct DocumentCreateTransitionActionV0 {
     /// The document is then stamped `$moderatedAt` the block's time and `$moderatedBy` the
     /// owner; `false` for any other create.
     pub moderated: bool,
+    /// The documents this create consumes: commitments it revealed through a `refersTo` lookup
+    /// with a computed key, the reference declaring `consume`, deleted in the same state
+    /// transition. Empty
+    /// when the action is built; the batch state validation (protocol version 14) sets it once
+    /// the create is accepted.
+    pub consumed_documents: Vec<ConsumedDocument>,
+}
+
+/// A document of the create's own contract that the create deletes because it revealed it:
+/// the commitment a `refersTo` lookup with a computed key found, the reference declaring
+/// `consume`. Its
+/// owner is the writer (registration demands the `$ownerId` agreement pair), so the delete is
+/// the one that owner could have made, and its storage is refunded the same way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsumedDocument {
+    /// The consumed document's id.
+    pub document_id: Identifier,
+    /// The consumed document's type, in the create's contract.
+    pub document_type_name: String,
 }
 
 /// document create transition action accessors v0
@@ -114,6 +133,12 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     /// Stamps the document as its owner's, a moderator of the contract whose create sets
     /// fields only moderators write
     fn set_moderated(&mut self);
+
+    /// The documents this create consumes, deleted in the same state transition.
+    fn consumed_documents(&self) -> &[ConsumedDocument];
+
+    /// Sets the documents this create consumes.
+    fn set_consumed_documents(&mut self, consumed_documents: Vec<ConsumedDocument>);
 }
 
 /// documents from create transition v0
