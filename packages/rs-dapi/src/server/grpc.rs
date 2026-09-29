@@ -1,6 +1,8 @@
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{info, trace};
 
 use crate::error::DAPIResult;
@@ -47,6 +49,17 @@ const _: () = assert!(
 /// decode cap, so it is the ceiling for every method and the body limit
 /// below is what keeps the queries on the smaller allowance.
 const MAX_PLATFORM_TRANSACTION_BODY_BYTES: usize = 34 * 1024 * 1024; // 34 MiB
+/// How many requests at once may hold a message larger than the query
+/// allowance on the transaction ingress. tonic reserves a receive buffer of the
+/// declared size as soon as a message header is in, so without this bound a
+/// client could open many streams, send only a header declaring the full
+/// allowance on each, and pin that much memory per stream until the unary
+/// timeout. With it the receive buffers of large broadcasts stay under
+/// 8 x 34 MiB = 272 MiB; a request over the bound is refused with
+/// `ResourceExhausted` before tonic reserves anything, and a broadcast of a
+/// small transition never needs a slot. Node-local admission policy, not
+/// consensus.
+const MAX_CONCURRENT_LARGE_TRANSACTION_BODIES: usize = 8;
 /// The Platform methods allowed the transaction body allowance.
 const PLATFORM_TRANSACTION_METHODS: &[&str] =
     &["/org.dash.platform.dapi.v0.Platform/broadcastStateTransition"];
@@ -99,6 +112,7 @@ impl DapiServer {
             MAX_PLATFORM_QUERY_BODY_BYTES,
             MAX_PLATFORM_TRANSACTION_BODY_BYTES,
             PLATFORM_TRANSACTION_METHODS,
+            MAX_CONCURRENT_LARGE_TRANSACTION_BODIES,
         );
 
         // Stack layers (execution order: metrics -> access log -> timeout -> body limit)
@@ -267,6 +281,12 @@ where
 /// * the bytes actually delivered are counted and the body is cut off when
 ///   they pass the limit, so a header that lies small does not help either.
 ///
+/// A request on the allow list whose messages grow past the small limit also
+/// needs one of a fixed number of large-body slots, taken when the header that
+/// crosses the small limit is in and held until the body is dropped, so the
+/// receive buffers tonic reserves for large messages are bounded in total and
+/// not only per request.
+///
 /// Requests to any other service pass through untouched.
 #[derive(Clone)]
 struct BodyLimitLayer {
@@ -274,6 +294,7 @@ struct BodyLimitLayer {
     default_limit: usize,
     large_limit: usize,
     large_limit_methods: &'static [&'static str],
+    large_body_slots: Arc<Semaphore>,
 }
 
 impl BodyLimitLayer {
@@ -282,25 +303,28 @@ impl BodyLimitLayer {
         default_limit: usize,
         large_limit: usize,
         large_limit_methods: &'static [&'static str],
+        max_concurrent_large_bodies: usize,
     ) -> Self {
         Self {
             service_path_prefix,
             default_limit,
             large_limit,
             large_limit_methods,
+            large_body_slots: Arc::new(Semaphore::new(max_concurrent_large_bodies)),
         }
     }
 
-    /// The body limit for a gRPC method path, `None` for a method of another
-    /// service.
-    fn limit_for_method(&self, path: &str) -> Option<usize> {
+    /// Wraps the request body of a method of the configured service in its
+    /// limit, or gives it back for a method of another service.
+    fn limit_body<B>(&self, path: &str, body: B) -> Result<LimitedMessageBody<B>, B> {
         if !path.starts_with(self.service_path_prefix) {
-            return None;
+            return Err(body);
         }
         if self.large_limit_methods.contains(&path) {
-            Some(self.large_limit)
+            Ok(LimitedMessageBody::new(body, self.large_limit)
+                .with_large_body_slots(self.default_limit, self.large_body_slots.clone()))
         } else {
-            Some(self.default_limit)
+            Ok(LimitedMessageBody::new(body, self.default_limit))
         }
     }
 }
@@ -338,11 +362,10 @@ where
     }
 
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
-        let limit = self.config.limit_for_method(req.uri().path());
         let (parts, body) = req.into_parts();
-        let body = match limit {
-            Some(limit) => TonicBody::new(LimitedMessageBody::new(body, limit)),
-            None => TonicBody::new(body),
+        let body = match self.config.limit_body(parts.uri.path(), body) {
+            Ok(limited) => TonicBody::new(limited),
+            Err(body) => TonicBody::new(body),
         };
         self.inner.call(Request::from_parts(parts, body))
     }
@@ -374,6 +397,13 @@ impl MessageFraming {
     }
 }
 
+/// The shared slots a body must hold once its messages grow past `threshold`.
+struct LargeBodySlots {
+    threshold: usize,
+    slots: Arc<Semaphore>,
+    held: Option<OwnedSemaphorePermit>,
+}
+
 /// A request body bounded by a byte limit, checked on the declared length of
 /// every gRPC message as soon as its header is in and on every byte delivered.
 struct LimitedMessageBody<B> {
@@ -381,6 +411,7 @@ struct LimitedMessageBody<B> {
     limit: usize,
     delivered: usize,
     framing: MessageFraming,
+    large_body_slots: Option<LargeBodySlots>,
 }
 
 impl<B> LimitedMessageBody<B> {
@@ -390,13 +421,43 @@ impl<B> LimitedMessageBody<B> {
             limit,
             delivered: 0,
             framing: MessageFraming::next_header(),
+            large_body_slots: None,
         }
+    }
+
+    /// Requires one of `slots` for as long as the body lives once a message
+    /// header takes it past `threshold` bytes.
+    fn with_large_body_slots(mut self, threshold: usize, slots: Arc<Semaphore>) -> Self {
+        self.large_body_slots = Some(LargeBodySlots {
+            threshold,
+            slots,
+            held: None,
+        });
+        self
     }
 
     fn over_limit(limit: usize) -> Status {
         Status::resource_exhausted(format!(
             "request body exceeds the {limit} byte limit of this method"
         ))
+    }
+
+    /// Takes a large-body slot for a body that will end at `end` bytes, if it
+    /// needs one and holds none yet.
+    fn claim_large_body_slot(&mut self, end: usize) -> Result<(), Status> {
+        let Some(large) = &mut self.large_body_slots else {
+            return Ok(());
+        };
+        if end <= large.threshold || large.held.is_some() {
+            return Ok(());
+        }
+        let permit = large.slots.clone().try_acquire_owned().map_err(|_| {
+            Status::resource_exhausted(
+                "too many large requests in flight on this node; retry later",
+            )
+        })?;
+        large.held = Some(permit);
+        Ok(())
     }
 
     /// Accounts for a delivered chunk: the running total first, then the walk
@@ -429,9 +490,11 @@ impl<B> LimitedMessageBody<B> {
                     // declared body has to fit: a message that cannot complete
                     // within the limit is refused before tonic reserves
                     // `declared` bytes for it.
-                    if consumed.saturating_add(declared) > self.limit {
+                    let end = consumed.saturating_add(declared);
+                    if end > self.limit {
                         return Err(Self::over_limit(self.limit));
                     }
+                    self.claim_large_body_slot(end)?;
                     MessageFraming::Body {
                         remaining: declared,
                     }
@@ -571,6 +634,7 @@ mod tests {
             MAX_PLATFORM_QUERY_BODY_BYTES,
             MAX_PLATFORM_TRANSACTION_BODY_BYTES,
             PLATFORM_TRANSACTION_METHODS,
+            MAX_CONCURRENT_LARGE_TRANSACTION_BODIES,
         )
     }
 
@@ -675,6 +739,74 @@ mod tests {
             .await
             .expect_err("a body over the limit is refused whatever it declares");
         assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+    }
+
+    /// A request body that delivers `bytes` in one DATA frame and then stays open.
+    fn open_body(bytes: Vec<u8>) -> impl Body<Data = Bytes, Error = Status> + Unpin {
+        http_body_util::StreamBody::new(futures::StreamExt::chain(
+            futures::stream::iter([Ok(Frame::data(Bytes::from(bytes)))]),
+            futures::stream::pending(),
+        ))
+    }
+
+    /// Large transaction bodies share a fixed number of slots: a header that takes the body
+    /// past the query allowance needs one while the body lives, a request that finds none
+    /// left is refused on that header, a body within the query allowance never needs one, and
+    /// dropping a body frees its slot.
+    #[tokio::test]
+    async fn large_transaction_bodies_share_a_bounded_number_of_slots() {
+        let layer = BodyLimitLayer::new(
+            PLATFORM_SERVICE_PATH_PREFIX,
+            MAX_PLATFORM_QUERY_BODY_BYTES,
+            MAX_PLATFORM_TRANSACTION_BODY_BYTES,
+            PLATFORM_TRANSACTION_METHODS,
+            1,
+        );
+        let open = |bytes: Vec<u8>| {
+            let Ok(body) = layer.limit_body(TRANSACTION_PATH, open_body(bytes)) else {
+                panic!("the transaction method is limited");
+            };
+            body
+        };
+        let large_header = || grpc_message(30 * 1024 * 1024, 0);
+
+        let mut first = open(large_header());
+        first
+            .frame()
+            .await
+            .expect("a frame")
+            .expect("the first large body takes the slot");
+
+        let status = open(large_header())
+            .frame()
+            .await
+            .expect("a frame")
+            .expect_err("no slot is left for a second one");
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+        assert!(
+            status.message().contains("too many large requests"),
+            "{status:?}"
+        );
+
+        // A body ending exactly at the query allowance needs no slot, one byte more does.
+        let at_threshold = MAX_PLATFORM_QUERY_BODY_BYTES - GRPC_MESSAGE_HEADER_LEN;
+        open(grpc_message(at_threshold, 0))
+            .frame()
+            .await
+            .expect("a frame")
+            .expect("a body within the query allowance needs no slot");
+        open(grpc_message(at_threshold + 1, 0))
+            .frame()
+            .await
+            .expect("a frame")
+            .expect_err("a body past the query allowance needs a slot");
+
+        drop(first);
+        open(large_header())
+            .frame()
+            .await
+            .expect("a frame")
+            .expect("the dropped body gave its slot back");
     }
 
     /// Sends the body as the given chunks, one DATA frame each.
@@ -865,9 +997,18 @@ mod tests {
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let address = listener.local_addr().expect("local address");
+        // One large-body slot, so the second family-cap call below only passes if the server
+        // gives the slot back once tonic is done with the first request's body.
+        let layer = BodyLimitLayer::new(
+            PLATFORM_SERVICE_PATH_PREFIX,
+            MAX_PLATFORM_QUERY_BODY_BYTES,
+            MAX_PLATFORM_TRANSACTION_BODY_BYTES,
+            PLATFORM_TRANSACTION_METHODS,
+            1,
+        );
         let server = tokio::spawn(async move {
             Server::builder()
-                .layer(body_limit_layer())
+                .layer(layer)
                 .add_service(ByteCounter)
                 .serve_with_incoming(TcpIncoming::from(listener))
                 .await
@@ -919,12 +1060,14 @@ mod tests {
             .max_contract_code_state_transition_size
             .expect("the latest version bounds contract code envelopes")
             as usize;
-        assert_eq!(
-            call(TRANSACTION_PATH, vec![0x5Au8; family_cap])
-                .await
-                .expect("a family-cap transition reaches the service"),
-            family_cap as u64
-        );
+        for _ in 0..2 {
+            assert_eq!(
+                call(TRANSACTION_PATH, vec![0x5Au8; family_cap])
+                    .await
+                    .expect("a family-cap transition reaches the service"),
+                family_cap as u64
+            );
+        }
 
         // Through the same server, a raw request body carrying an empty first message and
         // then the header of a 30 MiB second message, with the stream left open: the unary
