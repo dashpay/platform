@@ -16,9 +16,19 @@
 //! | transaction                                   | Core answer                               |
 //! |-----------------------------------------------|-------------------------------------------|
 //! | already in the mempool                        | success, the txid                         |
-//! | already in a block                            | `-27 Transaction already in block chain`  |
+//! | already in a block, an output still unspent   | `-27 Transaction already in block chain`  |
+//! | already in a block, **every output spent**    | `-25 bad-txns-inputs-missingorspent`      |
 //! | spends an input that does not exist           | `-25 bad-txns-inputs-missingorspent`      |
 //! | spends an input an IS-locked tx already spent | `-26 tx-txlock-conflict`                  |
+//!
+//! The second row is why a rejection alone is never enough to call a
+//! transaction dead: Core recognises a mined transaction only while one of its
+//! outputs is still in the UTXO set, and otherwise evaluates it like a new one
+//! whose inputs are gone (measured on testnet 2026-09-29: `e758f06a…`, block
+//! 1560020, both outputs spent → `-25`). Before a dead verdict the probe
+//! therefore asks nodes whether they know the txid at all (DAPI
+//! `getTransaction`, served from the evonode's transaction index); a node that
+//! knows it settles the verdict as accepted.
 //!
 //! The two DAPI implementations surface those codes differently — the JS
 //! server maps `-25` to `InvalidArgument`, rs-dapi to `FailedPrecondition` —
@@ -29,9 +39,14 @@
 //! [`BroadcastError::MaybeSent`]: crate::broadcaster::BroadcastError::MaybeSent
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use dashcore::Transaction;
+use dash_sdk::dapi_client::transport::TransportError;
+use dash_sdk::dapi_client::{DapiClientError, DapiRequestExecutor, RequestSettings};
+use dash_sdk::dapi_grpc::core::v0::{BroadcastTransactionRequest, GetTransactionRequest};
+use dash_sdk::dapi_grpc::tonic::Code;
+use dashcore::{Transaction, Txid};
 
 /// Core reject reasons that prove the transaction can never be mined as it
 /// stands.
@@ -73,12 +88,7 @@ pub enum NodeVerdict {
 }
 
 /// Classify a failed `broadcastTransaction` gRPC response.
-pub(crate) fn classify_failed_submission(
-    code: dash_sdk::dapi_grpc::tonic::Code,
-    message: &str,
-) -> NodeVerdict {
-    use dash_sdk::dapi_grpc::tonic::Code;
-
+pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdict {
     if code == Code::AlreadyExists {
         return NodeVerdict::Accepted;
     }
@@ -106,22 +116,39 @@ pub(crate) fn classify_failed_submission(
 pub enum ProbeVerdict {
     /// A node holds the transaction: it is in a mempool or a block.
     Accepted,
-    /// Two different nodes proved the transaction can never be mined.
+    /// Two different nodes refused it for missing or spent inputs, and two
+    /// different nodes do not know its txid: it is not in a block and can
+    /// never be mined.
     Dead { reason: String },
     /// Not enough evidence either way; the transaction stays ambiguous.
     Unresolved { reason: String },
 }
 
-/// Submits a signed transaction to one Core node and reports which node
-/// answered and what it said. A seam so the probe's evidence rules can be
-/// tested without a network.
+/// Whether one node knows a txid (DAPI `getTransaction`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LookupAnswer {
+    /// The node has the transaction, in its mempool or in a block.
+    Known,
+    /// The node answered and does not have it.
+    NotFound,
+    /// No answer: transport failure, timeout, anything else.
+    Unknown { reason: String },
+}
+
+/// Talks to one Core node per call and reports which node answered and what
+/// it said. A seam so the probe's evidence rules can be tested without a
+/// network.
 #[async_trait]
 pub(crate) trait NodeSubmitter: Send + Sync {
     async fn submit(&self, transaction: &Transaction) -> (Option<String>, NodeVerdict);
+    async fn lookup(&self, txid: &Txid) -> (Option<String>, LookupAnswer);
 }
 
 /// How many submissions one probe may spend looking for a verdict.
 const MAX_SUBMISSIONS_PER_PROBE: usize = 4;
+
+/// How many txid lookups one probe may spend confirming a dead verdict.
+const MAX_LOOKUPS_PER_PROBE: usize = 4;
 
 /// How many *distinct* nodes must independently prove a transaction dead.
 ///
@@ -144,8 +171,10 @@ pub trait AcceptanceProbe: Send + Sync + 'static {
 }
 
 /// Evidence rules shared by every probe: stop at the first node that holds
-/// the transaction, call it dead only when [`DEAD_QUORUM`] distinct nodes say
-/// so, and give up after [`MAX_SUBMISSIONS_PER_PROBE`] submissions.
+/// the transaction; call it dead only when [`DEAD_QUORUM`] distinct nodes
+/// refuse it for its inputs **and** [`DEAD_QUORUM`] distinct nodes do not know
+/// its txid; give up after [`MAX_SUBMISSIONS_PER_PROBE`] submissions and
+/// [`MAX_LOOKUPS_PER_PROBE`] lookups.
 pub(crate) async fn probe_with(
     submitter: &dyn NodeSubmitter,
     transaction: &Transaction,
@@ -172,9 +201,12 @@ pub(crate) async fn probe_with(
                 }
                 dead_reason.get_or_insert(reason);
                 if dead_nodes.len() >= DEAD_QUORUM {
-                    return ProbeVerdict::Dead {
-                        reason: dead_reason.unwrap_or_default(),
-                    };
+                    return confirm_dead(
+                        submitter,
+                        &transaction.txid(),
+                        dead_reason.unwrap_or_default(),
+                    )
+                    .await;
                 }
             }
             NodeVerdict::Refused { reason } | NodeVerdict::Unknown { reason } => {
@@ -194,32 +226,66 @@ pub(crate) async fn probe_with(
     }
 }
 
-/// Submits through DAPI's `broadcastTransaction` — a Core `sendrawtransaction`
-/// on a random evonode per request.
+/// A rejection for missing or spent inputs is also what a *mined* transaction
+/// whose outputs are all spent gets (see the module docs). Ask nodes whether
+/// they know the txid: one that does settles it as accepted; only
+/// [`DEAD_QUORUM`] distinct nodes not knowing it confirm the dead verdict.
+async fn confirm_dead(submitter: &dyn NodeSubmitter, txid: &Txid, reason: String) -> ProbeVerdict {
+    let mut not_found: HashSet<String> = HashSet::new();
+    let mut last_unknown = String::from("no lookup was answered");
+    for _ in 0..MAX_LOOKUPS_PER_PROBE {
+        let (node, answer) = submitter.lookup(txid).await;
+        tracing::debug!(
+            txid = %txid,
+            node = node.as_deref().unwrap_or("unidentified"),
+            ?answer,
+            "broadcast probe: txid lookup answered"
+        );
+        match answer {
+            LookupAnswer::Known => return ProbeVerdict::Accepted,
+            LookupAnswer::NotFound => {
+                if let Some(node) = node {
+                    not_found.insert(node);
+                }
+                if not_found.len() >= DEAD_QUORUM {
+                    return ProbeVerdict::Dead { reason };
+                }
+            }
+            LookupAnswer::Unknown { reason } => last_unknown = reason,
+        }
+    }
+    ProbeVerdict::Unresolved {
+        reason: format!(
+            "refused as {reason}, but only {} of {DEAD_QUORUM} nodes confirmed the txid is unknown; last lookup answer: {last_unknown}",
+            not_found.len()
+        ),
+    }
+}
+
+/// One node per request: the probe decides whether to ask another, and it has
+/// to know which node each answer came from.
+fn single_node() -> RequestSettings {
+    RequestSettings {
+        retries: Some(0),
+        ..RequestSettings::default()
+    }
+}
+
+/// Talks to evonodes through DAPI: `broadcastTransaction` (a Core
+/// `sendrawtransaction`) and `getTransaction`, a random node per request.
 pub(crate) struct DapiNodeSubmitter {
-    sdk: std::sync::Arc<dash_sdk::Sdk>,
+    sdk: Arc<dash_sdk::Sdk>,
 }
 
 #[async_trait]
 impl NodeSubmitter for DapiNodeSubmitter {
     async fn submit(&self, transaction: &Transaction) -> (Option<String>, NodeVerdict) {
-        use dash_sdk::dapi_client::transport::TransportError;
-        use dash_sdk::dapi_client::{DapiClientError, DapiRequestExecutor, RequestSettings};
-        use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
-
         let request = BroadcastTransactionRequest {
             transaction: dashcore::consensus::serialize(transaction),
             allow_high_fees: false,
             bypass_limits: false,
         };
-        // One node per submission: the probe decides whether to ask another,
-        // and it has to know which node each answer came from.
-        let settings = RequestSettings {
-            retries: Some(0),
-            ..RequestSettings::default()
-        };
-
-        match self.sdk.execute(request, settings).await {
+        match self.sdk.execute(request, single_node()).await {
             Ok(response) => (Some(response.address.to_string()), NodeVerdict::Accepted),
             Err(error) => {
                 let node = error.address.as_ref().map(ToString::to_string);
@@ -235,6 +301,30 @@ impl NodeSubmitter for DapiNodeSubmitter {
             }
         }
     }
+
+    async fn lookup(&self, txid: &Txid) -> (Option<String>, LookupAnswer) {
+        // `id` is the display hex, as Core's getrawtransaction takes it.
+        let request = GetTransactionRequest {
+            id: txid.to_string(),
+        };
+        match self.sdk.execute(request, single_node()).await {
+            Ok(response) => (Some(response.address.to_string()), LookupAnswer::Known),
+            Err(error) => {
+                let node = error.address.as_ref().map(ToString::to_string);
+                let answer = match &error.inner {
+                    DapiClientError::Transport(TransportError::Grpc(status))
+                        if status.code() == Code::NotFound =>
+                    {
+                        LookupAnswer::NotFound
+                    }
+                    other => LookupAnswer::Unknown {
+                        reason: other.to_string(),
+                    },
+                };
+                (node, answer)
+            }
+        }
+    }
 }
 
 /// The production probe: resubmits through DAPI.
@@ -243,7 +333,7 @@ pub struct DapiAcceptanceProbe {
 }
 
 impl DapiAcceptanceProbe {
-    pub fn new(sdk: std::sync::Arc<dash_sdk::Sdk>) -> Self {
+    pub fn new(sdk: Arc<dash_sdk::Sdk>) -> Self {
         Self {
             submitter: DapiNodeSubmitter { sdk },
         }
@@ -276,22 +366,45 @@ mod tests {
         }
     }
 
-    /// Replays scripted node answers in order and counts submissions.
+    /// Replays scripted node answers in order and counts calls. Lookups
+    /// default to two distinct nodes not knowing the txid, so a dead quorum
+    /// is confirmed unless a test scripts otherwise.
     struct ScriptedNodes {
         answers: Mutex<VecDeque<(Option<&'static str>, NodeVerdict)>>,
+        lookups: Mutex<VecDeque<(Option<&'static str>, LookupAnswer)>>,
         submissions: Mutex<usize>,
+        lookups_made: Mutex<usize>,
     }
 
     impl ScriptedNodes {
         fn new(answers: Vec<(Option<&'static str>, NodeVerdict)>) -> Self {
+            Self::with_lookups(
+                answers,
+                vec![
+                    (Some("x"), LookupAnswer::NotFound),
+                    (Some("y"), LookupAnswer::NotFound),
+                ],
+            )
+        }
+
+        fn with_lookups(
+            answers: Vec<(Option<&'static str>, NodeVerdict)>,
+            lookups: Vec<(Option<&'static str>, LookupAnswer)>,
+        ) -> Self {
             Self {
                 answers: Mutex::new(answers.into()),
+                lookups: Mutex::new(lookups.into()),
                 submissions: Mutex::new(0),
+                lookups_made: Mutex::new(0),
             }
         }
 
         fn submissions(&self) -> usize {
             *self.submissions.lock().expect("submissions")
+        }
+
+        fn lookups_made(&self) -> usize {
+            *self.lookups_made.lock().expect("lookups")
         }
     }
 
@@ -311,6 +424,22 @@ mod tests {
                     },
                 ));
             (node.map(str::to_string), verdict)
+        }
+
+        async fn lookup(&self, _txid: &Txid) -> (Option<String>, LookupAnswer) {
+            *self.lookups_made.lock().expect("lookups") += 1;
+            let (node, answer) = self
+                .lookups
+                .lock()
+                .expect("lookups")
+                .pop_front()
+                .unwrap_or((
+                    None,
+                    LookupAnswer::Unknown {
+                        reason: "script exhausted".to_string(),
+                    },
+                ));
+            (node.map(str::to_string), answer)
         }
     }
 
@@ -482,5 +611,55 @@ mod tests {
             ProbeVerdict::Dead { .. }
         ));
         assert_eq!(nodes.submissions(), 3);
+    }
+
+    /// Core answers `missingorspent` for a mined transaction whose outputs
+    /// are all spent (testnet `e758f06a…`, 2026-09-29). A node that still
+    /// knows the txid must turn the dead quorum into Accepted.
+    #[tokio::test]
+    async fn should_accept_a_refused_transaction_that_a_node_still_knows() {
+        let nodes = ScriptedNodes::with_lookups(
+            vec![(Some("a"), dead()), (Some("b"), dead())],
+            vec![(Some("c"), LookupAnswer::Known)],
+        );
+
+        assert_eq!(
+            probe_with(&nodes, &transaction()).await,
+            ProbeVerdict::Accepted
+        );
+        assert_eq!(nodes.lookups_made(), 1);
+    }
+
+    #[tokio::test]
+    async fn should_confirm_dead_only_when_two_distinct_nodes_do_not_know_the_txid() {
+        let nodes = ScriptedNodes::with_lookups(
+            vec![(Some("a"), dead()), (Some("b"), dead())],
+            vec![
+                (Some("c"), LookupAnswer::NotFound),
+                (Some("c"), LookupAnswer::NotFound),
+                (None, LookupAnswer::NotFound),
+                (
+                    Some("d"),
+                    LookupAnswer::Unknown {
+                        reason: "Unavailable".to_string(),
+                    },
+                ),
+            ],
+        );
+
+        assert!(matches!(
+            probe_with(&nodes, &transaction()).await,
+            ProbeVerdict::Unresolved { .. }
+        ));
+        assert_eq!(nodes.lookups_made(), MAX_LOOKUPS_PER_PROBE);
+    }
+
+    #[tokio::test]
+    async fn should_not_look_up_a_transaction_nobody_refused() {
+        let nodes = ScriptedNodes::new(vec![(Some("a"), NodeVerdict::Accepted)]);
+
+        probe_with(&nodes, &transaction()).await;
+
+        assert_eq!(nodes.lookups_made(), 0);
     }
 }

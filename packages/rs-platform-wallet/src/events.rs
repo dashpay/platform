@@ -12,10 +12,13 @@
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use dashcore::Txid;
+use key_wallet_manager::WalletId;
 
 pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
 
+use crate::broadcast_probe::ProbeVerdict;
 use crate::manager::dpns_sync::DpnsSyncPassSummary;
 use crate::manager::platform_address_sync::PlatformAddressSyncSummary;
 #[cfg(feature = "shielded")]
@@ -55,11 +58,18 @@ pub trait PlatformEventHandler: EventHandler {
     /// Default impl is a no-op so existing handlers don't have to care.
     fn on_outgoing_transaction_probed(
         &self,
-        _wallet_id: &key_wallet_manager::WalletId,
-        _txid: &dashcore::Txid,
-        _verdict: &crate::broadcast_probe::ProbeVerdict,
+        _wallet_id: &WalletId,
+        _txid: &Txid,
+        _verdict: &ProbeVerdict,
     ) {
     }
+
+    /// Fired when a send that had a published verdict is no longer an
+    /// unconfirmed root — it settled (block or InstantSend lock) or left the
+    /// wallet. Hosts drop any state they kept for the verdict.
+    ///
+    /// Default impl is a no-op so existing handlers don't have to care.
+    fn on_outgoing_transaction_cleared(&self, _wallet_id: &WalletId, _txid: &Txid) {}
 
     /// Fired after each [`ShieldedSyncManager`] pass completes,
     /// including passes that produced no updates or skipped every
@@ -173,13 +183,21 @@ impl PlatformEventManager {
     /// per unconfirmed send per block.
     pub fn on_outgoing_transaction_probed(
         &self,
-        wallet_id: &key_wallet_manager::WalletId,
-        txid: &dashcore::Txid,
-        verdict: &crate::broadcast_probe::ProbeVerdict,
+        wallet_id: &WalletId,
+        txid: &Txid,
+        verdict: &ProbeVerdict,
     ) {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_outgoing_transaction_probed(wallet_id, txid, verdict);
+        }
+    }
+
+    /// Dispatch a cleared broadcast-probe verdict to every handler.
+    pub fn on_outgoing_transaction_cleared(&self, wallet_id: &WalletId, txid: &Txid) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_outgoing_transaction_cleared(wallet_id, txid);
         }
     }
 

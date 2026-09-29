@@ -522,7 +522,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         self.persister.persistence_capabilities()
     }
 
-    /// The SDK instance.
     /// Turn automatic probing of unconfirmed sends on or off.
     ///
     /// When on, every unconfirmed send of a registered wallet whose broadcast
@@ -539,6 +538,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         self.broadcast_resolver.is_enabled()
     }
 
+    /// The SDK instance.
     pub fn sdk(&self) -> &dash_sdk::Sdk {
         &self.sdk
     }

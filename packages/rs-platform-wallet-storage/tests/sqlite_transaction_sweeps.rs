@@ -3834,7 +3834,7 @@ fn should_remove_a_swept_height_only_transaction_and_its_outputs() {
 /// Shape of ticket 32347: root R spends a real coin F:0 and leaves change
 /// R:1; child C spends that change plus another real coin F:1.
 #[test]
-fn an_abandoned_chain_frees_its_outside_inputs_and_holds_nothing() {
+fn should_free_an_abandoned_chains_outside_inputs_and_hold_nothing() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xE9);
     ensure_wallet_meta(&persister, &w);

@@ -4,6 +4,8 @@ use crate::platform_address_sync::{
     PlatformAddressSyncMetricsFFI, PlatformAddressSyncWalletResultFFI,
 };
 use crate::shielded_types::ShieldedSyncWalletResultFFI;
+use dashcore::Txid;
+use platform_wallet::broadcast_probe::ProbeVerdict;
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
 use platform_wallet::manager::dpns_sync::{DpnsSyncPassSummary, WalletDpnsSyncOutcome};
 #[cfg(feature = "shielded")]
@@ -53,13 +55,16 @@ pub type DpnsMarketplaceSyncCompletedFn = unsafe extern "C" fn(
 pub const OUTGOING_PROBE_VERDICT_ACCEPTED: u8 = 0;
 pub const OUTGOING_PROBE_VERDICT_DEAD: u8 = 1;
 pub const OUTGOING_PROBE_VERDICT_UNRESOLVED: u8 = 2;
+/// Not a verdict: the send is no longer unconfirmed (it settled or left the
+/// wallet); drop whatever was kept for its earlier verdict. `reason` is null.
+pub const OUTGOING_PROBE_VERDICT_CLEARED: u8 = 3;
 
 /// A verdict on an unconfirmed send whose broadcast outcome was unknown.
 /// `wallet_id` and `txid` point to 32 bytes each; `txid` is in wire
 /// (internal) byte order — reverse it for the display hex. `verdict` is one of
-/// the `OUTGOING_PROBE_VERDICT_*` codes; `reason` is null for `ACCEPTED`,
-/// otherwise a NUL-terminated diagnostic string (never user-facing copy). All
-/// pointers are valid only for the duration of the call.
+/// the `OUTGOING_PROBE_VERDICT_*` codes; `reason` is null for `ACCEPTED` and
+/// `CLEARED`, otherwise a NUL-terminated diagnostic string (never user-facing
+/// copy). All pointers are valid only for the duration of the call.
 pub type OutgoingTransactionProbedFn = unsafe extern "C" fn(
     context: *mut c_void,
     wallet_id: *const u8,
@@ -284,13 +289,28 @@ impl EventHandler for FFIEventHandler {
 }
 
 impl PlatformEventHandler for FFIEventHandler {
+    fn on_outgoing_transaction_cleared(&self, wallet_id: &[u8; 32], txid: &Txid) {
+        let Some(callback) = self.outgoing_probe_callback else {
+            return;
+        };
+        let txid_bytes: &[u8] = txid.as_ref();
+        unsafe {
+            callback(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                txid_bytes.as_ptr(),
+                OUTGOING_PROBE_VERDICT_CLEARED,
+                std::ptr::null(),
+            );
+        }
+    }
+
     fn on_outgoing_transaction_probed(
         &self,
         wallet_id: &[u8; 32],
-        txid: &dashcore::Txid,
-        verdict: &platform_wallet::broadcast_probe::ProbeVerdict,
+        txid: &Txid,
+        verdict: &ProbeVerdict,
     ) {
-        use platform_wallet::broadcast_probe::ProbeVerdict;
         let Some(callback) = self.outgoing_probe_callback else {
             return;
         };
@@ -654,8 +674,10 @@ mod outgoing_probe_callback_tests {
 
     use super::*;
 
-    /// (wallet_id, txid, verdict, reason) per call.
-    static CALLS: Mutex<Vec<([u8; 32], [u8; 32], u8, Option<String>)>> = Mutex::new(Vec::new());
+    /// (wallet_id, txid, verdict, reason) of one call.
+    type Call = ([u8; 32], [u8; 32], u8, Option<String>);
+
+    static CALLS: Mutex<Vec<Call>> = Mutex::new(Vec::new());
 
     unsafe extern "C" fn record(
         _context: *mut c_void,
@@ -716,8 +738,10 @@ mod outgoing_probe_callback_tests {
                 reason: "no quorum".to_string(),
             },
         );
+        with_callback.on_outgoing_transaction_cleared(&wallet, &txid);
         // A host without the slot receives nothing.
         handler(None).on_outgoing_transaction_probed(&wallet, &txid, &ProbeVerdict::Accepted);
+        handler(None).on_outgoing_transaction_cleared(&wallet, &txid);
 
         let calls = CALLS.lock().expect("calls").clone();
         let wire: [u8; 32] = *txid.as_byte_array();
@@ -737,6 +761,7 @@ mod outgoing_probe_callback_tests {
                     OUTGOING_PROBE_VERDICT_UNRESOLVED,
                     Some("no quorum".to_string())
                 ),
+                (wallet, wire, OUTGOING_PROBE_VERDICT_CLEARED, None),
             ]
         );
     }

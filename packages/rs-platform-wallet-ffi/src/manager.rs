@@ -166,8 +166,9 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     check_ptr!(event_extension);
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let persistence_extensions = persistence_extension_callbacks(persistence_extension);
-    let dpns_event_callback = event_extension_dpns_callback(event_extension);
-    let outgoing_probe_callback = event_extension_outgoing_probe_callback(event_extension);
+    let event_callbacks = event_extension_callbacks(event_extension);
+    let dpns_event_callback = event_callbacks.dpns;
+    let outgoing_probe_callback = event_callbacks.outgoing_probe;
     platform_wallet_manager_create_impl(
         sdk_ptr,
         persistence,
@@ -286,42 +287,42 @@ unsafe fn persistence_extension_callbacks(
     }
 }
 
-unsafe fn event_extension_dpns_callback(
-    extension: *const EventHandlerCallbacksExtension,
-) -> Option<DpnsMarketplaceSyncCompletedFn> {
-    let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
-    let version_end =
-        std::mem::offset_of!(EventHandlerCallbacksExtension, version) + std::mem::size_of::<u32>();
-    let version_ok = supplied_size >= version_end
-        && std::ptr::addr_of!((*extension).version).read()
-            == PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION;
-    negotiated_extension_slot!(
-        extension,
-        EventHandlerCallbacksExtension,
-        supplied_size,
-        version_ok,
-        on_dpns_marketplace_sync_completed_fn,
-        DpnsMarketplaceSyncCompletedFn
-    )
+/// The additive event callbacks a host supplied, negotiated from ONE snapshot
+/// of the extension header — `struct_size` and `version` are read once, so
+/// every slot is judged against the same declared layout even if host memory
+/// changes under us (see [`persistence_extension_callbacks`]).
+struct EventExtensionCallbacks {
+    dpns: Option<DpnsMarketplaceSyncCompletedFn>,
+    outgoing_probe: Option<OutgoingTransactionProbedFn>,
 }
 
-unsafe fn event_extension_outgoing_probe_callback(
+unsafe fn event_extension_callbacks(
     extension: *const EventHandlerCallbacksExtension,
-) -> Option<OutgoingTransactionProbedFn> {
+) -> EventExtensionCallbacks {
     let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
     let version_end =
         std::mem::offset_of!(EventHandlerCallbacksExtension, version) + std::mem::size_of::<u32>();
     let version_ok = supplied_size >= version_end
         && std::ptr::addr_of!((*extension).version).read()
             == PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION;
-    negotiated_extension_slot!(
-        extension,
-        EventHandlerCallbacksExtension,
-        supplied_size,
-        version_ok,
-        on_outgoing_transaction_probed_fn,
-        OutgoingTransactionProbedFn
-    )
+    EventExtensionCallbacks {
+        dpns: negotiated_extension_slot!(
+            extension,
+            EventHandlerCallbacksExtension,
+            supplied_size,
+            version_ok,
+            on_dpns_marketplace_sync_completed_fn,
+            DpnsMarketplaceSyncCompletedFn
+        ),
+        outgoing_probe: negotiated_extension_slot!(
+            extension,
+            EventHandlerCallbacksExtension,
+            supplied_size,
+            version_ok,
+            on_outgoing_transaction_probed_fn,
+            OutgoingTransactionProbedFn
+        ),
+    }
 }
 
 // The C entry point's own shape: every callback table and out-param the
@@ -2208,8 +2209,8 @@ mod outgoing_probe_extension_tests {
             on_outgoing_transaction_probed_fn
         );
         unsafe {
-            assert!(event_extension_dpns_callback(&ext).is_some());
-            assert!(event_extension_outgoing_probe_callback(&ext).is_none());
+            assert!(event_extension_callbacks(&ext).dpns.is_some());
+            assert!(event_extension_callbacks(&ext).outgoing_probe.is_none());
         }
     }
 
@@ -2217,7 +2218,7 @@ mod outgoing_probe_extension_tests {
     fn should_read_the_probe_slot_from_a_current_host() {
         let ext = both_slots();
         unsafe {
-            assert!(event_extension_outgoing_probe_callback(&ext).is_some());
+            assert!(event_extension_callbacks(&ext).outgoing_probe.is_some());
         }
     }
 
@@ -2226,7 +2227,7 @@ mod outgoing_probe_extension_tests {
         let mut ext = both_slots();
         ext.version = PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION + 1;
         unsafe {
-            assert!(event_extension_outgoing_probe_callback(&ext).is_none());
+            assert!(event_extension_callbacks(&ext).outgoing_probe.is_none());
         }
     }
 }

@@ -13,6 +13,18 @@ public enum OutgoingTransactionVerdict: Sendable, Equatable {
     case unresolved(reason: String)
 }
 
+/// Identifies one unconfirmed send across the wallets of a manager.
+public struct OutgoingTransactionKey: Hashable, Sendable {
+    public let walletId: Data
+    /// 32 bytes, wire (internal) byte order.
+    public let txidWire: Data
+
+    public init(walletId: Data, txidWire: Data) {
+        self.walletId = walletId
+        self.txidWire = txidWire
+    }
+}
+
 /// One broadcast-probe verdict. Nothing in the wallet changed because of it.
 public struct OutgoingTransactionProbeEvent: Sendable, Equatable {
     public let walletId: Data
@@ -23,6 +35,10 @@ public struct OutgoingTransactionProbeEvent: Sendable, Equatable {
     /// The txid as explorers and the UI display it (byte-reversed hex).
     public var txidDisplayHex: String {
         txidWire.reversed().map { String(format: "%02x", $0) }.joined()
+    }
+
+    public var key: OutgoingTransactionKey {
+        OutgoingTransactionKey(walletId: walletId, txidWire: txidWire)
     }
 
     public init(walletId: Data, txidWire: Data, verdict: OutgoingTransactionVerdict) {
@@ -48,6 +64,15 @@ func outgoingTransactionProbedCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
 
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    let txidWire = Data(bytes: txidPtr, count: 32)
+    if verdictCode == UInt8(OUTGOING_PROBE_VERDICT_CLEARED) {
+        let key = OutgoingTransactionKey(walletId: walletId, txidWire: txidWire)
+        Task { @MainActor [weak manager = handler.manager] in
+            manager?.handleOutgoingTransactionCleared(key)
+        }
+        return
+    }
     let reason = reasonPtr.map { String(cString: $0) } ?? ""
     let verdict: OutgoingTransactionVerdict
     switch verdictCode {
@@ -59,8 +84,8 @@ func outgoingTransactionProbedCallback(
         verdict = .unresolved(reason: reason)
     }
     let event = OutgoingTransactionProbeEvent(
-        walletId: Data(bytes: walletIdPtr, count: 32),
-        txidWire: Data(bytes: txidPtr, count: 32),
+        walletId: walletId,
+        txidWire: txidWire,
         verdict: verdict
     )
 
@@ -74,8 +99,9 @@ extension PlatformWalletManager {
     ///
     /// While on, the SDK resubmits every unconfirmed send whose broadcast
     /// outcome went quiet to evonodes over DAPI — right after SPV reports it
-    /// uncertain, then once per block — and publishes each verdict in
-    /// `outgoingTransactionVerdicts` / `lastOutgoingTransactionProbe`.
+    /// uncertain, then as blocks arrive — and publishes each *change* of
+    /// verdict in `outgoingTransactionVerdicts` / `lastOutgoingTransactionProbe`.
+    /// A send that settles or leaves the wallet is removed from the map.
     /// Resubmitting sends the same signed bytes: it can deliver a payment, it
     /// can never create a second one. Nothing in the wallet changes.
     public func setBroadcastProbeEnabled(_ enabled: Bool) throws {
@@ -88,7 +114,14 @@ extension PlatformWalletManager {
     @MainActor
     func handleOutgoingTransactionProbed(_ event: OutgoingTransactionProbeEvent) {
         guard !shutdownRequested, isConfigured else { return }
-        outgoingTransactionVerdicts[event.txidWire] = event
+        outgoingTransactionVerdicts[event.key] = event
         lastOutgoingTransactionProbe = event
+    }
+
+    /// The send settled or left the wallet: its verdict no longer applies.
+    @MainActor
+    func handleOutgoingTransactionCleared(_ key: OutgoingTransactionKey) {
+        guard !shutdownRequested, isConfigured else { return }
+        outgoingTransactionVerdicts.removeValue(forKey: key)
     }
 }

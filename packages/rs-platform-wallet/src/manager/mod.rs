@@ -24,6 +24,7 @@ use tokio_util::sync::CancellationToken;
 
 use key_wallet_manager::WalletManager;
 
+use crate::broadcast_probe::DapiAcceptanceProbe;
 use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::dashpay_sync::DashPaySyncManager;
@@ -34,6 +35,7 @@ use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
+use crate::wallet::core::broadcast_resolver::BroadcastResolver;
 use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -72,6 +74,11 @@ pub enum WalletWorker {
     /// tasks; its drain outcome is folded into the report because those
     /// tasks clone the FFI persister and can fire host callbacks.
     DashPayPayments,
+    /// Broadcast-probe passes spawned by `BroadcastResolver` in response to
+    /// SPV events. Not a registry worker: the resolver's own tracker closes
+    /// admission and aborts the passes; its drain outcome is folded into the
+    /// report because a pass publishes through the host's event callbacks.
+    BroadcastProbes,
     /// The wallet-event adapter task — the sink coordinator stores feed
     /// into. Not a registry worker: joined by
     /// [`shutdown`](PlatformWalletManager::shutdown) under a bounded
@@ -383,7 +390,7 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// Asks the network about this manager's unconfirmed sends whose
     /// broadcast outcome was unknown and publishes the verdicts. Off until
     /// the host calls [`set_broadcast_probe_enabled`](Self::set_broadcast_probe_enabled).
-    pub(super) broadcast_resolver: Arc<crate::wallet::core::broadcast_resolver::BroadcastResolver>,
+    pub(super) broadcast_resolver: Arc<BroadcastResolver>,
     /// Periodic shielded (Orchard) note sync coordinator (spends are
     /// detected during the note scan, no separate nullifier pass).
     /// Iterates every wallet that has been bound via
@@ -547,14 +554,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // was unknown (read-only; see its module docs). It publishes through
         // the event manager it is registered with, so it gets a weak handle
         // to it once that exists.
-        let broadcast_resolver = Arc::new(
-            crate::wallet::core::broadcast_resolver::BroadcastResolver::new(
-                Arc::new(crate::broadcast_probe::DapiAcceptanceProbe::new(
-                    Arc::clone(&sdk),
-                )),
-                Arc::clone(&wallet_manager),
-            ),
-        );
+        let broadcast_resolver = Arc::new(BroadcastResolver::new(
+            Arc::new(DapiAcceptanceProbe::new(Arc::clone(&sdk))),
+            Arc::clone(&wallet_manager),
+        ));
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             app_handler,
             lock_handler,
@@ -938,7 +941,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`] — including
     /// the non-registry workers [`WalletWorker::Spv`],
-    /// [`WalletWorker::DashPayPayments`], and
+    /// [`WalletWorker::DashPayPayments`], [`WalletWorker::BroadcastProbes`], and
     /// [`WalletWorker::EventAdapter`], so no callback-capable background
     /// work is excluded from the verdict. Inspect
     /// [`ShutdownReport::all_clean`] before freeing the host callback
@@ -961,17 +964,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Close payment-hook admission and join the admitted tasks —
         // they clone the FFI persister, so a straggler is exactly the
         // callback-after-destroy hazard the report exists to catch.
-        let payments_drained = self
-            .dashpay_payment_handler
-            .quiesce_within(PAYMENT_DRAIN_BUDGET)
-            .await;
-        // Probe passes publish through the host's event callbacks, so they
-        // must be gone before destroy returns; they are safe to abort.
-        let probes_drained = self
-            .broadcast_resolver
-            .quiesce_within(PAYMENT_DRAIN_BUDGET)
-            .await;
-        let payments_drained = payments_drained && probes_drained;
+        //
+        // Broadcast-probe passes publish through the host's event callbacks
+        // too, so they must be gone before destroy returns; they are safe to
+        // abort. Both drains run concurrently under one shared budget.
+        let (payments_drained, probes_drained) = tokio::join!(
+            self.dashpay_payment_handler
+                .quiesce_within(PAYMENT_DRAIN_BUDGET),
+            self.broadcast_resolver.quiesce_within(PAYMENT_DRAIN_BUDGET),
+        );
 
         // Drain the coordinators concurrently against one shared budget so
         // the drain phase as a whole is bounded (a wedged pass surfaces as
@@ -1043,6 +1044,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         report.per_worker.insert(
             WalletWorker::DashPayPayments,
             if payments_drained {
+                WorkerStatus::Ok
+            } else {
+                WorkerStatus::Timeout
+            },
+        );
+        report.per_worker.insert(
+            WalletWorker::BroadcastProbes,
+            if probes_drained {
                 WorkerStatus::Ok
             } else {
                 WorkerStatus::Timeout
@@ -1292,6 +1301,7 @@ mod tests {
         for worker in [
             WalletWorker::Spv,
             WalletWorker::DashPayPayments,
+            WalletWorker::BroadcastProbes,
             WalletWorker::EventAdapter,
         ] {
             assert!(

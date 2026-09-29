@@ -9,17 +9,22 @@
 //!   announcing the txid back, an InstantSend lock, or a confirmation proves
 //!   the network accepted it. Trustless; no DAPI involvement.
 //! - [`DapiBroadcaster`] (fallback for wallets without an SPV runtime):
-//!   submission via DAPI's gRPC endpoint. Core's own verdict decides the
-//!   outcome where the node gave one (see [`crate::broadcast_probe`]); every
-//!   other failure is conservatively [`BroadcastError::MaybeSent`].
+//!   submission via DAPI's gRPC endpoint. A node that already has the
+//!   transaction on chain counts as success; every other failure is
+//!   conservatively [`BroadcastError::MaybeSent`] (see [`crate::broadcast_probe`]
+//!   for why one node's rejection proves nothing).
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use dash_sdk::dapi_client::transport::TransportError;
+use dash_sdk::dapi_client::{DapiClientError, DapiRequestExecutor, IntoInner, RequestSettings};
+use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
 use dash_spv::BroadcastResult;
-use dashcore::{Transaction, Txid};
+use dashcore::{consensus, Transaction, Txid};
 
+use crate::broadcast_probe::{classify_failed_submission, NodeVerdict};
 use crate::error::PlatformWalletError;
 use crate::spv::SpvRuntime;
 
@@ -118,15 +123,6 @@ impl DapiBroadcaster {
 #[async_trait]
 impl TransactionBroadcaster for DapiBroadcaster {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
-        use dash_sdk::dapi_client::transport::TransportError;
-        use dash_sdk::dapi_client::{
-            DapiClientError, DapiRequestExecutor, IntoInner, RequestSettings,
-        };
-        use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
-        use dashcore::consensus;
-
-        use crate::broadcast_probe::{classify_failed_submission, NodeVerdict};
-
         let tx_bytes = consensus::serialize(transaction);
 
         let request = BroadcastTransactionRequest {
@@ -135,44 +131,29 @@ impl TransactionBroadcaster for DapiBroadcaster {
             bypass_limits: false,
         };
 
-        // `sdk.execute` retries across nodes internally, but only on transport
-        // failures: `AlreadyExists`, `InvalidArgument` and `FailedPrecondition`
-        // are non-retryable, so when one of them surfaces it is the answer of
-        // the node that evaluated the transaction. That makes Core's own
-        // verdict usable (see `broadcast_probe`): `AlreadyExists` means the
-        // transaction is on chain, and a proven-dead or refused transaction
-        // did not enter this node's mempool — its reserved inputs are safe to
-        // release, since a rebuild re-selecting them conflicts with, rather
-        // than adds to, any copy an earlier attempt may have delivered.
-        // Everything else — transport errors, timeouts, unrecognised
-        // rejections — stays `MaybeSent`, because an earlier attempt may have
-        // delivered the transaction before the response was lost.
-        let error = match self
+        // A node that answers `AlreadyExists` has the transaction on chain,
+        // so that is success. Every other failure stays `MaybeSent`, including
+        // Core's own rejections: one node's `missingorspent` is also what a
+        // lagging node, a node that has not seen our unconfirmed parent, and
+        // a mined transaction whose outputs are all spent produce (see
+        // `broadcast_probe`), and the `Rejected` contract demands proof that
+        // the transaction never entered the network — which one answer cannot
+        // give. `sdk.execute` also retries transport failures across nodes, so
+        // an earlier attempt may have delivered it before this error.
+        match self
             .sdk
             .execute(request, RequestSettings::default())
             .await
             .into_inner()
         {
-            Ok(_response) => return Ok(transaction.txid()),
-            Err(error) => error,
-        };
-
-        let verdict = match &error {
-            DapiClientError::Transport(TransportError::Grpc(status)) => {
-                classify_failed_submission(status.code(), status.message())
+            Ok(_response) => Ok(transaction.txid()),
+            Err(DapiClientError::Transport(TransportError::Grpc(status)))
+                if classify_failed_submission(status.code(), status.message())
+                    == NodeVerdict::Accepted =>
+            {
+                Ok(transaction.txid())
             }
-            _ => NodeVerdict::Unknown {
-                reason: error.to_string(),
-            },
-        };
-        match verdict {
-            NodeVerdict::Accepted => Ok(transaction.txid()),
-            NodeVerdict::Dead { reason } | NodeVerdict::Refused { reason } => {
-                Err(BroadcastError::Rejected {
-                    reason: format!("DAPI broadcast rejected: {reason}"),
-                })
-            }
-            NodeVerdict::Unknown { .. } => Err(BroadcastError::MaybeSent {
+            Err(error) => Err(BroadcastError::MaybeSent {
                 reason: format!("DAPI broadcast failed: {error}"),
             }),
         }
