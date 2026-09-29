@@ -36,6 +36,11 @@ Exit codes: 0 clean, 1 findings, 2 the audit could not run (cargo-audit
 missing, failing or incomplete because the crates.io index or a yank lookup
 was unavailable, unreadable manifest, lockfile or report).
 
+On a pull request the workflow runs this script from the base branch against
+the submitted Cargo.toml and Cargo.lock as data files, with `--base-manifest`
+pointing at the base branch's manifest so the submitted engine set cannot be
+smaller than the base's. Nothing from the pull request is executed.
+
 `--self-test` evaluates manifests, lockfiles and reports built in memory and
 proves that the checker accepts a clean set and rejects each kind of finding.
 The workflow runs it before every real audit so a green run means the set was
@@ -283,7 +288,13 @@ def yanked_engine_versions(manifest, lock, index_url):
 
 
 def parse_date(value):
-    """ISO 8601 date string to date, or None when absent or malformed."""
+    """ISO 8601 date string or TOML date literal to date, or None when absent or malformed.
+
+    tomllib returns datetime.datetime for a TOML datetime literal and
+    datetime.date for a bare date literal; both are accepted as the day.
+    """
+    if isinstance(value, datetime.datetime):
+        return value.date()
     if isinstance(value, datetime.date):
         return value
     if not isinstance(value, str):
@@ -368,16 +379,26 @@ def describe(finding):
     return ": ".join(parts[:2]) + (" (" + "; ".join(parts[2:]) + ")" if len(parts) > 2 else "")
 
 
-def evaluate(manifest, lock, report, today, index_yanked=None):
+def evaluate(manifest, lock, report, today, index_yanked=None, base_manifest=None):
     """Pure core: returns (exit code, output lines).
 
     `index_yanked` is the checker's own yank result from the crates.io index
     (a list of (name, version)); None means the index was not consulted, which
     is reported as a notice so an offline run cannot be mistaken for a full one.
+    `base_manifest` is the trusted branch's parsed manifest when a submitted
+    manifest is audited: every engine crate the base names must still be in the
+    submitted set, so a pull request cannot pass by shrinking the set.
     """
     failures = []
     notices = []
     engine = set(manifest["crates"])
+
+    if base_manifest is not None:
+        for name in sorted(set(base_manifest["crates"]) - engine):
+            failures.append(
+                f"engine crate {name} is in the base branch's set but not in the submitted "
+                "manifest; the set may grow in a pull request, never shrink"
+            )
 
     for name in manifest["crates"]:
         if name in lock:
@@ -525,7 +546,16 @@ def self_test(out=sys.stdout):
     today = datetime.date(2026, 9, 22)
     checks = []
 
-    def expect(name, manifest_text, report, expected, needle=None, lock_text=SAMPLE_LOCK, index_yanked=None):
+    def expect(
+        name,
+        manifest_text,
+        report,
+        expected,
+        needle=None,
+        lock_text=SAMPLE_LOCK,
+        index_yanked=None,
+        base_manifest_text=None,
+    ):
         try:
             code, lines = evaluate(
                 parse_manifest(manifest_text, name),
@@ -533,6 +563,7 @@ def self_test(out=sys.stdout):
                 report,
                 today,
                 index_yanked,
+                parse_manifest(base_manifest_text, name) if base_manifest_text else None,
             )
         except AuditError as error:
             code, lines = EXIT_ERROR, [str(error)]
@@ -577,6 +608,33 @@ def self_test(out=sys.stdout):
         sample_report([WASMTIME_VULN]),
         EXIT_CLEAN,
         "note acknowledged vulnerability wasmtime",
+    )
+    expect(
+        "acknowledgement with a TOML datetime literal expiry is read as its day",
+        sample_manifest(
+            'acknowledged = [{ id = "RUSTSEC-2026-0096", reason = "x", expires = 2026-10-31T00:00:00 }]\n'
+        ),
+        sample_report([WASMTIME_VULN]),
+        EXIT_CLEAN,
+        "note acknowledged vulnerability wasmtime",
+    )
+    expect(
+        "acknowledgement with a TOML date literal expiry that has passed fails cleanly",
+        sample_manifest(
+            'acknowledged = [{ id = "RUSTSEC-2026-0096", reason = "x", expires = 2026-09-21 }]\n'
+        ),
+        sample_report([WASMTIME_VULN]),
+        EXIT_FINDINGS,
+        "expired on 2026-09-21",
+    )
+    expect(
+        "acknowledgement with a non-date expiry fails cleanly",
+        sample_manifest(
+            'acknowledged = [{ id = "RUSTSEC-2026-0096", reason = "x", expires = 20261031 }]\n'
+        ),
+        sample_report([WASMTIME_VULN]),
+        EXIT_FINDINGS,
+        "`expires` must be an ISO 8601 date",
     )
     expect(
         "expired acknowledgement fails",
@@ -713,6 +771,29 @@ def self_test(out=sys.stdout):
         sample_report(),
         EXIT_CLEAN,
         "patch declaration wasmtime: no [patch] entry, remove the declaration",
+    )
+    base_manifest = (
+        "[workspace]\nmembers = []\n\n[workspace.metadata.dashvm.engine]\n"
+        'crates = ["wasmtime", "cranelift-codegen", "wasmparser", "wasm-encoder"]\n'
+    )
+    expect(
+        "submitted manifest that drops a base engine crate fails",
+        sample_manifest(),
+        sample_report(),
+        EXIT_FINDINGS,
+        "engine crate wasm-encoder is in the base branch's set but not in the submitted",
+        base_manifest_text=base_manifest,
+    )
+    expect(
+        "submitted manifest that keeps or grows the base set passes",
+        sample_manifest(),
+        sample_report(),
+        EXIT_CLEAN,
+        "0 failure(s)",
+        base_manifest_text=(
+            "[workspace]\nmembers = []\n\n[workspace.metadata.dashvm.engine]\n"
+            'crates = ["wasmtime", "cranelift-codegen"]\n'
+        ),
     )
     expect(
         "manifest without the engine table is an error",
@@ -866,6 +947,13 @@ def main(argv=None):
         help="lockfile to audit (passed to cargo audit --file)",
     )
     parser.add_argument(
+        "--base-manifest",
+        help=(
+            "the trusted branch's root Cargo.toml when --manifest is a submitted copy; "
+            "every engine crate it names must still be in the submitted set"
+        ),
+    )
+    parser.add_argument(
         "--report",
         help="evaluate a saved `cargo audit --json` report instead of running cargo-audit",
     )
@@ -899,6 +987,11 @@ def main(argv=None):
 
     try:
         manifest = parse_manifest(read_text(args.manifest, "manifest"), args.manifest)
+        base_manifest = None
+        if args.base_manifest:
+            base_manifest = parse_manifest(
+                read_text(args.base_manifest, "base manifest"), args.base_manifest
+            )
         lock = parse_lockfile(read_text(args.lockfile, "lockfile"), args.lockfile)
         if args.report:
             report = parse_report(read_text(args.report, "report"), args.report)
@@ -911,7 +1004,7 @@ def main(argv=None):
         print(f"engine audit error: {error}")
         return EXIT_ERROR
 
-    code, lines = evaluate(manifest, lock, report, today, index_yanked)
+    code, lines = evaluate(manifest, lock, report, today, index_yanked, base_manifest)
     for line in lines:
         print(line)
     return code

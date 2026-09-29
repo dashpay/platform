@@ -18,10 +18,10 @@ permissions:
 jobs:
   check-status:
     name: Aggregate security audit results
-    # The engine audit also runs on pull requests, including from forks. The
-    # status page aggregates the scheduled and dispatched audits only, and a
-    # pull request branch has no runs of the other workflows to aggregate.
-    if: github.event.workflow_run.event != 'pull_request'
+    # The engine audit also runs on pull requests (pull_request_target),
+    # including from forks. The status page aggregates the scheduled and
+    # dispatched audits only.
+    if: github.event.workflow_run.event == 'schedule' || github.event.workflow_run.event == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - name: Check all security audit workflows

@@ -117,6 +117,12 @@ What is automated is the workflow `Security: DashVM Engine`
   configuration, the checker or the workflow. A dependency bump that pulls in
   an affected engine crate is therefore red on the pull request, not
   discovered the next night.
+- On a pull request it runs the base branch's workflow and checker, not the
+  pull request's. The submitted root manifest and lockfile are fetched as
+  data files and audited against the base branch's engine set, which the
+  pull request may grow but never shrink. Nothing from the pull request is
+  executed, so a pull request that edits the checker cannot make its own
+  audit pass.
 - It runs `cargo-audit` from outside the workspace, so the ignore list in
   `.cargo/audit.toml` cannot hide an engine advisory. The base-wide audit has
   its own backlog and its own exceptions; the engine has neither.

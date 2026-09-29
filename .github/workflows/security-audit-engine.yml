@@ -10,13 +10,21 @@ name: "Security: DashVM Engine"
 # from outside the workspace so the ignore list in .cargo/audit.toml cannot
 # hide an engine advisory; engine exceptions live in Cargo.toml with a reason
 # and an expiry.
+#
+# Pull requests are audited through pull_request_target on purpose: the
+# workflow definition and the checker then come from the base branch, the
+# pull request's root manifest and lockfile are fetched as data files only,
+# and nothing from the pull request is executed. A pull request that edits
+# the checker cannot make its own audit pass, and one that drops a crate
+# from the engine set fails against the base branch's set. The token holds
+# contents: read and nothing else.
 
 on:
   workflow_dispatch:
   schedule:
     # After the base-wide audit at 23:30 UTC, off the round minute.
     - cron: "45 23 * * *"
-  pull_request:
+  pull_request_target:
     branches:
       - master
       - "v*-dev"
@@ -37,7 +45,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: engine-audit-${{ github.workflow }}-${{ github.ref }}
+  # github.ref is the base branch under pull_request_target, so key pull
+  # request runs on their number instead of cancelling one another.
+  group: engine-audit-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -46,8 +56,23 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Check out repo
+      - name: Check out the trusted revision
+        # Under pull_request_target this is the base branch head, never the
+        # pull request; on schedule and dispatch it is the branch itself.
         uses: actions/checkout@v4
+
+      - name: Fetch the submitted manifest and lockfile as data
+        if: github.event_name == 'pull_request_target'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          submitted="${RUNNER_TEMP}/submitted"
+          mkdir -p "${submitted}"
+          git fetch --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+          git show FETCH_HEAD:Cargo.toml > "${submitted}/Cargo.toml"
+          git show FETCH_HEAD:Cargo.lock > "${submitted}/Cargo.lock"
+          echo "submitted head: $(git rev-parse FETCH_HEAD)"
+          ls -l "${submitted}"
 
       - name: Set up audit toolchain
         # Same as the base-wide audit: the tool builds with a compiler
@@ -80,8 +105,18 @@ jobs:
           # shown and summarised on failure, then exit with its status.
           set -uo pipefail
           report="${RUNNER_TEMP}/engine-audit.txt"
+          args=()
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request_target" ]; then
+            # Audit the submitted files with the base branch's checker, and
+            # hold the engine set to at least the base branch's set.
+            args=(
+              --manifest "${RUNNER_TEMP}/submitted/Cargo.toml"
+              --lockfile "${RUNNER_TEMP}/submitted/Cargo.lock"
+              --base-manifest Cargo.toml
+            )
+          fi
           status=0
-          python3 .github/scripts/check-engine-advisories.py > "${report}" || status=$?
+          python3 .github/scripts/check-engine-advisories.py ${args[@]+"${args[@]}"} > "${report}" || status=$?
           cat "${report}"
           {
             echo "## DashVM engine dependency audit"
