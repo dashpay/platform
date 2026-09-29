@@ -187,6 +187,12 @@ def select(manifest, kind, output, wait_seconds, arch=None, validation=False):
                     require(run["path"] == ".github/workflows/runner-image-candidate.yml"
                             and run["event"] == "pull_request_target", "Unexpected candidate publisher")
                     if run["conclusion"] == "success":
+                        # Publication may finish during the retry sleep after
+                        # this PR was updated/closed. Do not queue a stale label
+                        # that the allocator must refuse to service.
+                        current = api(f"pulls/{pr['number']}")
+                        require(current["state"] == "open" and current["head"]["sha"] == head,
+                                "PR changed before selecting its candidate")
                         labels = ["self-hosted", "Linux", "X64",
                                   f"platform-image-pr-{pr['number']}-{head}-{candidate['description'][7:]}-{kind}"]
                         break
