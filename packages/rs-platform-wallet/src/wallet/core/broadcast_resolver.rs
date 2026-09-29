@@ -51,7 +51,6 @@
 //! are merged into the next. Every host callback comes from that task, never
 //! from a caller that may hold its own locks.
 
-use std::cell::OnceCell;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -709,6 +708,16 @@ pub(crate) trait WalletSource: Send + Sync {
     ) -> Option<Option<WalletRead>>;
 }
 
+/// Whether any account of the wallet records `txid` — a map lookup per
+/// account, not a walk over the records.
+fn holds(info: &PlatformWalletInfo, txid: &Txid) -> bool {
+    info.core_wallet
+        .accounts
+        .all_accounts()
+        .iter()
+        .any(|account| account.transactions().contains_key(txid))
+}
+
 struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);
 
 #[async_trait]
@@ -719,13 +728,9 @@ impl WalletSource for ManagerSource {
             .list_wallets()
             .into_iter()
             .filter(|wallet_id| {
-                manager.get_wallet_info(wallet_id).is_some_and(|info| {
-                    info.core_wallet
-                        .accounts
-                        .all_accounts()
-                        .iter()
-                        .any(|account| account.transactions().contains_key(&txid))
-                })
+                manager
+                    .get_wallet_info(wallet_id)
+                    .is_some_and(|info| holds(info, &txid))
             })
             .copied()
             .collect()
@@ -739,14 +744,9 @@ impl WalletSource for ManagerSource {
     ) -> Option<Option<WalletRead>> {
         let manager = self.0.read().await;
         let info = manager.get_wallet_info(&wallet_id)?;
-        // Built at most once, and only if there is a txid to look up.
-        let accounts = OnceCell::new();
-        let forced = forced_held(by_height, forced, |txid| {
-            accounts
-                .get_or_init(|| info.core_wallet.accounts.all_accounts())
-                .iter()
-                .any(|account| account.transactions().contains_key(txid))
-        });
+        // Checked again under this lock: the record may have left since the
+        // holders lookup (a sweep, a removal).
+        let forced = forced_held(by_height, forced, |txid| holds(info, txid));
         Some(forced.map(|forced| WalletRead {
             views: collect_views(info),
             synced_height: info.core_wallet.synced_height(),
@@ -788,20 +788,17 @@ impl VerdictSink for EventSink {
 }
 
 /// Hand `events` to the host. A handler that panics does not take the
-/// resolver down, and a verdict it failed to take is unpublished so a later
-/// pass sends it again. (Where panics abort — the iOS profiles — none of this
-/// runs; it matters where they unwind.)
-fn deliver(sink: &Arc<dyn VerdictSink>, state: &mut ResolverState, events: Vec<Outgoing>) {
+/// resolver down, but the event it panicked on is lost — it is not sent
+/// again. A panicking handler is a host bug; this only keeps probing alive
+/// where panics unwind (the iOS profiles abort instead).
+fn deliver(sink: &Arc<dyn VerdictSink>, events: Vec<Outgoing>) {
     for item in &events {
         if catch_unwind(AssertUnwindSafe(|| sink.deliver(item))).is_err() {
             tracing::error!(
                 wallet_id = %hex::encode(item.wallet_id),
                 event = ?item.event,
-                "broadcast probe: a host handler panicked delivering an event"
+                "broadcast probe: a host handler panicked; its event is lost"
             );
-            if let ResolverEvent::Verdict(txid, _) = &item.event {
-                state.published.remove(&(item.wallet_id, *txid));
-            }
         }
     }
 }
@@ -856,7 +853,7 @@ struct PendingPass {
     /// results did.
     by_height: bool,
     forced: HashSet<Txid>,
-    /// The earliest command at which one of `forced` was reported.
+    /// The latest command at which one of `forced` was reported.
     forced_since: Option<u64>,
 }
 
@@ -914,7 +911,8 @@ struct Actor {
     jobs: JoinSet<JobDone>,
     /// Which run each read or probe job belongs to, so a job that panicked
     /// can end its run instead of leaving the wallet stuck behind it.
-    job_runs: HashMap<task::Id, (WalletId, u64)>,
+    /// A probe job also names its root, whose send time a panic withdraws.
+    job_runs: HashMap<task::Id, (WalletId, u64, Option<Txid>)>,
     /// Commands handled so far: orders an `Uncertain` result against probes.
     tick: u64,
     /// When each root was last sent to the network: the command count and the
@@ -985,7 +983,12 @@ impl Actor {
                 // for an `Uncertain` result belongs to no run: wake every
                 // wallet instead.
                 match owner {
-                    Some((wallet_id, run)) => {
+                    Some((wallet_id, run, root)) => {
+                        // The probe never reached a verdict: it must not
+                        // count as sent for the forced-probe dedup.
+                        if let Some(root) = root {
+                            self.probed.remove(&(wallet_id, root));
+                        }
                         if let Some(entry) = self.wallets.get_mut(&wallet_id) {
                             if entry.run.as_ref().is_some_and(|current| current.id == run) {
                                 entry.run = None;
@@ -1018,8 +1021,10 @@ impl Actor {
                 let enabled = self.enabled;
                 let entry = self.entry(wallet_id);
                 let previous = entry.height.replace(height);
+                // While a pass runs, its end decides the wait: queue the height
+                // and let `probe_next` drop it if no root turns out due.
                 if !enabled
-                    || entry.wait_until.is_some_and(|until| height < until)
+                    || (entry.run.is_none() && entry.wait_until.is_some_and(|until| height < until))
                     || is_catch_up_step(previous, height)
                 {
                     return;
@@ -1075,7 +1080,7 @@ impl Actor {
                 if !enabled {
                     self.probed.clear();
                     let events = self.state.forget_all();
-                    deliver(&self.sink, &mut self.state, events);
+                    deliver(&self.sink, events);
                 }
             }
             Command::WalletRemoved(wallet_id) => {
@@ -1084,7 +1089,7 @@ impl Actor {
                 }
                 self.probed.retain(|(wallet, _), _| *wallet != wallet_id);
                 let events = self.state.forget_wallet(&wallet_id);
-                deliver(&self.sink, &mut self.state, events);
+                deliver(&self.sink, events);
             }
         }
     }
@@ -1115,7 +1120,7 @@ impl Actor {
                 read,
             }
         });
-        self.job_runs.insert(abort.id(), (wallet_id, run));
+        self.job_runs.insert(abort.id(), (wallet_id, run, None));
         entry.run = Some(Run {
             id: run,
             seq: entry.seq,
@@ -1136,12 +1141,16 @@ impl Actor {
                     return;
                 }
                 for wallet_id in wallets {
-                    let entry = self.wallets.entry(wallet_id).or_default();
+                    // Counted like a command: a run that read the id as gone
+                    // before this must not drop the entry and its request.
+                    let entry = self.entry(wallet_id);
                     let pending = entry.pending.get_or_insert_with(PendingPass::default);
                     pending.height = pending.height.max(entry.height.unwrap_or(0));
                     pending.forced.insert(txid);
+                    // The latest result: a probe sent before it must not
+                    // stand in for the forced probe it asks for.
                     pending.forced_since =
-                        Some(pending.forced_since.map_or(since, |s| s.min(since)));
+                        Some(pending.forced_since.map_or(since, |s| s.max(since)));
                     self.start(wallet_id);
                 }
             }
@@ -1173,7 +1182,7 @@ impl Actor {
                         }
                         self.probed.retain(|(wallet, _), _| *wallet != wallet_id);
                         let events = self.state.forget_wallet(&wallet_id);
-                        deliver(&self.sink, &mut self.state, events);
+                        deliver(&self.sink, events);
                         self.start(wallet_id);
                     }
                     Some(None) => {
@@ -1192,8 +1201,10 @@ impl Actor {
                             &read.forced,
                         );
                         // Forget send times of roots that settled or left.
+                        let present: HashSet<Txid> =
+                            read.views.iter().map(|view| view.txid).collect();
                         self.probed.retain(|(wallet, txid), _| {
-                            *wallet != wallet_id || read.views.iter().any(|view| view.txid == *txid)
+                            *wallet != wallet_id || present.contains(txid)
                         });
                         // A root already sent to the network at this height
                         // after the `Uncertain` result arrived needs no second
@@ -1218,7 +1229,7 @@ impl Actor {
                         }
                         // Clears and re-published dead verdicts reach the host
                         // before the pass goes out to the network.
-                        deliver(&self.sink, &mut self.state, start.events);
+                        deliver(&self.sink, start.events);
                         self.probe_next(wallet_id);
                     }
                 }
@@ -1247,7 +1258,7 @@ impl Actor {
                     root,
                     &verdict,
                 );
-                deliver(&self.sink, &mut self.state, events);
+                deliver(&self.sink, events);
                 self.probe_next(wallet_id);
             }
         }
@@ -1276,7 +1287,8 @@ impl Actor {
                     verdict,
                 }
             });
-            self.job_runs.insert(run.abort.id(), (wallet_id, id));
+            self.job_runs
+                .insert(run.abort.id(), (wallet_id, id, Some(root)));
             self.probed
                 .insert((wallet_id, root), (self.tick, probing.height));
             return;
@@ -1284,6 +1296,13 @@ impl Actor {
         entry.wait_until =
             (!run.woken).then(|| next_pass_height(&self.state, wallet_id, &probing.views));
         entry.run = None;
+        // A height queued during the run that no root is due at is dropped;
+        // a forced request never is.
+        if let (Some(pending), Some(until)) = (&entry.pending, entry.wait_until) {
+            if pending.forced.is_empty() && pending.height < until {
+                entry.pending = None;
+            }
+        }
         self.start(wallet_id);
     }
 }
@@ -1292,6 +1311,9 @@ enum ActorSlot {
     /// Waiting for the first command sent from inside a Tokio runtime.
     NotStarted(Box<Actor>, mpsc::UnboundedReceiver<Command>),
     Running(JoinHandle<()>, oneshot::Sender<()>),
+    /// Told to stop but not yet ended within a budget: a retried stop joins
+    /// it again rather than reporting it gone.
+    Stopping(JoinHandle<()>),
     Closed,
 }
 
@@ -1387,26 +1409,38 @@ impl BroadcastResolver {
     /// Stop the resolver's task: it aborts every read and probe it started and
     /// waits for them, all within `budget`; after this no host callback comes
     /// from the resolver. `NotRunning` if it never started or was already
-    /// stopped; `Timeout` if it did not end in time (it is then aborted);
-    /// `Panicked` if it had died. Idempotent.
+    /// stopped; `Timeout` if it did not end in time (it is then aborted, and
+    /// a later call waits for it again); `Panicked` if it had died.
     pub(crate) async fn stop_within(&self, budget: Duration) -> WorkerStatus {
         self.started.store(true, Ordering::Release);
-        let slot = std::mem::replace(
-            &mut *self.actor.lock().unwrap_or_else(PoisonError::into_inner),
-            ActorSlot::Closed,
-        );
-        let ActorSlot::Running(mut handle, stop) = slot else {
-            return WorkerStatus::NotRunning;
-        };
-        let _ = stop.send(());
-        match tokio::time::timeout(budget, &mut handle).await {
-            Ok(Ok(())) => WorkerStatus::Ok,
-            Ok(Err(error)) if error.is_panic() => WorkerStatus::Panicked(error.to_string()),
-            Ok(Err(error)) => WorkerStatus::Stopped(Some(error.to_string())),
-            Err(_) => {
-                handle.abort();
-                WorkerStatus::Timeout
-            }
+        stop_slot(&self.actor, budget).await
+    }
+}
+
+/// See [`BroadcastResolver::stop_within`].
+async fn stop_slot(actor: &Mutex<ActorSlot>, budget: Duration) -> WorkerStatus {
+    let slot = std::mem::replace(
+        &mut *actor.lock().unwrap_or_else(PoisonError::into_inner),
+        ActorSlot::Closed,
+    );
+    let mut handle = match slot {
+        ActorSlot::Running(handle, stop) => {
+            let _ = stop.send(());
+            handle
+        }
+        ActorSlot::Stopping(handle) => handle,
+        ActorSlot::NotStarted(..) | ActorSlot::Closed => return WorkerStatus::NotRunning,
+    };
+    match tokio::time::timeout(budget, &mut handle).await {
+        Ok(Ok(())) => WorkerStatus::Ok,
+        Ok(Err(error)) if error.is_panic() => WorkerStatus::Panicked(error.to_string()),
+        Ok(Err(error)) => WorkerStatus::Stopped(Some(error.to_string())),
+        Err(_) => {
+            // An abort cannot interrupt a host callback in progress: keep
+            // the handle so a retried stop waits for it again.
+            handle.abort();
+            *actor.lock().unwrap_or_else(PoisonError::into_inner) = ActorSlot::Stopping(handle);
+            WorkerStatus::Timeout
         }
     }
 }
@@ -2509,6 +2543,55 @@ mod tests {
         rig.settle().await;
 
         assert_eq!(probe.probed(), vec![txid(1)]);
+    }
+
+    /// A wallet waiting for nothing (idle) is forced by an `Uncertain` result;
+    /// a height that arrives while that pass runs is kept, so the new root
+    /// gets its next-block probe.
+    #[tokio::test]
+    async fn should_keep_a_height_that_arrives_during_a_forced_pass() {
+        let probe = Arc::new(ScriptedProbe::new(&[
+            (txid(1), dead()),
+            (txid(2), unresolved()),
+        ]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.height(wallet(), 102).await;
+        assert_eq!(probe.probed(), vec![txid(1)], "idle after the dead root");
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
+        );
+
+        rig.actor.handle(Command::Uncertain(txid(2)));
+        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        rig.actor.joined(listed);
+        rig.actor.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 103,
+        });
+        rig.settle().await;
+
+        assert_eq!(probe.probed(), vec![txid(1), txid(2), txid(2)]);
+    }
+
+    /// A stop that runs out of budget keeps the task: a retried stop waits for
+    /// it again and never reports it gone while it still runs.
+    #[tokio::test]
+    async fn should_not_report_a_task_that_outlived_a_stop_as_not_running() {
+        let (stop, _stopped) = oneshot::channel();
+        // A blocking task stands in for a host callback that abort cannot cut.
+        let handle = tokio::task::spawn_blocking(|| std::thread::sleep(Duration::from_millis(300)));
+        let slot = Mutex::new(ActorSlot::Running(handle, stop));
+
+        let first = stop_slot(&slot, Duration::from_millis(20)).await;
+        let second = stop_slot(&slot, Duration::from_secs(5)).await;
+        let third = stop_slot(&slot, Duration::from_secs(5)).await;
+
+        assert_eq!(first, WorkerStatus::Timeout);
+        assert_eq!(second, WorkerStatus::Ok);
+        assert_eq!(third, WorkerStatus::NotRunning);
     }
 
     /// A probe that panics.

@@ -465,12 +465,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
-                    if let Err(e) = wm.remove_wallet(id) {
-                        tracing::warn!(
+                    match wm.remove_wallet(id) {
+                        Ok(_) => self.broadcast_resolver.wallet_removed(id),
+                        Err(e) => tracing::warn!(
                             wallet_id = %hex::encode(id),
                             error = %e,
                             "rollback after load failure: remove_wallet failed"
-                        );
+                        ),
                     }
                 }
             }

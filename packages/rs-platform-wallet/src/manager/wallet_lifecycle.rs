@@ -543,12 +543,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 "failed to persist wallet registration changeset"
             );
             let mut wm = self.wallet_manager.write().await;
-            if let Err(remove_err) = wm.remove_wallet(&wallet_id) {
-                tracing::warn!(
+            match wm.remove_wallet(&wallet_id) {
+                Ok(_) => self.broadcast_resolver.wallet_removed(&wallet_id),
+                Err(remove_err) => tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     error = %remove_err,
                     "rollback: remove_wallet failed while unwinding a failed wallet registration"
-                );
+                ),
             }
             return Err(PlatformWalletError::from_store_failure(&*self.persister, e));
         }
@@ -591,12 +592,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     "failed to restore persisted platform-address state"
                 );
                 let mut wm = self.wallet_manager.write().await;
-                if let Err(remove_err) = wm.remove_wallet(&wallet_id) {
-                    tracing::warn!(
+                match wm.remove_wallet(&wallet_id) {
+                    Ok(_) => self.broadcast_resolver.wallet_removed(&wallet_id),
+                    Err(remove_err) => tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
                         error = %remove_err,
                         "rollback: remove_wallet failed while unwinding a failed wallet setup"
-                    );
+                    ),
                 }
                 // Wrap the already-typed error rather than stringify it, so
                 // its concrete variant and source chain survive.
