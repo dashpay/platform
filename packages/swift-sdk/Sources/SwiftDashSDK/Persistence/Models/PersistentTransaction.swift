@@ -257,12 +257,13 @@ public final class PersistentTransaction {
     public func direction(for walletId: Data) -> UInt32 {
         let wallets = Set((inputs + outputs).filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
             .compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
-        guard wallets.count > 1, direction != 3, transactionTypeKind != 1, !isAssetLock else { return direction }
+        guard wallets.count > 1, direction != CoreDirectionCode.coinJoin,
+              typedKind != .coinJoin, !isAssetLock else { return direction }
         let spendsOurs = inputs.contains {
             PlatformWalletPersistenceHandler.isWalletOwnedTxo($0)
                 && PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) == walletId
         }
-        return spendsOurs ? 1 : 0
+        return spendsOurs ? CoreDirectionCode.outgoing : CoreDirectionCode.incoming
     }
 
     /// Format the wallet's Core value movement in DASH.
@@ -292,10 +293,11 @@ public final class PersistentTransaction {
         // internal only when nothing leaves the wallet and something stays in
         // it, or an asset lock burns into Platform. Both sides test one table.
         let direction: UInt32
-        if previousDirection == 3 { direction = 3 }
-        else if inputs.isEmpty { direction = 0 }
-        else if allOutputsOwned && (!ownedOutputAmounts.isEmpty || isAssetLock) { direction = 2 }
-        else { direction = 1 }
+        if previousDirection == CoreDirectionCode.coinJoin { direction = CoreDirectionCode.coinJoin }
+        else if inputs.isEmpty { direction = CoreDirectionCode.incoming }
+        else if allOutputsOwned && (!ownedOutputAmounts.isEmpty || isAssetLock) {
+            direction = CoreDirectionCode.internalTransfer
+        } else { direction = CoreDirectionCode.outgoing }
         return (received - spent, direction)
     }
 
@@ -427,6 +429,15 @@ public final class PersistentTransaction {
 /// "pre-feature / not-populated" sentinel and is NOT a case in this
 /// enum — `TransactionTypeKind(rawValue: 0xFF)` returns `nil`, which
 /// the accessors treat as "unknown" so no branch fires falsely.
+/// Wire values of `PersistentTransaction.direction`, matching `directionName`
+/// and the FFI's `TransactionDirection` discriminants.
+enum CoreDirectionCode {
+    static let incoming: UInt32 = 0
+    static let outgoing: UInt32 = 1
+    static let internalTransfer: UInt32 = 2
+    static let coinJoin: UInt32 = 3
+}
+
 public enum TransactionTypeKind: UInt8 {
     case standard = 0
     case coinJoin = 1

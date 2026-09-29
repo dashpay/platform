@@ -626,6 +626,10 @@ fn coalesce_newest_wins<K: std::hash::Hash + Eq>(
 }
 
 /// Keep the last correction per account before folding account contributions.
+// TODO(unify-record-coalescing): `coalesce_newest_wins` (the `Merge` path)
+// can regress a confirmed context to an older mempool slice; this helper
+// keeps the highest context rank. Unify them once `Merge` semantics are
+// reviewed.
 pub(crate) fn coalesce_account_records(records: &mut Vec<TransactionRecord>) {
     let mut positions = BTreeMap::new();
     for mut record in std::mem::take(records) {

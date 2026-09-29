@@ -1707,7 +1707,7 @@ mod tests {
     }
 
     #[test]
-    fn should_keep_uncredited_outputs_spent() {
+    fn should_mark_observed_spent_and_doomed_outputs_spent() {
         use platform_wallet::changeset::changeset::UtxoCreditVerdict;
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
@@ -1743,6 +1743,60 @@ mod tests {
                 .unwrap();
             assert!(spent, "engine did not credit {verdict:?}");
         }
+    }
+
+    #[test]
+    fn should_keep_prior_spent_flag_for_uncredited_outputs() {
+        use platform_wallet::changeset::changeset::UtxoCreditVerdict;
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xA8u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+        let stored_spent = |outpoint: &OutPoint| -> Option<bool> {
+            tx.query_row(
+                "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![&wallet_id[..], blob::encode_outpoint(outpoint).unwrap()],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap()
+        };
+        let uncredited = |utxo: Utxo| CoreChangeSet {
+            utxo_credit_verdicts: [(utxo.outpoint, UtxoCreditVerdict::Uncredited)].into(),
+            new_utxos: vec![utxo],
+            ..Default::default()
+        };
+
+        let fresh = sample_utxo(Txid::from_byte_array([3; 32]), 100, true);
+        apply(&tx, &wallet_id, &uncredited(fresh.clone())).unwrap();
+        assert_eq!(
+            stored_spent(&fresh.outpoint),
+            None,
+            "never materialize an uncredited output"
+        );
+
+        let known = sample_utxo(Txid::from_byte_array([4; 32]), 100, true);
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                new_utxos: vec![known.clone()],
+                utxo_credit_verdicts: [(known.outpoint, UtxoCreditVerdict::Doomed)].into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        apply(&tx, &wallet_id, &uncredited(known.clone())).unwrap();
+        assert_eq!(
+            stored_spent(&known.outpoint),
+            Some(true),
+            "an uncredited replay keeps the spend"
+        );
     }
 
     #[test]

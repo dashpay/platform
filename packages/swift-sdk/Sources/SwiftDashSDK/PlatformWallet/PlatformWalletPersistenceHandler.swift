@@ -2548,7 +2548,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         record.blockHash = blockHashBytes.allSatisfy { $0 == 0 } ? nil : blockHashBytes
         // A context-only recovery record has zero accounting; a funded asset lock burns Core value.
         // A stored debit is itself the proof we funded it: its inputs may not be linked yet.
-        let preserveLockAccounting = tx.transaction_type_kind == 6 && tx.net_amount == 0 && !tx.has_fee
+        let preserveLockAccounting = tx.transaction_type_kind == TransactionTypeKind.assetLock.rawValue
+            && tx.net_amount == 0 && !tx.has_fee
             && record.netAmount < 0
         if !preserveLockAccounting { record.direction = tx.direction }
         if let typeName = tx.transaction_type {
@@ -3428,8 +3429,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 if roundAdvancedFinalityBoundary {
                     collectFinalizedSweptTombstones(walletId: walletId)
                 }
+                // Display-only accounting: a failure here must not fail the
+                // round, and is reported under its own event, not save_failed.
+                // Recomputed values that did land are consistent on their own.
                 do {
                     try reconcileTransactionAccounting(Array(accountingDirty.values))
+                } catch {
+                    SDKLogger.event(
+                        "persistence_transaction_accounting_failed", category: .persistence, severity: .error,
+                        fields: ["phase": .publicText("round"), "wallet_reference": .reference(walletId)],
+                        error: error
+                    )
+                }
+                do {
                     try backgroundContext.save()
                     committedRoundGeneration &+= 1
                     SDKLogger.event(
@@ -6863,7 +6875,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
             if let accounting = PersistentTransaction.reconciledAccounting(
                 inputs: inputs, ownedOutputAmounts: amounts, allOutputsOwned: allOutputsOwned,
-                previousDirection: transaction.transactionTypeKind == 1 ? 3 : transaction.direction,
+                previousDirection: transaction.typedKind == .coinJoin
+                    ? CoreDirectionCode.coinJoin : transaction.direction,
                 isAssetLock: transaction.isAssetLock
             ) {
                 transaction.netAmount = accounting.netAmount

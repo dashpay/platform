@@ -1,9 +1,3 @@
-## Unreleased
-
-### Fixed
-
-- **platform-wallet-storage:** Restore confirmed Core spend and finality state on SQLite load so old funding transactions cannot make already-spent outputs selectable again.
-
 ## [4.2.0-beta.4](https://github.com/dashpay/platform/compare/v4.2.0-beta.3...v4.2.0-beta.4) (2026-09-24)
 
 
