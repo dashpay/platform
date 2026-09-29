@@ -165,6 +165,18 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertEqual(repaired?.netAmount, -100)
     }
 
+    func testShouldRestoreWalletsWhenLoadTimeAccountingFails() throws {
+        let container = try DashModelContainer.createInMemory()
+        container.mainContext.insert(PersistentWallet(walletId: Data(repeating: 1, count: 32), network: .testnet))
+        try container.mainContext.save()
+        let injector = FetchFaultInjector(faulting: PersistentCoreAddress.self)
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet, modelFetcher: injector
+        )
+        XCTAssertFalse(handler.loadWalletList().errored, "display accounting must not block restore")
+        XCTAssertTrue(injector.observedReads.contains("PersistentCoreAddress"))
+    }
+
     func testShouldPreserveAccountingWhenSomePrevoutsAreMissing() throws {
         let container = try DashModelContainer.createInMemory()
         let context = container.mainContext
