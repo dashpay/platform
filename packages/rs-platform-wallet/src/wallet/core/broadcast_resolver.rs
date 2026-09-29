@@ -59,6 +59,7 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use dash_async::WorkerStatus;
 use dash_spv::sync::SyncEvent;
 use dash_spv::{BroadcastResult, EventHandler};
 use dashcore::{Transaction, Txid};
@@ -410,39 +411,39 @@ impl ResolverState {
     fn forget_wallet(&mut self, wallet_id: &WalletId) -> Vec<Outgoing> {
         self.schedules.retain(|(wallet, _), _| wallet != wallet_id);
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
-        let mut cleared: Vec<Txid> = self
-            .published
-            .keys()
-            .filter(|(wallet, _)| wallet == wallet_id)
-            .map(|(_, txid)| *txid)
-            .collect();
-        cleared.sort();
-        self.published.retain(|(wallet, _), _| wallet != wallet_id);
-        cleared
-            .into_iter()
-            .map(|txid| Outgoing {
-                wallet_id: *wallet_id,
-                event: ResolverEvent::Cleared(txid),
-                height: None,
-                trigger: "removed",
-            })
-            .collect()
+        self.clear_where(|wallet, _| wallet == wallet_id, None, "removed")
     }
 
     /// Drop everything; a clear for every published send.
     fn forget_all(&mut self) -> Vec<Outgoing> {
         self.schedules.clear();
         self.finished.clear();
-        let mut cleared: Vec<(WalletId, Txid)> =
-            self.published.drain().map(|(key, _)| key).collect();
+        self.clear_where(|_, _| true, None, "disabled")
+    }
+
+    /// Unpublish every send `drop` matches; a clear for each, in a stable order.
+    fn clear_where(
+        &mut self,
+        drop: impl Fn(&WalletId, &Txid) -> bool,
+        height: Option<u32>,
+        trigger: &'static str,
+    ) -> Vec<Outgoing> {
+        let mut cleared: Vec<(WalletId, Txid)> = self
+            .published
+            .keys()
+            .filter(|(wallet, txid)| drop(wallet, txid))
+            .copied()
+            .collect();
         cleared.sort();
+        self.published
+            .retain(|(wallet, txid), _| !drop(wallet, txid));
         cleared
             .into_iter()
             .map(|(wallet_id, txid)| Outgoing {
                 wallet_id,
                 event: ResolverEvent::Cleared(txid),
-                height: None,
-                trigger: "disabled",
+                height,
+                trigger,
             })
             .collect()
     }
@@ -543,24 +544,11 @@ pub(crate) fn begin_pass(
     state
         .finished
         .retain(|(wallet, txid), _| !is_gone(wallet, txid));
-    let mut cleared: Vec<Txid> = state
-        .published
-        .keys()
-        .filter(|(wallet, txid)| *wallet == wallet_id && !own_present.contains(txid))
-        .map(|(_, txid)| *txid)
-        .collect();
-    cleared.sort();
-    state
-        .published
-        .retain(|(wallet, txid), _| *wallet != wallet_id || own_present.contains(txid));
-    for txid in cleared {
-        events.push(Outgoing {
-            wallet_id,
-            event: ResolverEvent::Cleared(txid),
-            height: Some(height),
-            trigger,
-        });
-    }
+    events.extend(state.clear_where(
+        |wallet, txid| *wallet == wallet_id && !own_present.contains(txid),
+        Some(height),
+        trigger,
+    ));
 
     let mined = state.mined(&wallet_id);
     let graph = ChainGraph::new(views, &mined);
@@ -708,8 +696,8 @@ fn forced_held(
 /// Where passes read wallets from.
 #[async_trait]
 pub(crate) trait WalletSource: Send + Sync {
-    /// The ids of every wallet held now.
-    async fn wallet_ids(&self) -> Vec<WalletId>;
+    /// The wallets whose records hold `txid` — one look under one lock.
+    async fn holders(&self, txid: Txid) -> Vec<WalletId>;
 
     /// `None`: no such wallet. `Some(None)`: nothing to do (see
     /// [`forced_held`]) — decided without walking the records.
@@ -725,12 +713,20 @@ struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);
 
 #[async_trait]
 impl WalletSource for ManagerSource {
-    async fn wallet_ids(&self) -> Vec<WalletId> {
-        self.0
-            .read()
-            .await
+    async fn holders(&self, txid: Txid) -> Vec<WalletId> {
+        let manager = self.0.read().await;
+        manager
             .list_wallets()
             .into_iter()
+            .filter(|wallet_id| {
+                manager.get_wallet_info(wallet_id).is_some_and(|info| {
+                    info.core_wallet
+                        .accounts
+                        .all_accounts()
+                        .iter()
+                        .any(|account| account.transactions().contains_key(&txid))
+                })
+            })
             .copied()
             .collect()
     }
@@ -791,9 +787,11 @@ impl VerdictSink for EventSink {
     }
 }
 
-/// Hand `events` to the host. A handler that panics loses its own event, not
-/// the resolver: the actor task must outlive a faulty host callback.
-fn deliver(sink: &Arc<dyn VerdictSink>, events: Vec<Outgoing>) {
+/// Hand `events` to the host. A handler that panics does not take the
+/// resolver down, and a verdict it failed to take is unpublished so a later
+/// pass sends it again. (Where panics abort — the iOS profiles — none of this
+/// runs; it matters where they unwind.)
+fn deliver(sink: &Arc<dyn VerdictSink>, state: &mut ResolverState, events: Vec<Outgoing>) {
     for item in &events {
         if catch_unwind(AssertUnwindSafe(|| sink.deliver(item))).is_err() {
             tracing::error!(
@@ -801,6 +799,9 @@ fn deliver(sink: &Arc<dyn VerdictSink>, events: Vec<Outgoing>) {
                 event = ?item.event,
                 "broadcast probe: a host handler panicked delivering an event"
             );
+            if let ResolverEvent::Verdict(txid, _) = &item.event {
+                state.published.remove(&(item.wallet_id, *txid));
+            }
         }
     }
 }
@@ -826,12 +827,18 @@ enum Command {
 
 /// What a finished job reports back to the actor.
 enum JobDone {
-    /// The wallets to route an `Uncertain` result to.
-    Listed { txid: Txid, wallets: Vec<WalletId> },
+    /// The wallets holding a transaction reported `Uncertain` at command
+    /// `since`.
+    Listed {
+        txid: Txid,
+        since: u64,
+        wallets: Vec<WalletId>,
+    },
     Read {
         wallet_id: WalletId,
         run: u64,
         height: u32,
+        forced_since: Option<u64>,
         read: Option<Option<WalletRead>>,
     },
     Probed {
@@ -849,6 +856,8 @@ struct PendingPass {
     /// results did.
     by_height: bool,
     forced: HashSet<Txid>,
+    /// The earliest command at which one of `forced` was reported.
+    forced_since: Option<u64>,
 }
 
 /// A pass in flight: reading the wallet, then probing its due roots one at
@@ -878,7 +887,10 @@ struct WalletEntry {
     height: Option<u32>,
     /// Height advances below this are skipped — no walk over the wallet's
     /// records while no root can be due. `u32::MAX` when nothing is left to
-    /// probe (idle). Reset by anything that may have left new work.
+    /// probe (idle). Reset by anything that may have left new work — which
+    /// assumes every change to the wallet's records arrives as a touching
+    /// wallet event (see [`may_leave_work`]); a path that changes records
+    /// without emitting one must send the resolver such an event too.
     wait_until: Option<u32>,
     pending: Option<PendingPass>,
     run: Option<Run>,
@@ -903,6 +915,12 @@ struct Actor {
     /// Which run each read or probe job belongs to, so a job that panicked
     /// can end its run instead of leaving the wallet stuck behind it.
     job_runs: HashMap<task::Id, (WalletId, u64)>,
+    /// Commands handled so far: orders an `Uncertain` result against probes.
+    tick: u64,
+    /// When each root was last sent to the network: the command count and the
+    /// pass height. A forced pass skips a root already probed at its height
+    /// since the `Uncertain` result arrived.
+    probed: HashMap<(WalletId, Txid), (u64, u32)>,
 }
 
 impl Actor {
@@ -921,6 +939,8 @@ impl Actor {
             sink,
             jobs: JoinSet::new(),
             job_runs: HashMap::new(),
+            tick: 0,
+            probed: HashMap::new(),
         }
     }
 
@@ -959,13 +979,24 @@ impl Actor {
                     return; // aborted: its run was dropped on purpose
                 }
                 tracing::error!(?owner, %error, "broadcast probe: a job panicked");
-                // End the run it belonged to, as if it had found nothing,
-                // so the wallet's next pass can start.
-                if let Some((wallet_id, run)) = owner {
-                    if let Some(entry) = self.wallets.get_mut(&wallet_id) {
-                        if entry.run.as_ref().is_some_and(|current| current.id == run) {
-                            entry.run = None;
-                            self.start(wallet_id);
+                // End the run it belonged to and let the next height probe the
+                // wallet again — what the run carried (a forced txid) is lost,
+                // but its roots are due to the schedule. A panicked lookup
+                // for an `Uncertain` result belongs to no run: wake every
+                // wallet instead.
+                match owner {
+                    Some((wallet_id, run)) => {
+                        if let Some(entry) = self.wallets.get_mut(&wallet_id) {
+                            if entry.run.as_ref().is_some_and(|current| current.id == run) {
+                                entry.run = None;
+                                entry.wait_until = None;
+                                self.start(wallet_id);
+                            }
+                        }
+                    }
+                    None => {
+                        for entry in self.wallets.values_mut() {
+                            entry.wait_until = None;
                         }
                     }
                 }
@@ -981,6 +1012,7 @@ impl Actor {
     }
 
     fn handle(&mut self, command: Command) {
+        self.tick += 1;
         match command {
             Command::Height { wallet_id, height } => {
                 let enabled = self.enabled;
@@ -1012,13 +1044,15 @@ impl Actor {
                 if !self.enabled {
                     return;
                 }
-                // Routed to every wallet the manager holds, including ones no
-                // event has introduced yet.
+                // Routed to the wallets holding it, including ones no event
+                // has introduced yet.
                 let source = Arc::clone(&self.source);
+                let since = self.tick;
                 self.jobs.spawn(async move {
                     JobDone::Listed {
                         txid,
-                        wallets: source.wallet_ids().await,
+                        since,
+                        wallets: source.holders(txid).await,
                     }
                 });
             }
@@ -1039,16 +1073,18 @@ impl Actor {
                     }
                 }
                 if !enabled {
+                    self.probed.clear();
                     let events = self.state.forget_all();
-                    deliver(&self.sink, events);
+                    deliver(&self.sink, &mut self.state, events);
                 }
             }
             Command::WalletRemoved(wallet_id) => {
                 if let Some(run) = self.wallets.remove(&wallet_id).and_then(|entry| entry.run) {
                     run.abort.abort();
                 }
+                self.probed.retain(|(wallet, _), _| *wallet != wallet_id);
                 let events = self.state.forget_wallet(&wallet_id);
-                deliver(&self.sink, events);
+                deliver(&self.sink, &mut self.state, events);
             }
         }
     }
@@ -1075,6 +1111,7 @@ impl Actor {
                 wallet_id,
                 run,
                 height: pending.height,
+                forced_since: pending.forced_since,
                 read,
             }
         });
@@ -1090,7 +1127,11 @@ impl Actor {
 
     fn job_done(&mut self, done: JobDone) {
         match done {
-            JobDone::Listed { txid, wallets } => {
+            JobDone::Listed {
+                txid,
+                since,
+                wallets,
+            } => {
                 if !self.enabled {
                     return;
                 }
@@ -1099,6 +1140,8 @@ impl Actor {
                     let pending = entry.pending.get_or_insert_with(PendingPass::default);
                     pending.height = pending.height.max(entry.height.unwrap_or(0));
                     pending.forced.insert(txid);
+                    pending.forced_since =
+                        Some(pending.forced_since.map_or(since, |s| s.min(since)));
                     self.start(wallet_id);
                 }
             }
@@ -1106,6 +1149,7 @@ impl Actor {
                 wallet_id,
                 run,
                 height,
+                forced_since,
                 read,
             } => {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
@@ -1117,33 +1161,53 @@ impl Actor {
                 };
                 match read {
                     None => {
-                        // Gone from the wallet manager (its removal clears),
-                        // or an id a late event brought back after removal.
+                        // Gone from the wallet manager — not always through
+                        // `wallet_removed` (a failed registration or load is
+                        // rolled back without it) — so forget it here too;
+                        // clearing twice is harmless. Keep the entry if a
+                        // command for a same-id wallet arrived meanwhile.
                         if run_seq == entry.seq {
                             self.wallets.remove(&wallet_id);
                         } else {
                             entry.run = None;
-                            self.start(wallet_id);
                         }
+                        self.probed.retain(|(wallet, _), _| *wallet != wallet_id);
+                        let events = self.state.forget_wallet(&wallet_id);
+                        deliver(&self.sink, &mut self.state, events);
+                        self.start(wallet_id);
                     }
                     Some(None) => {
                         entry.run = None;
                         self.start(wallet_id);
                     }
                     Some(Some(read)) => {
-                        if !read.forced.is_empty() {
-                            entry.wait_until = None;
-                        }
                         // A request queued before any height was reported
                         // carries 0; the wallet's own synced height is better.
                         let height = height.max(read.synced_height);
-                        let start = begin_pass(
+                        let mut start = begin_pass(
                             &mut self.state,
                             wallet_id,
                             height,
                             &read.views,
                             &read.forced,
                         );
+                        // Forget send times of roots that settled or left.
+                        self.probed.retain(|(wallet, txid), _| {
+                            *wallet != wallet_id || read.views.iter().any(|view| view.txid == *txid)
+                        });
+                        // A root already sent to the network at this height
+                        // after the `Uncertain` result arrived needs no second
+                        // probe — the forced one would only repeat it.
+                        if let Some(since) = forced_since {
+                            let probed = &self.probed;
+                            start.due.retain(|(root, _)| {
+                                !probed.get(&(wallet_id, *root)).is_some_and(
+                                    |&(tick, probed_height)| {
+                                        tick >= since && probed_height == height
+                                    },
+                                )
+                            });
+                        }
                         if let Some(current) = entry.run.as_mut() {
                             current.probing = Some(Probing {
                                 views: read.views,
@@ -1154,7 +1218,7 @@ impl Actor {
                         }
                         // Clears and re-published dead verdicts reach the host
                         // before the pass goes out to the network.
-                        deliver(&self.sink, start.events);
+                        deliver(&self.sink, &mut self.state, start.events);
                         self.probe_next(wallet_id);
                     }
                 }
@@ -1183,7 +1247,7 @@ impl Actor {
                     root,
                     &verdict,
                 );
-                deliver(&self.sink, events);
+                deliver(&self.sink, &mut self.state, events);
                 self.probe_next(wallet_id);
             }
         }
@@ -1213,6 +1277,8 @@ impl Actor {
                 }
             });
             self.job_runs.insert(run.abort.id(), (wallet_id, id));
+            self.probed
+                .insert((wallet_id, root), (self.tick, probing.height));
             return;
         }
         entry.wait_until =
@@ -1320,27 +1386,26 @@ impl BroadcastResolver {
 
     /// Stop the resolver's task: it aborts every read and probe it started and
     /// waits for them, all within `budget`; after this no host callback comes
-    /// from the resolver. Returns `false` if that did not finish in time (the
-    /// task is then aborted) or the task had died of a panic. Idempotent.
-    pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
+    /// from the resolver. `NotRunning` if it never started or was already
+    /// stopped; `Timeout` if it did not end in time (it is then aborted);
+    /// `Panicked` if it had died. Idempotent.
+    pub(crate) async fn stop_within(&self, budget: Duration) -> WorkerStatus {
         self.started.store(true, Ordering::Release);
         let slot = std::mem::replace(
             &mut *self.actor.lock().unwrap_or_else(PoisonError::into_inner),
             ActorSlot::Closed,
         );
         let ActorSlot::Running(mut handle, stop) = slot else {
-            return true;
+            return WorkerStatus::NotRunning;
         };
         let _ = stop.send(());
         match tokio::time::timeout(budget, &mut handle).await {
-            Ok(Ok(())) => true,
-            Ok(Err(error)) => {
-                tracing::error!(%error, "broadcast probe: the resolver task had died");
-                false
-            }
+            Ok(Ok(())) => WorkerStatus::Ok,
+            Ok(Err(error)) if error.is_panic() => WorkerStatus::Panicked(error.to_string()),
+            Ok(Err(error)) => WorkerStatus::Stopped(Some(error.to_string())),
             Err(_) => {
                 handle.abort();
-                false
+                WorkerStatus::Timeout
             }
         }
     }
@@ -2119,8 +2184,14 @@ mod tests {
 
     #[async_trait]
     impl WalletSource for FakeSource {
-        async fn wallet_ids(&self) -> Vec<WalletId> {
-            self.views.lock().expect("views").keys().copied().collect()
+        async fn holders(&self, txid: Txid) -> Vec<WalletId> {
+            self.views
+                .lock()
+                .expect("views")
+                .iter()
+                .filter(|(_, views)| views.iter().any(|view| view.txid == txid))
+                .map(|(wallet_id, _)| *wallet_id)
+                .collect()
         }
 
         async fn read(
@@ -2401,6 +2472,41 @@ mod tests {
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
 
         rig.send(Command::Uncertain(txid(1))).await;
+
+        assert_eq!(probe.probed(), vec![txid(1)]);
+    }
+
+    /// A wallet the manager dropped without `wallet_removed` (a rolled-back
+    /// registration or load): the pass that finds it gone clears its verdicts.
+    #[tokio::test]
+    async fn should_clear_the_verdicts_of_a_wallet_gone_without_a_removal() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.sent();
+
+        rig.source.views.lock().expect("views").remove(&wallet());
+        rig.height(wallet(), 102).await;
+
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+        assert!(rig.actor.state.schedules.is_empty());
+    }
+
+    /// An `Uncertain` result that lands while a height pass already probes the
+    /// root at that height does not send it to the network a second time.
+    #[tokio::test]
+    async fn should_not_probe_a_root_twice_at_one_height_for_an_uncertain_result() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+
+        rig.actor.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        rig.actor.handle(Command::Uncertain(txid(1)));
+        rig.settle().await;
 
         assert_eq!(probe.probed(), vec![txid(1)]);
     }

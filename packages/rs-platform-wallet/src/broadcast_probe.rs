@@ -46,6 +46,7 @@ use dash_sdk::dapi_client::transport::TransportError;
 use dash_sdk::dapi_client::{DapiClientError, DapiRequestExecutor, RequestSettings};
 use dash_sdk::dapi_grpc::core::v0::{BroadcastTransactionRequest, GetTransactionRequest};
 use dash_sdk::dapi_grpc::tonic::Code;
+use dashcore::consensus;
 use dashcore::{Transaction, Txid};
 
 /// Core reject reasons that prove the transaction can never be mined as it
@@ -281,7 +282,7 @@ pub(crate) struct DapiNodeSubmitter {
 impl NodeSubmitter for DapiNodeSubmitter {
     async fn submit(&self, transaction: &Transaction) -> (Option<String>, NodeVerdict) {
         let request = BroadcastTransactionRequest {
-            transaction: dashcore::consensus::serialize(transaction),
+            transaction: consensus::serialize(transaction),
             allow_high_fees: false,
             bypass_limits: false,
         };

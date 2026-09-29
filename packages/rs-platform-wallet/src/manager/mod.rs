@@ -968,10 +968,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // The broadcast resolver's task publishes through the host's event
         // callbacks too, so it must be gone before destroy returns; it and its
         // probes are safe to abort. Both drains run concurrently under one shared budget.
-        let (payments_drained, probes_drained) = tokio::join!(
+        let (payments_drained, probes_status) = tokio::join!(
             self.dashpay_payment_handler
                 .quiesce_within(PAYMENT_DRAIN_BUDGET),
-            self.broadcast_resolver.quiesce_within(PAYMENT_DRAIN_BUDGET),
+            self.broadcast_resolver.stop_within(PAYMENT_DRAIN_BUDGET),
         );
 
         // Drain the coordinators concurrently against one shared budget so
@@ -1049,14 +1049,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 WorkerStatus::Timeout
             },
         );
-        report.per_worker.insert(
-            WalletWorker::BroadcastProbes,
-            if probes_drained {
-                WorkerStatus::Ok
-            } else {
-                WorkerStatus::Timeout
-            },
-        );
+        report
+            .per_worker
+            .insert(WalletWorker::BroadcastProbes, probes_status);
 
         // The wallet-event adapter is the sink the coordinators' stores
         // feed into, so it drains AFTER them. It is a plain tokio task,
