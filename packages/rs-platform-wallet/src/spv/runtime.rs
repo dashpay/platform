@@ -116,6 +116,10 @@ pub struct SpvRuntime {
     /// `task` before joining it, so an empty `task` does not mean the old run
     /// loop has exited; `start` refuses while this is non-zero.
     stops_in_progress: AtomicUsize,
+    /// Serializes [`stop`](Self::stop): a stop running alongside another
+    /// would find no client and an empty `task` while the first is still
+    /// joining the run loop, and report success early.
+    stop_serial: tokio::sync::Mutex<()>,
     peer_tracker: Arc<PeerTracker>,
 }
 
@@ -172,6 +176,7 @@ impl SpvRuntime {
             last_config: RwLock::new(None),
             task: Mutex::new(None),
             stops_in_progress: AtomicUsize::new(0),
+            stop_serial: tokio::sync::Mutex::new(()),
             peer_tracker: Arc::new(PeerTracker::default()),
         }
     }
@@ -320,10 +325,18 @@ impl SpvRuntime {
         tx: &Transaction,
         timeout: Option<Duration>,
     ) -> Result<BroadcastResult, BroadcastError> {
-        let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(BroadcastError::Rejected {
-            reason: "SPV broadcast not sent: client not started".to_string(),
-        })?;
+        // Clone the client and release the read guard before the acceptance
+        // wait (as long as the caller's timeout): held across it, the guard
+        // would keep `stop` from taking the client for that long.
+        let client = {
+            let client_guard = self.client.read().await;
+            client_guard
+                .as_ref()
+                .ok_or(BroadcastError::Rejected {
+                    reason: "SPV broadcast not sent: client not started".to_string(),
+                })?
+                .clone()
+        };
 
         client
             .broadcast_transaction_and_wait(tx, timeout)
@@ -384,38 +397,47 @@ impl SpvRuntime {
     /// [`PlatformWalletManager::shutdown`](crate::manager::PlatformWalletManager::shutdown)
     /// and therefore the FFI's `destroy` must return through, so a wedged
     /// host callback has to surface as an error rather than hang teardown:
-    /// the client stop is capped at [`SPV_CLIENT_STOP_BUDGET`], the run-loop
-    /// join at [`SPV_STOP_TIMEOUT`] with an [`SPV_ABORT_GRACE`] post-abort
+    /// taking the client and stopping it share [`SPV_CLIENT_STOP_BUDGET`]
+    /// (taking it waits for the client's read guards), and the run-loop join
+    /// is capped at [`SPV_STOP_TIMEOUT`] with an [`SPV_ABORT_GRACE`] post-abort
     /// confirmation. A run loop that outlives all of that is **re-parked**,
     /// not detached, so a teardown retry re-joins it — and the error return
     /// keeps it out of a clean shutdown verdict.
     ///
-    /// Idempotent: a second call finds no client and re-joins whatever the
-    /// first call re-parked.
+    /// Idempotent. Stops run one at a time: a second call waits for the one
+    /// in flight, then finds no client and re-joins whatever that one
+    /// re-parked, so it never reports success while the old run loop is live.
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
         let _stopping = StopInProgress::begin(&self.stops_in_progress);
-        let taken = {
-            let mut client = self.client.write().await;
-            client.take()
-        };
+        let _serial = self.stop_serial.lock().await;
 
-        let stop_result = match taken {
-            Some(c) => match tokio::time::timeout(SPV_CLIENT_STOP_BUDGET, c.stop()).await {
-                Ok(result) => result.map_err(|e| PlatformWalletError::SpvError(e.to_string())),
-                Err(_) => {
-                    // The client is dropped with the timed-out future. The
-                    // data-dir lock may outlive this call, which is strictly
-                    // better than never returning from `destroy`.
-                    tracing::warn!(
-                        "SPV client stop did not complete within {:?}; abandoning it",
-                        SPV_CLIENT_STOP_BUDGET
-                    );
-                    Err(PlatformWalletError::SpvError(format!(
-                        "SPV client stop did not complete within {SPV_CLIENT_STOP_BUDGET:?}"
-                    )))
-                }
-            },
-            None => Ok(()),
+        let stop_result = match tokio::time::timeout(SPV_CLIENT_STOP_BUDGET, async {
+            let taken = self.client.write().await.take();
+            match taken {
+                Some(c) => c
+                    .stop()
+                    .await
+                    .map_err(|e| PlatformWalletError::SpvError(e.to_string())),
+                None => Ok(()),
+            }
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                // Either the client lock stayed held by a reader, leaving the
+                // client in place for a retry, or the stop itself ran over and
+                // the client was dropped with the timed-out future. The
+                // data-dir lock may outlive this call, which is strictly
+                // better than never returning from `destroy`.
+                tracing::warn!(
+                    "SPV client stop did not complete within {:?}; abandoning it",
+                    SPV_CLIENT_STOP_BUDGET
+                );
+                Err(PlatformWalletError::SpvError(format!(
+                    "SPV client stop did not complete within {SPV_CLIENT_STOP_BUDGET:?}"
+                )))
+            }
         };
         self.peer_tracker.clear();
 
@@ -1029,6 +1051,75 @@ mod tests {
             runtime.ensure_no_live_run_loop().is_ok(),
             "a finished stop must not block the next start"
         );
+    }
+
+    /// A second stop issued while the first is still joining the run loop
+    /// must not report success before that loop has exited.
+    #[tokio::test]
+    async fn should_not_finish_a_second_stop_while_the_first_is_joining() {
+        let runtime = Arc::new(unstarted_runtime());
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let run_loop = tokio::spawn(async move {
+            let _ = release_rx.await;
+        });
+        *runtime.task.lock().expect("spv task mutex poisoned") = Some(run_loop);
+
+        let first = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move { runtime.stop().await })
+        };
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while runtime
+                .task
+                .lock()
+                .expect("spv task mutex poisoned")
+                .is_some()
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the first stop should take the run-loop handle promptly");
+
+        let second = {
+            let runtime = Arc::clone(&runtime);
+            tokio::spawn(async move { runtime.stop().await })
+        };
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !second.is_finished(),
+            "a second stop must wait while the first is still joining the run loop"
+        );
+
+        release_tx
+            .send(())
+            .expect("the run loop is still waiting to be released");
+        first
+            .await
+            .expect("the first stop task completes")
+            .expect("the released run loop exits cleanly");
+        second
+            .await
+            .expect("the second stop task completes")
+            .expect("the second stop finds nothing left to stop");
+    }
+
+    /// Taking the client waits for its read guards; that wait is bounded
+    /// like the rest of the stop instead of hanging behind a long reader.
+    #[tokio::test(start_paused = true)]
+    async fn should_bound_the_wait_for_the_client_lock() {
+        let runtime = unstarted_runtime();
+        let reader = runtime.client.read().await;
+
+        let result = runtime.stop().await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::SpvError(_))),
+            "a stop blocked on the client lock must give up with an error, got {result:?}"
+        );
+        drop(reader);
     }
 
     /// Once the parked run loop has exited, the next start drops it and
