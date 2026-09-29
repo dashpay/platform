@@ -380,6 +380,10 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// Tracks asynchronous payment hooks so manager shutdown can close
     /// admission and drain every task before host callback contexts are freed.
     pub(super) dashpay_payment_handler: Arc<DashPayPaymentHandler>,
+    /// Asks the network about this manager's unconfirmed sends whose
+    /// broadcast outcome was unknown and publishes the verdicts. Off until
+    /// the host calls [`set_broadcast_probe_enabled`](Self::set_broadcast_probe_enabled).
+    pub(super) broadcast_resolver: Arc<crate::wallet::core::broadcast_resolver::BroadcastResolver>,
     /// Periodic shielded (Orchard) note sync coordinator (spends are
     /// detected during the note scan, no separate nullifier pass).
     /// Iterates every wallet that has been bound via
@@ -539,13 +543,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&wallet_manager),
             Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
         ));
+        // BroadcastResolver probes unconfirmed sends whose broadcast outcome
+        // was unknown (read-only; see its module docs). It publishes through
+        // the event manager it is registered with, so it gets a weak handle
+        // to it once that exists.
+        let broadcast_resolver = Arc::new(
+            crate::wallet::core::broadcast_resolver::BroadcastResolver::new(
+                Arc::new(crate::broadcast_probe::DapiAcceptanceProbe::new(
+                    Arc::clone(&sdk),
+                )),
+                Arc::clone(&wallet_manager),
+            ),
+        );
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             app_handler,
             lock_handler,
             balance_handler,
             spend_observation_handler,
             Arc::clone(&dashpay_payment_handler) as Arc<dyn PlatformEventHandler>,
+            Arc::clone(&broadcast_resolver) as Arc<dyn PlatformEventHandler>,
         ]));
+        broadcast_resolver.set_event_manager(Arc::downgrade(&event_manager));
 
         let spv = Arc::new(SpvRuntime::new(
             Arc::clone(&wallet_manager),
@@ -595,6 +613,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             dashpay_sync_manager: dashpay_sync,
             dpns_sync_manager: dpns_sync,
             dashpay_payment_handler,
+            broadcast_resolver,
             #[cfg(feature = "shielded")]
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
@@ -946,6 +965,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .dashpay_payment_handler
             .quiesce_within(PAYMENT_DRAIN_BUDGET)
             .await;
+        // Probe passes publish through the host's event callbacks, so they
+        // must be gone before destroy returns; they are safe to abort.
+        let probes_drained = self
+            .broadcast_resolver
+            .quiesce_within(PAYMENT_DRAIN_BUDGET)
+            .await;
+        let payments_drained = payments_drained && probes_drained;
 
         // Drain the coordinators concurrently against one shared budget so
         // the drain phase as a whole is bounded (a wedged pass surfaces as

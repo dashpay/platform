@@ -1,7 +1,10 @@
+// Used by the user-driven cancel of a proven-dead send, which lands separately.
+#[allow(dead_code)]
 pub(crate) mod abandon_plan;
 pub mod balance;
 pub mod balance_handler;
 mod broadcast;
+pub(crate) mod broadcast_resolver;
 pub mod generation;
 // Inherent `CoreWallet::sign_message` only — no types to re-export.
 mod sign_message;

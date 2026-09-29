@@ -45,6 +45,22 @@ pub trait PlatformEventHandler: EventHandler {
     /// [`DpnsSyncManager`]: crate::manager::dpns_sync::DpnsSyncManager
     fn on_dpns_marketplace_sync_completed(&self, _summary: &DpnsSyncPassSummary) {}
 
+    /// Fired when the broadcast resolver has asked the network about an
+    /// unconfirmed send of this wallet whose broadcast outcome was unknown.
+    /// `Accepted` means a node holds the transaction; `Dead` means two
+    /// distinct nodes proved it can never be mined; `Unresolved` means no
+    /// verdict yet — the resolver asks again on a later block. Nothing in the
+    /// wallet changes either way.
+    ///
+    /// Default impl is a no-op so existing handlers don't have to care.
+    fn on_outgoing_transaction_probed(
+        &self,
+        _wallet_id: &key_wallet_manager::WalletId,
+        _txid: &dashcore::Txid,
+        _verdict: &crate::broadcast_probe::ProbeVerdict,
+    ) {
+    }
+
     /// Fired after each [`ShieldedSyncManager`] pass completes,
     /// including passes that produced no updates or skipped every
     /// wallet because none had a bound shielded sub-wallet yet.
@@ -150,6 +166,20 @@ impl PlatformEventManager {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_dpns_marketplace_sync_completed(summary);
+        }
+    }
+
+    /// Dispatch a broadcast-probe verdict to every handler. Rare: at most one
+    /// per unconfirmed send per block.
+    pub fn on_outgoing_transaction_probed(
+        &self,
+        wallet_id: &key_wallet_manager::WalletId,
+        txid: &dashcore::Txid,
+        verdict: &crate::broadcast_probe::ProbeVerdict,
+    ) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_outgoing_transaction_probed(wallet_id, txid, verdict);
         }
     }
 
