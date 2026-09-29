@@ -68,6 +68,22 @@ def changed_requirements(pr, manifest_path=MANIFEST):
     return False
 
 
+def latest_status(head, context):
+    # The combined /status endpoint omits creator. Full statuses are newest
+    # first: select before validating, never fall back to an older success.
+    page = 1
+    while True:
+        statuses = api(f"commits/{head}/statuses?per_page=100&page={page}")
+        # GitHub contexts are case-insensitive; a case variant must shadow
+        # older canonical statuses even though it cannot be trusted below.
+        candidate = next((s for s in statuses if s["context"].casefold() == context.casefold()), None)
+        if candidate is not None:
+            return candidate
+        if len(statuses) < 100:
+            return None
+        page += 1
+
+
 def export_environment(manifest, output):
     lock = manifest["requirements"]
     versions = lock["versions"]
@@ -140,11 +156,13 @@ def select(manifest, kind, output, wait_seconds, arch=None, validation=False):
             require(fingerprint(expected) == fingerprint(manifest),
                     "Merge-tree requirements differ from PR head; rebase before building a candidate")
             deadline = time.monotonic() + wait_seconds
+            context = f"Runner image candidate / PR {pr['number']}"
             while True:
-                statuses = api(f"commits/{head}/status")["statuses"]
-                candidate = next((s for s in statuses if s["context"] == f"Runner image candidate / PR {pr['number']}"), None)
+                candidate = latest_status(head, context)
                 if candidate and candidate["state"] == "success":
-                    require(candidate.get("creator", {}).get("login") == "github-actions[bot]",
+                    require(candidate["context"] == context, "Candidate status must use the exact publisher context")
+                    creator = candidate.get("creator")
+                    require(isinstance(creator, dict) and creator.get("login") == "github-actions[bot]",
                             "Candidate status must come from the trusted publisher")
                     require(re.fullmatch(r"sha256:[0-9a-f]{64}", candidate.get("description", "")),
                             "Publisher did not record an immutable digest")

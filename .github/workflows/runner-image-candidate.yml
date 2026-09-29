@@ -23,10 +23,10 @@ jobs:
     if: >-
       (github.event.action != 'closed' && !github.event.pull_request.draft)
       || (github.event.action == 'closed' && github.event.pull_request.merged)
-    uses: dashpay/dash-selfhosted-image/.github/workflows/platform-candidate.yml@07811cd919f6956ba9c6d69a3a1bff4550eb3761
+    uses: dashpay/dash-selfhosted-image/.github/workflows/platform-candidate.yml@7d901150bd3d0789d50c46f365b058f2f5f1f52d
     with:
       pull_request: ${{ github.event.pull_request.number }}
-      control_revision: 07811cd919f6956ba9c6d69a3a1bff4550eb3761
+      control_revision: 7d901150bd3d0789d50c46f365b058f2f5f1f52d
       mode: ${{ github.event.action == 'closed' && 'promote' || 'candidate' }}
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
