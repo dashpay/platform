@@ -966,8 +966,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // callback-after-destroy hazard the report exists to catch.
         //
         // The broadcast resolver's task publishes through the host's event
-        // callbacks too, so it must be gone before destroy returns; it and its
-        // probes are safe to abort. Both drains run concurrently under one shared budget.
+        // callbacks too, so it must be gone before destroy returns: it is told
+        // to stop, aborts and awaits its probes, and ends. It is not aborted
+        // itself — it may be inside a host callback — so a Timeout here means
+        // it may still call the host. Both drains share one budget.
         let (payments_drained, probes_status) = tokio::join!(
             self.dashpay_payment_handler
                 .quiesce_within(PAYMENT_DRAIN_BUDGET),

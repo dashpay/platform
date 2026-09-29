@@ -385,8 +385,8 @@ pub(crate) struct Outgoing {
 
 /// What started a pass: dash-spv's `Uncertain` result for one of the
 /// wallet's transactions, or an advance of its synced height.
-fn trigger_of(forced: &HashSet<Txid>) -> &'static str {
-    if forced.is_empty() {
+fn trigger_of(forced: bool) -> &'static str {
+    if !forced {
         "height"
     } else {
         "uncertain"
@@ -528,10 +528,10 @@ pub(crate) fn begin_pass(
     wallet_id: WalletId,
     height: u32,
     views: &[OutgoingView],
-    forced: &HashSet<Txid>,
-    already_sent: impl Fn(&Txid, &Txid) -> bool,
+    forced: &HashMap<Txid, u64>,
+    sent_at: impl Fn(&Txid) -> Option<(u64, u32)>,
 ) -> PassStart {
-    let trigger = trigger_of(forced);
+    let trigger = trigger_of(!forced.is_empty());
     let mut events = Vec::new();
     // What the wallet itself still holds unsettled — what state is kept for.
     let present: HashSet<Txid> = views.iter().map(|view| view.txid).collect();
@@ -556,15 +556,18 @@ pub(crate) fn begin_pass(
     let mined = state.mined(&wallet_id);
     let graph = ChainGraph::new(views, &mined);
     let roots = graph.roots();
-    // `already_sent(txid, root)`: the root was sent to the network at this
-    // height after `txid` was reported — forcing it again would only repeat.
+    // `forced` maps each txid reported `Uncertain` to the command it was
+    // reported at; `sent_at(root)` is when the root was last sent to the
+    // network (command, height). A root sent at this height after its txid
+    // was reported is not forced again — that would only repeat the probe.
+    let sent_at = &sent_at;
     let forced_roots: BTreeSet<Txid> = forced
         .iter()
-        .flat_map(|txid| {
-            graph
-                .roots_of(txid)
-                .into_iter()
-                .filter(|root| !already_sent(txid, root))
+        .flat_map(|(txid, &reported)| {
+            graph.roots_of(txid).into_iter().filter(move |root| {
+                !sent_at(root)
+                    .is_some_and(|(sent, sent_height)| sent >= reported && sent_height == height)
+            })
         })
         .collect();
 
@@ -587,7 +590,6 @@ pub(crate) fn begin_pass(
             .entry(key)
             .or_insert_with(|| ProbeSchedule::new(height));
         if forced_roots.contains(&view.txid) || schedule.is_due(height) {
-            schedule.probed_at(height);
             due.push_back((view.txid, view.transaction.clone()));
         }
     }
@@ -595,6 +597,15 @@ pub(crate) fn begin_pass(
         events,
         due,
         present,
+    }
+}
+
+/// A root is being sent to the network at `height`: its schedule counts from
+/// here. Marked when the probe goes out, not when the pass is planned, so a
+/// root the pass never reached (its run ended early) stays due.
+pub(crate) fn mark_sent(state: &mut ResolverState, wallet_id: WalletId, root: Txid, height: u32) {
+    if let Some(schedule) = state.schedules.get_mut(&(wallet_id, root)) {
+        schedule.probed_at(height);
     }
 }
 
@@ -606,7 +617,7 @@ pub(crate) fn record_probe(
     wallet_id: WalletId,
     height: u32,
     views: &[OutgoingView],
-    forced: &HashSet<Txid>,
+    trigger: &'static str,
     root: Txid,
     verdict: &ProbeVerdict,
 ) -> Vec<Outgoing> {
@@ -634,14 +645,7 @@ pub(crate) fn record_probe(
     } else {
         BTreeSet::new()
     };
-    state.publish_all(
-        wallet_id,
-        sends,
-        verdict,
-        height,
-        trigger_of(forced),
-        &mut events,
-    );
+    state.publish_all(wallet_id, sends, verdict, height, trigger, &mut events);
     events
 }
 
@@ -802,37 +806,19 @@ impl VerdictSink for EventSink {
     }
 }
 
-/// How many times one event is handed to a host handler that panics on it.
-const DELIVERY_ATTEMPTS: u8 = 3;
-
-/// Events a host handler panicked on, with the attempts made so far.
-type Retries = VecDeque<(Outgoing, u8)>;
-
-/// Hand `events` to the host. A handler that panics does not take the
-/// resolver down: the event is queued and handed over again before the
-/// actor's next step, while it still says what the state says, up to
-/// [`DELIVERY_ATTEMPTS`] times. (Where panics abort — the iOS profiles — the
-/// app ends instead.)
-fn deliver(sink: &Arc<dyn VerdictSink>, retries: &mut Retries, events: Vec<Outgoing>) {
-    for item in events {
-        attempt(sink, retries, item, 1);
-    }
-}
-
-fn attempt(sink: &Arc<dyn VerdictSink>, retries: &mut Retries, item: Outgoing, attempts: u8) {
-    if catch_unwind(AssertUnwindSafe(|| sink.deliver(&item))).is_ok() {
-        return;
-    }
-    let giving_up = attempts >= DELIVERY_ATTEMPTS;
-    tracing::error!(
-        wallet_id = %hex::encode(item.wallet_id),
-        event = ?item.event,
-        attempts,
-        giving_up,
-        "broadcast probe: a host handler panicked delivering an event"
-    );
-    if !giving_up {
-        retries.push_back((item, attempts));
+/// Hand `events` to the host. The one production handler — the FFI bridge —
+/// cannot panic, and the release profiles abort on a panic anyway; for a Rust
+/// embedder whose handler panics under unwinding, the event it panicked on is
+/// logged and dropped rather than taking the resolver task down.
+fn deliver(sink: &Arc<dyn VerdictSink>, events: Vec<Outgoing>) {
+    for item in &events {
+        if catch_unwind(AssertUnwindSafe(|| sink.deliver(item))).is_err() {
+            tracing::error!(
+                wallet_id = %hex::encode(item.wallet_id),
+                event = ?item.event,
+                "broadcast probe: a host handler panicked; its event is dropped"
+            );
+        }
     }
 }
 
@@ -906,7 +892,7 @@ struct Run {
 struct Probing {
     views: Vec<OutgoingView>,
     height: u32,
-    forced: HashSet<Txid>,
+    trigger: &'static str,
     due: VecDeque<(Txid, Transaction)>,
 }
 
@@ -951,9 +937,6 @@ struct Actor {
     /// pass height. A forced pass skips a root already probed at its height
     /// since the `Uncertain` result arrived.
     probed: HashMap<(WalletId, Txid), (u64, u32)>,
-    /// Events a host handler panicked on, handed over again before the next
-    /// command or job result.
-    retries: Retries,
 }
 
 impl Actor {
@@ -974,7 +957,6 @@ impl Actor {
             job_runs: HashMap::new(),
             tick: 0,
             probed: HashMap::new(),
-            retries: VecDeque::new(),
         }
     }
 
@@ -1002,7 +984,6 @@ impl Actor {
     }
 
     fn joined(&mut self, joined: Result<(task::Id, JobDone), JoinError>) {
-        self.retry_deliveries();
         match joined {
             Ok((id, done)) => {
                 self.job_runs.remove(&id);
@@ -1016,7 +997,7 @@ impl Actor {
                 tracing::error!(?owner, %error, "broadcast probe: a job panicked");
                 // End the run it belonged to and let the next height probe the
                 // wallet again — what the run carried (a forced txid) is lost,
-                // but its roots are due to the schedule. A panicked lookup
+                // but the roots it had not sent yet are still due. A panicked lookup
                 // for an `Uncertain` result belongs to no run: wake every
                 // wallet instead.
                 match owner {
@@ -1051,7 +1032,6 @@ impl Actor {
     }
 
     fn handle(&mut self, command: Command) {
-        self.retry_deliveries();
         self.tick += 1;
         match command {
             Command::Height { wallet_id, height } => {
@@ -1117,7 +1097,7 @@ impl Actor {
                 if !enabled {
                     self.probed.clear();
                     let events = self.state.forget_all();
-                    deliver(&self.sink, &mut self.retries, events);
+                    deliver(&self.sink, events);
                 }
             }
             Command::WalletRemoved(wallet_id) => {
@@ -1126,7 +1106,7 @@ impl Actor {
                 }
                 self.probed.retain(|(wallet, _), _| *wallet != wallet_id);
                 let events = self.state.forget_wallet(&wallet_id);
-                deliver(&self.sink, &mut self.retries, events);
+                deliver(&self.sink, events);
             }
         }
     }
@@ -1222,8 +1202,12 @@ impl Actor {
                         }
                         self.probed.retain(|(wallet, _), _| *wallet != wallet_id);
                         let events = self.state.forget_wallet(&wallet_id);
-                        deliver(&self.sink, &mut self.retries, events);
+                        deliver(&self.sink, events);
                         if keep {
+                            // The wait belonged to the state just forgotten.
+                            if let Some(entry) = self.wallets.get_mut(&wallet_id) {
+                                entry.wait_until = None;
+                            }
                             self.end_run(wallet_id);
                         }
                     }
@@ -1232,22 +1216,17 @@ impl Actor {
                         // A request queued before any height was reported
                         // carries 0; the wallet's own synced height is better.
                         let height = height.max(read.synced_height);
+                        // The reports for txids the wallet still holds.
+                        let mut reported = reported;
+                        reported.retain(|txid, _| read.forced.contains(txid));
                         let probed = &self.probed;
                         let start = begin_pass(
                             &mut self.state,
                             wallet_id,
                             height,
                             &read.views,
-                            &read.forced,
-                            |txid, root| {
-                                reported.get(txid).is_some_and(|&since| {
-                                    probed.get(&(wallet_id, *root)).is_some_and(
-                                        |&(tick, probed_height)| {
-                                            tick >= since && probed_height == height
-                                        },
-                                    )
-                                })
-                            },
+                            &reported,
+                            |root| probed.get(&(wallet_id, *root)).copied(),
                         );
                         // Forget send times of roots that settled or left.
                         self.probed.retain(|(wallet, txid), _| {
@@ -1257,13 +1236,13 @@ impl Actor {
                             current.probing = Some(Probing {
                                 views: read.views,
                                 height,
-                                forced: read.forced,
+                                trigger: trigger_of(!reported.is_empty()),
                                 due: start.due,
                             });
                         }
                         // Clears and re-published dead verdicts reach the host
                         // before the pass goes out to the network.
-                        deliver(&self.sink, &mut self.retries, start.events);
+                        deliver(&self.sink, start.events);
                         self.probe_next(wallet_id);
                     }
                 }
@@ -1288,11 +1267,16 @@ impl Actor {
                     wallet_id,
                     probing.height,
                     &probing.views,
-                    &probing.forced,
+                    probing.trigger,
                     root,
                     &verdict,
                 );
-                deliver(&self.sink, &mut self.retries, events);
+                // Every node failed: the transaction may have reached none, so
+                // this probe must not stand in for a forced one.
+                if matches!(verdict, ProbeVerdict::Unresolved { .. }) {
+                    self.probed.remove(&(wallet_id, root));
+                }
+                deliver(&self.sink, events);
                 self.probe_next(wallet_id);
             }
         }
@@ -1325,6 +1309,7 @@ impl Actor {
                 .insert(run.abort.id(), (wallet_id, id, Some(root)));
             self.probed
                 .insert((wallet_id, root), (self.tick, probing.height));
+            mark_sent(&mut self.state, wallet_id, root, probing.height);
             return;
         }
         entry.wait_until =
@@ -1346,27 +1331,6 @@ impl Actor {
             }
         }
         self.start(wallet_id);
-    }
-
-    /// Hand the host again what a panicking handler did not take, while it
-    /// still says what the state says: a verdict still published, a clear of
-    /// a send still unpublished.
-    fn retry_deliveries(&mut self) {
-        for (item, attempts) in std::mem::take(&mut self.retries) {
-            let current = match &item.event {
-                ResolverEvent::Verdict(txid, verdict) => self
-                    .state
-                    .published
-                    .get(&(item.wallet_id, *txid))
-                    .is_some_and(|published| same_for_host(published, verdict)),
-                ResolverEvent::Cleared(txid) => {
-                    !self.state.published.contains_key(&(item.wallet_id, *txid))
-                }
-            };
-            if current {
-                attempt(&self.sink, &mut self.retries, item, attempts + 1);
-            }
-        }
     }
 }
 
@@ -1885,18 +1849,21 @@ mod tests {
     ) -> u32 {
         let due = {
             let mut guard = state.lock().expect("state");
-            let start = begin_pass(
-                &mut guard.state,
-                wallet_id,
-                height,
-                views,
-                forced,
-                |_, _| false,
-            );
+            let forced: HashMap<Txid, u64> = forced.iter().map(|txid| (*txid, 0)).collect();
+            let start = begin_pass(&mut guard.state, wallet_id, height, views, &forced, |_| {
+                None
+            });
             guard.push(start.events);
             start.due
         };
+        let trigger = trigger_of(!forced.is_empty());
         for (root, transaction) in due {
+            mark_sent(
+                &mut state.lock().expect("state").state,
+                wallet_id,
+                root,
+                height,
+            );
             let verdict = probe.probe(&transaction).await;
             let mut guard = state.lock().expect("state");
             let events = record_probe(
@@ -1904,7 +1871,7 @@ mod tests {
                 wallet_id,
                 height,
                 views,
-                forced,
+                trigger,
                 root,
                 &verdict,
             );
@@ -2613,7 +2580,7 @@ mod tests {
     /// root at that height does not send it to the network a second time.
     #[tokio::test]
     async fn should_not_probe_a_root_twice_at_one_height_for_an_uncertain_result() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
         let mut rig = enabled(probe.clone()).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.height(wallet(), 100).await;
@@ -2626,6 +2593,100 @@ mod tests {
         rig.settle().await;
 
         assert_eq!(probe.probed(), vec![txid(1)]);
+    }
+
+    /// A probe where every node failed may have reached none of them: it does
+    /// not stand in for the forced probe an `Uncertain` result asks for.
+    #[tokio::test]
+    async fn should_still_force_a_root_whose_probe_at_this_height_was_unresolved() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+
+        rig.actor.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        rig.actor.handle(Command::Uncertain(txid(1)));
+        rig.settle().await;
+
+        assert_eq!(probe.probed(), vec![txid(1), txid(1)]);
+    }
+
+    /// The dedup is per reported txid: a root sent after one txid of its chain
+    /// was reported, but before another was, is forced again for the later
+    /// report.
+    #[test]
+    fn should_force_a_root_again_for_a_txid_reported_after_it_was_sent() {
+        let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
+        // Root 1 went out at command 7, height 100, and is not due again at
+        // 100 by its schedule — only a force can send it.
+        let sent_at = |root: &Txid| (*root == txid(1)).then_some((7, 100));
+        let due_for = |forced: HashMap<Txid, u64>| {
+            let mut state = ResolverState::default();
+            state
+                .schedules
+                .insert((wallet(), txid(1)), ProbeSchedule::new(100));
+            mark_sent(&mut state, wallet(), txid(1), 100);
+            begin_pass(&mut state, wallet(), 100, &views, &forced, sent_at)
+                .due
+                .len()
+        };
+
+        assert_eq!(
+            due_for(HashMap::from([(txid(1), 5)])),
+            0,
+            "sent after its report"
+        );
+        assert_eq!(
+            due_for(HashMap::from([(txid(2), 9)])),
+            1,
+            "sent before the child's report"
+        );
+    }
+
+    /// A run that ends early (a probe panicked) leaves the roots it never sent
+    /// due at once, so the next pass probes them.
+    #[test]
+    fn should_keep_due_the_roots_a_run_never_sent() {
+        let mut state = ResolverState::default();
+        let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])];
+        let start = begin_pass(&mut state, wallet(), 100, &views, &HashMap::new(), |_| None);
+        let planned: Vec<Txid> = start.due.iter().map(|(root, _)| *root).collect();
+        assert_eq!(planned.len(), 2);
+
+        // Only the first root goes out before the run ends.
+        mark_sent(&mut state, wallet(), planned[0], 100);
+        let again = begin_pass(&mut state, wallet(), 100, &views, &HashMap::new(), |_| None);
+
+        assert_eq!(
+            again.due.iter().map(|(root, _)| *root).collect::<Vec<_>>(),
+            vec![planned[1]]
+        );
+    }
+
+    /// A run whose read finds nothing to do still drops a height queued
+    /// during it that no root is due at.
+    #[tokio::test]
+    async fn should_drop_a_queued_height_when_a_forced_read_finds_nothing() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        let walks = rig.walks();
+
+        // An `Uncertain` for a txid the wallet no longer holds by read time.
+        rig.actor.handle(Command::Uncertain(txid(1)));
+        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        rig.views(wallet(), vec![send(3, &[outpoint(93, 0)])]);
+        rig.actor.joined(listed);
+        rig.actor.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 102,
+        });
+        rig.settle().await;
+
+        assert_eq!(rig.walks(), walks, "idle: neither pass walked the records");
     }
 
     /// A wallet waiting for nothing (idle) is forced by an `Uncertain` result;
@@ -2697,69 +2758,6 @@ mod tests {
         assert!(
             started.elapsed() >= Duration::from_millis(150),
             "waited for the task"
-        );
-    }
-
-    /// A host handler that panics on the first delivery only.
-    #[derive(Default)]
-    struct FlakySink {
-        calls: StdMutex<u32>,
-        taken: StdMutex<Vec<ResolverEvent>>,
-    }
-
-    impl VerdictSink for FlakySink {
-        fn deliver(&self, item: &Outgoing) {
-            let first = {
-                let mut calls = self.calls.lock().expect("calls");
-                *calls += 1;
-                *calls == 1
-            };
-            if first {
-                panic!("host handler bug");
-            }
-            self.taken.lock().expect("taken").push(item.event.clone());
-        }
-    }
-
-    /// An event a handler panicked on is handed over again before the next
-    /// step, while it still holds.
-    #[tokio::test]
-    async fn should_hand_over_again_an_event_a_handler_panicked_on() {
-        let sink = Arc::new(FlakySink::default());
-        let source = Arc::new(FakeSource::default());
-        let mut actor = Actor::new(
-            Arc::new(ScriptedProbe::new(&[(txid(1), dead())])),
-            Arc::clone(&source) as Arc<dyn WalletSource>,
-            Arc::clone(&sink) as Arc<dyn VerdictSink>,
-        );
-        source
-            .views
-            .lock()
-            .expect("views")
-            .insert(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        actor.handle(Command::SetEnabled(true));
-        for height in [100, 101] {
-            actor.handle(Command::Height {
-                wallet_id: wallet(),
-                height,
-            });
-            while let Some(joined) = actor.jobs.join_next_with_id().await {
-                actor.joined(joined);
-            }
-        }
-        assert!(
-            sink.taken.lock().expect("taken").is_empty(),
-            "the first try panicked"
-        );
-
-        actor.handle(Command::Seen {
-            wallet_id: wallet(),
-            touched: false,
-        });
-
-        assert_eq!(
-            *sink.taken.lock().expect("taken"),
-            vec![ResolverEvent::Verdict(txid(1), dead())]
         );
     }
 
