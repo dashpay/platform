@@ -888,6 +888,7 @@ mod tests {
         fail_next_flush: Mutex<Option<PersistenceErrorKind>>,
         store_commits_inline: AtomicBool,
         omit_reconciliation_capabilities: AtomicBool,
+        use_full_wallet_restore: AtomicBool,
     }
 
     impl PlatformWalletPersistence for RecordingPersistence {
@@ -896,10 +897,14 @@ mod tests {
         }
 
         fn persistence_capabilities(&self) -> PersistenceCapabilities {
+            let writes = PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
             if self.omit_reconciliation_capabilities.load(Ordering::SeqCst) {
-                PersistenceCapabilities::NONE
-            } else {
+                writes
+            } else if self.use_full_wallet_restore.load(Ordering::SeqCst) {
                 PersistenceCapabilities::ASSET_LOCK_RECONCILIATION
+            } else {
+                writes.union(PersistenceCapabilities::TRACKED_ASSET_LOCK_RESTORE)
             }
         }
 
@@ -1080,6 +1085,9 @@ mod tests {
             AssetLockFundingType::AssetLockShieldedAddressTopUp,
         ] {
             let ctx = consumption_report_context_for(funding_type).await;
+            ctx.persistence
+                .use_full_wallet_restore
+                .store(true, Ordering::SeqCst);
             let error = ctx
                 .manager
                 .reconcile_asset_lock_submit_result::<()>(

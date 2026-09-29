@@ -49,7 +49,8 @@ impl PersistenceCapabilities {
     /// DPNS name-state (username marketplace) rows can be persisted.
     pub const DPNS_NAME_STATES: Self = Self(1 << 8);
     /// Tracked asset-lock rows, including status and proof updates, can be
-    /// persisted. Restart hydration is the separate `WALLET_RESTORE` contract.
+    /// persisted. Restart hydration requires `TRACKED_ASSET_LOCK_RESTORE`
+    /// or the broader `WALLET_RESTORE` contract.
     pub const TRACKED_ASSET_LOCKS: Self = Self(1 << 9);
     /// Tracked (wallet-independent) masternodes are persisted AND restored
     /// across restarts
@@ -106,13 +107,18 @@ impl PersistenceCapabilities {
     /// wired.
     pub const DASHPAY_PAYMENTS: Self = Self(1 << 12);
 
+    /// Nonterminal tracked asset-lock rows, including their exact status and
+    /// proof, are restored through `load()` into the wallet manager after restart.
+    /// This does not attest restoration of unrelated wallet fields.
+    pub const TRACKED_ASSET_LOCK_RESTORE: Self = Self(1 << 13);
+
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 12;
+    const HIGHEST_DECLARED_BIT: u32 = 13;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -126,10 +132,18 @@ impl PersistenceCapabilities {
     pub const SHIELDED_FVK_RESTART: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::SHIELDED_VIEWING_KEYS.0);
 
-    /// Capabilities required to durably reconcile an asset-lock status and
-    /// restore that exact row after process restart.
+    /// Full-wallet restore capabilities sufficient for asset-lock reconciliation.
+    /// Use [`Self::supports_asset_lock_reconciliation`] to also accept a backend
+    /// that restores only the tracked asset-lock domain.
     pub const ASSET_LOCK_RECONCILIATION: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0 | Self::WALLET_RESTORE.0);
+
+    /// Whether atomic asset-lock updates can be restored after restart.
+    pub const fn supports_asset_lock_reconciliation(self) -> bool {
+        self.contains(Self::ATOMIC_CHANGESETS.union(Self::TRACKED_ASSET_LOCKS))
+            && (self.contains(Self::WALLET_RESTORE)
+                || self.contains(Self::TRACKED_ASSET_LOCK_RESTORE))
+    }
 
     pub const fn from_bits_retain(bits: u64) -> Self {
         Self(bits)
@@ -205,6 +219,10 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::DASHPAY_PAYMENTS,
                 "dashpay_payments",
             ),
+            (
+                PersistenceCapabilities::TRACKED_ASSET_LOCK_RESTORE,
+                "tracked_asset_lock_restore",
+            ),
         ];
 
         KNOWN
@@ -222,7 +240,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::DASHPAY_PAYMENTS.bits()
+    PersistenceCapabilities::TRACKED_ASSET_LOCK_RESTORE.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -251,8 +269,37 @@ mod tests {
         assert_eq!(PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits(), 0x800);
         assert_eq!(PersistenceCapabilities::DASHPAY_PAYMENTS.bits(), 0x1000);
         assert_eq!(
+            PersistenceCapabilities::TRACKED_ASSET_LOCK_RESTORE.bits(),
+            0x2000
+        );
+        assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
             0x281
+        );
+    }
+
+    #[test]
+    fn reconciliation_requires_atomic_writes_and_either_restore_contract() {
+        for restore in [
+            PersistenceCapabilities::WALLET_RESTORE,
+            PersistenceCapabilities::TRACKED_ASSET_LOCK_RESTORE,
+            PersistenceCapabilities::WALLET_RESTORE
+                .union(PersistenceCapabilities::TRACKED_ASSET_LOCK_RESTORE),
+        ] {
+            let writes = PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
+            assert!(writes.union(restore).supports_asset_lock_reconciliation());
+            assert!(!writes.supports_asset_lock_reconciliation());
+            assert!(!restore.supports_asset_lock_reconciliation());
+            assert!(!restore
+                .union(PersistenceCapabilities::ATOMIC_CHANGESETS)
+                .supports_asset_lock_reconciliation());
+            assert!(!restore
+                .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
+                .supports_asset_lock_reconciliation());
+        }
+        assert!(
+            PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.supports_asset_lock_reconciliation()
         );
     }
 
