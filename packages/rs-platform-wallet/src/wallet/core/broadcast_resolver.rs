@@ -342,10 +342,19 @@ impl BroadcastResolver {
                 return;
             }
             let events = events.upgrade();
+            // What started this pass: dash-spv's Uncertain result for one
+            // transaction, or a new block for every due root.
+            let trigger = if force.is_some() {
+                "uncertain"
+            } else {
+                "block"
+            };
             for (txid, verdict) in &verdicts {
                 tracing::info!(
                     wallet_id = %hex::encode(wallet_id),
                     txid = %txid,
+                    height,
+                    trigger,
                     ?verdict,
                     "broadcast probe: verdict for an unconfirmed send"
                 );
