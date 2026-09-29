@@ -17,6 +17,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 - [Ranked queries](#ranked-queries)
 - [Document references (`refersTo`)](#document-references-refersto)
 - [Building a document create transition by hand](#building-a-document-create-transition-by-hand)
+- [Action fees (`actionFeeAgreement`)](#action-fees-actionfeeagreement)
 - [Immutable properties (`immutable`)](#immutable-properties-immutable)
 - [Property constraints (`propertyConstraints`)](#property-constraints-propertyconstraints)
 - [How a document type is stored (`documentTypeLayout`)](#how-a-document-type-is-stored-documenttypelayout)
@@ -266,6 +267,35 @@ From protocol version 14 the id of a new document commits to the identity contra
 A document whose values fall under a contested index enters a contest, and its create must state the most it pays into the contest's fund: without it, or stating less than the fund to join, Platform refuses the create with error 40114 and still charges its fees. From protocol version 14 that fund doubles once the contest holds 250 contenders and again for every 50 more. `sdk.documents.create` states it itself. For a transition built by hand, `sdk.documents.contestFundToJoin(document)` reads the contest's contenders (one proved query per 100) and returns the `PrefundedVotingBalance` to pass, the contested index's name and the fund to join now, or `undefined` for a document that joins no contest. Without the SDK, pass the document's contract as `dataContract` to `new DocumentCreateTransition(...)`: a contested document then states the contest's fund on its contested index, what joining costs below 250 contenders, and `contestFund` replaces that amount.
 
 From protocol version 14 a create may state more, as headroom for contenders joining before it lands: `new PrefundedVotingBalance({ indexName: prefundedVotingBalance.indexName, credits: 2n * prefundedVotingBalance.credits })`. Platform charges only the fund to join, but the identity must hold what the create states. Before 14 the stated amount must be exactly the contest's fund, and a create stating more is refused.
+
+## Action fees (`actionFeeAgreement`)
+
+From protocol version 14 a document type may charge a fee for an action (its `actionFees`: an `owner` part paid to the contract owner and a `moderators` part paid to its moderators). The contract is read when the transition executes, not when it was signed, so every transition on an action that charges a fee carries an action fee agreement naming the fee its signer saw. Without one Platform refuses the transition with error 40132, with other amounts 40133, and when the executing epoch's fee multiplier is above what the agreement tolerates 40134. Each refusal still spends the identity contract nonce, and charges no action fee.
+
+`create`, `replace`, `delete`, `transfer`, `purchase` and `setPrice` take it as `actionFeeAgreement`, a `DocumentActionFeeAgreement` or the options to build one. Name the amounts from the contract you showed the user, never from one fetched behind their back at signing time, so that a fee changed since is refused instead of paid:
+
+```ts
+// { pricing?: 'fixed' | 'feeMultiplier', create?: { owner?, moderators? }, ... }, amounts as bigints.
+// No `pricing` means 'feeMultiplier'; a part left out of the schema is 0.
+const declared = (contract.schemas as Record<string, any>).post.actionFees;
+await sdk.documents.create({
+  document,
+  identityKey,
+  signer,
+  actionFeeAgreement: {
+    owner: declared.create.owner ?? 0n,
+    moderators: declared.create.moderators ?? 0n,
+    // Unless `pricing: 'fixed'`: the multiplier you priced the fee with, and how far above it
+    // (in percent) the multiplier of the epoch the transition executes in may be.
+    feeMultiplier: {
+      knownPermille: (await sdk.epoch.current()).feeMultiplierPermille,
+      increaseTolerancePercent: 20,
+    },
+  },
+});
+```
+
+A fixed fee (`pricing: 'fixed'`) names no `feeMultiplier`, and a fee priced by the multiplier must name one: getting that wrong is refused as 40133. An agreement on an action that charges nothing is ignored. On a document type an elected contract moderates, `moderators` may name exactly the share of the declared part the contract's seated moderation charter takes (its `moderatorsShare`, in percent, rounded down to the credit); any other lower amount is refused (40139). A transition built by hand passes a `new DocumentActionFeeAgreement({...})` as `actionFeeAgreement` to `new DocumentCreateTransition(...)` and the other document transition constructors. The SDK refuses an agreement before any request when it runs a protocol version before 14.
 
 ## Encrypted properties (`encryptedFor`)
 

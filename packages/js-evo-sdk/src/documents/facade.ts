@@ -106,8 +106,11 @@ export class DocumentsFacade {
    * instance when you later intend to delete an indexOnly document whose
    * type requires `$createdAt`. A document of a contested index joins a
    * contest: `options.contestFund` is the most, in credits, it pays into it.
-   * For an indexOnly type the proof shows the document's entry at the proof's
-   * block, not that this create wrote it: no stronger proof exists for one.
+   * A document type whose `actionFees` charge a fee to create needs
+   * `options.actionFeeAgreement`, the fee the user was shown (every document
+   * write takes one; see the README). For an indexOnly type the proof shows the
+   * document's entry at the proof's block, not that this create wrote it: no
+   * stronger proof exists for one.
    */
   async create(options: wasm.DocumentCreateOptions): Promise<wasm.Document> {
     const w = await this.sdk.getWasmSdkConnected();
@@ -131,31 +134,49 @@ export class DocumentsFacade {
     return w.getContestFundToJoin(document);
   }
 
+  /**
+   * Replaces a document. A document type whose `actionFees` charge a fee to
+   * replace needs `options.actionFeeAgreement`.
+   */
   async replace(options: wasm.DocumentReplaceOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentReplace(options);
   }
 
   /**
-   * Deletes a document and resolves once the proof shows it gone. For an
-   * indexOnly type the proof shows the document's entry gone at the proof's
-   * block, not that this delete removed it: no stronger proof exists for one.
+   * Deletes a document and resolves once the proof shows it gone. A document
+   * type whose `actionFees` charge a fee to delete needs
+   * `options.actionFeeAgreement`. For an indexOnly type the proof shows the
+   * document's entry gone at the proof's block, not that this delete removed
+   * it: no stronger proof exists for one.
    */
   async delete(options: wasm.DocumentDeleteOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentDelete(options);
   }
 
+  /**
+   * A document type whose `actionFees` charge a fee to transfer a document needs
+   * `options.actionFeeAgreement`.
+   */
   async transfer(options: wasm.DocumentTransferOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentTransfer(options);
   }
 
+  /**
+   * A document type whose `actionFees` charge a fee to purchase a document needs
+   * `options.actionFeeAgreement`.
+   */
   async purchase(options: wasm.DocumentPurchaseOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentPurchase(options);
   }
 
+  /**
+   * A document type whose `actionFees` charge a fee to set the price of a document needs
+   * `options.actionFeeAgreement`.
+   */
   async setPrice(options: wasm.DocumentSetPriceOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentSetPrice(options);
