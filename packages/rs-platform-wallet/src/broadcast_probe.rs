@@ -57,25 +57,25 @@ use dashcore::{Transaction, Txid};
 /// - `tx-txlock-conflict`: an input is already spent by an InstantSend-locked
 ///   transaction, which is final.
 ///
-/// `-25` has two false positives that the *caller* must rule out — a node
-/// that has not yet seen one of our own unconfirmed parents, and a node
-/// lagging behind the tip. See [`AcceptanceProbe`] for how the probe guards
-/// against the second, and the wallet-side resolver for the first.
+/// A node's `-25` alone is never taken as proof. It is also what a node that
+/// has not yet seen one of the transaction's unconfirmed parents answers
+/// (the wallet-side resolver only probes chain roots for that reason), what a
+/// node lagging behind the tip answers (hence [`DEAD_QUORUM`]: two distinct
+/// nodes), and what a mined transaction whose outputs are all spent gets
+/// (hence the txid lookup in [`confirm_dead`]).
+///
+/// `txn-mempool-conflict` is deliberately absent: it means another,
+/// unconfirmed and not IS-locked, transaction spends the same input, and
+/// either one may still be mined — no verdict.
 const DEAD_REASONS: &[&str] = &[
     "bad-txns-inputs-missingorspent",
     "missing inputs",
     "tx-txlock-conflict",
 ];
 
-/// Core reject reasons that say this node refused the transaction without
-/// proving it can never land: `txn-mempool-conflict` means another,
-/// unconfirmed and not IS-locked, transaction spends the same input, and
-/// either one may still be mined.
-const REFUSED_REASONS: &[&str] = &["txn-mempool-conflict"];
-
 /// What a single Core node said when handed a signed transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NodeVerdict {
+pub(crate) enum NodeVerdict {
     /// The node holds the transaction in its mempool — it accepted it now or
     /// already had it.
     Accepted,
@@ -83,9 +83,8 @@ pub enum NodeVerdict {
     Mined,
     /// The node proved the transaction can never be mined as it stands.
     Dead { reason: String },
-    /// The node refused the transaction without proving it dead.
-    Refused { reason: String },
-    /// No verdict: transport failure, timeout, or an unrecognised rejection.
+    /// No verdict: transport failure, timeout, or a rejection that proves
+    /// nothing (such as `txn-mempool-conflict`).
     Unknown { reason: String },
 }
 
@@ -97,14 +96,6 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
     let lowered = message.to_ascii_lowercase();
     if DEAD_REASONS.iter().any(|reason| lowered.contains(reason)) {
         return NodeVerdict::Dead {
-            reason: message.to_string(),
-        };
-    }
-    if REFUSED_REASONS
-        .iter()
-        .any(|reason| lowered.contains(reason))
-    {
-        return NodeVerdict::Refused {
             reason: message.to_string(),
         };
     }
@@ -122,9 +113,10 @@ pub enum ProbeVerdict {
     /// A node has the transaction in a block. Final — there is nothing left to
     /// ask, even if this wallet has not seen that block yet.
     Mined,
-    /// Two different nodes refused it for missing or spent inputs, and two
-    /// different nodes do not know its txid: it is not in a block and can
-    /// never be mined.
+    /// Two different nodes refused it for a reason in [`DEAD_REASONS`]
+    /// (missing or spent inputs, or a conflict with an InstantSend-locked
+    /// spend), and two different nodes answered `getTransaction` with
+    /// NotFound: it is not in a block and can never be mined.
     Dead { reason: String },
     /// Not enough evidence either way; the transaction stays ambiguous.
     Unresolved { reason: String },
@@ -216,7 +208,7 @@ pub(crate) async fn probe_with(
                     .await;
                 }
             }
-            NodeVerdict::Refused { reason } | NodeVerdict::Unknown { reason } => {
+            NodeVerdict::Unknown { reason } => {
                 last_other = reason;
             }
         }
@@ -502,8 +494,9 @@ mod tests {
             (
                 Code::FailedPrecondition,
                 "Transaction is rejected: txn-mempool-conflict",
-                NodeVerdict::Refused {
-                    reason: "Transaction is rejected: txn-mempool-conflict".to_string(),
+                NodeVerdict::Unknown {
+                    reason: "FailedPrecondition: Transaction is rejected: txn-mempool-conflict"
+                        .to_string(),
                 },
             ),
         ];
@@ -596,7 +589,7 @@ mod tests {
         let nodes = ScriptedNodes::new(vec![
             (
                 Some("a"),
-                NodeVerdict::Refused {
+                NodeVerdict::Unknown {
                     reason: "txn-mempool-conflict".to_string(),
                 },
             ),

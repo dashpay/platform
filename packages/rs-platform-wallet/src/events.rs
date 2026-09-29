@@ -48,12 +48,13 @@ pub trait PlatformEventHandler: EventHandler {
     /// [`DpnsSyncManager`]: crate::manager::dpns_sync::DpnsSyncManager
     fn on_dpns_marketplace_sync_completed(&self, _summary: &DpnsSyncPassSummary) {}
 
-    /// Fired when the broadcast resolver has asked the network about an
-    /// unconfirmed send of this wallet whose broadcast outcome was unknown.
-    /// `Accepted` means a node holds the transaction; `Dead` means two
-    /// distinct nodes proved it can never be mined; `Unresolved` means no
-    /// verdict yet — the resolver asks again on a later block. Nothing in the
-    /// wallet changes either way.
+    /// Fired when the verdict on an unconfirmed send of this wallet changes —
+    /// the network was asked about the root of its chain. `Accepted` means a
+    /// node holds the transaction in its mempool; `Mined` that a node has it
+    /// in a block; `Dead` that the transaction, or a parent it spends, can
+    /// never be mined (two distinct nodes refused it and two do not know it);
+    /// `Unresolved` that there is no verdict yet — the resolver asks again on
+    /// a later block. Nothing in the wallet changes either way.
     ///
     /// Default impl is a no-op so existing handlers don't have to care.
     fn on_outgoing_transaction_probed(

@@ -105,7 +105,8 @@ extension PlatformWalletManager {
     ///
     /// While on, the SDK resubmits every unconfirmed send whose broadcast
     /// outcome went quiet to evonodes over DAPI — right after SPV reports it
-    /// uncertain, then as blocks arrive — and publishes each *change* of
+    /// uncertain, then every block for 24 blocks and every 10 after — and
+    /// publishes each *change* of
     /// verdict in `outgoingTransactionVerdicts` / `lastOutgoingTransactionProbe`.
     /// A send that settles or leaves the wallet is removed from the map.
     /// Resubmitting sends the same signed bytes: it can deliver a payment, it
@@ -129,5 +130,8 @@ extension PlatformWalletManager {
     func handleOutgoingTransactionCleared(_ key: OutgoingTransactionKey) {
         guard !shutdownRequested, isConfigured else { return }
         outgoingTransactionVerdicts.removeValue(forKey: key)
+        if lastOutgoingTransactionProbe?.key == key {
+            lastOutgoingTransactionProbe = nil
+        }
     }
 }

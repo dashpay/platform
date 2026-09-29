@@ -524,11 +524,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Turn automatic probing of unconfirmed sends on or off.
     ///
-    /// When on, every unconfirmed send of a registered wallet whose broadcast
-    /// outcome went quiet is resubmitted to evonodes over DAPI — once right
-    /// after dash-spv reports it `Uncertain`, then once per block — and the
-    /// verdict is published as `on_outgoing_transaction_probed`. Nothing in
-    /// the wallet changes. Off by default.
+    /// When on, the roots of a registered wallet's unconfirmed chains are
+    /// resubmitted to evonodes over DAPI — right after dash-spv reports a send
+    /// `Uncertain`, then every block for 24 blocks and every 10 after — and
+    /// each change of a send's verdict is published as
+    /// `on_outgoing_transaction_probed`, each send that no longer needs one
+    /// as `on_outgoing_transaction_cleared`. Nothing in the wallet changes.
+    /// Off by default; turning it off clears every published verdict.
     pub fn set_broadcast_probe_enabled(&self, enabled: bool) {
         self.broadcast_resolver.set_enabled(enabled);
     }

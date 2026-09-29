@@ -855,11 +855,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .await;
         }
 
-        // Broadcast-probe state for the wallet's sends goes too, and the host
-        // is told to drop the verdicts it shows for them: a same-id recreation
-        // must not inherit them.
-        self.broadcast_resolver.wallet_removed(wallet_id);
-
         // Only now free the id in the inner manager — the LAST id-keyed step.
         // An identity registered on this wallet after the snapshot above (a
         // host racing an identity add against its own removal) is left as a
@@ -890,6 +885,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 );
             }
         }
+
+        // Broadcast-probe state for the wallet's sends goes too, and the host
+        // is told to drop the verdicts it shows for them. After the inner
+        // removal, so no probe pass can read the wallet and rebuild that state;
+        // before the midpoint, so a same-id recreation's state is never touched.
+        self.broadcast_resolver.wallet_removed(wallet_id);
 
         // Test-only rendezvous: the window a concurrent same-id registration can
         // publish a new generation into. Sits AFTER every id-keyed unregister,

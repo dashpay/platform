@@ -2660,6 +2660,9 @@ public class PlatformWalletManager: ObservableObject {
         // Same for broadcast-probe verdicts: Rust forgets the wallet's sends
         // on removal, and a restored wallet (same id) must start clean.
         outgoingTransactionVerdicts = outgoingTransactionVerdicts.filter { $0.key.walletId != walletId }
+        if lastOutgoingTransactionProbe?.walletId == walletId {
+            lastOutgoingTransactionProbe = nil
+        }
         // A store reconcile in flight for any wallet stops between pages:
         // its next step would read rows `deleteWalletData` is about to
         // remove. Coarse on purpose — the cadence re-runs the others.
