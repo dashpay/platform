@@ -34,7 +34,7 @@ pub trait DocumentCreateTransitionActionValidation {
     /// Validates the create against state. From version 2 it also settles what a contested
     /// create pays into its contest: the fund to join it, which may be less than the most the
     /// contender stated. From version 2 (protocol version 14) too, the commitments the create
-    /// reveals through a `refersTo` lookup declaring `consume` are pushed onto
+    /// reveals through a `refersTo` lookup whose reference declares `consume` are pushed onto
     /// `consumed_documents`, for the caller to delete with the create once it accepts it;
     /// earlier versions push nothing.
     #[allow(clippy::too_many_arguments)]

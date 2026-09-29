@@ -5,7 +5,7 @@ A `lookup` lets a document reference find its target through a unique index of t
 | | |
 |---|---|
 | **Where** | Inside a `permanentDocument` or `deletableDocument` [`refersTo`](refers-to.md) declaration: on an identifier property, on the `items` of a typed array of identifiers, as an operand of an [expression](refers-to-expressions.md), or in [`ownerRefersTo` and `creatorRefersTo`](owner-refers-to.md). With a [`propertyAgreement` function](#commit-and-reveal), also on a string or byte array property. |
-| **Value** | `{ "index": ..., "keys": { ... } }`. `index` is the name of a unique index of `documentType`, 1 to 32 characters. `keys` maps every property of that index (1 to 10) to where its value comes from: `"."` (the reference's own value), `"$ownerId"` (the writer) or a property path of the referring document type, except the one a [`propertyAgreement` function](#commit-and-reveal) fills. With a function the lookup may also declare `minimumAgeBlocks` and `consume`. |
+| **Value** | `{ "index": ..., "keys": { ... } }`. `index` is the name of a unique index of `documentType`, 1 to 32 characters. `keys` maps every property of that index (1 to 10) to where its value comes from: `"."` (the reference's own value), `"$ownerId"` (the writer) or a property path of the referring document type, except the one a [`propertyAgreement` function](#commit-and-reveal) fills. Beside a lookup with a function the `refersTo` may also declare `minimumAgeBlocks` and `consume`. |
 | **Since** | protocol version 14 |
 | **On update** | Fixed, like the rest of `refersTo`: adding, removing or changing a lookup is refused (`IncompatibleDocumentTypeSchemaError`, 10246). |
 | **Errors** | `ReferencedEntityNotFoundError` (40120) when the index finds no document; at registration `ReferencedDocumentLookupInvalidError` (40137) for an index of another contract, `InvalidContractStructure` (10231) for one of the same contract. A function adds `DocumentReferencePreimageInvalidError` (10423) and `ReferencedDocumentRequirementNotMetError` (40142). |
@@ -104,14 +104,16 @@ A `propertyAgreement` pair may hold a function: `"<referenced property>": { "fun
   "refersTo": {
     "type": "deletableDocument",
     "documentType": "preorder",
-    "lookup": { "index": "saltedHash", "minimumAgeBlocks": 1, "consume": true },
+    "lookup": { "index": "saltedHash" },
     "propertyAgreement": {
       "$ownerId": "$ownerId",
       "saltedDomainHash": {
         "function": "sys.hash.sha256d",
         "params": ["preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
       }
-    }
+    },
+    "minimumAgeBlocks": 1,
+    "consume": true
   }
 }
 ```
@@ -121,6 +123,8 @@ The salt must reveal a `preorder` whose `saltedDomainHash` is the sha256d of the
 - **Params.** A property path reads the document being created, the property carrying the reference included; `{ "const": text }` is fixed text of 1 to 64 bytes; `"."` is the value carrying the reference where it has no path (each element of a typed array, the writer, the creator); 1 to 16 params. Strings count as their UTF-8, byte arrays as their bytes, identifiers as their 32 bytes. Two values of no fixed length must be separated by a one-byte `const`, and a value holding that byte is refused, so the joined bytes split back one way only.
 - **Carrier.** A string or byte array property may carry a `refersTo` only this way, and keeps its type. The value carrying the reference fills the key exactly once, as a `"."` key or a param; a param names a property by its path, never as `"."`. In `ownerRefersTo` and `creatorRefersTo` the value may be left out beside a function.
 - **Judged once.** A function's key is checked when the document is created, never on a replace, so every stored value it reads must be fixed once written, the carrier included (listed under `immutable` on a mutable type). Its plain `propertyAgreement` pairs are judged with it, so each property they name must be fixed once written too, or transient. On a type whose documents can be replaced it may not be an operand of an `anyOf`, which would then hold on every replace. Params may be transient: they are read from the create. The hash is billed as the double SHA-256 it is, by the blocks it hashes, beside the document fetch.
+`minimumAgeBlocks` and `consume` sit on the `refersTo`, beside the lookup: they describe the document the lookup finds, and need its key computed by a function.
+
 - **`minimumAgeBlocks`**: the commitment's `$createdAtBlockHeight` is at least that many blocks below the create's height. The commitment type must list `$createdAtBlockHeight` in `required`.
 - **`consume: true`**: the create deletes the commitment, its storage refunded to its owner. Only with the `"$ownerId": "$ownerId"` pair, into a type of the same contract whose owner may delete its documents, that declares no delete token cost or delete action fee (no delete transition charges them), and that requires no stricter signature security level than the revealing type. A contract-bound key signing the create must be allowed to act on the consumed type too (`ContractBoundedKeyOutOfBoundsError`, 20014).
 

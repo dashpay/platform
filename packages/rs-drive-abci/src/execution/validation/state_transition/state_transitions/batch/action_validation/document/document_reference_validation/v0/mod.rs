@@ -921,8 +921,8 @@ fn validate_reference_v0(
 /// create only (`is_create`), and holds on a replace without a read, since
 /// registration made everything it reads fixed once written and the
 /// commitment it found may have been consumed or deleted since. On a create
-/// the document it finds must also meet the lookup's `minimumAgeBlocks`, and
-/// when the lookup declares `consume` the document is pushed onto
+/// the document it finds must also meet the reference's `minimumAgeBlocks`,
+/// and when the reference declares `consume` the document is pushed onto
 /// `consumed_documents` once the leaf holds.
 #[allow(clippy::too_many_arguments)]
 fn validate_reference_target_v0(
@@ -1329,7 +1329,7 @@ fn validate_reference_target_v0(
             }
 
             // The commitment a computed key found: it must be old enough, and the create
-            // deletes it when the lookup consumes it. Its age is judged in blocks, from its
+            // deletes it when the reference consumes it. Its age is judged in blocks, from its
             // `$createdAtBlockHeight` (registration demands the type record one) to the
             // block of the create, so 1 means an earlier block; a document recording none
             // never meets it. Only a lookup the protocol version 14 parser produced has

@@ -368,7 +368,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 || relies_on_gas_sponsor_to_pay
             {
                 // A sponsored batch joins the next block, so its state is judged at that
-                // block's height: an age counted in blocks (a `refersTo` lookup's
+                // block's height: an age counted in blocks (a `refersTo`'s
                 // `minimumAgeBlocks`) is then the one the block sees
                 let last_block_info = platform.state.last_block_info();
                 let next_block_info = BlockInfo {

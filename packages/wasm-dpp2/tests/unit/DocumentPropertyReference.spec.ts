@@ -155,9 +155,9 @@ type Reference = {
   lookup?: {
     index: string;
     keys?: Record<string, string>;
-    minimumAgeBlocks?: number;
-    consume?: boolean;
   };
+  minimumAgeBlocks?: number;
+  consume?: boolean;
   inList?: string;
 };
 
@@ -480,7 +480,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
                 refersTo: {
                   type: 'deletableDocument',
                   documentType: 'preorder',
-                  lookup: { index: 'saltedHash', minimumAgeBlocks: 1, consume: true },
+                  lookup: { index: 'saltedHash' },
                   propertyAgreement: {
                     $ownerId: '$ownerId',
                     saltedDomainHash: {
@@ -488,6 +488,8 @@ describe('DataContract — refersTo declarations (v14)', () => {
                       params: ['preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
                     },
                   },
+                  minimumAgeBlocks: 1,
+                  consume: true,
                 },
               },
             },
@@ -503,7 +505,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       const [salted] = contract.documentTypeReferences('domain') as Reference[];
 
       // The function stays in the agreement, as declared; the lookup keeps
-      // the index and what the commitment must be
+      // the index, and what the commitment must be sits beside it
       expect(salted.path).to.equal('preorderSalt');
       expect(salted.type).to.equal('deletableDocument');
       expect(salted.propertyAgreement).to.deep.equal({
@@ -513,11 +515,9 @@ describe('DataContract — refersTo declarations (v14)', () => {
           params: ['preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
         },
       });
-      expect(salted.lookup).to.deep.equal({
-        index: 'saltedHash',
-        minimumAgeBlocks: 1,
-        consume: true,
-      });
+      expect(salted.lookup).to.deep.equal({ index: 'saltedHash' });
+      expect(salted.minimumAgeBlocks).to.equal(1);
+      expect(salted.consume).to.equal(true);
     });
 
     it('should refuse a lookup into an index that is not unique', () => {

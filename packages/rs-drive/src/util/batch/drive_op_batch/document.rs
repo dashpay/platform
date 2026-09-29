@@ -95,11 +95,11 @@ pub enum DocumentOperationType<'a> {
         document_type_info: DocumentTypeInfo<'a>,
     },
     /// Adds a document and deletes the documents its create consumed: the commitments a
-    /// `refersTo` lookup declaring `consume` found (protocol version 14), each a document
-    /// of the same contract. One conversion builds the add first and then each delete
-    /// against the operations already built, so a tree the new document writes into (an
-    /// index bucket shared with a consumed document, an expirations tree of the same
-    /// millisecond) is not taken for empty and deleted from under the insert.
+    /// `refersTo` lookup found for a reference declaring `consume` (protocol version 14),
+    /// each a document of the same contract. One conversion builds the add first and then
+    /// each delete against the operations already built, so a tree the new document writes
+    /// into (an index bucket shared with a consumed document, an expirations tree of the
+    /// same millisecond) is not taken for empty and deleted from under the insert.
     AddDocumentAndDeleteConsumed {
         /// The document and contract info, also may contain the owner_id
         owned_document_info: OwnedDocumentInfo<'a>,

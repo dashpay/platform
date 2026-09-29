@@ -15,14 +15,16 @@
 //!   "refersTo": {
 //!     "type": "deletableDocument",
 //!     "documentType": "preorder",
-//!     "lookup": { "index": "saltedHash", "minimumAgeBlocks": 1, "consume": true },
+//!     "lookup": { "index": "saltedHash" },
 //!     "propertyAgreement": {
 //!       "$ownerId": "$ownerId",
 //!       "saltedDomainHash": {
 //!         "function": "sys.hash.sha256d",
 //!         "params": ["preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
 //!       }
-//!     }
+//!     },
+//!     "minimumAgeBlocks": 1,
+//!     "consume": true
 //!   }
 //! }
 //! ```

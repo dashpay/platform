@@ -540,7 +540,7 @@ fn validate_reference_target_declaration_v0(
                         declaration_path,
                         lookup.index.clone(),
                         "consume deletes the document the lookup finds with the create, so it \
-                         is only allowed on a lookup into the declaring contract"
+                         is only allowed beside a lookup into the declaring contract"
                             .to_string(),
                     )
                     .into(),

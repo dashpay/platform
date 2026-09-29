@@ -1,8 +1,8 @@
 //! `propertyAgreement` function pairs
 //! (`"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }`,
 //! protocol version 14), a commit and reveal: the parse of the function into
-//! the computed key of the reference's lookup, the lookup's `minimumAgeBlocks`
-//! and `consume`, a string or byte array property whose value the function
+//! the computed key of the reference's lookup, the `minimumAgeBlocks` and
+//! `consume` declared beside the lookup, a string or byte array property whose value the function
 //! reads, the checks of the referring side on every parse, the checks of the
 //! referenced side at contract level, and the protocol version gate.
 
@@ -55,13 +55,18 @@ fn reveal_with(
 }
 
 /// The `refersTo` of a DPNS-shaped `domain`'s `preorderSalt`, with
-/// `lookup_extra` merged into its lookup and `agreement_extra` into its
-/// agreement.
+/// `declaration_extra` (its `minimumAgeBlocks` and `consume`) merged into the
+/// declaration and `agreement_extra` into its agreement.
 fn salt_reveal(
-    lookup_extra: serde_json::Value,
+    declaration_extra: serde_json::Value,
     agreement_extra: serde_json::Value,
 ) -> serde_json::Value {
-    reveal_with(dpns_function(), lookup_extra, agreement_extra, json!({}))
+    reveal_with(
+        dpns_function(),
+        json!({}),
+        agreement_extra,
+        declaration_extra,
+    )
 }
 
 /// The DPNS reveal as DPNS would declare it: the writer's own preorder, from
@@ -438,8 +443,10 @@ fn should_refuse_a_function_pair_that_computes_no_lookup_key() {
 
     // The index property filled twice, by keys and by the function
     assert_refused_by_the_parser(
-        dpns_contract(salt_reveal(
+        dpns_contract(reveal_with(
+            dpns_function(),
             json!({ "keys": { "saltedDomainHash": "normalizedLabel" } }),
+            json!({}),
             json!({}),
         )),
         "which the propertyAgreement function pair fills",
@@ -475,23 +482,59 @@ fn should_refuse_a_function_pair_that_computes_no_lookup_key() {
 
 #[test]
 fn should_refuse_age_and_consume_without_a_function_pair() {
-    let contract_value = dpns_contract_carried_by(
-        "referrerId",
-        json!({
-            "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-            "contentMediaType": "application/x.dash.dpp.identifier", "position": 6
-        }),
-        json!({
+    let referrer = |refers_to: serde_json::Value| {
+        dpns_contract_carried_by(
+            "referrerId",
+            json!({
+                "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier", "position": 6
+            }),
+            refers_to,
+        )
+    };
+    // A lookup whose key no function computes finds no commitment
+    for extra in [json!({ "minimumAgeBlocks": 1 }), json!({ "consume": true })] {
+        let mut refers_to = json!({
             "type": "deletableDocument",
             "documentType": "preorder",
-            "lookup": {
-                "index": "saltedHash",
-                "keys": { "saltedDomainHash": "." },
-                "minimumAgeBlocks": 1
-            }
-        }),
+            "lookup": { "index": "saltedHash", "keys": { "saltedDomainHash": "." } },
+            "propertyAgreement": { "$ownerId": "$ownerId" }
+        });
+        merge(&mut refers_to, extra);
+        assert_refused_by_the_parser(
+            referrer(refers_to),
+            "need a lookup whose key a propertyAgreement function pair computes",
+        );
+    }
+    // Nor does a reference without a lookup
+    assert_refused_by_the_parser(
+        referrer(json!({
+            "type": "deletableDocument",
+            "documentType": "preorder",
+            "minimumAgeBlocks": 1
+        })),
+        "deletableDocument refersTo does not take minimumAgeBlocks without a lookup",
     );
-    assert_refused(contract(contract_value), "need a computed key");
+    assert_refused_by_the_parser(
+        referrer(json!({ "type": "identity", "consume": true })),
+        "identity refersTo does not take consume without a lookup",
+    );
+}
+
+#[test]
+fn should_refuse_age_and_consume_inside_the_lookup() {
+    // They describe the document the lookup finds, and sit beside the lookup
+    for extra in [json!({ "minimumAgeBlocks": 1 }), json!({ "consume": true })] {
+        assert_refused_by_the_parser(
+            dpns_contract(reveal_with(
+                dpns_function(),
+                extra,
+                json!({ "$ownerId": "$ownerId" }),
+                json!({}),
+            )),
+            "sit beside the lookup, on the refersTo",
+        );
+    }
 }
 
 #[test]
@@ -501,7 +544,12 @@ fn should_refuse_a_minimum_age_of_zero_or_a_consume_of_false() {
         "minimumAgeBlocks must be at least 1",
     );
     assert_refused_by_the_parser(
-        dpns_contract(salt_reveal(json!({ "minimumAgeSeconds": 60 }), json!({}))),
+        dpns_contract(reveal_with(
+            dpns_function(),
+            json!({ "minimumAgeSeconds": 60 }),
+            json!({}),
+            json!({}),
+        )),
         "refersTo lookup \"minimumAgeSeconds\" is unknown",
     );
     assert_refused_by_the_parser(
@@ -528,15 +576,12 @@ fn should_refuse_consume_without_the_writer_owner_pair_or_on_a_permanent_referen
     );
     let mut permanent = dpns_contract(reveal_with(
         dpns_function(),
-        json!({ "consume": true }),
+        json!({}),
         json!({ "$ownerId": "$ownerId" }),
-        json!({ "type": "permanentDocument" }),
+        json!({ "type": "permanentDocument", "consume": true }),
     ));
     permanent["documentSchemas"]["preorder"]["canBeDeleted"] = json!(false);
-    assert_refused(
-        contract(permanent),
-        "permanentDocument refersTo lookup cannot consume",
-    );
+    assert_refused_by_the_parser(permanent, "permanentDocument refersTo cannot consume");
 }
 
 #[test]

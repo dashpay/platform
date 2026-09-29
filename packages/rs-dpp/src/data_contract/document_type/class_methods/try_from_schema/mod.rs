@@ -1092,6 +1092,22 @@ fn validate_reference_target_keys(
         )));
     }
 
+    // `minimumAgeBlocks` and `consume` describe the document a lookup's
+    // computed key finds, a commitment: they sit beside the lookup and need it
+    // (its parse checks for the propertyAgreement function computing the key)
+    if let Some(keyword) = [property_names::MINIMUM_AGE_BLOCKS, property_names::CONSUME]
+        .into_iter()
+        .find(|keyword| refers_to_map.contains_key(*keyword))
+    {
+        if !refers_to_map.contains_key(property_names::LOOKUP) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "{reference_type} refersTo does not take {keyword} without a lookup: it \
+                 describes the document a lookup whose key a propertyAgreement function pair \
+                 computes finds"
+            )));
+        }
+    }
+
     Ok(())
 }
 
@@ -1160,14 +1176,17 @@ fn parse_reference_target(
                     // shape (and its encoding in the reference errors)
                     match refers_to_map.get(property_names::LOOKUP) {
                         Some(lookup_value) => {
-                            let lookup =
-                                parse_document_reference_lookup(lookup_value, agreement_function)?;
+                            let lookup = parse_document_reference_lookup(
+                                refers_to_map,
+                                lookup_value,
+                                agreement_function,
+                            )?;
                             // A permanent document is never deleted, so there is
                             // nothing to consume
                             if lookup.consume {
                                 return Err(DataContractError::InvalidContractStructure(
-                                    "permanentDocument refersTo lookup cannot consume the \
-                                     document it finds, which is never deleted: consume needs a \
+                                    "permanentDocument refersTo cannot consume the document its \
+                                     lookup finds, which is never deleted: consume needs a \
                                      deletableDocument reference"
                                         .to_string(),
                                 ));
@@ -1188,8 +1207,11 @@ fn parse_reference_target(
                 }
                 "deletableDocument" => match refers_to_map.get(property_names::LOOKUP) {
                     Some(lookup_value) => {
-                        let lookup =
-                            parse_document_reference_lookup(lookup_value, agreement_function)?;
+                        let lookup = parse_document_reference_lookup(
+                            refers_to_map,
+                            lookup_value,
+                            agreement_function,
+                        )?;
                         // Consuming deletes the found document, so only its
                         // owner's own reveal may: the `$ownerId` pair makes the
                         // writer the found document's owner
@@ -1198,7 +1220,7 @@ fn parse_reference_target(
                                 != Some(OWNER_ID)
                         {
                             return Err(DataContractError::InvalidContractStructure(
-                                "deletableDocument refersTo lookup may consume the document it \
+                                "deletableDocument refersTo may consume the document its lookup \
                                  finds only when the writer owns it: declare the \
                                  propertyAgreement pair \"$ownerId\": \"$ownerId\""
                                     .to_string(),
@@ -1712,14 +1734,16 @@ pub(super) fn parse_doctype_reference(
 /// be left out when that one is the whole index. Beside a computed key `"."`
 /// may be left out of `keys`, the function reading the value in its params or
 /// the lookup being an `ownerRefersTo` or `creatorRefersTo` one (checked with
-/// the other referring-side rules), and the lookup may declare
-/// `minimumAgeBlocks` and `consume`, what the commitment the key finds must be
-/// and whether the create deletes it. What the names resolve to is checked once
+/// the other referring-side rules), and the `refersTo` declaring the lookup,
+/// `refers_to_map`, may declare `minimumAgeBlocks` and `consume` beside it,
+/// what the commitment the key finds must be and whether the create deletes
+/// it, held on the parsed lookup. What the names resolve to is checked once
 /// the document types are parsed: the sources against the declaring type
 /// ([`validate_reference_lookup_sources`]), the index against the referenced one
 /// (at contract level for a type of the same contract, at registration for one
 /// of another contract).
 fn parse_document_reference_lookup(
+    refers_to_map: &BTreeMap<String, &Value>,
     lookup_value: &Value,
     agreement_function: Option<(String, LookupHashKey)>,
 ) -> Result<DocumentReferenceLookup, DataContractError> {
@@ -1727,15 +1751,12 @@ fn parse_document_reference_lookup(
     if let Some(unknown) = lookup_map.keys().find(|key| {
         !matches!(
             key.as_str(),
-            property_names::LOOKUP_INDEX
-                | property_names::LOOKUP_KEYS
-                | property_names::LOOKUP_MINIMUM_AGE_BLOCKS
-                | property_names::LOOKUP_CONSUME
+            property_names::LOOKUP_INDEX | property_names::LOOKUP_KEYS
         )
     }) {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "refersTo lookup {unknown:?} is unknown: a lookup takes index, keys, \
-             minimumAgeBlocks and consume"
+            "refersTo lookup {unknown:?} is unknown: a lookup takes index and keys \
+             (minimumAgeBlocks and consume sit beside the lookup, on the refersTo)"
         )));
     }
 
@@ -1835,37 +1856,37 @@ fn parse_document_reference_lookup(
     }
 
     // What the commitment a computed key finds must be, and whether the create
-    // deletes it: a lookup without one finds no commitment
-    let minimum_age_blocks = lookup_map
-        .get(property_names::LOOKUP_MINIMUM_AGE_BLOCKS)
+    // deletes it, declared beside the lookup: a lookup without one finds no
+    // commitment
+    let minimum_age_blocks = refers_to_map
+        .get(property_names::MINIMUM_AGE_BLOCKS)
         .map(|value| {
             let blocks: u32 = value.to_integer().map_err(|_| {
                 DataContractError::InvalidContractStructure(
-                    "refersTo lookup minimumAgeBlocks must be an integer from 1 to 4294967295"
-                        .to_string(),
+                    "refersTo minimumAgeBlocks must be an integer from 1 to 4294967295".to_string(),
                 )
             })?;
             if blocks == 0 {
                 return Err(DataContractError::InvalidContractStructure(
-                    "refersTo lookup minimumAgeBlocks must be at least 1".to_string(),
+                    "refersTo minimumAgeBlocks must be at least 1".to_string(),
                 ));
             }
             Ok(blocks)
         })
         .transpose()?;
-    let consume = match lookup_map.get(property_names::LOOKUP_CONSUME) {
+    let consume = match refers_to_map.get(property_names::CONSUME) {
         None => false,
         Some(value) if value.as_bool() == Some(true) => true,
         Some(_) => {
             return Err(DataContractError::InvalidContractStructure(
-                "refersTo lookup consume may only be declared true".to_string(),
+                "refersTo consume may only be declared true".to_string(),
             ))
         }
     };
     if computed_keys == 0 && (minimum_age_blocks.is_some() || consume) {
         return Err(DataContractError::InvalidContractStructure(
-            "refersTo lookup minimumAgeBlocks and consume need a computed key, a \
-             propertyAgreement function pair: they describe the commitment a create reveals"
+            "refersTo minimumAgeBlocks and consume need a lookup whose key a propertyAgreement \
+             function pair computes: they describe the commitment a create reveals"
                 .to_string(),
         ));
     }

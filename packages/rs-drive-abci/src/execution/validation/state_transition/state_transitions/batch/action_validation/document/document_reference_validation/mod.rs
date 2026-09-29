@@ -94,8 +94,8 @@ pub(crate) trait DocumentReferenceValidation {
     /// not be set, and an update cannot add a `creatorRefersTo`.
     ///
     /// A lookup with a computed key reveals a commitment and is judged on a create only
-    /// (`changed_fields` is `None`): the document it finds must meet the lookup's
-    /// `minimumAgeBlocks`, and when the lookup declares `consume` the document is pushed onto
+    /// (`changed_fields` is `None`): the document it finds must meet the reference's
+    /// `minimumAgeBlocks`, and when the reference declares `consume` the document is pushed onto
     /// `consumed_documents` for the caller to delete with the create once it accepts it. A
     /// replace leaves it alone, since nothing it reads can have changed.
     #[allow(clippy::too_many_arguments)]

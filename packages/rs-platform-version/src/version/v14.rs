@@ -1592,8 +1592,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     Document create structure validation 1 refuses a create missing a param,
 ///     repeating a key on the way to one, or whose variable-length param holds
 ///     the one-byte separator that must follow it
-///     (`DocumentReferencePreimageInvalidError`, 10423). Beside a function the
-///     lookup may declare `minimumAgeBlocks`, judged by document create state
+///     (`DocumentReferencePreimageInvalidError`, 10423). Beside such a lookup,
+///     on the `refersTo` (refused inside the lookup), the reference may
+///     declare `minimumAgeBlocks`, judged by document create state
 ///     validation 2 against the found document's `$createdAtBlockHeight`
 ///     (`ReferencedDocumentRequirementNotMetError`, 40142), and `consume`, which
 ///     deletes the found document with the create

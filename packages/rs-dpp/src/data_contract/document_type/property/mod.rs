@@ -1303,10 +1303,10 @@ impl<'a> DocumentTypeRef<'a> {
     }
 
     /// The names of the document types a create of this type may consume: those a
-    /// `refersTo` lookup declaring `consume` finds, on any holder and in any leaf of
-    /// an expression, each a type of this type's own contract. A create deletes such
-    /// a document along with its own write, so whatever may sign the create must be
-    /// allowed to act on these types too.
+    /// `refersTo` lookup finds where the reference declares `consume`, on any
+    /// holder and in any leaf of an expression, each a type of this type's own
+    /// contract. A create deletes such a document along with its own write, so
+    /// whatever may sign the create must be allowed to act on these types too.
     pub fn consumable_document_type_names(self) -> BTreeSet<&'a str> {
         self.reference_declarations()
             .filter_map(|(_, reference)| reference.target())

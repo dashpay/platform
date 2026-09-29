@@ -142,7 +142,10 @@ pub const MAX_LOOKUP_INDEX_NAME_LENGTH: usize = 32;
 
 /// How a document reference finds the referenced document when its value is not
 /// that document's id: through the unique index `index` of the referenced
-/// document type, with one key part per index property.
+/// document type, with one key part per index property. With a computed key
+/// it also holds what the reference declares, beside its `lookup`, of the
+/// document found: `minimumAgeBlocks` and `consume`. It serializes as the
+/// parsed model, those two and the computed key inside the lookup.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, DecodeUntrusted)]
 pub struct DocumentReferenceLookup {
     /// The name of a unique index of the referenced document type.
@@ -158,14 +161,15 @@ pub struct DocumentReferenceLookup {
     /// a computed key, where it may be left out.
     pub keys: BTreeMap<String, LookupKeySource>,
     /// With a computed key only: how many blocks before the create the
-    /// document the key finds must have been created (`minimumAgeBlocks`),
-    /// judged on its `$createdAtBlockHeight`, so that 1 keeps a commitment and
+    /// document the key finds must have been created (the reference's
+    /// `minimumAgeBlocks`, beside its `lookup`), judged on its `$createdAtBlockHeight`, so that 1 keeps a commitment and
     /// its reveal out of the same block. The referenced document type must
     /// record `$createdAtBlockHeight`.
     #[serde(rename = "minimumAgeBlocks", skip_serializing_if = "Option::is_none")]
     pub minimum_age_blocks: Option<u32>,
     /// With a computed key only: whether the create deletes the document the
-    /// key found (`consume`), in the same state transition. Only a
+    /// key found (the reference's `consume`, beside its `lookup`), in the same
+    /// state transition. Only a
     /// `deletableDocument` reference whose `propertyAgreement` pairs the
     /// writer's `$ownerId` with the found document's may consume, into a
     /// document type of the declaring contract whose documents their owner

@@ -122,6 +122,13 @@ export type DocumentPropertyReferenceTarget =
        * value is the referenced document's `$id`.
        */
       lookup?: DocumentReferenceLookup;
+      /**
+       * Beside a lookup whose key a `propertyAgreement` function computes
+       * only: how many blocks before the create the document the lookup
+       * finds must have been created, from its `$createdAtBlockHeight`, so 1
+       * means an earlier block (code 40142 when it was not).
+       */
+      minimumAgeBlocks?: number;
     }
   | {
       type: 'identityPublicKey';
@@ -208,6 +215,19 @@ export type DocumentPropertyReferenceTarget =
        * key: that commitment is judged when the document is created only.
        */
       lookup?: DocumentReferenceLookup;
+      /**
+       * Beside a lookup whose key a `propertyAgreement` function computes
+       * only: how many blocks before the create the document the lookup
+       * finds must have been created, from its `$createdAtBlockHeight`, so 1
+       * means an earlier block (code 40142 when it was not).
+       */
+      minimumAgeBlocks?: number;
+      /**
+       * Beside a lookup whose key a `propertyAgreement` function computes
+       * only: the create deletes the document the lookup finds, the writer's
+       * own commitment, in the same state transition.
+       */
+      consume?: true;
     }
   | {
       /**
@@ -297,19 +317,6 @@ export type DocumentReferenceLookup = {
    * so `keys` is absent when it is the whole index.
    */
   keys?: Record<string, string>;
-  /**
-   * With a `propertyAgreement` function only: how many blocks before the
-   * create the document the key finds must have been created, from its
-   * `$createdAtBlockHeight`, so 1 means an earlier block (code 40142 when it
-   * was not).
-   */
-  minimumAgeBlocks?: number;
-  /**
-   * With a `propertyAgreement` function only: the create deletes the
-   * document the key finds, the writer's own commitment, in the same state
-   * transition.
-   */
-  consume?: true;
 };
 
 /**
@@ -704,19 +711,15 @@ fn set_reference_target_fields(
                 if read_keys > 0 {
                     set_field(&lookup_object, "keys", &keys, path)?;
                 }
-                // Present only where declared, as the schema spells them
+                set_field(object, "lookup", &lookup_object, path)?;
+                // Present only where declared, beside the lookup, as the
+                // schema spells them
                 if let Some(blocks) = lookup.minimum_age_blocks {
-                    set_field(
-                        &lookup_object,
-                        "minimumAgeBlocks",
-                        &JsValue::from(blocks),
-                        path,
-                    )?;
+                    set_field(object, "minimumAgeBlocks", &JsValue::from(blocks), path)?;
                 }
                 if lookup.consume {
-                    set_field(&lookup_object, "consume", &JsValue::TRUE, path)?;
+                    set_field(object, "consume", &JsValue::TRUE, path)?;
                 }
-                set_field(object, "lookup", &lookup_object, path)?;
             }
         }
         // A document reference found by its `$id` agreement pair, whose list

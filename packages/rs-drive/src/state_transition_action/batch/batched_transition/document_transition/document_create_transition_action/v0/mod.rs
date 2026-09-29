@@ -56,14 +56,16 @@ pub struct DocumentCreateTransitionActionV0 {
     /// owner; `false` for any other create.
     pub moderated: bool,
     /// The documents this create consumes: commitments it revealed through a `refersTo` lookup
-    /// with a computed key declaring `consume`, deleted in the same state transition. Empty
+    /// with a computed key, the reference declaring `consume`, deleted in the same state
+    /// transition. Empty
     /// when the action is built; the batch state validation (protocol version 14) sets it once
     /// the create is accepted.
     pub consumed_documents: Vec<ConsumedDocument>,
 }
 
 /// A document of the create's own contract that the create deletes because it revealed it:
-/// the commitment a `refersTo` lookup with a computed key found, declaring `consume`. Its
+/// the commitment a `refersTo` lookup with a computed key found, the reference declaring
+/// `consume`. Its
 /// owner is the writer (registration demands the `$ownerId` agreement pair), so the delete is
 /// the one that owner could have made, and its storage is refunded the same way.
 #[derive(Debug, Clone, PartialEq, Eq)]

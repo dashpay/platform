@@ -119,9 +119,9 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         let mut seated_charter_reads = SeatedCharterReads::default();
 
         // The commitments this batch's creates consume, which no other write of the batch may
-        // touch. Only a create revealing a commitment through a `refersTo` lookup declaring
-        // `consume` records one, and only the protocol version 14 parser produces such a
-        // lookup, so no earlier batch takes this path.
+        // touch. Only a create revealing a commitment through a `refersTo` lookup, the
+        // reference declaring `consume`, records one, and only the protocol version 14 parser
+        // produces such a lookup, so no earlier batch takes this path.
         let mut consumed_documents =
             ConsumedDocuments::for_batch(state_transition_action.transitions());
 
