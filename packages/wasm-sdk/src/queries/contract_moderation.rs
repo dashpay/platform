@@ -122,7 +122,10 @@ export interface ContractModerationEntriesPage {
 export interface ContractDocumentRemovalsQuery {
   /** The moderated contract. */
   contractId: IdentifierLike;
-  /** The document type; it must set `canBeDeletedByModerators`, as no other keeps records. */
+  /**
+   * The document type; it must set `moderatorAbilities.delete` and not
+   * `moderatorAbilities.deleteKeepsRecord: false`, as no other keeps records.
+   */
   documentTypeName: string;
   /**
    * Read the records of these documents alone, 1 to 100 distinct ids. A document with no
@@ -616,7 +619,8 @@ impl WasmSdk {
     /// in document id order: the records of the `documentIds` named, where a document with no
     /// record is left out, or else one page of them all. Pass a page's `nextStartAfter` as the
     /// next query's `startAfter`; a page without one is the last. The document type must set
-    /// `canBeDeletedByModerators`: no other keeps records, and the node refuses the query.
+    /// `moderatorAbilities.delete` without `deleteKeepsRecord: false`: no other keeps records,
+    /// and the node refuses the query.
     ///
     /// # Example
     /// ```javascript

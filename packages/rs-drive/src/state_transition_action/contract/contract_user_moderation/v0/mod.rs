@@ -32,6 +32,9 @@ pub struct ContractUserModerationTransitionActionV0 {
     /// what a document restore read and decoded when the transition was validated, `None`
     /// for every other action
     pub document_restoration: Option<ContractDocumentRestorationContext>,
+    /// what a document field change read and built when the transition was validated,
+    /// `None` for every other action
+    pub document_change: Option<ContractDocumentChangeContext>,
     /// the signer's count of moderation actions on the elected contract since its moderators
     /// pot was last settled, this action included, when the signer is on the contract's seated
     /// team and the action counts (a ban, a suspension, a warning or a document deletion);
@@ -53,13 +56,25 @@ pub struct ContractWarningContext {
 }
 
 /// What the validation of a document deletion read, so that Drive deletes the document and
-/// writes its removal record without reading again.
+/// writes its removal record, when its type keeps one, without reading again.
 #[derive(Debug, Clone)]
 pub struct ContractDocumentDeletionContext {
     /// the moderated contract, as fetched: the deletion resolves the document type from it
     pub data_contract_fetch_info: Arc<DataContractFetchInfo>,
     /// the owner of the document as stored
     pub document_owner_id: Identifier,
+    /// the removal record to write, `None` when the document's type keeps none
+    /// (`moderatorAbilities.deleteKeepsRecord: false`)
+    pub record: Option<ContractDocumentRemovalRecordContext>,
+    /// whether the document's owner is refunded its storage
+    /// (`moderatorAbilities.deleteRefundsOwner`); it forfeits it otherwise
+    pub refunds_owner: bool,
+}
+
+/// What the validation of a document deletion read and computed for the removal record it
+/// leaves.
+#[derive(Debug, Clone)]
+pub struct ContractDocumentRemovalRecordContext {
     /// the time of the block the deletion runs in, recorded as the removal time
     pub removed_at: TimestampMillis,
     /// a double SHA-256 of the document as serialized under its type, recorded so that a
@@ -81,4 +96,15 @@ pub struct ContractDocumentRestorationContext {
     /// the document's removal record as it will be stored: the record read, marked restored
     /// by the signer at the block's time
     pub removal: ContractDocumentRemoval,
+}
+
+/// What the validation of a document field change read and built, so that Drive stores the
+/// changed document without reading again.
+#[derive(Debug, Clone)]
+pub struct ContractDocumentChangeContext {
+    /// the moderated contract, as fetched: the change resolves the document type from it
+    pub data_contract_fetch_info: Arc<DataContractFetchInfo>,
+    /// the document as it will be stored: the stored one with the fields the transition sets,
+    /// its revision one higher, everything else as it was
+    pub document: Document,
 }

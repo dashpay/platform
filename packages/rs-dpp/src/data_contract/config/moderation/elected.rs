@@ -13,7 +13,8 @@
 //! moderated types not yet usable, or usable and unmoderated meanwhile.
 
 use crate::data_contract::config::moderation::{
-    document_schema_lets_moderators_delete, ContractModerationConfig,
+    document_schema_lets_moderators_change_fields, document_schema_lets_moderators_delete,
+    ContractModerationConfig,
 };
 use crate::data_contract::DocumentName;
 use crate::prelude::TimestampMillis;
@@ -79,8 +80,8 @@ pub mod property_names {
 )]
 #[serde(rename_all = "camelCase")]
 pub enum ModerationAbility {
-    /// Delete documents of the type, within its `canBeDeletedByModeratorsFor` window. Needs
-    /// the type flagged `canBeDeletedByModerators`.
+    /// Delete documents of the type, within its `moderatorAbilities.deleteWithin` window, and
+    /// restore them. Needs the type to set `moderatorAbilities.delete`.
     DeleteDocuments,
     /// Put identities on the banlist and take them off it, over their documents of the
     /// type. Needs the banlist.
@@ -91,6 +92,10 @@ pub enum ModerationAbility {
     /// Warn identities and clear their warnings, over their documents of the type. Needs
     /// the warning list.
     Warn,
+    /// Write the fields only moderators write on documents of the type, with a moderation
+    /// transition or in the team members' own creates and replaces. Needs the type to list
+    /// them under `moderatorAbilities.changeFields`.
+    ChangeDocumentFields,
 }
 
 impl ModerationAbility {
@@ -101,6 +106,7 @@ impl ModerationAbility {
             ModerationAbility::Ban => "ban",
             ModerationAbility::Suspend => "suspend",
             ModerationAbility::Warn => "warn",
+            ModerationAbility::ChangeDocumentFields => "changeDocumentFields",
         }
     }
 }
@@ -352,8 +358,9 @@ pub struct ElectedModerators {
     /// The document types the team moderates, each with the abilities the seated team holds
     /// on it: non-empty, each type a document type of the contract, each ability set
     /// non-empty and backed by the contract (`Ban`, `Suspend` and `Warn` by the list the
-    /// contract keeps, `DeleteDocuments` by the type being flagged
-    /// `canBeDeletedByModerators`). The lists themselves stay contract-wide: an ability on
+    /// contract keeps, `DeleteDocuments` by the type setting `moderatorAbilities.delete`,
+    /// `ChangeDocumentFields` by the type listing `moderatorAbilities.changeFields`). The
+    /// lists themselves stay contract-wide: an ability on
     /// a type is what a team may do over the documents of that type. The set also bounds
     /// the interim block. A charter does not price the moderators part of an action: the
     /// type's `actionFees.moderators` amount is the most a team may charge, and a charter
@@ -509,6 +516,14 @@ impl ElectedModerators {
                     {
                         Some("document deletions, but the type can not be deleted by moderators")
                     }
+                    ModerationAbility::ChangeDocumentFields
+                        if !document_schema_lets_moderators_change_fields(schema) =>
+                    {
+                        Some(
+                            "document field changes, but the type lists no field moderators \
+                             write",
+                        )
+                    }
                     _ => None,
                 };
                 if let Some(unbacked) = unbacked {
@@ -517,6 +532,22 @@ impl ElectedModerators {
                     ));
                 }
             }
+        }
+
+        // Once a team is seated only it writes the fields a type keeps for moderators, so a
+        // type keeping any must give the team the ability: without it nobody could ever write
+        // them again, and the declaration can not change.
+        if let Some(document_type_name) = document_schemas
+            .iter()
+            .filter(|(_, schema)| document_schema_lets_moderators_change_fields(schema))
+            .map(|(name, _)| name)
+            .find(|name| !self.allows(name, ModerationAbility::ChangeDocumentFields))
+        {
+            return Some(format!(
+                "the document type \"{document_type_name}\" keeps fields only moderators write, \
+                 but the moderated set does not give the team `changeDocumentFields` on it, so \
+                 nobody could write them once a team is seated"
+            ));
         }
 
         None
@@ -577,10 +608,23 @@ mod tests {
         BTreeMap::from([
             (
                 "post".to_string(),
-                platform_value!({ "type": "object", "canBeDeletedByModerators": true }),
+                platform_value!({ "type": "object", "moderatorAbilities": { "delete": true } }),
             ),
             ("like".to_string(), platform_value!({ "type": "object" })),
         ])
+    }
+
+    /// [`schemas`] and `report`, whose `status` only moderators write
+    fn schemas_with_a_report() -> BTreeMap<DocumentName, Value> {
+        let mut schemas = schemas();
+        schemas.insert(
+            "report".to_string(),
+            platform_value!({
+                "type": "object",
+                "moderatorAbilities": { "changeFields": ["status"] },
+            }),
+        );
+        schemas
     }
 
     /// A declaration within every bound: both lists, bans and suspensions allowed, `post`
@@ -809,6 +853,43 @@ mod tests {
         assert!(refusal(&config(deletions_on_like))
             .expect("refused")
             .contains("\"like\" allows document deletions, but the type can not be deleted"));
+
+        // Field changes on `report` are backed by the fields it keeps for moderators; on `post`,
+        // which keeps none, they are not.
+        let with_a_report = |elected: ElectedModerators| {
+            let result = config(elected)
+                .validate(
+                    &schemas_with_a_report(),
+                    Network::Mainnet,
+                    PlatformVersion::latest(),
+                )
+                .expect("validate");
+            (!result.is_valid()).then(|| rendered(&result.errors))
+        };
+        let mut changes = elected();
+        changes.moderated_document_types.insert(
+            "report".to_string(),
+            moderated(&[ModerationAbility::ChangeDocumentFields]),
+        );
+        assert_eq!(with_a_report(changes.clone()), None);
+        abilities_of(&mut changes, "post").insert(ModerationAbility::ChangeDocumentFields);
+        assert!(with_a_report(changes)
+            .expect("refused")
+            .contains("\"post\" allows document field changes, but the type lists no field"));
+
+        // A type keeping such fields must be moderated with the ability, or nobody could write
+        // them once a team is seated.
+        for without in [elected(), {
+            let mut deletions_only = elected();
+            deletions_only
+                .moderated_document_types
+                .insert("report".to_string(), moderated(&[ModerationAbility::Ban]));
+            deletions_only
+        }] {
+            assert!(with_a_report(without)
+                .expect("refused")
+                .contains("\"report\" keeps fields only moderators write"));
+        }
     }
 
     #[test]
