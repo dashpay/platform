@@ -76,8 +76,9 @@ data class WalletEntity(
      * record: native re-runs the backfill once and writes one. `floor` is the
      * lowest height the backfill rewound to, `rewoundFrom` the cursor it
      * rewound from — the scan is complete once `syncedHeight` climbs back
-     * past it — and `covered` the opaque cover set (68 bytes per contact:
-     * owner id, contact id, covered-from height) only native reads.
+     * past it — and `covered` the opaque cover set (72 bytes per receival
+     * account: owner id, contact id, account index, covered-from height)
+     * only native reads.
      */
     val dashPayBackfillFloor: Int? = null,
     val dashPayBackfillRewoundFrom: Int? = null,

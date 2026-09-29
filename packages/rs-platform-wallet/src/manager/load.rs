@@ -231,6 +231,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
                 dashpay_backfill,
+                rewind_barrier: Default::default(),
             };
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
@@ -240,8 +241,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 &platform_info,
             );
 
-            // The cursor the host just handed back is the durable one: seed
-            // the shared record of it before any writer can race it.
+            // The cursor the host just handed back is the durable one; it
+            // seeds the shared record of it as the wallet is published below.
             let loaded_cursor = platform_info.core_wallet.metadata.synced_height;
 
             if wallet_id != expected_wallet_id {
@@ -271,7 +272,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             //
             // The existence check and the insert share one write-lock scope
             // so a concurrent loader can't slip between them (TOCTOU).
+            //
+            // The durable cursor is seeded in that same scope, under the
+            // cursor lock taken first (its order: cursor lock, then manager).
+            // The insert makes the wallet visible to the scanner and the
+            // event adapter; seeding after it would let an adapter commit or
+            // a reconcile record a newer durable height first, and the seed
+            // would then overwrite it with the stale loaded one. An entry a
+            // removed or rolled-back registration left behind is overwritten
+            // here the same way, so it is never read against a live wallet.
             {
+                let mut durable_cursors = self.durable_cursors.lock().await;
                 let mut wm = self.wallet_manager.write().await;
                 if wm.get_wallet(&wallet_id).is_some() {
                     continue 'load;
@@ -283,6 +294,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     )));
                     break 'load;
                 }
+                durable_cursors.insert(wallet_id, loaded_cursor);
             }
             inserted_in_manager.push(wallet_id);
 
@@ -349,12 +361,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 Arc::clone(&self.sync_fault),
                 Arc::clone(&self.durable_cursors),
             );
-            // No manager-lock guard is alive here, so taking the cursor lock
-            // keeps its order (cursor lock, then manager).
-            self.durable_cursors
-                .lock()
-                .await
-                .insert(wallet_id, loaded_cursor);
 
             // Initialize the platform-address provider. If the snapshot
             // carried a slice for this wallet, restore it directly;

@@ -6838,7 +6838,7 @@ class PlatformWalletPersistenceHandlerTest {
     }
     /** One packed cover-set entry: owner id ‖ contact id ‖ covered-from (LE u32). */
     private fun backfillEntry(owner: Byte, contact: Byte, coveredFrom: Int): ByteArray =
-        ByteArray(32) { owner } + ByteArray(32) { contact } + byteArrayOf(
+        ByteArray(32) { owner } + ByteArray(32) { contact } + ByteArray(4) + byteArrayOf(
             (coveredFrom and 0xFF).toByte(),
             ((coveredFrom shr 8) and 0xFF).toByte(),
             ((coveredFrom shr 16) and 0xFF).toByte(),

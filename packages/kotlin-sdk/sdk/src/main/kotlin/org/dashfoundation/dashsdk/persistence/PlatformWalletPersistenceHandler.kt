@@ -4112,11 +4112,11 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_DPNS_NAME_STATES: Long = 0x100
         internal const val CAPABILITY_TRACKED_ASSET_LOCKS: Long = 0x200
         /**
-         * Bytes per contact in the opaque cover set
+         * Bytes per receival account in the opaque cover set
          * [onWalletChangesetDashPayBackfill] delivers: owner id (32),
-         * contact id (32), covered-from height (4).
+         * contact id (32), account index (4), covered-from height (4).
          */
-        internal const val DASHPAY_BACKFILL_COVERED_ENTRY_SIZE: Int = 32 + 32 + 4
+        internal const val DASHPAY_BACKFILL_COVERED_ENTRY_SIZE: Int = 32 + 32 + 4 + 4
 
         internal const val CAPABILITY_CORE_SWEEP_REMOVAL: Long =
             NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL

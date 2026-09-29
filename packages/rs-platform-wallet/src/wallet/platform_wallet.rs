@@ -305,6 +305,11 @@ pub struct PlatformWalletInfo {
     /// [`DashPayBackfillRecord`](crate::changeset::DashPayBackfillRecord)
     /// for how the two compose.
     pub dashpay_backfill: crate::changeset::DashPayBackfillRecord,
+    /// Orders this wallet's queued `SyncHeightAdvanced` events against
+    /// in-memory rewinds of its scan cursor; see
+    /// [`RewindBarrier`](crate::changeset::core_bridge::RewindBarrier). In
+    /// memory only.
+    pub rewind_barrier: crate::changeset::core_bridge::RewindBarrier,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.

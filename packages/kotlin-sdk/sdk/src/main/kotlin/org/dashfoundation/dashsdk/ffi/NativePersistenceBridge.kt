@@ -447,9 +447,10 @@ abstract class NativePersistenceBridge {
      * stored. Descriptor `([BII[BI)I`.
      *
      * Whole-record semantics: replace what the wallet row holds, never
-     * merge. [covered] is ONE flat `byte[]` of `68 * coveredCount` bytes —
-     * per contact the owner identity id (32), the contact identity id (32)
-     * and the height it is covered from (u32, little-endian) — the same
+     * merge. [covered] is ONE flat `byte[]` of `72 * coveredCount` bytes —
+     * per receival account the owner identity id (32), the contact identity
+     * id (32), the account index (u32) and the height it is covered from
+     * (u32), both little-endian — the same
      * packing the sweep slot uses for its txids. Store it as an opaque blob
      * and hand it back unchanged on [WalletRestoreData.dashPayBackfillCovered];
      * only native reads it.
@@ -1076,7 +1077,7 @@ class WalletRestoreData(
 
     /**
      * The record's cover set, exactly as [NativePersistenceBridge.onWalletChangesetDashPayBackfill]
-     * delivered it: `68` bytes per covered contact. Native re-packs it into
+     * delivered it: `72` bytes per covered receival account. Native re-packs it into
      * a `DashPayBackfillCoveredContactFFI` array; a blob that is not a whole
      * number of entries is read as no record.
      */

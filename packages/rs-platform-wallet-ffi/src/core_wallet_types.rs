@@ -126,13 +126,17 @@ pub struct DashPayBackfillCoveredContactFFI {
     pub owner_identity_id: [u8; 32],
     /// The contact whose payments the receival account collects.
     pub contact_identity_id: [u8; 32],
+    /// The receival account's index — coverage is per receival account, not
+    /// per relationship.
+    pub account_index: u32,
     /// Lowest height the scan is guaranteed to test with this contact's
     /// addresses watched.
     pub covered_from: u32,
 }
 
 /// Project a backfill record's cover set into its C mirrors for the
-/// extension slot, in record order (sorted by `(owner, contact)`).
+/// extension slot, in record order (sorted by `(owner, contact,
+/// account_index)`).
 pub fn build_dashpay_backfill_covered_for_callback(
     record: &platform_wallet::changeset::DashPayBackfillRecord,
 ) -> Vec<DashPayBackfillCoveredContactFFI> {
@@ -142,6 +146,7 @@ pub fn build_dashpay_backfill_covered_for_callback(
         .map(|entry| DashPayBackfillCoveredContactFFI {
             owner_identity_id: entry.owner.to_buffer(),
             contact_identity_id: entry.contact.to_buffer(),
+            account_index: entry.account_index,
             covered_from: entry.covered_from,
         })
         .collect()

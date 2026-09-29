@@ -286,12 +286,81 @@ where
 /// durable cursor past rows the adapter had not yet persisted
 /// (dashpay/platform#4302 review). Both take this lock before they read the
 /// wallet's in-memory cursor and hold it until their `store()` returns; the
-/// adapter strips an advance above the in-memory cursor at commit time, and
-/// the reconcile never writes a cursor at or above the recorded durable one.
+/// adapter strips, at commit time, an advance a rewind has overtaken (see
+/// [`RewindBarrier`]) or one above the in-memory cursor, and the reconcile
+/// never writes a cursor at or above the recorded durable one.
 ///
 /// Lock order is this mutex, then the wallet manager — never the reverse.
 /// Seeded with the cursor each wallet was loaded or created with.
 pub type DurableCursors = Arc<tokio::sync::Mutex<BTreeMap<WalletId, u32>>>;
+
+/// Orders one wallet's `SyncHeightAdvanced` events against in-memory rewinds
+/// of its scan cursor, so an advance the engine emitted *before* a rewind is
+/// never persisted after it.
+///
+/// A rewind emits nothing (the engine only reports forward moves), so the
+/// persistence channel carries no marker of where one happened, and a
+/// height comparison cannot place it either: once the rescan has climbed
+/// back past a still-queued pre-rewind advance, that advance looks current,
+/// and storing it would put the durable cursor above transaction rows the
+/// rescan emitted behind it in the channel (dashpay/platform#4302 review).
+///
+/// The barrier counts instead. The engine emits a `SyncHeightAdvanced` only
+/// right after calling this wallet's `update_synced_height` hook, under the
+/// same manager write lock, so the hook counts emissions exactly
+/// ([`note_emitted`](Self::note_emitted)), and the adapter counts them back
+/// down as it projects them ([`take_next`](Self::take_next)). A rewind —
+/// made under that same write lock — snapshots how many are still in flight
+/// ([`arm`](Self::arm)): exactly those were emitted before it, and the
+/// adapter drops them as they arrive. Every later advance is tagged with the
+/// rewind epoch it was projected in, and a commit strips one whose epoch a
+/// rewind has since superseded, which covers an advance the adapter had
+/// already projected when the rewind ran.
+///
+/// Miscounting fails safe: an extra count only drops a later, genuine
+/// advance, leaving the durable cursor behind the scan until the next one.
+#[derive(Debug, Default)]
+pub struct RewindBarrier {
+    /// `SyncHeightAdvanced` events emitted for this wallet that the adapter
+    /// has not projected yet.
+    in_flight: u64,
+    /// How many of the next projected advances were emitted before the
+    /// latest rewind.
+    stale: u64,
+    /// Bumped by every rewind.
+    epoch: u64,
+}
+
+impl RewindBarrier {
+    /// The engine is about to emit a `SyncHeightAdvanced` for this wallet.
+    pub(crate) fn note_emitted(&mut self) {
+        self.in_flight = self.in_flight.saturating_add(1);
+    }
+
+    /// The scan cursor was just lowered in memory: every advance still in
+    /// flight predates it.
+    pub(crate) fn arm(&mut self) {
+        self.stale = self.in_flight;
+        self.epoch = self.epoch.wrapping_add(1);
+    }
+
+    /// Classify the next advance the adapter projects: `None` when it was
+    /// emitted before the latest rewind, else the epoch it belongs to.
+    pub(crate) fn take_next(&mut self) -> Option<u64> {
+        self.in_flight = self.in_flight.saturating_sub(1);
+        if self.stale > 0 {
+            self.stale -= 1;
+            None
+        } else {
+            Some(self.epoch)
+        }
+    }
+
+    /// The current rewind epoch.
+    pub(crate) fn epoch(&self) -> u64 {
+        self.epoch
+    }
+}
 
 /// [`spawn_wallet_event_adapter`] sharing `durable_cursors` with the other
 /// writer of the durable sync cursor (the DashPay rescan reconcile). The
@@ -317,11 +386,67 @@ where
     ))
 }
 
-/// Strip, from each wallet's batch, a sync-height advance above that
-/// wallet's in-memory cursor. Such an advance was projected before a rewind
-/// lowered the cursor; storing it now would claim coverage the rescan has
-/// not produced. Called with [`DurableCursors`] held, right before commit,
-/// so no rewind can slip in between this check and the store.
+/// Project one event and fold it into its wallet's entry of `batch`, in
+/// channel order.
+///
+/// A `SyncHeightAdvanced` is first classified against the wallet's
+/// [`RewindBarrier`]: one emitted before the latest rewind contributes no
+/// height, and the first advance of a newer rewind epoch replaces the
+/// batch's height instead of max-merging with it — a pre-rewind height is
+/// higher than the rescan's by construction, and the max would keep it.
+async fn project_event_into_batch(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    event: &WalletEvent,
+    batch: &mut BTreeMap<WalletId, WalletBatch>,
+) {
+    let wallet_id = event.wallet_id();
+    let advance_epoch = match event {
+        WalletEvent::SyncHeightAdvanced { .. } => Some(
+            wallet_manager
+                .write()
+                .await
+                .get_wallet_info_mut(&wallet_id)
+                .map_or(Some(0), |info| info.rewind_barrier.take_next()),
+        ),
+        _ => None,
+    };
+    let mut core = build_core_changeset(wallet_manager, event).await;
+    let asset_locks = reconstruct_asset_locks_for_event(wallet_manager, event).await;
+    let payments = sent_payment_verdicts(wallet_manager, event).await;
+    let entry = batch.entry(wallet_id).or_default();
+    match advance_epoch {
+        Some(None) => {
+            tracing::debug!(
+                wallet_id = %hex::encode(wallet_id),
+                projected = ?core.synced_height,
+                "wallet-event adapter: dropping a sync-height advance emitted before a rewind"
+            );
+            core.synced_height = None;
+            core.synced_height_is_rewind = false;
+        }
+        Some(Some(epoch)) if core.synced_height.is_some() => {
+            if entry.advance_epoch.is_some_and(|held| held != epoch) {
+                entry.core.synced_height = None;
+                entry.core.synced_height_is_rewind = false;
+            }
+            entry.advance_epoch = Some(epoch);
+        }
+        _ => {}
+    }
+    entry.core.merge(core);
+    entry.asset_locks.merge(asset_locks);
+    // Last-write-wins per `(owner, txid)`: a transaction swept and then
+    // reinstated inside one drain reaches the store as the verdict the drain
+    // ended on, never as two rows.
+    merge_payment_overlays(&mut entry.payments, payments);
+}
+
+/// Strip, from each wallet's batch, a sync-height advance a rewind has
+/// overtaken: one projected in a [`RewindBarrier`] epoch a rewind has since
+/// superseded, or one above the wallet's in-memory cursor. Storing either
+/// would claim coverage the rescan has not produced. Called with
+/// [`DurableCursors`] held, right before commit, so no rewind can slip in
+/// between this check and the store.
 async fn drop_watermarks_above_the_live_cursor(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     batch: &mut BTreeMap<WalletId, WalletBatch>,
@@ -339,6 +464,21 @@ async fn drop_watermarks_above_the_live_cursor(
         let Some(info) = wm.get_wallet_info(wallet_id) else {
             continue;
         };
+        // Projected in a rewind epoch that has since been superseded: the
+        // advance predates the rewind whatever its height, even once the
+        // rescan has climbed back past it.
+        if wallet_batch
+            .advance_epoch
+            .is_some_and(|epoch| epoch != info.rewind_barrier.epoch())
+        {
+            tracing::debug!(
+                wallet_id = %hex::encode(wallet_id),
+                projected = height,
+                "wallet-event adapter: dropping a sync-height advance a rewind overtook"
+            );
+            wallet_batch.core.synced_height = None;
+            continue;
+        }
         let live = info.core_wallet.synced_height();
         if height > live {
             tracing::debug!(
@@ -496,20 +636,11 @@ async fn run_wallet_event_adapter<P>(
 
         let mut batch: BTreeMap<WalletId, WalletBatch> = BTreeMap::new();
         let mut closed = false;
-        {
-            let wallet_id = event.wallet_id();
-            // For events that need to consult per-wallet state (today only
-            // `TransactionInstantLocked`, which checks finality before
-            // recording the IS lock), `build_core_changeset` takes a brief
-            // read lock on the manager.
-            let core = build_core_changeset(&wallet_manager, &event).await;
-            let asset_locks = reconstruct_asset_locks_for_event(&wallet_manager, &event).await;
-            let payments = sent_payment_verdicts(&wallet_manager, &event).await;
-            let entry = batch.entry(wallet_id).or_default();
-            entry.core.merge(core);
-            entry.asset_locks.merge(asset_locks);
-            merge_payment_overlays(&mut entry.payments, payments);
-        }
+        // For events that need to consult per-wallet state (today only
+        // `TransactionInstantLocked`, which checks finality before recording
+        // the IS lock), `build_core_changeset` takes a brief read lock on the
+        // manager.
+        project_event_into_batch(&wallet_manager, &event, &mut batch).await;
 
         // Fold in whatever else is already buffered. `try_recv` never waits,
         // so this drains the backlog at projection speed and stops as soon as
@@ -518,18 +649,7 @@ async fn run_wallet_event_adapter<P>(
         while folded < ADAPTER_STORE_BATCH_LIMIT {
             match receiver.try_recv() {
                 Ok(event) => {
-                    let wallet_id = event.wallet_id();
-                    let core = build_core_changeset(&wallet_manager, &event).await;
-                    let asset_locks =
-                        reconstruct_asset_locks_for_event(&wallet_manager, &event).await;
-                    let payments = sent_payment_verdicts(&wallet_manager, &event).await;
-                    let entry = batch.entry(wallet_id).or_default();
-                    entry.core.merge(core);
-                    entry.asset_locks.merge(asset_locks);
-                    // Last-write-wins per `(owner, txid)`: a transaction swept
-                    // and then reinstated inside one drain reaches the store as
-                    // the verdict the drain ended on, never as two rows.
-                    merge_payment_overlays(&mut entry.payments, payments);
+                    project_event_into_batch(&wallet_manager, &event, &mut batch).await;
                     folded += 1;
                 }
                 Err(TryRecvError::Empty) => break,
@@ -815,6 +935,7 @@ fn commit_wallet<P>(
         mut core,
         asset_locks,
         payments,
+        advance_epoch: _,
     } = wallet_batch;
     {
         // Sent-payment verdicts reach a host only through the payment-overlay
@@ -1115,6 +1236,10 @@ struct WalletBatch {
     /// identity blob is instead patched row-by-row by the persister, inside
     /// its own write transaction — see the SQLite backend's `dashpay` module.
     payments: PaymentOverlay,
+    /// The [`RewindBarrier`] epoch of the advance in `core.synced_height`,
+    /// checked again at commit: an advance a rewind has since superseded is
+    /// stripped there. `None` while the batch carries no advance.
+    advance_epoch: Option<u64>,
 }
 
 /// Rebuild missing tracked asset locks from the records an event
@@ -3932,6 +4057,7 @@ mod contact_watch_only_projection_tests {
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
@@ -4629,6 +4755,7 @@ mod tests {
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         };
         info.core_wallet.update_synced_height(1_000);
         let manager = test_manager();
@@ -4693,6 +4820,7 @@ mod tests {
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         };
         info.core_wallet.update_synced_height(1_000);
         let manager = test_manager();
@@ -4746,6 +4874,158 @@ mod tests {
             Some(500),
             "a rewind is never second-guessed"
         );
+    }
+
+    /// A wallet at `synced_height` with the manager's lossless persistence
+    /// receiver installed, so advances go through the engine's real
+    /// emission path (and the [`RewindBarrier`] hook counting it).
+    async fn engine_wallet(
+        synced_height: u32,
+    ) -> (
+        Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        tokio::sync::mpsc::UnboundedReceiver<WalletEvent>,
+        WalletId,
+    ) {
+        use crate::wallet::core::WalletGeneration;
+        use crate::wallet::identity::IdentityManager;
+        use key_wallet::test_utils::TestWalletContext;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let ctx = TestWalletContext::new_random();
+        let mut info = PlatformWalletInfo {
+            observed_input_conflicts: Default::default(),
+            core_wallet: ctx.managed_wallet,
+            generation: Arc::new(WalletGeneration::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+            dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
+        };
+        info.core_wallet.update_synced_height(synced_height);
+        let manager = test_manager();
+        let receiver = manager
+            .write()
+            .await
+            .take_persistence_receiver()
+            .expect("persistence receiver");
+        let wallet_id = manager
+            .write()
+            .await
+            .insert_wallet(ctx.wallet, info)
+            .expect("insert wallet");
+        (manager, receiver, wallet_id)
+    }
+
+    /// The scan cursor as the engine advances it: in memory, and emitted.
+    async fn engine_advance(
+        manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        height: u32,
+    ) {
+        use key_wallet_manager::WalletInterface;
+        manager
+            .write()
+            .await
+            .update_wallet_synced_height(&wallet_id, height);
+    }
+
+    /// The scan cursor as `reconcile_dashpay_rescan` lowers it: in memory
+    /// only, arming the barrier under the same write lock.
+    async fn rewind(
+        manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        floor: u32,
+    ) {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let mut wm = manager.write().await;
+        let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+        info.core_wallet.update_synced_height(floor);
+        info.rewind_barrier.arm();
+    }
+
+    async fn project(
+        manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        receiver: &mut tokio::sync::mpsc::UnboundedReceiver<WalletEvent>,
+        count: usize,
+    ) -> BTreeMap<WalletId, super::WalletBatch> {
+        let mut batch = BTreeMap::new();
+        for _ in 0..count {
+            let event = receiver.try_recv().expect("queued event");
+            super::project_event_into_batch(manager, &event, &mut batch).await;
+        }
+        batch
+    }
+
+    /// dashpay/platform#4302 review: an advance the engine emitted before a
+    /// rewind, still queued when the rescan has climbed back past it, looks
+    /// current by height — the live cursor is above it again — yet storing
+    /// it would put the durable cursor above transaction rows the rescan
+    /// emitted behind it. The barrier drops it by emission order instead.
+    #[tokio::test]
+    async fn an_advance_queued_before_a_rewind_is_dropped_after_the_rescan_climbs_past_it() {
+        let (manager, mut receiver, wallet_id) = engine_wallet(0).await;
+        engine_advance(&manager, wallet_id, 1_000).await; // pre-rewind, still queued
+        rewind(&manager, wallet_id, 100).await;
+        engine_advance(&manager, wallet_id, 500).await;
+        engine_advance(&manager, wallet_id, 1_000).await; // the rescan is back at 1000
+
+        // The adapter drains the pre-rewind advance on its own.
+        let mut stale = project(&manager, &mut receiver, 1).await;
+        assert_eq!(stale[&wallet_id].core.synced_height, None);
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut stale).await;
+        assert_eq!(stale[&wallet_id].core.synced_height, None);
+
+        // The rescan's own advances flow, behind the rows they imply.
+        let mut fresh = project(&manager, &mut receiver, 2).await;
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut fresh).await;
+        assert_eq!(fresh[&wallet_id].core.synced_height, Some(1_000));
+    }
+
+    /// The same race with the advance already projected when the rewind
+    /// runs: by commit the rescan has climbed back past it, so the live
+    /// cursor no longer exposes it, and the superseded epoch does.
+    #[tokio::test]
+    async fn the_commit_drops_an_advance_a_rewind_overtook_after_the_rescan_climbs_past_it() {
+        let (manager, mut receiver, wallet_id) = engine_wallet(0).await;
+        engine_advance(&manager, wallet_id, 1_000).await;
+        let mut projected = project(&manager, &mut receiver, 1).await;
+        assert_eq!(projected[&wallet_id].core.synced_height, Some(1_000));
+
+        rewind(&manager, wallet_id, 100).await;
+        engine_advance(&manager, wallet_id, 1_200).await;
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut projected).await;
+        assert_eq!(
+            projected[&wallet_id].core.synced_height, None,
+            "projected before the rewind: stripped although the live cursor is above it"
+        );
+
+        // The rescan's advance, in the next batch, is stored.
+        let mut next = project(&manager, &mut receiver, 1).await;
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut next).await;
+        assert_eq!(next[&wallet_id].core.synced_height, Some(1_200));
+    }
+
+    /// A batch that holds a pre-rewind advance and then the rescan's first
+    /// one ends on the rescan's height: the newer epoch replaces the older
+    /// advance rather than max-merging with it, which would keep the higher,
+    /// pre-rewind height.
+    #[tokio::test]
+    async fn a_batch_spanning_a_rewind_keeps_the_rescans_height_not_the_higher_stale_one() {
+        let (manager, mut receiver, wallet_id) = engine_wallet(0).await;
+        engine_advance(&manager, wallet_id, 1_000).await;
+        let first = receiver.try_recv().expect("pre-rewind advance");
+        let mut batch = BTreeMap::new();
+        super::project_event_into_batch(&manager, &first, &mut batch).await;
+
+        rewind(&manager, wallet_id, 100).await;
+        engine_advance(&manager, wallet_id, 400).await;
+        let second = receiver.try_recv().expect("rescan advance");
+        super::project_event_into_batch(&manager, &second, &mut batch).await;
+        assert_eq!(batch[&wallet_id].core.synced_height, Some(400));
+
+        super::drop_watermarks_above_the_live_cursor(&manager, &mut batch).await;
+        assert_eq!(batch[&wallet_id].core.synced_height, Some(400));
     }
 
     /// A record-bearing (non-watermark) event: carries
@@ -6425,6 +6705,7 @@ mod tests {
                 core: CoreChangeSet::default(),
                 asset_locks,
                 payments: super::PaymentOverlay::default(),
+                advance_epoch: None,
             },
         );
         commit_batch(
@@ -6485,6 +6766,7 @@ mod tests {
                 core,
                 asset_locks: AssetLockChangeSet::default(),
                 payments: super::PaymentOverlay::default(),
+                advance_epoch: None,
             },
         );
         batch
@@ -6526,6 +6808,7 @@ mod tests {
                 core: watermark_with_rows(700, 700),
                 asset_locks: AssetLockChangeSet::default(),
                 payments: one_verdict_overlay(PaymentStatus::Failed),
+                advance_epoch: None,
             },
         );
         let diag = commit_batch(
@@ -6578,6 +6861,7 @@ mod tests {
                 core: watermark_with_rows(700, 700),
                 asset_locks: AssetLockChangeSet::default(),
                 payments: one_verdict_overlay(PaymentStatus::Failed),
+                advance_epoch: None,
             },
         );
         let diag = commit_batch(
@@ -6630,6 +6914,7 @@ mod tests {
                 core: CoreChangeSet::default(),
                 asset_locks: AssetLockChangeSet::default(),
                 payments: one_verdict_overlay(PaymentStatus::Failed),
+                advance_epoch: None,
             },
         );
         commit_batch(
@@ -6672,6 +6957,7 @@ mod tests {
                 core: CoreChangeSet::default(),
                 asset_locks: AssetLockChangeSet::default(),
                 payments: one_verdict_overlay(PaymentStatus::Confirmed),
+                advance_epoch: None,
             },
         );
         commit_batch(
@@ -7493,6 +7779,7 @@ mod utxo_credit_verdict_tests {
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
@@ -7588,6 +7875,7 @@ mod utxo_credit_verdict_tests {
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);

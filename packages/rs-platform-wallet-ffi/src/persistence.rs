@@ -2235,6 +2235,15 @@ impl PlatformWalletPersistence for FFIPersister {
         // after the core changeset callback so the lowered cursor a rescan
         // round carries is staged before the record that vouches for it.
         // Whole-record semantics: the host replaces what it holds.
+        //
+        // A host that registered no changeset callback stores no cursor at
+        // all, so no record can vouch for one it holds: it never receives
+        // the record, not even on a record-only round. Withholding only the
+        // cursor-bearing round is not enough — that round still returns
+        // `Ok`, the reconcile records its cursor as durable, and a later
+        // record-only round would then deliver coverage beside a host cursor
+        // that never moved.
+        let host_stores_cursors = self.callbacks.on_persist_wallet_changeset_fn.is_some();
         let backfill_cursor_owed = changeset
             .core
             .as_ref()
@@ -2242,7 +2251,7 @@ impl PlatformWalletPersistence for FFIPersister {
         if let Some(record) = changeset
             .dashpay_backfill
             .as_ref()
-            .filter(|_| !backfill_cursor_owed || cursor_delivered)
+            .filter(|_| host_stores_cursors && (!backfill_cursor_owed || cursor_delivered))
         {
             if let Some(cb) = self.wallet_dashpay_backfill_callback {
                 let covered = build_dashpay_backfill_covered_for_callback(record);
@@ -5341,12 +5350,13 @@ fn decode_dashpay_backfill(
         .map(|c| DashPayBackfillCoveredContact {
             owner: Identifier::from(c.owner_identity_id),
             contact: Identifier::from(c.contact_identity_id),
+            account_index: c.account_index,
             covered_from: c.covered_from,
         })
         .collect();
-    // Canonical order and one entry per pair, whatever the host stored.
-    covered.sort_by_key(|entry| (entry.owner, entry.contact));
-    covered.dedup_by(|a, b| (a.owner, a.contact) == (b.owner, b.contact));
+    // Canonical order and one entry per account, whatever the host stored.
+    covered.sort_by_key(DashPayBackfillCoveredContact::key);
+    covered.dedup_by(|a, b| a.key() == b.key());
     DashPayBackfillRecord {
         floor: entry.dashpay_backfill_floor,
         rewound_from: entry.dashpay_backfill_rewound_from,
@@ -8461,11 +8471,13 @@ mod tests {
                 (
                     dpp::prelude::Identifier::from([9u8; 32]),
                     dpp::prelude::Identifier::from([2u8; 32]),
+                    0,
                     2_300_000,
                 ),
                 (
                     dpp::prelude::Identifier::from([1u8; 32]),
                     dpp::prelude::Identifier::from([3u8; 32]),
+                    0,
                     2_167_092,
                 ),
             ],
@@ -8539,8 +8551,10 @@ mod tests {
     /// for, and must not reach the host when that cursor did not — a host
     /// without atomic rounds would keep the coverage over its old cursor
     /// (dashpay/platform#4302 review). Withheld when the changeset callback
-    /// fails or is absent for a round that carries a cursor; delivered for a
-    /// record-only round.
+    /// fails for a round that carries a cursor, and on every round —
+    /// record-only ones included — for a host with no changeset callback,
+    /// which holds no cursor a record could vouch for. Delivered for a
+    /// record-only round on a host that stores cursors.
     #[test]
     fn a_backfill_record_is_withheld_when_its_cursor_did_not_reach_the_host() {
         use platform_wallet::changeset::{CoreChangeSet, DashPayBackfillRecord};
@@ -8556,6 +8570,13 @@ mod tests {
             _changeset: *const WalletChangeSetFFI,
         ) -> i32 {
             1
+        }
+        unsafe extern "C" fn accept_changeset(
+            _ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            0
         }
         unsafe extern "C" fn count_backfill(
             ctx: *mut c_void,
@@ -8605,25 +8626,34 @@ mod tests {
         assert!(rejected.store([1u8; 32], rewind_round()).is_err());
         assert_eq!(sink.backfills.load(Ordering::SeqCst), 0);
 
-        // The host takes no cursors at all: a record over one is meaningless.
+        let record_only_round = || PlatformWalletChangeSet {
+            dashpay_backfill: Some(DashPayBackfillRecord::default()),
+            ..PlatformWalletChangeSet::default()
+        };
+
+        // The host takes no cursors at all: a record over one is meaningless,
+        // on the rewind round and on every record-only round after it.
         let sink = Sink::default();
         let cursorless = persister(&sink, None);
         cursorless
             .store([1u8; 32], rewind_round())
             .expect("nothing failed");
+        cursorless
+            .store([1u8; 32], record_only_round())
+            .expect("record-only round");
         assert_eq!(sink.backfills.load(Ordering::SeqCst), 0);
 
-        // A record-only round (no cursor to pair with) is delivered.
-        cursorless
-            .store(
-                [1u8; 32],
-                PlatformWalletChangeSet {
-                    dashpay_backfill: Some(DashPayBackfillRecord::default()),
-                    ..PlatformWalletChangeSet::default()
-                },
-            )
+        // A host that stores cursors gets the record with its cursor, and a
+        // record-only round (no cursor to pair with) on its own.
+        let sink = Sink::default();
+        let accepting = persister(&sink, Some(accept_changeset));
+        accepting
+            .store([1u8; 32], rewind_round())
+            .expect("rewind round");
+        accepting
+            .store([1u8; 32], record_only_round())
             .expect("record-only round");
-        assert_eq!(sink.backfills.load(Ordering::SeqCst), 1);
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 2);
     }
 
     /// The restore side of dashpay/platform#4302: a wallet-restore entry
@@ -8657,16 +8687,19 @@ mod tests {
             DashPayBackfillCoveredContactFFI {
                 owner_identity_id: [9u8; 32],
                 contact_identity_id: [2u8; 32],
+                account_index: 0,
                 covered_from: 2_300_000,
             },
             DashPayBackfillCoveredContactFFI {
                 owner_identity_id: [1u8; 32],
                 contact_identity_id: [3u8; 32],
+                account_index: 0,
                 covered_from: 2_167_092,
             },
             DashPayBackfillCoveredContactFFI {
                 owner_identity_id: [9u8; 32],
                 contact_identity_id: [2u8; 32],
+                account_index: 0,
                 covered_from: 2_999_999,
             },
         ];
@@ -8687,11 +8720,13 @@ mod tests {
                 (
                     dpp::prelude::Identifier::from([1u8; 32]),
                     dpp::prelude::Identifier::from([3u8; 32]),
+                    0,
                     2_167_092,
                 ),
                 (
                     dpp::prelude::Identifier::from([9u8; 32]),
                     dpp::prelude::Identifier::from([2u8; 32]),
+                    0,
                     2_300_000,
                 ),
             ],
@@ -8700,7 +8735,8 @@ mod tests {
         assert_eq!(
             decoded.covered_from(
                 &dpp::prelude::Identifier::from([9u8; 32]),
-                &dpp::prelude::Identifier::from([2u8; 32])
+                &dpp::prelude::Identifier::from([2u8; 32]),
+                0
             ),
             Some(2_300_000),
             "the first of a duplicated pair wins"

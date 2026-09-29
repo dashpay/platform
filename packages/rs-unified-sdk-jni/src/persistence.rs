@@ -855,14 +855,15 @@ unsafe extern "C" fn tramp_persist_wallet_changeset_chain_lock_height(
 /// Wire size of one covered contact in the flat `covered` array handed to
 /// `onWalletChangesetDashPayBackfill` and read back from
 /// `WalletRestoreData.dashPayBackfillCovered`: owner (32) ‖ contact (32) ‖
-/// `coveredFrom` (u32, little-endian). The same layout as
+/// `accountIndex` (u32) ‖ `coveredFrom` (u32), both little-endian. The same
+/// layout as
 /// `DashPayBackfillRecord::covered_bytes`, so the handler can store the array
 /// as one opaque blob and hand it straight back at load.
-const DASHPAY_BACKFILL_COVERED_ENTRY_LEN: usize = 32 + 32 + 4;
+const DASHPAY_BACKFILL_COVERED_ENTRY_LEN: usize = 32 + 32 + 4 + 4;
 
 /// Descriptor of `NativePersistenceBridge.onWalletChangesetDashPayBackfill`:
 /// `(walletId, floor, rewoundFrom, covered, coveredCount)`. The cover set is
-/// shipped as ONE flat `byte[]` of `68·N` bytes plus a count, the same packing
+/// shipped as ONE flat `byte[]` of `72·N` bytes plus a count, the same packing
 /// the sweep slot uses for its txids, rather than one JVM allocation per
 /// contact — a contact-heavy wallet records hundreds.
 const WALLET_CHANGESET_DASHPAY_BACKFILL_DESCRIPTOR: &str = "([BII[BI)I";
@@ -886,6 +887,7 @@ unsafe extern "C" fn tramp_persist_wallet_dashpay_backfill(
         for entry in entries {
             packed.extend_from_slice(&entry.owner_identity_id);
             packed.extend_from_slice(&entry.contact_identity_id);
+            packed.extend_from_slice(&entry.account_index.to_le_bytes());
             packed.extend_from_slice(&entry.covered_from.to_le_bytes());
         }
         let packed_arr = env.byte_array_from_slice(&packed)?;
@@ -2724,7 +2726,7 @@ fn build_wallet_restore_entry(
 
 /// Read the Kotlin `WalletRestoreData.dashPayBackfill*` fields: the presence
 /// flag, the two scalars, and the cover set unpacked from its flat
-/// `68·N`-byte blob (see [`DASHPAY_BACKFILL_COVERED_ENTRY_LEN`]) into staged
+/// `72·N`-byte blob (see [`DASHPAY_BACKFILL_COVERED_ENTRY_LEN`]) into staged
 /// [`DashPayBackfillCoveredContactFFI`] rows. A blob whose length is not a
 /// whole number of entries yields `(false, 0, 0, [])` — no record — and a
 /// `warn`, never a partial cover set.
@@ -2760,13 +2762,16 @@ fn build_dashpay_backfill_restore(
         .map(|chunk| {
             let mut owner_identity_id = [0u8; 32];
             let mut contact_identity_id = [0u8; 32];
+            let mut account_index = [0u8; 4];
             let mut height = [0u8; 4];
             owner_identity_id.copy_from_slice(&chunk[..32]);
             contact_identity_id.copy_from_slice(&chunk[32..64]);
-            height.copy_from_slice(&chunk[64..68]);
+            account_index.copy_from_slice(&chunk[64..68]);
+            height.copy_from_slice(&chunk[68..72]);
             DashPayBackfillCoveredContactFFI {
                 owner_identity_id,
                 contact_identity_id,
+                account_index: u32::from_le_bytes(account_index),
                 covered_from: u32::from_le_bytes(height),
             }
         })

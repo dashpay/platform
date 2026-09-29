@@ -43,6 +43,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         }
     }
 
@@ -58,6 +59,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         }
     }
 
@@ -155,7 +157,14 @@ impl WalletInfoInterface for PlatformWalletInfo {
             .update_last_processed_height(current_height);
     }
 
+    /// The engine's only caller is `update_wallet_synced_height`, which emits
+    /// a `SyncHeightAdvanced` straight after this returns, under the same
+    /// manager write lock — so this is where emissions are counted for the
+    /// [`RewindBarrier`](crate::changeset::core_bridge::RewindBarrier).
+    /// Platform code that moves the cursor calls `core_wallet` directly and
+    /// emits nothing.
     fn update_synced_height(&mut self, current_height: u32) {
+        self.rewind_barrier.note_emitted();
         self.core_wallet.update_synced_height(current_height);
     }
 

@@ -445,6 +445,7 @@ mod tests {
             observed_input_conflicts: Default::default(),
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         }
     }
 

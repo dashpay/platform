@@ -866,6 +866,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             return true;
         }
         info.core_wallet.update_synced_height(from_height);
+        // Advances the engine emitted before this reset must not be stored
+        // after it.
+        info.rewind_barrier.arm();
         // Not persisted here, so remember it as owed: the next DashPay
         // backfill record round carries it as that round's cursor, and no
         // coverage reaches disk beside a durable cursor this reset retracted
@@ -1954,6 +1957,7 @@ mod txo_inventory_tests {
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
             observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
