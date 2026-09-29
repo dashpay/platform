@@ -233,7 +233,44 @@ class SelectorTests(unittest.TestCase):
                     self.assertEqual(self.select(wait_seconds=60)["image_changed"], "true")
                 sleep.assert_called_once_with(20)
                 self.assertEqual(self.status_calls(), [STATUS_PATH, STATUS_PATH])
-                self.assertEqual([call.args[0] for call in self.api.call_args_list].count("pulls/5151"), 2)
+                self.assertEqual([call.args[0] for call in self.api.call_args_list].count("pulls/5151"), 3)
+
+    def test_should_reject_head_change_or_closure_during_candidate_retry(self):
+        good = FIXTURE["statuses"][0]
+        for kind in ("rust", "kotlin", "npm"):
+            for change in ("head", "closed"):
+                with self.subTest(kind=kind, change=change):
+                    self.pr["state"] = "open"
+                    self.pr["head"]["sha"] = HEAD
+                    event = {"pull_request": copy.deepcopy(self.pr)}
+                    self.responses[STATUS_PATH] = [dict(good, state="pending")]
+
+                    def publish_after_pr_changes(_seconds):
+                        self.responses[STATUS_PATH] = [good]
+                        if change == "head":
+                            self.pr["head"]["sha"] = "e" * 40
+                        else:
+                            self.pr["state"] = "closed"
+
+                    with patch.object(runner.time, "monotonic", return_value=0), \
+                         patch.object(runner.time, "sleep", side_effect=publish_after_pr_changes):
+                        with self.assertRaisesRegex(ValueError, "PR changed before selecting"):
+                            self.select(event, kind=kind, wait_seconds=60)
+                    self.assertFalse(self.output.exists())
+
+    def test_should_fail_closed_if_final_candidate_head_check_is_unavailable(self):
+        original = self.api_response
+
+        def fail_after_publisher_validation(path):
+            response = original(path)
+            if path == RUN_PATH:
+                self.responses["pulls/5151"] = URLError("final PR check unavailable")
+            return response
+
+        with patch.object(self, "api_response", side_effect=fail_after_publisher_validation):
+            with self.assertRaisesRegex(URLError, "final PR check unavailable"):
+                self.select()
+        self.assertFalse(self.output.exists())
 
     def test_environment_export_rejects_multiline_values_before_writing(self):
         self.manifest["requirements"]["versions"]["protoc"] = "32.0\nINJECTED=yes"
