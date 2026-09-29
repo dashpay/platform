@@ -258,9 +258,12 @@ where
 /// Two checks enforce the limit, both before Prost materialises a single
 /// field:
 ///
-/// * the gRPC message header (the five bytes tonic reads first) declares the
-///   message length, and a declared length over the limit is refused at once,
-///   before tonic reserves a receive buffer of that size;
+/// * the header of every gRPC message in the body (the five bytes tonic reads
+///   before it reserves a receive buffer of the declared size) is checked as
+///   soon as it is in, and a message that could not complete within the limit
+///   is refused at once. Every message counts, not only the first: tonic's
+///   unary path drains the messages after the first while looking for the
+///   trailers, reserving for each of them under the service-wide cap;
 /// * the bytes actually delivered are counted and the body is cut off when
 ///   they pass the limit, so a header that lies small does not help either.
 ///
@@ -349,16 +352,35 @@ where
 /// message length.
 const GRPC_MESSAGE_HEADER_LEN: usize = 5;
 
+/// Where the framing walk of [`LimitedMessageBody`] stands in the stream of
+/// gRPC messages: collecting the header of the next message, or inside a
+/// message body with a known number of bytes to go.
+enum MessageFraming {
+    Header {
+        bytes: [u8; GRPC_MESSAGE_HEADER_LEN],
+        filled: usize,
+    },
+    Body {
+        remaining: usize,
+    },
+}
+
+impl MessageFraming {
+    const fn next_header() -> Self {
+        MessageFraming::Header {
+            bytes: [0; GRPC_MESSAGE_HEADER_LEN],
+            filled: 0,
+        }
+    }
+}
+
 /// A request body bounded by a byte limit, checked on the declared length of
-/// the first gRPC message as soon as its header is in and on every byte
-/// delivered after that.
+/// every gRPC message as soon as its header is in and on every byte delivered.
 struct LimitedMessageBody<B> {
     inner: B,
     limit: usize,
     delivered: usize,
-    /// The first bytes of the body until the message header is complete;
-    /// `None` once it has been checked.
-    header: Option<Vec<u8>>,
+    framing: MessageFraming,
 }
 
 impl<B> LimitedMessageBody<B> {
@@ -367,7 +389,7 @@ impl<B> LimitedMessageBody<B> {
             inner,
             limit,
             delivered: 0,
-            header: Some(Vec::with_capacity(GRPC_MESSAGE_HEADER_LEN)),
+            framing: MessageFraming::next_header(),
         }
     }
 
@@ -377,24 +399,55 @@ impl<B> LimitedMessageBody<B> {
         ))
     }
 
-    /// Accounts for a delivered chunk: the declared length once the header is
-    /// complete, then the running total.
+    /// Accounts for a delivered chunk: the running total first, then the walk
+    /// through the gRPC framing so that every message header is checked the
+    /// moment it is complete, whether it sits inside one chunk or is split
+    /// across several.
     fn check_chunk(&mut self, chunk: &Bytes) -> Result<(), Status> {
+        // Bytes accounted by the framing walk, so a header completing mid-chunk
+        // is judged on what was delivered up to it.
+        let mut consumed = self.delivered;
         self.delivered = self.delivered.saturating_add(chunk.len());
         if self.delivered > self.limit {
             return Err(Self::over_limit(self.limit));
         }
-        if let Some(header) = self.header.as_mut() {
-            let missing = GRPC_MESSAGE_HEADER_LEN - header.len();
-            header.extend_from_slice(&chunk[..chunk.len().min(missing)]);
-            if header.len() == GRPC_MESSAGE_HEADER_LEN {
-                let declared =
-                    u32::from_be_bytes([header[1], header[2], header[3], header[4]]) as usize;
-                self.header = None;
-                if declared.saturating_add(GRPC_MESSAGE_HEADER_LEN) > self.limit {
-                    return Err(Self::over_limit(self.limit));
+        let mut rest: &[u8] = chunk;
+        while !rest.is_empty() {
+            let next = match &mut self.framing {
+                MessageFraming::Header { bytes, filled } => {
+                    let take = rest.len().min(GRPC_MESSAGE_HEADER_LEN - *filled);
+                    bytes[*filled..*filled + take].copy_from_slice(&rest[..take]);
+                    *filled += take;
+                    rest = &rest[take..];
+                    consumed = consumed.saturating_add(take);
+                    if *filled < GRPC_MESSAGE_HEADER_LEN {
+                        continue;
+                    }
+                    let declared =
+                        u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]) as usize;
+                    // Everything delivered up to this header plus the whole
+                    // declared body has to fit: a message that cannot complete
+                    // within the limit is refused before tonic reserves
+                    // `declared` bytes for it.
+                    if consumed.saturating_add(declared) > self.limit {
+                        return Err(Self::over_limit(self.limit));
+                    }
+                    MessageFraming::Body {
+                        remaining: declared,
+                    }
                 }
-            }
+                MessageFraming::Body { remaining } => {
+                    let take = rest.len().min(*remaining);
+                    *remaining -= take;
+                    rest = &rest[take..];
+                    consumed = consumed.saturating_add(take);
+                    if *remaining > 0 {
+                        continue;
+                    }
+                    MessageFraming::next_header()
+                }
+            };
+            self.framing = next;
         }
         Ok(())
     }
@@ -624,6 +677,104 @@ mod tests {
         assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
     }
 
+    /// Sends the body as the given chunks, one DATA frame each.
+    async fn send_chunks(path: &str, chunks: Vec<Vec<u8>>) -> Result<usize, Status> {
+        use http_body_util::StreamBody;
+
+        let frames = futures::stream::iter(
+            chunks
+                .into_iter()
+                .map(|chunk| Ok::<_, Status>(Frame::data(Bytes::from(chunk)))),
+        );
+        let mut service = body_limit_layer().layer(BodyLengthService);
+        let request = Request::builder()
+            .uri(path)
+            .body(axum::body::Body::new(StreamBody::new(frames)))
+            .expect("request");
+        service
+            .call(request)
+            .await
+            .map(|response| response.into_body())
+            .map_err(|error| {
+                *error
+                    .downcast::<Status>()
+                    .expect("the limit layer reports a tonic status")
+            })
+    }
+
+    /// Every message header is checked, not only the first: tonic's unary path drains the
+    /// messages after the first while looking for the trailers and reserves a receive buffer
+    /// for each of them, so a small first message followed by a header declaring a
+    /// transaction-sized second message must be refused on those bytes, whether the second
+    /// header arrives in the same DATA frame as the first message or split across frames.
+    #[tokio::test]
+    async fn body_limit_checks_every_message_header() {
+        let first = grpc_message(0, 0);
+        let second_header = grpc_message(30 * 1024 * 1024, 0);
+
+        // Both headers in one DATA frame.
+        let mut one_frame = first.clone();
+        one_frame.extend_from_slice(&second_header);
+        let status = send_body(QUERY_PATH, one_frame.clone())
+            .await
+            .expect_err("a second message over the limit is refused");
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+        assert!(
+            status
+                .message()
+                .contains(&MAX_PLATFORM_QUERY_BODY_BYTES.to_string()),
+            "{status:?}"
+        );
+
+        // The second header split across frames, two bytes then three.
+        let status = send_chunks(
+            QUERY_PATH,
+            vec![
+                first.clone(),
+                second_header[..2].to_vec(),
+                second_header[2..].to_vec(),
+            ],
+        )
+        .await
+        .expect_err("a second header split across frames is refused too");
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+
+        // A first message whose body is split across frames is walked correctly: the second
+        // header is found where the declared body ends, not at a frame boundary.
+        let mut body = grpc_message(7, 7);
+        body.extend_from_slice(&second_header);
+        let status = send_chunks(QUERY_PATH, vec![body[..3].to_vec(), body[3..].to_vec()])
+            .await
+            .expect_err("the second header is found after the declared body");
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
+
+        // Two small messages are fine, in one frame or in several, and the transaction
+        // ingress admits a large second declaration.
+        let mut two_small = grpc_message(7, 7);
+        two_small.extend_from_slice(&grpc_message(9, 9));
+        assert_eq!(
+            send_body(QUERY_PATH, two_small.clone())
+                .await
+                .expect("two small messages pass"),
+            two_small.len()
+        );
+        assert_eq!(
+            send_chunks(
+                QUERY_PATH,
+                two_small.chunks(4).map(<[u8]>::to_vec).collect()
+            )
+            .await
+            .expect("two small messages split across frames pass"),
+            two_small.len()
+        );
+        assert_eq!(
+            send_body(TRANSACTION_PATH, one_frame.clone())
+                .await
+                .expect("the ingress admits a large second declaration"),
+            one_frame.len()
+        );
+    }
+
     /// The layer is scoped to the Platform service: a Core request above the Platform query
     /// allowance passes through untouched, so Core keeps its own service-wide cap.
     #[tokio::test]
@@ -774,6 +925,53 @@ mod tests {
                 .expect("a family-cap transition reaches the service"),
             family_cap as u64
         );
+
+        // Through the same server, a raw request body carrying an empty first message and
+        // then the header of a 30 MiB second message, with the stream left open: the unary
+        // handler reads the first message and drains the rest while looking for the trailers,
+        // so without the per-message header check tonic would reserve 30 MiB and wait for the
+        // body. The layer refuses the request on those ten bytes and the response comes back
+        // at once, without the stream ever closing.
+        {
+            use dapi_grpc::tonic::body::Body as GrpcBody;
+            use http_body_util::StreamBody;
+            use tower::ServiceExt;
+
+            let mut open_ended = grpc_message(0, 0);
+            open_ended.extend_from_slice(&grpc_message(30 * 1024 * 1024, 0));
+            let frames = futures::StreamExt::chain(
+                futures::stream::iter([Ok::<_, Status>(Frame::data(Bytes::from(open_ended)))]),
+                futures::stream::pending(),
+            );
+            let request = Request::builder()
+                .method("POST")
+                .uri(format!("http://{address}{QUERY_PATH}"))
+                .header("content-type", "application/grpc")
+                .header("te", "trailers")
+                .body(GrpcBody::new(StreamBody::new(frames)))
+                .expect("request");
+            let mut raw = Channel::from_shared(format!("http://{address}"))
+                .expect("endpoint")
+                .connect()
+                .await
+                .expect("connect");
+            let response = tokio::time::timeout(
+                Duration::from_secs(5),
+                raw.ready().await.expect("channel ready").call(request),
+            )
+            .await
+            .expect("the request is answered while the stream is still open")
+            .expect("transport");
+            let status = Status::from_header_map(response.headers())
+                .expect("a trailers-only response carries the status");
+            assert_eq!(status.code(), Code::ResourceExhausted, "{status:?}");
+            assert!(
+                status
+                    .message()
+                    .contains(&MAX_PLATFORM_QUERY_BODY_BYTES.to_string()),
+                "{status:?}"
+            );
+        }
 
         server.abort();
     }
