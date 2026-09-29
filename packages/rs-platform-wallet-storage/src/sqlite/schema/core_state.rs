@@ -1642,20 +1642,45 @@ mod tests {
         );
     }
 
-    #[test]
-    fn should_skip_corrupt_record_during_history_migration() {
+    /// A V018 database whose wallet 0xAD has one corrupt record at `height`.
+    fn v018_with_corrupt_record(height: Option<i64>) -> (Connection, [u8; 32]) {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         conn.execute_batch("DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; DELETE FROM refinery_schema_history WHERE version >= 19;").unwrap();
         let wallet_id = [0xADu8; 32];
         conn.execute(
-            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 100)",
             params![&wallet_id[..]],
         )
         .unwrap();
-        conn.execute("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)", params![&wallet_id[..], &[0u8;32][..], &[0xffu8][..]]).unwrap();
-        crate::sqlite::migrations::run(&mut conn)
-            .expect("one unreadable record must not block opening the database");
+        conn.execute(
+            "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) VALUES (?1, 500, 500)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, ?3, 0, ?4)",
+            params![&wallet_id[..], &[0u8; 32][..], height, &[0xffu8][..]],
+        )
+        .unwrap();
+        (conn, wallet_id)
+    }
+
+    #[test]
+    fn should_fail_history_migration_on_corrupt_unconfirmed_record() {
+        let (mut conn, _) = v018_with_corrupt_record(None);
+        assert!(
+            crate::sqlite::migrations::run(&mut conn).is_err(),
+            "a resync cannot restore an unconfirmed record, so it must not be dropped"
+        );
+        let tables: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'core_transaction_inputs'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tables, 0);
         let version: i64 = conn
             .query_row(
                 "SELECT max(version) FROM refinery_schema_history",
@@ -1663,19 +1688,58 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(version >= 19);
-        let stored: Vec<u8> = conn
-            .query_row(
-                "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1",
-                params![&wallet_id[..]],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(stored, vec![0xff], "the unreadable row is left untouched");
+        assert_eq!(version, 18);
     }
 
     #[test]
-    fn should_heal_corrupt_record_when_the_transaction_is_stored_again() {
+    fn should_drop_corrupt_confirmed_record_and_rescan_its_wallet() {
+        let (mut conn, wallet_id) = v018_with_corrupt_record(Some(150));
+        let kept = transaction_record(
+            Txid::from_byte_array([0x11; 32]),
+            TransactionContext::InBlock(BlockInfo::new(160, BlockHash::all_zeros(), 1)),
+        );
+        conn.execute(
+            "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, 160, 1, ?3)",
+            params![&wallet_id[..], AsRef::<[u8]>::as_ref(&kept.txid), blob::encode(&kept).unwrap()],
+        )
+        .unwrap();
+        crate::sqlite::migrations::run(&mut conn)
+            .expect("a re-deliverable corrupt record must not block opening");
+        let rows: Vec<Vec<u8>> = conn
+            .prepare_cached("SELECT txid FROM core_transactions WHERE wallet_id = ?1")
+            .unwrap()
+            .query_map(params![&wallet_id[..]], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(rows, vec![AsRef::<[u8]>::as_ref(&kept.txid).to_vec()]);
+        let (last_processed, synced): (i64, i64) = conn
+            .query_row(
+                "SELECT last_processed_height, synced_height FROM core_sync_state WHERE wallet_id = ?1",
+                params![&wallet_id[..]],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            synced, 99,
+            "the filter checkpoint rewinds to just below birth"
+        );
+        assert_eq!(
+            last_processed, 500,
+            "the processed watermark stays monotonic"
+        );
+        let (cs, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        assert_eq!(cs.synced_height, Some(99), "load hands the rewind to SPV");
+    }
+
+    #[test]
+    fn should_reject_corrupt_prior_record_when_storing_the_transaction() {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0xA9u8; 32];
@@ -1691,19 +1755,18 @@ mod tests {
         )
         .unwrap();
         let tx = conn.transaction().unwrap();
-        apply(
-            &tx,
-            &wallet_id,
-            &CoreChangeSet {
-                records: vec![record.clone()],
-                ..Default::default()
-            },
-        )
-        .expect("a corrupt stored copy must not wedge later writes");
-        let healed = get_tx_record(&tx, &wallet_id, &record.txid, &LoadCtx::strict())
-            .unwrap()
-            .unwrap();
-        assert_eq!(healed.txid, record.txid);
+        assert!(
+            apply(
+                &tx,
+                &wallet_id,
+                &CoreChangeSet {
+                    records: vec![record],
+                    ..Default::default()
+                },
+            )
+            .is_err(),
+            "normal operation treats corrupt stored history as an error"
+        );
     }
 
     #[test]

@@ -21,40 +21,36 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::{blob, id32, wallets};
 use crate::sqlite::util::safe_cast::i64_to_u64;
 
-/// Read a stored record as repair evidence; an unreadable one is no evidence.
-fn prior_record(
+/// Read a stored record; undecodable bytes are an error the caller classifies.
+fn read_record(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     txid: &Txid,
 ) -> Result<Option<TransactionRecord>, WalletStorageError> {
-    let read = (|| {
-        let stored: Option<Option<(i64, Vec<u8>)>> = tx
-            .query_row(
-                "SELECT length(record_blob), record_blob FROM core_transactions \
-                 WHERE wallet_id = ?1 AND txid = ?2",
-                params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
-                |row| {
-                    Ok(match row.get::<_, Option<i64>>(0)? {
-                        Some(len) => Some((len, row.get(1)?)),
-                        None => None,
-                    })
-                },
-            )
-            .optional()?;
-        let Some(Some((len, payload))) = stored else {
-            return Ok(None);
-        };
-        blob::check_size(len)?;
-        let record: TransactionRecord = blob::decode(&payload)?;
-        Ok(Some(record).filter(|record| record.txid == *txid))
-    })();
-    match read {
-        Err(error) if is_unreadable(&error) => {
-            tracing::warn!(%txid, %error, "skipping unreadable transaction record in history migration");
-            Ok(None)
-        }
-        result => result,
+    let stored: Option<Option<(i64, Vec<u8>)>> = tx
+        .query_row(
+            "SELECT length(record_blob), record_blob FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+            params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+            |row| {
+                Ok(match row.get::<_, Option<i64>>(0)? {
+                    Some(len) => Some((len, row.get(1)?)),
+                    None => None,
+                })
+            },
+        )
+        .optional()?;
+    let Some(Some((len, payload))) = stored else {
+        return Ok(None);
+    };
+    blob::check_size(len)?;
+    let record: TransactionRecord = blob::decode(&payload)?;
+    if record.txid != *txid {
+        return Err(WalletStorageError::blob_decode(
+            "transaction record names another transaction",
+        ));
     }
+    Ok(Some(record))
 }
 
 /// Whether `error` reports stored bytes that cannot be decoded, not a database failure.
@@ -69,25 +65,56 @@ fn is_unreadable(error: &WalletStorageError) -> bool {
     )
 }
 
-/// Run one record's repair atomically; unreadable stored data skips it instead of failing.
-fn repair_best_effort(
+/// Drop an undecodable record that a Core resync re-delivers, and force that resync.
+///
+/// Only a block-confirmed record (typed `height` set) is re-delivered by a
+/// filter rescan; an unconfirmed one may never be seen again, so it keeps the
+/// migration failing rather than losing it. Lowering `synced_height` to just
+/// below the wallet's birth height makes the next SPV start rescan the wallet
+/// from its birth, which re-records the transaction and re-applies its spends.
+/// The spent marks and outputs it already produced stay as they are:
+/// conservative until the rescan confirms them.
+fn drop_for_resync(
     tx: &Transaction<'_>,
+    wallet_id: &WalletId,
     txid: &Txid,
-    repair: impl FnOnce() -> Result<(), WalletStorageError>,
+    error: WalletStorageError,
 ) -> Result<(), WalletStorageError> {
-    tx.execute_batch("SAVEPOINT core_history_repair")?;
-    let result = repair();
-    if result.is_err() {
-        tx.execute_batch("ROLLBACK TO core_history_repair")?;
+    let height: Option<i64> = tx.query_row(
+        "SELECT height FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+        params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+        |row| row.get(0),
+    )?;
+    if height.is_none() {
+        return Err(error);
     }
-    tx.execute_batch("RELEASE core_history_repair")?;
-    match result {
-        Err(error) if is_unreadable(&error) => {
-            tracing::warn!(%txid, %error, "skipping history repair of unreadable stored data");
-            Ok(())
-        }
-        result => result,
-    }
+    let birth_height: i64 = tx.query_row(
+        "SELECT birth_height FROM wallets WHERE wallet_id = ?1",
+        params![wallet_id.as_slice()],
+        |row| row.get(0),
+    )?;
+    let rescan_from = (birth_height - 1).max(0);
+    tx.execute(
+        "DELETE FROM core_transaction_inputs WHERE wallet_id = ?1 AND txid = ?2",
+        params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+    )?;
+    tx.execute(
+        "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+        params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+    )?;
+    tx.execute(
+        "UPDATE core_sync_state SET synced_height = MIN(COALESCE(synced_height, ?2), ?2) \
+         WHERE wallet_id = ?1",
+        params![wallet_id.as_slice(), rescan_from],
+    )?;
+    tracing::warn!(
+        wallet_id = %hex::encode(wallet_id),
+        %txid,
+        %error,
+        rescan_from,
+        "dropped an undecodable confirmed transaction record; Core history rescans from birth"
+    );
+    Ok(())
 }
 
 /// Index raw inputs independently of when their ownership becomes known.
@@ -160,12 +187,11 @@ fn contact_only_script(
 fn repair_record(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
-    txid: &Txid,
+    mut record: TransactionRecord,
     network: dashcore::Network,
 ) -> Result<(), WalletStorageError> {
-    let Some(mut record) = prior_record(tx, wallet_id, txid)? else {
-        return Ok(());
-    };
+    let record_txid = record.txid;
+    let txid = &record_txid;
     let original = blob::encode(&record)?;
     let mut inputs = BTreeMap::new();
     for detail in record.input_details.drain(..) {
@@ -305,37 +331,30 @@ fn repair_record(
 }
 
 pub(super) fn repair_history(tx: &Transaction<'_>) -> Result<(), WalletStorageError> {
-    // Keys are collected first: savepoint rollbacks must not race an open cursor.
+    // Keys are collected first so drops never race the open cursor.
     let mut keys = Vec::new();
     {
         let mut stmt = tx.prepare_cached("SELECT length(wallet_id), wallet_id, length(txid), txid FROM core_transactions WHERE record_blob IS NOT NULL")?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
-            let key = (|| {
-                blob::check_fixed_width(row.get(0)?, 32, "core_transactions.wallet_id")?;
-                let wallet_id: Vec<u8> = row.get(1)?;
-                let wallet_id = id32("core_transactions.wallet_id", &wallet_id)?;
-                blob::check_fixed_width(row.get(2)?, 32, "core_transactions.txid")?;
-                let txid: Vec<u8> = row.get(3)?;
-                Ok::<_, WalletStorageError>((wallet_id, Txid::from_slice(&txid)?))
-            })();
-            match key {
-                Ok(key) => keys.push(key),
-                Err(error) if is_unreadable(&error) => {
-                    tracing::warn!(%error, "skipping unreadable transaction key in history migration");
-                }
-                Err(error) => return Err(error),
-            }
+            blob::check_fixed_width(row.get(0)?, 32, "core_transactions.wallet_id")?;
+            let wallet_id: Vec<u8> = row.get(1)?;
+            let wallet_id = id32("core_transactions.wallet_id", &wallet_id)?;
+            blob::check_fixed_width(row.get(2)?, 32, "core_transactions.txid")?;
+            let txid: Vec<u8> = row.get(3)?;
+            keys.push((wallet_id, Txid::from_slice(&txid)?));
         }
     }
     for (wallet_id, txid) in keys {
-        repair_best_effort(tx, &txid, || {
-            let Some(record) = prior_record(tx, &wallet_id, &txid)? else {
-                return Ok(());
-            };
-            index_record(tx, &wallet_id, &record)?;
-            repair_record(tx, &wallet_id, &txid, network(tx, &wallet_id)?)
-        })?;
+        match read_record(tx, &wallet_id, &txid) {
+            Ok(Some(record)) => {
+                index_record(tx, &wallet_id, &record)?;
+                repair_record(tx, &wallet_id, record, network(tx, &wallet_id)?)?;
+            }
+            Ok(None) => {}
+            Err(error) if is_unreadable(&error) => drop_for_resync(tx, &wallet_id, &txid, error)?,
+            Err(error) => return Err(error),
+        }
     }
     Ok(())
 }
