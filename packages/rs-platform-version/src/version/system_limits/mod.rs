@@ -427,7 +427,7 @@ mod tests {
         }
     }
 
-    /// The v1 decoder picks the family cap from these fields: `None` means a contract
+    /// The v2 decoder (protocol version 17 onward) picks the family cap from these fields: `None` means a contract
     /// transition is bounded like every other family, `Some` means the larger contract-code
     /// cap applies. A shipped version that gained a `Some` by a copy-paste into a new table
     /// would silently raise the cap validators on that version agree on, so the absence is
