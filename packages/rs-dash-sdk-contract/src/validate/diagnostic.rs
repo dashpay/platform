@@ -519,8 +519,9 @@ pub enum DiagnosticKind {
         /// The property path.
         property: String,
     },
-    /// An index has neither properties nor a terminal: a flat index needs a
-    /// terminal to be keyed by.
+    /// An index on a stored collection has no properties: only an index-only
+    /// collection has a terminal (`$ownerId` when omitted) to key a flat
+    /// index by.
     IndexWithoutProperties,
     /// An entry payload property is not a declared top-level field.
     EntryPayloadPropertyUnknown {
@@ -858,7 +859,7 @@ impl fmt::Display for DiagnosticKind {
                 write!(f, "terminal component `{property}` named twice")
             }
             DiagnosticKind::IndexWithoutProperties => {
-                f.write_str("an index without properties needs a terminal to be keyed by")
+                f.write_str("an index without properties needs an index-only collection's terminal to be keyed by")
             }
             DiagnosticKind::EntryPayloadPropertyUnknown { property } => {
                 write!(f, "entry payload property `{property}` is not a top-level field")

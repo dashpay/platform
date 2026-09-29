@@ -176,8 +176,11 @@ fn validate_collection(
     // rules the native parser applies to `documentsAverageable`: an omitted
     // option is promoted silently, an explicit `false` next to the sugar is a
     // contradiction the author must resolve.
-    let mut count = collection.count.unwrap_or(false);
+    // Natively a range count on the primary key makes the tree count-bearing
+    // (`documentsCountable || rangeCountable`), so the manifest records the
+    // effective countability.
     let mut range_count = collection.range_count.unwrap_or(false);
+    let mut count = collection.count.unwrap_or(false) || range_count;
     let mut sum = collection.sum.clone();
     let mut range_sum = collection.range_sum.unwrap_or(false);
     if let Some(average) = &collection.average {
@@ -594,13 +597,10 @@ fn validate_index(
 ) -> IndexManifest {
     let path = DeclarationPath::index(&collection.name, &index.name);
 
-    // A flat index is keyed by its terminal alone; without either there is
-    // nothing to key by.
-    let has_terminal = index
-        .index_only
-        .as_ref()
-        .is_some_and(|options| !options.terminal.is_empty());
-    if index.properties.is_empty() && !has_terminal {
+    // A flat index is keyed by its terminal alone, and on an index-only
+    // collection an omitted terminal is `$ownerId` natively, so only a stored
+    // collection can declare an index with nothing to key by.
+    if index.properties.is_empty() && !collection.index_only {
         diagnostics.push(Diagnostic::new(
             path.clone(),
             DiagnosticKind::IndexWithoutProperties,

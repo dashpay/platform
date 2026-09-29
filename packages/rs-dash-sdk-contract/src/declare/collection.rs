@@ -114,6 +114,10 @@ pub struct TokenCost {
     pub effect: TokenCostEffect,
     /// Who pays gas.
     pub gas_paid_by: GasPaidBy,
+    /// Whether a transition may omit the token payment for this action, in
+    /// which case its signer pays gas in credits as for an unpriced action.
+    /// Default false.
+    pub optional: bool,
 }
 
 impl TokenCost {
@@ -125,7 +129,14 @@ impl TokenCost {
             amount,
             effect: TokenCostEffect::default(),
             gas_paid_by: GasPaidBy::default(),
+            optional: false,
         }
+    }
+
+    /// Lets a transition omit the token payment.
+    pub fn optional(mut self, optional: bool) -> Self {
+        self.optional = optional;
+        self
     }
 
     /// Prices in another contract's token.

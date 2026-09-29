@@ -501,6 +501,13 @@ const TOKEN_COST_KEYS: &[KeySpec] = &[
         required: false,
         doc: "default `document_owner`",
     },
+    KeySpec {
+        name: "optional",
+        value: ValueShape::Bool,
+        required: false,
+        doc:
+            "a transition may omit the token payment and pay gas in credits instead, default false",
+    },
 ];
 
 const INDEX_KEYS: &[KeySpec] = &[
@@ -1156,6 +1163,7 @@ mod tests {
                 "contract",
                 "effect",
                 "gas_paid_by",
+                "optional",
             ],
         ),
         (

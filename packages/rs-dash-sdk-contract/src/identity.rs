@@ -8,7 +8,7 @@
 //!
 //! | Identity | Grammar | Source of the rule |
 //! |---|---|---|
-//! | [`CollectionName`] | `^[a-zA-Z0-9_-]{1,64}$` | native document type name rule |
+//! | [`CollectionName`] | `^[a-zA-Z0-9_]{1,64}$` | native document type name rule (generation 3 refuses `-`) |
 //! | [`PropertyName`] | `^[a-zA-Z0-9_]{1,64}$` | document meta-schema property names |
 //! | [`PropertyPath`] | dotted property names, at most 256 bytes, or a system property | index property name limit |
 //! | [`IndexName`] | 1 to 32 characters | document meta-schema index name |
@@ -125,11 +125,7 @@ impl InvalidName {
     }
 }
 
-fn is_collection_name_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_' || c == '-'
-}
-
-fn is_property_name_char(c: char) -> bool {
+fn is_name_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
@@ -159,24 +155,11 @@ fn check_bounded_name(
     Ok(())
 }
 
-/// The native document type name rule: letters, digits, `_` and `-`.
-fn check_collection_name(kind: NameKind, name: &str) -> Result<(), InvalidName> {
-    check_bounded_name(
-        kind,
-        name,
-        is_collection_name_char,
-        "ASCII letters, digits, `_` and `-`",
-    )
-}
-
-/// The document meta-schema property name rule: letters, digits and `_`.
-fn check_property_name(kind: NameKind, name: &str) -> Result<(), InvalidName> {
-    check_bounded_name(
-        kind,
-        name,
-        is_property_name_char,
-        "ASCII letters, digits and `_`",
-    )
+/// The name rule shared by document type names (generation 3 refuses `-`
+/// under full validation) and meta-schema property names: letters, digits
+/// and `_`.
+fn check_word_name(kind: NameKind, name: &str) -> Result<(), InvalidName> {
+    check_bounded_name(kind, name, is_name_char, "ASCII letters, digits and `_`")
 }
 
 fn check_lower_segment(kind: NameKind, name: &str, segment: &str) -> Result<(), InvalidName> {
@@ -277,10 +260,11 @@ macro_rules! name_newtype {
 
 name_newtype!(
     /// The identity of a collection: its declared name, which is also the native
-    /// document type name. Grammar `^[a-zA-Z0-9_-]{1,64}$`.
+    /// document type name. Grammar `^[a-zA-Z0-9_]{1,64}$` (generation 3 refuses
+    /// `-` under full validation).
     CollectionName,
     NameKind::Collection,
-    check_collection_name
+    check_word_name
 );
 
 name_newtype!(
@@ -289,7 +273,7 @@ name_newtype!(
     /// identifies a stored field.
     PropertyName,
     NameKind::Property,
-    check_property_name
+    check_word_name
 );
 
 name_newtype!(
@@ -356,7 +340,7 @@ fn check_property_path(kind: NameKind, path: &str) -> Result<(), InvalidName> {
         ));
     }
     for segment in path.split('.') {
-        check_property_name(NameKind::Property, segment).map_err(|error| {
+        check_word_name(NameKind::Property, segment).map_err(|error| {
             InvalidName::new(
                 kind,
                 path,
@@ -447,7 +431,7 @@ mod tests {
     fn should_accept_collection_names_at_the_boundary() {
         let longest: String = core::iter::repeat_n('a', MAX_NAME_BYTES).collect();
         assert!(CollectionName::new(&longest).is_ok());
-        assert!(CollectionName::new("scores-v1_2").is_ok());
+        assert!(CollectionName::new("scores_v1_2").is_ok());
         assert!(CollectionName::new("A").is_ok());
     }
 
@@ -463,8 +447,9 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_hyphens_in_property_names_but_not_collection_names() {
-        assert!(CollectionName::new("first-name").is_ok());
+    fn should_reject_hyphens_in_collection_and_property_names() {
+        assert!(CollectionName::new("journal-entry").is_err());
+        assert!(CollectionName::new("journal_entry").is_ok());
         assert!(PropertyName::new("first_name").is_ok());
         assert!(PropertyName::new("first-name").is_err());
         assert!(PropertyPath::new("profile.first-name").is_err());
