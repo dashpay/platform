@@ -228,9 +228,11 @@ mod tests {
         let v2_version = PlatformVersion::latest();
         let ordinary_cap = v2_version.system_limits.max_state_transition_size as usize;
 
+        // Outer index 0 (`DataContractCreate`), inner index 2: the contract-code capable
+        // generation of the create family (index 1 is the existing contract-group generation).
         let mut envelope = vec![0xFFu8; ordinary_cap + 1];
         envelope[0] = 0;
-        envelope[1] = 1;
+        envelope[1] = 2;
         let raw_state_transitions = vec![envelope];
 
         let container = platform

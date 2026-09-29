@@ -57,9 +57,15 @@ pub enum StateTransitionDecodeBudget {
 const DATA_CONTRACT_CREATE_VARIANT_INDEX: u32 = 0;
 /// The bincode variant index of `StateTransition::DataContractUpdate`.
 const DATA_CONTRACT_UPDATE_VARIANT_INDEX: u32 = 1;
-/// The bincode variant index of the contract-code capable generation inside both contract
-/// transition enums (`DataContractCreateTransition::V1`, `DataContractUpdateTransition::V1`).
-const CONTRACT_CODE_CAPABLE_GENERATION_INDEX: u32 = 1;
+/// The bincode variant index of the contract-code capable generation of
+/// `DataContractCreateTransition`. The enum already has `V0` and `V1` (`V1` registers contract
+/// groups from protocol version 14 and carries no code), so the code-bearing generation is the
+/// next one, `V2`.
+const CONTRACT_CODE_CAPABLE_CREATE_GENERATION_INDEX: u32 = 2;
+/// The bincode variant index of the contract-code capable generation of
+/// `DataContractUpdateTransition`. The enum has only `V0`, so the code-bearing generation is
+/// `V1`.
+const CONTRACT_CODE_CAPABLE_UPDATE_GENERATION_INDEX: u32 = 1;
 
 /// The longest prefix [`StateTransition::peek_envelope_kind`] reads: two bincode `u32`
 /// varints of at most five bytes each.
@@ -72,6 +78,18 @@ pub enum ContractCodeFamily {
     DataContractCreate,
     /// `StateTransition::DataContractUpdate` in a contract-code capable generation.
     DataContractUpdate,
+}
+
+impl ContractCodeFamily {
+    /// The inner variant index of the generation of this family that can carry a code bundle.
+    /// The two enums have different histories, so the index is chosen per family: every
+    /// generation that exists today stays ordinary.
+    const fn contract_code_capable_generation_index(self) -> u32 {
+        match self {
+            ContractCodeFamily::DataContractCreate => CONTRACT_CODE_CAPABLE_CREATE_GENERATION_INDEX,
+            ContractCodeFamily::DataContractUpdate => CONTRACT_CODE_CAPABLE_UPDATE_GENERATION_INDEX,
+        }
+    }
 }
 
 impl fmt::Display for ContractCodeFamily {
@@ -106,14 +124,16 @@ impl StateTransition {
     /// The outer `StateTransition` enum and the inner transition enums are bincode enums, so
     /// the payload starts with the outer variant index followed by the inner variant index,
     /// both big-endian `u32` varints. A prefix naming `DataContractCreate` or
-    /// `DataContractUpdate` in the contract-code capable generation is
-    /// [`StateTransitionEnvelopeKind::ContractCodeCapable`]; every other prefix, including an
-    /// unknown index or fewer bytes than a discriminant needs, is
-    /// [`StateTransitionEnvelopeKind::Ordinary`], so it is bounded by the ordinary cap and
-    /// fails decode exactly as it does today. At most ten bytes are read and nothing is
-    /// allocated. The discriminants are pinned by the classification test over real
-    /// serialized fixtures, so a reordering of either enum fails a test instead of silently
-    /// moving the cap.
+    /// `DataContractUpdate` in that family's contract-code capable generation (create `V2`,
+    /// update `V1`; each family's index is the one after its newest existing generation) is
+    /// [`StateTransitionEnvelopeKind::ContractCodeCapable`]; every other prefix, including
+    /// every generation that exists today, an unknown index or fewer bytes than a discriminant
+    /// needs, is [`StateTransitionEnvelopeKind::Ordinary`], so it is bounded by the ordinary
+    /// cap and fails decode exactly as it does today. At most ten bytes are read and nothing
+    /// is allocated. The discriminants are pinned by the classification tests over real
+    /// serialized fixtures of every existing generation, so a reordering of either enum or a
+    /// generation added without moving the index fails a test instead of silently moving the
+    /// cap.
     pub fn peek_envelope_kind(bytes: &[u8]) -> StateTransitionEnvelopeKind {
         let prefix = &bytes[..bytes.len().min(ENVELOPE_PREFIX_MAX_LEN)];
         let config = bincode::config::standard().with_big_endian();
@@ -131,7 +151,7 @@ impl StateTransition {
         else {
             return StateTransitionEnvelopeKind::Ordinary;
         };
-        if inner_index == CONTRACT_CODE_CAPABLE_GENERATION_INDEX {
+        if inner_index == family.contract_code_capable_generation_index() {
             StateTransitionEnvelopeKind::ContractCodeCapable { family }
         } else {
             StateTransitionEnvelopeKind::Ordinary
@@ -303,7 +323,11 @@ mod tests {
     use crate::state_transition::batch_transition::BatchTransitionV1;
     use crate::state_transition::batch_transition::BatchTransition;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+    use crate::contract_group::{
+        ContractGroupMember, ContractGroupMembership, ContractGroupRegistration,
+    };
     use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
+    use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV1;
     use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
     use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -316,7 +340,7 @@ mod tests {
     use crate::withdrawal::Pooling;
     use platform_value::{BinaryData, Identifier, Value};
     use platform_version::version::PLATFORM_VERSIONS;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     fn contract_with_document_schemas(
         document_schemas: BTreeMap<String, Value>,
@@ -364,6 +388,31 @@ mod tests {
             DataContractCreateTransitionV0 {
                 data_contract,
                 identity_nonce: 1,
+                user_fee_increase: 5,
+                signature_public_key_id: 2,
+                signature: BinaryData::new(vec![0xAB; 65]),
+            },
+        ))
+    }
+
+    /// The contract-group generation of the create transition (protocol version 14), with a
+    /// registration and a membership so the fixture is the real shape and not an empty shell.
+    fn create_v1_with_contract_groups(
+        data_contract: DataContractInSerializationFormat,
+    ) -> StateTransition {
+        StateTransition::DataContractCreate(DataContractCreateTransition::V1(
+            DataContractCreateTransitionV1 {
+                data_contract,
+                identity_nonce: 1,
+                contract_group: Some(ContractGroupRegistration {
+                    admins: BTreeSet::from([Identifier::from([11u8; 32])]),
+                    name: Some("group".to_string()),
+                    description: None,
+                }),
+                contract_group_memberships: vec![ContractGroupMembership {
+                    contract_group_id: Identifier::from([12u8; 32]),
+                    member: ContractGroupMember::Contract,
+                }],
                 user_fee_increase: 5,
                 signature_public_key_id: 2,
                 signature: BinaryData::new(vec![0xAB; 65]),
@@ -455,6 +504,10 @@ mod tests {
                 create_v0(contract_with_document_schemas(BTreeMap::new())),
             ),
             (
+                "contract create v1 (contract groups)",
+                create_v1_with_contract_groups(contract_with_document_schemas(BTreeMap::new())),
+            ),
+            (
                 "contract update v0",
                 update_v0(contract_with_document_schemas(BTreeMap::new())),
             ),
@@ -473,36 +526,54 @@ mod tests {
         }
     }
 
-    /// The contract families are the outer indices 0 and 1 and the contract-code capable
-    /// generation is inner index 1. Those indices are pinned against the serialized V0 forms:
-    /// the outer index is what the real transitions start with, and flipping the inner byte
-    /// from the V0 index to the next one is exactly what a V1 variant of the same enum encodes
-    /// as. A reordering of either enum changes what these bytes mean and fails here.
+    /// The contract families are the outer indices 0 and 1, and each family's contract-code
+    /// capable generation is the inner index after its newest existing generation: 2 for
+    /// create (`V0` and the contract-group `V1` exist), 1 for update (only `V0` exists). Those
+    /// indices are pinned against the serialized forms of every existing generation: the outer
+    /// index is what the real transitions start with, the inner index of the newest real
+    /// generation is one below the code-bearing index, and flipping that byte to the next
+    /// value is exactly what the next variant of the same enum encodes as. A reordering of
+    /// either enum, or a generation added to the base without moving the index, changes what
+    /// these bytes mean and fails here.
     #[test]
     fn should_recognise_the_contract_code_capable_prefix_of_both_contract_families() {
-        let create_bytes = create_v0(contract_with_document_schemas(BTreeMap::new()))
+        let create_v0_bytes = create_v0(contract_with_document_schemas(BTreeMap::new()))
             .serialize_to_bytes()
-            .expect("serialize create");
+            .expect("serialize create v0");
+        let create_v1_bytes =
+            create_v1_with_contract_groups(contract_with_document_schemas(BTreeMap::new()))
+                .serialize_to_bytes()
+                .expect("serialize create v1");
         let update_bytes = update_v0(contract_with_document_schemas(BTreeMap::new()))
             .serialize_to_bytes()
             .expect("serialize update");
-        assert_eq!(create_bytes[0], DATA_CONTRACT_CREATE_VARIANT_INDEX as u8);
+        assert_eq!(create_v0_bytes[0], DATA_CONTRACT_CREATE_VARIANT_INDEX as u8);
+        assert_eq!(create_v1_bytes[0], DATA_CONTRACT_CREATE_VARIANT_INDEX as u8);
         assert_eq!(update_bytes[0], DATA_CONTRACT_UPDATE_VARIANT_INDEX as u8);
-        assert_eq!(create_bytes[1], 0, "the V0 generation is inner index 0");
-        assert_eq!(update_bytes[1], 0, "the V0 generation is inner index 0");
-
-        let mut create_v1_prefix = create_bytes.clone();
-        create_v1_prefix[1] = CONTRACT_CODE_CAPABLE_GENERATION_INDEX as u8;
+        assert_eq!(create_v0_bytes[1], 0, "the V0 generation is inner index 0");
         assert_eq!(
-            StateTransition::peek_envelope_kind(&create_v1_prefix),
+            create_v1_bytes[1] + 1,
+            CONTRACT_CODE_CAPABLE_CREATE_GENERATION_INDEX as u8,
+            "the newest existing create generation sits right below the code-bearing index"
+        );
+        assert_eq!(
+            update_bytes[1] + 1,
+            CONTRACT_CODE_CAPABLE_UPDATE_GENERATION_INDEX as u8,
+            "the newest existing update generation sits right below the code-bearing index"
+        );
+
+        let mut create_code_prefix = create_v1_bytes.clone();
+        create_code_prefix[1] = CONTRACT_CODE_CAPABLE_CREATE_GENERATION_INDEX as u8;
+        assert_eq!(
+            StateTransition::peek_envelope_kind(&create_code_prefix),
             StateTransitionEnvelopeKind::ContractCodeCapable {
                 family: ContractCodeFamily::DataContractCreate
             }
         );
-        let mut update_v1_prefix = update_bytes.clone();
-        update_v1_prefix[1] = CONTRACT_CODE_CAPABLE_GENERATION_INDEX as u8;
+        let mut update_code_prefix = update_bytes.clone();
+        update_code_prefix[1] = CONTRACT_CODE_CAPABLE_UPDATE_GENERATION_INDEX as u8;
         assert_eq!(
-            StateTransition::peek_envelope_kind(&update_v1_prefix),
+            StateTransition::peek_envelope_kind(&update_code_prefix),
             StateTransitionEnvelopeKind::ContractCodeCapable {
                 family: ContractCodeFamily::DataContractUpdate
             }
@@ -510,7 +581,7 @@ mod tests {
 
         // Only the two bytes matter: the same prefix on its own classifies identically.
         assert_eq!(
-            StateTransition::peek_envelope_kind(&[0, 1]),
+            StateTransition::peek_envelope_kind(&[0, 2]),
             StateTransitionEnvelopeKind::ContractCodeCapable {
                 family: ContractCodeFamily::DataContractCreate
             }
@@ -526,10 +597,44 @@ mod tests {
         // the decoder rather than second-guessing it, which keeps the cap consistent with what
         // the bytes decode into.
         assert_eq!(
-            StateTransition::peek_envelope_kind(&[251, 0, 0, 1]),
+            StateTransition::peek_envelope_kind(&[251, 0, 0, 2]),
             StateTransitionEnvelopeKind::ContractCodeCapable {
                 family: ContractCodeFamily::DataContractCreate
             }
+        );
+    }
+
+    /// The contract-group generation of the create transition (`V1`, protocol version 14) is
+    /// an existing ordinary generation: it carries no code and keeps the ordinary cap and the
+    /// historical decode budget on every protocol version, including the ones that bound the
+    /// contract-code envelopes. The index is per family precisely so this generation is not
+    /// caught by the update family's code-bearing index.
+    #[test]
+    fn should_keep_the_contract_group_create_generation_on_the_ordinary_cap() {
+        let fixture =
+            create_v1_with_contract_groups(contract_with_document_schemas(BTreeMap::new()));
+        let bytes = fixture.serialize_to_bytes().expect("serialize create v1");
+        assert_eq!(
+            bytes[..2],
+            [0, 1],
+            "create V1 is outer index 0, inner index 1"
+        );
+
+        let kind = StateTransition::peek_envelope_kind(&bytes);
+        assert_eq!(kind, StateTransitionEnvelopeKind::Ordinary);
+        let latest = PlatformVersion::latest();
+        assert_eq!(
+            StateTransition::family_max_size(kind, latest),
+            latest.system_limits.max_state_transition_size
+        );
+        assert_eq!(
+            StateTransition::family_decode_budget(kind, latest),
+            StateTransitionDecodeBudget::Historical
+        );
+        assert_eq!(
+            StateTransition::deserialize_from_bytes_in_version_bounded(&bytes, latest)
+                .expect("an ordinary generation decodes on the bounded path"),
+            fixture
         );
     }
 
@@ -541,7 +646,13 @@ mod tests {
             ("outer update index only", vec![1]),
             ("unknown outer index", vec![200, 1]),
             ("batch outer index with inner 1", vec![2, 1]),
-            ("contract create with a later inner generation", vec![0, 2]),
+            ("batch outer index with inner 2", vec![2, 2]),
+            (
+                "contract create in the contract-group generation",
+                vec![0, 1],
+            ),
+            ("contract create with a later inner generation", vec![0, 3]),
+            ("contract update with a later inner generation", vec![1, 2]),
             ("multi-byte unknown outer index", vec![251, 0, 200, 1]),
             ("reserved varint discriminant", vec![255, 1]),
             ("truncated multi-byte inner index", vec![0, 251]),
@@ -860,7 +971,7 @@ mod tests {
             .expect("the latest version bounds contract code envelopes") as usize;
         for size in [1 << 20, 8 << 20, 16 << 20, cap] {
             let mut envelope = vec![0u8; size];
-            envelope[1] = CONTRACT_CODE_CAPABLE_GENERATION_INDEX as u8;
+            envelope[1] = CONTRACT_CODE_CAPABLE_CREATE_GENERATION_INDEX as u8;
             let started = Instant::now();
             let kind = StateTransition::peek_envelope_kind(&envelope);
             let peek = started.elapsed();

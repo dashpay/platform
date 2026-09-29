@@ -241,9 +241,12 @@ The family is read from the wire prefix before anything is decoded.
 `StateTransition::peek_envelope_kind` looks at the first ten bytes at most
 (the outer variant index of `StateTransition`, then the inner variant index
 of the contract transition enum) and returns `Ordinary` or
-`ContractCodeCapable { family }`; an unknown or truncated prefix is
-`Ordinary`, so it is bounded by the small cap and fails decode as it always
-did. `family_max_size` and `family_decode_budget` map the kind onto the
+`ContractCodeCapable { family }`. The code-bearing generation is chosen per
+family as the one after its newest existing generation: create `V2` (the
+contract-group `V1` from protocol version 14 stays ordinary) and update
+`V1`. Every generation that exists today, and an unknown or truncated prefix,
+is `Ordinary`, so it is bounded by the small cap and fails decode as it
+always did. `family_max_size` and `family_decode_budget` map the kind onto the
 tables of the active version, and
 `deserialize_from_bytes_in_version_bounded` decodes under that budget and
 reports a not-yet-active variant as `StateTransitionNotActiveError` (an

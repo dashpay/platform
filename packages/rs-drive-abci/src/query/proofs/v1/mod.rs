@@ -85,12 +85,12 @@ mod tests {
     use dpp::ProtocolError;
 
     /// A synthetic envelope with the contract-code capable prefix of a contract create
-    /// transition (outer index 0, inner index 1).
+    /// transition (outer index 0, inner index 2: the generation after the contract-group `V1`).
     fn contract_code_capable_envelope(len: usize) -> Vec<u8> {
         // The filler is not zero because bincode decodes trailing zeroes as valid empty fields.
         let mut envelope = vec![0xFFu8; len];
         envelope[0] = 0;
-        envelope[1] = 1;
+        envelope[1] = 2;
         envelope
     }
 

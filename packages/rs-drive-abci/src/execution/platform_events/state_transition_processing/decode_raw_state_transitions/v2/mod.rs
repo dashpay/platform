@@ -159,8 +159,9 @@ mod tests {
     use std::collections::BTreeMap;
 
     /// The prefix of a contract create transition in the contract-code capable generation:
-    /// outer index 0 (`DataContractCreate`), inner index 1.
-    const CONTRACT_CODE_CAPABLE_CREATE_PREFIX: [u8; 2] = [0, 1];
+    /// outer index 0 (`DataContractCreate`), inner index 2 (the generation after the
+    /// contract-group `V1`).
+    const CONTRACT_CODE_CAPABLE_CREATE_PREFIX: [u8; 2] = [0, 2];
 
     /// A synthetic envelope: the given prefix followed by bytes no state transition decodes
     /// from (bincode decodes trailing zeroes as valid empty fields, so the filler is not zero).
@@ -280,18 +281,25 @@ mod tests {
     }
 
     #[test]
-    fn should_keep_the_ordinary_cap_for_v0_contract_transitions() {
+    fn should_keep_the_ordinary_cap_for_existing_contract_transition_generations() {
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
         let max_size = platform_version.system_limits.max_state_transition_size as usize;
-        // Outer index 0 (create) and 1 (update) with inner index 0: the original generation.
-        let oversized_create = envelope_with_prefix(&[0, 0], max_size + 1);
-        let oversized_update = envelope_with_prefix(&[1, 0], max_size + 1);
+        // Outer index 0 (create) with inner index 0 (the original generation) and 1 (the
+        // contract-group generation), and outer index 1 (update) with inner index 0: every
+        // generation that exists today.
+        let oversized_create_v0 = envelope_with_prefix(&[0, 0], max_size + 1);
+        let oversized_create_v1 = envelope_with_prefix(&[0, 1], max_size + 1);
+        let oversized_update_v0 = envelope_with_prefix(&[1, 0], max_size + 1);
 
-        let raw_state_transitions = vec![oversized_create, oversized_update];
+        let raw_state_transitions = vec![
+            oversized_create_v0,
+            oversized_create_v1,
+            oversized_update_v0,
+        ];
         let container =
             platform.decode_raw_state_transitions_v2(&raw_state_transitions, platform_version);
         for decoded in container.into_iter() {
@@ -303,7 +311,7 @@ mod tests {
                             BasicError::StateTransitionMaxSizeExceededError(_)
                         )
                     ),
-                    "a V0 contract transition keeps the ordinary cap, got {:?}",
+                    "an existing contract transition generation keeps the ordinary cap, got {:?}",
                     invalid.error
                 ),
                 other => panic!("expected InvalidEncoding, got {other:?}"),
