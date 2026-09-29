@@ -122,7 +122,7 @@ missing required option is `MissingOption`. Nothing is ignored.
 |---|---|---|
 | `persistent` | struct | `collection` (required), `schema` (integer, default 1), `write` (`any` / `owner` / `contract`), `mutable`, `deletable`, `keep_history`, `keep_transfer_history`, `keep_purchase_history`, `keep_pricing_history`, `transferable`, `trade` (`none` / `direct_purchase`), `security_level` (`critical` / `high` / `medium`), `encryption_key` and `decryption_key` (`unique` / `multiple` / `multiple_reference_to_latest`), `count`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `index_only`, `entry_payload = [...]` (index-only: top-level properties stored in the entry value), `requires = ["$createdAt", ...]` (system properties every document carries), `store` (`public` / `private`) |
 | `singleton` | struct | `collection` (required), `schema`, `write`, `security_level`, `encryption_key`, `decryption_key`, `requires = [...]`, `store` |
-| `token_cost` | struct, repeatable | `on` (an ordinary action, required), `token_position` (required), `amount` (required), `contract` (base58), `effect` (`transfer_to_contract_owner` / `burn`), `gas_paid_by` (`document_owner` / `contract_owner` / `prefer_contract_owner`) |
+| `token_cost` | struct, repeatable | `on` (an ordinary action, required), `token_position` (required), `amount` (required), `contract` (base58), `effect` (`transfer_to_contract_owner` / `burn`), `gas_paid_by` (`document_owner` / `contract_owner` / `prefer_contract_owner`), `optional` |
 | `index` | struct, repeatable | `name` (required), `fields(<path> = "asc", ...)` (omitted only for a flat index-only index keyed by its terminal), `unique`, `null_searchable` (default true), `contested(field_matches(<path> = "<regex>"), resolution = "masternode_vote" / "masternode_vote_no_locking", description)`, `count` or `count = "offset"`, `range_count`, `sum = "<property>"`, `range_sum`, `average = "<property>"`, `range_average`, `ranked_count` or `ranked_count = ["<level>", ...]`, `ranked_sum`, `ranked_average`, `time_range(on, range_secs, step_secs, phase_secs, ttl_secs)`, `terminal = "<property>"` or `terminal = ["<property>", ...]`, `preallocated`, `skip_if_absent` |
 | `field` | field | `position` (required), `max_chars`, `min_chars`, `max_len`, `min_len`, `min`, `max`, `values = [...]`, `required` (default true), `transient`, `refers_to` (`identity` / `contract` / `token` / `permanent_document` / `identity_public_key`), `document_type`, `contract`, `agreement(<mine> = "<theirs>")`, `key_id_field`, `description` |
 | `document_id` | field | none |
@@ -143,7 +143,7 @@ impl block, source file or declaration order that produced it.
 
 | Identity | Grammar | Where the rule comes from |
 |---|---|---|
-| Collection | `^[a-zA-Z0-9_-]{1,64}$` | native document type name |
+| Collection | `^[a-zA-Z0-9_]{1,64}$` | native document type name (generation 3 refuses `-`) |
 | Property | `^[a-zA-Z0-9_]{1,64}$`, plus its position | meta-schema property names |
 | Index | 1 to 32 characters, unique within its collection | meta-schema index name |
 | Method | `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`, at most 64 bytes, unique contract-wide | provisional |
