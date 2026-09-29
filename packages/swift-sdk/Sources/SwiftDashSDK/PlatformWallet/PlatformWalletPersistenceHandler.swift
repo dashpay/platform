@@ -6909,25 +6909,30 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             return (nil, 0, true)
         }
-        do {
-            let walletIds = Set(wallets.map(\.walletId))
-            let transactions = try modelFetcher.fetch(FetchDescriptor<PersistentTransaction>(), in: backgroundContext)
-                .filter { row in
-                    row.involvedAccounts.contains { walletIds.contains($0.wallet.walletId) }
-                        || (row.inputs + row.outputs).contains {
-                            Self.resolvedWalletId(of: $0).map { walletIds.contains($0) } == true
-                        }
-                }
-            let txos = try modelFetcher.fetch(FetchDescriptor<PersistentTxo>(), in: backgroundContext)
-            try reconcileTransactionAccounting(transactions, txos: Dictionary(uniqueKeysWithValues: txos.map { ($0.outpoint, $0) }))
-            try backgroundContext.save()
-        } catch {
-            backgroundContext.rollback()
-            SDKLogger.event(
-                "persistence_wallet_load_failed", category: .persistence, severity: .error,
-                fields: ["phase": .publicText("transaction_accounting")], error: error
-            )
-            return (nil, 0, true)
+        // Mid-round the context holds another round's staged writes: saving
+        // would commit half of it and rolling back would silently drop it.
+        // That round reconciles its own dirty rows; the next load repairs the rest.
+        if !inChangeset {
+            do {
+                let walletIds = Set(wallets.map(\.walletId))
+                let transactions = try modelFetcher.fetch(FetchDescriptor<PersistentTransaction>(), in: backgroundContext)
+                    .filter { row in
+                        row.involvedAccounts.contains { walletIds.contains($0.wallet.walletId) }
+                            || (row.inputs + row.outputs).contains {
+                                Self.resolvedWalletId(of: $0).map { walletIds.contains($0) } == true
+                            }
+                    }
+                let txos = try modelFetcher.fetch(FetchDescriptor<PersistentTxo>(), in: backgroundContext)
+                try reconcileTransactionAccounting(transactions, txos: Dictionary(uniqueKeysWithValues: txos.map { ($0.outpoint, $0) }))
+                try backgroundContext.save()
+            } catch {
+                backgroundContext.rollback()
+                SDKLogger.event(
+                    "persistence_wallet_load_failed", category: .persistence, severity: .error,
+                    fields: ["phase": .publicText("transaction_accounting")], error: error
+                )
+                return (nil, 0, true)
+            }
         }
         let restorable = wallets.filter { wallet in
             wallet.accounts.contains { ($0.accountExtendedPubKeyBytes?.isEmpty == false) }
