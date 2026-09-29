@@ -59,6 +59,7 @@ pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
+pub use wallet::core::broadcast_resolver::BroadcastProbeSwitch;
 pub use wallet::core::WalletBalance;
 pub use wallet::core::{
     CoreWallet, SignedCoreTransaction, ASSET_LOCK_FUNDING_SOURCES, SEND_FUNDING_SOURCES,

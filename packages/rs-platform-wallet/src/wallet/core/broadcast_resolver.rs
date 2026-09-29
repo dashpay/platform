@@ -37,8 +37,9 @@
 //! and the first step after launch, are catch-up and skipped — every block
 //! for [`EVERY_BLOCK_WINDOW`] blocks and every [`SLOW_INTERVAL`] blocks after.
 //! A wallet whose last pass had nothing left to probe is idle and not scanned
-//! again until another wallet event (a new transaction, a block that touched
-//! its records, a reorg) or an `Uncertain` result wakes it. One
+//! again until a wallet event that touched its records (a new or
+//! InstantSend-locked transaction, a block or chainlock that changed records, a
+//! sweep) or an `Uncertain` result for one of its transactions wakes it. One
 //! worker per wallet drains a queue of merged requests. `Dead` and `Mined` end
 //! the probing of a root; `Accepted` does not — a mempool is not settlement.
 //! Probes run only while the SPV client delivers blocks, i.e. while the app is
@@ -162,6 +163,8 @@ pub(crate) struct ChainGraph<'a> {
     /// Unsettled for the purpose of picking roots: every view except those a
     /// probe found mined.
     unsettled: BTreeSet<Txid>,
+    /// Unsettled transactions spending an output of each unsettled one.
+    children: HashMap<Txid, Vec<Txid>>,
 }
 
 impl<'a> ChainGraph<'a> {
@@ -171,12 +174,29 @@ impl<'a> ChainGraph<'a> {
     pub(crate) fn new(views: &'a [OutgoingView], mined: &HashSet<Txid>) -> Self {
         let by_txid: HashMap<Txid, &OutgoingView> =
             views.iter().map(|view| (view.txid, view)).collect();
-        let unsettled = by_txid
+        let unsettled: BTreeSet<Txid> = by_txid
             .keys()
             .filter(|txid| !mined.contains(*txid))
             .copied()
             .collect();
-        Self { by_txid, unsettled }
+        let mut children: HashMap<Txid, Vec<Txid>> = HashMap::new();
+        for txid in &unsettled {
+            let parents: BTreeSet<Txid> = by_txid[txid]
+                .transaction
+                .input
+                .iter()
+                .map(|input| input.previous_output.txid)
+                .filter(|parent| unsettled.contains(parent))
+                .collect();
+            for parent in parents {
+                children.entry(parent).or_default().push(*txid);
+            }
+        }
+        Self {
+            by_txid,
+            unsettled,
+            children,
+        }
     }
 
     fn is_own(&self, txid: &Txid) -> bool {
@@ -249,18 +269,14 @@ impl<'a> ChainGraph<'a> {
     /// and every unsettled send built on it, transitively. A dead root takes
     /// all of them with it.
     pub(crate) fn own_in_chain(&self, root: &Txid) -> BTreeSet<Txid> {
-        let mut chain = BTreeSet::from([*root]);
-        loop {
-            let before = chain.len();
-            for txid in &self.unsettled {
-                if !chain.contains(txid)
-                    && self.by_txid[txid].spends_output_of(&|parent| chain.contains(parent))
-                {
-                    chain.insert(*txid);
-                }
+        let mut chain = BTreeSet::new();
+        let mut frontier = vec![*root];
+        while let Some(txid) = frontier.pop() {
+            if !chain.insert(txid) {
+                continue;
             }
-            if chain.len() == before {
-                break;
+            if let Some(children) = self.children.get(&txid) {
+                frontier.extend(children.iter().copied());
             }
         }
         chain.into_iter().filter(|txid| self.is_own(txid)).collect()
@@ -369,7 +385,13 @@ pub(crate) struct ResolverState {
     finished: HashMap<(WalletId, Txid), Final>,
     published: HashMap<(WalletId, Txid), ProbeVerdict>,
     generation_all: u64,
+    /// Kept for removed wallets too: a wallet re-added under the same id must
+    /// not match a generation read before its removal.
     generations: HashMap<WalletId, u64>,
+    /// Probing is off. Set under this lock together with the clears, so a
+    /// pass started after probing was turned off stops as surely as one that
+    /// started before.
+    off: bool,
     outbox: VecDeque<Outgoing>,
 }
 
@@ -379,6 +401,11 @@ impl ResolverState {
             all: self.generation_all,
             wallet: self.generations.get(wallet_id).copied().unwrap_or(0),
         }
+    }
+
+    /// Whether a pass started under `started` may still probe and record.
+    fn is_current(&self, wallet_id: &WalletId, started: Generation) -> bool {
+        !self.off && self.generation(wallet_id) == started
     }
 
     fn enqueue(
@@ -461,11 +488,9 @@ pub(crate) fn is_catch_up_step(previous: Option<u32>, height: u32) -> bool {
     previous.is_none_or(|previous| height.saturating_sub(previous) > CATCH_UP_STEP)
 }
 
-/// What a pass leaves behind besides the queued events.
+/// What a pass leaves behind besides the events it queued.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PassOutcome {
-    /// The events this pass queued, in order.
-    pub events: Vec<ResolverEvent>,
     /// Nothing left to probe: no roots, or every root has a final verdict.
     /// The wallet can go idle until something new happens.
     pub nothing_to_probe: bool,
@@ -477,12 +502,16 @@ pub(crate) struct PassOutcome {
 /// `Uncertain`). `started` is the [`Generation`] the caller read the wallet
 /// under; once it is no longer current (wallet removed, probing turned off),
 /// the pass records nothing more and sends nothing more to the network.
+/// `flush` delivers what is queued so far; the pass calls it with no lock
+/// held after each locked stretch, so a clear or a verdict does not wait for
+/// the probes of other roots.
 ///
 /// A root's verdict is published for the wallet's own sends: the root itself
 /// when it is one, and — when the root is dead — every own send built on it,
 /// on every pass, so a send built on a dead root's change later is covered
 /// too. A root found mined counts as settled when picking roots, so its
 /// children are probed next.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn resolve_pass(
     state: &Mutex<ResolverState>,
     probe: &dyn AcceptanceProbe,
@@ -491,6 +520,7 @@ pub(crate) async fn resolve_pass(
     views: &[OutgoingView],
     forced: &HashSet<Txid>,
     started: Generation,
+    flush: &(dyn Fn() + Sync),
 ) -> PassOutcome {
     let trigger = if forced.is_empty() {
         "height"
@@ -504,17 +534,16 @@ pub(crate) async fn resolve_pass(
         .filter(|view| view.spends_own_coins)
         .map(|view| view.txid)
         .collect();
+    let stopped = PassOutcome {
+        nothing_to_probe: false,
+    };
 
-    let mut events = Vec::new();
     // Each locked stretch is its own block: a guard must not live across the
     // probes' awaits.
     let mined: HashSet<Txid> = {
         let mut guard = state.lock().expect("resolver state poisoned");
-        if guard.generation(&wallet_id) != started {
-            return PassOutcome {
-                events,
-                nothing_to_probe: false,
-            };
+        if !guard.is_current(&wallet_id, started) {
+            return stopped;
         }
         // Forget what settled or left the wallet; clear the sends the host had a
         // verdict for.
@@ -543,7 +572,6 @@ pub(crate) async fn resolve_pass(
                 Some(height),
                 trigger,
             );
-            events.push(ResolverEvent::Cleared(txid));
         }
 
         guard
@@ -562,6 +590,9 @@ pub(crate) async fn resolve_pass(
 
     let due = {
         let mut guard = state.lock().expect("resolver state poisoned");
+        if !guard.is_current(&wallet_id, started) {
+            return stopped;
+        }
         // A dead root takes every own send built on it — including ones built on
         // its change after it was found dead.
         for view in &roots {
@@ -577,7 +608,6 @@ pub(crate) async fn resolve_pass(
                             Some(height),
                             trigger,
                         );
-                        events.push(ResolverEvent::Verdict(send, verdict.clone()));
                     }
                 }
             }
@@ -600,66 +630,68 @@ pub(crate) async fn resolve_pass(
         }
         due
     };
+    flush();
 
     for (root, transaction) in due {
-        if state
+        if !state
             .lock()
             .expect("resolver state poisoned")
-            .generation(&wallet_id)
-            != started
+            .is_current(&wallet_id, started)
         {
-            break;
+            return stopped;
         }
         let verdict = probe.probe(&transaction).await;
         let key = (wallet_id, root);
-        let mut guard = state.lock().expect("resolver state poisoned");
-        // Stopped meanwhile, or the root dropped by a newer pass: recording
-        // now would resurrect state that was cleared.
-        if guard.generation(&wallet_id) != started || !guard.schedules.contains_key(&key) {
-            continue;
-        }
-        match &verdict {
-            ProbeVerdict::Dead { reason } => {
-                guard.finished.insert(
-                    key,
-                    Final::Dead {
-                        reason: reason.clone(),
-                    },
-                );
+        {
+            let mut guard = state.lock().expect("resolver state poisoned");
+            if !guard.is_current(&wallet_id, started) {
+                return stopped;
             }
-            ProbeVerdict::Mined => {
-                guard.finished.insert(key, Final::Mined);
+            // Dropped by a newer pass meanwhile (it settled or left): recording
+            // now would resurrect state that was cleared.
+            if !guard.schedules.contains_key(&key) {
+                continue;
             }
-            _ => {}
-        }
-        let sends: BTreeSet<Txid> = if matches!(verdict, ProbeVerdict::Dead { .. }) {
-            graph.own_in_chain(&root)
-        } else if graph.is_own(&root) {
-            BTreeSet::from([root])
-        } else {
-            BTreeSet::new()
-        };
-        for send in sends {
-            if guard.publish((wallet_id, send), &verdict) {
-                guard.enqueue(
-                    wallet_id,
-                    ResolverEvent::Verdict(send, verdict.clone()),
-                    Some(height),
-                    trigger,
-                );
-                events.push(ResolverEvent::Verdict(send, verdict.clone()));
+            match &verdict {
+                ProbeVerdict::Dead { reason } => {
+                    guard.finished.insert(
+                        key,
+                        Final::Dead {
+                            reason: reason.clone(),
+                        },
+                    );
+                }
+                ProbeVerdict::Mined => {
+                    guard.finished.insert(key, Final::Mined);
+                }
+                _ => {}
+            }
+            let sends: BTreeSet<Txid> = if matches!(verdict, ProbeVerdict::Dead { .. }) {
+                graph.own_in_chain(&root)
+            } else if graph.is_own(&root) {
+                BTreeSet::from([root])
+            } else {
+                BTreeSet::new()
+            };
+            for send in sends {
+                if guard.publish((wallet_id, send), &verdict) {
+                    guard.enqueue(
+                        wallet_id,
+                        ResolverEvent::Verdict(send, verdict.clone()),
+                        Some(height),
+                        trigger,
+                    );
+                }
             }
         }
+        flush();
     }
 
     let guard = state.lock().expect("resolver state poisoned");
     let nothing_to_probe = roots
         .iter()
         .all(|view| guard.finished.contains_key(&(wallet_id, view.txid)));
-    PassOutcome {
-        events,
-        nothing_to_probe,
-    }
+    PassOutcome { nothing_to_probe }
 }
 
 /// Deliver queued events to the host, in order, with no lock held while a
@@ -809,7 +841,20 @@ impl PassQueue {
 #[derive(Default)]
 struct PendingPass {
     height: u32,
+    /// A height advance asked for this pass; otherwise only `Uncertain`
+    /// results did, and a wallet that holds none of `forced` is skipped.
+    by_height: bool,
     forced: HashSet<Txid>,
+}
+
+/// Whether any account of the wallet records `txid` — a map lookup per
+/// account, not a walk over the records.
+fn holds(info: &PlatformWalletInfo, txid: &Txid) -> bool {
+    info.core_wallet
+        .accounts
+        .all_accounts()
+        .iter()
+        .any(|account| account.transactions().contains_key(txid))
 }
 
 /// Runs probe passes off the wallet-event fan-out and delivers each change of
@@ -828,8 +873,9 @@ pub(crate) struct BroadcastResolver {
     delivering: Arc<AtomicBool>,
     /// Every wallet seen in an event, with its last synced height if one has
     /// been reported: an SPV-level `Uncertain` carries no wallet id, so it is
-    /// queued for every known wallet.
-    wallets: Mutex<HashMap<WalletId, Option<u32>>>,
+    /// queued for every known wallet. A worker that finds its wallet gone
+    /// drops the entry, so a late event for a removed wallet cannot keep it.
+    wallets: Arc<Mutex<HashMap<WalletId, Option<u32>>>>,
     passes: Arc<Mutex<PassQueue>>,
     events: Mutex<Weak<PlatformEventManager>>,
     tasks: ProbeTasks,
@@ -844,9 +890,12 @@ impl BroadcastResolver {
             enabled: AtomicBool::new(false),
             probe,
             wallet_manager,
-            state: Arc::new(Mutex::new(ResolverState::default())),
+            state: Arc::new(Mutex::new(ResolverState {
+                off: true,
+                ..ResolverState::default()
+            })),
             delivering: Arc::new(AtomicBool::new(false)),
-            wallets: Mutex::new(HashMap::new()),
+            wallets: Arc::new(Mutex::new(HashMap::new())),
             passes: Arc::new(Mutex::new(PassQueue::default())),
             events: Mutex::new(Weak::new()),
             tasks: ProbeTasks::new(),
@@ -866,16 +915,29 @@ impl BroadcastResolver {
 
     /// Turning probing off forgets every send and tells the host to drop every
     /// verdict it holds: with no passes running, nothing would ever clear them.
-    /// Passes still running stop before their next probe and record nothing.
+    /// Passes still running, and ones already queued, stop before their next
+    /// probe and record nothing. Either way every wallet leaves idle, so
+    /// turning probing back on re-publishes what was cleared.
+    ///
+    /// The clears are delivered on the calling thread before this returns.
     pub(crate) fn set_enabled(&self, enabled: bool) {
-        let was = self.enabled.swap(enabled, Ordering::SeqCst);
-        if was && !enabled {
-            self.state
-                .lock()
-                .expect("resolver state poisoned")
-                .forget_all();
-            self.deliver();
+        let changed = {
+            let mut state = self.state.lock().expect("resolver state poisoned");
+            let was = self.enabled.swap(enabled, Ordering::SeqCst);
+            state.off = !enabled;
+            if was && !enabled {
+                state.forget_all();
+            }
+            was != enabled
+        };
+        if changed {
+            let mut passes = self.passes.lock().expect("pass queue poisoned");
+            passes.idle.clear();
+            if !enabled {
+                passes.pending.clear();
+            }
         }
+        self.deliver();
     }
 
     pub(crate) fn is_enabled(&self) -> bool {
@@ -911,17 +973,18 @@ impl BroadcastResolver {
     }
 
     /// Queue a pass for `wallet_id`; start a worker for it unless one runs.
-    /// A height-driven request (no `force`) is dropped for an idle wallet.
+    /// A height-driven request (no `force`) is dropped for an idle wallet; a
+    /// forced one is queued, and the worker skips it cheaply if the wallet
+    /// does not hold the transaction.
     fn request_pass(&self, wallet_id: WalletId, height: u32, force: Option<Txid>) {
         {
             let mut passes = self.passes.lock().expect("pass queue poisoned");
-            if force.is_some() {
-                passes.wake(&wallet_id);
-            } else if passes.idle.contains(&wallet_id) {
+            if force.is_none() && passes.idle.contains(&wallet_id) {
                 return;
             }
             let pending = passes.pending.entry(wallet_id).or_default();
             pending.height = pending.height.max(height);
+            pending.by_height |= force.is_none();
             pending.forced.extend(force);
             if !passes.running.insert(wallet_id) {
                 return; // the running worker picks it up
@@ -931,6 +994,7 @@ impl BroadcastResolver {
         let probe = Arc::clone(&self.probe);
         let state = Arc::clone(&self.state);
         let passes = Arc::clone(&self.passes);
+        let wallets = Arc::clone(&self.wallets);
         let delivering = Arc::clone(&self.delivering);
         let events = self.events.lock().expect("events mutex poisoned").clone();
         self.tasks.spawn(async move {
@@ -939,6 +1003,7 @@ impl BroadcastResolver {
                 wallet_id,
                 armed: true,
             };
+            let flush = || deliver(&state, &delivering, &events);
             loop {
                 // Take the next request, or stop — under the same lock a
                 // request_pass would take, so a request can never land between
@@ -951,7 +1016,12 @@ impl BroadcastResolver {
                     }
                     (next, queue.wakes(&wallet_id))
                 };
-                let Some(PendingPass { height, forced }) = next else {
+                let Some(PendingPass {
+                    height,
+                    by_height,
+                    forced,
+                }) = next
+                else {
                     // Already left the running set under the lock; the guard
                     // must not remove a marker a new worker may have set since.
                     running.armed = false;
@@ -965,17 +1035,44 @@ impl BroadcastResolver {
                 let read = {
                     let manager = wallet_manager.read().await;
                     manager.get_wallet_info(&wallet_id).map(|info| {
+                        // An `Uncertain` result is queued for every wallet;
+                        // only the one holding the transaction acts on it.
+                        let forced: HashSet<Txid> = forced
+                            .into_iter()
+                            .filter(|txid| holds(info, txid))
+                            .collect();
+                        if !by_height && forced.is_empty() {
+                            return None;
+                        }
                         // A request queued before any height was reported
                         // carries 0; the wallet's own synced height is better.
-                        (
-                            collect_views(info),
-                            height.max(info.core_wallet.synced_height()),
-                        )
+                        let height = height.max(info.core_wallet.synced_height());
+                        Some((collect_views(info), height, forced))
                     })
                 };
-                let Some((views, height)) = read else {
-                    continue; // removed; wallet_removed does the clearing
+                let (views, height, forced) = match read {
+                    Some(Some(pass)) => pass,
+                    Some(None) => continue, // not this wallet's transaction
+                    None => {
+                        // Removed (wallet_removed did the clearing), or an id a
+                        // late event brought back after the removal.
+                        wallets
+                            .lock()
+                            .expect("wallets mutex poisoned")
+                            .remove(&wallet_id);
+                        let mut queue = passes.lock().expect("pass queue poisoned");
+                        queue.idle.remove(&wallet_id);
+                        queue.wakes.remove(&wallet_id);
+                        continue;
+                    }
                 };
+                if !forced.is_empty() {
+                    passes
+                        .lock()
+                        .expect("pass queue poisoned")
+                        .idle
+                        .remove(&wallet_id);
+                }
                 let outcome = resolve_pass(
                     &state,
                     probe.as_ref(),
@@ -984,6 +1081,7 @@ impl BroadcastResolver {
                     &views,
                     &forced,
                     started,
+                    &flush,
                 )
                 .await;
                 if outcome.nothing_to_probe {
@@ -992,9 +1090,22 @@ impl BroadcastResolver {
                         queue.idle.insert(wallet_id);
                     }
                 }
-                deliver(&state, &delivering, &events);
+                flush();
             }
         });
+    }
+}
+
+/// A handle that turns automatic probing on or off, usable after the lock that
+/// guards the manager is released: turning probing off delivers a clear per
+/// published send to the host on the calling thread.
+#[derive(Clone)]
+pub struct BroadcastProbeSwitch(pub(crate) Arc<BroadcastResolver>);
+
+impl BroadcastProbeSwitch {
+    /// See [`PlatformWalletManager::set_broadcast_probe_enabled`](crate::PlatformWalletManager::set_broadcast_probe_enabled).
+    pub fn set_enabled(&self, enabled: bool) {
+        self.0.set_enabled(enabled);
     }
 }
 
@@ -1019,6 +1130,25 @@ impl Drop for Running {
     }
 }
 
+/// Whether a wallet event may have left something new to probe. A chainlock
+/// that locked nothing, or a block that only matured coins or moved balances,
+/// does not — chainlocks arrive about once per block for every wallet.
+fn may_leave_work(event: &WalletEvent) -> bool {
+    match event {
+        WalletEvent::TransactionDetected { .. }
+        | WalletEvent::TransactionInstantLocked { .. }
+        | WalletEvent::TransactionsSwept { .. } => true,
+        WalletEvent::BlockProcessed {
+            inserted, updated, ..
+        } => !inserted.is_empty() || !updated.is_empty(),
+        WalletEvent::ChainLockProcessed {
+            locked_transactions,
+            ..
+        } => locked_transactions.values().any(|txids| !txids.is_empty()),
+        WalletEvent::SyncHeightAdvanced { .. } => false,
+    }
+}
+
 impl EventHandler for BroadcastResolver {
     fn on_wallet_event(&self, event: &WalletEvent) {
         let wallet_id = event.wallet_id();
@@ -1034,18 +1164,17 @@ impl EventHandler for BroadcastResolver {
             }
             return;
         }
-        // Anything else that happens to the wallet — a new transaction, a
-        // block that changed its records, a reorg, a sweep — may leave
-        // something to probe: wake it.
         self.wallets
             .lock()
             .expect("wallets mutex poisoned")
             .entry(wallet_id)
             .or_insert(None);
-        self.passes
-            .lock()
-            .expect("pass queue poisoned")
-            .wake(&wallet_id);
+        if may_leave_work(event) {
+            self.passes
+                .lock()
+                .expect("pass queue poisoned")
+                .wake(&wallet_id);
+        }
     }
 
     fn on_sync_event(&self, event: &SyncEvent) {
@@ -1325,9 +1454,8 @@ mod tests {
         height: u32,
         views: &[OutgoingView],
     ) -> Vec<ResolverEvent> {
-        run(state, probe, wallet(), height, views, &none())
-            .await
-            .events
+        run(state, probe, wallet(), height, views, &none()).await;
+        outbox(state)
     }
 
     /// A pass started under the current generation, as the worker runs it.
@@ -1340,7 +1468,17 @@ mod tests {
         forced: &HashSet<Txid>,
     ) -> PassOutcome {
         let started = state.lock().expect("state").generation(&wallet_id);
-        resolve_pass(state, probe, wallet_id, height, views, forced, started).await
+        resolve_pass(
+            state,
+            probe,
+            wallet_id,
+            height,
+            views,
+            forced,
+            started,
+            &|| {},
+        )
+        .await
     }
 
     fn outbox(state: &Mutex<ResolverState>) -> Vec<ResolverEvent> {
@@ -1473,10 +1611,20 @@ mod tests {
         let started = state.lock().expect("state").generation(&wallet());
         state.lock().expect("state").forget_all();
 
-        let outcome = resolve_pass(&state, &probe, wallet(), 100, &views, &none(), started).await;
+        resolve_pass(
+            &state,
+            &probe,
+            wallet(),
+            100,
+            &views,
+            &none(),
+            started,
+            &|| {},
+        )
+        .await;
 
         assert!(probe.probed().is_empty());
-        assert!(outcome.events.is_empty());
+        assert!(outbox(&state).is_empty());
         assert!(state.lock().expect("state").schedules.is_empty());
     }
 
@@ -1612,7 +1760,7 @@ mod tests {
             state: Arc::clone(&state),
         };
 
-        let outcome = run(
+        run(
             &state,
             &probe,
             wallet(),
@@ -1622,7 +1770,7 @@ mod tests {
         )
         .await;
 
-        assert!(outcome.events.is_empty());
+        assert!(outbox(&state).is_empty());
         assert!(state.lock().expect("state").published.is_empty());
     }
 
@@ -1755,17 +1903,106 @@ mod tests {
         ));
     }
 
-    /// Events reach the host in the order they were queued, and a pass
-    /// queues them as it returns them.
+    /// Probing off: a pass that read its generation after the switch stops
+    /// as surely as one that started before it.
     #[tokio::test]
-    async fn should_queue_every_event_a_pass_returns_in_order() {
+    async fn should_do_nothing_while_probing_is_off() {
+        let state = Mutex::new(ResolverState {
+            off: true,
+            ..ResolverState::default()
+        });
+        let probe = ScriptedProbe::new(&[]);
+
+        run(
+            &state,
+            &probe,
+            wallet(),
+            100,
+            &[send(1, &[outpoint(90, 0)])],
+            &none(),
+        )
+        .await;
+
+        assert!(probe.probed().is_empty());
+        assert!(outbox(&state).is_empty());
+        assert!(state.lock().expect("state").schedules.is_empty());
+    }
+
+    /// A probe that records what the host had been told by the time it ran.
+    struct SnapshotProbe {
+        delivered: Arc<StdMutex<Vec<ResolverEvent>>>,
+        seen: StdMutex<Vec<ResolverEvent>>,
+    }
+
+    #[async_trait]
+    impl AcceptanceProbe for SnapshotProbe {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
+            *self.seen.lock().expect("seen") = self.delivered.lock().expect("delivered").clone();
+            unresolved()
+        }
+    }
+
+    /// A clear reaches the host before the pass goes out to the network, not
+    /// after every root's probe.
+    #[tokio::test]
+    async fn should_deliver_clears_before_probing() {
         let state = Mutex::new(ResolverState::default());
-        let probe = ScriptedProbe::new(&[(txid(1), dead())]);
-        let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])];
+        pass(
+            &state,
+            &ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]),
+            100,
+            &[send(1, &[outpoint(90, 0)])],
+        )
+        .await;
+        let delivered = Arc::new(StdMutex::new(Vec::new()));
+        let probe = SnapshotProbe {
+            delivered: Arc::clone(&delivered),
+            seen: StdMutex::new(Vec::new()),
+        };
+        let flush = || {
+            let batch = outbox(&state);
+            delivered.lock().expect("delivered").extend(batch);
+        };
+        let started = state.lock().expect("state").generation(&wallet());
 
-        let events = pass(&state, &probe, 100, &views).await;
+        resolve_pass(
+            &state,
+            &probe,
+            wallet(),
+            101,
+            &[send(2, &[outpoint(91, 0)])],
+            &none(),
+            started,
+            &flush,
+        )
+        .await;
 
-        assert_eq!(outbox(&state), events);
-        assert!(outbox(&state).is_empty(), "taken once");
+        assert_eq!(
+            *probe.seen.lock().expect("seen"),
+            vec![ResolverEvent::Cleared(txid(1))]
+        );
+        assert_eq!(
+            *delivered.lock().expect("delivered"),
+            vec![
+                ResolverEvent::Cleared(txid(1)),
+                ResolverEvent::Verdict(txid(2), unresolved()),
+            ]
+        );
+    }
+
+    /// A long chain on one root: every own send in it, found in one walk.
+    #[test]
+    fn should_find_every_own_send_in_a_long_chain() {
+        let mut views = vec![send(1, &[outpoint(90, 0)])];
+        for n in 2..=20u8 {
+            views.push(send(n, &[outpoint(n - 1, 1)]));
+        }
+        views.push(incoming(30, &[outpoint(80, 0)]));
+        let graph = ChainGraph::new(&views, &none());
+
+        assert_eq!(
+            graph.own_in_chain(&txid(1)),
+            (1..=20u8).map(txid).collect::<BTreeSet<_>>()
+        );
     }
 }

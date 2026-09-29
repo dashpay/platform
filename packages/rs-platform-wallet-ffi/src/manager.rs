@@ -2160,10 +2160,13 @@ pub unsafe extern "C" fn platform_wallet_manager_set_broadcast_probe_enabled(
     handle: Handle,
     enabled: bool,
 ) -> PlatformWalletFFIResult {
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        manager.set_broadcast_probe_enabled(enabled);
-    });
-    unwrap_option_or_return!(option);
+    // Released before switching: turning probing off calls the host once per
+    // published send, and a host that calls back into the FFI from there must
+    // not do so under the storage lock.
+    let option = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(handle, |manager| manager.broadcast_probe_switch());
+    let switch = unwrap_option_or_return!(option);
+    switch.set_enabled(enabled);
     PlatformWalletFFIResult::ok()
 }
 
