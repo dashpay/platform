@@ -1,8 +1,9 @@
-//! Commit and reveal through a `refersTo` lookup with a computed key (protocol
-//! version 14) through the full ABCI pipeline. The fixture's `preorder` holds
-//! a commitment, `saltedDomainHash`, under a unique index, as the DPNS
-//! preorder does. Its `domain`'s `preorderSalt` refers to one through the
-//! `sys.hash.sha256d` of `preorderSalt ++ normalizedLabel ++ "." ++
+//! Commit and reveal through a `refersTo` whose `propertyAgreement` holds a
+//! function (protocol version 14), through the full ABCI pipeline. The
+//! fixture's `preorder` holds a commitment, `saltedDomainHash`, under a unique
+//! index, as the DPNS preorder does. Its `domain`'s `preorderSalt` refers to
+//! one found through that index, whose `saltedDomainHash` the agreement pins to
+//! the `sys.hash.sha256d` of `preorderSalt ++ normalizedLabel ++ "." ++
 //! parentDomainName`, byte for byte the hash the DPNS create trigger computes
 //! for a name under a parent. The reveal must be the writer's own commitment
 //! (`$ownerId` agreement), from an earlier block (`minimumAgeBlocks: 1`), and

@@ -797,9 +797,9 @@ fn apply_property_reference_v0(
 
 /// Reads the `refersTo` of a string or byte array property: its value is not
 /// an id, so the one declaration it may carry is a document reference, of
-/// either kind, found through a `lookup` whose computed key reads the value as
-/// its `"."` param, a commitment the value is revealed to (a salt a preorder
-/// hashed). `None` for every other property type, and for a declaration
+/// either kind, found through a `lookup` whose key a `propertyAgreement`
+/// function computes from the value, a commitment the value is revealed to (a
+/// salt a preorder hashed). `None` for every other property type, and for a declaration
 /// without a lookup, which [`apply_property_reference`] folds into the type or
 /// refuses.
 ///
@@ -835,8 +835,8 @@ fn apply_revealed_reference(
     let refused = || {
         DataContractError::InvalidContractStructure(
             "refersTo on a string or byte array property must be a permanentDocument or \
-             deletableDocument reference whose lookup reveals the value in a computed key, \
-             reading it as the \".\" param: the value is not an id"
+             deletableDocument reference whose lookup key is computed by a propertyAgreement \
+             function reading the value: the value is not an id"
                 .to_string(),
         )
     };
@@ -854,12 +854,13 @@ fn apply_revealed_reference(
     }
     validate_reference_target_keys(&refers_to_map, reference_type)?;
     let target = parse_reference_target(&refers_to_map, reference_type)?;
-    let reveals_the_value = target
+    // That the function reads the value, by the property's path, exactly
+    // once is a referring-side rule, checked once the type is parsed
+    let computed = target
         .as_any_document_reference()
         .and_then(|declaration| declaration.lookup)
-        .and_then(|lookup| lookup.hash_key())
-        .is_some_and(|(_, key)| key.reference_value_uses() == 1);
-    if !reveals_the_value {
+        .is_some_and(|lookup| lookup.is_checked_on_create_only());
+    if !computed {
         return Err(refused());
     }
     Ok(Some(target))
@@ -1123,7 +1124,23 @@ fn parse_reference_target(
                 )));
             }
 
-            let property_agreement = parse_property_agreement(refers_to_map, document_target)?;
+            let (property_agreement, agreement_function) =
+                parse_property_agreement(refers_to_map, document_target)?;
+            // A function pair computes a key of the lookup that finds the
+            // referenced document: it needs one, whose index holds the property
+            // the pair names
+            if let Some((referenced_property, _)) = &agreement_function {
+                if document_target == "listElement"
+                    || !refers_to_map.contains_key(property_names::LOOKUP)
+                {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "{document_target} refersTo propertyAgreement \"{referenced_property}\" \
+                         is a function, which computes a key of the lookup that finds the \
+                         referenced document: declare a lookup whose index holds \
+                         \"{referenced_property}\""
+                    )));
+                }
+            }
 
             let document_type_name = document_type_name.to_string();
             match document_target {
@@ -1132,7 +1149,8 @@ fn parse_reference_target(
                     // shape (and its encoding in the reference errors)
                     match refers_to_map.get(property_names::LOOKUP) {
                         Some(lookup_value) => {
-                            let lookup = parse_document_reference_lookup(lookup_value)?;
+                            let lookup =
+                                parse_document_reference_lookup(lookup_value, agreement_function)?;
                             // A permanent document is never deleted, so there is
                             // nothing to consume
                             if lookup.consume {
@@ -1159,7 +1177,8 @@ fn parse_reference_target(
                 }
                 "deletableDocument" => match refers_to_map.get(property_names::LOOKUP) {
                     Some(lookup_value) => {
-                        let lookup = parse_document_reference_lookup(lookup_value)?;
+                        let lookup =
+                            parse_document_reference_lookup(lookup_value, agreement_function)?;
                         // Consuming deletes the found document, so only its
                         // owner's own reveal may: the `$ownerId` pair makes the
                         // writer the found document's owner
@@ -1225,14 +1244,21 @@ fn parse_reference_target(
 /// The `propertyAgreement` of a document reference of `document_target`: each
 /// `{referring property: referenced property}` pair, either side a property
 /// path or the system property its side admits (the writer's `$ownerId` on the
-/// referring side; `$ownerId`, `$creatorId` or `$id` on the referenced side).
-/// What the names resolve to is checked at registration.
+/// referring side; `$ownerId`, `$creatorId` or `$id` on the referenced side),
+/// and at most one function pair, returned apart:
+/// `{referenced property: { "function": ..., "params": [...] }}`, keyed by the
+/// referenced side since a function cannot be a key, whose property must hold
+/// what the function computes from the referring document (see
+/// [`LookupHashKey`]). A function pair computes a key of the reference's
+/// lookup, which the caller checks it has. What the names resolve to is
+/// checked at registration.
+#[allow(clippy::type_complexity)]
 fn parse_property_agreement(
     refers_to_map: &BTreeMap<String, &Value>,
     document_target: &str,
-) -> Result<BTreeMap<String, String>, DataContractError> {
+) -> Result<(BTreeMap<String, String>, Option<(String, LookupHashKey)>), DataContractError> {
     let Some(agreement_value) = refers_to_map.get(property_names::PROPERTY_AGREEMENT) else {
-        return Ok(BTreeMap::new());
+        return Ok((BTreeMap::new(), None));
     };
     let agreement_map = agreement_value.to_btree_ref_string_map()?;
     if agreement_map.is_empty() || agreement_map.len() > 10 {
@@ -1241,49 +1267,72 @@ fn parse_property_agreement(
              property pairs"
         )));
     }
-    agreement_map
-        .iter()
-        .map(|(referring_property, referenced_value)| {
-            let referenced_property = referenced_value.as_text().ok_or_else(|| {
-                DataContractError::InvalidContractStructure(
-                    "propertyAgreement values must be referenced property paths (strings)"
-                        .to_string(),
-                )
-            })?;
-            for path in [referring_property.as_str(), referenced_property] {
-                if path.is_empty() || path.len() > MAX_PROPERTY_PATH_LENGTH {
-                    return Err(DataContractError::InvalidContractStructure(format!(
-                        "propertyAgreement property paths must be between 1 and \
-                         {MAX_PROPERTY_PATH_LENGTH} characters"
-                    )));
-                }
+    let mut pairs = BTreeMap::new();
+    let mut function = None;
+    for (key, value) in agreement_map {
+        if key.is_empty() || key.len() > MAX_PROPERTY_PATH_LENGTH {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "propertyAgreement property paths must be between 1 and \
+                 {MAX_PROPERTY_PATH_LENGTH} characters"
+            )));
+        }
+        // A function computes the referenced property's value from the
+        // referring document: the key names the referenced side
+        if matches!(value, Value::Map(_)) {
+            if key.starts_with('$') {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "propertyAgreement function pair \"{key}\" must name a schema property of \
+                     the referenced document type, which the function computes"
+                )));
             }
-            // Either side may name a system property, but only one the
-            // agreement can read back as an identifier: the writer's
-            // `$ownerId` on the referring side (a write gate); `$ownerId`,
-            // `$creatorId` or `$id` on the referenced side.
-            if referring_property.starts_with('$')
-                && !is_referring_system_agreement_property(referring_property)
-            {
+            if function.is_some() {
                 return Err(DataContractError::InvalidContractStructure(
-                    "propertyAgreement keys must name a schema property of the declaring \
-                     document type or its $ownerId"
-                        .to_string(),
+                    "propertyAgreement holds at most one function pair".to_string(),
                 ));
             }
-            if referenced_property.starts_with('$')
-                && !is_referenced_system_agreement_property(referenced_property)
-            {
-                return Err(DataContractError::InvalidContractStructure(
-                    "propertyAgreement values must name a schema property of the referenced \
-                     document type or one of its $ownerId, $creatorId and $id system \
-                     properties"
-                        .to_string(),
-                ));
-            }
-            Ok((referring_property.clone(), referenced_property.to_string()))
-        })
-        .collect()
+            function = Some((key, LookupHashKey::from_value(value)?));
+            continue;
+        }
+        let referring_property = key;
+        let referenced_property = value.as_text().ok_or_else(|| {
+            DataContractError::InvalidContractStructure(
+                "propertyAgreement values must be referenced property paths (strings), or a \
+                 function of the referring document keyed by the referenced property"
+                    .to_string(),
+            )
+        })?;
+        if referenced_property.is_empty() || referenced_property.len() > MAX_PROPERTY_PATH_LENGTH {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "propertyAgreement property paths must be between 1 and \
+                 {MAX_PROPERTY_PATH_LENGTH} characters"
+            )));
+        }
+        // Either side may name a system property, but only one the
+        // agreement can read back as an identifier: the writer's
+        // `$ownerId` on the referring side (a write gate); `$ownerId`,
+        // `$creatorId` or `$id` on the referenced side.
+        if referring_property.starts_with('$')
+            && !is_referring_system_agreement_property(&referring_property)
+        {
+            return Err(DataContractError::InvalidContractStructure(
+                "propertyAgreement keys must name a schema property of the declaring \
+                 document type or its $ownerId"
+                    .to_string(),
+            ));
+        }
+        if referenced_property.starts_with('$')
+            && !is_referenced_system_agreement_property(referenced_property)
+        {
+            return Err(DataContractError::InvalidContractStructure(
+                "propertyAgreement values must name a schema property of the referenced \
+                 document type or one of its $ownerId, $creatorId and $id system \
+                 properties"
+                    .to_string(),
+            ));
+        }
+        pairs.insert(referring_property, referenced_property.to_string());
+    }
+    Ok((pairs, function))
 }
 
 /// A `listElement` declaration beyond what it shares with the other document
@@ -1644,22 +1693,24 @@ pub(super) fn parse_doctype_reference(
 }
 
 /// The `lookup` of a document reference: `index`, the name of an index of the
-/// referenced document type, and `keys`, every property of that index mapped to
-/// its referring-side source (`"."`, `"$ownerId"` or a property path), with `"."`
-/// exactly once, or to a computed key
-/// (`{ "function": "sys.hash.sha256d", "params": [...] }`, see [`LookupHashKey`]),
-/// at most one of them, whose params may read `"."` in place of a source. Beside
-/// a computed key `"."` may be left out, which only the lookup of an
-/// `ownerRefersTo` or `creatorRefersTo` may do (checked with the other
-/// referring-side rules), and the lookup may declare `minimumAgeBlocks` and
-/// `consume`, what the commitment the key finds must be and whether the create
-/// deletes it. What the names resolve to is
-/// checked once the document types are parsed: the sources against the
-/// declaring type ([`validate_reference_lookup_sources`]), the index against
-/// the referenced one (at contract level for a type of the same contract, at
-/// registration for one of another contract).
+/// referenced document type, and `keys`, properties of that index mapped to
+/// their referring-side source (`"."`, `"$ownerId"` or a property path), with
+/// `"."` exactly once. The reference's `propertyAgreement` function pair,
+/// `agreement_function`, fills the index property it names with a computed key
+/// (see [`LookupHashKey`]), so `keys` maps the other index properties and may
+/// be left out when that one is the whole index. Beside a computed key `"."`
+/// may be left out of `keys`, the function reading the value in its params or
+/// the lookup being an `ownerRefersTo` or `creatorRefersTo` one (checked with
+/// the other referring-side rules), and the lookup may declare
+/// `minimumAgeBlocks` and `consume`, what the commitment the key finds must be
+/// and whether the create deletes it. What the names resolve to is checked once
+/// the document types are parsed: the sources against the declaring type
+/// ([`validate_reference_lookup_sources`]), the index against the referenced one
+/// (at contract level for a type of the same contract, at registration for one
+/// of another contract).
 fn parse_document_reference_lookup(
     lookup_value: &Value,
+    agreement_function: Option<(String, LookupHashKey)>,
 ) -> Result<DocumentReferenceLookup, DataContractError> {
     let lookup_map = lookup_value.to_btree_ref_string_map()?;
     if let Some(unknown) = lookup_map.keys().find(|key| {
@@ -1687,22 +1738,29 @@ fn parse_document_reference_lookup(
         )));
     }
 
-    let keys_map = lookup_map
-        .get(property_names::LOOKUP_KEYS)
-        .ok_or_else(|| {
-            DataContractError::InvalidContractStructure(
-                "permanentDocument refersTo lookup must declare keys".to_string(),
-            )
-        })?
-        .to_btree_ref_string_map()?;
-    if keys_map.is_empty() || keys_map.len() > MAX_LOOKUP_KEYS {
-        return Err(DataContractError::InvalidContractStructure(format!(
-            "permanentDocument refersTo lookup keys must map between 1 and {MAX_LOOKUP_KEYS} \
-             index properties"
-        )));
-    }
+    let keys_map = match lookup_map.get(property_names::LOOKUP_KEYS) {
+        Some(keys_value) => {
+            let keys_map = keys_value.to_btree_ref_string_map()?;
+            if keys_map.is_empty() || keys_map.len() > MAX_LOOKUP_KEYS {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "permanentDocument refersTo lookup keys must map between 1 and \
+                     {MAX_LOOKUP_KEYS} index properties"
+                )));
+            }
+            keys_map
+        }
+        // A propertyAgreement function pair may fill the whole index
+        None if agreement_function.is_some() => BTreeMap::new(),
+        None => {
+            return Err(DataContractError::InvalidContractStructure(
+                "permanentDocument refersTo lookup must declare keys, or a propertyAgreement \
+                 function pair filling its index"
+                    .to_string(),
+            ))
+        }
+    };
 
-    let keys = keys_map
+    let mut keys = keys_map
         .into_iter()
         .map(|(index_property, source_value)| {
             if index_property.is_empty() || index_property.len() > MAX_LOOKUP_PATH_LENGTH {
@@ -1711,18 +1769,11 @@ fn parse_document_reference_lookup(
                      and {MAX_LOOKUP_PATH_LENGTH} characters"
                 )));
             }
-            // A computed key is an object naming its function; every other
-            // source a string
-            if matches!(source_value, Value::Map(_)) {
-                return Ok((
-                    index_property,
-                    LookupKeySource::Hash(LookupHashKey::from_value(source_value)?),
-                ));
-            }
             let source = source_value.as_text().ok_or_else(|| {
                 DataContractError::InvalidContractStructure(
                     "permanentDocument refersTo lookup keys must map each index property to a \
-                     string, \".\", \"$ownerId\" or a property path, or to a computed key"
+                     string, \".\", \"$ownerId\" or a property path; a key computed by a \
+                     function is a propertyAgreement pair"
                         .to_string(),
                 )
             })?;
@@ -1730,13 +1781,22 @@ fn parse_document_reference_lookup(
         })
         .collect::<Result<BTreeMap<String, LookupKeySource>, DataContractError>>()?;
 
-    let computed_keys = keys
-        .values()
-        .filter(|source| matches!(source, LookupKeySource::Hash(_)))
-        .count();
-    if computed_keys > 1 {
+    // The function pair of the reference's agreement fills the index property
+    // it names, which `keys` then may not map
+    let computed_keys = usize::from(agreement_function.is_some());
+    if let Some((index_property, key)) = agreement_function {
+        if keys.contains_key(&index_property) {
+            return Err(DataContractError::InvalidContractStructure(format!(
+                "refersTo lookup keys map \"{index_property}\", which the propertyAgreement \
+                 function pair fills: an index property takes one source"
+            )));
+        }
+        keys.insert(index_property, LookupKeySource::Hash(key));
+    }
+    if keys.len() > MAX_LOOKUP_KEYS {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "refersTo lookup keys hold at most one computed key, found {computed_keys}"
+            "permanentDocument refersTo lookup keys, with the propertyAgreement function pair, \
+             must fill at most {MAX_LOOKUP_KEYS} index properties"
         )));
     }
 
@@ -1749,9 +1809,11 @@ fn parse_document_reference_lookup(
 
     // Without the reference's own value in the key, every document would
     // resolve to the same referenced document whatever the property holds: it
-    // fills the key once, as a source or a param of the computed key. A
-    // computed key makes the key the document's own, so beside one the value
-    // may be left out, on the writer or the creator alone
+    // fills the key once, as a source or a param of the computed key. Beside a
+    // computed key `"."` may be absent here: its params may name a property
+    // carrying the reference by its path, and the writer or the creator may
+    // leave the value out, which the referring-side rules check knowing where
+    // the reference sits
     let reference_value_uses = lookup.reference_value_uses();
     let allowed_uses: &[usize] = if computed_keys == 1 { &[0, 1] } else { &[1] };
     if !allowed_uses.contains(&reference_value_uses) {
@@ -1791,8 +1853,8 @@ fn parse_document_reference_lookup(
     };
     if computed_keys == 0 && (minimum_age_blocks.is_some() || consume) {
         return Err(DataContractError::InvalidContractStructure(
-            "refersTo lookup minimumAgeBlocks and consume need a computed key: they describe \
-             the commitment a create reveals"
+            "refersTo lookup minimumAgeBlocks and consume need a computed key, a \
+             propertyAgreement function pair: they describe the commitment a create reveals"
                 .to_string(),
         ));
     }

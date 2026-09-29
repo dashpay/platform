@@ -1,10 +1,13 @@
-//! A computed key of a `refersTo` lookup: in place of a key source,
-//! `{ "function": "sys.hash.sha256d", "params": [...] }` names a system hash
-//! function (`sys.hash`, see [`HashFunction`]) of values the referring document
+//! A computed key of a `refersTo` lookup, declared as a `propertyAgreement`
+//! function pair: `"<referenced property>": { "function": "sys.hash.sha256d",
+//! "params": [...] }` says the referenced document's property holds a system
+//! hash (`sys.hash`, see [`HashFunction`]) of values the referring document
 //! reveals, the same `function` / `params` shape a `generatedFrom` property
-//! declares. The document such a key finds is a commitment made earlier, so a
-//! lookup holding one is a commit and reveal: a document may be created only
-//! when a commitment to values it carries exists.
+//! declares. The property is a key of the reference's lookup, so the platform
+//! finds the referenced document by the hash. The document it finds is a
+//! commitment made earlier, so the reference is a commit and reveal: a
+//! document may be created only when a commitment to values it carries
+//! exists.
 //!
 //! ```json
 //! "preorderSalt": {
@@ -12,30 +15,30 @@
 //!   "refersTo": {
 //!     "type": "deletableDocument",
 //!     "documentType": "preorder",
-//!     "lookup": {
-//!       "index": "saltedHash",
-//!       "keys": { "saltedDomainHash": {
+//!     "lookup": { "index": "saltedHash", "minimumAgeBlocks": 1, "consume": true },
+//!     "propertyAgreement": {
+//!       "$ownerId": "$ownerId",
+//!       "saltedDomainHash": {
 //!         "function": "sys.hash.sha256d",
-//!         "params": [".", "normalizedLabel", { "const": "." }, "parentDomainName"]
-//!       } },
-//!       "minimumAgeBlocks": 1,
-//!       "consume": true
-//!     },
-//!     "propertyAgreement": { "$ownerId": "$ownerId" }
+//!         "params": ["preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
+//!       }
+//!     }
 //!   }
 //! }
 //! ```
 //!
 //! The hash is taken over the bytes of the params joined in order with nothing
-//! between them: `"."` is the value carrying the reference (here the salt), a
-//! dotted path a property of the same document (a string's UTF-8, a byte
-//! array's bytes, an identifier's 32 bytes), and `{ "const": text }` fixed
-//! UTF-8 text. So that the joined bytes split back into the params one way
-//! only, every variable-length param (a string, or a byte array whose size is
-//! not fixed) that another variable-length param follows is followed directly
-//! by a one-byte `const`, its separator, and a value holding that byte is
-//! refused when the document is created. The rules live here so the parse, the
-//! registration checks and the write-time check read one grammar.
+//! between them: a dotted path a property of the referring document (a
+//! string's UTF-8, a byte array's bytes, an identifier's 32 bytes), the
+//! property carrying the reference included, named by its path;
+//! `{ "const": text }` fixed UTF-8 text; and `"."` the value carrying the
+//! reference where it has no path (each element of a typed array, the writer
+//! or the creator). So that the joined bytes split back into the params one
+//! way only, every variable-length param (a string, or a byte array whose size
+//! is not fixed) that another variable-length param follows is followed
+//! directly by a one-byte `const`, its separator, and a value holding that
+//! byte is refused when the document is created. The rules live here so the
+//! parse, the registration checks and the write-time check read one grammar.
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property::generated_from::{HashFunction, SystemFunction};
@@ -76,8 +79,10 @@ pub const MAX_LOOKUP_KEY_PATH_LENGTH: usize = 256;
 // @append_only
 #[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, DecodeUntrusted)]
 pub enum LookupKeyParam {
-    /// `"."`: the value carrying the reference: the property's value, or for
-    /// an `ownerRefersTo` or `creatorRefersTo` the writer's or creator's id.
+    /// `"."`: the value carrying the reference where it has no path of its
+    /// own: each element of a typed array, or for an `ownerRefersTo` or
+    /// `creatorRefersTo` the writer's or creator's id. A single property
+    /// carrying the reference is named by its path instead.
     ReferenceValue,
     /// A dotted path of a string, byte array or identifier property of the
     /// referring document type.
@@ -594,7 +599,7 @@ mod tests {
     fn dpns_key() -> LookupHashKey {
         LookupHashKey::from_value(&platform_value!({
             "function": "sys.hash.sha256d",
-            "params": [".", "normalizedLabel", { "const": "." }, "parentDomainName"]
+            "params": ["preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
         }))
         .expect("the DPNS key should parse")
     }
@@ -659,7 +664,10 @@ mod tests {
         let salt = Value::Bytes32([0x42; 32]);
         let salt_type = salt_type(&domain);
 
-        let missing_parent = data(&[("normalizedLabel", "al1ce".into())]);
+        let missing_parent = data(&[
+            ("normalizedLabel", "al1ce".into()),
+            ("preorderSalt", salt.clone()),
+        ]);
         assert!(matches!(
             key.preimage(domain.as_ref(), &salt, &salt_type, &missing_parent),
             Err(LookupPreimageError { param, .. }) if param == "parentDomainName"
@@ -669,6 +677,7 @@ mod tests {
         let dotted_label = data(&[
             ("normalizedLabel", "a.b".into()),
             ("parentDomainName", "c".into()),
+            ("preorderSalt", salt.clone()),
         ]);
         assert!(matches!(
             key.preimage(domain.as_ref(), &salt, &salt_type, &dotted_label),
@@ -679,6 +688,7 @@ mod tests {
         let dotted_parent = data(&[
             ("normalizedLabel", "al1ce".into()),
             ("parentDomainName", "b.c".into()),
+            ("preorderSalt", salt.clone()),
         ]);
         assert!(key
             .preimage(domain.as_ref(), &salt, &salt_type, &dotted_parent)
@@ -713,7 +723,7 @@ mod tests {
             serde_json::to_value(&source).expect("the key serializes"),
             serde_json::json!({
                 "function": "sys.hash.sha256d",
-                "params": [".", "normalizedLabel", { "const": "." }, "parentDomainName"]
+                "params": ["preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
             })
         );
         assert_eq!(

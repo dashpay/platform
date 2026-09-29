@@ -148,10 +148,13 @@ type Reference = {
   keyIdProperty?: string;
   keyRequirements?: { purpose?: string; boundTo?: string };
   identityProperty?: string;
-  propertyAgreement?: Record<string, string>;
+  propertyAgreement?: Record<
+    string,
+    string | { function: string; params: Array<string | { const: string }> }
+  >;
   lookup?: {
     index: string;
-    keys: Record<string, string | { function: string; params: Array<string | { const: string }> }>;
+    keys?: Record<string, string>;
     minimumAgeBlocks?: number;
     consume?: boolean;
   };
@@ -443,7 +446,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(other).to.not.have.property('lookup');
     });
 
-    it('should list a byte array revealing its value into a computed key', () => {
+    it('should list a byte array revealing its value through a propertyAgreement function', () => {
       const salt = {
         type: 'array',
         byteArray: true,
@@ -477,18 +480,14 @@ describe('DataContract — refersTo declarations (v14)', () => {
                 refersTo: {
                   type: 'deletableDocument',
                   documentType: 'preorder',
-                  lookup: {
-                    index: 'saltedHash',
-                    keys: {
-                      saltedDomainHash: {
-                        function: 'sys.hash.sha256d',
-                        params: ['.', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
-                      },
+                  lookup: { index: 'saltedHash', minimumAgeBlocks: 1, consume: true },
+                  propertyAgreement: {
+                    $ownerId: '$ownerId',
+                    saltedDomainHash: {
+                      function: 'sys.hash.sha256d',
+                      params: ['preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
                     },
-                    minimumAgeBlocks: 1,
-                    consume: true,
                   },
-                  propertyAgreement: { $ownerId: '$ownerId' },
                 },
               },
             },
@@ -503,17 +502,19 @@ describe('DataContract — refersTo declarations (v14)', () => {
       });
       const [salted] = contract.documentTypeReferences('domain') as Reference[];
 
+      // The function stays in the agreement, as declared; the lookup keeps
+      // the index and what the commitment must be
       expect(salted.path).to.equal('preorderSalt');
       expect(salted.type).to.equal('deletableDocument');
-      expect(salted.propertyAgreement).to.deep.equal({ $ownerId: '$ownerId' });
+      expect(salted.propertyAgreement).to.deep.equal({
+        $ownerId: '$ownerId',
+        saltedDomainHash: {
+          function: 'sys.hash.sha256d',
+          params: ['preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
+        },
+      });
       expect(salted.lookup).to.deep.equal({
         index: 'saltedHash',
-        keys: {
-          saltedDomainHash: {
-            function: 'sys.hash.sha256d',
-            params: ['.', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
-          },
-        },
         minimumAgeBlocks: 1,
         consume: true,
       });

@@ -15,7 +15,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentTypeRef, IdentityKeyReferenceRequirements,
-    KeyIdReference, LookupKeyParam, LookupKeySource, PropertyReference,
+    KeyIdReference, LookupHashKey, LookupKeyParam, LookupKeySource, PropertyReference,
 };
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
@@ -108,10 +108,12 @@ export type DocumentPropertyReferenceTarget =
        * identifier property on the referring side. The referring side may
        * be the writer's own `$ownerId`, which makes the pair a write gate:
        * only an identity equal to the referenced side may create the
-       * document, and every replace re-checks it. Absent — not
+       * document, and every replace re-checks it. At most one pair is a
+       * function instead, keyed by the referenced property (see
+       * {@link DocumentReferenceAgreementFunction}). Absent — not
        * `{}`-valued — when the declaration carries none.
        */
-      propertyAgreement?: Record<string, string>;
+      propertyAgreement?: Record<string, string | DocumentReferenceAgreementFunction>;
       /**
        * How the referenced document is found when the property's value is
        * not its id. See {@link DocumentReferenceLookup}. Absent when the
@@ -193,7 +195,7 @@ export type DocumentPropertyReferenceTarget =
        * Write-time equality bindings, exactly as for `permanentDocument`.
        * Absent — not `{}`-valued — when the declaration carries none.
        */
-      propertyAgreement?: Record<string, string>;
+      propertyAgreement?: Record<string, string | DocumentReferenceAgreementFunction>;
       /**
        * How the referenced document is found when the property's value is
        * not its id. See {@link DocumentReferenceLookup}. Absent when the
@@ -286,33 +288,43 @@ export type DocumentPropertyReferenceOperand =
  */
 export type DocumentReferenceLookup = {
   index: string;
-  keys: Record<string, string | DocumentReferenceLookupHashKey>;
   /**
-   * With a computed key only: how many blocks before the create the document
-   * the key finds must have been created, from its `$createdAtBlockHeight`,
-   * so 1 means an earlier block (code 40142 when it was not).
+   * The index properties read from the referring document. The one a
+   * `propertyAgreement` function names is filled by that function instead,
+   * so `keys` is absent when it is the whole index.
+   */
+  keys?: Record<string, string>;
+  /**
+   * With a `propertyAgreement` function only: how many blocks before the
+   * create the document the key finds must have been created, from its
+   * `$createdAtBlockHeight`, so 1 means an earlier block (code 40142 when it
+   * was not).
    */
   minimumAgeBlocks?: number;
   /**
-   * With a computed key only: the create deletes the document the key finds,
-   * the writer's own commitment, in the same state transition.
+   * With a `propertyAgreement` function only: the create deletes the
+   * document the key finds, the writer's own commitment, in the same state
+   * transition.
    */
   consume?: true;
 };
 
 /**
- * A computed lookup key, for a commit and reveal: the index property is
- * filled with the hash `function` (`sys.hash.sha256d`, SHA-256 of SHA-256)
- * of the `params`' bytes joined in order with nothing between them. A param
- * is `'.'`, the value carrying the reference (the property's value, such as
- * a salt, or the writer's or creator's id), a property path of the document
- * being created (a string's UTF-8, a byte array's bytes, an identifier's 32
- * bytes), or `{ const }`, fixed UTF-8 text. The document it finds is a
- * commitment made earlier; the lookup is checked when the document is
- * created only. To reveal one, compute the same hash over the values you
- * create the document with.
+ * A `propertyAgreement` function pair, for a commit and reveal, keyed by the
+ * referenced property: that property must hold the hash `function`
+ * (`sys.hash.sha256d`, SHA-256 of SHA-256) of the `params`' bytes joined in
+ * order with nothing between them, and it fills that property of the
+ * lookup's index, the key the referenced document is found by. A param is a
+ * property path of the document being created (a string's UTF-8, a byte
+ * array's bytes, an identifier's 32 bytes), the property carrying the
+ * reference included, `{ const }`, fixed UTF-8 text, or `'.'`, the value
+ * carrying the reference where it has no path (each element of a typed
+ * array, the writer or the creator). The document it finds is a commitment
+ * made earlier; the reference is checked when the document is created only.
+ * To reveal one, compute the same hash over the values you create the
+ * document with.
  */
-export type DocumentReferenceLookupHashKey = {
+export type DocumentReferenceAgreementFunction = {
   function: 'sys.hash.sha256d';
   params: Array<string | { const: string }>;
 };
@@ -343,7 +355,7 @@ export type DocumentPropertyReference = {
    * `creatorRefersTo` declaration takes its place, listed first with the
    * path `"$creatorId"`: the same, with the document's creator, who never
    * changes, as the value, and a `deletableDocument` only with a computed
-   * lookup key (see {@link DocumentReferenceLookupHashKey}).
+   * lookup key (see {@link DocumentReferenceAgreementFunction}).
    *
    * This is the same string consensus reports in the `path` field of the
    * document-write reference errors (codes 40120-40125, 40131, 40135,
@@ -379,12 +391,9 @@ fn set_field(target: &Object, key: &str, value: &JsValue, path: &str) -> WasmDpp
     Ok(())
 }
 
-/// A lookup key source as the schema spells it: `'.'`, `'$ownerId'` or a
-/// property path as a string, and a computed key as `{ function, params }`.
-fn lookup_key_source_to_js(source: &LookupKeySource, path: &str) -> WasmDppResult<JsValue> {
-    let LookupKeySource::Hash(key) = source else {
-        return Ok(JsValue::from_str(source.as_str()));
-    };
+/// A `propertyAgreement` function as the schema spells it:
+/// `{ function, params }`.
+fn agreement_function_to_js(key: &LookupHashKey, path: &str) -> WasmDppResult<JsValue> {
     let computed = Object::new();
     set_field(
         &computed,
@@ -464,21 +473,31 @@ fn set_key_requirements_field(
 
 /// The `propertyAgreement` field of a document reference: `{ referring
 /// property: referenced property }`, a consensus-enforced equality at write
-/// time (for a `listElement`, the `$id` pair names the document). Absent,
-/// not `{}`-valued, when the declaration carries none, matching the schema's
-/// own omission and the absent-field convention of the other optional target
-/// fields.
+/// time (for a `listElement`, the `$id` pair names the document), and the
+/// function pair, keyed by the referenced property, that the lookup holds as
+/// its computed key. Absent, not `{}`-valued, when the declaration carries
+/// none, matching the schema's own omission and the absent-field convention
+/// of the other optional target fields.
 fn set_property_agreement_field(
     object: &Object,
     property_agreement: &BTreeMap<String, String>,
+    function: Option<(&str, &LookupHashKey)>,
     path: &str,
 ) -> WasmDppResult<()> {
-    if property_agreement.is_empty() {
+    if property_agreement.is_empty() && function.is_none() {
         return Ok(());
     }
     let agreement = Object::new();
     for (referring, referenced) in property_agreement {
         set_field(&agreement, referring, &JsValue::from_str(referenced), path)?;
+    }
+    if let Some((referenced, key)) = function {
+        set_field(
+            &agreement,
+            referenced,
+            &agreement_function_to_js(key, path)?,
+            path,
+        )?;
     }
     set_field(object, "propertyAgreement", &agreement, path)
 }
@@ -640,13 +659,24 @@ fn set_reference_target_fields(
                 &JsValue::from_str(document_type_name),
                 path,
             )?;
-            set_property_agreement_field(object, property_agreement, path)?;
+            let lookup = match target {
+                DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
+                | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. } => {
+                    Some(lookup)
+                }
+                _ => None,
+            };
+            // The computed key is declared as the agreement's function pair
+            set_property_agreement_field(
+                object,
+                property_agreement,
+                lookup.and_then(|lookup| lookup.hash_key()),
+                path,
+            )?;
             // Present only on a lookup reference, absent when the value is
             // the referenced document's id, as the schema omits it; the
             // sources keep their schema spelling.
-            if let DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
-            | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. } = target
-            {
+            if let Some(lookup) = lookup {
                 let lookup_object = Object::new();
                 set_field(
                     &lookup_object,
@@ -655,15 +685,22 @@ fn set_reference_target_fields(
                     path,
                 )?;
                 let keys = Object::new();
+                let mut read_keys = 0;
                 for (index_property, source) in &lookup.keys {
+                    if matches!(source, LookupKeySource::Hash(_)) {
+                        continue;
+                    }
                     set_field(
                         &keys,
                         index_property,
-                        &lookup_key_source_to_js(source, path)?,
+                        &JsValue::from_str(source.as_str()),
                         path,
                     )?;
+                    read_keys += 1;
                 }
-                set_field(&lookup_object, "keys", &keys, path)?;
+                if read_keys > 0 {
+                    set_field(&lookup_object, "keys", &keys, path)?;
+                }
                 // Present only where declared, as the schema spells them
                 if let Some(blocks) = lookup.minimum_age_blocks {
                     set_field(
@@ -696,7 +733,7 @@ fn set_reference_target_fields(
                 &JsValue::from_str(&reference.document_type_name),
                 path,
             )?;
-            set_property_agreement_field(object, &reference.property_agreement, path)?;
+            set_property_agreement_field(object, &reference.property_agreement, None, path)?;
             set_field(
                 object,
                 "inList",

@@ -8,9 +8,11 @@ use platform_serialization_derive::{
 use thiserror::Error;
 
 /// A document being created cannot assemble the preimage of a `refersTo` lookup key it
-/// reveals (`{ "function": "sys.hash.sha256d", "params": [...] }`): a value a param reads is
-/// absent or of a kind a param cannot take, or a variable-length value holds the one-byte
-/// separator that follows it, so the preimage would not split back into its params one way.
+/// reveals, the `propertyAgreement` function pair
+/// (`"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }`): a value
+/// a param reads is absent or of a kind a param cannot take, or a variable-length value holds
+/// the one-byte separator that follows it, so the preimage would not split back into its
+/// params one way.
 ///
 /// A pure structure check on document create (protocol version 14): it reads the transition
 /// alone, so it is a basic error, and it refuses the create before the lookup reads state.

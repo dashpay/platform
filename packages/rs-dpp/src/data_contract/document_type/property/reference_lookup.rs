@@ -60,9 +60,12 @@ pub enum LookupKeySource {
     /// A property path of the referring document type. The property must be
     /// required, so the key is never missing a part.
     Property(String),
-    /// `{ "function": "sys.hash.sha256d", "params": [...] }`: the hash of a
-    /// preimage the referring document reveals, see [`LookupHashKey`]. A
-    /// lookup holding one is checked when the document is created only, and
+    /// A `propertyAgreement` function pair,
+    /// `"<index property>": { "function": "sys.hash.sha256d", "params": [...] }`:
+    /// the hash of a preimage the referring document reveals, see
+    /// [`LookupHashKey`]. Declared in the agreement, as what the referenced
+    /// property must hold, and held here as the source of that index property.
+    /// A lookup holding one is checked when the document is created only, and
     /// the document it finds is a commitment. Appended, so every earlier
     /// source keeps its consensus encoding.
     Hash(LookupHashKey),
@@ -133,11 +136,13 @@ pub struct DocumentReferenceLookup {
     pub index: String,
     /// Every property of the index, by its name on the referenced side
     /// (`$ownerId` among the system ones), mapped to the referring-side source
-    /// of its value. The reference's own value, `"."`, fills a key part
-    /// exactly once, as a source ([`LookupKeySource::ReferenceValue`]) or as a
-    /// param of a computed key, except in the lookup of an `ownerRefersTo` or
-    /// `creatorRefersTo` holding a computed key, where it may be left out. At
-    /// most one source is a computed key ([`LookupKeySource::Hash`]).
+    /// of its value: the lookup's `keys`, and the index property the
+    /// reference's `propertyAgreement` function pair names, whose source is
+    /// that computed key ([`LookupKeySource::Hash`]), at most one. The value
+    /// carrying the reference fills a key part exactly once, as a `"."` source
+    /// ([`LookupKeySource::ReferenceValue`]) or as a param of the computed key,
+    /// except in the lookup of an `ownerRefersTo` or `creatorRefersTo` holding
+    /// a computed key, where it may be left out.
     pub keys: BTreeMap<String, LookupKeySource>,
     /// With a computed key only: how many blocks before the create the
     /// document the key finds must have been created (`minimumAgeBlocks`),
@@ -177,6 +182,25 @@ impl DocumentReferenceLookup {
                 LookupKeySource::Hash(key) => Some((index_property.as_str(), key)),
                 _ => None,
             })
+    }
+
+    /// How many times the value carrying the reference fills the key when it
+    /// is the property at `reference_path`: as a `"."` source, or as a param of
+    /// the computed key naming that path. A param `"."` is not counted: a
+    /// property carrying the reference is named by its path, which
+    /// [`Self::referring_side_error`] demands.
+    pub fn carrier_reads(&self, reference_path: &str) -> usize {
+        self.keys
+            .values()
+            .map(|source| match source {
+                LookupKeySource::ReferenceValue => 1,
+                LookupKeySource::Hash(key) => key
+                    .properties_read()
+                    .filter(|path| *path == reference_path)
+                    .count(),
+                LookupKeySource::OwnerId | LookupKeySource::Property(_) => 0,
+            })
+            .sum()
     }
 
     /// How many times the reference's own value, `"."`, fills the key: as a
@@ -236,13 +260,16 @@ impl DocumentReferenceLookup {
     /// listed under `immutableAllowSetting`, which would let a replace set it
     /// later unchecked), unless it is transient, never stored and read from
     /// the create alone. On a property the reference's own value must fill
-    /// the key exactly once, `"."`, as a source or a param of the computed
-    /// key, and on a string or byte array property, `reference_type` not an
+    /// the key exactly once, as a `"."` source or a param of the computed key,
+    /// and on a string or byte array property, `reference_type` not an
     /// identifier, as a param only, a source having to match an index
-    /// property of the same kind; only the lookup of an `ownerRefersTo` or
-    /// `creatorRefersTo`, `reference_path` `$ownerId` or `$creatorId`, may
-    /// leave it out beside a computed key, its declaration applying to every
-    /// create whatever the writer is.
+    /// property of the same kind. A param names a single property carrying
+    /// the reference by its path, never `"."`, which stands only for a value
+    /// without one (each element of a typed array, the writer, the creator);
+    /// only the lookup of an `ownerRefersTo` or `creatorRefersTo`,
+    /// `reference_path` `$ownerId` or `$creatorId`, may leave the value out
+    /// beside a computed key, its declaration applying to every create
+    /// whatever the writer is.
     pub fn referring_side_error(
         &self,
         declaring: DocumentTypeRef,
@@ -251,6 +278,28 @@ impl DocumentReferenceLookup {
     ) -> Option<String> {
         let computed = self.is_checked_on_create_only();
         let on_the_document = reference_path == OWNER_ID || reference_path == CREATOR_ID;
+        // A single property carrying the reference has a path, which a param
+        // names it by; `"."` stays for the values without one: each element of
+        // a typed array, the writer and the creator
+        let named_by_path = !on_the_document
+            && !matches!(
+                declaring
+                    .flattened_properties()
+                    .get(reference_path)
+                    .map(|property| &property.property_type),
+                Some(DocumentPropertyType::TypedArray(_))
+            );
+        if named_by_path {
+            if let Some((index_property, _)) = self
+                .hash_key()
+                .filter(|(_, key)| key.reference_value_uses() > 0)
+            {
+                return Some(format!(
+                    "propertyAgreement function \"{index_property}\" reads \".\": a param \
+                     names the property carrying the reference by its path, \"{reference_path}\""
+                ));
+            }
+        }
         let revealed = !matches!(
             reference_type,
             DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
@@ -267,12 +316,18 @@ impl DocumentReferenceLookup {
             ));
         }
         if computed && !on_the_document {
-            if self.reference_value_uses() != 1 {
+            let reads = if named_by_path {
+                self.carrier_reads(reference_path)
+            } else {
+                self.reference_value_uses()
+            };
+            if reads != 1 {
                 return Some(format!(
-                    "the key reads \".\", the value of \"{reference_path}\", {} times: a \
-                     property's lookup reads it exactly once, and only the lookup of an \
-                     ownerRefersTo or creatorRefersTo may leave it out beside a computed key",
-                    self.reference_value_uses()
+                    "the key reads the value of \"{reference_path}\" {reads} times: a \
+                     property's lookup reads it exactly once, as a \".\" key or a param of the \
+                     propertyAgreement function (by its path, or as \".\" for an element), and \
+                     only the lookup of an ownerRefersTo or creatorRefersTo may leave it out \
+                     beside a computed key"
                 ));
             }
             if !is_transient(declaring, reference_path)
@@ -294,7 +349,9 @@ impl DocumentReferenceLookup {
                 LookupKeySource::ReferenceValue => continue,
                 LookupKeySource::Hash(key) => {
                     if let Some(reason) = key.referring_side_error(declaring, reference_type) {
-                        return Some(format!("key \"{index_property}\" {reason}"));
+                        return Some(format!(
+                            "propertyAgreement function \"{index_property}\" {reason}"
+                        ));
                     }
                     continue;
                 }
@@ -434,19 +491,24 @@ impl DocumentReferenceLookup {
             .find(|property| !self.keys.contains_key(&property.name))
         {
             return Some(format!(
-                "keys does not map \"{}\", a property of index \"{}\": every index property \
-                 needs a source",
+                "keys does not map \"{}\", a property of index \"{}\", and no \
+                 propertyAgreement function fills it: every index property needs a source",
                 missing.name, self.index
             ));
         }
-        if let Some(extra) = self.keys.keys().find(|name| {
+        if let Some((extra, source)) = self.keys.iter().find(|(name, _)| {
             !index
                 .properties
                 .iter()
                 .any(|property| &property.name == *name)
         }) {
+            let declared = if matches!(source, LookupKeySource::Hash(_)) {
+                "the propertyAgreement function fills"
+            } else {
+                "keys maps"
+            };
             return Some(format!(
-                "keys maps \"{extra}\", which is not a property of index \"{}\"",
+                "{declared} \"{extra}\", which is not a property of index \"{}\"",
                 self.index
             ));
         }
@@ -477,8 +539,8 @@ impl DocumentReferenceLookup {
                     );
                     if !holds_hash {
                         return Some(format!(
-                            "key \"{index_property}\" is a {} hash, so the index property must \
-                             be a byte array of exactly {length} bytes",
+                            "propertyAgreement function \"{index_property}\" is a {} hash, so \
+                             the index property must be a byte array of exactly {length} bytes",
                             key.function.as_str()
                         ));
                     }

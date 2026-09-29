@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a permanentDocument lookup, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the propertyConstraints doctype keyword (named conditions over the document's properties, comparisons between integer expressions, of a string or identifier property with constants or with another property of its kind, in (value membership) and present or absent tests combined with anyOf, allOf and not, which every created or replaced document must meet), the maxBytes property keyword (the most UTF-8 bytes a string, or each string element of a typed array, may take), the generatedFrom property keyword (a string property whose value a built-in function generates from other properties of the same document, on arrival when a document leaves it out), computed refersTo lookup keys (a key that is a sys.hash function of values the document reveals, for a commit and reveal checked on create, on an identifier or on the string or byte array property whose value it reveals, with the lookup's minimumAgeBlocks and consume), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), refuses a dotted path in summable, averageable, documentsSummable and documentsAverageable, whose value is read from the top level of the document (the same word-character pattern; no contract on mainnet or testnet names one), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
+  "$comment": "EDITABLE UNTIL 4.2 (PROTOCOL V14) IS LIVE ON MAINNET; FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), the refersTo reference keyword on identifier properties (and, for an identityPublicKey reference with identityProperty, on the key id integer property), declaring one target or a reference expression of anyOf and allOf, and its ownerRefersTo and creatorRefersTo forms on the document type, whose value is the writer or the creator (an identity, a permanentDocument lookup, or an expression of them), the requiredSince property keyword (the contract version a property is required from), the propertyConstraints doctype keyword (named conditions over the document's properties, comparisons between integer expressions, of a string or identifier property with constants or with another property of its kind, in (value membership) and present or absent tests combined with anyOf, allOf and not, which every created or replaced document must meet), the maxBytes property keyword (the most UTF-8 bytes a string, or each string element of a typed array, may take), the generatedFrom property keyword (a string property whose value a built-in function generates from other properties of the same document, on arrival when a document leaves it out), refersTo propertyAgreement functions (a pair keyed by the referenced property, whose value a sys.hash function of values the document reveals must be, filling a key of the reference's lookup, for a commit and reveal checked on create, on an identifier or on the string or byte array property whose value it reveals, with the lookup's minimumAgeBlocks and consume), the timeRange index transform, and typed arrays (an array property whose items schema names one scalar element type instead of byteArray, stored inline as an element count followed by the elements, whose identifier elements may carry a refersTo), refuses `-` in property and document type names (word characters only; a census of every contract on mainnet and testnet found none), refuses a dotted path in summable, averageable, documentsSummable and documentsAverageable, whose value is read from the top level of the document (the same word-character pattern; no contract on mainnet or testnet names one), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once 4.2 is live on mainnet, mutating it would change historical validation results and break consensus replay, and any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "referenceOperands": {
@@ -39,8 +39,8 @@
         }
       }
     },
-    "lookupHashKey": {
-      "description": "A computed refersTo lookup key, the same function and params shape as generatedFrom: a sys.hash function (sys.hash.sha256d, SHA-256 of SHA-256, 32 bytes) of the params' bytes joined in order with nothing between them. A param is \".\", the value carrying the reference; the dotted path of a string (its UTF-8), byte array (its bytes) or identifier (its 32 bytes) property of the referring document type; or { \"const\": text }, fixed UTF-8 text of 1 to 64 bytes. See lookup for what a computed key means.",
+    "agreementFunction": {
+      "description": "The value of a propertyAgreement function pair, the same function and params shape as generatedFrom: a sys.hash function (sys.hash.sha256d, SHA-256 of SHA-256, 32 bytes) of the params' bytes joined in order with nothing between them, which the referenced property the pair names must hold. A param is the dotted path of a string (its UTF-8), byte array (its bytes) or identifier (its 32 bytes) property of the referring document type, the property carrying the reference included; { \"const\": text }, fixed UTF-8 text of 1 to 64 bytes; or \".\", the value carrying the reference where it has no path (each element of a typed array, the writer of an ownerRefersTo, the creator of a creatorRefersTo). See lookup for what the computed key means.",
       "type": "object",
       "properties": {
         "function": {
@@ -717,7 +717,7 @@
               "additionalProperties": false
             },
             "propertyAgreement": {
-              "description": "permanentDocument, deletableDocument and listElement references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A listElement reference holds exactly one pair with $id on the referenced side, read from a schema identifier property (not $ownerId): it names the document whose list the value must be in",
+              "description": "permanentDocument, deletableDocument and listElement references only: each { referring property: referenced property } pair must hold as an equality between the referring document's value and the referenced document's value, enforced by consensus at document write time. The referring side is a schema property of the declaring document type or its own $ownerId, the writer, which turns the pair into a write gate: only an identity whose id equals the referenced side may create or replace the document. The referenced side is a schema property of the referenced document type, or one of its $ownerId, $creatorId and $id system identifiers, in which case the referring property must be an identifier; $creatorId additionally needs a referenced document type that records creator ids (transferable or tradeable types of a format-1 contract). Both sides must exist and share one value kind, validated at contract registration. $ownerId follows the referenced document through transfers while $creatorId and $id never change; each is checked when the referring document is written, not when the referenced document later moves. A listElement reference holds exactly one pair with $id on the referenced side, read from a schema identifier property (not $ownerId): it names the document whose list the value must be in. At most one pair may instead be a function, keyed by the referenced property since a function cannot be a key: { referenced property: { \"function\": \"sys.hash.sha256d\", \"params\": [...] } } (agreementFunction) demands that the referenced property hold that hash of the referring document's values, and fills that property of the lookup's index, the key the referenced document is found by; it needs a lookup, see lookup for the commit and reveal it makes",
               "type": "object",
               "minProperties": 1,
               "maxProperties": 10,
@@ -732,19 +732,23 @@
                 ]
               },
               "additionalProperties": {
-                "type": "string",
                 "anyOf": [
                   {
+                    "type": "string",
                     "minLength": 1,
                     "maxLength": 256,
                     "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
                   },
                   {
+                    "type": "string",
                     "enum": [
                       "$ownerId",
                       "$creatorId",
                       "$id"
                     ]
+                  },
+                  {
+                    "$ref": "#/$defs/agreementFunction"
                   }
                 ]
               }
@@ -757,7 +761,7 @@
               "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
             },
             "lookup": {
-              "description": "permanentDocument and deletableDocument references only: the property's value is not the referenced document's id. The referenced document is the one the named unique index of the referenced document type finds for a key assembled from the referring document, and the reference holds if that document exists. index names an index of the referenced document type that is unique, carries no timeRange and does not belong to an indexOnly type; its key must stay with the document it found (every schema property of the index fixed by an immutable document type or the immutable list, $ownerId only on a type whose documents can be neither transferred nor traded), so the reference never dangles; keys maps every property of that index (by its name on the referenced side, system ones such as $ownerId included), in any order, to where its value comes from: a property path of the referring document type, \"$ownerId\" for the referring document's owner, or \".\" for the value of the property carrying the reference (on an array element, the element), which must appear exactly once. A property a key reads must be required (and so must every object around it), not transient nor inside a transient object, and hold the same kind of value as its index property, so a lookup never runs with a missing key part; all of this is validated at contract registration. When the referring document is created or replaced, consensus queries the index for the assembled key, billed as a document fetch, and refuses the write with ReferencedEntityNotFoundError (40120) if it finds no document; propertyAgreement pairs are checked against the document found. A replace re-validates a permanentDocument lookup when a property a key reads changed, and on every replace when a key reads $ownerId. On a deletableDocument reference the lookup says less: once the document it found is deleted the same key may find another filed later, so the reference means a document with this key exists now; every replace re-validates it, as it does a deletableDocument reference by id, and an immutable property may not hold one (the clearing a dead reference by id allows reads an id, which a key is not). A key may instead be computed, { \"function\": \"sys.hash.sha256d\", \"params\": [...] } (lookupHashKey), for a commit and reveal: it fills a byte array index property of exactly 32 bytes with the hash of the params' bytes joined in order, \".\" being the value carrying the reference. The document such a key finds is a commitment made earlier, and the lookup is checked when the referring document is created only, never on a replace: every stored property it reads (its params, its other key parts, the property carrying it) must be fixed once written, and a property carrying it may not be listed under immutableAllowSetting. A param may be transient, being read from the create, and optional, a create missing a param being refused (DocumentReferencePreimageInvalidError, 10423), as is one whose param sits behind a key repeated in an object on the way. So the joined bytes split into the params one way only, every variable-length param (a string, or a byte array without a fixed size) that another one follows must be followed directly by a one-byte const, its separator, which its value may not hold (refused the same way). A lookup holds at most one computed key; \".\" fills the key exactly once, as a source or a param, except beside a computed key of an ownerRefersTo or creatorRefersTo, which may leave it out. A string or byte array property may carry a refersTo only this way, its value revealed as the computed key's \".\" param: it is not an id. Beside a computed key the lookup may declare minimumAgeBlocks and consume. A propertyAgreement pair { \"$ownerId\": \"$ownerId\" } demands that the commitment be the writer's own (ReferencedDocumentPropertyMismatchError, 40127, otherwise); without it anyone who learns the params may reveal them",
+              "description": "permanentDocument and deletableDocument references only: the property's value is not the referenced document's id. The referenced document is the one the named unique index of the referenced document type finds for a key assembled from the referring document, and the reference holds if that document exists. index names an index of the referenced document type that is unique, carries no timeRange and does not belong to an indexOnly type; its key must stay with the document it found (every schema property of the index fixed by an immutable document type or the immutable list, $ownerId only on a type whose documents can be neither transferred nor traded), so the reference never dangles; keys maps every property of that index (by its name on the referenced side, system ones such as $ownerId included), in any order, to where its value comes from: a property path of the referring document type, \"$ownerId\" for the referring document's owner, or \".\" for the value of the property carrying the reference (on an array element, the element), which must appear exactly once. A property a key reads must be required (and so must every object around it), not transient nor inside a transient object, and hold the same kind of value as its index property, so a lookup never runs with a missing key part; all of this is validated at contract registration. When the referring document is created or replaced, consensus queries the index for the assembled key, billed as a document fetch, and refuses the write with ReferencedEntityNotFoundError (40120) if it finds no document; propertyAgreement pairs are checked against the document found. A replace re-validates a permanentDocument lookup when a property a key reads changed, and on every replace when a key reads $ownerId. On a deletableDocument reference the lookup says less: once the document it found is deleted the same key may find another filed later, so the reference means a document with this key exists now; every replace re-validates it, as it does a deletableDocument reference by id, and an immutable property may not hold one (the clearing a dead reference by id allows reads an id, which a key is not). keys may be left out for the index property a propertyAgreement function pair names, { referenced property: { \"function\": \"sys.hash.sha256d\", \"params\": [...] } } (agreementFunction), which fills it with a computed key, for a commit and reveal: a byte array index property of exactly 32 bytes, filled with the hash of the params' bytes joined in order, so keys is left out entirely when that property is the whole index. The document such a key finds is a commitment made earlier, and the lookup is checked when the referring document is created only, never on a replace: every stored property it reads (the function's params, the other key parts, the property carrying the reference) must be fixed once written, and a property carrying it may not be listed under immutableAllowSetting. A param may be transient, being read from the create, and optional, a create missing a param being refused (DocumentReferencePreimageInvalidError, 10423), as is one whose param sits behind a key repeated in an object on the way. So the joined bytes split into the params one way only, every variable-length param (a string, or a byte array without a fixed size) that another one follows must be followed directly by a one-byte const, its separator, which its value may not hold (refused the same way). A reference holds at most one function pair; the value carrying the reference fills the key exactly once, as a \".\" key or a param of the function, which names a single property carrying the reference by its path and uses \".\" only for a value without one (each element of a typed array, the writer, the creator), except beside a function of an ownerRefersTo or creatorRefersTo, which may leave it out. A string or byte array property may carry a refersTo only this way, its value read by the function: it is not an id. Beside a function the lookup may declare minimumAgeBlocks and consume. A propertyAgreement pair { \"$ownerId\": \"$ownerId\" } demands that the commitment be the writer's own (ReferencedDocumentPropertyMismatchError, 40127, otherwise); without it anyone who learns the params may reveal them",
               "type": "object",
               "properties": {
                 "index": {
@@ -774,43 +778,35 @@
                     "maxLength": 256
                   },
                   "additionalProperties": {
+                    "type": "string",
                     "anyOf": [
                       {
-                        "type": "string",
-                        "anyOf": [
-                          {
-                            "const": "."
-                          },
-                          {
-                            "const": "$ownerId"
-                          },
-                          {
-                            "minLength": 1,
-                            "maxLength": 256,
-                            "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
-                          }
-                        ]
+                        "const": "."
                       },
                       {
-                        "$ref": "#/$defs/lookupHashKey"
+                        "const": "$ownerId"
+                      },
+                      {
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "pattern": "^[a-zA-Z0-9_]{1,64}(\\.[a-zA-Z0-9_]{1,64})*$"
                       }
                     ]
                   }
                 },
                 "minimumAgeBlocks": {
-                  "description": "With a computed key only: how many blocks before the create the document the key finds must have been created, judged against its $createdAtBlockHeight, so that 1 keeps a commitment and the create revealing it out of the same block. The referenced document type must list $createdAtBlockHeight in its required, checked at contract registration; a found document recording no creation height never meets it. An unmet age refuses the create (ReferencedDocumentRequirementNotMetError, 40142). Available from protocol version 14.",
+                  "description": "With a propertyAgreement function only: how many blocks before the create the document the key finds must have been created, judged against its $createdAtBlockHeight, so that 1 keeps a commitment and the create revealing it out of the same block. The referenced document type must list $createdAtBlockHeight in its required, checked at contract registration; a found document recording no creation height never meets it. An unmet age refuses the create (ReferencedDocumentRequirementNotMetError, 40142). Available from protocol version 14.",
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 4294967295
                 },
                 "consume": {
-                  "description": "With a computed key only: the create deletes the document the key finds, in the same state transition, its storage refunded to its owner as a delete by that owner would. Only on a deletableDocument reference whose propertyAgreement pairs \"$ownerId\" with \"$ownerId\", so a create consumes the writer's own commitment and no other, into a document type of the declaring contract whose documents their owner may delete (canBeDeleted: true), checked at contract registration. A batch that consumes the same document twice, or also deletes, replaces, transfers, reprices or buys it, refuses the create that would consume it (ReferencedEntityNotFoundError, 40120). Available from protocol version 14.",
+                  "description": "With a propertyAgreement function only: the create deletes the document the key finds, in the same state transition, its storage refunded to its owner as a delete by that owner would. Only on a deletableDocument reference whose propertyAgreement pairs \"$ownerId\" with \"$ownerId\", so a create consumes the writer's own commitment and no other, into a document type of the declaring contract whose documents their owner may delete (canBeDeleted: true), checked at contract registration. A batch that consumes the same document twice, or also deletes, replaces, transfers, reprices or buys it, refuses the create that would consume it (ReferencedEntityNotFoundError, 40120). Available from protocol version 14.",
                   "const": true
                 }
               },
               "required": [
-                "index",
-                "keys"
+                "index"
               ],
               "additionalProperties": false
             }
@@ -840,6 +836,23 @@
           },
           "additionalProperties": false,
           "allOf": [
+            {
+              "$comment": "A lookup may leave keys out only when a propertyAgreement function pair fills its index: then the agreement holds a value that is not a string",
+              "if": {
+                "properties": {
+                  "lookup": { "not": { "required": ["keys"] } }
+                },
+                "required": ["lookup"]
+              },
+              "then": {
+                "required": ["propertyAgreement"],
+                "properties": {
+                  "propertyAgreement": {
+                    "not": { "additionalProperties": { "type": "string" } }
+                  }
+                }
+              }
+            },
             {
               "if": {
                 "properties": {

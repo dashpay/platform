@@ -68,24 +68,22 @@
             "documentType": "preorder",
             "lookup": {
               "index": "saltedHash",
-              "keys": {
-                "saltedDomainHash": {
-                  "function": "sys.hash.sha256d",
-                  "params": [
-                    ".",
-                    "normalizedLabel",
-                    {
-                      "const": "."
-                    },
-                    "parentDomainName"
-                  ]
-                }
-              },
               "minimumAgeBlocks": 1,
               "consume": true
             },
             "propertyAgreement": {
-              "$ownerId": "$ownerId"
+              "$ownerId": "$ownerId",
+              "saltedDomainHash": {
+                "function": "sys.hash.sha256d",
+                "params": [
+                  "preorderSalt",
+                  "normalizedLabel",
+                  {
+                    "const": "."
+                  },
+                  "parentDomainName"
+                ]
+              }
             }
           }
         }
@@ -130,15 +128,15 @@
         "type": "deletableDocument",
         "documentType": "preorder",
         "lookup": {
-          "index": "saltedHash",
-          "keys": {
-            "saltedDomainHash": {
-              "function": "sys.hash.sha256d",
-              "params": [
-                "preorderSalt",
-                "label"
-              ]
-            }
+          "index": "saltedHash"
+        },
+        "propertyAgreement": {
+          "saltedDomainHash": {
+            "function": "sys.hash.sha256d",
+            "params": [
+              "preorderSalt",
+              "label"
+            ]
           }
         }
       },
@@ -212,19 +210,17 @@
             "documentType": "preorder",
             "lookup": {
               "index": "saltedHash",
-              "keys": {
-                "saltedDomainHash": {
-                  "function": "sys.hash.sha256d",
-                  "params": [
-                    "preorderSalt",
-                    "label"
-                  ]
-                }
-              },
               "consume": true
             },
             "propertyAgreement": {
-              "$ownerId": "$ownerId"
+              "$ownerId": "$ownerId",
+              "saltedDomainHash": {
+                "function": "sys.hash.sha256d",
+                "params": [
+                  "preorderSalt",
+                  "label"
+                ]
+              }
             }
           },
           {
@@ -276,19 +272,17 @@
                 "documentType": "preorder",
                 "lookup": {
                   "index": "saltedHash",
-                  "keys": {
-                    "saltedDomainHash": {
-                      "function": "sys.hash.sha256d",
-                      "params": [
-                        "preorderSalt",
-                        "label"
-                      ]
-                    }
-                  },
                   "consume": true
                 },
                 "propertyAgreement": {
-                  "$ownerId": "$ownerId"
+                  "$ownerId": "$ownerId",
+                  "saltedDomainHash": {
+                    "function": "sys.hash.sha256d",
+                    "params": [
+                      "preorderSalt",
+                      "label"
+                    ]
+                  }
                 }
               },
               {
@@ -332,23 +326,21 @@
             "documentType": "preorder",
             "lookup": {
               "index": "saltedHash",
-              "keys": {
-                "saltedDomainHash": {
-                  "function": "sys.hash.sha256d",
-                  "params": [
-                    ".",
-                    "label",
-                    {
-                      "const": "/"
-                    },
-                    "secret"
-                  ]
-                }
-              },
               "consume": true
             },
             "propertyAgreement": {
-              "$ownerId": "$ownerId"
+              "$ownerId": "$ownerId",
+              "saltedDomainHash": {
+                "function": "sys.hash.sha256d",
+                "params": [
+                  "preorderSalt",
+                  "label",
+                  {
+                    "const": "/"
+                  },
+                  "secret"
+                ]
+              }
             }
           }
         },

@@ -1468,39 +1468,44 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     an unindexed string of 64 characters or more can hold, were refused
 ///     (`ReferencedDocumentPropertyMismatchError`, 40127).
 ///
-/// 57. **A `refersTo` lookup key may be a hash the document reveals**: a
-///     lookup key may be `{ "function": "sys.hash.sha256d", "params": [...] }`
-///     (meta-schema v3 `lookupHashKey`, parser generation 3,
-///     `apply_property_reference` 0), the SHA-256 of the SHA-256 of its params'
-///     bytes joined in order: `"."`, the value carrying the reference, a
-///     property path of the document, or `{ "const": text }`, a string counting
-///     as its UTF-8, a byte array as its bytes, an identifier as its 32 bytes.
-///     The function is `SystemFunction::Hash`, a `sys.hash` namespace beside the
-///     string transformations of `generatedFrom`, which refuses it. A string or
-///     byte array property may now carry a `refersTo` whose lookup reveals its
-///     value this way (`DocumentProperty::revealed_reference`,
-///     `PropertyReference::Revealed`); the property keeps its type. The document
-///     such a key finds is a commitment made earlier, so the lookup is judged
-///     when the document is created only: its params may be transient or
-///     optional, every stored value it reads must be fixed once written, and a
-///     replace leaves it alone. Document create structure validation 1 refuses a
-///     create missing a param, repeating a key on the way to one, or whose
-///     variable-length param holds the one-byte separator that must follow it
-///     (`DocumentReferencePreimageInvalidError`, 10423). Beside the key a lookup
-///     may declare `minimumAgeBlocks`, judged by document create state
+/// 57. **A `refersTo` may find its document by a hash the document reveals**:
+///     a `propertyAgreement` pair may be a function, keyed by the referenced
+///     property, `"<referenced property>": { "function": "sys.hash.sha256d",
+///     "params": [...] }` (meta-schema v3 `agreementFunction`, parser
+///     generation 3, `apply_property_reference` 0): the referenced property
+///     holds the SHA-256 of the SHA-256 of the params' bytes joined in order, a
+///     property path of the document (the property carrying the reference
+///     included), `{ "const": text }`, or `"."` for a value without a path (each
+///     element of a typed array, the writer, the creator), a string counting as
+///     its UTF-8, a byte array as its bytes, an identifier as its 32 bytes. That
+///     property must be in the reference's `lookup` index, whose `keys` may then
+///     leave it out: the parser holds the function as the lookup's computed key
+///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
+///     `sys.hash` namespace beside the string transformations of
+///     `generatedFrom`, which refuses it. A string or byte array property may
+///     now carry a `refersTo` whose function reads its value
+///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`);
+///     the property keeps its type. The document such a key finds is a
+///     commitment made earlier, so the lookup is judged when the document is
+///     created only: its params may be transient or optional, every stored value
+///     it reads must be fixed once written, and a replace leaves it alone.
+///     Document create structure validation 1 refuses a create missing a param,
+///     repeating a key on the way to one, or whose variable-length param holds
+///     the one-byte separator that must follow it
+///     (`DocumentReferencePreimageInvalidError`, 10423). Beside a function the
+///     lookup may declare `minimumAgeBlocks`, judged by document create state
 ///     validation 2 against the found document's `$createdAtBlockHeight`
 ///     (`ReferencedDocumentRequirementNotMetError`, 40142), and `consume`, which
 ///     deletes the found document with the create
 ///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
-///     it elsewhere refused with 40120). A `propertyAgreement` pair
-///     `{"$ownerId": "$ownerId"}` makes the commitment the writer's own, and
-///     `consume` requires it, into the declaring contract, on a type whose
-///     owners may delete. `creatorRefersTo` takes a `deletableDocument` target
-///     through a computed key, and an `ownerRefersTo` or `creatorRefersTo`
-///     lookup may leave `"."` out beside one. The keyword reproduces the DPNS
-///     preorder hash of a name under a parent byte for byte; the DPNS contract
-///     and its create trigger are unchanged. See
-///     `book/src/data-model/documents.md`.
+///     it elsewhere refused with 40120). A plain pair `{"$ownerId": "$ownerId"}`
+///     makes the commitment the writer's own, and `consume` requires it, into
+///     the declaring contract, on a type whose owners may delete.
+///     `creatorRefersTo` takes a `deletableDocument` target through a function,
+///     and an `ownerRefersTo` or `creatorRefersTo` lookup may leave the value
+///     out beside one. The declaration reproduces the DPNS preorder hash of a
+///     name under a parent byte for byte; the DPNS contract and its create
+///     trigger are unchanged. See `book/src/data-model/documents.md`.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

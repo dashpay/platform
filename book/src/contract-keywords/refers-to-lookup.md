@@ -4,11 +4,11 @@ A `lookup` lets a document reference find its target through a unique index of t
 
 | | |
 |---|---|
-| **Where** | Inside a `permanentDocument` or `deletableDocument` [`refersTo`](refers-to.md) declaration: on an identifier property, on the `items` of a typed array of identifiers, as an operand of an [expression](refers-to-expressions.md), or in [`ownerRefersTo` and `creatorRefersTo`](owner-refers-to.md). With a [computed key](#commit-and-reveal), also on a string or byte array property. |
-| **Value** | `{ "index": ..., "keys": { ... } }`. `index` is the name of a unique index of `documentType`, 1 to 32 characters. `keys` maps every property of that index (1 to 10) to where its value comes from: `"."` (the reference's own value), `"$ownerId"` (the writer), a property path of the referring document type, or, for at most one of them, a [computed key](#commit-and-reveal). With a computed key the lookup may also declare `minimumAgeBlocks` and `consume`. |
+| **Where** | Inside a `permanentDocument` or `deletableDocument` [`refersTo`](refers-to.md) declaration: on an identifier property, on the `items` of a typed array of identifiers, as an operand of an [expression](refers-to-expressions.md), or in [`ownerRefersTo` and `creatorRefersTo`](owner-refers-to.md). With a [`propertyAgreement` function](#commit-and-reveal), also on a string or byte array property. |
+| **Value** | `{ "index": ..., "keys": { ... } }`. `index` is the name of a unique index of `documentType`, 1 to 32 characters. `keys` maps every property of that index (1 to 10) to where its value comes from: `"."` (the reference's own value), `"$ownerId"` (the writer) or a property path of the referring document type, except the one a [`propertyAgreement` function](#commit-and-reveal) fills. With a function the lookup may also declare `minimumAgeBlocks` and `consume`. |
 | **Since** | protocol version 14 |
 | **On update** | Fixed, like the rest of `refersTo`: adding, removing or changing a lookup is refused (`IncompatibleDocumentTypeSchemaError`, 10246). |
-| **Errors** | `ReferencedEntityNotFoundError` (40120) when the index finds no document; at registration `ReferencedDocumentLookupInvalidError` (40137) for an index of another contract, `InvalidContractStructure` (10231) for one of the same contract. A computed key adds `DocumentReferencePreimageInvalidError` (10423) and `ReferencedDocumentRequirementNotMetError` (40142). |
+| **Errors** | `ReferencedEntityNotFoundError` (40120) when the index finds no document; at registration `ReferencedDocumentLookupInvalidError` (40137) for an index of another contract, `InvalidContractStructure` (10231) for one of the same contract. A function adds `DocumentReferencePreimageInvalidError` (10423) and `ReferencedDocumentRequirementNotMetError` (40142). |
 
 ## Example
 
@@ -96,48 +96,44 @@ The value of a lookup reference is a key part, not a document id. So a lookup re
 
 ## Commit and reveal
 
-A key part may be computed instead of read: `{ "function": "sys.hash.sha256d", "params": [...] }` fills the index property with the SHA-256 of the SHA-256 of the params' bytes, joined in order. The document it finds is a commitment made earlier, one that stored that hash, so the document being created may exist only while a commitment to values it carries exists. This is how a name registration that preorders a salted hash works, written as a declaration on the salt:
+A `propertyAgreement` pair may hold a function: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` says the referenced document's property holds the SHA-256 of the SHA-256 of the params' bytes, joined in order. It is keyed by the referenced property, since a function cannot be a key. That property must be in the lookup's index, and the platform fills it with the hash to find the document, so the lookup may leave it out of `keys`, and leave `keys` out entirely when it is the whole index. The document it finds is a commitment made earlier, one that stored that hash, so the document being created may exist only while a commitment to values it carries exists. This is how a name registration that preorders a salted hash works, written as a declaration on the salt:
 
 ```json
 "preorderSalt": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 5,
+  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 4,
   "refersTo": {
     "type": "deletableDocument",
     "documentType": "preorder",
-    "lookup": {
-      "index": "saltedHash",
-      "keys": {
-        "saltedDomainHash": {
-          "function": "sys.hash.sha256d",
-          "params": [".", "normalizedLabel", { "const": "." }, "parentDomainName"]
-        }
-      },
-      "minimumAgeBlocks": 1,
-      "consume": true
-    },
-    "propertyAgreement": { "$ownerId": "$ownerId" }
+    "lookup": { "index": "saltedHash", "minimumAgeBlocks": 1, "consume": true },
+    "propertyAgreement": {
+      "$ownerId": "$ownerId",
+      "saltedDomainHash": {
+        "function": "sys.hash.sha256d",
+        "params": ["preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
+      }
+    }
   }
 }
 ```
 
 The salt must reveal a `preorder` whose `saltedDomainHash` is the sha256d of the salt, the normalized label, a dot and the parent. The `$ownerId` pair makes it the writer's own preorder, `minimumAgeBlocks: 1` one created in an earlier block, and `consume: true` deletes it with the create.
 
-- **Params.** `"."` is the value carrying the reference (here the salt), a property path reads the document being created, and `{ "const": text }` is fixed text of 1 to 64 bytes; 1 to 16 params. Strings count as their UTF-8, byte arrays as their bytes, identifiers as their 32 bytes. Two values of no fixed length must be separated by a one-byte `const`, and a value holding that byte is refused, so the joined bytes split back one way only.
-- **Carrier.** A string or byte array property may carry a `refersTo` only this way, reading `"."` exactly once, and keeps its type. On an identifier `"."` fills the key once, as a key part or a param. In `ownerRefersTo` and `creatorRefersTo` it may be left out beside a computed key.
-- **Judged once.** A computed key is checked when the document is created, never on a replace, so every stored value it reads must be fixed once written. Params may be transient: they are read from the create.
+- **Params.** A property path reads the document being created, the property carrying the reference included; `{ "const": text }` is fixed text of 1 to 64 bytes; `"."` is the value carrying the reference where it has no path (each element of a typed array, the writer, the creator); 1 to 16 params. Strings count as their UTF-8, byte arrays as their bytes, identifiers as their 32 bytes. Two values of no fixed length must be separated by a one-byte `const`, and a value holding that byte is refused, so the joined bytes split back one way only.
+- **Carrier.** A string or byte array property may carry a `refersTo` only this way, and keeps its type. The value carrying the reference fills the key exactly once, as a `"."` key or a param; a param names a property by its path, never as `"."`. In `ownerRefersTo` and `creatorRefersTo` the value may be left out beside a function.
+- **Judged once.** A function's key is checked when the document is created, never on a replace, so every stored value it reads must be fixed once written. Params may be transient: they are read from the create.
 - **`minimumAgeBlocks`**: the commitment's `$createdAtBlockHeight` is at least that many blocks below the create's height. The commitment type must list `$createdAtBlockHeight` in `required`.
-- **`consume: true`**: the create deletes the commitment, its storage refunded to its owner. Only with the `{ "$ownerId": "$ownerId" }` pair, into a type of the same contract whose owner may delete its documents.
+- **`consume: true`**: the create deletes the commitment, its storage refunded to its owner. Only with the `"$ownerId": "$ownerId"` pair, into a type of the same contract whose owner may delete its documents.
 
-A create missing a param, or with a value holding its separator, is refused before any read (`DocumentReferencePreimageInvalidError`, 10423). No commitment is `ReferencedEntityNotFoundError` (40120), another identity's `ReferencedDocumentPropertyMismatchError` (40127), and one too young `ReferencedDocumentRequirementNotMetError` (40142). The [Documents chapter](../data-model/documents.md#commit-and-reveal-a-computed-lookup-key) has the full rules.
+A create missing a param, or with a value holding its separator, is refused before any read (`DocumentReferencePreimageInvalidError`, 10423). No commitment is `ReferencedEntityNotFoundError` (40120), another identity's `ReferencedDocumentPropertyMismatchError` (40127), and one too young `ReferencedDocumentRequirementNotMetError` (40142). The [Documents chapter](../data-model/documents.md#commit-and-reveal-a-propertyagreement-function) has the full rules.
 
 ## Rules at registration
 
 **On the referring side**, checked for every contract by the parser (`InvalidContractStructure`, 10231):
 
 - `lookup` is only allowed on `permanentDocument` and `deletableDocument` references.
-- `"."` is read exactly once, as a key part or as a param of a [computed key](#commit-and-reveal). Without it every value would find the same document. Only the lookup of `ownerRefersTo` or `creatorRefersTo` may leave it out, beside a computed key.
+- The reference's own value is read exactly once, as a `"."` key part or as a param of a [`propertyAgreement` function](#commit-and-reveal). Without it every value would find the same document. Only the lookup of `ownerRefersTo` or `creatorRefersTo` may leave it out, beside a function.
 - Every other source is `"$ownerId"` or a property path. No other `$` name is accepted, and a path may not name the reference property itself: write `"."` for that.
-- A property a key reads must exist on the referring type, be required (and so must every object around it), not be `transient` or inside a transient object, and hold a single value, not an object or an array. A lookup never runs with a missing key part, and a reader can assemble the same key from the stored document. A computed key's params follow [their own rules](#commit-and-reveal): they may be transient or optional, since they are read from the create alone.
+- A property a key reads must exist on the referring type, be required (and so must every object around it), not be `transient` or inside a transient object, and hold a single value, not an object or an array. A lookup never runs with a missing key part, and a reader can assemble the same key from the stored document. A function's params follow [their own rules](#commit-and-reveal): they may be transient or optional, since they are read from the create alone.
 - A `"$ownerId"` key part needs a referring type whose documents can be neither transferred nor traded: a transfer or a purchase would move the writer part of the key without a write.
 - A `deletableDocument` lookup may not sit under an `immutable` property, alone or as an operand of an expression: every replace checks it again, so once its document is deleted the property would have to change.
 
