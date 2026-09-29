@@ -18,7 +18,9 @@ use dpp::address_funds::AddressWitness;
 use dpp::platform_value::BinaryData;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::types::key_storage::DpnsNameInfo;
+use crate::wallet::identity::types::key_storage::{DpnsFetch, DpnsNameInfo};
+
+use super::{DPNS_USERNAMES_MAX_PAGES, DPNS_USERNAMES_PAGE_LIMIT};
 
 use super::*;
 
@@ -317,6 +319,40 @@ impl IdentityWallet {
         })
     }
 
+    /// Every DPNS username `identity_id` owns on Platform, paged, as
+    /// [`DpnsNameInfo`]s stamped with `acquired_at`, and whether that is the
+    /// whole owned set ([`DpnsFetch::Complete`]) or only a lower bound — see
+    /// [`Sdk::get_all_dpns_usernames_by_identity`] for when paging can prove
+    /// completeness. Every username fetch that feeds
+    /// `ManagedIdentity::apply_fetched_dpns_names` goes through here.
+    pub(super) async fn fetch_owned_dpns_names(
+        &self,
+        identity_id: Identifier,
+        acquired_at: Option<u64>,
+    ) -> Result<(Vec<DpnsNameInfo>, DpnsFetch), dash_sdk::Error> {
+        let (usernames, complete) = self
+            .sdk
+            .get_all_dpns_usernames_by_identity(
+                identity_id,
+                DPNS_USERNAMES_PAGE_LIMIT,
+                DPNS_USERNAMES_MAX_PAGES,
+            )
+            .await?;
+        let names = usernames
+            .into_iter()
+            .map(|username| DpnsNameInfo {
+                label: username.label,
+                acquired_at,
+            })
+            .collect();
+        let fetch = if complete {
+            DpnsFetch::Complete
+        } else {
+            DpnsFetch::Partial
+        };
+        Ok((names, fetch))
+    }
+
     /// Fetch the DPNS usernames owned by `identity_id` from Platform
     /// and reconcile the local
     /// [`ManagedIdentity.dpns_names`](crate::wallet::identity::ManagedIdentity)
@@ -326,8 +362,9 @@ impl IdentityWallet {
     /// wallet only watches, that complete owned set replaces the cache (names
     /// that left drop out); a wallet-owned identity only gains labels, since
     /// the marketplace sweep owns its departures. If the page bound is
-    /// reached first the result is only a lower bound and is merged — see
-    /// `ManagedIdentity::apply_fetched_dpns_names`. Known labels keep their
+    /// reached first, or the platform version cannot continue a full page
+    /// (protocol version <= 13), the result is only a lower bound and is
+    /// merged — see `ManagedIdentity::apply_fetched_dpns_names`. Known labels keep their
     /// timestamp; new labels get an
     /// `acquired_at` timestamp of best-effort wall-clock millis —
     /// DPNS documents carry their own `$createdAt` but
@@ -344,26 +381,18 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<u32, PlatformWalletError> {
-        let (usernames, complete) = self
-            .sdk
-            .get_all_dpns_usernames_by_identity(
-                *identity_id,
-                super::DPNS_USERNAMES_PAGE_LIMIT,
-                super::DPNS_USERNAMES_MAX_PAGES,
-            )
+        let acquired_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .ok();
+        let (names, fetch) = self
+            .fetch_owned_dpns_names(*identity_id, acquired_at)
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to fetch DPNS usernames for identity {identity_id}: {e}",
                 ))
             })?;
-        // See `apply_fetched_dpns_names`: only a watched identity's complete
-        // set drops names; wallet-owned identities and unfinished paging add.
-
-        let acquired_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .ok();
 
         let added;
         {
@@ -375,17 +404,7 @@ impl IdentityWallet {
                 return Ok(0);
             };
             // One snapshot for the whole fetch — see `apply_fetched_dpns_names`.
-            added = managed.apply_fetched_dpns_names(
-                usernames
-                    .into_iter()
-                    .map(|username| DpnsNameInfo {
-                        label: username.label,
-                        acquired_at,
-                    })
-                    .collect(),
-                complete,
-                &self.persister,
-            );
+            added = managed.apply_fetched_dpns_names(names, fetch, &self.persister);
         }
         Ok(added)
     }

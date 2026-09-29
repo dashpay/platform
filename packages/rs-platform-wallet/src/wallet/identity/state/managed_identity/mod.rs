@@ -17,7 +17,7 @@ pub use dashpay::DashPayState;
 // `state::managed_identity::*` path.
 pub use crate::wallet::identity::types::block_time::{self, BlockTime};
 pub use crate::wallet::identity::types::key_storage::{
-    self, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData,
+    self, DpnsFetch, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData,
 };
 
 use dpp::identity::Identity;

@@ -166,7 +166,6 @@ impl IdentityWallet {
         identity_index: u32,
         source: LoadKeyHashSource<'_>,
     ) -> Result<Option<Identity>, PlatformWalletError> {
-        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
@@ -278,16 +277,8 @@ impl IdentityWallet {
         }
 
         // Query DPNS names for the discovered identity.
-        match self
-            .sdk
-            .get_all_dpns_usernames_by_identity(
-                identity_id,
-                super::DPNS_USERNAMES_PAGE_LIMIT,
-                super::DPNS_USERNAMES_MAX_PAGES,
-            )
-            .await
-        {
-            Ok((usernames, complete)) => {
+        match self.fetch_owned_dpns_names(identity_id, None).await {
+            Ok((names, fetch)) => {
                 let mut wm = self.wallet_manager.write().await;
                 let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
                     crate::error::PlatformWalletError::WalletNotFound(
@@ -295,18 +286,7 @@ impl IdentityWallet {
                     )
                 })?;
                 if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
-                    // Complete once paging reached a short page — see `apply_fetched_dpns_names`.
-                    managed.apply_fetched_dpns_names(
-                        usernames
-                            .into_iter()
-                            .map(|username| DpnsNameInfo {
-                                label: username.label,
-                                acquired_at: None,
-                            })
-                            .collect(),
-                        complete,
-                        &self.persister,
-                    );
+                    managed.apply_fetched_dpns_names(names, fetch, &self.persister);
                 }
             }
             Err(e) => {
@@ -422,8 +402,6 @@ impl IdentityWallet {
     /// and a possibly truncated result only add — see
     /// `ManagedIdentity::apply_fetched_dpns_names`.
     pub async fn refresh_dpns_names(&self) -> Result<(), PlatformWalletError> {
-        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
-
         // Collect identity IDs so we don't hold the lock during network calls.
         let identity_ids: Vec<Identifier> = {
             let wm = self.wallet_manager.read().await;
@@ -440,16 +418,8 @@ impl IdentityWallet {
         };
 
         for identity_id in identity_ids {
-            match self
-                .sdk
-                .get_all_dpns_usernames_by_identity(
-                    identity_id,
-                    super::DPNS_USERNAMES_PAGE_LIMIT,
-                    super::DPNS_USERNAMES_MAX_PAGES,
-                )
-                .await
-            {
-                Ok((usernames, complete)) => {
+            match self.fetch_owned_dpns_names(identity_id, None).await {
+                Ok((names, fetch)) => {
                     let mut wm = self.wallet_manager.write().await;
                     let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
                         crate::error::PlatformWalletError::WalletNotFound(
@@ -458,18 +428,7 @@ impl IdentityWallet {
                     })?;
                     if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id)
                     {
-                        // Complete once paging reached a short page — see `apply_fetched_dpns_names`.
-                        managed.apply_fetched_dpns_names(
-                            usernames
-                                .into_iter()
-                                .map(|u| DpnsNameInfo {
-                                    label: u.label,
-                                    acquired_at: None,
-                                })
-                                .collect(),
-                            complete,
-                            &self.persister,
-                        );
+                        managed.apply_fetched_dpns_names(names, fetch, &self.persister);
                     }
                 }
                 Err(e) => {
