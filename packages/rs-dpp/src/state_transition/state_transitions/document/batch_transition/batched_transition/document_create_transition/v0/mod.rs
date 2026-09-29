@@ -207,9 +207,15 @@ impl DocumentCreateTransitionV0 {
                 data_contract,
                 identity_contract_nonce,
             )?),
-            // `$entropy` is raw bytes, so a text value carries them in base64:
-            // `remove_bytes_32` decodes base64, where the identifier readers
-            // (`remove_hash256_bytes`, `remove_identifier`) decode base58.
+            // Reads base64 because `to_value_map` below writes base64: it inserts `$entropy` as
+            // `Value::Bytes`, and `Value::Bytes` crosses into JSON as a base64 string. The two
+            // sides have to name the same encoding or a transition cannot survive a trip through
+            // its own JSON form.
+            //
+            // `remove_bytes_32` decodes base64; `remove_hash256_bytes` decodes base58 despite a
+            // name that sounds like it is about the width. Base58 is the identifier convention,
+            // which is why `$id` and `$dataContractId` — written as `Value::Identifier` — keep
+            // that reader and this field does not.
             entropy: map
                 .remove_bytes_32(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?
@@ -223,6 +229,8 @@ impl DocumentCreateTransitionV0 {
     #[cfg(feature = "value-conversion")]
     pub(crate) fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut transition_base_map = self.base.to_value_map()?;
+        // Written as `Value::Bytes`, which crosses into JSON as base64 — so the reader in
+        // `from_value_map` decodes base64 rather than the base58 an identifier would use.
         transition_base_map.insert(
             property_names::ENTROPY.to_string(),
             Value::Bytes(self.entropy.to_vec()),
