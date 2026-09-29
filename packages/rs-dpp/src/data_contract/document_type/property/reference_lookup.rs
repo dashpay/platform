@@ -603,6 +603,16 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
+        // The storage layer refuses to delete a document whose type keeps history. A full
+        // parse, the only one this check runs under, already refuses such a type that allows
+        // deletion; the rule is kept here too, as `ttl` and moderator deletion keep theirs
+        if self.consume && referenced.documents_keep_history() {
+            return Some(format!(
+                "consume deletes the found document, which the storage layer refuses for \
+                 \"{}\": its documents keep history",
+                referenced.name()
+            ));
+        }
         // Consuming deletes the found document without a delete transition of its
         // own: no delete token cost is charged, no delete action fee, and the key
         // signing the create is only held to the creating type's security level.
@@ -1172,6 +1182,37 @@ mod tests {
         let lookup = lookup("byKey", &[("keyId", "signerKeyId"), ("$ownerId", ".")]);
         assert_eq!(
             lookup.referenced_side_error(declaring.as_ref(), referenced.as_ref()),
+            None
+        );
+    }
+
+    #[test]
+    fn should_refuse_consuming_a_type_that_keeps_history() {
+        // Parsed without full validation, as a type stored before protocol version 14
+        // may be: a full parse refuses a deletable type that keeps history first
+        let keeps_history = join_request_with(platform_value!({
+            "canBeDeleted": true,
+            "documentsKeepHistory": true
+        }));
+        let consuming = DocumentReferenceLookup {
+            consume: true,
+            ..lookup(
+                "bySubmittedCharter",
+                &[
+                    ("submittedCharterId", "submittedCharterId"),
+                    ("$ownerId", "."),
+                ],
+            )
+        };
+        let error = consuming
+            .referenced_side_error(elected_charter().as_ref(), keeps_history.as_ref())
+            .expect("consuming a type that keeps history should be refused");
+        assert!(error.contains("its documents keep history"), "{error}");
+
+        // The same type without the history may be consumed
+        let deletable = join_request_with(platform_value!({ "canBeDeleted": true }));
+        assert_eq!(
+            consuming.referenced_side_error(elected_charter().as_ref(), deletable.as_ref()),
             None
         );
     }
