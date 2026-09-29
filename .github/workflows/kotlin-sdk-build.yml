@@ -4,6 +4,7 @@ on:
   workflow_call:
   workflow_dispatch:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'packages/kotlin-sdk/**'
       - 'packages/swift-sdk/**'
@@ -52,6 +53,7 @@ jobs:
       actions: read
     outputs:
       labels: ${{ steps.select.outputs.labels }}
+      candidate_deferred: ${{ steps.select.outputs.candidate_deferred }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,18 +62,19 @@ jobs:
         id: select
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 .github/scripts/runner-image.py select --kind kotlin
+        run: python3 .github/scripts/runner-image.py select --kind kotlin --defer-draft
 
   kotlin-sdk-build:
     name: Kotlin SDK build + tests (x86_64 emulator)
     needs: select-runner
     runs-on: ${{ fromJSON(needs.select-runner.outputs.labels) }}
-    # Fork PRs must not execute on a persistent runner. Keep this guard in sync
-    # with tests-rs-workspace.yml.
+    # Keep the existing fork boundary; only draft manifest candidates defer.
+    # Ordinary application drafts still run on their compatible provisioned pool.
     if: >-
-      github.event_name != 'pull_request'
+      (github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name == github.repository
-      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw'
+      || github.event.pull_request.head.repo.owner.login == 'thepastaclaw')
+      && needs.select-runner.outputs.candidate_deferred != 'true'
     timeout-minutes: 120
 
     steps:
