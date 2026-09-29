@@ -242,11 +242,21 @@ fn repair_record(
             );
             // Stale mempool rows cannot overrule a later sweep's release.
             if !matches!(record.context, TransactionContext::Mempool) {
+                // Record the spender so the mark stays attributable and
+                // reversible; an existing claim by another spender stands.
+                // TODO(release-repair-spends-after-reorg): release rows whose
+                // `spent_in_txid` spender is reorged out and never re-mined;
+                // needs verification of how upstream downgrades a stored
+                // record's context on reorg.
                 tx.execute(
-                    "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
+                    "UPDATE core_utxos SET spent = 1, \
+                         spent_in_txid = CASE WHEN spent = 1 AND spent_in_txid IS NOT NULL \
+                             THEN spent_in_txid ELSE ?3 END \
+                     WHERE wallet_id = ?1 AND outpoint = ?2",
                     params![
                         wallet_id.as_slice(),
-                        blob::encode_outpoint(&input.previous_output)?
+                        blob::encode_outpoint(&input.previous_output)?,
+                        txid.as_byte_array().as_slice()
                     ],
                 )?;
             }
@@ -333,6 +343,14 @@ fn repair_record(
     record.output_details = outputs.into_values().collect();
     let repaired = blob::encode(&record)?;
     if repaired != original {
+        // Append-only: the first pre-repair blob is kept verbatim and never
+        // replaced, so a wrong repair can always be undone.
+        tx.execute(
+            "INSERT OR IGNORE INTO core_transaction_record_originals (wallet_id, txid, record_blob) \
+             SELECT wallet_id, txid, record_blob FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+            params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+        )?;
         tx.execute(
             "UPDATE core_transactions SET record_blob = ?1 WHERE wallet_id = ?2 AND txid = ?3",
             params![

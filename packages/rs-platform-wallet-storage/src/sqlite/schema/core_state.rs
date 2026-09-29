@@ -1510,6 +1510,36 @@ mod tests {
             )
             .unwrap();
         assert!(spent, "late funding must not resurrect the spent coin");
+        let spender: Option<Vec<u8>> = tx
+            .query_row(
+                "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![
+                    &wallet_id[..],
+                    blob::encode_outpoint(&funding.outpoint).unwrap()
+                ],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            spender.as_deref(),
+            Some(AsRef::<[u8]>::as_ref(&spending.txid)),
+            "a repair mark names its spender so it can be reverted"
+        );
+        let original: Vec<u8> = tx
+            .query_row(
+                "SELECT record_blob FROM core_transaction_record_originals \
+                 WHERE wallet_id = ?1 AND txid = ?2",
+                params![&wallet_id[..], AsRef::<[u8]>::as_ref(&spending.txid)],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            blob::decode::<TransactionRecord>(&original)
+                .unwrap()
+                .net_amount,
+            90_000,
+            "the pre-repair record is kept verbatim"
+        );
         apply(
             &tx,
             &wallet_id,
@@ -1567,7 +1597,7 @@ mod tests {
             ],
         )
         .unwrap();
-        tx.execute_batch("DROP TABLE IF EXISTS core_transaction_inputs; DELETE FROM refinery_schema_history WHERE version >= 19;").unwrap();
+        tx.execute_batch("DROP TABLE IF EXISTS core_transaction_inputs; DROP TABLE IF EXISTS core_transaction_record_originals; DELETE FROM refinery_schema_history WHERE version >= 19;").unwrap();
         tx.commit().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let repaired = get_tx_record(&conn, &wallet_id, &spending.txid, &LoadCtx::strict())
@@ -1597,13 +1627,26 @@ mod tests {
                 .net_amount,
             -150_000
         );
+        let original: Vec<u8> = conn
+            .query_row(
+                "SELECT record_blob FROM core_transaction_record_originals \
+                 WHERE wallet_id = ?1 AND txid = ?2",
+                params![&wallet_id[..], AsRef::<[u8]>::as_ref(&spending.txid)],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            original,
+            blob::encode(&spending).unwrap(),
+            "V019 keeps the record it rewrote"
+        );
     }
 
     #[test]
     fn should_skip_corrupt_record_during_history_migration() {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
-        conn.execute_batch("DROP TABLE core_transaction_inputs; DELETE FROM refinery_schema_history WHERE version >= 19;").unwrap();
+        conn.execute_batch("DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; DELETE FROM refinery_schema_history WHERE version >= 19;").unwrap();
         let wallet_id = [0xADu8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -1805,7 +1848,7 @@ mod tests {
         let wallet_id = [0xB2u8; 32];
         let (contact, own) = stage_contact_only_utxo(&conn, &wallet_id);
         conn.execute_batch(
-            "DROP TABLE core_transaction_inputs; DELETE FROM refinery_schema_history WHERE version >= 19;",
+            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; DELETE FROM refinery_schema_history WHERE version >= 19;",
         )
         .unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
