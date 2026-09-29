@@ -195,13 +195,18 @@ in the 36.0.7 patch release on the long-term-support line:
 - **Miscompiled guest heap access on aarch64 Cranelift** (a Critical sandbox
   escape). Guest-reachable, host safety and guest-visible semantics, on one
   architecture only. A node on the affected build already disagrees with the
-  specification of the admitted operators. The patched engine restores the
-  specified behaviour. Whether the fix is a hotfix or an incident is decided
-  by the differential run over recorded executions: if no committed
-  execution depended on the bug, the outputs are identical and the release is
-  a hotfix; if one did, a committed wrong result exists and the incident path
-  applies. Before contract execution is active on any network, the corpus
-  comparison alone decides.
+  specification of the admitted operators, and the patched engine changes
+  what an admitted module computes on some input. That is a consensus
+  behaviour change under the rule below, so on an active network the fix is
+  a new engine profile through a protocol upgrade, however clean the replay
+  of recorded executions is: an accepted module may hold an input-dependent
+  path that no committed execution has taken yet, and nodes on the two
+  builds would first disagree when it is taken. The differential run over
+  recorded executions still runs, to answer a different question: whether a
+  committed execution already depended on the bug, in which case the
+  incident path applies as well. Before contract execution is active on any
+  network, the profile is not yet frozen and the pin moves with the corpus
+  comparison as its evidence.
 - **Segfault or out-of-sandbox load with `f64x2.splat` on x86-64 Cranelift.**
   A SIMD operator. SIMD is not in the initial profile, so the code path is
   unreachable from admitted modules. Acknowledged with that reason until the
@@ -232,7 +237,9 @@ decide whether the replacement release is equivalent. A patch release fixes
 more than the advisory that prompted it, and an unreachable advisory says
 nothing about the other changes in the same release. Every engine change,
 routine or urgent, is judged by the rule in the next section; "routine" only
-means that nothing in the advisory suggests the evidence will fail.
+means that nothing in the advisory suggests the change reaches an admitted
+module. A fix that is itself guest-reachable and guest-visible has already
+answered the question: it is a protocol upgrade.
 
 ## The execution/fee-equivalence hotfix rule
 
@@ -245,9 +252,12 @@ version change. A patch bump on the pinned line, a temporary patch, a fix in
 the validation or runtime crate, and a change of the Cranelift configuration
 are all engine changes and all fall under this rule.
 
-**The rule.** An engine change may ship as a hotfix only with equivalence
-evidence over accepted code and recorded executions, on both supported
-architectures. Equivalence means all of the following, with no exception:
+**The rule.** An engine change may ship as a hotfix only when it cannot
+change any consensus-visible outcome for any input admitted under the
+existing engine profile, and only with equivalence evidence over accepted
+code and recorded executions on both supported architectures. Both halves
+are required. Equivalence evidence means all of the following, with no
+exception:
 
 1. For every accepted canonical module (every stored contract version,
    whether or not it is currently executable), the prepared bytes are
@@ -265,20 +275,46 @@ architectures. Equivalence means all of the following, with no exception:
    Where it does not, it is recorded diagnostically and a difference is
    reported, not failed.
 
-Anything that does not meet all five is a protocol upgrade: a new
+6. A written argument, recorded with the change, that the change cannot
+   alter a consensus-visible outcome for any admitted input: nothing in it
+   touches the lowering of an admitted operator, the memory and table guard
+   logic, the fuel or metering accounting, the resource limits, the trap
+   classification or the host-call boundary under the pinned profile. Fixes
+   confined to code that is not compiled in or not guest-reachable, as
+   classified above, satisfy this by construction.
+
+Point 6 is what the first five cannot supply. Matching every recorded
+execution and every corpus vector shows that history replays identically;
+it does not show that the next execution will. An accepted module can hold
+an input-dependent path that neither history nor the corpus has exercised,
+and a compiler change that alters that path passes all five checks and then
+makes nodes on the old build and the new build disagree the first time the
+path is taken, under one protocol version, during a rolling node upgrade.
+This is the same reason a shipped generation of a versioned method is never
+edited in place (see the coding conventions): a consensus behaviour change
+is selected by the protocol version, not by which binary a node happens to
+run. A change known to alter a guest-reachable semantic, metering, admission
+or resource outcome is therefore a protocol upgrade even when history
+replays identically.
+
+Anything that does not meet all six is a protocol upgrade: a new
 `engine_profile` number in the DashVM table, the old profile retained so
 historical blocks replay under it, activation through the normal upgrade vote.
 There is no emergency pause and no new authority for engine changes; the
 owner decision is that engine behaviour changes go through normal protocol
-upgrades and preserve historical replay.
+upgrades and preserve historical replay. A guest-reachable vulnerability in
+the active profile therefore stays reachable until the vote activates the
+new profile; the chapter states that plainly rather than offering a shortcut
+that would fork the network.
 
-**A committed wrong result is not a hotfix case.** If the differential run
-shows that a committed execution depended on the bug, the chain has already
-diverged from the specification and the engine fix cannot restore it. That is
-an incident under the existing recovery path, described in the Block Failure
-Classes chapter once it lands: failing transitions are removed by the
-proposer, no denylist is distributed and no bespoke recovery mechanism is
-added.
+**A committed wrong result is an incident on top of the upgrade.** If the
+differential run shows that a committed execution depended on the bug, the
+chain has already diverged from the specification and no engine change can
+restore it. The new profile still goes through the upgrade; the committed
+result is handled as an incident under the existing recovery path, described
+in the Block Failure Classes chapter once it lands: failing transitions are
+removed by the proposer, no denylist is distributed and no bespoke recovery
+mechanism is added.
 
 **Node-local changes are not engine changes.** The compiled-artifact cache
 format, compile speed, memory use of the compiler, diagnostics and logging
@@ -286,12 +322,13 @@ are never consensus-visible and need only the ordinary tests. A change that
 starts as node-local and turns out to alter a result is, by that fact, an
 engine change.
 
-**Before activation the rule is vacuous over history.** Until a network
-activates contract execution, the set of accepted modules and recorded
-executions is empty and the rule reduces to the corpus comparison on both
-architectures. Patch bumps on the long-term-support line still take that
-comparison, and should be taken promptly in that period, so the line the
-first profile pins is as fresh as the evidence allows.
+**Before activation the rule does not apply.** Until a network activates
+contract execution, no engine profile has been selected by a released
+protocol version on that network, so there is no frozen behaviour to
+preserve and no accepted module to diverge on. The pin moves with the corpus
+comparison on both architectures as its evidence, and patch bumps on the
+long-term-support line should be taken promptly in that period so the line
+the first profile freezes is as fresh as the evidence allows.
 
 **Until the evidence exists, there is no hotfix.** The rule needs tooling:
 the deterministic corpus, cross-architecture replay, and a differential
@@ -314,18 +351,26 @@ plainly rather than assuming the evidence.
    fix and an expiry, and add the matching `[patch]` entry. If the advisory
    is unreachable under the profile and no release is available, add a scoped
    acknowledgement with the reason and an expiry.
-4. **Produce the evidence.** The full equivalence run of the rule above for
+4. **Write the reachability argument.** For the replacement release as a
+   whole, not just the advisory: state why no change in it can alter a
+   consensus-visible outcome for any admitted input under the pinned
+   profile (point 6 of the rule). If that cannot be stated, or the release
+   changes the lowering of an admitted operator, guard logic, metering,
+   limits, trap classification or the host-call boundary, the answer is a
+   new engine profile and the remaining steps run for that upgrade.
+5. **Produce the evidence.** The full equivalence run of the rule above for
    the replacement release as a whole, on both architectures, over the
    accepted modules, the corpus and (after activation) the recorded
    executions. The advisory's reachability does not shorten this step: it
-   only tells the maintainer what to look at first when the run reports a
-   difference, and whether a committed execution could have depended on the
-   bug.
-5. **Decide.** Equivalent: node release, with the advisory named in the
-   release notes and the classification recorded. Not equivalent, or no
-   evidence possible: new engine profile and protocol upgrade. Committed wrong
-   result found: incident path.
-6. **Retire the exception.** When the patched release ships, remove the
+   tells the maintainer what to look at first when the run reports a
+   difference, and the run over recorded executions tells whether a
+   committed execution already depended on the bug.
+6. **Decide.** Argument holds and evidence clean: node release, with the
+   advisory named in the release notes and the classification and argument
+   recorded. Argument fails, evidence differs, or no evidence possible: new
+   engine profile and protocol upgrade. Committed wrong result found: the
+   incident path, in addition.
+7. **Retire the exception.** When the patched release ships, remove the
    temporary patch and its declaration; when an acknowledged advisory stops
    being reported, remove the acknowledgement. The audit reports both as
    notices so they are not forgotten.

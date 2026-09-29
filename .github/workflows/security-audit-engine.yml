@@ -64,14 +64,16 @@ jobs:
       - name: Fetch the submitted manifest and lockfile as data
         if: github.event_name == 'pull_request_target'
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # The event's immutable head commit, not the moving pull request
+          # ref: a rerun or a queued run audits the revision the event names.
+          SUBMITTED_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           submitted="${RUNNER_TEMP}/submitted"
           mkdir -p "${submitted}"
-          git fetch --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
-          git show FETCH_HEAD:Cargo.toml > "${submitted}/Cargo.toml"
-          git show FETCH_HEAD:Cargo.lock > "${submitted}/Cargo.lock"
-          echo "submitted head: $(git rev-parse FETCH_HEAD)"
+          git fetch --no-tags --depth=1 origin "${SUBMITTED_SHA}"
+          git show "${SUBMITTED_SHA}:Cargo.toml" > "${submitted}/Cargo.toml"
+          git show "${SUBMITTED_SHA}:Cargo.lock" > "${submitted}/Cargo.lock"
+          echo "submitted head: ${SUBMITTED_SHA}"
           ls -l "${submitted}"
 
       - name: Set up audit toolchain
