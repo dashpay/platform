@@ -193,8 +193,9 @@ impl Drive {
 
     /// The operation that adds `amount` to the block epoch's processing fee pool, reading
     /// the current pool value in the same transaction. In estimation mode the read is
-    /// priced without state and the write is priced as an insert of a sum item; the caller
-    /// describes the pool layers first.
+    /// priced without state and the write is priced as an insert of the widest sum item
+    /// (the estimator bills a plain element by its serialized size, the applied write
+    /// bills the fixed sum item size); the caller describes the pool layers first.
     ///
     /// Readiness credits reach the pool this way (the cleanup reserve at retirement, the
     /// membership lookup fees of the block event) so that every credit leaving a readiness
@@ -252,12 +253,15 @@ impl Drive {
                 "adding over i64::MAX to the processing fee pool",
             ))));
         }
-        let updated_value =
+        let updated_value = if apply {
             existing_value
                 .checked_add(amount as i64)
                 .ok_or(ProtocolError::Overflow(
                     "overflow when adding to the processing fee pool",
-                ))?;
+                ))?
+        } else {
+            i64::MAX
+        };
         Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
             epoch_tree_path
                 .iter()
