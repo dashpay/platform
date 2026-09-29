@@ -78,7 +78,8 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertEqual(tx.netAmount(for: first.walletId), -100)
         XCTAssertEqual(tx.netAmount(for: other.walletId), -200)
     }
-    private func serializedSpend(inputs: [Data], outputValue: UInt64 = 40) -> Data {
+    /// `burn` makes the single output an OP_RETURN, as an asset lock's is.
+    private func serializedSpend(inputs: [Data], outputValue: UInt64 = 40, burn: Bool = false) -> Data {
         var bytes = Data([2, 0, 0, 0, UInt8(inputs.count)])
         for txid in inputs {
             bytes.append(txid)
@@ -86,7 +87,8 @@ final class TransactionAccountingTests: XCTestCase {
         }
         bytes.append(1)
         withUnsafeBytes(of: outputValue.littleEndian) { bytes.append(contentsOf: $0) }
-        bytes.append(contentsOf: [0, 0, 0, 0, 0])
+        bytes.append(contentsOf: burn ? [1, 0x6a] : [0])
+        bytes.append(contentsOf: [0, 0, 0, 0])
         return bytes
     }
 
@@ -266,7 +268,7 @@ final class TransactionAccountingTests: XCTestCase {
         let walletId = Data(repeating: 1, count: 32)
         context.insert(PersistentWallet(walletId: walletId, network: .testnet))
         let spenderId = Data(repeating: 3, count: 32)
-        let bytes = serializedSpend(inputs: [walletId, Data(repeating: 2, count: 32)], outputValue: 0)
+        let bytes = serializedSpend(inputs: [walletId, Data(repeating: 2, count: 32)], outputValue: 0, burn: true)
         let spender = PersistentTransaction(txid: spenderId, transactionData: bytes, direction: 2, netAmount: -200)
         spender.transactionTypeKind = 6
         let coin = input(100)
@@ -291,7 +293,7 @@ final class TransactionAccountingTests: XCTestCase {
         let spenderId = Data(repeating: 3, count: 32)
         persist(handler, walletId: walletId, txid: walletId, outputs: [(walletId, 100)])
         persist(handler, walletId: walletId, txid: spenderId,
-                bytes: serializedSpend(inputs: [walletId], outputValue: 0), kind: 6, inputTxids: [walletId])
+                bytes: serializedSpend(inputs: [walletId], outputValue: 0, burn: true), kind: 6, inputTxids: [walletId])
         let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>()).first { $0.txid == spenderId })
         XCTAssertEqual(row.netAmount, -100)
         XCTAssertEqual(row.direction, 2)
