@@ -203,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn get_raw_returns_the_moderation_stamp_only_once_set() {
+    fn should_return_the_moderation_stamp_only_once_set() {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_contract(
             "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",

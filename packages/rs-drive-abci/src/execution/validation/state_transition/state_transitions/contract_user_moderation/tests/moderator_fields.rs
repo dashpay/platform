@@ -17,6 +17,7 @@ const INVALID_DOCUMENT_REVISION: u32 = 40106;
 const JSON_SCHEMA: u32 = 10101;
 const DOCUMENT_PROPERTY_CONSTRAINT_VIOLATED: u32 = 10422;
 const NOTICE: &str = "notice";
+const CARD: &str = "card";
 
 /// A report of a post, which its author can not replace, which moderators may delete, and
 /// whose `status` and `resolution` only they write, queried by who handled it last and when.
@@ -90,7 +91,23 @@ fn notice_schema() -> Value {
     })
 }
 
-/// A contract whose owner and named moderator moderate posts, reports, tickets and notices
+/// A card its owner may give away, whose `grade` only moderators write
+fn card_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "transferable": 1,
+        "moderatorAbilities": { "changeFields": ["grade"] },
+        "properties": {
+            "name": { "type": "string", "minLength": 1, "maxLength": 50, "position": 0 },
+            "grade": { "type": "integer", "minimum": 0, "maximum": 10, "position": 1 },
+        },
+        "required": ["name"],
+        "additionalProperties": false,
+    })
+}
+
+/// A contract whose owner and named moderator moderate posts, reports, tickets, notices and
+/// cards
 async fn setup() -> Setup {
     setup_where(|_| {}).await
 }
@@ -108,6 +125,7 @@ async fn setup_where(modify_config: impl FnOnce(&mut DataContractConfig)) -> Set
             add_document_type(contract, REPORT, report_schema());
             add_document_type(contract, TICKET, ticket_schema());
             add_document_type(contract, NOTICE, notice_schema());
+            add_document_type(contract, CARD, card_schema());
         },
     )
     .await
@@ -930,7 +948,12 @@ async fn should_stamp_the_moderator_who_last_wrote_the_fields() {
         ),
         vec![report.id()]
     );
-    assert_ne!(untouched.id(), report.id());
+    // The report nobody moderated still carries no stamp.
+    let untouched = setup
+        .stored_document(REPORT, untouched.id(), None)
+        .expect("expected the untouched report");
+    assert_eq!(untouched.moderated_at(), None);
+    assert_eq!(untouched.moderated_by(), None);
 }
 
 #[tokio::test]
@@ -1018,4 +1041,94 @@ async fn should_stamp_a_moderator_who_writes_the_fields_in_their_own_documents()
         .stored_document(TICKET, own.id(), Some(&transaction))
         .expect("expected the ticket");
     assert_eq!(kept.moderated_at(), Some(BLOCK_TIME_MS + 4_000));
+}
+
+#[tokio::test]
+async fn should_keep_the_stamp_through_a_transfer_and_a_restore() {
+    let setup = setup().await;
+    let platform_version = PlatformVersion::latest();
+    let stamped_at = BLOCK_TIME_MS + 2_000;
+
+    // A card a moderator graded, given away by its owner: the new owner holds it with the
+    // stamp as the moderator left it.
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (card, create_card) = setup
+        .create_document_of_type_with(&setup.user, CARD, |document| {
+            let properties = document.properties_mut();
+            properties.clear();
+            properties.insert("name".to_string(), Value::Text("ace".to_string()));
+        })
+        .await;
+    assert_success(&setup.process(&create_card, &transaction));
+    let grade = setup
+        .moderate(
+            &setup.moderator,
+            change_action(CARD, card.id(), platform_value!({ "grade": 7u64 })),
+        )
+        .await;
+    assert_success(&setup.process_at(&grade, stamped_at, &transaction));
+    let mut graded = setup
+        .stored_document(CARD, card.id(), Some(&transaction))
+        .expect("expected the card");
+    graded.increment_revision().expect("expected a revision");
+    let transfer = BatchTransition::new_document_transfer_transition_from_document(
+        graded,
+        setup
+            .contract
+            .document_type_for_name(CARD)
+            .expect("expected the card type"),
+        setup.stranger.id(),
+        &setup.user.key,
+        setup.user.contract_nonce(),
+        0,
+        None,
+        &setup.user.signer,
+        platform_version,
+        None,
+    )
+    .await
+    .expect("expected the transfer");
+    assert_success(&setup.process_at(&transfer, BLOCK_TIME_MS + 3_000, &transaction));
+    let given = setup
+        .stored_document(CARD, card.id(), Some(&transaction))
+        .expect("expected the card");
+    assert_eq!(given.owner_id(), setup.stranger.id());
+    assert_eq!(given.moderated_at(), Some(stamped_at));
+    assert_eq!(given.moderated_by(), Some(setup.moderator.id()));
+
+    // A handled report a moderator deletes and the contract owner restores comes back with the
+    // stamp, which its bytes carry.
+    let (post, create_post) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create_post, &transaction));
+    let (report, create) =
+        create_report(&setup, &setup.stranger, post.id(), platform_value!({})).await;
+    assert_success(&setup.process(&create, &transaction));
+    let handle = setup
+        .moderate(
+            &setup.moderator,
+            change_action(REPORT, report.id(), platform_value!({ "status": 2u64 })),
+        )
+        .await;
+    assert_success(&setup.process_at(&handle, stamped_at, &transaction));
+    setup.commit(transaction);
+    let handled = setup
+        .stored_document(REPORT, report.id(), None)
+        .expect("expected the report");
+    assert_eq!(handled.moderated_by(), Some(setup.moderator.id()));
+    let bytes = setup.document_bytes(REPORT, &handled);
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(REPORT, report.id()))
+        .await;
+    assert_success(&setup.process_at(&delete, BLOCK_TIME_MS + 4_000, &transaction));
+    let restore = setup
+        .moderate(&setup.owner, restore_action(REPORT, bytes))
+        .await;
+    assert_success(&setup.process_at(&restore, BLOCK_TIME_MS + 5_000, &transaction));
+    setup.commit(transaction);
+    assert_eq!(
+        setup.stored_document(REPORT, report.id(), None),
+        Some(handled)
+    );
 }

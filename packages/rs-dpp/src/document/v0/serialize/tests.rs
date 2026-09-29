@@ -1,5 +1,6 @@
 use super::*;
-use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::random_document::CreateRandomDocument;
 use crate::tests::json_document::json_document_to_contract;
@@ -1147,7 +1148,7 @@ fn serialize_v3_round_trips_every_property_type() {
 }
 
 #[test]
-fn serialize_v3_round_trips_the_moderation_stamp() {
+fn should_round_trip_the_moderation_stamp_in_format_3() {
     let platform_version = PlatformVersion::latest();
     let document_type = kitchen_sink_document_type();
     let unstamped = stamped_document(
@@ -1187,6 +1188,45 @@ fn serialize_v3_round_trips_the_moderation_stamp() {
         DocumentV0::from_bytes(&unstamped_bytes, document_type.as_ref(), platform_version)
             .expect("expected to deserialize the unstamped document"),
         unstamped
+    );
+}
+
+#[test]
+fn should_refuse_the_moderation_stamp_in_an_older_format() {
+    let platform_version = PlatformVersion::latest();
+    let mut contract = json_document_to_contract(
+        "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        false,
+        platform_version,
+    )
+    .expect("expected to load dashpay contract");
+    // A config version 0 contract serializes in format 0 only, whatever the document holds
+    contract.set_config(
+        DataContractConfig::default_for_version(platform_version).expect("a latest config"),
+    );
+    let document_type = contract
+        .document_type_for_name("contactRequest")
+        .expect("expected contactRequest document type");
+    let crate::document::Document::V0(mut document) = document_type
+        .random_document(Some(7), platform_version)
+        .expect("expected random document");
+    document.moderated_by = Some(Identifier::new([5; 32]));
+
+    // Format 2 has no place for the stamp: refused, not dropped
+    let error = document
+        .serialize_specific_version(document_type, &contract, 2)
+        .expect_err("format 2 can not hold the stamp");
+    assert!(
+        error.to_string().contains("$moderatedBy"),
+        "expected the refusal to name the stamp, got {error}"
+    );
+    let bytes = document
+        .serialize_specific_version(document_type, &contract, 3)
+        .expect("format 3 holds the stamp");
+    assert_eq!(
+        DocumentV0::from_bytes(&bytes, document_type, platform_version)
+            .expect("expected to deserialize the stamped document"),
+        document
     );
 }
 

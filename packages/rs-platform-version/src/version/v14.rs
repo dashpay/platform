@@ -1521,8 +1521,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     unique index (10231); the shipped index key, query value and size
 ///     arms for the two names (`get_raw_for_document_type` v0,
 ///     `serialize_value_for_key` v0, Drive's estimated key sizes) are reached
-///     only through such an index. The change's proof must name the signer as
-///     `$moderatedBy`.
+///     only through such an index.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

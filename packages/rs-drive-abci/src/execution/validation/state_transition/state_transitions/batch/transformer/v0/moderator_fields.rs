@@ -21,11 +21,11 @@ use drive::state_transition_action::batch::batched_transition::BatchedTransition
 /// field its document type keeps for the contract's moderators
 /// (`moderatorAbilities.changeFields`): a create that sets one, a replace whose changed fields
 /// hold one (the first in name order is the one reported). When `writer` does not moderate
-/// the contract the write is refused and the refusal returned; when it does, a replace is
+/// the contract the write is refused and the refusal returned; when it does, the action is
 /// stamped as a moderator's, so the document is written with `$moderatedAt` the block's time
-/// and `$moderatedBy` the writer (a create needs no stamp here: the create action stamps the
-/// document as its owner's whenever it sets such a field, which only a moderator's may).
-/// `None` for any other action, a refused one included.
+/// and `$moderatedBy` the writer. `None` for any other action, a refused one included. This is
+/// the only place a create or replace is stamped: an action built without this judgement is
+/// written without a stamp.
 ///
 /// Judged in the transformer, so the mempool refuses such a write as a block does. Added in
 /// place to the shipped transformer at protocol version 14 and inert before it: only meta-schema
@@ -85,8 +85,13 @@ pub(super) fn judge_moderator_field_write(
     if refusal.is_some() {
         return Ok(refusal);
     }
-    if let DocumentTransitionAction::ReplaceAction(action) = action {
-        action.set_moderated(block_info.time_ms, writer);
+    match action {
+        // A create's writer is its owner, whom the create action stamps at its block's time
+        DocumentTransitionAction::CreateAction(action) => action.set_moderated(),
+        DocumentTransitionAction::ReplaceAction(action) => {
+            action.set_moderated(block_info.time_ms, writer)
+        }
+        _ => {}
     }
     Ok(None)
 }

@@ -858,8 +858,7 @@ mod json_convertible_tests {
     }
 
     #[test]
-    fn json_and_value_round_trips_carry_the_moderation_stamp() {
-        use crate::serialization::{JsonConvertible, ValueConvertible};
+    fn should_carry_the_moderation_stamp_through_json_and_value() {
         let mut original = fixture();
         original.set_moderated_at(Some(1_700_000_002_000));
         original.set_moderated_by(Some(Identifier::new([0xd4; 32])));

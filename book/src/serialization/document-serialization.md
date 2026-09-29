@@ -145,7 +145,7 @@ Time-related fields use a compact encoding with a **bitfield** to indicate which
 - `$moderatedAt`: **8 bytes big-endian u64**, milliseconds since Unix epoch
 - `$moderatedBy`: **32 bytes**, the moderator's identity id
 
-Bits 9 and 10 are read only in version 3, the format of protocol version 14. They are set only on a document a moderator has written the fields only moderators write of (see [System Properties](../contract-keywords/system-properties.md#moderatedat-and-moderatedby)), so every other document's bitfield is as it was before the bits had a meaning.
+Bits 9 and 10 are read only in version 3, the format of protocol version 14. They are set only on a document a moderator has written the fields only moderators write of (see [System Properties](../contract-keywords/system-properties.md#moderatedat-and-moderatedby)), so every other document's bitfield is as it was before the bits had a meaning. An earlier format has no place for them: serializing a stamped document in format 0, 1 or 2 is refused rather than dropping the stamp.
 
 For example, if a document has `$createdAt` and `$updatedAt` set, the bitfield would be `0x0003`, followed by 16 bytes (8 for each timestamp).
 

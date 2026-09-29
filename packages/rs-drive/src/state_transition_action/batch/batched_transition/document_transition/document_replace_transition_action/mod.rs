@@ -151,24 +151,21 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
 
     fn moderated_at(&self) -> Option<TimestampMillis> {
         match self {
-            DocumentReplaceTransitionAction::V0(v0) => {
-                v0.moderation_stamp.as_deref().map(|(at, _)| *at)
-            }
+            DocumentReplaceTransitionAction::V0(v0) => v0.moderated_at,
         }
     }
 
     fn moderated_by(&self) -> Option<Identifier> {
         match self {
-            DocumentReplaceTransitionAction::V0(v0) => {
-                v0.moderation_stamp.as_deref().map(|(_, by)| *by)
-            }
+            DocumentReplaceTransitionAction::V0(v0) => v0.moderated_by,
         }
     }
 
     fn set_moderated(&mut self, moderated_at: TimestampMillis, moderator: Identifier) {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => {
-                v0.moderation_stamp = Some(Box::new((moderated_at, moderator)))
+                v0.moderated_at = Some(moderated_at);
+                v0.moderated_by = Some(moderator);
             }
         }
     }
