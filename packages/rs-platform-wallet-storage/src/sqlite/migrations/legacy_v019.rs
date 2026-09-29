@@ -1,0 +1,569 @@
+//! Frozen V019 history repair. It backfills the raw-input index and corrects
+//! stored accounting for databases migrating from V018 or earlier.
+//!
+//! Frozen on purpose: the live per-round repair in `schema::core_history` may
+//! evolve, but V019 must keep doing exactly what it did when it shipped. Only
+//! the low-level blob codec is shared; `TransactionRecord`'s encoding is owned
+//! upstream (key-wallet) and cannot be frozen here. Do not edit.
+
+use std::collections::BTreeMap;
+
+use dashcore::hashes::Hash;
+use dashcore::{Address, OutPoint, ScriptBuf, Txid};
+use key_wallet::managed_account::transaction_record::{
+    InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+};
+use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+use platform_wallet::wallet::platform_wallet::WalletId;
+use rusqlite::{params, OptionalExtension, Transaction};
+
+use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::schema::{blob, id32, wallets};
+use crate::sqlite::util::safe_cast::i64_to_u64;
+
+/// Read a stored record; undecodable bytes are an error the caller classifies.
+fn read_record(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    txid: &Txid,
+) -> Result<Option<TransactionRecord>, WalletStorageError> {
+    let stored: Option<Option<(i64, Vec<u8>)>> = tx
+        .query_row(
+            "SELECT length(record_blob), record_blob FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+            params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+            |row| {
+                Ok(match row.get::<_, Option<i64>>(0)? {
+                    Some(len) => Some((len, row.get(1)?)),
+                    None => None,
+                })
+            },
+        )
+        .optional()?;
+    let Some(Some((len, payload))) = stored else {
+        return Ok(None);
+    };
+    blob::check_size(len)?;
+    let record: TransactionRecord = blob::decode(&payload)?;
+    if record.txid != *txid {
+        return Err(WalletStorageError::blob_decode(
+            "transaction record names another transaction",
+        ));
+    }
+    Ok(Some(record))
+}
+
+/// Whether `error` reports stored bytes that cannot be decoded, not a database failure.
+fn is_unreadable(error: &WalletStorageError) -> bool {
+    matches!(
+        error,
+        WalletStorageError::BincodeDecode { .. }
+            | WalletStorageError::BlobDecode { .. }
+            | WalletStorageError::BlobTooLarge { .. }
+            | WalletStorageError::HashDecode { .. }
+            | WalletStorageError::IntegerOverflow { .. }
+    )
+}
+
+/// Drop an undecodable record that a Core resync re-delivers, and force that resync.
+///
+/// Only a block-confirmed record (typed `height` set) is re-delivered by a
+/// filter rescan; an unconfirmed one may never be seen again, so it keeps the
+/// migration failing rather than losing it. Lowering `synced_height` to just
+/// below the wallet's birth height makes the next SPV start rescan the wallet
+/// from its birth, which re-records the transaction and re-applies its spends.
+/// The spent marks and outputs it already produced stay as they are:
+/// conservative until the rescan confirms them.
+fn drop_for_resync(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    txid: &Txid,
+    error: WalletStorageError,
+) -> Result<(), WalletStorageError> {
+    let height: Option<i64> = tx.query_row(
+        "SELECT height FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+        params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+        |row| row.get(0),
+    )?;
+    if height.is_none() {
+        return Err(error);
+    }
+    let birth_height: i64 = tx.query_row(
+        "SELECT birth_height FROM wallets WHERE wallet_id = ?1",
+        params![wallet_id.as_slice()],
+        |row| row.get(0),
+    )?;
+    let rescan_from = (birth_height - 1).max(0);
+    tx.execute(
+        "DELETE FROM core_transaction_inputs WHERE wallet_id = ?1 AND txid = ?2",
+        params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+    )?;
+    tx.execute(
+        "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+        params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+    )?;
+    tx.execute(
+        "UPDATE core_sync_state SET synced_height = MIN(COALESCE(synced_height, ?2), ?2) \
+         WHERE wallet_id = ?1",
+        params![wallet_id.as_slice(), rescan_from],
+    )?;
+    tracing::warn!(
+        wallet_id = %hex::encode(wallet_id),
+        %txid,
+        %error,
+        rescan_from,
+        "dropped an undecodable confirmed transaction record; Core history rescans from birth"
+    );
+    Ok(())
+}
+
+/// Index raw inputs independently of when their ownership becomes known.
+fn index_record(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    record: &TransactionRecord,
+) -> Result<(), WalletStorageError> {
+    let mut stmt = tx.prepare_cached(
+        "INSERT OR IGNORE INTO core_transaction_inputs (wallet_id, txid, outpoint) VALUES (?1, ?2, ?3)",
+    )?;
+    for input in &record.transaction.input {
+        stmt.execute(params![
+            wallet_id.as_slice(),
+            record.txid.as_byte_array().as_slice(),
+            blob::encode_outpoint(&input.previous_output)?,
+        ])?;
+    }
+    Ok(())
+}
+
+fn network(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+) -> Result<dashcore::Network, WalletStorageError> {
+    let label: String = tx.query_row(
+        "SELECT network FROM wallets WHERE wallet_id = ?1",
+        params![wallet_id.as_slice()],
+        |r| r.get(0),
+    )?;
+    wallets::parse_network(&label)
+        .ok_or_else(|| WalletStorageError::blob_decode("wallets.network is unknown"))
+}
+
+fn owned_output(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    outpoint: &OutPoint,
+    network: dashcore::Network,
+) -> Result<Option<(u64, Address)>, WalletStorageError> {
+    let mut stmt = tx.prepare_cached("SELECT value, length(script), script FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0")?;
+    let mut rows = stmt.query(params![
+        wallet_id.as_slice(),
+        blob::encode_outpoint(outpoint)?
+    ])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    let value = i64_to_u64("core_utxos.value", row.get(0)?)?;
+    blob::check_size(row.get(1)?)?;
+    let script: Vec<u8> = row.get(2)?;
+    if contact_only_script(tx, wallet_id, &script)? {
+        return Ok(None);
+    }
+    let address = Address::from_script(&ScriptBuf::from_bytes(script), network)?;
+    Ok(Some((value, address)))
+}
+
+/// Whether `script` is tracked only by a contact's watch-only (DashPay external) chain.
+fn contact_only_script(
+    conn: &Transaction<'_>,
+    wallet_id: &WalletId,
+    script: &[u8],
+) -> Result<bool, WalletStorageError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) AND NOT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2 AND account_type != 'dashpay_external')",
+        params![wallet_id.as_slice(), script], |r| r.get(0))?)
+}
+
+fn repair_record(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    mut record: TransactionRecord,
+    network: dashcore::Network,
+) -> Result<(), WalletStorageError> {
+    let record_txid = record.txid;
+    let txid = &record_txid;
+    let original = blob::encode(&record)?;
+    let mut inputs = BTreeMap::new();
+    for detail in record.input_details.drain(..) {
+        if !contact_only_script(tx, wallet_id, detail.address.script_pubkey().as_bytes())? {
+            inputs.insert(detail.index, detail);
+        }
+    }
+    for (index, input) in record.transaction.input.iter().enumerate() {
+        if let Some((value, address)) =
+            owned_output(tx, wallet_id, &input.previous_output, network)?
+        {
+            inputs.insert(
+                index as u32,
+                InputDetail {
+                    index: index as u32,
+                    value,
+                    address,
+                },
+            );
+            // Stale mempool rows cannot overrule a later sweep's release.
+            if !matches!(record.context, TransactionContext::Mempool) {
+                // Record the spender so the mark stays attributable and
+                // reversible; an existing claim by another spender stands.
+                tx.execute(
+                    "UPDATE core_utxos SET spent = 1, \
+                         spent_in_txid = CASE WHEN spent = 1 AND spent_in_txid IS NOT NULL \
+                             THEN spent_in_txid ELSE ?3 END \
+                     WHERE wallet_id = ?1 AND outpoint = ?2",
+                    params![
+                        wallet_id.as_slice(),
+                        blob::encode_outpoint(&input.previous_output)?,
+                        txid.as_byte_array().as_slice()
+                    ],
+                )?;
+            }
+        }
+    }
+    let mut outputs = BTreeMap::new();
+    for mut detail in record.output_details.drain(..) {
+        if let Some(address) = &detail.address {
+            if contact_only_script(tx, wallet_id, address.script_pubkey().as_bytes())? {
+                detail.role = OutputRole::Sent;
+            }
+        }
+        outputs.insert(detail.index, detail);
+    }
+    for (index, output) in record.transaction.output.iter().enumerate() {
+        let index = index as u32;
+        if let Some((_, address)) = owned_output(
+            tx,
+            wallet_id,
+            &OutPoint {
+                txid: *txid,
+                vout: index,
+            },
+            network,
+        )? {
+            let role = outputs.get(&index).map_or(OutputRole::Received, |d| {
+                if d.role == OutputRole::Change {
+                    OutputRole::Change
+                } else {
+                    OutputRole::Received
+                }
+            });
+            outputs.insert(
+                index,
+                OutputDetail {
+                    index,
+                    role,
+                    address: Some(address),
+                    value: output.value,
+                },
+            );
+        }
+    }
+    // Empty metadata is not accounting evidence (e.g. confirmation-only placeholders).
+    if inputs.is_empty() && outputs.is_empty() {
+        return Ok(());
+    }
+    let received: i128 = outputs
+        .values()
+        .filter(|d| matches!(d.role, OutputRole::Received | OutputRole::Change))
+        .map(|d| i128::from(d.value))
+        .sum();
+    let spent: i128 = inputs.values().map(|d| i128::from(d.value)).sum();
+    record.net_amount = i64::try_from(received - spent).map_err(|_| {
+        WalletStorageError::blob_decode("wallet transaction net amount exceeds i64")
+    })?;
+    let has_ours = outputs
+        .values()
+        .any(|d| matches!(d.role, OutputRole::Received | OutputRole::Change));
+    let has_external = record
+        .transaction
+        .output
+        .iter()
+        .enumerate()
+        .any(|(i, output)| {
+            !output.script_pubkey.is_op_return()
+                && !outputs.get(&(i as u32)).is_some_and(|d| {
+                    matches!(
+                        d.role,
+                        OutputRole::Received | OutputRole::Change | OutputRole::Unspendable
+                    )
+                })
+        });
+    record.direction = if record.transaction_type == TransactionType::CoinJoin {
+        TransactionDirection::CoinJoin
+    } else if inputs.is_empty() {
+        TransactionDirection::Incoming
+    } else if !has_external && (has_ours || record.transaction_type == TransactionType::AssetLock) {
+        TransactionDirection::Internal
+    } else {
+        TransactionDirection::Outgoing
+    };
+    record.input_details = inputs.into_values().collect();
+    record.output_details = outputs.into_values().collect();
+    let repaired = blob::encode(&record)?;
+    if repaired != original {
+        // Append-only: the first pre-repair blob is kept verbatim and never
+        // replaced, so a wrong repair can always be undone.
+        tx.execute(
+            "INSERT OR IGNORE INTO core_transaction_record_originals (wallet_id, txid, record_blob) \
+             SELECT wallet_id, txid, record_blob FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+            params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
+        )?;
+        tx.execute(
+            "UPDATE core_transactions SET record_blob = ?1 WHERE wallet_id = ?2 AND txid = ?3",
+            params![
+                repaired,
+                wallet_id.as_slice(),
+                txid.as_byte_array().as_slice()
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+pub(super) fn repair_history(tx: &Transaction<'_>) -> Result<(), WalletStorageError> {
+    // Keys are collected first so drops never race the open cursor.
+    let mut keys = Vec::new();
+    {
+        let mut stmt = tx.prepare_cached("SELECT length(wallet_id), wallet_id, length(txid), txid FROM core_transactions WHERE record_blob IS NOT NULL")?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            blob::check_fixed_width(row.get(0)?, 32, "core_transactions.wallet_id")?;
+            let wallet_id: Vec<u8> = row.get(1)?;
+            let wallet_id = id32("core_transactions.wallet_id", &wallet_id)?;
+            blob::check_fixed_width(row.get(2)?, 32, "core_transactions.txid")?;
+            let txid: Vec<u8> = row.get(3)?;
+            keys.push((wallet_id, Txid::from_slice(&txid)?));
+        }
+    }
+    for (wallet_id, txid) in keys {
+        match read_record(tx, &wallet_id, &txid) {
+            Ok(Some(record)) => {
+                index_record(tx, &wallet_id, &record)?;
+                repair_record(tx, &wallet_id, record, network(tx, &wallet_id)?)?;
+            }
+            Ok(None) => {}
+            Err(error) if is_unreadable(&error) => drop_for_resync(tx, &wallet_id, &txid, error)?,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use dashcore::address::Payload;
+    use dashcore::{BlockHash, PubkeyHash, Transaction as CoreTransaction, TxIn, TxOut};
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::transaction_checking::BlockInfo;
+    use key_wallet::Utxo;
+    use platform_wallet::changeset::CoreChangeSet;
+    use rusqlite::Connection;
+
+    use super::*;
+    use crate::sqlite::schema::core_state;
+
+    fn address(marker: u8) -> Address {
+        Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([marker; 20])),
+        )
+    }
+
+    fn utxo(outpoint: OutPoint, value: u64, address: Address) -> Utxo {
+        Utxo {
+            outpoint,
+            txout: TxOut {
+                value,
+                script_pubkey: address.script_pubkey(),
+            },
+            address,
+            height: 100,
+            is_coinbase: false,
+            is_confirmed: true,
+            is_instantlocked: false,
+            is_locked: false,
+            is_trusted: false,
+        }
+    }
+
+    /// Pins V019's observable result on a V018-shaped database: the repaired
+    /// record, the preserved original, the input index and the spent marks.
+    #[test]
+    fn should_pin_v019_repair_of_a_v018_database() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xC1u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let (own, change, contact, external) = (address(1), address(2), address(3), address(4));
+        conn.execute(
+            "INSERT INTO core_address_pool (wallet_id, account_type, account_index, pool_type, address_index, script) \
+             VALUES (?1, 'dashpay_external', 0, 0, 0, ?2)",
+            params![&wallet_id[..], contact.script_pubkey().as_bytes()],
+        )
+        .unwrap();
+        let funding = OutPoint::new(Txid::from_byte_array([0x71; 32]), 0);
+        let body = CoreTransaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: funding,
+                ..Default::default()
+            }],
+            output: vec![
+                TxOut {
+                    value: 30_000,
+                    script_pubkey: change.script_pubkey(),
+                },
+                TxOut {
+                    value: 50_000,
+                    script_pubkey: contact.script_pubkey(),
+                },
+                TxOut {
+                    value: 15_000,
+                    script_pubkey: external.script_pubkey(),
+                },
+            ],
+            special_transaction_payload: None,
+        };
+        let txid = body.txid();
+        // What an old build stored: the input was not known to be ours and
+        // the contact's output was credited as received.
+        let original = TransactionRecord::new(
+            body,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::InBlock(BlockInfo::new(101, BlockHash::all_zeros(), 7)),
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            vec![
+                OutputDetail {
+                    index: 0,
+                    role: OutputRole::Change,
+                    address: Some(change.clone()),
+                    value: 30_000,
+                },
+                OutputDetail {
+                    index: 1,
+                    role: OutputRole::Received,
+                    address: Some(contact),
+                    value: 50_000,
+                },
+            ],
+            80_000,
+        );
+        {
+            let tx = conn.transaction().unwrap();
+            core_state::apply(
+                &tx,
+                &wallet_id,
+                &CoreChangeSet {
+                    new_utxos: vec![
+                        utxo(funding, 100_000, own.clone()),
+                        utxo(OutPoint::new(txid, 0), 30_000, change.clone()),
+                    ],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            tx.execute(
+                "INSERT OR REPLACE INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
+                 VALUES (?1, ?2, 101, 1, ?3)",
+                params![
+                    &wallet_id[..],
+                    txid.as_byte_array().as_slice(),
+                    blob::encode(&original).unwrap()
+                ],
+            )
+            .unwrap();
+            tx.execute_batch(
+                "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+                 DELETE FROM refinery_schema_history WHERE version >= 19;",
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+
+        let mut expected = original.clone();
+        expected.input_details = vec![InputDetail {
+            index: 0,
+            value: 100_000,
+            address: own,
+        }];
+        expected.output_details = vec![
+            OutputDetail {
+                index: 0,
+                role: OutputRole::Change,
+                address: Some(change),
+                value: 30_000,
+            },
+            OutputDetail {
+                index: 1,
+                role: OutputRole::Sent,
+                address: Some(address(3)),
+                value: 50_000,
+            },
+        ];
+        expected.net_amount = -70_000;
+        expected.direction = TransactionDirection::Outgoing;
+        let read_blob = |sql: &str| -> Vec<u8> {
+            conn.query_row(
+                sql,
+                params![&wallet_id[..], txid.as_byte_array().as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            read_blob(
+                "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2"
+            ),
+            blob::encode(&expected).unwrap()
+        );
+        assert_eq!(
+            read_blob(
+                "SELECT record_blob FROM core_transaction_record_originals WHERE wallet_id = ?1 AND txid = ?2"
+            ),
+            blob::encode(&original).unwrap()
+        );
+        let (spent, spender): (bool, Option<Vec<u8>>) = conn
+            .query_row(
+                "SELECT spent, spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![&wallet_id[..], blob::encode_outpoint(&funding).unwrap()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert!(spent);
+        assert_eq!(spender.as_deref(), Some(txid.as_byte_array().as_slice()));
+        let indexed: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM core_transaction_inputs WHERE wallet_id = ?1 AND txid = ?2 AND outpoint = ?3",
+                params![
+                    &wallet_id[..],
+                    txid.as_byte_array().as_slice(),
+                    blob::encode_outpoint(&funding).unwrap()
+                ],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(indexed, 1);
+    }
+}

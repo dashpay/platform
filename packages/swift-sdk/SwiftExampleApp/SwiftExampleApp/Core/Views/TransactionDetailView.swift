@@ -4,7 +4,9 @@ import SwiftDashSDK
 struct TransactionDetailView: View {
     let transaction: PersistentTransaction
     var walletId: Data? = nil
-    private var netAmount: Int64 { walletId.flatMap { transaction.netAmount(for: $0) } ?? transaction.netAmount }
+    /// `nil` while this wallet's amount is unresolved — the same state the
+    /// amount label shows as "Amount unavailable", so fee and amount agree.
+    private var netAmount: Int64? { walletId.map { transaction.netAmount(for: $0) } ?? transaction.netAmount }
     private var direction: UInt32 { walletId.map { transaction.direction(for: $0) } ?? transaction.direction }
     /// Asset-lock payload funding amount, excluding the Core transaction fee.
     var assetLockAmountDuffs: Int64? = nil
@@ -201,7 +203,7 @@ struct TransactionDetailView: View {
                             )
                         }
 
-                        if let fee = formattedFee, netAmount < 0 {
+                        if let fee = formattedFee, let amount = netAmount, amount < 0 {
                             TransactionDetailRow(
                                 label: "Network Fee",
                                 value: fee

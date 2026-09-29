@@ -264,8 +264,9 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   Coinbase-maturity nuance re-warms on sync. `is_instantlocked` is NOT
 ///   among them: it is rebuilt from `core_instant_locks` above, for every
 ///   UTXO a replayed lock covers.
-/// - **Transaction records**: the SQLite loader replays confirmed history
-///   through the wallet checker after this projection.
+/// - **Transaction records**: the SQLite loader replays recorded history
+///   (confirmed, then unconfirmed) through the wallet checker after this
+///   projection.
 ///
 /// # Errors
 ///
@@ -420,12 +421,15 @@ pub fn apply_persisted_core_state(
     Ok(())
 }
 
-/// Restore spend and finality guards without re-crediting outputs excluded by persistence.
-pub(crate) fn restore_confirmed_transactions(
-    mut wallet_info: ManagedWalletInfo,
-    mut wallet: Wallet,
+/// Restore spend reservations and finality guards without re-crediting outputs excluded by persistence.
+///
+/// Unconfirmed (mempool / InstantSend) spends are replayed too: without them a
+/// redelivered funding transaction would re-credit an output they reserve.
+pub(crate) fn restore_recorded_transactions(
+    wallet_info: &mut ManagedWalletInfo,
+    wallet: &mut Wallet,
     records: Vec<TransactionRecord>,
-) -> Result<(Wallet, ManagedWalletInfo), WalletStorageError> {
+) {
     // Where the load projection parked each unspent outpoint; its keys are
     // the outputs persistence still considers unspent.
     let placed: HashMap<OutPoint, AccountType> = wallet_info
@@ -437,72 +441,119 @@ pub(crate) fn restore_confirmed_transactions(
             account.utxos.keys().map(move |outpoint| (*outpoint, owner))
         })
         .collect();
-    let mut confirmed: Vec<_> = records
-        .into_iter()
-        .filter(|record| record.block_info().is_some())
-        .collect();
-    if confirmed.is_empty() {
-        return Ok((wallet, wallet_info));
+    if records.is_empty() {
+        return;
     }
-    confirmed.sort_by_key(|record| {
+    // TODO(bound-load-history-replay): every stored record is replayed on each
+    // load; bounding it to records above the last chain lock needs care so
+    // finality and spend guards for older records are not lost.
+    let replay = replay_order(records);
+
+    // Kept only to undo a replay the checker suspended part-way through.
+    let (info_before, wallet_before) = (wallet_info.clone(), wallet.clone());
+    let completed = poll_ready(async {
+        for record in replay {
+            wallet_info
+                .check_core_transaction(&record.transaction, record.context, wallet, true, false)
+                .await;
+        }
+    })
+    .is_some();
+    if !completed {
+        // Degrade to the pre-replay projection: persisted spends stay
+        // excluded, only redelivery guards are missing until the next sync.
+        tracing::error!(
+            wallet_id = %hex::encode(wallet_info.wallet_id),
+            "transaction checker suspended during load replay; restored spend guards skipped"
+        );
+        *wallet_info = info_before;
+        *wallet = wallet_before;
+        return;
+    }
+
+    let spent: HashSet<_> = wallet_info
+        .observed_spent_outpoints()
+        .keys()
+        .copied()
+        .collect();
+    // Replay credits an output to the account whose pool derives it. When
+    // that differs from the load-time fallback, the fallback copy is a
+    // duplicate: drop it so each outpoint lives in exactly one account.
+    let misplaced: HashSet<(OutPoint, AccountType)> = wallet_info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|account| {
+            let owner = funds_account_type(account);
+            let placed = &placed;
+            account.utxos.keys().filter_map(move |outpoint| {
+                placed
+                    .get(outpoint)
+                    .filter(|parked| **parked != owner)
+                    .map(|parked| (*outpoint, *parked))
+            })
+        })
+        .collect();
+    for account in wallet_info.accounts.all_funding_accounts_mut() {
+        let owner = funds_account_type(account);
+        account.utxos.retain(|outpoint, _| {
+            placed.contains_key(outpoint)
+                && !spent.contains(outpoint)
+                && !misplaced.contains(&(*outpoint, owner))
+        });
+    }
+    // Finalize replayed records before a sync checkpoint can prune their spend guards.
+    if let Some(chain_lock) = wallet_info.metadata.last_applied_chain_lock.clone() {
+        wallet_info.apply_chain_lock(chain_lock);
+    }
+    wallet_info.update_balance();
+}
+
+/// Poll `future` once, returning its output only if it completed without suspending.
+///
+/// The wallet checker is `async` only by trait shape: it never awaits, so it
+/// completes on the first poll and load needs no async runtime. A test pins
+/// that; an upstream change that adds a real await fails it.
+fn poll_ready<F: std::future::Future>(future: F) -> Option<F::Output> {
+    let mut future = std::pin::pin!(future);
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    match future.as_mut().poll(&mut cx) {
+        std::task::Poll::Ready(output) => Some(output),
+        std::task::Poll::Pending => None,
+    }
+}
+
+/// Order records as the chain would deliver them: confirmed by block position,
+/// then unconfirmed ones with every in-set parent ahead of its children.
+fn replay_order(records: Vec<TransactionRecord>) -> Vec<TransactionRecord> {
+    let (mut ordered, mut pending): (Vec<_>, Vec<_>) = records
+        .into_iter()
+        .partition(|record| record.block_info().is_some());
+    ordered.sort_by_key(|record| {
         record
             .block_info()
             .map(|block| (block.height(), block.position()))
     });
-
-    // The checker only mutates in-memory state; no network requests or persistence.
-    dash_async::block_on(async move {
-        for record in confirmed {
-            wallet_info
-                .check_core_transaction(
-                    &record.transaction,
-                    record.context,
-                    &mut wallet,
-                    true,
-                    false,
-                )
-                .await;
-        }
-
-        let spent: HashSet<_> = wallet_info
-            .observed_spent_outpoints()
-            .keys()
-            .copied()
-            .collect();
-        // Replay credits an output to the account whose pool derives it. When
-        // that differs from the load-time fallback, the fallback copy is a
-        // duplicate: drop it so each outpoint lives in exactly one account.
-        let misplaced: HashSet<(OutPoint, AccountType)> = wallet_info
-            .accounts
-            .all_funding_accounts()
-            .into_iter()
-            .flat_map(|account| {
-                let owner = funds_account_type(account);
-                let placed = &placed;
-                account.utxos.keys().filter_map(move |outpoint| {
-                    placed
-                        .get(outpoint)
-                        .filter(|parked| **parked != owner)
-                        .map(|parked| (*outpoint, *parked))
-                })
+    // Deterministic start; parents are then pulled forward in rounds.
+    pending.sort_by_key(|record| record.txid);
+    while !pending.is_empty() {
+        let waiting: HashSet<_> = pending.iter().map(|record| record.txid).collect();
+        let (ready, blocked): (Vec<_>, Vec<_>) = pending.into_iter().partition(|record| {
+            record.transaction.input.iter().all(|input| {
+                input.previous_output.txid == record.txid
+                    || !waiting.contains(&input.previous_output.txid)
             })
-            .collect();
-        for account in wallet_info.accounts.all_funding_accounts_mut() {
-            let owner = funds_account_type(account);
-            account.utxos.retain(|outpoint, _| {
-                placed.contains_key(outpoint)
-                    && !spent.contains(outpoint)
-                    && !misplaced.contains(&(*outpoint, owner))
-            });
+        });
+        if ready.is_empty() {
+            // Unreachable for real transactions (txids cannot form a cycle);
+            // keep the rest rather than drop a reservation.
+            ordered.extend(blocked);
+            break;
         }
-        // Finalize replayed records before a sync checkpoint can prune their spend guards.
-        if let Some(chain_lock) = wallet_info.metadata.last_applied_chain_lock.clone() {
-            wallet_info.apply_chain_lock(chain_lock);
-        }
-        wallet_info.update_balance();
-        (wallet, wallet_info)
-    })
-    .map_err(WalletStorageError::CoreHistoryReplay)
+        ordered.extend(ready);
+        pending = blocked;
+    }
+    ordered
 }
 
 /// Account identity of a funds account, stable across replay mutations.
@@ -3255,5 +3306,63 @@ mod tests {
             restored.is_instantlocked,
             "the restored UTXO must carry instant-locked status, not wait for the next sync"
         );
+    }
+
+    /// Load replays history without an async runtime by polling the checker
+    /// once. If upstream ever makes it suspend, this fails in CI instead of
+    /// load silently skipping the restored spend guards in production.
+    #[test]
+    fn should_complete_transaction_checker_on_first_poll() {
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, Transaction, TxIn, TxOut, Txid};
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
+        };
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+        let mut wallet =
+            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let address = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let funding = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array([9; 32]), 0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: 1_000,
+                script_pubkey: address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let spend = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(funding.txid(), 0),
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let block =
+            TransactionContext::InBlock(BlockInfo::new(1, dashcore::BlockHash::all_zeros(), 1));
+        for (tx, context) in [(&funding, block), (&spend, TransactionContext::Mempool)] {
+            let result =
+                poll_ready(info.check_core_transaction(tx, context, &mut wallet, true, false));
+            assert!(
+                result.is_some_and(|r| r.is_relevant),
+                "the checker must complete on its first poll"
+            );
+        }
     }
 }
