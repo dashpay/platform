@@ -2547,8 +2547,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let blockHashBytes = hashData(tx.block_hash)
         record.blockHash = blockHashBytes.allSatisfy { $0 == 0 } ? nil : blockHashBytes
         // A context-only recovery record has zero accounting; a funded asset lock burns Core value.
+        // A stored debit is itself the proof we funded it: its inputs may not be linked yet.
         let preserveLockAccounting = tx.transaction_type_kind == 6 && tx.net_amount == 0 && !tx.has_fee
-            && record.netAmount != 0 && record.inputs.contains(where: Self.isWalletOwnedTxo)
+            && record.netAmount < 0
         if !preserveLockAccounting { record.direction = tx.direction }
         if let typeName = tx.transaction_type {
             record.transactionType = String(cString: typeName)

@@ -284,6 +284,26 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertEqual(row.context, 2)
     }
 
+    func testShouldPreserveAssetLockDebitWhenNoInputIsLinkedYet() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let walletId = Data(repeating: 1, count: 32)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        let spenderId = Data(repeating: 3, count: 32)
+        let bytes = serializedSpend(inputs: [Data(repeating: 2, count: 32)], outputValue: 0, burn: true)
+        let lock = PersistentTransaction(txid: spenderId, transactionData: bytes, direction: 2, netAmount: -200)
+        lock.transactionTypeKind = 6
+        lock.fee = 7
+        context.insert(lock)
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        persist(handler, walletId: walletId, txid: spenderId, bytes: bytes, kind: 6)
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>()).first { $0.txid == spenderId })
+        XCTAssertEqual(row.netAmount, -200, "a synthetic zero update must not erase the debit")
+        XCTAssertEqual(row.fee, 7)
+        XCTAssertEqual(row.direction, 2)
+    }
+
     func testShouldRepairNoChangeAssetLockToFullCoreDebit() throws {
         let container = try DashModelContainer.createInMemory()
         let walletId = Data(repeating: 1, count: 32)
