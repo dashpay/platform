@@ -12,8 +12,8 @@ undeletable, so everything a charter points at, and the charter itself, is a
 fixed text; the three team changes are deletable.
 
 The schema carries almost every rule through its keywords: typed arrays with
-a reference per element, a reference resolved through a unique index
-(`lookup`), `distinctFrom`, key requirements on key references, the
+a reference per element, a reference found through a unique index
+(`findBy`), a reference to an element of a list (`inList`), `distinctFrom`, key requirements on key references, the
 `encryptedFor` envelope, `maxBytes` for the description's 4096-byte cap and a
 `propertyConstraints` rule holding the reward split to 100. What it cannot say,
 the cap on additions, is checked by the batch's state validation, and
@@ -62,7 +62,7 @@ to this type.
 
 | Property | Type | Meaning |
 | --- | --- | --- |
-| `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` | The proposal; `recipientId` must equal its owner (`propertyAgreement`) |
+| `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` | The proposal; its owner must equal `recipientId` (`where`) |
 | `recipientId` | identifier, required, `refersTo` an identity public key through `recipientKeyId` | The leader and the decryption key the message is encrypted to |
 | `recipientKeyId` | integer, required | The leader's key id |
 | `senderKeyId` | integer, required | The owner's encryption key the shared secret is derived from |
@@ -72,7 +72,7 @@ to this type.
 
 A proposal put to the vote with its team: the only type that opens or joins
 the contest for a target. Only the proposal's leader may create one, for the
-proposal's own target (`propertyAgreement` on `$ownerId` and
+proposal's own target (`where` on `$ownerId` and
 `targetContractId`). The `byTargetContract` index is a contested unique index
 keyed by the target contract with resolution `1`, the vote without a Lock
 choice by masternodes (weight 1) and evonodes (weight 4): a create on it
@@ -88,7 +88,7 @@ leader and members act with the target's full mandate; there are no powers.
 | --- | --- | --- |
 | `targetContractId` | identifier, required, `refersTo` a contract whose election is open | The contract contended for; its own `electionDelay` since its creation must have passed |
 | `submittedCharterId` | identifier, required, `refersTo` a `submittedCharter` | The proposal the team runs on |
-| `members` | array of at most 15 unique identity ids, required, each the owner of a `joinRequest` for this proposal (`lookup`) and none the leader (`distinctFrom`) | The team besides the leader; may be empty |
+| `members` | array of at most 15 unique identity ids, required, each the owner of a `joinRequest` for this proposal (`findBy`) and none the leader (`distinctFrom`) | The team besides the leader; may be empty |
 
 ## After the election
 
@@ -96,9 +96,9 @@ Once an elected charter is seated, its team can change without a new vote:
 
 | Type | Written by | Properties | Rules |
 | --- | --- | --- | --- |
-| `addedModerator` | the leader | `electedCharterId`, `submittedCharterId`, `memberId` | `memberId` owns a `joinRequest` for the charter's proposal (`lookup`) and is not the leader; at most the target's `maxAddedModerators` additions per charter at a time, a consensus rule of the batch's state validation (41202); deleting it takes the member off and frees its slot |
-| `removedModerator` | the leader | `electedCharterId`, `memberId` | Needs no resignation; `memberId` is one of the charter's elected `members` (`listElement`); deleting it puts the member back |
-| `resignationRequest` | a member of the team | `electedCharterId`, `recipientId`, `recipientKeyId`, `senderKeyId`, `encryptedMessage` | The writer is in the charter's `members` or has an addition now (`ownerRefersTo` with `anyOf`, the addition a `deletableDocument` lookup); a message only the leader can read; deletable, which withdraws it; the leader acts on it by deleting the addition or removing an elected member |
+| `addedModerator` | the leader | `electedCharterId`, `submittedCharterId`, `memberId` | `memberId` owns a `joinRequest` for the charter's proposal (`findBy`) and is not the leader; at most the target's `maxAddedModerators` additions per charter at a time, a consensus rule of the batch's state validation (41202); deleting it takes the member off and frees its slot |
+| `removedModerator` | the leader | `electedCharterId`, `memberId` | Needs no resignation; `memberId` is one of the charter's elected `members` (`inList`); deleting it puts the member back |
+| `resignationRequest` | a member of the team | `electedCharterId`, `recipientId`, `recipientKeyId`, `senderKeyId`, `encryptedMessage` | The writer is in the charter's `members` or has an addition now (`ownerRefersTo` with `anyOf`, the addition a `deletableDocument` found by `findBy`); a message only the leader can read; deletable, which withdraws it; the leader acts on it by deleting the addition or removing an elected member |
 
 Each exists at most once per member and charter (unique indexes). The team
 that acts is the leader plus the elected members less the removals, plus the

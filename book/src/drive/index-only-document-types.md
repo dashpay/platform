@@ -258,7 +258,7 @@ every write, so a per-hashtag ranked index on a like doctype used to tax
 every like — tagged or not — and forced a `''` sentinel onto the
 referenced post's hashtag. With `byHashtagPost` as a skip index, an
 untagged like pays only for the indexes it actually appears in, and the
-sentinel disappears (see the absence-aware `propertyAgreement` below).
+sentinel disappears (see the absence-aware `where` below).
 
 ## Lifecycle
 
@@ -268,29 +268,29 @@ sentinel disappears (see the absence-aware `propertyAgreement` below).
   uniqueness constraint over its value projection plus owner — for likes,
   the `[postId]` index is the one-like-per-(post, owner) rule. `refersTo`
   validation runs unchanged (it reads transition values, not storage), so a
-  like on a nonexistent post is rejected — and a `propertyAgreement`
-  declaration on the reference (`{ "hashtag": "hashtag" }`) binds the
-  like's own property to the referenced post's: the referenced document is
+  like on a nonexistent post is rejected, and a `where` declaration on the
+  reference (`{ "hashtag": "hashtag" }`) binds the referenced post's
+  property to the like's own: the referenced document is
   already fetched for the existence check, so the equality comparison adds
   no reads, and a like whose hashtag disagrees with its post's is refused.
-  Absence is part of the agreement, strictly: both sides absent agree, one
+  Absence is part of the comparison, strictly: both sides absent agree, one
   side absent is the same mismatch a differing value would be — a like may
   omit its hashtag exactly when its post has none (anything laxer would
   let likes on tagged posts silently deflate per-tag aggregates), which is
-  what lets an agreement key double as a `skipIfAbsent` skip property with both
-  sides of the reference optional. The referenced side of a pair may also
-  name the referenced document's `$ownerId` or `$creatorId` (the referring
-  side must then be an identifier property): `{ "authorId": "$ownerId" }`
-  binds a like to its post's current owner, so an `[authorId, postId]`
+  what lets a compared property double as a `skipIfAbsent` skip property
+  with both sides of the reference optional. The key of an entry, the
+  referenced side, may also name the referenced document's `$ownerId` or
+  `$creatorId` (the referring side must then be an identifier property):
+  `{ "$ownerId": "authorId" }` binds a like to its post's current owner, so an `[authorId, postId]`
   index can be preallocated and ranked per author. `$ownerId` follows the
   post through transfers and `$creatorId` never changes; either is checked
   when the like is written, not when the post later moves. `$creatorId` is
   only recorded by transferable or tradeable types of a format-1 contract,
   which contract registration checks before accepting the declaration.
-  The referring side may in turn be the like's own `$ownerId`, the writer:
-  `{ "$ownerId": "$ownerId" }` lets only the post's current owner create
-  or replace a like on it, `{ "$ownerId": "$creatorId" }` only its
-  original creator. That is a write gate, checked on create and on every
+  The referring side, an entry's value, may in turn be the like's own
+  `$ownerId`, the writer: `{ "$ownerId": "$ownerId" }` lets only the post's
+  current owner create or replace a like on it, `{ "$creatorId": "$ownerId" }`
+  only its original creator. That is a write gate, checked on create and on every
   replace of the like, not only when its reference changes, since the post
   may have been transferred in between; a transfer itself is not
   re-checked, so on a transferable referring type it governs writing, not
@@ -319,14 +319,14 @@ entry pays for one item insert. When the index path is a pure function of
 a refersTo-referenced document, that lopsidedness is avoidable: an index
 may declare `preallocated: true` iff every index property is either the
 referring property itself (its value is the referenced document's `$id`)
-or a key of that reference's `propertyAgreement` (consensus-equal to a
+or a referring value of that reference's `where` (consensus-equal to a
 referenced-document property, its `$ownerId` and `$creatorId` included),
 and the reference is a `permanentDocument` one targeting a document type
 of the **same contract**. A `deletableDocument` reference shapes the path
 the same way but does not qualify: its target can be deleted, and the
 trees created alongside it would outlive it with other owners' entries
-inside. `byHashtagPost` (`[hashtag, postId]`) qualifies
-— `hashtag` through the agreement, `postId` as the reference;
+inside. `byHashtagPost` (`[hashtag, postId]`) qualifies:
+`hashtag` through `where`, `postId` as the reference;
 `byLiker` (`[$ownerId]`) cannot, since no referenced document determines
 the liker. An `[authorId, postId]` index whose `authorId` agrees with the
 post's `$ownerId` qualifies too: the poster is the one owner a referenced

@@ -53,7 +53,7 @@ From protocol version 14, a document type is refused (`InvalidContractStructure`
 
 - an entry does not name a top-level property of the type. A nested path, a system property or an undeclared name is refused; to drop a nested value, list the object around it;
 - an index reads a transient property, or a property inside a transient object. Every stored document would lack the value, so the index could find nothing and a unique index would enforce nothing;
-- a reference reads one where the value would have to be stored: a `refersTo` lookup may not read one on either side, a `propertyAgreement` may not name one on its referenced side, a key reference may not store its key id with a transient identity, and a `listElement` reference may not find its list's document through one. The referring side of a `propertyAgreement` may be transient: it is checked on the transition;
+- a reference reads one where the value would have to be stored: a `refersTo` `findBy` may not read one on either side (the params of a `findBy` function may, being read from the create), a `where` may not name one on its referenced side, a key reference may not store its key id with a transient identity, and an `inList` reference may not find its list's document through one. The referring side of a `where` entry may be transient: it is checked on the transition;
 - `encryptedFor` names one as its recipient or key id;
 - `generatedFrom` sits on one or names one as a param;
 - `immutable` lists one. A transient property is always absent from the stored document, so every replace that carries it would count as changing it;

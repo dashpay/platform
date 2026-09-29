@@ -217,8 +217,8 @@
         "refersTo": {
           "type": "permanentDocument",
           "documentType": "submittedCharter",
-          "propertyAgreement": {
-            "recipientId": "$ownerId"
+          "where": {
+            "$ownerId": "recipientId"
           }
         },
         "position": 0
@@ -337,7 +337,7 @@
         "refersTo": {
           "type": "permanentDocument",
           "documentType": "submittedCharter",
-          "propertyAgreement": {
+          "where": {
             "$ownerId": "$ownerId",
             "targetContractId": "targetContractId"
           }
@@ -359,12 +359,9 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "joinRequest",
-            "lookup": {
-              "index": "bySubmittedCharter",
-              "keys": {
-                "submittedCharterId": "submittedCharterId",
-                "$ownerId": "."
-              }
+            "findBy": {
+              "submittedCharterId": "submittedCharterId",
+              "$ownerId": "."
             }
           }
         },
@@ -409,7 +406,7 @@
         "refersTo": {
           "type": "permanentDocument",
           "documentType": "electedCharter",
-          "propertyAgreement": {
+          "where": {
             "$ownerId": "$ownerId",
             "submittedCharterId": "submittedCharterId"
           }
@@ -435,12 +432,9 @@
         "refersTo": {
           "type": "permanentDocument",
           "documentType": "joinRequest",
-          "lookup": {
-            "index": "bySubmittedCharter",
-            "keys": {
-              "submittedCharterId": "submittedCharterId",
-              "$ownerId": "."
-            }
+          "findBy": {
+            "submittedCharterId": "submittedCharterId",
+            "$ownerId": "."
           }
         },
         "description": "An identity that asked to join the proposal",
@@ -484,7 +478,7 @@
         "refersTo": {
           "type": "permanentDocument",
           "documentType": "electedCharter",
-          "propertyAgreement": {
+          "where": {
             "$ownerId": "$ownerId"
           }
         },
@@ -499,10 +493,10 @@
         "contentMediaType": "application/x.dash.dpp.identifier",
         "distinctFrom": "$ownerId",
         "refersTo": {
-          "type": "listElement",
+          "type": "permanentDocument",
           "documentType": "electedCharter",
-          "propertyAgreement": {
-            "electedCharterId": "$id"
+          "findBy": {
+            "$id": "electedCharterId"
           },
           "inList": "members"
         },
@@ -525,22 +519,19 @@
     "ownerRefersTo": {
       "anyOf": [
         {
-          "type": "listElement",
+          "type": "permanentDocument",
           "documentType": "electedCharter",
-          "propertyAgreement": {
-            "electedCharterId": "$id"
+          "findBy": {
+            "$id": "electedCharterId"
           },
           "inList": "members"
         },
         {
           "type": "deletableDocument",
           "documentType": "addedModerator",
-          "lookup": {
-            "index": "byElectedCharterMember",
-            "keys": {
-              "electedCharterId": "electedCharterId",
-              "memberId": "."
-            }
+          "findBy": {
+            "electedCharterId": "electedCharterId",
+            "memberId": "."
           }
         }
       ]
@@ -569,8 +560,8 @@
         "refersTo": {
           "type": "permanentDocument",
           "documentType": "electedCharter",
-          "propertyAgreement": {
-            "recipientId": "$ownerId"
+          "where": {
+            "$ownerId": "recipientId"
           }
         },
         "position": 0

@@ -3,8 +3,8 @@
 //! A `preallocated` index (see [`super::PREALLOCATED`]) promises that its
 //! whole path is a pure function of one refersTo-referenced document: every
 //! index property is either the referring property itself (whose value is the
-//! referenced document's `$id`) or a key of that property's
-//! `propertyAgreement` (whose value consensus enforces equal to a
+//! referenced document's `$id`) or a referring value of that property's
+//! `where` (whose value consensus enforces equal to a
 //! referenced-document property at write time). This module derives that
 //! function — the *binding* — from the index and the declaring document
 //! type's properties, so the two consumers cannot drift:
@@ -32,7 +32,7 @@ pub enum PreallocatedKeySource<'a> {
     /// The index property is the referring property: its value for entries
     /// referencing the created document is that document's `$id`.
     ReferencedDocumentId,
-    /// The index property is bound by the reference's `propertyAgreement`:
+    /// The index property is bound by the reference's `where`:
     /// its value is the named property of the referenced document, which may
     /// be one of its `$ownerId` and `$creatorId` system identifiers as well
     /// as a schema property. The two sides are validated to share one value
@@ -386,7 +386,6 @@ mod tests {
                 document_type_name: "post".to_string(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
-                    index: "byAuthor".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,

@@ -263,7 +263,7 @@ fn validate_document_type_references_v0(
     // never changes (the writer is the owner on a type that can be neither
     // transferred nor traded, which generation 3 requires of `ownerRefersTo`,
     // and the creator is set once), so a replace re-validates one when a
-    // property its lookup or a `propertyAgreement` reads changed, or always
+    // property its `findBy` or `where` reads changed, or always
     // for a writer gate.
     for (holder, reference) in document_type.reference_declarations() {
         let path = holder.path();
@@ -316,7 +316,7 @@ fn validate_document_type_references_v0(
             }
             PropertyReference::Value(target) => (target, false),
             PropertyReference::Elements { target, .. } => (target, true),
-            // A string or byte array revealed into a computed lookup key, a
+            // A string or byte array revealed into a computed `findBy` key, a
             // commitment judged when the document is created only; an unset
             // one is not validated. The key's hash stands for the value in the
             // errors, the value being no id. In place in generation 0: only the
@@ -337,7 +337,7 @@ fn validate_document_type_references_v0(
                             document_type.name().clone(),
                             path.to_string(),
                             path.to_string(),
-                            "the value cannot be revealed into its lookup key".to_string(),
+                            "the value cannot be revealed into its findBy key".to_string(),
                         )
                         .into(),
                     ))
@@ -588,8 +588,8 @@ fn validate_document_type_references_v0(
 /// The documents one write's references fetched by id, by (contract,
 /// document id) and then document type name, each with the lists collected
 /// from it for its list elements, by list path: a document two references
-/// name (a `permanentDocument` reference to a charter and a `listElement`
-/// read through the same `$id` property, or the elements of one typed array)
+/// name (a `permanentDocument` reference to a charter and one with `inList`
+/// found through the same `$id` property, or the elements of one typed array)
 /// is fetched and billed once, and a list is collected into a set once. A
 /// hit allocates nothing. Lookup results are not kept: a key is not an id.
 #[derive(Default)]
@@ -671,7 +671,7 @@ impl FetchedDocuments {
 /// reference declared by `reference_target` although the reference property
 /// itself is untouched, because the target binds a sibling property of the
 /// same document, or because it is re-checked on every replace:
-/// - a propertyAgreement pair binds each referring property;
+/// - a `where` entry binds each referring property;
 /// - an identityPublicKey reference binds the key id property, since the
 ///   referenced key is the (identity id, key id) pair and a freshly written
 ///   key id must exist and not be disabled;
@@ -910,7 +910,7 @@ fn validate_reference_v0(
 /// `path` is how the errors name it (the property path, or the element's list
 /// path). The target must exist and meet the declaration's contract
 /// requirements, a referenced document's type must be deletable or not as
-/// declared, and each `propertyAgreement` pair must hold between
+/// declared, and each `where` entry must hold between
 /// `document_data` (or the writer `owner_id`) and the referenced document.
 /// Every read is billed to `execution_context`; a foreign contract holding a
 /// referenced document type is resolved through `referenced_contracts`,
@@ -1148,7 +1148,7 @@ fn validate_reference_target_v0(
             // The document: the one whose id the value is, or the one the
             // (permanentDocument) lookup finds through a unique index of its
             // type with the value as one key part, or, for a list element, the
-            // one whose id the `$id` pair's property holds (unset: no document,
+            // one whose id the property `findBy` reads `$id` from holds (unset: no document,
             // so no list holds the value). A by-id fetch is shared with every
             // other reference of the same document in this write
             let document_id = match list_reference {
@@ -1156,8 +1156,8 @@ fn validate_reference_target_v0(
                 Some(list_reference) => {
                     let Some(id_property) = list_reference.document_id_property() else {
                         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "a listElement reference carries a $id agreement pair, which the \
-                             parser enforces",
+                            "a reference with inList carries a findBy $id, which the parser \
+                             enforces",
                         )));
                     };
                     match document_data.get_optional_identifier_at_path(id_property) {
@@ -1319,7 +1319,7 @@ fn validate_reference_target_v0(
                             (Some(_), None) | (None, Some(_)) => return Ok(mismatch()),
                         };
                     // In place in generation 0, which every table selects: a
-                    // `propertyAgreement` only parses from protocol version
+                    // `where` only parses from protocol version
                     // 14 (`apply_property_reference` 0), so before it no
                     // document type carries a pair to reach this comparison
                     if !referring_value.same_scalar_data(&referenced_value) {

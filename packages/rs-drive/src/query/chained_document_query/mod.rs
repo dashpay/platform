@@ -232,19 +232,20 @@ impl<'a> DriveDocumentQuery<'a> {
             }
             _ => None,
         };
-        // A lookup reference is a document reference whose value is not the
-        // outer document's id, so `as_document_reference` leaves it out; it
-        // is named here so the refusal says why
+        // A reference found by `findBy` is a document reference whose value
+        // is not the outer document's id, so `as_document_reference` leaves it
+        // out; it is named here so the refusal says why
         if let DocumentPropertyType::IdentifierWithReference(
             DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
             | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. },
         ) = &join_document_property.property_type
         {
             return Err(unsupported(format!(
-                "chained query join property \"{}\" refers to its document through the \
-                 unique index \"{}\", so its value is not the outer document's id: a join \
-                 needs a reference whose value is the referenced document's $id",
-                join_property, lookup.index,
+                "chained query join property \"{}\" refers to its document by findBy ({}), \
+                 so its value is not the outer document's id: a join needs a reference whose \
+                 value is the referenced document's $id",
+                join_property,
+                lookup.find_by_names(),
             )));
         }
         // A reference expression is no single document reference either: an

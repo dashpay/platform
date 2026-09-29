@@ -28,7 +28,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentReferenceErrorCodeWasm {
     /// The referenced identity, contract, token or document (permanent or
-    /// deletable) does not exist, or a `listElement` value is not an element
+    /// deletable) does not exist, or a value with `inList` is not an element
     /// of the list it must be in (or was set while the property finding the
     /// list's document was not).
     ReferencedEntityNotFound = 40120,
@@ -64,26 +64,26 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// meet what the reference's `keyRequirements` require of it: its
     /// purpose, or a binding to a document type of the declaring contract.
     ReferencedIdentityKeyRequirementNotMet = 40136,
-    /// A `refersTo` lookup into a document type of another contract cannot
-    /// resolve there, reported at contract registration: the named index is
-    /// missing or not unique, the keys do not cover it exactly, or a source
-    /// holds a different kind of value than its index property. (A lookup into
-    /// the declaring contract is refused by the contract parse instead.)
+    /// A `refersTo` `findBy` into a document type of another contract cannot
+    /// resolve there, reported at contract registration: no unique index is
+    /// over exactly the properties it names, or a source holds a different
+    /// kind of value than the property it fills. (A `findBy` into the
+    /// declaring contract is refused by the contract parse instead.)
     ReferencedDocumentLookupInvalid = 40137,
-    /// A `refersTo: listElement` whose list lives in a document type of
+    /// A `refersTo` with `inList` whose list lives in a document type of
     /// another contract cannot be served by it, reported at contract
     /// registration: that type's documents can be deleted, the list is not a
     /// stored typed array of identifiers of it, or a replace could change the
     /// list. (A list in the declaring contract is refused by the contract parse
     /// instead.)
     ReferencedDocumentListInvalid = 40138,
-    /// The document a `refersTo` lookup with a computed key found, the
-    /// commitment the create reveals, exists but does not meet the lookup's
+    /// The document a `refersTo` `findBy` function found, the commitment the
+    /// create reveals, exists but does not meet the reference's
     /// `minimumAgeBlocks`: it was created too recently, in the same block
     /// with a minimum of 1. Retry in a later block.
     ReferencedDocumentRequirementNotMet = 40142,
-    /// A create cannot reveal the preimage of a `refersTo` lookup with a
-    /// computed key: a value a param reads is absent, or a variable-length
+    /// A create cannot reveal the preimage of a `refersTo` `findBy`
+    /// function: a value a param reads is absent, or a variable-length
     /// value holds the one-byte separator that follows it in the preimage.
     DocumentReferencePreimageInvalid = 10423,
 }

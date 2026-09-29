@@ -1,10 +1,11 @@
-//! `propertyAgreement` function pairs
+//! `findBy` functions
 //! (`"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }`,
 //! protocol version 14), a commit and reveal: the parse of the function into
-//! the computed key of the reference's lookup, the `minimumAgeBlocks` and
-//! `consume` declared beside the lookup, a string or byte array property whose value the function
-//! reads, the checks of the referring side on every parse, the checks of the
-//! referenced side at contract level, and the protocol version gate.
+//! the computed key the reference is found by, the `minimumAgeBlocks` and
+//! `consume` declared beside `findBy`, a string or byte array property whose
+//! value the function reads, the checks of the referring side on every parse,
+//! the checks of the referenced side at contract level, and the protocol
+//! version gate.
 
 use super::reference_test_helpers::{assert_refused, contract, contract_on, CONTRACT_ID};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -30,43 +31,41 @@ fn dpns_function() -> serde_json::Value {
     })
 }
 
-/// A preorder reference found through `saltedHash` whose agreement holds
-/// `function` for `saltedDomainHash`, with `lookup_extra` merged into its
-/// lookup, `agreement_extra` into its agreement and `declaration_extra` into
-/// the declaration.
+/// A preorder reference found by `findBy` holding `function` for
+/// `saltedDomainHash` (so through the `saltedHash` index), with `find_by_extra`
+/// merged into its `findBy`, `where_extra` as its `where` (left out when empty)
+/// and `declaration_extra` merged into the declaration.
 fn reveal_with(
     function: serde_json::Value,
-    lookup_extra: serde_json::Value,
-    agreement_extra: serde_json::Value,
+    find_by_extra: serde_json::Value,
+    where_extra: serde_json::Value,
     declaration_extra: serde_json::Value,
 ) -> serde_json::Value {
-    let mut lookup = json!({ "index": "saltedHash" });
-    merge(&mut lookup, lookup_extra);
-    let mut agreement = json!({ "saltedDomainHash": function });
-    merge(&mut agreement, agreement_extra);
+    let mut find_by = json!({ "saltedDomainHash": function });
+    merge(&mut find_by, find_by_extra);
     let mut declaration = json!({
         "type": "deletableDocument",
         "documentType": "preorder",
-        "lookup": lookup,
-        "propertyAgreement": agreement
+        "findBy": find_by
     });
+    if where_extra
+        .as_object()
+        .is_some_and(|entries| !entries.is_empty())
+    {
+        declaration["where"] = where_extra;
+    }
     merge(&mut declaration, declaration_extra);
     declaration
 }
 
 /// The `refersTo` of a DPNS-shaped `domain`'s `preorderSalt`, with
 /// `declaration_extra` (its `minimumAgeBlocks` and `consume`) merged into the
-/// declaration and `agreement_extra` into its agreement.
+/// declaration and `where_extra` as its `where`.
 fn salt_reveal(
     declaration_extra: serde_json::Value,
-    agreement_extra: serde_json::Value,
+    where_extra: serde_json::Value,
 ) -> serde_json::Value {
-    reveal_with(
-        dpns_function(),
-        json!({}),
-        agreement_extra,
-        declaration_extra,
-    )
+    reveal_with(dpns_function(), json!({}), where_extra, declaration_extra)
 }
 
 /// The DPNS reveal as DPNS would declare it: the writer's own preorder, from
@@ -209,7 +208,6 @@ fn salt_reference(contract: &DataContract) -> DocumentPropertyReferenceTarget {
 
 fn dpns_lookup(minimum_age_blocks: Option<u32>, consume: bool) -> DocumentReferenceLookup {
     DocumentReferenceLookup {
-        index: "saltedHash".to_string(),
         keys: BTreeMap::from([(
             "saltedDomainHash".to_string(),
             LookupKeySource::Hash(LookupHashKey {
@@ -242,8 +240,8 @@ fn assert_refused_by_the_parser(contract_value: serde_json::Value, fragment: &st
 fn should_parse_the_dpns_salt_as_revealing_the_preorder_with_its_age_consumption_and_owner_pair() {
     let parsed = contract(dpns_contract(dpns_salt_reveal())).expect("the DPNS reveal should parse");
 
-    // The function pair becomes the lookup's computed key; the other pairs
-    // stay the agreement
+    // The function is the lookup's computed key; the where entries are the
+    // agreement
     assert_eq!(
         salt_reference(&parsed),
         DocumentPropertyReferenceTarget::DeletableDocumentLookup {
@@ -270,8 +268,8 @@ fn should_parse_the_dpns_salt_as_revealing_the_preorder_with_its_age_consumption
 
 #[test]
 fn should_parse_a_function_pair_that_demands_nothing_more() {
-    // No owner pair, no minimum age, no consume: each is optional, and the
-    // agreement may hold the function alone
+    // No owner entry, no minimum age, no consume: each is optional, and
+    // findBy may hold the function alone
     let parsed = contract(dpns_contract(salt_reveal(json!({}), json!({}))))
         .expect("a bare function pair should parse");
     let DocumentPropertyReferenceTarget::DeletableDocumentLookup {
@@ -346,9 +344,11 @@ fn should_refuse_a_deletable_creator_lookup_without_a_computed_key() {
         contract(dpns_contract_with_creator_reference(json!({
             "type": "deletableDocument",
             "documentType": "preorder",
-            "lookup": { "index": "saltedHash", "keys": { "saltedDomainHash": "." } }
+            "findBy": {
+                "saltedDomainHash": "."
+            }
         }))),
-        "does not take a deletableDocument reference unless its lookup key is computed",
+        "does not take a deletableDocument reference unless its findBy key is computed",
     );
 }
 
@@ -406,63 +406,33 @@ fn should_refuse_malformed_functions_in_the_parser() {
 }
 
 #[test]
-fn should_refuse_a_function_pair_that_computes_no_lookup_key() {
+fn should_refuse_a_function_that_computes_no_find_by_key() {
     // Keyed by a system property, which no function computes
     let mut system_key = dpns_contract(salt_reveal(json!({}), json!({})));
-    let agreement = &mut system_key["documentSchemas"]["domain"]["properties"]["preorderSalt"]
-        ["refersTo"]["propertyAgreement"];
-    agreement["$ownerId"] = dpns_function();
-    agreement
+    let find_by = &mut system_key["documentSchemas"]["domain"]["properties"]["preorderSalt"]
+        ["refersTo"]["findBy"];
+    find_by["$ownerId"] = dpns_function();
+    find_by
         .as_object_mut()
         .expect("an object")
         .remove("saltedDomainHash");
-    assert_refused_by_the_parser(system_key, "must name a schema property of the referenced");
+    assert_refused_by_the_parser(
+        system_key,
+        "findBy function \"$ownerId\" must fill a schema property of the referenced",
+    );
 
     // Two functions
     assert_refused_by_the_parser(
-        dpns_contract(salt_reveal(json!({}), json!({ "other": dpns_function() }))),
-        "at most one function pair",
-    );
-
-    // No lookup to fill a key of
-    assert_refused_by_the_parser(
-        dpns_contract_carried_by(
-            "referrerId",
-            json!({
-                "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-                "contentMediaType": "application/x.dash.dpp.identifier", "position": 6
-            }),
-            json!({
-                "type": "deletableDocument",
-                "documentType": "preorder",
-                "propertyAgreement": { "saltedDomainHash": dpns_function() }
-            }),
-        ),
-        "declare a lookup whose index holds",
-    );
-
-    // The index property filled twice, by keys and by the function
-    assert_refused_by_the_parser(
         dpns_contract(reveal_with(
             dpns_function(),
-            json!({ "keys": { "saltedDomainHash": "normalizedLabel" } }),
+            json!({ "other": dpns_function() }),
             json!({}),
             json!({}),
         )),
-        "which the propertyAgreement function pair fills",
+        "findBy holds at most one function",
     );
 
-    // A computed key spelled in keys is no longer a key source
-    assert_refused_by_the_parser(
-        dpns_contract(json!({
-            "type": "deletableDocument",
-            "documentType": "preorder",
-            "lookup": { "index": "saltedHash", "keys": { "saltedDomainHash": dpns_function() } }
-        })),
-        "a key computed by a function is a propertyAgreement pair",
-    );
-
-    // A lookup with neither keys nor a function has no key at all
+    // A function in where, which compares the document found and finds none
     assert_refused_by_the_parser(
         dpns_contract_carried_by(
             "referrerId",
@@ -473,15 +443,16 @@ fn should_refuse_a_function_pair_that_computes_no_lookup_key() {
             json!({
                 "type": "deletableDocument",
                 "documentType": "preorder",
-                "lookup": { "index": "saltedHash" }
+                "findBy": { "saltedDomainHash": "." },
+                "where": { "saltedDomainHash": dpns_function() }
             }),
         ),
-        "must declare keys, or a propertyAgreement function pair filling its index",
+        "holds a function, which computes a key that finds the document: declare it in findBy",
     );
 }
 
 #[test]
-fn should_refuse_age_and_consume_without_a_function_pair() {
+fn should_refuse_age_and_consume_without_a_function() {
     let referrer = |refers_to: serde_json::Value| {
         dpns_contract_carried_by(
             "referrerId",
@@ -492,49 +463,33 @@ fn should_refuse_age_and_consume_without_a_function_pair() {
             refers_to,
         )
     };
-    // A lookup whose key no function computes finds no commitment
+    // A key read as is finds no commitment
     for extra in [json!({ "minimumAgeBlocks": 1 }), json!({ "consume": true })] {
         let mut refers_to = json!({
             "type": "deletableDocument",
             "documentType": "preorder",
-            "lookup": { "index": "saltedHash", "keys": { "saltedDomainHash": "." } },
-            "propertyAgreement": { "$ownerId": "$ownerId" }
+            "findBy": { "saltedDomainHash": "." },
+            "where": { "$ownerId": "$ownerId" }
         });
         merge(&mut refers_to, extra);
         assert_refused_by_the_parser(
             referrer(refers_to),
-            "need a lookup whose key a propertyAgreement function pair computes",
+            "need a findBy function computing the key",
         );
     }
-    // Nor does a reference without a lookup
+    // Nor does a reference without findBy
     assert_refused_by_the_parser(
         referrer(json!({
             "type": "deletableDocument",
             "documentType": "preorder",
             "minimumAgeBlocks": 1
         })),
-        "deletableDocument refersTo does not take minimumAgeBlocks without a lookup",
+        "deletableDocument refersTo does not take minimumAgeBlocks without findBy",
     );
     assert_refused_by_the_parser(
         referrer(json!({ "type": "identity", "consume": true })),
-        "identity refersTo does not take consume without a lookup",
+        "identity refersTo does not take consume without findBy",
     );
-}
-
-#[test]
-fn should_refuse_age_and_consume_inside_the_lookup() {
-    // They describe the document the lookup finds, and sit beside the lookup
-    for extra in [json!({ "minimumAgeBlocks": 1 }), json!({ "consume": true })] {
-        assert_refused_by_the_parser(
-            dpns_contract(reveal_with(
-                dpns_function(),
-                extra,
-                json!({ "$ownerId": "$ownerId" }),
-                json!({}),
-            )),
-            "sit beside the lookup, on the refersTo",
-        );
-    }
 }
 
 #[test]
@@ -542,15 +497,6 @@ fn should_refuse_a_minimum_age_of_zero_or_a_consume_of_false() {
     assert_refused_by_the_parser(
         dpns_contract(salt_reveal(json!({ "minimumAgeBlocks": 0 }), json!({}))),
         "minimumAgeBlocks must be at least 1",
-    );
-    assert_refused_by_the_parser(
-        dpns_contract(reveal_with(
-            dpns_function(),
-            json!({ "minimumAgeSeconds": 60 }),
-            json!({}),
-            json!({}),
-        )),
-        "refersTo lookup \"minimumAgeSeconds\" is unknown",
     );
     assert_refused_by_the_parser(
         dpns_contract(salt_reveal(json!({ "consume": false }), json!({}))),
@@ -570,7 +516,7 @@ fn should_refuse_consume_without_the_writer_owner_pair_or_on_a_permanent_referen
     assert_refused(
         contract(dpns_contract(salt_reveal(
             json!({ "consume": true }),
-            json!({ "$ownerId": "$creatorId" }),
+            json!({ "$creatorId": "$ownerId" }),
         ))),
         "\"$ownerId\": \"$ownerId\"",
     );
@@ -596,8 +542,8 @@ fn should_refuse_a_function_whose_index_property_cannot_hold_the_hash() {
                 json!({}),
                 json!({ "properties": { "saltedDomainHash": hash_property } }),
             )),
-            "propertyAgreement function \"saltedDomainHash\" is a sys.hash.sha256d hash, so the \
-             index property must be a byte array of exactly 32 bytes",
+            "findBy function \"saltedDomainHash\" is a sys.hash.sha256d hash, so the index \
+             property must be a byte array of exactly 32 bytes",
         );
     }
 }
@@ -608,16 +554,16 @@ fn should_refuse_a_function_naming_a_property_outside_the_index() {
         dpns_contract_with(salt_reveal(json!({}), json!({})), json!({}), json!({}));
     let preorder = &mut contract_value["documentSchemas"]["preorder"];
     preorder["properties"]["other"] = json!({ "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 1 });
-    let agreement = &mut contract_value["documentSchemas"]["domain"]["properties"]["preorderSalt"]
-        ["refersTo"]["propertyAgreement"];
-    agreement["other"] = dpns_function();
-    agreement
+    let find_by = &mut contract_value["documentSchemas"]["domain"]["properties"]["preorderSalt"]
+        ["refersTo"]["findBy"];
+    find_by["other"] = dpns_function();
+    find_by
         .as_object_mut()
         .expect("an object")
         .remove("saltedDomainHash");
     assert_refused(
         contract(contract_value),
-        "keys does not map \"saltedDomainHash\"",
+        "\"preorder\" has no unique index over exactly (other)",
     );
 }
 
@@ -716,9 +662,11 @@ fn should_refuse_a_revealed_reference_without_a_function_pair() {
             json!({
                 "type": "deletableDocument",
                 "documentType": "preorder",
-                "lookup": { "index": "saltedHash", "keys": { "saltedDomainHash": "." } }
+                "findBy": {
+                    "saltedDomainHash": "."
+                }
             }),
-            "whose lookup key is computed by a propertyAgreement function",
+            "found by a findBy function reading the value",
         ),
         // Without a lookup there is nothing to reveal the value into
         (
@@ -729,12 +677,11 @@ fn should_refuse_a_revealed_reference_without_a_function_pair() {
             json!({ "anyOf": [salt_reveal(json!({}), json!({})), salt_reveal(json!({ "consume": true }), json!({}))] }),
             "refersTo anyOf is only allowed on identifier properties",
         ),
-        // Only a document is found through a lookup, and the value is no key id
+        // Only a document is found by findBy, and the value is no key id
         (
             json!({
                 "type": "identity",
-                "lookup": { "index": "saltedHash" },
-                "propertyAgreement": { "saltedDomainHash": dpns_function() }
+                "findBy": { "saltedDomainHash": dpns_function() }
             }),
             "must be a permanentDocument or deletableDocument reference",
         ),
@@ -768,14 +715,14 @@ fn should_refuse_a_carrier_or_stored_param_a_replace_could_change() {
     };
     assert_refused(
         not_transient(json!({ "immutable": ["normalizedLabel", "parentDomainName"] })),
-        "\"preorderSalt\" carries a lookup with a computed key",
+        "\"preorderSalt\" carries a reference found by a computed key",
     );
     assert_refused(
         not_transient(json!({
             "immutable": ["normalizedLabel", "parentDomainName", "preorderSalt"],
             "immutableAllowSetting": ["preorderSalt"]
         })),
-        "\"preorderSalt\" carries a lookup with a computed key",
+        "\"preorderSalt\" carries a reference found by a computed key",
     );
     assert_refused(
         contract(dpns_contract_with(
@@ -801,13 +748,15 @@ fn should_refuse_a_carrier_or_stored_param_a_replace_could_change() {
 }
 
 /// A contract whose domain's `committerId` identifier refers to a
-/// `committed` document unique on (`committerId`, `hash`), through `keys`
-/// and `agreement`, with `domain_extra` merged into the domain.
+/// `committed` document unique on (`committerId`, `hash`), found by `keys`
+/// with `function` merged in, with `domain_extra` merged into the domain.
 fn committer_reveal(
     keys: serde_json::Value,
-    agreement: serde_json::Value,
+    function: serde_json::Value,
     domain_extra: serde_json::Value,
 ) -> serde_json::Value {
+    let mut find_by = keys;
+    merge(&mut find_by, function);
     let mut contract_value = dpns_contract_carried_by(
         "committerId",
         json!({
@@ -817,8 +766,7 @@ fn committer_reveal(
         json!({
             "type": "deletableDocument",
             "documentType": "committed",
-            "lookup": { "index": "byCommitter", "keys": keys },
-            "propertyAgreement": agreement
+            "findBy": find_by
         }),
     );
     merge(
@@ -924,8 +872,8 @@ fn should_read_each_element_of_a_typed_array_as_dot() {
                 "refersTo": {
                     "type": "permanentDocument",
                     "documentType": "committed",
-                    "lookup": { "index": "byCommitter", "keys": { "committerId": "sponsorId" } },
-                    "propertyAgreement": {
+                    "findBy": {
+                        "committerId": "sponsorId",
                         "hash": { "function": "sys.hash.sha256d", "params": params }
                     }
                 }
@@ -973,7 +921,7 @@ fn should_refuse_an_update_changing_a_function_or_what_it_demands() {
         json!({ "minimumAgeBlocks": 1, "consume": true }),
         json!({ "$ownerId": "$ownerId" }),
     );
-    reordered["propertyAgreement"]["saltedDomainHash"]["params"] =
+    reordered["findBy"]["saltedDomainHash"]["params"] =
         json!(["preorderSalt", "parentDomainName", { "const": "." }, "normalizedLabel"]);
 
     // Documents were revealed under the declaration as written, so any change to
@@ -1055,7 +1003,7 @@ fn should_refuse_a_plain_pair_beside_a_function_reading_a_property_a_replace_can
     // what the create held
     let with_label_pair = |domain_extra: serde_json::Value| {
         dpns_contract_with(
-            salt_reveal(json!({}), json!({ "label": "tier" })),
+            salt_reveal(json!({}), json!({ "tier": "label" })),
             domain_extra,
             json!({
                 "properties": {
@@ -1073,7 +1021,7 @@ fn should_refuse_a_plain_pair_beside_a_function_reading_a_property_a_replace_can
             "documentsMutable": true,
             "immutable": ["normalizedLabel", "parentDomainName"]
         }))),
-        "propertyAgreement pair \"label\" sits beside a function",
+        "where reads \"label\" beside a findBy function",
     );
     contract(with_label_pair(json!({
         "documentsMutable": true,

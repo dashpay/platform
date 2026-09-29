@@ -52,7 +52,7 @@ A commenter may take a comment down at any time. Since `true` is the usual defau
 ### Rules at registration
 
 - From protocol version 14, a type with `documentsKeepHistory: true` must set `canBeDeleted: false` (`InvalidContractStructure`, 10231). The default is `true`, so it has to be written out. A contract registered earlier with both flags on stays readable, but its next update is checked like a new contract, so that update must turn `canBeDeleted` off on the type. That is the one change to `canBeDeleted` an update may make.
-- For references, a type whose owner may delete its documents is deletable: a `permanentDocument` or `listElement` reference may not point at it (`ReferencedDocumentTypeDeletableError`, 40122), and a `deletableDocument` reference may. See [References](refers-to.md).
+- For references, a type whose owner may delete its documents is deletable: a `permanentDocument` reference, `inList` included, may not point at it (`ReferencedDocumentTypeDeletableError`, 40122), and a `deletableDocument` reference may. See [References](refers-to.md).
 
 ## `moderatorAbilities.delete`
 
@@ -99,7 +99,7 @@ All refusals below are `InvalidContractStructure` (10231).
 
 - The contract's config must declare `moderation`. Moderation cannot be added by a later update, so without it nobody could ever delete anything. In return the `moderation` block may keep no banlist, suspension list or warning list at all when a document type gives its moderators an ability.
 - Refused on a type that keeps history (Drive never deletes those documents), on an `indexOnly` type (there is no stored row to name), on a type with `creationRestrictionMode` 1 or 2 (its documents are the contract owner's or the platform's), and on a type with a contested index (a restore could not go through the vote the index requires).
-- For references, the type is deletable even with `canBeDeleted: false`: a `permanentDocument` or `listElement` reference may not point at it (40122), and a `deletableDocument` reference may.
+- For references, the type is deletable even with `canBeDeleted: false`: a `permanentDocument` reference, `inList` included, may not point at it (40122), and a `deletableDocument` reference may.
 
 ## `moderatorAbilities.deleteWithin`
 
@@ -179,7 +179,7 @@ Whether the owner of a document a moderator deletes is refunded its storage. By 
 | The contract's moderators | `moderatorAbilities.delete: true`, within `moderatorAbilities.deleteWithin` when set | Only with `moderatorAbilities.deleteRefundsOwner: true`, except on a type with a `ttl` |
 | The platform | `ttl`, once it has passed | No |
 
-A type that allows any of the three counts as deletable for references. Only a type that allows none of them can be the target of a `permanentDocument` or `listElement` reference.
+A type that allows any of the three counts as deletable for references. Only a type that allows none of them can be the target of a `permanentDocument` reference, with `inList` or without.
 
 ## See also
 

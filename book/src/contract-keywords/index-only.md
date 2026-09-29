@@ -40,7 +40,7 @@ A `like` of a social contract whose `post` type cannot be deleted:
       "refersTo": {
         "type": "permanentDocument",
         "documentType": "post",
-        "propertyAgreement": { "hashtag": "hashtag" }
+        "where": { "hashtag": "hashtag" }
       },
       "position": 1
     }
@@ -84,7 +84,7 @@ Rules at registration:
 - At least one index involves no `$createdAt` and does not set `skipIfAbsent`: the proof index.
 - Every property is in `required`, except a skip property of a `skipIfAbsent` index. An object holding an indexed property is required too.
 - Every required property appears in at least one index that does not skip, as a property or a terminal component, except the `entryPayload` properties. Every optional property appears in a skip index without a `timeRange` whose skip set is that property alone.
-- The type cannot also set [`ttl`](ttl.md) or `moderatorAbilities.delete`, and a `refersTo` lookup cannot target it.
+- The type cannot also set [`ttl`](ttl.md) or `moderatorAbilities.delete`, and a `refersTo` `findBy` cannot target it.
 
 ## `entryPayload`
 
@@ -154,8 +154,8 @@ In the example, `byHashtagPost` could be preallocated: `postId` is the reference
 Rules at registration:
 
 - Only on an `indexOnly` type.
-- Every index property is either a property with a `permanentDocument` reference to a type of the same contract, or a key of that reference's `propertyAgreement`. A `deletableDocument` reference does not qualify, since the trees would outlive a deleted target. `$ownerId` may only be the terminal.
-- The referenced property of each such agreement key holds at most 255 bytes, since creating a referenced document makes its value an index key (40126 when the contract is created or updated).
+- Every index property is either a property with a `permanentDocument` reference to a type of the same contract, or a referring value of that reference's `where`. A `deletableDocument` reference does not qualify, since the trees would outlive a deleted target. `$ownerId` may only be the terminal.
+- The referenced property of each such `where` entry holds at most 255 bytes, since creating a referenced document makes its value an index key (40126 when the contract is created or updated).
 - Not with `timeRange` or `integerRange`.
 
 A referenced document whose agreed value takes more bytes than the referring property can hold preallocates nothing for that index, since no entry could agree with it.
@@ -197,5 +197,5 @@ What an index-only type adds to the rules of every type:
 
 - [Index-Only Document Types](../drive/index-only-document-types.md) for the entry layout, the row commitment, the full constraint list and the query surface.
 - [Indexes](indexes.md), [Counts, Sums and Averages](aggregates.md) and [Ranked Indexes](ranked.md) for the index keywords an index-only type uses.
-- [References (refersTo)](refers-to.md) for `permanentDocument` references and `propertyAgreement`, which `preallocated` relies on.
+- [References (refersTo)](refers-to.md) for `permanentDocument` references and `where`, which `preallocated` relies on.
 - [Mutability](mutability.md), [Deletion](deletion.md) and [Creation, Transfers and Trading](ownership-and-trading.md) for the flags an index-only type must set.
