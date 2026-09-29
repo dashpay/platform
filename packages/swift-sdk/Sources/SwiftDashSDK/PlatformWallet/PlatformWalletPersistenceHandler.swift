@@ -3714,14 +3714,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let pickedLabel = identityRow.mainDpnsName.map(PersistentDPNSName.normalize)
         for row in previouslyAssociatedRows
         where !canonicalLabels.contains(row.normalizedLabel) {
-            row.isOwned = false
-            row.lastUpdated = Date()
             if row.documentIdBase58 == nil && row.normalizedLabel != pickedLabel {
                 // No marketplace history is attached, so this is only a stale
                 // label-cache row and can be removed entirely. The picked
                 // name's row stays, marked not owned, so readers can tell a
                 // departed pick from an identity that has no rows yet.
                 backgroundContext.delete(row)
+            } else if row.isOwned {
+                // Only the departure itself is a change: a row already
+                // retained as not owned is left untouched by every later
+                // snapshot that omits it, so it is not re-dirtied each time.
+                row.isOwned = false
+                row.lastUpdated = Date()
             }
         }
 

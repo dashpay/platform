@@ -222,6 +222,31 @@ final class DpnsMarketplacePersistenceTests: XCTestCase {
         XCTAssertEqual(reread.ownedMainDpnsName, "Alice")
     }
 
+    /// A retained not-owned row is written once, when it departs: later
+    /// snapshots that still omit it leave it untouched instead of re-dirtying
+    /// it with a fresh `lastUpdated`.
+    func testRetainedNotOwnedPickRowIsNotRewrittenByLaterSnapshots() throws {
+        applyIdentitySnapshot(id: ownerId, names: [("Alice", 10), ("Bob", 20)])
+        let context = ModelContext(container)
+        XCTAssertTrue(PersistentIdentity.updateMainDpnsName(
+            in: context, identityId: ownerId, mainDpnsName: "Alice"))
+        try context.save()
+
+        applyIdentitySnapshot(id: ownerId, names: [("Bob", 20)])
+        let departedAt = try XCTUnwrap(
+            PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId)?
+                .dpnsNames.first { $0.label == "Alice" }?.lastUpdated)
+
+        applyIdentitySnapshot(id: ownerId, names: [("Bob", 20)])
+        applyIdentitySnapshot(id: ownerId, names: [("Bob", 20)])
+
+        let identity = try XCTUnwrap(PersistentIdentity.fetch(in: ModelContext(container), identityId: ownerId))
+        let alice = try XCTUnwrap(identity.dpnsNames.first { $0.label == "Alice" })
+        XCTAssertFalse(alice.isOwned)
+        XCTAssertEqual(alice.lastUpdated, departedAt)
+        XCTAssertNil(identity.ownedMainDpnsName)
+    }
+
     /// A departed pick with no display cache (`dpnsName` never set — a pick
     /// alone does not fill it) still falls back to another owned name.
     func testDisplayFallsBackToAnOwnedNameWhenTheDisplayCacheIsNil() throws {
