@@ -4,9 +4,14 @@
 //! the manager consumes the carried snapshot directly, so no wrong-seed check
 //! runs here; that gate lives in the resolver-backed signing entrypoints.
 
+use std::collections::HashSet;
+
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::transaction_record::TransactionRecord;
+use key_wallet::transaction_checking::WalletTransactionChecker;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
@@ -258,8 +263,8 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   Coinbase-maturity nuance re-warms on sync. `is_instantlocked` is NOT
 ///   among them: it is rebuilt from `core_instant_locks` above, for every
 ///   UTXO a replayed lock covers.
-/// - **Transaction-record history**: rebuilt by the next scan; not a
-///   balance input.
+/// - **Transaction records**: the SQLite loader replays confirmed history
+///   through the wallet checker after this projection.
 ///
 /// # Errors
 ///
@@ -299,12 +304,6 @@ pub fn apply_persisted_core_state(
     if let Some(cl) = &core.last_applied_chain_lock {
         wallet_info.metadata.last_applied_chain_lock = Some(cl.clone());
     }
-
-    // INTENTIONAL(tx-record-rehydration-gap): `core` also carries transaction
-    // records, but they cannot be replayed here — injecting one needs the raw
-    // `dashcore::Transaction`, and this crate persists only the abstracted
-    // `TransactionRecord` blob. History re-warms on the next scan and is not a
-    // balance input.
 
     // Restore the UTXO set, routing each unspent outpoint to its true owning
     // funds account via `utxo_accounts` (matched on the same account identity
@@ -418,6 +417,65 @@ pub fn apply_persisted_core_state(
     // silent zero would be a hard FAIL of the rehydration contract.
     wallet_info.update_balance();
     Ok(())
+}
+
+/// Restore spend and finality guards without re-crediting outputs excluded by persistence.
+pub(crate) fn restore_confirmed_transactions(
+    mut wallet_info: ManagedWalletInfo,
+    mut wallet: Wallet,
+    records: Vec<TransactionRecord>,
+) -> Result<(Wallet, ManagedWalletInfo), WalletStorageError> {
+    let unspent: HashSet<_> = wallet_info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|account| account.utxos.keys().copied())
+        .collect();
+    let mut confirmed: Vec<_> = records
+        .into_iter()
+        .filter(|record| record.block_info().is_some())
+        .collect();
+    if confirmed.is_empty() {
+        return Ok((wallet, wallet_info));
+    }
+    confirmed.sort_by_key(|record| {
+        record
+            .block_info()
+            .map(|block| (block.height(), block.position()))
+    });
+
+    // The checker only mutates in-memory state; no network requests or persistence.
+    dash_async::block_on(async move {
+        for record in confirmed {
+            wallet_info
+                .check_core_transaction(
+                    &record.transaction,
+                    record.context,
+                    &mut wallet,
+                    true,
+                    false,
+                )
+                .await;
+        }
+
+        let spent: HashSet<_> = wallet_info
+            .observed_spent_outpoints()
+            .keys()
+            .copied()
+            .collect();
+        for account in wallet_info.accounts.all_funding_accounts_mut() {
+            account
+                .utxos
+                .retain(|outpoint, _| unspent.contains(outpoint) && !spent.contains(outpoint));
+        }
+        // Finalize replayed records before a sync checkpoint can prune their spend guards.
+        if let Some(chain_lock) = wallet_info.metadata.last_applied_chain_lock.clone() {
+            wallet_info.apply_chain_lock(chain_lock);
+        }
+        wallet_info.update_balance();
+        (wallet, wallet_info)
+    })
+    .map_err(WalletStorageError::CoreHistoryReplay)
 }
 
 /// Resolve an owning account to its position among `account_keys`, or fall

@@ -34,6 +34,10 @@ pub enum AutoBackupOperation {
 /// Errors produced by the wallet-storage SQLite backend.
 #[derive(Debug, thiserror::Error)]
 pub enum WalletStorageError {
+    /// Confirmed Core history could not be replayed into the restored wallet.
+    #[error("could not restore confirmed Core history: {0}")]
+    CoreHistoryReplay(#[source] dash_async::AsyncError),
+
     /// File-system I/O error reaching the database or backup files.
     #[error("io error")]
     Io(#[from] std::io::Error),
@@ -706,7 +710,8 @@ impl WalletStorageError {
             // `ToSqlConversionFailure`, `InvalidColumnIndex`) — is a
             // logic bug, not a contention failure.
             Self::Sqlite(_) => false,
-            Self::Io(_)
+            Self::CoreHistoryReplay(_)
+            | Self::Io(_)
             | Self::Migration(_)
             | Self::IntegrityCheckFailed { .. }
             | Self::IntegrityCheckRunFailed { .. }
@@ -871,6 +876,7 @@ impl WalletStorageError {
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
+            | Self::CoreHistoryReplay(_)
             | Self::DatabasePathIsSymlink { .. } => PersistenceErrorKind::Fatal,
         }
     }
@@ -891,6 +897,7 @@ impl WalletStorageError {
             },
             Self::Sqlite(_) => "sqlite_other",
             Self::FlushRetryable { .. } => "flush_retryable",
+            Self::CoreHistoryReplay(_) => "core_history_replay",
             Self::Io(_) => "io",
             Self::Migration(_) => "migration",
             Self::IntegrityCheckFailed { .. } => "integrity_check_failed",

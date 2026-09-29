@@ -1849,6 +1849,9 @@ fn load_one_wallet(
                 ))
             })?;
     }
+    let (wallet, wallet_info) =
+        super::rehydrate::restore_confirmed_transactions(wallet_info, wallet, core_state.records)
+            .map_err(PersistenceError::from)?;
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,

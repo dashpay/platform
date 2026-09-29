@@ -41,6 +41,7 @@ platform-wallet = { path = "../rs-platform-wallet", features = [
     "eddsa",
 ], optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
+dash-async = { path = "../rs-dash-async", optional = true }
 key-wallet = { workspace = true, optional = true }
 dashcore = { workspace = true, optional = true }
 dpp = { path = "../rs-dpp", optional = true }
@@ -225,6 +226,7 @@ sqlite = [
     "dep:platform-wallet",
     "dep:serde",
     "dep:key-wallet",
+    "dep:dash-async",
     "dep:dashcore",
     "dep:dpp",
     "dep:dash-sdk",
