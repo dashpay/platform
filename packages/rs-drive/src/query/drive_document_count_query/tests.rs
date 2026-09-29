@@ -85,6 +85,8 @@ fn insert_person_doc(
         updated_at_core_block_height: None,
         transferred_at_core_block_height: None,
         creator_id: None,
+        moderated_at: None,
+        moderated_by: None,
     }
     .into();
 
@@ -1293,6 +1295,8 @@ fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -1570,6 +1574,8 @@ fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -2171,6 +2177,7 @@ mod range_countable_picker_tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -3027,6 +3034,8 @@ mod range_countable_point_lookup_tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -3076,6 +3085,8 @@ mod range_countable_point_lookup_tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -3672,6 +3683,7 @@ mod time_range_picker_tests {
             ranked_summable: false,
             ranked_averageable: false,
             time_range,
+            integer_range: None,
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
@@ -3713,7 +3725,8 @@ mod time_range_picker_tests {
                 step_seconds: 2 * HOUR_SECONDS,
                 phase_seconds: 0,
                 ttl_seconds: None,
-            },
+            }
+            .into(),
         }]
     }
 
@@ -3829,7 +3842,11 @@ mod time_range_picker_tests {
             equal("hashtag", Value::Text("ibiza".to_string())),
         ];
         let mut mismatched = source_resolution();
-        mismatched[0].transform.step_seconds /= 2;
+        if let dpp::data_contract::document_type::IndexBucketing::Time(transform) =
+            &mut mismatched[0].transform
+        {
+            transform.step_seconds /= 2;
+        }
         assert!(
             DriveDocumentCountQuery::find_countable_index_for_where_clauses(
                 &indexes,

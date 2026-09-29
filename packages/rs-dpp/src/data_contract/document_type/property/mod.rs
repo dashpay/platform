@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
 use std::io::{BufReader, Cursor, Read};
@@ -43,12 +43,18 @@ pub mod array;
 pub mod encrypted_for;
 pub mod generated_from;
 pub mod list_element_reference;
+pub mod lookup_preimage;
 pub mod reference_expression;
 pub mod reference_lookup;
 
 pub use encrypted_for::{EncryptedFor, EncryptedForRecipient, EncryptionScheme};
-pub use generated_from::{GeneratedFrom, GenerationParam, StringTransformation, SystemFunction};
+pub use generated_from::{
+    GeneratedFrom, GenerationParam, HashFunction, StringTransformation, SystemFunction,
+};
 pub use list_element_reference::ListElementReference;
+pub use lookup_preimage::{
+    first_unrevealable_lookup_key, LookupHashKey, LookupKeyParam, LookupPreimageError,
+};
 pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
     MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
@@ -87,6 +93,15 @@ pub struct DocumentProperty {
     /// property, and only on contracts parsed from protocol version 14 on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generated_from: Option<GeneratedFrom>,
+    /// The `refersTo` of a string or byte array property, whose value is not
+    /// an id but is revealed into a computed lookup key, a `propertyAgreement`
+    /// function naming the property by its path among its `params`, such as a
+    /// salt a commitment hashed. An identifier property's
+    /// `refersTo` is folded into its type instead
+    /// ([`DocumentPropertyType::IdentifierWithReference`]). Only ever `Some` on
+    /// contracts parsed from protocol version 14 on.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revealed_reference: Option<DocumentPropertyReferenceTarget>,
 }
 
 /// What a `distinctFrom` identifier property must differ from.
@@ -924,6 +939,13 @@ pub enum DocumentPropertyReferenceTarget {
     /// dead one nor clear it), and it may be an operand of a reference
     /// expression, which is then re-validated on every replace as well.
     ///
+    /// A lookup whose key a `propertyAgreement` function computes
+    /// ([`DocumentReferenceLookup::is_checked_on_create_only`]) is the
+    /// exception: the document it finds is a commitment the create reveals, so
+    /// it is judged when the document is created only and holds on a replace
+    /// without a read. An immutable property may hold one, and on a type whose
+    /// documents can be replaced it may not be an operand of an `anyOf`.
+    ///
     /// Appended, so every earlier variant keeps its consensus encoding. It
     /// serializes under the `deletableDocument` tag, with a `lookup` field.
     #[serde(rename = "deletableDocument")]
@@ -1167,6 +1189,11 @@ pub enum PropertyReference<'a> {
     /// A key id property carrying an `identityPublicKey` declaration that
     /// names whose key it is ([`DocumentPropertyType::KeyIdWithReference`]).
     KeyId(&'a KeyIdReference),
+    /// A string or byte array property whose value is revealed into the
+    /// computed lookup key of its `refersTo` ([`DocumentProperty::revealed_reference`]):
+    /// not an id, so read only as a param of that key's `propertyAgreement`
+    /// function, which names the property by its path, on a create.
+    Revealed(&'a DocumentPropertyReferenceTarget),
 }
 
 impl<'a> PropertyReference<'a> {
@@ -1174,9 +1201,9 @@ impl<'a> PropertyReference<'a> {
     /// key reference on the key id, which has no identifier target.
     pub fn target(&self) -> Option<&'a DocumentPropertyReferenceTarget> {
         match self {
-            PropertyReference::Value(target) | PropertyReference::Elements { target, .. } => {
-                Some(target)
-            }
+            PropertyReference::Value(target)
+            | PropertyReference::Elements { target, .. }
+            | PropertyReference::Revealed(target) => Some(target),
             PropertyReference::KeyId(_) => None,
         }
     }
@@ -1188,7 +1215,9 @@ impl<'a> PropertyReference<'a> {
     pub fn max_references(&self) -> u32 {
         let values = match self {
             PropertyReference::Elements { max_items, .. } => u32::from(*max_items),
-            PropertyReference::Value(_) | PropertyReference::KeyId(_) => 1,
+            PropertyReference::Value(_)
+            | PropertyReference::KeyId(_)
+            | PropertyReference::Revealed(_) => 1,
         };
         let leaves = self.target().map_or(1, |target| target.leaves().len());
         values.saturating_mul(u32::try_from(leaves).unwrap_or(u32::MAX))
@@ -1263,8 +1292,34 @@ impl<'a> DocumentTypeRef<'a> {
                 property
                     .property_type
                     .reference()
+                    .or_else(|| {
+                        property
+                            .revealed_reference
+                            .as_ref()
+                            .map(PropertyReference::Revealed)
+                    })
                     .map(|reference| (ReferenceHolder::Property(path.as_str()), reference))
             }))
+    }
+
+    /// The names of the document types a create of this type may consume: those a
+    /// `refersTo` lookup finds where the reference declares `consume`, on any
+    /// holder and in any leaf of an expression, each a type of this type's own
+    /// contract. A create deletes such a document along with its own write, so
+    /// whatever may sign the create must be allowed to act on these types too.
+    pub fn consumable_document_type_names(self) -> BTreeSet<&'a str> {
+        self.reference_declarations()
+            .filter_map(|(_, reference)| reference.target())
+            .flat_map(|target| target.leaves())
+            .filter_map(|leaf| match leaf {
+                DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+                    document_type_name,
+                    lookup,
+                    ..
+                } if lookup.consume => Some(document_type_name.as_str()),
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -1539,6 +1594,14 @@ fn write_document_reference(
     }
     if let Some(lookup) = lookup {
         write!(f, ", found through unique index {}", lookup.index)?;
+        // A computed key: the document found is a commitment the write reveals
+        if let Some((index_property, key)) = lookup.hash_key() {
+            write!(
+                f,
+                ", {index_property} the {} of a revealed preimage",
+                key.function.as_str()
+            )?;
+        }
     }
     write!(f, ")")
 }
@@ -4575,6 +4638,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -4587,6 +4651,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -7415,6 +7480,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         inner_fields.insert(
@@ -7427,6 +7493,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7482,6 +7549,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7505,6 +7573,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         inner_fields.insert(
@@ -7517,6 +7586,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7955,6 +8025,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -7993,6 +8064,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8005,6 +8077,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -8026,6 +8099,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8038,6 +8112,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let obj = DocumentPropertyType::Object(sub_fields);
@@ -8334,6 +8409,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8346,6 +8422,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8410,6 +8487,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8422,6 +8500,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8512,6 +8591,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         sub_fields.insert(
@@ -8524,6 +8604,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -8796,6 +8877,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8828,6 +8910,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         // Second field is required
@@ -8841,6 +8924,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8962,6 +9046,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -8983,6 +9068,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(inner_fields);
@@ -9293,6 +9379,7 @@ mod tests {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             },
         );
         let prop = DocumentPropertyType::Object(sub_fields);
@@ -9560,6 +9647,7 @@ mod tests {
             distinct_from: None,
             encrypted_for: None,
             generated_from: None,
+            revealed_reference: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
@@ -9584,6 +9672,7 @@ mod tests {
             distinct_from: None,
             encrypted_for: None,
             generated_from: None,
+            revealed_reference: None,
         };
 
         let value = serde_json::to_value(&property).expect("serialization should succeed");
@@ -10230,6 +10319,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "bySubmittedCharter".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             }
             .to_string(),
@@ -10275,6 +10366,8 @@ mod tests {
         let lookup = DocumentReferenceLookup {
             index: "bySubmittedCharter".to_string(),
             keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+            minimum_age_blocks: None,
+            consume: false,
         };
         let target = DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id: None,
@@ -10607,6 +10700,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             },
             DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
@@ -10638,6 +10733,8 @@ mod tests {
                 lookup: DocumentReferenceLookup {
                     index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
+                    minimum_age_blocks: None,
+                    consume: false,
                 },
             },
         ];

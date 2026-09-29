@@ -77,11 +77,20 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// list. (A list in the declaring contract is refused by the contract parse
     /// instead.)
     ReferencedDocumentListInvalid = 40138,
+    /// The document a `refersTo` lookup with a computed key found, the
+    /// commitment the create reveals, exists but does not meet the lookup's
+    /// `minimumAgeBlocks`: it was created too recently, in the same block
+    /// with a minimum of 1. Retry in a later block.
+    ReferencedDocumentRequirementNotMet = 40142,
+    /// A create cannot reveal the preimage of a `refersTo` lookup with a
+    /// computed key: a value a param reads is absent, or a variable-length
+    /// value holds the one-byte separator that follows it in the preimage.
+    DocumentReferencePreimageInvalid = 10423,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131 or 40135-40138.
+    /// is not in the 40120-40125 range, 40131, 40135-40138, 40142 or 10423.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -95,6 +104,8 @@ impl DocumentReferenceErrorCodeWasm {
             40136 => Some(Self::ReferencedIdentityKeyRequirementNotMet),
             40137 => Some(Self::ReferencedDocumentLookupInvalid),
             40138 => Some(Self::ReferencedDocumentListInvalid),
+            40142 => Some(Self::ReferencedDocumentRequirementNotMet),
+            10423 => Some(Self::DocumentReferencePreimageInvalid),
             _ => None,
         }
     }
@@ -335,7 +346,7 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125, 40131, 40135 and 40136.
+    /// not one of codes 40120-40125, 40131, 40135-40138, 40142 and 10423.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
         DocumentReferenceErrorCodeWasm::from_code(self.0.code())
@@ -394,9 +405,12 @@ impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::basic::document::DocumentReferencePreimageInvalidError;
     use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
     use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
+    use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
@@ -714,6 +728,30 @@ mod tests {
                 )
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedKeyIdPropertyInvalid,
+            ),
+            (
+                StateError::ReferencedDocumentRequirementNotMetError(
+                    ReferencedDocumentRequirementNotMetError::new(
+                        id(),
+                        "minimumAgeBlocks".to_string(),
+                        "1".to_string(),
+                        "preorderSalt".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentRequirementNotMet,
+            ),
+            (
+                BasicError::DocumentReferencePreimageInvalidError(
+                    DocumentReferencePreimageInvalidError::new(
+                        "domain".to_string(),
+                        "preorderSalt".to_string(),
+                        "parentDomainName".to_string(),
+                        "the value is absent".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::DocumentReferencePreimageInvalid,
             ),
         ]
     }

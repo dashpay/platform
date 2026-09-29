@@ -83,7 +83,7 @@ What may be indexed:
 
 - **A top-level property** of the type, by its name.
 - **A property inside an object**, by its dotted path. DPNS indexes `records.identity`, the `identity` property of a domain's `records` object.
-- **System properties**: `$ownerId`, `$createdAt`, `$updatedAt`, `$transferredAt`, their `*BlockHeight` and `*CoreBlockHeight` variants, and `$creatorId` on a type that records it (see [System Properties](system-properties.md)). A timestamp or block height is only recorded when the type lists it in `required`; an index on one that is not required holds every document under null.
+- **System properties**: `$ownerId`, `$createdAt`, `$updatedAt`, `$transferredAt`, their `*BlockHeight` and `*CoreBlockHeight` variants, `$creatorId` on a type that records it, and `$moderatedAt` and `$moderatedBy` on a type that lists `moderatorAbilities.changeFields`, in a non-unique index, from protocol version 14 (see [System Properties](system-properties.md)). A timestamp or block height is only recorded when the type lists it in `required`; an index on one that is not required holds every document under null.
 - **Not `$id`**, which the document type's primary tree already indexes (`SystemPropertyIndexAlreadyPresentError`, 10208).
 
 What each indexed property must be, because its value becomes a GroveDB key of at most 255 bytes:
@@ -110,7 +110,7 @@ A document that leaves any of the indexed properties out is not held to the inde
 
 Uniqueness is per index. `bySlug` above is unique over the pair (`$ownerId`, `slug`), so two authors may use the same slug; a unique index on `slug` alone would make each slug global.
 
-A unique index with a [`timeRange`](time-range.md) treats two documents in the same window as equal on the bucketed property. A unique index cannot carry a ranking.
+A unique index with a [`timeRange`](time-range.md) or an [`integerRange`](integer-range.md) treats two documents in the same window as equal on the bucketed property. A unique index cannot carry a ranking.
 
 ## `nullSearchable`
 
@@ -126,7 +126,7 @@ With the default, a document whose indexed properties are all missing is still e
 
 DPNS sets `"nullSearchable": false` on its `records.identity` index, so domains that point at no identity take no room in it.
 
-`nullSearchable: false` is refused on an index with a ranking or a `timeRange`, on an index of an index-only type, and together with `skipIfAbsent`.
+`nullSearchable: false` is refused on an index with a ranking, a `timeRange` or an `integerRange`, on an index of an index-only type, and together with `skipIfAbsent`.
 
 ## `skipIfAbsent`
 
@@ -138,7 +138,7 @@ DPNS sets `"nullSearchable": false` on its `records.identity` index, so domains 
 | **Since** | protocol version 14 |
 | **On update** | Fixed (10217) |
 
-A document that leaves out a property of the index's **skip set** writes nothing into this index, and its delete looks for nothing there. `true` makes the skip set every optional property of the index; an array names it. The skip property can sit anywhere in the index, under a [`timeRange`](time-range.md) window too. The index then holds only the documents carrying every skip property, and its counts and rankings are "among the documents that have them". A present but empty value is not absent and is indexed.
+A document that leaves out a property of the index's **skip set** writes nothing into this index, and its delete looks for nothing there. `true` makes the skip set every optional property of the index; an array names it. The skip property can sit anywhere in the index, under a [`timeRange`](time-range.md) or [`integerRange`](integer-range.md) window too. The index then holds only the documents carrying every skip property, and its counts and rankings are "among the documents that have them". A present but empty value is not absent and is indexed.
 
 ```json
 "post": {
@@ -225,11 +225,12 @@ An index entry may carry more keywords, each with its own chapter:
 - [Counts, Sums and Averages](aggregates.md): `countable`, `summable`, `averageable` and their `range*` forms keep totals per indexed value, so counts, sums and averages are read without walking the documents.
 - [Ranked Indexes](ranked.md): `rankedCountable`, `rankedSummable` and `rankedAverageable` order the indexed values by those totals, for "top 10" queries with proofs.
 - [Time-Range Indexes](time-range.md): `timeRange` groups documents into time windows, for "trending this hour" queries.
+- [Integer-Range Indexes](integer-range.md): `integerRange` groups documents into windows of an integer property, for counts and rankings per price or score band.
 - [Index-Only Types](index-only.md): `terminal`, `preallocated` and `skipIfAbsent` shape the indexes of a type whose documents live only in their indexes.
 
 ## See also
 
 - [Indexes](../drive/indexes.md) in the Drive part: the index trie, the GroveDB layout and the query picker.
-- [Contested Indexes](contested.md), [Counts, Sums and Averages](aggregates.md), [Ranked Indexes](ranked.md), [Time-Range Indexes](time-range.md), [Index-Only Types](index-only.md).
+- [Contested Indexes](contested.md), [Counts, Sums and Averages](aggregates.md), [Ranked Indexes](ranked.md), [Time-Range Indexes](time-range.md), [Integer-Range Indexes](integer-range.md), [Index-Only Types](index-only.md).
 - [System Properties](system-properties.md) for what `$ownerId`, `$createdAt` and the others hold.
 - [Contract Keywords](../contract-keywords.md) for the conventions of these chapters.

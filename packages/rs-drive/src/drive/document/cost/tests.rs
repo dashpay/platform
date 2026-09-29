@@ -701,6 +701,61 @@ fn should_price_a_time_window_with_a_ttl_without_flags_as_processing() {
 }
 
 #[test]
+fn should_price_every_window_of_an_integer_range_and_match_what_drive_charges() {
+    // A `u32` price sampled as 1 would sit in the clamped bottom window only;
+    // the sample is taken clear of it, so all three windows are priced, and
+    // the estimate still equals what Drive charges for that document.
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(platform_value!({ "listing": {
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": true,
+        "properties": {
+            "price": { "type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 0 },
+            "category": { "type": "string", "maxLength": 20, "position": 1 }
+        },
+        "indices": [{
+            "name": "byPriceBand",
+            "properties": [{ "price": "asc" }, { "category": "asc" }],
+            "integerRange": { "on": "price", "range": 300, "step": 100 },
+        }],
+        "required": ["price", "category"],
+        "additionalProperties": false,
+    }}));
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply the contract");
+    let listing = contract.document_type_for_name("listing").expect("listing");
+    let (document, _) = sized_document(&contract, listing, &Default::default(), platform_version)
+        .expect("expected a sized document");
+
+    let references = writes_of(&contract, listing, &document)
+        .into_iter()
+        .filter(|write| write.role == LayoutRole::Member)
+        .count();
+    assert_eq!(references, 3, "one reference per window");
+
+    let cost = document_create_cost(
+        &contract,
+        listing,
+        &document,
+        &CostAssumptions::new(platform_version),
+        platform_version,
+    )
+    .expect("expected a cost");
+    let fee = insert(&drive, &contract, listing, &document).expect("expected to insert");
+    assert_eq!(fee.storage_fee, cost.storage_credits.new_values);
+}
+
+#[test]
 fn should_count_trees_keyed_by_the_document_id_as_new_and_unrefunded() {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));

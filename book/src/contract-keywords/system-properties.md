@@ -1,6 +1,6 @@
 # System Properties
 
-Every document carries a few values the platform manages rather than the writer: its id, its owner, and, on some types, its revision, its creator and the times it was created, updated and transferred. Their names start with `$`. A document type does not declare them in `properties`. It names them where it wants to use them: in `required`, to have a timestamp recorded, in `indices`, to query by them, and in the keywords that accept one, such as a reference's `propertyAgreement`.
+Every document carries a few values the platform manages rather than the writer: its id, its owner, and, on some types, its revision, its creator, the times it was created, updated and transferred, and who last moderated it and when. Their names start with `$`. A document type does not declare them in `properties`. It names them where it wants to use them: in `required`, to have a timestamp recorded, in `indices`, to query by them, and in the keywords that accept one, such as a reference's `propertyAgreement`.
 
 | Property | Holds | Recorded |
 |---|---|---|
@@ -10,6 +10,7 @@ Every document carries a few values the platform manages rather than the writer:
 | [`$createdAt`, `$updatedAt`, `$transferredAt`](#timestamps) | block times of the creation, last update and last transfer | when listed in `required` |
 | [`$createdAtBlockHeight` and the other heights](#block-heights) | Platform and Core block heights of the same events | when listed in `required` |
 | [`$creatorId`](#creatorid) | the identity that created the document | on types whose documents can be transferred or sold |
+| [`$moderatedAt`, `$moderatedBy`](#moderatedat-and-moderatedby) | the block time and the moderator of the last write of the fields only moderators write | on types that keep such fields, once a moderator writes them |
 
 ## Example
 
@@ -134,9 +135,40 @@ On a type whose documents can change hands, `$ownerId` follows the document whil
 - on the referenced side of a reference's `propertyAgreement`, and as a key reference's `identityProperty`;
 - by [`creatorRefersTo`](owner-refers-to.md), which checks the creator. A type that does not record creators may not declare it (`InvalidContractStructure`, 10231).
 
+## `$moderatedAt` and `$moderatedBy`
+
+| | |
+|---|---|
+| **Where** | Documents of a type that lists [`moderatorAbilities.changeFields`](moderator-abilities.md#changefields) |
+| **Value** | `$moderatedAt`: a block time, in milliseconds since the Unix epoch. `$moderatedBy`: an identifier, the id of the moderator. |
+| **Recorded** | Once a moderator of the contract writes the fields the type keeps for its moderators; absent until then |
+| **Since** | protocol version 14 |
+| **Errors** | `InvalidContractStructure` (10231): an index naming either on a type that lists no `changeFields`, or in a unique index. `UndefinedIndexPropertyError` (10209): an index naming either before protocol version 14. |
+
+The two record the last time a moderator wrote the fields only moderators write, and who did. They are set together, from the block that processes the write, and never by the writer:
+
+| Event | Sets both |
+|---|---|
+| A moderator's field change (`changeDocumentFields`) | to the block's time and the moderator who signed it |
+| A create that sets such a field, by a document owner who moderates the contract | to the block's time and the owner |
+| A replace that changes, adds or removes such a field, by an owner who moderates | to the block's time and the owner |
+
+Nothing else moves them: a replace that leaves those fields as they were, a transfer, a purchase and a price update keep them, and a restore puts them back as they were. They do not change `$updatedAt`, which stays the owner's. A document no moderator has written carries neither, and a type that keeps no fields for its moderators never records them.
+
+Both may be indexed, on a type that lists `changeFields`, so an application can find what its moderators handled, by whom and in what order:
+
+```json
+"indices": [
+  { "name": "byModerator", "properties": [{ "$moderatedBy": "asc" }, { "$moderatedAt": "asc" }] }
+]
+```
+
+A unique index may not name them: a moderator's change would be refused because another document holds the same stamp. They are not written in `required` or `properties`, and no other keyword reads them.
+
 ## See also
 
 - [What Lives Inside a Document](../data-model/documents.md#what-lives-inside-a-document), for the fields of a document
 - [Document Shape](document-shape.md#required), for the `required` list that records timestamps
 - [Document Serialization](../serialization/document-serialization.md#high-level-structure), for where each system property sits in the stored bytes
 - [Creation, Transfers and Trading](ownership-and-trading.md), for the flags that decide `$revision` and `$creatorId`
+- [Moderator Abilities](moderator-abilities.md#changefields), for the fields whose writes `$moderatedAt` and `$moderatedBy` record

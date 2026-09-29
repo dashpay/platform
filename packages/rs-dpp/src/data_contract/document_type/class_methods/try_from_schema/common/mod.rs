@@ -22,7 +22,9 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
-use crate::data_contract::document_type::index::{Index, IndexGrammarAdmissions};
+use crate::data_contract::document_type::index::{
+    Index, IndexGrammarAdmissions, IntegerRangeKeyType,
+};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::property::DocumentPropertyType;
@@ -49,7 +51,7 @@ use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
-use crate::document::property_names::{CREATED_AT, UPDATED_AT};
+use crate::document::property_names::{CREATED_AT, MODERATED_AT, MODERATED_BY, UPDATED_AT};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -107,6 +109,10 @@ use std::collections::HashSet;
 
 #[cfg(feature = "validation")]
 use super::NOT_ALLOWED_SYSTEM_PROPERTIES;
+
+/// The system properties a moderator's write of the fields a type keeps for its moderators
+/// stamps on the document: indexable from generation 3, on such a type only.
+const MODERATION_STAMP_PROPERTIES: [&str; 2] = [MODERATED_AT, MODERATED_BY];
 use super::{MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH};
 use crate::consensus::basic::data_contract::{
     InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
@@ -209,6 +215,9 @@ pub(super) struct ParserGeneration {
     /// the key falls through to the unknown-key arm and is rejected as any
     /// pre-generation-3 node rejected it.
     pub admit_time_range: bool,
+    /// Whether the index grammar admits the `integerRange` keyword. Forwarded
+    /// to [`Index::try_from_value_map`] exactly like `admit_time_range`.
+    pub admit_integer_range: bool,
 
     // ---- INDEX ONLY: the third generation-3 addition ----
     /// Whether the index grammar admits the `terminal` keyword (indexOnly
@@ -236,6 +245,11 @@ pub(super) struct ParserGeneration {
     /// vote without a Lock choice. Forwarded to [`Index::try_from_value_map`]
     /// exactly like the admissions above.
     pub admit_index_no_locking_resolution: bool,
+    /// Whether an index may name `$moderatedAt` or `$moderatedBy`, the stamp a moderator's
+    /// write of the fields a type keeps for its moderators leaves. Admitted here for every
+    /// type; `apply_moderator_abilities` then refuses it on a type that keeps no such field,
+    /// and in a unique index.
+    pub admit_moderation_stamp_indexes: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -884,6 +898,7 @@ fn parse_indices(
                         IndexGrammarAdmissions {
                             ranked: ctx.generation.admit_ranked,
                             time_range: ctx.generation.admit_time_range,
+                            integer_range: ctx.generation.admit_integer_range,
                             terminal: ctx.generation.admit_index_terminal,
                             preallocated: ctx.generation.admit_index_preallocated,
                             skip_if_absent: ctx.generation.admit_index_skip_if_absent,
@@ -894,6 +909,32 @@ fn parse_indices(
                         },
                     )
                     .map_err(consensus_or_protocol_data_contract_error)?;
+
+                    // INTEGER RANGE: the index grammar cannot see property
+                    // types, so the source's key encoding is resolved here,
+                    // on every parse, validating or not: the write walkers,
+                    // the uniqueness probe and the query resolver all read
+                    // it, and a contract loaded from state must bucket
+                    // exactly as it did at registration. The source must be
+                    // a user integer property of at most 64 bits; a system
+                    // property is not in the flattened map, so it is refused
+                    // here too.
+                    if let Some(transform) = index.integer_range.as_mut() {
+                        transform.key_type = flattened_document_properties
+                            .get(transform.source.as_str())
+                            .and_then(|property| {
+                                IntegerRangeKeyType::from_property_type(&property.property_type)
+                            })
+                            .ok_or_else(|| {
+                                consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "integerRange.on (\"{}\") must name an integer \
+                                         property of the document type of at most 64 bits",
+                                        transform.source
+                                    )),
+                                )
+                            })?;
+                    }
 
                     // `skipIfAbsent: true` skips on every optional property of
                     // the index. Optionality is a document-type fact the index
@@ -951,34 +992,59 @@ fn parse_indices(
                         // or the platform version, so they live here. A
                         // generation without the `timeRange` grammar never
                         // parses a transform, so this is a no-op there.
-                        if let Some(transform) = &index.time_range {
+                        if let Some(bucketing) = index.bucketing() {
                             // The overlap factor is the number of index
                             // entries a single document produces on this
                             // index — its write amplification — so its cap
                             // is a versioned system limit rather than a
                             // structural constant: retuning it is a
                             // protocol-version decision, not a code edit.
+                            // Both kinds of grid share the one limit.
                             // `None` means a protocol version predating
-                            // time-range indexes, which cannot reach here
-                            // because the keyword does not parse there.
+                            // bucketed indexes, which cannot reach here
+                            // because neither keyword parses there.
                             if let Some(max_overlap_factor) = ctx
                                 .platform_version
                                 .system_limits
                                 .max_time_range_overlap_factor
                             {
-                                let overlap = transform.overlap_factor();
+                                let overlap = bucketing.overlap_factor();
                                 if overlap > max_overlap_factor {
                                     return Err(consensus_or_protocol_data_contract_error(
                                         DataContractError::InvalidContractStructure(format!(
-                                            "timeRange overlap factor (range / step = {}) \
-                                             exceeds the maximum of {}; a smaller window or a \
-                                             larger step is required to bound per-document \
-                                             index entries",
-                                            overlap, max_overlap_factor
+                                            "{} overlap factor (range / step = {}) exceeds \
+                                             the maximum of {}; a smaller window or a larger \
+                                             step is required to bound per-document index \
+                                             entries",
+                                            bucketing.keyword(),
+                                            overlap,
+                                            max_overlap_factor
                                         )),
                                     ));
                                 }
                             }
+                            // The grid-qualified level key is a GroveDB key,
+                            // capped at 255 bytes like every other key; the
+                            // grid suffix makes a long property path reach
+                            // the cap sooner, so it is refused here instead
+                            // of failing when the contract's trees are made.
+                            let level_key = bucketing.storage_key(bucketing.source());
+                            if level_key.len() > usize::from(MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH)
+                            {
+                                return Err(consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "the {} level of index \"{}\" encodes to {} bytes, \
+                                         over the {}-byte key cap: shorten the property path \
+                                         or the grid numbers",
+                                        bucketing.keyword(),
+                                        index.name,
+                                        level_key.len(),
+                                        MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                                    )),
+                                ));
+                            }
+                        }
+                        if let Some(transform) = &index.time_range {
                             // The TTL cap is likewise a versioned system
                             // limit — it is what makes billing TTL'd bytes
                             // at a flat processing rate honest, so retuning
@@ -1058,6 +1124,39 @@ fn parse_indices(
                                          user-defined properties are not supported as a \
                                          time-range source",
                                         source
+                                    )),
+                                ));
+                            }
+                        }
+
+                        // INTEGER RANGE: the checks that need the schema.
+                        // (The overlap cap and level key cap ran above.)
+                        if let Some(transform) = &index.integer_range {
+                            // A required source keeps every document in the
+                            // windows: an optional one would leave documents
+                            // without the property under the null entry,
+                            // which no window selection reads. A nested
+                            // source is only always present when every
+                            // object above it is required too.
+                            if let Some(ancestor) =
+                                unrequired_ancestor(&transform.source, required_fields)
+                            {
+                                return Err(consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "integerRange.on (\"{}\") sits inside \"{}\", which \
+                                         is not listed in `required`: a valid document could \
+                                         omit the whole object, leaving it in no window",
+                                        transform.source, ancestor
+                                    )),
+                                ));
+                            }
+                            if !required_fields.contains(transform.source.as_str()) {
+                                return Err(consensus_or_protocol_data_contract_error(
+                                    DataContractError::InvalidContractStructure(format!(
+                                        "integerRange.on (\"{}\") names a property the \
+                                         document type does not require; add it to the \
+                                         document type's required fields",
+                                        transform.source
                                     )),
                                 ));
                             }
@@ -1289,6 +1388,14 @@ fn validate_index_properties(
                 )
                 .into(),
             )));
+        }
+
+        // The moderation stamps, where the generation admits them: whether the type carries
+        // them is `apply_moderator_abilities`'s to judge
+        if ctx.generation.admit_moderation_stamp_indexes
+            && MODERATION_STAMP_PROPERTIES.contains(&index_property.name.as_str())
+        {
+            return Ok(());
         }
 
         // Indexed property must be defined in user schema if it's not a system one
@@ -2258,6 +2365,33 @@ pub(super) fn apply_moderator_abilities(
             message,
         ))
     };
+    // Only a type keeping fields for its moderators has its documents stamped, so only such a
+    // type indexes the stamp. Never in a unique index: the stamp is the moderator's and the
+    // time, and a moderator's change refused because another document holds the same would
+    // make no sense.
+    for (index_name, index) in &document_type.indices {
+        let Some(stamp) = index
+            .properties
+            .iter()
+            .map(|property| property.name.as_str())
+            .find(|property| MODERATION_STAMP_PROPERTIES.contains(property))
+        else {
+            continue;
+        };
+        if change_fields.is_empty() {
+            return Err(structure_error(format!(
+                "index \"{index_name}\" of document type \"{name}\" reads `{stamp}`, which only \
+                 the documents of a type listing `{MODERATOR_ABILITIES}.{CHANGE_FIELDS}` carry",
+            )));
+        }
+        if index.unique {
+            return Err(structure_error(format!(
+                "unique index \"{index_name}\" of document type \"{name}\" reads `{stamp}`: a \
+                 moderator's change would be refused because another document holds the same \
+                 stamp",
+            )));
+        }
+    }
     if !delete
         && delete_within.is_none()
         && delete_keeps_record.is_none()
@@ -2452,8 +2586,8 @@ pub(super) fn apply_moderator_abilities(
 
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
-/// the referring side of every `propertyAgreement`, lookup key and key id
-/// property, for every leaf of every reference expression, the
+/// the referring side of every `propertyAgreement`, lookup key (a computed
+/// key's params included) and key id property, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -2493,6 +2627,11 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                     ..
                 } => {
                     read.extend(lookup.referring_properties().map(top_level_property));
+                    // A computed key's params: the key is judged on the create only, so a
+                    // change would leave the document no longer hashing to what it revealed
+                    if let Some((_, key)) = lookup.hash_key() {
+                        read.extend(key.properties_read().map(top_level_property));
+                    }
                     Some(property_agreement)
                 }
                 DocumentPropertyReferenceTarget::ListElement(list_element) => {
@@ -3239,14 +3378,15 @@ pub(super) fn apply_index_only(
                 || !index.ranked_countable_at.is_empty()
                 || index.ranked_summable
                 || index.ranked_averageable
-                || index.time_range.is_some()
+                || index.is_bucketed()
                 || index.skip_if_absent
                 || index.preallocated
             {
                 return Err(structure_error(format!(
                     "index \"{}\" on indexOnly document type \"{}\" has no properties (a \
                      flat index keyed by its terminal alone), so it admits no countable, \
-                     summable, ranked, timeRange, skipIfAbsent or preallocated keyword: \
+                     summable, ranked, timeRange, integerRange, skipIfAbsent or preallocated \
+                     keyword: \
                      there is no prefix level for them to apply to",
                     index_name, name,
                 )));
@@ -3305,6 +3445,24 @@ pub(super) fn apply_index_only(
         // the create wrote. A bucketed index involves `$createdAt` and
         // therefore never counts as the required `$createdAt`-free
         // proof index.
+        //
+        // `integerRange` is refused. An indexOnly index keeps one entry per
+        // (prefix values, terminal), and a bucketed level holds window
+        // starts, not values: two rows that differ only in the bucketed
+        // integer would claim the same entry in every window they share, so
+        // the index would silently act as a uniqueness constraint over
+        // overlapping value bands. (A `$createdAt` window cannot do this: the
+        // proof index, which involves no `$createdAt`, already keeps rows
+        // that differ only in `$createdAt` apart.)
+        if index.integer_range.is_some() {
+            return Err(structure_error(format!(
+                "index \"{}\" on indexOnly document type \"{}\" declares integerRange: an \
+                 indexOnly index keeps one entry per window and other values, so rows that \
+                 differ only in the bucketed integer would collide in the windows they share; \
+                 bucket integers on a document type that stores its documents",
+                index_name, name,
+            )));
+        }
         // The sum axes (summable / rangeSummable / rankedSummable /
         // rankedAverageable / the averageable sugar) are admitted: a
         // summable index's terminal entry is an
@@ -3528,12 +3686,12 @@ pub(super) fn apply_index_only(
         // timestamp, not by a stored property value the binding could
         // resolve — and its `$createdAt` source can never be
         // reference-bound anyway.
-        if index.preallocated && index.time_range.is_some() {
+        if index.preallocated && index.is_bucketed() {
             return Err(structure_error(format!(
                 "index \"{}\" on indexOnly document type \"{}\" declares `preallocated` \
-                 together with `timeRange`: a bucketed level is keyed by bucket starts \
-                 computed from a timestamp at write time, so its path cannot be \
-                 preallocated from a referenced document",
+                 together with `timeRange` or `integerRange`: a bucketed level is keyed by \
+                 window starts computed at write time, so its path cannot be preallocated \
+                 from a referenced document",
                 index_name, name,
             )));
         }
@@ -3723,22 +3881,34 @@ pub(super) fn apply_index_only(
         // unrequired `profile` lets a valid document omit the whole object.
         // Every ancestor path of an indexed dotted property must therefore
         // be required too, or the no-null invariant silently breaks.
-        let mut ancestor = String::new();
-        for segment in property_name.split('.') {
-            if !ancestor.is_empty() {
-                if !document_type.required_fields.contains(&ancestor) {
-                    return Err(structure_error(format!(
-                        "property \"{}\" on indexOnly document type \"{}\" sits inside \
-                         \"{}\", which is not listed in `required`: a valid document could \
-                         omit the whole object, leaving the indexed leaf absent",
-                        property_name, name, ancestor,
-                    )));
-                }
-                ancestor.push('.');
-            }
-            ancestor.push_str(segment);
+        if let Some(ancestor) = unrequired_ancestor(property_name, &document_type.required_fields) {
+            return Err(structure_error(format!(
+                "property \"{}\" on indexOnly document type \"{}\" sits inside \
+                 \"{}\", which is not listed in `required`: a valid document could \
+                 omit the whole object, leaving the indexed leaf absent",
+                property_name, name, ancestor,
+            )));
         }
     }
 
     Ok(())
+}
+
+/// The first object path above the dotted `property_name` that is not in
+/// `required_fields`, if any. `required_fields` lists a nested object's own
+/// `required` members under their full paths whether or not the object is
+/// itself required, so a required leaf is only always present when every
+/// ancestor path is required too.
+fn unrequired_ancestor(property_name: &str, required_fields: &BTreeSet<String>) -> Option<String> {
+    let mut ancestor = String::new();
+    for segment in property_name.split('.') {
+        if !ancestor.is_empty() {
+            if !required_fields.contains(&ancestor) {
+                return Some(ancestor);
+            }
+            ancestor.push('.');
+        }
+        ancestor.push_str(segment);
+    }
+    None
 }

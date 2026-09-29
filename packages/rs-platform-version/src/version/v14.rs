@@ -1507,8 +1507,23 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `InvalidContractModerationDocumentFieldsError` (10905),
 ///     `DocumentFieldNotChangeableByModeratorsError` (41123) and
 ///     `DocumentModeratorFieldNotWritableError` (41124), appended.
+/// 58. **The last moderator's stamp (`$moderatedAt`, `$moderatedBy`)**: two
+///     system properties of a document whose type keeps fields for its
+///     moderators (57), the block time and the identity of the last moderator
+///     to write them. A `changeDocumentFields` sets both, and so does the batch
+///     transformer (in place, inert before 14) for a create or replace whose
+///     signer moderates the contract and writes such a field; a replace that
+///     leaves the fields alone carries them over, and transfers, purchases,
+///     price updates and restores keep them. Document serialization format 3
+///     (this version's) records them behind bits 512 and 1024 of its time
+///     field flags, so a document without them is written as before. Parser
+///     generation 3 lets an index name either on such a type, never in a
+///     unique index (10231); the shipped index key, query value and size
+///     arms for the two names (`get_raw_for_document_type` v0,
+///     `serialize_value_for_key` v0, Drive's estimated key sizes) are reached
+///     only through such an index.
 ///
-/// 58. **`skipIfAbsent` at any position, `true` or an array, on every type**:
+/// 59. **`skipIfAbsent` at any position, `true` or an array, on every type**:
 ///     document meta-schema v3 and the generation-3 parser take
 ///     `skipIfAbsent: true` (skip on every optional property of the index)
 ///     or an array naming the skip set, and a skip property may sit at any
@@ -1531,7 +1546,85 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     queries: it could only skip on an indexOnly index's first property,
 ///     where both rules agree.
 ///
-/// 59. **Null flags follow each index's own path**: the v2 index-level
+/// 60. **Integer-range indexes**: an index can declare an `integerRange`
+///     transform (`on`, `range`, `step`, optional `phase < step`) that
+///     buckets a required user integer property of at most 64 bits into
+///     windows starting at `phase + k * step`; a start below the lowest
+///     value of the property's integer type is clamped to it, so every
+///     value is in at least one window. It shares the time-range machinery:
+///     the grid-qualified level key, the walkers' fan-out (the insert, delete
+///     and update walkers read one `IndexBucketing`), the overlap cap
+///     (`SystemLimits::max_time_range_overlap_factor`) and the resolution
+///     provenance that keeps raw queries off a bucketed index. The v1
+///     `getDocuments` handler resolves the new `IN_INTEGER_RANGE` operator,
+///     a typed `IntegerRangeSelection` naming one window by its start, to a
+///     window-start equality from the query alone. `unique: true` needs
+///     non-overlapping windows; the uniqueness probe (v1) looks in the
+///     candidate's window and lets a document change its value within its
+///     own window. An indexOnly type cannot declare one (its entries would
+///     collide across rows that share a window); neither kind of bucketed
+///     index can be a `refersTo` lookup target or a `propertyConstraints`
+///     answering index; a nested source must sit in required objects and
+///     the grid-qualified level key fits 255 bytes; and a document `ttl`
+///     prices every window an integer-range index writes.
+///
+/// 61. **A `refersTo` may find its document by a hash the document reveals**:
+///     a `propertyAgreement` pair may be a function, keyed by the referenced
+///     property, `"<referenced property>": { "function": "sys.hash.sha256d",
+///     "params": [...] }` (meta-schema v3 `agreementFunction`, parser
+///     generation 3, `apply_property_reference` 0): the referenced property
+///     holds the SHA-256 of the SHA-256 of the params' bytes joined in order, a
+///     property path of the document (the property carrying the reference
+///     included), `{ "const": text }`, or `"."` for a value without a path (each
+///     element of a typed array, the writer, the creator), a string counting as
+///     its UTF-8, a byte array as its bytes, an identifier as its 32 bytes. That
+///     property must be in the reference's `lookup` index, whose `keys` may then
+///     leave it out: the parser holds the function as the lookup's computed key
+///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
+///     `sys.hash` namespace beside the string transformations of
+///     `generatedFrom`, which refuses it. A string or byte array property may
+///     now carry a `refersTo` whose function reads its value
+///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`);
+///     the property keeps its type. The document such a key finds is a
+///     commitment made earlier, so the lookup is judged when the document is
+///     created only: its params may be transient or optional, every stored value
+///     it reads must be fixed once written, and a replace leaves it alone.
+///     Document create structure validation 1 refuses a create missing a param,
+///     repeating a key on the way to one, or whose variable-length param holds
+///     the one-byte separator that must follow it
+///     (`DocumentReferencePreimageInvalidError`, 10423). Beside such a lookup,
+///     on the `refersTo` (refused inside the lookup), the reference may
+///     declare `minimumAgeBlocks`, judged by document create state
+///     validation 2 against the found document's `$createdAtBlockHeight`
+///     (`ReferencedDocumentRequirementNotMetError`, 40142), and `consume`, which
+///     deletes the found document with the create
+///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
+///     it elsewhere refused with 40120). The hash is computed once per key and
+///     billed as `ValidationOperation::DoubleSha256` by the blocks it hashes,
+///     beside the lookup's document fetch. Such a `deletableDocument` lookup,
+///     judged on the create alone, may sit on an `immutable` property, which
+///     `validate_no_immutable_deletable_element_references` otherwise refuses.
+///     A plain pair `{"$ownerId": "$ownerId"}`
+///     makes the commitment the writer's own, and `consume` requires it, into
+///     the declaring contract, on a type whose owners may delete, that declares
+///     no delete token cost or delete action fee and requires no stricter
+///     signature security level than the declaring type; batch advanced
+///     structure 1 refuses a contract-bound key whose bounds leave out a type
+///     the created type may consume (`ContractBoundedKeyOutOfBoundsError`,
+///     20014). The consumed deletes are converted with the create's own
+///     operations pending, so a type may consume its own documents. The plain
+///     pairs beside a function are judged with it, on the create alone, so the
+///     properties they name must be fixed once written or transient; on a
+///     mutable type such a lookup may not be an `anyOf` operand; and no
+///     property a function reads may be listed under
+///     `moderatorAbilities.changeFields` (57).
+///     `creatorRefersTo` takes a `deletableDocument` target through a function,
+///     and an `ownerRefersTo` or `creatorRefersTo` lookup may leave the value
+///     out beside one. The declaration reproduces the DPNS preorder hash of a
+///     name under a parent byte for byte; the DPNS contract and its create
+///     trigger are unchanged. See `book/src/data-model/documents.md`.
+///
+/// 62. **Null flags follow each index's own path**: the v2 index-level
 ///     insert and delete walkers give each sub-level the null flags of its
 ///     parent and its own value. They carried the flags from one sibling
 ///     sub-level into the next, so a unique index could store its entry in
@@ -1577,9 +1670,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
 /// `offset`; the ranked response is an additive `ResultData.ranked`
 /// variant, whose `skipped` field is likewise additive; and the v1
-/// where-clause operator enum gains `IN_TIME_RANGE = 11`, which pre-v14
-/// servers reject as an unknown operator rather than misread (the v0 wire
-/// has no time-range operator at all).
+/// where-clause operator enum gains `IN_TIME_RANGE = 11` and
+/// `IN_INTEGER_RANGE = 12`, which pre-v14 servers reject as unknown
+/// operators rather than misread (the v0 wire has neither).
 /// Contract-bound authentication keys activate through contract-bounds validation v2,
 /// identity-signature validation v1 and batch advanced-structure v1. Identity creation
 /// validates key bounds (state v1) and identity-update state v1 retains the contract

@@ -97,10 +97,11 @@ impl<C> Platform<C> {
         }
         if proto_where_clauses
             .iter()
-            .any(conversions::is_time_range_clause)
+            .any(conversions::is_window_selection_clause)
         {
             return Ok(unsupported(
-                "a chained request supports no time-range (IN_TIME_RANGE) clauses",
+                "a chained request supports no window selection (IN_TIME_RANGE or \
+                 IN_INTEGER_RANGE) clauses",
             ));
         }
 
@@ -349,6 +350,7 @@ mod tests {
                         // fields.
                         variant: Some(document_field_value::Variant::BytesValue(OWNER_1.to_vec())),
                     }),
+                    integer_range: None,
                     time_range: None,
                 },
             ],

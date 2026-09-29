@@ -126,6 +126,8 @@ impl DocumentReplaceTransitionActionStateValidationV1 for DocumentReplaceTransit
             Some(self.stored_changed_values()),
             platform,
             block_info,
+            // A replace consumes nothing: a lookup that could is judged on a create only
+            &mut Vec::new(),
             transaction,
             execution_context,
             platform_version,

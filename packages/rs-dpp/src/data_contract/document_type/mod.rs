@@ -151,6 +151,13 @@ pub(crate) mod property_names {
     pub const LOOKUP_INDEX: &str = "index";
     /// `lookup`: every index property mapped to its referring-side source.
     pub const LOOKUP_KEYS: &str = "keys";
+    /// `refersTo` beside a `lookup` with a computed key: how many blocks
+    /// before the referring document's create the document the key finds
+    /// must have been created.
+    pub const MINIMUM_AGE_BLOCKS: &str = "minimumAgeBlocks";
+    /// `refersTo` beside a `lookup` with a computed key: whether the create
+    /// deletes the document the key finds.
+    pub const CONSUME: &str = "consume";
     /// `refersTo: listElement`: the typed array of identifiers, on the
     /// referenced document type, the value must be an element of.
     /// Meta-schema v3+ (protocol version 14).

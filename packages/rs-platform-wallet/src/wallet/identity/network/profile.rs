@@ -217,6 +217,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let profile_document_type = dashpay_contract
@@ -366,6 +368,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let profile_document_type = dashpay_contract
@@ -750,6 +754,7 @@ fn single_profile_query(
             value: platform_value!(identity_id),
         }],
         time_range_clauses: vec![],
+        integer_range_clauses: vec![],
         sub_queries: vec![],
         group_by: vec![],
         having: vec![],
@@ -785,6 +790,7 @@ fn contact_profiles_chunk_query(
             value: in_values,
         }],
         time_range_clauses: vec![],
+        integer_range_clauses: vec![],
         sub_queries: vec![],
         group_by: vec![],
         having: vec![],

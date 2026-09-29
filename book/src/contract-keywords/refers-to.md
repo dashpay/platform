@@ -4,7 +4,7 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
 
 | | |
 |---|---|
-| **Where** | An identifier property, at the top level or inside an object; the `items` of a typed array of identifiers, where every element is checked; and, for one form of `identityPublicKey`, an integer key id property. `ownerRefersTo` and `creatorRefersTo` carry the same declaration at the document type level. |
+| **Where** | An identifier property, at the top level or inside an object; the `items` of a typed array of identifiers, where every element is checked; for one form of `identityPublicKey`, an integer key id property; and a string or byte array property whose value a `propertyAgreement` function reveals (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). `ownerRefersTo` and `creatorRefersTo` carry the same declaration at the document type level. |
 | **Value** | An object: `type`, naming one [target](#targets), with the [keys](#keys) that target takes; or an object holding only `anyOf` or only `allOf` (see [Expressions](refers-to-expressions.md)). |
 | **Default** | Absent: the identifier is not checked against anything. |
 | **Since** | protocol version 14 |
@@ -153,6 +153,7 @@ Binds the referring document to the document it references: each pair `{ "<refer
 - **Absence counts.** Both sides absent agree; one side absent is a mismatch, as a different value is.
 - **Values, not keys.** The two sides compare as values of their type: strings as text (so `""` is not `"\0"`), byte arrays and identifiers as bytes (an identifier equals the same 32 bytes, however it is carried), integers as numbers whatever width they are carried at, floats exactly, bit for bit (so `-0.0` is not `0.0`). A value of any length compares, past the 255 bytes of an index key too.
 - The comparison reads the document already fetched for the existence check, so it costs nothing more. A pair that does not hold refuses the write with `ReferencedDocumentPropertyMismatchError` (40127).
+- **A function pair** is keyed the other way, by the referenced property, since a function cannot be a key: `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }` demands that the referenced property hold that hash of the referring document's values. At most one per declaration, and only beside a `lookup` whose index holds that property, which the hash fills to find the document: a commit and reveal, see [Commit and reveal](refers-to-lookup.md#commit-and-reveal).
 
 ```json
 "submittedCharterId": {
@@ -284,7 +285,7 @@ A contract's declarations are checked when it is registered, and again for the w
 - A declaration holds `type` and the keys its target takes, or a single `anyOf` or `allOf`.
 - A referenced `documentType` must exist (`ReferencedDocumentTypeNotFoundError`, 40121). Its documents must never disappear for `permanentDocument` and `listElement` (`ReferencedDocumentTypeDeletableError`, 40122) and must be able to for `deletableDocument` (`ReferencedDocumentTypeNotDeletableError`, 40131). A `listElement` whose list is in the declaring contract is the exception: the parser checks its type and reports a deletable one as `InvalidContractStructure` (10231).
 - Every `propertyAgreement` pair must be one that can hold (40126), every key reference must fit the document type (40125), every `boundTo` must name a type a key can be bound to (10231), and every [lookup](refers-to-lookup.md#rules-at-registration) and [list](refers-to-list-element.md#rules-at-registration) must resolve.
-- An `immutable` property may not hold a `deletableDocument` reference that a replace could not remove: one inside an object, a typed array of them, or any `deletableDocument` found through a lookup. A single `deletableDocument` reference by id that is itself an immutable top-level property is allowed, but not also under `immutableAllowSetting`, which would let a replace set it to another document once it was cleared. A `contract` reference with an `owner` requirement may not sit under an immutable property of a type whose documents can be transferred or traded. All refused with `InvalidContractStructure` (10231); see [Mutability](mutability.md).
+- An `immutable` property may not hold a `deletableDocument` reference that a replace could not remove: one inside an object, a typed array of them, or any `deletableDocument` found through a lookup, except one whose key a `propertyAgreement` function computes, which is checked on the create alone. A single `deletableDocument` reference by id that is itself an immutable top-level property is allowed, but not also under `immutableAllowSetting`, which would let a replace set it to another document once it was cleared. A `contract` reference with an `owner` requirement may not sit under an immutable property of a type whose documents can be transferred or traded. All refused with `InvalidContractStructure` (10231); see [Mutability](mutability.md).
 - The type stays within the [reference budget](#the-reference-budget).
 - On an update, every existing declaration must be unchanged (10246). A document type the update adds may declare any reference.
 

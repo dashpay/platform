@@ -753,6 +753,51 @@ fn should_refuse_a_field_a_reference_agreement_reads() {
 }
 
 #[test]
+fn should_refuse_a_field_a_computed_lookup_key_hashes() {
+    // `label` is a param of the function computing the lookup's key: the key is judged when
+    // the document is created only, so a moderator changing `label` would leave a stored
+    // document that no longer hashes to the commitment it revealed. The type is immutable,
+    // which the lookup's own fixed-once-written rule would otherwise accept.
+    let schema = platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "moderatorAbilities": { "changeFields": ["label"] },
+        "indices": [
+            { "name": "byHash", "properties": [{ "hash": "asc" }], "unique": true },
+        ],
+        "properties": {
+            "hash": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "position": 0,
+            },
+            "label": { "type": "string", "maxLength": 63, "position": 1 },
+            "salt": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "position": 2,
+                "refersTo": {
+                    "type": "permanentDocument",
+                    "documentType": "post",
+                    "lookup": { "index": "byHash" },
+                    "propertyAgreement": {
+                        "hash": { "function": "sys.hash.sha256d", "params": ["salt", "label"] },
+                    },
+                },
+            },
+        },
+        "required": ["hash"],
+        "transient": ["salt"],
+        "additionalProperties": false,
+    });
+    assert_refused_naming(parse_moderated(schema), &["label", "reference"]);
+}
+
+#[test]
 fn should_refuse_a_generated_field_and_what_a_generated_field_reads() {
     let schema = |field: &str| {
         platform_value!({
@@ -813,6 +858,102 @@ fn should_refuse_fields_on_an_index_only_type() {
     assert_refused_naming(
         parse_moderated(schema),
         &["indexOnly", "moderatorAbilities.changeFields"],
+    );
+}
+
+// ---- the moderation stamp: `$moderatedAt` and `$moderatedBy` -------------------------------
+
+/// `report_schema(abilities)` with `index` beside its own
+fn report_schema_indexing(abilities: Value, index: Value) -> Value {
+    let mut schema = report_schema(abilities);
+    if let Value::Map(map) = &mut schema {
+        for (key, value) in map.iter_mut() {
+            if key == &Value::Text("indices".to_string()) {
+                if let Value::Array(indices) = value {
+                    indices.push(index.clone());
+                }
+            }
+        }
+    }
+    schema
+}
+
+fn stamp_index(unique: bool) -> Value {
+    platform_value!({
+        "name": "byModerator",
+        "properties": [{ "$moderatedBy": "asc" }, { "$moderatedAt": "asc" }],
+        "unique": unique,
+    })
+}
+
+#[test]
+fn should_index_the_stamp_of_a_type_with_fields_only_moderators_write() {
+    let document_type = parse_moderated(report_schema_indexing(
+        platform_value!({ "changeFields": ["status"] }),
+        stamp_index(false),
+    ))
+    .expect("a type whose fields moderators write indexes who wrote them last, and when");
+    let index = document_type
+        .indexes()
+        .get("byModerator")
+        .expect("expected the index");
+    assert_eq!(index.properties[0].name, "$moderatedBy");
+    assert_eq!(index.properties[1].name, "$moderatedAt");
+}
+
+#[test]
+fn should_refuse_to_index_the_stamp_of_a_type_no_moderator_writes() {
+    // Only a moderator's write of a type's `changeFields` stamps its documents: a type whose
+    // moderators only delete, or that gives them nothing, would index a value none carries.
+    assert_refused_naming(
+        parse_moderated(report_schema_indexing(
+            platform_value!({ "delete": true }),
+            stamp_index(false),
+        )),
+        &[
+            "byModerator",
+            "$moderatedBy",
+            "moderatorAbilities.changeFields",
+        ],
+    );
+    assert_refused_naming(
+        parse_moderated(without_abilities(report_schema_indexing(
+            platform_value!({ "changeFields": ["status"] }),
+            stamp_index(false),
+        ))),
+        &["byModerator", "$moderatedBy"],
+    );
+}
+
+#[test]
+fn should_refuse_the_stamp_in_a_unique_index() {
+    assert_refused_naming(
+        parse_moderated(report_schema_indexing(
+            platform_value!({ "changeFields": ["status"] }),
+            stamp_index(true),
+        )),
+        &["unique index", "byModerator", "$moderatedBy"],
+    );
+}
+
+#[test]
+fn should_refuse_to_index_the_stamp_before_protocol_version_14() {
+    // Generations before 3 know no such system property: the index names an undefined one.
+    let platform_version = PlatformVersion::get(13).expect("expected platform version");
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config available");
+    let schema = without_abilities(post_schema(platform_value!({
+        "indices": [stamp_index(false)],
+    })));
+    let error = parse_with_config(schema, &config, 13, true)
+        .expect_err("the stamp is not indexable before protocol version 14");
+    assert!(
+        matches!(
+            error,
+            ProtocolError::ConsensusError(ref error)
+                if matches!(**error, ConsensusError::BasicError(BasicError::UndefinedIndexPropertyError(_)))
+        ),
+        "expected UndefinedIndexPropertyError, got {error:?}"
     );
 }
 

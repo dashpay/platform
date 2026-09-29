@@ -13,6 +13,7 @@ use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{DocumentProperty, DocumentPropertyType, DocumentTypeRef};
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0};
+use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
 use dpp::platform_value::{Identifier, Value};
 use dpp::version::PlatformVersion;
 use indexmap::IndexMap;
@@ -247,6 +248,17 @@ pub fn sized_document(
         &mut fields,
         platform_version,
     );
+    // Integers are sampled as 1, which for an integer-range source can sit in
+    // the clamped bottom window and so price fewer windows than a typical
+    // document writes. Such a source is sampled clear of the bottom instead,
+    // so the estimate prices the grid's full fan-out.
+    for index in document_type.indexes().values() {
+        if let Some(transform) = &index.integer_range {
+            if let Some(value) = transform.key_type.value_of(transform.full_fan_out_value()) {
+                data.insert_at_path(&transform.source, value)?;
+            }
+        }
+    }
 
     let owner_id = Identifier::from([1; 32]);
     let required = document_type.required_fields();
@@ -276,6 +288,8 @@ pub fn sized_document(
         updated_at_core_block_height: core_height("$updatedAtCoreBlockHeight"),
         transferred_at_core_block_height: core_height("$transferredAtCoreBlockHeight"),
         creator_id,
+        moderated_at: None,
+        moderated_by: None,
     };
     Ok((document.into(), fields))
 }
