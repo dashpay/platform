@@ -414,12 +414,25 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // than sliced here: the authoritative id is the one that call returns,
         // and it is deliberately not assumed equal to `registration_wallet_id`
         // (see the divergence branch below).
+        //
+        // The same read also yields the cursor the host holds for every
+        // persisted wallet: a registration that recreates a wallet the host
+        // already has must measure durable writes against that cursor, not
+        // the one it just built (see the seed below).
         let load_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
-        let mut persisted_platform_addresses =
+        let (mut persisted_platform_addresses, host_cursors) =
             match super::run_blocking_load(move || load_persister.load()).await {
                 Ok(crate::changeset::ClientStartState {
-                    platform_addresses, ..
-                }) => platform_addresses,
+                    platform_addresses,
+                    wallets,
+                    ..
+                }) => (
+                    platform_addresses,
+                    wallets
+                        .iter()
+                        .map(|(id, state)| (*id, state.wallet_info.metadata.synced_height))
+                        .collect::<std::collections::BTreeMap<WalletId, u32>>(),
+                ),
                 Err(e) => {
                     tracing::error!(
                         wallet_id = %hex::encode(registration_wallet_id),
@@ -447,6 +460,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // overwrite it with the creation one. An entry a removed or
         // rolled-back registration left behind is overwritten here the same
         // way, so it is never read against a live wallet.
+        //
+        // A registration can recreate a wallet the host already holds (the
+        // same seed added again on a fresh manager). The host keeps that
+        // row's cursor — registration writes no core cursor, and a host
+        // preserves `syncedHeight` on the metadata upsert — so the seed is
+        // the host's cursor, not the freshly built one. When the built cursor
+        // is lower, the wallet is in effect reset in memory only: that
+        // reset is owed to the host like any other, and the next DashPay
+        // backfill record round carries it, so coverage never reaches disk
+        // beside the host's higher cursor (dashpay/platform#4302 review).
         let created_cursor = platform_info.core_wallet.metadata.synced_height;
         let wallet_id = {
             let mut durable_cursors = self.durable_cursors.lock().await;
@@ -460,7 +483,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         other
                     )),
                 })?;
-            durable_cursors.insert(wallet_id, created_cursor);
+            let host_cursor = host_cursors
+                .get(&wallet_id)
+                .copied()
+                .unwrap_or(created_cursor);
+            if created_cursor < host_cursor {
+                if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
+                    let owed = &mut info.dashpay_backfill.unpersisted_cursor;
+                    *owed = Some(owed.map_or(created_cursor, |cursor| cursor.min(created_cursor)));
+                }
+            }
+            durable_cursors.insert(wallet_id, host_cursor);
             wallet_id
         };
 

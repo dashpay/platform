@@ -4220,6 +4220,126 @@ mod tests {
         assert!(core.synced_height_is_rewind);
     }
 
+    /// A fresh manager recreating a wallet the host already holds (the same
+    /// seed added again) builds a cursor below the host's — registration
+    /// writes no core cursor and the host keeps its row's `syncedHeight`.
+    /// The durable cursor is seeded from what the host holds, and the lower
+    /// built cursor is owed like any in-memory reset: the first record round
+    /// carries it, so a contact forward-covered at the built cursor is never
+    /// stored beside the host's higher one, and a reload rewinds for nothing
+    /// it should not (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn recreating_a_persisted_wallet_owes_its_lower_cursor_to_the_host() {
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+
+        // What the host holds: this seed's wallet, scanned to 1000.
+        let (donor, _donor_persister, wallet_id) = make_wallet().await;
+        let (wallet, mut managed) = {
+            let wm = donor.wallet_manager.read().await;
+            (
+                wm.get_wallet(&wallet_id).expect("wallet").clone(),
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .core_wallet
+                    .clone(),
+            )
+        };
+        managed.metadata.synced_height = 1_000;
+        let host = Arc::new(ReloadPersister {
+            wallet,
+            managed,
+            identities: std::collections::BTreeMap::new(),
+            backfill: Default::default(),
+            stores: Mutex::default(),
+        });
+
+        // A fresh manager recreates it from the seed, born at 101.
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let recreated = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(101),
+            )
+            .await
+            .expect("recreate");
+        assert_eq!(recreated.wallet_id(), wallet_id);
+        {
+            let wm = manager.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            assert_eq!(info.core_wallet.metadata.synced_height, 100);
+            assert_eq!(
+                info.dashpay_backfill.unpersisted_cursor,
+                Some(100),
+                "the lower built cursor is owed to the host"
+            );
+        }
+        assert_eq!(
+            manager
+                .durable_cursors
+                .lock()
+                .await
+                .get(&wallet_id)
+                .copied(),
+            Some(1_000),
+            "the durable cursor is the host's, not the built one"
+        );
+
+        // A contact forward-covered at the built cursor.
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let iw = recreated.identity();
+        iw.dashpay()
+            .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+            .await
+            .expect("register receival account");
+        {
+            let p = WalletPersister::new(wallet_id, Arc::clone(&host) as _);
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                .expect("add owner");
+            let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 200, 0);
+            let incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 200, 0);
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .apply_established_contact(EstablishedContact::new(contact, outgoing, incoming));
+        }
+        host.stores.lock().unwrap().clear();
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile"),
+            None,
+            "forward-covered at the built cursor"
+        );
+        let stores = host.stores.lock().unwrap();
+        let round = last_stored_record(&stores).expect("the record is stored");
+        let core = round
+            .core
+            .as_ref()
+            .expect("the owed reset rides the record round");
+        assert_eq!(core.synced_height, Some(100));
+        assert!(core.synced_height_is_rewind);
+        assert_eq!(
+            round
+                .dashpay_backfill
+                .as_ref()
+                .unwrap()
+                .covered_from(&owner, &contact, 0),
+            Some(200)
+        );
+    }
+
     /// Registering a receival account bumps the wallet's account generation,
     /// which the filter pipeline compares per batch: a batch scanned before
     /// the registration can no longer certify coverage for the new account
