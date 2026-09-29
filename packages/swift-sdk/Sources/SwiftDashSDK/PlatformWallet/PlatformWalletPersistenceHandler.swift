@@ -6837,6 +6837,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             var amounts: [UInt64] = []
             var allOutputsOwned = true
             let ownedVouts = Set(transaction.outputs.filter { !$0.isDeleted && Self.isWalletOwnedTxo($0) }.map(\.vout))
+            // An address-matched output with no linked TXO carries no wallet of
+            // its own, so it counts only for the spending wallets: another local
+            // wallet's credit must not hide inside the sender's scalar.
+            let spendingWallets = Set(inputs.compactMap { Self.resolvedWalletId(of: $0) })
             for (index, output) in decoded.outputs.enumerated() {
                 // OP_RETURN burns (including asset locks) are not spendable Core outputs.
                 if output.scriptPubkey.first == 0x6a { continue }
@@ -6846,7 +6850,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     let owner: PersistentCoreAddress?
                     if let cached = roundIndex?.coreAddressesByAddress[address] { owner = cached }
                     else { owner = try modelFetcher.fetch(descriptor, in: backgroundContext).first }
-                    if let account = owner?.account, account.accountType != Self.dashpayExternalAccountTypeTag {
+                    if let account = owner?.account, account.accountType != Self.dashpayExternalAccountTypeTag,
+                       spendingWallets.contains(account.wallet.walletId) {
                         belongs = true
                     }
                 }

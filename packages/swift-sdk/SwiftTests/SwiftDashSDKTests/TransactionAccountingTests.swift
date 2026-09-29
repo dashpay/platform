@@ -300,6 +300,58 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertTrue(row.isAssetLock)
     }
 
+    func testShouldNotReportStoredAmountWhileInputsArePending() {
+        let walletId = Data(repeating: 1, count: 32)
+        let tx = PersistentTransaction(txid: Data(repeating: 3, count: 32), transactionData: Data(), netAmount: 40)
+        let change = PersistentTxo(transaction: tx, vout: 0, amount: 40, address: "", height: 1)
+        change.walletId = walletId
+        tx.outputs = [change]
+        XCTAssertEqual(tx.netAmount(for: walletId), 40)
+        tx.pendingInputs = [PersistentPendingInput(
+            outpoint: Data(repeating: 9, count: 36), inputIndex: 0,
+            spendingTxid: tx.txid, spendingTransaction: tx, walletId: walletId
+        )]
+        XCTAssertNil(tx.netAmount(for: walletId), "a missing input makes the stored amount provisional")
+    }
+
+    func testShouldNotCountAnotherLocalWalletsUnlinkedOutputForTheSender() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let senderId = Data(repeating: 1, count: 32)
+        let receiver = PersistentWallet(walletId: Data(repeating: 2, count: 32), network: .testnet)
+        let receiverAccount = PersistentAccount(
+            wallet: receiver, accountType: 0, accountIndex: 0, accountTypeName: "Standard BIP44 Account"
+        )
+        // P2PKH to pubkey hash 0x05 x 20 on testnet: B's address with no TXO row yet.
+        let receiverAddress = PersistentCoreAddress(
+            address: "yLmzEvw3frCPS4cyRmFFeKbt64fUPzMwFh", poolTypeTag: 0, addressIndex: 0, derivationPath: ""
+        )
+        receiverAddress.account = receiverAccount
+        context.insert(PersistentWallet(walletId: senderId, network: .testnet))
+        context.insert(receiver)
+        context.insert(receiverAccount)
+        context.insert(receiverAddress)
+        var bytes = Data([2, 0, 0, 0, 1])
+        bytes.append(senderId)
+        bytes.append(contentsOf: [0, 0, 0, 0, 0, 255, 255, 255, 255, 1])
+        withUnsafeBytes(of: UInt64(40).littleEndian) { bytes.append(contentsOf: $0) }
+        bytes.append(contentsOf: [25, 0x76, 0xa9, 0x14] + [UInt8](repeating: 5, count: 20) + [0x88, 0xac])
+        bytes.append(contentsOf: [0, 0, 0, 0])
+        let spender = PersistentTransaction(
+            txid: Data(repeating: 3, count: 32), transactionData: bytes, direction: 1, netAmount: -100
+        )
+        let coin = input(100)
+        coin.spendingTransaction = spender
+        context.insert(coin)
+        context.insert(spender)
+        try context.save()
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        XCTAssertFalse(handler.loadWalletList().errored)
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>()).first { $0.txid == spender.txid })
+        XCTAssertEqual(row.netAmount, -100, "the receiving wallet's credit is not the sender's")
+        XCTAssertEqual(row.netAmount(for: senderId), -100)
+    }
+
     func testShouldExcludePersistedContactOutputsFromOwnedAccounting() throws {
         let container = try DashModelContainer.createInMemory()
         let context = container.mainContext

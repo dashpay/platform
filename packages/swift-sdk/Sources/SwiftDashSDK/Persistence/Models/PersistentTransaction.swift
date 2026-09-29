@@ -241,8 +241,9 @@ public final class PersistentTransaction {
         let wallets = Set((inputs + outputs).filter(PlatformWalletPersistenceHandler.isWalletOwnedTxo)
             .compactMap { PlatformWalletPersistenceHandler.resolvedWalletId(of: $0) })
         let hasUnownedTxos = (inputs + outputs).contains { !PlatformWalletPersistenceHandler.isWalletOwnedTxo($0) }
-        if wallets.count == 1, wallets.contains(walletId), !hasUnownedTxos { return netAmount }
+        // Unresolved inputs make any amount provisional, the stored one included.
         guard pendingInputs.isEmpty else { return nil }
+        if wallets.count == 1, wallets.contains(walletId), !hasUnownedTxos { return netAmount }
         let walletInputs = owned(inputs)
         let walletOutputs = owned(outputs)
         guard !walletInputs.isEmpty || !walletOutputs.isEmpty else { return nil }
