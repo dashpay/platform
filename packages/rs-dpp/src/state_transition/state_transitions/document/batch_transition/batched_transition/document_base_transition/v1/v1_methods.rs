@@ -21,6 +21,8 @@ pub trait DocumentBaseTransitionV1Methods: DocumentBaseTransitionV0Methods {
 
 impl DocumentBaseTransitionV1Methods for DocumentBaseTransitionV1 {
     fn token_payment_info(&self) -> Option<TokenPaymentInfo> {
+        // Cloned rather than copied because the payment info gained a variant that owns its
+        // data. Same value either way, so nothing a released protocol version reads changes.
         self.token_payment_info.clone()
     }
 
