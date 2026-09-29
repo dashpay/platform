@@ -24,6 +24,7 @@ use wasm_bindgen::{prelude::*, JsCast};
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
+use wasm_dpp2::state_transitions::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
 use wasm_dpp2::state_transitions::batch::token_payment_info::{
     TokenPaymentInfoOptionsJs, TokenPaymentInfoWasm,
 };
@@ -269,6 +270,66 @@ impl WasmSdk {
             document_type_name,
             Some(entropy_array),
         ))
+    }
+}
+
+// ============================================================================
+// Contest Fund To Join
+// ============================================================================
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Document")]
+    pub type DocumentJs;
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// The prefunded voting balance a create of `document` states to join the
+    /// contest it enters: the contested index the document falls under and the
+    /// fund to join that contest now, or `undefined` when the document joins no
+    /// contest (its type has no contested index, or its values do not match one).
+    ///
+    /// `documentCreate` states this itself. A create transition built by hand
+    /// passes it as `prefundedVotingBalance` to `new DocumentCreateTransition`:
+    /// from protocol version 14 a contested create that states less than the
+    /// fund to join is refused and still pays its fees. The fund doubles once the
+    /// contest holds 250 contenders and again for every 50 more, so this reads
+    /// the contenders with proved queries, one per 100 of them. From protocol
+    /// version 14 a create may state more than this, as headroom against
+    /// contenders joining before it lands: Platform charges it only the fund to
+    /// join, but the identity must hold what it states. Before 14 it must state
+    /// exactly this.
+    ///
+    /// @param document - The document to create; its contract is fetched (or
+    ///                   read from the cache) to find the contested index
+    /// @returns The index name and credits to state, or undefined
+    #[wasm_bindgen(js_name = "getContestFundToJoin")]
+    pub async fn get_contest_fund_to_join(
+        &self,
+        document: DocumentJs,
+    ) -> Result<Option<PrefundedVotingBalanceWasm>, WasmSdkError> {
+        // Cloned out of the caller's `Document` before the first await, so the
+        // object is not borrowed while the contest is read
+        let document = DocumentWasm::try_from(&JsValue::from(document))?;
+        let contract_id: Identifier = document.data_contract_id().into();
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+        let document_type_name = document.document_type_name();
+        let document_type = data_contract
+            .document_type_for_name(&document_type_name)
+            .map_err(|e| {
+                WasmSdkError::not_found(format!(
+                    "Document type '{}' not found: {}",
+                    document_type_name, e
+                ))
+            })?;
+        let document: Document = document.into();
+
+        let prefunded_voting_balance = self
+            .inner_sdk()
+            .prefunded_voting_balance_to_join(document_type, &document)
+            .await?;
+        Ok(prefunded_voting_balance.map(PrefundedVotingBalanceWasm::from))
     }
 }
 

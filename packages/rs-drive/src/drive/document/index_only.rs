@@ -23,6 +23,7 @@
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
 use crate::drive::document::index_level_tree_types::terminal_member_tree_type;
 use crate::drive::document::index_only_item_estimated_value_size;
+pub(crate) use crate::drive::document::index_only_member_key;
 use crate::drive::document::time_range_ttl::entry_key_bucket_start;
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
@@ -446,29 +447,4 @@ pub(crate) fn index_only_terminal_max_key_size(
         total = total.saturating_add(width);
     }
     Ok(u8::try_from(total).unwrap_or(u8::MAX))
-}
-
-/// The member key `document` produces under a terminal: the components'
-/// values in their tree-key encoding, concatenated in the terminal's
-/// order — one component for a plain terminal, several for a composite
-/// one. The write path's twin of the query side's
-/// `serialize_value_for_key` concatenation.
-pub(crate) fn index_only_member_key(
-    document: &Document,
-    document_type: DocumentTypeRef,
-    terminal: &[String],
-    owner_id: Option<[u8; 32]>,
-    platform_version: &PlatformVersion,
-) -> Result<Vec<u8>, Error> {
-    let mut member_key = Vec::new();
-    for component in terminal {
-        let encoded = document
-            .get_raw_for_document_type(component, document_type, owner_id, platform_version)?
-            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
-                "indexOnly terminal value must be present: the parser requires every \
-                 indexOnly property (and $ownerId) to be set",
-            )))?;
-        member_key.extend(encoded);
-    }
-    Ok(member_key)
 }

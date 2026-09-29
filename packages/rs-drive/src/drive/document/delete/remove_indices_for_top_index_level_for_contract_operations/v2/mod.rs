@@ -9,7 +9,8 @@ use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, time_range_index_keys,
+    index_level_tree_types_with_continuation_demotion, index_only_level_skips_when_absent,
+    time_range_index_keys,
 };
 use crate::drive::document::time_range_ttl::entry_key_bucket_start;
 use crate::drive::document::unique_event_id;
@@ -236,9 +237,7 @@ impl Drive {
                 // resolves a value, so estimation sweeps this branch as
                 // written — a deliberate over-estimate that keeps the dry
                 // run an upper bound.
-                None if document_type.index_only()
-                    && !document_type.required_fields().contains(property_name) =>
-                {
+                None if index_only_level_skips_when_absent(document_type, property_name) => {
                     continue;
                 }
                 // A stored type's absent value keeps its null-layout empty

@@ -3,7 +3,8 @@ use crate::drive::document::expiration::pricing::{
     document_expiration_cleanup_fee_for_bytes, document_remaining_lifetime_ms, document_ttl_pricing,
 };
 use crate::drive::document::index_level_tree_types::{
-    index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
+    continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
+    level_counts_continuations, IndexLevelTreeTypes,
 };
 use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
 use crate::drive::document::{
@@ -487,8 +488,7 @@ impl Drive {
             // count exactly their single continuation, so the continuation
             // is inserted unwrapped and contributes its subtree count —
             // matching the v2 insert walker's dispatch.
-            let mut parent_counts_continuations = current_index_level.ranked_count_grouping()
-                || current_index_level.count_propagating();
+            let mut parent_counts_continuations = level_counts_continuations(current_index_level);
 
             if change_occurred_on_index {
                 // here we are inserting an empty tree that will have a subtree of all other index properties
@@ -637,10 +637,11 @@ impl Drive {
                         // branch tree must be zero-wrapped so its entries
                         // never pollute the subtree totals — matching the v2
                         // insert walker's dispatch.
-                        let inserted = if matches!(parent_value_tree_type, TreeType::NormalTree)
-                            || (parent_counts_continuations
-                                && !current_index_level.count_exempt_branch())
-                        {
+                        let inserted = if !continuation_contributes_zero(
+                            parent_value_tree_type,
+                            parent_counts_continuations,
+                            current_index_level,
+                        ) {
                             self.batch_insert_empty_index_tree_if_not_exists(
                                 PathKeyInfo::PathKeyRef::<0>((
                                     index_path.clone(),
@@ -726,8 +727,7 @@ impl Drive {
                 // The next-deeper continuation (if any) hangs inside
                 // this level's value tree.
                 parent_value_tree_type = sub_level_tree_types.value_tree_type;
-                parent_counts_continuations = current_index_level.ranked_count_grouping()
-                    || current_index_level.count_propagating();
+                parent_counts_continuations = level_counts_continuations(current_index_level);
 
                 // we push the actual value of the index path, both for the new and the old
                 index_path.push(document_index_field);
@@ -1208,8 +1208,7 @@ impl Drive {
             // grouping level (validation rejects `at` naming the transform
             // source), but the stamps are read rather than assumed so the
             // three walkers share one rule.
-            let mut parent_counts_continuations =
-                top_index_level.ranked_count_grouping() || top_index_level.count_propagating();
+            let mut parent_counts_continuations = level_counts_continuations(top_index_level);
             for (i, (level, sub_level_tree_types)) in levels.iter().enumerate() {
                 let property_name = &new_suffix[i * 2];
                 let value = &new_suffix[i * 2 + 1];
@@ -1226,9 +1225,11 @@ impl Drive {
                     // dispatch above).
                     let property_name_tree_type = sub_level_tree_types.property_name_tree_type;
                     let ranked_axes = sub_level_tree_types.ranked_axes.as_slice();
-                    let inserted = if matches!(parent_value_tree_type, TreeType::NormalTree)
-                        || (parent_counts_continuations && !level.count_exempt_branch())
-                    {
+                    let inserted = if !continuation_contributes_zero(
+                        parent_value_tree_type,
+                        parent_counts_continuations,
+                        level,
+                    ) {
                         self.batch_insert_empty_index_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((path.clone(), property_name.as_slice())),
                             property_name_tree_type,
@@ -1280,8 +1281,7 @@ impl Drive {
                 path.push(value.clone());
 
                 parent_value_tree_type = sub_level_tree_types.value_tree_type;
-                parent_counts_continuations =
-                    level.ranked_count_grouping() || level.count_propagating();
+                parent_counts_continuations = level_counts_continuations(level);
             }
 
             if new_terminator_is_unique {
