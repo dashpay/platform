@@ -2,7 +2,8 @@ use super::*;
 use crate::drive::document::expiration::paths::documents_expirations_path_vec;
 use crate::drive::document::expiration::pricing::document_expiration_cleanup_fee;
 use crate::drive::document::fixture_contracts::{
-    leave_out_optional_unique_values, leave_out_skip_properties, small_sums, CONTRACTS,
+    leave_out_optional_indexed_values, leave_out_optional_unique_values, leave_out_skip_properties,
+    small_sums, CONTRACTS,
 };
 use crate::drive::document::make_document_reference;
 use crate::drive::{Drive, RootTree};
@@ -220,6 +221,12 @@ fn should_price_what_drive_charges() {
                 // `skipIfAbsent` indexes skip them.
                 if (3..=4).contains(&seed) {
                     leave_out_skip_properties(&mut document, document_type);
+                }
+                // Seeds 5 and 6 leave out the optional indexed properties,
+                // all or every other one, so sibling branches meet missing
+                // values beside present ones.
+                if (5..=6).contains(&seed) {
+                    leave_out_optional_indexed_values(&mut document, document_type, seed == 6);
                 }
                 // Seed 10 repeats the values of seed 9 under a new id, where
                 // no unique index forbids it.
