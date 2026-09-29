@@ -777,7 +777,10 @@ public class PlatformWalletManager: ObservableObject {
     /// store lock. Stop must run on an independent thread to release that
     /// scan before shutdown drains admitted snapshots. Per-manager so a
     /// slow stop cannot prevent another manager from stopping its scan.
-    private let shieldedStopQueue = DispatchQueue(
+    /// Serial and shared by shutdown's early stop and the async
+    /// [`stopShieldedSync()`], so the two never quiesce the loop at once.
+    /// Internal so the shielded-sync extension can dispatch to it.
+    let shieldedStopQueue = DispatchQueue(
         label: "org.dash.platform-wallet.shielded-stop",
         qos: .userInitiated
     )
@@ -801,6 +804,12 @@ public class PlatformWalletManager: ObservableObject {
     /// [`startSpv(config:)`] refuses to start while one is in flight.
     /// Internal so the SPV extension can maintain it.
     var spvStopsInFlight = 0
+
+    /// Async shielded-sync stops between admission and completion. While one
+    /// is in flight the shielded event handlers drop every event, and the
+    /// shielded lifecycle calls that would race the drain throw. Internal so
+    /// the shielded-sync extension can maintain it.
+    var shieldedStopsInFlight = 0
 
     // MARK: - Init
 
