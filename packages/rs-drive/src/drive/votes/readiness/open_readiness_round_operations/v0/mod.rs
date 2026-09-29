@@ -11,8 +11,10 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::block::block_info::BlockInfo;
+use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
+use dpp::voting::readiness::payer::ReadinessPayer;
 use dpp::voting::readiness::round::{ReadinessRound, ReadinessRoundOpening};
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -45,8 +47,9 @@ impl Drive {
         }
 
         // Is there a round to replace? Only a real run reads; an estimate prices the
-        // replacement shape (the larger of the two: a crossed round with a deadline entry and
-        // a fund to settle) so the estimate covers both.
+        // replacement shape (the largest one: a crossed round with a deadline entry and a
+        // fund to settle, paid by another identity so the refund is a second balance write)
+        // so the estimate covers every case.
         let previous = if estimated_costs_only_with_layer_info.is_none() {
             self.fetch_readiness_round_operations(
                 contract_id,
@@ -59,6 +62,13 @@ impl Drive {
                 self.config.network.magic(),
                 ReadinessRoundOpening {
                     accepted_at_height: opening.accepted_at_height.wrapping_sub(1),
+                    payer: ReadinessPayer::Identity(Identifier::new(
+                        round.payer().identity_id().map_or([0u8; 32], |payer| {
+                            let mut other = payer.to_buffer();
+                            other[0] ^= 0xFF;
+                            other
+                        }),
+                    )),
                     ..opening
                 },
                 platform_version,
@@ -80,7 +90,8 @@ impl Drive {
             false
         };
 
-        let mut refund = 0u64;
+        // The retired round's refund belongs to whoever funded it.
+        let mut previous_refund = None;
         if let Some(previous) = previous.as_ref() {
             let (retirement, retire_operations) = self.retire_readiness_round_operations(
                 previous,
@@ -90,7 +101,7 @@ impl Drive {
                 transaction,
                 platform_version,
             )?;
-            refund = retirement.refund;
+            previous_refund = Some((previous.payer(), retirement.refund));
             drive_operations.extend(retire_operations);
         }
 
@@ -148,26 +159,47 @@ impl Drive {
             )?);
         }
 
-        // One balance write for the payer: the refund of the retired fund netted against the
-        // new funding. Two absolute writes on one balance key in one batch would collapse.
+        // Settle the balances. When the same payer funded the retired round the refund is
+        // netted against the new funding into one write: two absolute writes on one balance
+        // key in one batch would collapse. Another payer is debited the full funding and the
+        // retired round's payer is credited its own refund.
+        let (same_payer_refund, other_payer_refund) = match previous_refund {
+            Some((previous_payer, refund)) if previous_payer == round.payer() => (refund, None),
+            Some((previous_payer, refund)) => (0, Some((previous_payer, refund))),
+            None => (0, None),
+        };
         if let Some(payer_id) = round.payer().identity_id() {
             let payer = payer_id.to_buffer();
-            if funding.initial_funding > refund {
+            if funding.initial_funding > same_payer_refund {
                 drive_operations.extend(self.remove_from_identity_balance_operations(
                     payer,
-                    funding.initial_funding - refund,
+                    funding.initial_funding - same_payer_refund,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
                 )?);
-            } else if refund > funding.initial_funding {
+            } else if same_payer_refund > funding.initial_funding {
                 drive_operations.extend(self.add_to_identity_balance_operations(
                     payer,
-                    refund - funding.initial_funding,
+                    same_payer_refund - funding.initial_funding,
                     estimated_costs_only_with_layer_info,
                     transaction,
                     platform_version,
                 )?);
+            }
+        }
+        if let Some((previous_payer, refund)) = other_payer_refund {
+            // An estimate always prices the credit: the placeholder's fund reads as empty.
+            if refund > 0 || estimated_costs_only_with_layer_info.is_some() {
+                if let Some(previous_payer_id) = previous_payer.identity_id() {
+                    drive_operations.extend(self.add_to_identity_balance_operations(
+                        previous_payer_id.to_buffer(),
+                        refund,
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        platform_version,
+                    )?);
+                }
             }
         }
 

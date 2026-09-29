@@ -29,8 +29,10 @@ impl Drive {
     /// In one batch: the pointer is written to the new round id, the new round tree is
     /// created with its record and empty reports count tree, the new fund is created, and
     /// when a round was current it is retired (queued for cleanup, its deadline entry
-    /// dropped, its fund emptied with the cleanup reserve charged to the pool). The payer's
-    /// balance is written once, netting the retired fund's refund against the new funding.
+    /// dropped, its fund emptied with the cleanup reserve charged to the pool). The retired
+    /// fund's refund goes to the payer that funded it: netted against the new funding into
+    /// one balance write when the same payer opens the replacement, credited to the previous
+    /// payer beside the new payer's debit otherwise.
     /// Old reports cannot count for the new round: they live under the old round's key,
     /// which the pointer no longer names.
     ///

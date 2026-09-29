@@ -71,23 +71,28 @@ fn opening(contract_id: [u8; 32], payer: Identifier, height: u64) -> ReadinessRo
 /// A drive at the latest version with one funded payer identity.
 fn setup() -> (Drive, Identifier) {
     let drive = setup_drive_with_initial_state_structure(None);
+    let payer = funded_identity(&drive, 7, [0xAAu8; 32], PAYER_BALANCE);
+    (drive, payer)
+}
+
+/// Creates an identity holding `balance` credits.
+fn funded_identity(drive: &Drive, seed: u64, id: [u8; 32], balance: Credits) -> Identifier {
     let platform_version = PlatformVersion::latest();
-    let mut rng = StdRng::seed_from_u64(7);
-    let payer =
-        create_test_identity_with_rng(&drive, [0xAAu8; 32], &mut rng, None, platform_version)
-            .expect("payer")
-            .id();
+    let mut rng = StdRng::seed_from_u64(seed);
+    let identity = create_test_identity_with_rng(drive, id, &mut rng, None, platform_version)
+        .expect("identity")
+        .id();
     drive
         .add_to_identity_balance(
-            payer.to_buffer(),
-            PAYER_BALANCE,
+            identity.to_buffer(),
+            balance,
             &BlockInfo::default(),
             true,
             None,
             platform_version,
         )
-        .expect("fund payer");
-    (drive, payer)
+        .expect("fund identity");
+    identity
 }
 
 fn apply(
@@ -1216,6 +1221,124 @@ mod retirement {
             "estimated storage {} < applied {}",
             estimated.storage_fee,
             fee_full.storage_fee
+        );
+    }
+
+    #[test]
+    fn should_refund_a_replaced_round_to_its_own_payer_when_another_payer_replaces_it() {
+        let (drive, first_payer) = setup();
+        let platform_version = PlatformVersion::latest();
+        let second_payer = funded_identity(&drive, 9, [0xACu8; 32], PAYER_BALANCE);
+        drive
+            .add_to_system_credits(2 * PAYER_BALANCE, None, platform_version)
+            .expect("system credits");
+        let contract_id = [1u8; 32];
+        let (mut first, _) = open_round(&drive, contract_id, first_payer, 10, None);
+        let (_, operations) = drive
+            .record_readiness_crossing_operations(
+                &mut first,
+                1_500_000,
+                MIN_WAIT_MS,
+                MAX_WAIT_MS,
+                &mut None,
+                None,
+                platform_version,
+            )
+            .expect("crossing");
+        apply(&drive, operations, None, platform_version);
+        assert!(conservation_holds(&drive, None));
+        let first_balance_before = payer_balance(&drive, first_payer, None);
+        let second_balance_before = payer_balance(&drive, second_payer, None);
+
+        let (second, fee) = open_round(&drive, contract_id, second_payer, 20, None);
+
+        // The first payer gets its own remainder back; the second pays the full funding.
+        assert_eq!(
+            payer_balance(&drive, first_payer, None),
+            first_balance_before + INITIAL_FUNDING - CLEANUP_RESERVE
+        );
+        assert_eq!(
+            payer_balance(&drive, second_payer, None),
+            second_balance_before - INITIAL_FUNDING
+        );
+        assert_eq!(
+            drive
+                .fetch_readiness_fund(second.funding_id().to_buffer(), None, platform_version)
+                .expect("new fund"),
+            Some(INITIAL_FUNDING)
+        );
+        assert_eq!(
+            drive
+                .fetch_readiness_fund(first.funding_id().to_buffer(), None, platform_version)
+                .expect("old fund"),
+            None
+        );
+        assert_eq!(pool_credits(&drive, None), CLEANUP_RESERVE);
+        assert!(conservation_holds(&drive, None));
+
+        // The estimate prices the two-payer settlement.
+        let mut layer_info = Some(HashMap::new());
+        let (_, operations) = drive
+            .open_readiness_round_operations(
+                opening(contract_id, first_payer, 30),
+                FUNDING,
+                &block_info(1_000_000, 30, 100),
+                &mut layer_info,
+                None,
+                platform_version,
+            )
+            .expect("estimate ops");
+        let estimated = estimate(
+            &drive,
+            layer_info.expect("layer info"),
+            operations,
+            platform_version,
+        );
+        assert!(
+            estimated.processing_fee >= fee.processing_fee,
+            "estimated processing {} < applied {}",
+            estimated.processing_fee,
+            fee.processing_fee
+        );
+        assert!(
+            estimated.storage_fee >= fee.storage_fee,
+            "estimated storage {} < applied {}",
+            estimated.storage_fee,
+            fee.storage_fee
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_replacement_the_new_payer_cannot_fund_from_its_own_balance() {
+        let (drive, first_payer) = setup();
+        let platform_version = PlatformVersion::latest();
+        // Enough to cover the funding net of the old fund's refund, not the funding itself.
+        let second_payer = funded_identity(&drive, 9, [0xACu8; 32], 5_000_000);
+        let contract_id = [1u8; 32];
+        let (first, _) = open_round(&drive, contract_id, first_payer, 10, None);
+
+        let result = drive.open_readiness_round_operations(
+            opening(contract_id, second_payer, 20),
+            FUNDING,
+            &block_info(1_000_000, 20, 100),
+            &mut None,
+            None,
+            platform_version,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(Error::Identity(
+                    crate::error::identity::IdentityError::IdentityInsufficientBalance(_)
+                ))
+            ),
+            "{result:?}"
+        );
+        assert_eq!(
+            drive
+                .fetch_readiness_round(contract_id, None, platform_version)
+                .expect("fetch"),
+            Some(first)
         );
     }
 

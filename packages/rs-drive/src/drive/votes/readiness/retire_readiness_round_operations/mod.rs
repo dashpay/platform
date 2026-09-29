@@ -19,8 +19,8 @@ pub struct ReadinessRetirement {
     pub fund_balance: Credits,
     /// The credits charged to the epoch's processing pool for the deferred cleanup.
     pub cleanup_charged: Credits,
-    /// The credits owed to the payer; the caller settles them (a single balance write per
-    /// batch, netted against any new funding).
+    /// The credits owed to the retired round's payer; the caller settles them (netted
+    /// against new funding by the same payer into a single balance write).
     pub refund: Credits,
 }
 
@@ -33,7 +33,8 @@ impl Drive {
     /// Never opens the reports tree, so the batch is a fixed number of operations whatever
     /// the round accumulated. The refund is returned rather than written because a batch
     /// may both refund the old payer and debit the new funding on the same identity, and
-    /// two absolute balance writes on one key in one batch collapse; the caller nets them.
+    /// two absolute balance writes on one key in one batch collapse; the caller nets them
+    /// when the payers match and credits the round's own payer otherwise.
     ///
     /// One retirement per applied batch: the pool credit is an absolute rewrite of the
     /// epoch's processing pool item, so two retirements in one batch would collapse too.
