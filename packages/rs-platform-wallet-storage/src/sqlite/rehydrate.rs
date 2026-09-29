@@ -264,8 +264,9 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   Coinbase-maturity nuance re-warms on sync. `is_instantlocked` is NOT
 ///   among them: it is rebuilt from `core_instant_locks` above, for every
 ///   UTXO a replayed lock covers.
-/// - **Transaction records**: the SQLite loader replays confirmed history
-///   through the wallet checker after this projection.
+/// - **Transaction records**: the SQLite loader replays recorded history
+///   (confirmed, then unconfirmed) through the wallet checker after this
+///   projection.
 ///
 /// # Errors
 ///
@@ -420,8 +421,11 @@ pub fn apply_persisted_core_state(
     Ok(())
 }
 
-/// Restore spend and finality guards without re-crediting outputs excluded by persistence.
-pub(crate) fn restore_confirmed_transactions(
+/// Restore spend reservations and finality guards without re-crediting outputs excluded by persistence.
+///
+/// Unconfirmed (mempool / InstantSend) spends are replayed too: without them a
+/// redelivered funding transaction would re-credit an output they reserve.
+pub(crate) fn restore_recorded_transactions(
     mut wallet_info: ManagedWalletInfo,
     mut wallet: Wallet,
     records: Vec<TransactionRecord>,
@@ -437,22 +441,14 @@ pub(crate) fn restore_confirmed_transactions(
             account.utxos.keys().map(move |outpoint| (*outpoint, owner))
         })
         .collect();
-    let mut confirmed: Vec<_> = records
-        .into_iter()
-        .filter(|record| record.block_info().is_some())
-        .collect();
-    if confirmed.is_empty() {
+    if records.is_empty() {
         return Ok((wallet, wallet_info));
     }
-    confirmed.sort_by_key(|record| {
-        record
-            .block_info()
-            .map(|block| (block.height(), block.position()))
-    });
+    let replay = replay_order(records);
 
     // The checker only mutates in-memory state; no network requests or persistence.
     dash_async::block_on(async move {
-        for record in confirmed {
+        for record in replay {
             wallet_info
                 .check_core_transaction(
                     &record.transaction,
@@ -503,6 +499,39 @@ pub(crate) fn restore_confirmed_transactions(
         (wallet, wallet_info)
     })
     .map_err(WalletStorageError::CoreHistoryReplay)
+}
+
+/// Order records as the chain would deliver them: confirmed by block position,
+/// then unconfirmed ones with every in-set parent ahead of its children.
+fn replay_order(records: Vec<TransactionRecord>) -> Vec<TransactionRecord> {
+    let (mut ordered, mut pending): (Vec<_>, Vec<_>) = records
+        .into_iter()
+        .partition(|record| record.block_info().is_some());
+    ordered.sort_by_key(|record| {
+        record
+            .block_info()
+            .map(|block| (block.height(), block.position()))
+    });
+    // Deterministic start; parents are then pulled forward in rounds.
+    pending.sort_by_key(|record| record.txid);
+    while !pending.is_empty() {
+        let waiting: HashSet<_> = pending.iter().map(|record| record.txid).collect();
+        let (ready, blocked): (Vec<_>, Vec<_>) = pending.into_iter().partition(|record| {
+            record.transaction.input.iter().all(|input| {
+                input.previous_output.txid == record.txid
+                    || !waiting.contains(&input.previous_output.txid)
+            })
+        });
+        if ready.is_empty() {
+            // Unreachable for real transactions (txids cannot form a cycle);
+            // keep the rest rather than drop a reservation.
+            ordered.extend(blocked);
+            break;
+        }
+        ordered.extend(ready);
+        pending = blocked;
+    }
+    ordered
 }
 
 /// Account identity of a funds account, stable across replay mutations.
