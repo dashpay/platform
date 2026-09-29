@@ -35,7 +35,8 @@
 //! height that follows the tip — steps of more than [`CATCH_UP_STEP`] blocks,
 //! and the first step after launch, are catch-up and skipped — every block
 //! for [`EVERY_BLOCK_WINDOW`] blocks and every [`SLOW_INTERVAL`] blocks after.
-//! A wallet whose last pass had nothing left to probe is idle and not scanned
+//! Between passes a wallet waits for the height at which its next root is due;
+//! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
 //! InstantSend-locked transaction, a block or chainlock that changed records, a
 //! sweep) or an `Uncertain` result for one of its transactions wakes it. `Dead` and `Mined` end
@@ -50,9 +51,11 @@
 //! are merged into the next. Every host callback comes from that task, never
 //! from a caller that may hold its own locks.
 
+use std::cell::OnceCell;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -62,8 +65,8 @@ use dashcore::{Transaction, Txid};
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
-use tokio::sync::{mpsc, RwLock};
-use tokio::task::{AbortHandle, JoinHandle, JoinSet};
+use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::task::{self, AbortHandle, JoinError, JoinHandle, JoinSet};
 
 use crate::broadcast_probe::{AcceptanceProbe, ProbeVerdict};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
@@ -320,6 +323,19 @@ impl ProbeSchedule {
 
     fn probed_at(&mut self, height: u32) {
         self.last_probe = Some(height);
+    }
+
+    /// The lowest height at which [`is_due`](Self::is_due) holds.
+    pub(crate) fn next_due(&self) -> u32 {
+        match self.last_probe {
+            None => 0,
+            Some(last)
+                if last.saturating_add(1).saturating_sub(self.first_seen) < EVERY_BLOCK_WINDOW =>
+            {
+                last.saturating_add(1)
+            }
+            Some(last) => last.saturating_add(SLOW_INTERVAL),
+        }
     }
 }
 
@@ -582,9 +598,7 @@ pub(crate) fn begin_pass(
 
 /// Record one root's probe result: a final verdict ends its probing, and the
 /// verdict goes to the wallet's own sends — the root when it is one, and,
-/// when it is dead, every own send built on it. Nothing is recorded for a
-/// root a newer pass has dropped (it settled or left) or whose wallet was
-/// forgotten meanwhile.
+/// when it is dead, every own send built on it.
 pub(crate) fn record_probe(
     state: &mut ResolverState,
     wallet_id: WalletId,
@@ -596,9 +610,6 @@ pub(crate) fn record_probe(
 ) -> Vec<Outgoing> {
     let mut events = Vec::new();
     let key = (wallet_id, root);
-    if !state.schedules.contains_key(&key) {
-        return events;
-    }
     match verdict {
         ProbeVerdict::Dead { reason } => {
             state.finished.insert(
@@ -632,18 +643,24 @@ pub(crate) fn record_probe(
     events
 }
 
-/// Nothing left to probe for the wallet: no roots, or every root has a final
-/// verdict. The wallet can go idle until something new happens.
-pub(crate) fn nothing_to_probe(
+/// The lowest height at which a root of the wallet can be due, if nothing new
+/// happens to it: a root without a schedule yet (the child of one just found
+/// mined) is due at once; `u32::MAX` when every root has a final verdict
+/// (nothing left to probe) or there are none.
+pub(crate) fn next_pass_height(
     state: &ResolverState,
     wallet_id: WalletId,
     views: &[OutgoingView],
-) -> bool {
+) -> u32 {
     let mined = state.mined(&wallet_id);
     ChainGraph::new(views, &mined)
         .roots()
         .iter()
-        .all(|view| state.finished.contains_key(&(wallet_id, view.txid)))
+        .map(|view| (wallet_id, view.txid))
+        .filter(|key| !state.finished.contains_key(key))
+        .map(|key| state.schedules.get(&key).map_or(0, ProbeSchedule::next_due))
+        .min()
+        .unwrap_or(u32::MAX)
 }
 
 fn log_outgoing(item: &Outgoing) {
@@ -691,6 +708,9 @@ fn forced_held(
 /// Where passes read wallets from.
 #[async_trait]
 pub(crate) trait WalletSource: Send + Sync {
+    /// The ids of every wallet held now.
+    async fn wallet_ids(&self) -> Vec<WalletId>;
+
     /// `None`: no such wallet. `Some(None)`: nothing to do (see
     /// [`forced_held`]) — decided without walking the records.
     async fn read(
@@ -705,6 +725,16 @@ struct ManagerSource(Arc<RwLock<WalletManager<PlatformWalletInfo>>>);
 
 #[async_trait]
 impl WalletSource for ManagerSource {
+    async fn wallet_ids(&self) -> Vec<WalletId> {
+        self.0
+            .read()
+            .await
+            .list_wallets()
+            .into_iter()
+            .copied()
+            .collect()
+    }
+
     async fn read(
         &self,
         wallet_id: WalletId,
@@ -713,16 +743,14 @@ impl WalletSource for ManagerSource {
     ) -> Option<Option<WalletRead>> {
         let manager = self.0.read().await;
         let info = manager.get_wallet_info(&wallet_id)?;
-        let forced = if forced.is_empty() {
-            by_height.then_some(forced)
-        } else {
-            let accounts = info.core_wallet.accounts.all_accounts();
-            forced_held(by_height, forced, |txid| {
-                accounts
-                    .iter()
-                    .any(|account| account.transactions().contains_key(txid))
-            })
-        };
+        // Built at most once, and only if there is a txid to look up.
+        let accounts = OnceCell::new();
+        let forced = forced_held(by_height, forced, |txid| {
+            accounts
+                .get_or_init(|| info.core_wallet.accounts.all_accounts())
+                .iter()
+                .any(|account| account.transactions().contains_key(txid))
+        });
         Some(forced.map(|forced| WalletRead {
             views: collect_views(info),
             synced_height: info.core_wallet.synced_height(),
@@ -744,7 +772,12 @@ struct EventSink(Mutex<Weak<PlatformEventManager>>);
 impl VerdictSink for EventSink {
     fn deliver(&self, item: &Outgoing) {
         log_outgoing(item);
-        let Some(events) = self.0.lock().expect("event sink poisoned").upgrade() else {
+        let events = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .upgrade();
+        let Some(events) = events else {
             return;
         };
         match &item.event {
@@ -758,9 +791,17 @@ impl VerdictSink for EventSink {
     }
 }
 
+/// Hand `events` to the host. A handler that panics loses its own event, not
+/// the resolver: the actor task must outlive a faulty host callback.
 fn deliver(sink: &Arc<dyn VerdictSink>, events: Vec<Outgoing>) {
     for item in &events {
-        sink.deliver(item);
+        if catch_unwind(AssertUnwindSafe(|| sink.deliver(item))).is_err() {
+            tracing::error!(
+                wallet_id = %hex::encode(item.wallet_id),
+                event = ?item.event,
+                "broadcast probe: a host handler panicked delivering an event"
+            );
+        }
     }
 }
 
@@ -785,6 +826,8 @@ enum Command {
 
 /// What a finished job reports back to the actor.
 enum JobDone {
+    /// The wallets to route an `Uncertain` result to.
+    Listed { txid: Txid, wallets: Vec<WalletId> },
     Read {
         wallet_id: WalletId,
         run: u64,
@@ -815,7 +858,8 @@ struct Run {
     id: u64,
     /// The wallet's command count when the run started.
     seq: u64,
-    /// Something touched the wallet during the run: do not mark it idle.
+    /// Something touched the wallet during the run: its read may be stale, so
+    /// the next height must not be skipped.
     woken: bool,
     abort: AbortHandle,
     probing: Option<Probing>,
@@ -832,9 +876,10 @@ struct Probing {
 struct WalletEntry {
     /// Last synced height reported, for telling catch-up from following.
     height: Option<u32>,
-    /// The last pass had nothing to probe: height advances skip the wallet
-    /// (no walk over its records per block) until something wakes it.
-    idle: bool,
+    /// Height advances below this are skipped — no walk over the wallet's
+    /// records while no root can be due. `u32::MAX` when nothing is left to
+    /// probe (idle). Reset by anything that may have left new work.
+    wait_until: Option<u32>,
     pending: Option<PendingPass>,
     run: Option<Run>,
     /// Commands seen for this wallet. A run that found the wallet gone drops
@@ -855,6 +900,9 @@ struct Actor {
     source: Arc<dyn WalletSource>,
     sink: Arc<dyn VerdictSink>,
     jobs: JoinSet<JobDone>,
+    /// Which run each read or probe job belongs to, so a job that panicked
+    /// can end its run instead of leaving the wallet stuck behind it.
+    job_runs: HashMap<task::Id, (WalletId, u64)>,
 }
 
 impl Actor {
@@ -872,20 +920,53 @@ impl Actor {
             source,
             sink,
             jobs: JoinSet::new(),
+            job_runs: HashMap::new(),
         }
     }
 
-    async fn run(mut self, mut commands: mpsc::UnboundedReceiver<Command>) {
+    async fn run(
+        mut self,
+        mut commands: mpsc::UnboundedReceiver<Command>,
+        mut stop: oneshot::Receiver<()>,
+    ) {
         loop {
             tokio::select! {
+                biased;
+                _ = &mut stop => break,
                 command = commands.recv() => match command {
                     Some(command) => self.handle(command),
-                    None => return,
+                    None => break,
                 },
-                Some(done) = self.jobs.join_next(), if !self.jobs.is_empty() => {
-                    // An aborted job (its run was dropped) reports nothing.
-                    if let Ok(done) = done {
-                        self.job_done(done);
+                Some(joined) = self.jobs.join_next_with_id(), if !self.jobs.is_empty() => {
+                    self.joined(joined);
+                }
+            }
+        }
+        // Abort every read and probe and wait for them, so nothing the
+        // resolver started outlives it.
+        self.jobs.shutdown().await;
+    }
+
+    fn joined(&mut self, joined: Result<(task::Id, JobDone), JoinError>) {
+        match joined {
+            Ok((id, done)) => {
+                self.job_runs.remove(&id);
+                self.job_done(done);
+            }
+            Err(error) => {
+                let owner = self.job_runs.remove(&error.id());
+                if !error.is_panic() {
+                    return; // aborted: its run was dropped on purpose
+                }
+                tracing::error!(?owner, %error, "broadcast probe: a job panicked");
+                // End the run it belonged to, as if it had found nothing,
+                // so the wallet's next pass can start.
+                if let Some((wallet_id, run)) = owner {
+                    if let Some(entry) = self.wallets.get_mut(&wallet_id) {
+                        if entry.run.as_ref().is_some_and(|current| current.id == run) {
+                            entry.run = None;
+                            self.start(wallet_id);
+                        }
                     }
                 }
             }
@@ -905,7 +986,10 @@ impl Actor {
                 let enabled = self.enabled;
                 let entry = self.entry(wallet_id);
                 let previous = entry.height.replace(height);
-                if !enabled || entry.idle || is_catch_up_step(previous, height) {
+                if !enabled
+                    || entry.wait_until.is_some_and(|until| height < until)
+                    || is_catch_up_step(previous, height)
+                {
                     return;
                 }
                 let pending = entry.pending.get_or_insert_with(PendingPass::default);
@@ -916,35 +1000,37 @@ impl Actor {
             Command::Seen { wallet_id, touched } => {
                 let entry = self.entry(wallet_id);
                 if touched {
-                    entry.idle = false;
+                    entry.wait_until = None;
                     if let Some(run) = entry.run.as_mut() {
                         run.woken = true;
                     }
                 }
             }
             Command::Uncertain(txid) => {
+                // The switch is decided here, in order with SetEnabled — not
+                // by the sender, which may see the flag before the actor does.
                 if !self.enabled {
                     return;
                 }
-                let wallets: Vec<WalletId> = self.wallets.keys().copied().collect();
-                for wallet_id in wallets {
-                    if let Some(entry) = self.wallets.get_mut(&wallet_id) {
-                        let pending = entry.pending.get_or_insert_with(PendingPass::default);
-                        pending.height = pending.height.max(entry.height.unwrap_or(0));
-                        pending.forced.insert(txid);
+                // Routed to every wallet the manager holds, including ones no
+                // event has introduced yet.
+                let source = Arc::clone(&self.source);
+                self.jobs.spawn(async move {
+                    JobDone::Listed {
+                        txid,
+                        wallets: source.wallet_ids().await,
                     }
-                    self.start(wallet_id);
-                }
+                });
             }
             Command::SetEnabled(enabled) => {
                 if enabled == self.enabled {
                     return;
                 }
                 self.enabled = enabled;
-                // Either way every wallet leaves idle, so turning probing
-                // back on re-publishes what turning it off cleared.
+                // Either way every wallet waits for nothing, so turning
+                // probing back on re-publishes what turning it off cleared.
                 for entry in self.wallets.values_mut() {
-                    entry.idle = false;
+                    entry.wait_until = None;
                     if !enabled {
                         entry.pending = None;
                         if let Some(run) = entry.run.take() {
@@ -992,6 +1078,7 @@ impl Actor {
                 read,
             }
         });
+        self.job_runs.insert(abort.id(), (wallet_id, run));
         entry.run = Some(Run {
             id: run,
             seq: entry.seq,
@@ -1003,6 +1090,18 @@ impl Actor {
 
     fn job_done(&mut self, done: JobDone) {
         match done {
+            JobDone::Listed { txid, wallets } => {
+                if !self.enabled {
+                    return;
+                }
+                for wallet_id in wallets {
+                    let entry = self.wallets.entry(wallet_id).or_default();
+                    let pending = entry.pending.get_or_insert_with(PendingPass::default);
+                    pending.height = pending.height.max(entry.height.unwrap_or(0));
+                    pending.forced.insert(txid);
+                    self.start(wallet_id);
+                }
+            }
             JobDone::Read {
                 wallet_id,
                 run,
@@ -1012,14 +1111,15 @@ impl Actor {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
-                let Some(current) = entry.run.as_mut().filter(|current| current.id == run) else {
-                    return;
+                let run_seq = match entry.run.as_ref() {
+                    Some(current) if current.id == run => current.seq,
+                    _ => return,
                 };
                 match read {
                     None => {
                         // Gone from the wallet manager (its removal clears),
                         // or an id a late event brought back after removal.
-                        if current.seq == entry.seq {
+                        if run_seq == entry.seq {
                             self.wallets.remove(&wallet_id);
                         } else {
                             entry.run = None;
@@ -1032,7 +1132,7 @@ impl Actor {
                     }
                     Some(Some(read)) => {
                         if !read.forced.is_empty() {
-                            entry.idle = false;
+                            entry.wait_until = None;
                         }
                         // A request queued before any height was reported
                         // carries 0; the wallet's own synced height is better.
@@ -1044,12 +1144,14 @@ impl Actor {
                             &read.views,
                             &read.forced,
                         );
-                        current.probing = Some(Probing {
-                            views: read.views,
-                            height,
-                            forced: read.forced,
-                            due: start.due,
-                        });
+                        if let Some(current) = entry.run.as_mut() {
+                            current.probing = Some(Probing {
+                                views: read.views,
+                                height,
+                                forced: read.forced,
+                                due: start.due,
+                            });
+                        }
                         // Clears and re-published dead verdicts reach the host
                         // before the pass goes out to the network.
                         deliver(&self.sink, start.events);
@@ -1110,11 +1212,11 @@ impl Actor {
                     verdict,
                 }
             });
+            self.job_runs.insert(run.abort.id(), (wallet_id, id));
             return;
         }
-        if !run.woken && nothing_to_probe(&self.state, wallet_id, &probing.views) {
-            entry.idle = true;
-        }
+        entry.wait_until =
+            (!run.woken).then(|| next_pass_height(&self.state, wallet_id, &probing.views));
         entry.run = None;
         self.start(wallet_id);
     }
@@ -1123,7 +1225,7 @@ impl Actor {
 enum ActorSlot {
     /// Waiting for the first command sent from inside a Tokio runtime.
     NotStarted(Box<Actor>, mpsc::UnboundedReceiver<Command>),
-    Running(JoinHandle<()>),
+    Running(JoinHandle<()>, oneshot::Sender<()>),
     Closed,
 }
 
@@ -1139,6 +1241,9 @@ enum ActorSlot {
 pub(crate) struct BroadcastResolver {
     enabled: AtomicBool,
     commands: mpsc::UnboundedSender<Command>,
+    /// The actor has been started (or the resolver closed): `send` no longer
+    /// needs the slot.
+    started: AtomicBool,
     actor: Mutex<ActorSlot>,
     sink: Arc<EventSink>,
 }
@@ -1158,6 +1263,7 @@ impl BroadcastResolver {
         Self {
             enabled: AtomicBool::new(false),
             commands,
+            started: AtomicBool::new(false),
             actor: Mutex::new(ActorSlot::NotStarted(Box::new(actor), receiver)),
             sink,
         }
@@ -1166,35 +1272,41 @@ impl BroadcastResolver {
     /// Where verdicts are delivered. Weak: the event manager holds this
     /// resolver as one of its handlers.
     pub(crate) fn set_event_manager(&self, events: Weak<PlatformEventManager>) {
-        *self.sink.0.lock().expect("event sink poisoned") = events;
+        *self.sink.0.lock().unwrap_or_else(PoisonError::into_inner) = events;
     }
 
     fn send(&self, command: Command) {
         // Fails only once the actor is gone (shutdown); nothing to do then.
         let _ = self.commands.send(command);
-        let mut slot = self.actor.lock().expect("resolver actor slot poisoned");
+        if self.started.load(Ordering::Acquire) {
+            return;
+        }
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return; // queued; started by the first command sent from a runtime
+        };
+        let mut slot = self.actor.lock().unwrap_or_else(PoisonError::into_inner);
         if matches!(*slot, ActorSlot::NotStarted(..)) {
-            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                if let ActorSlot::NotStarted(actor, receiver) =
-                    std::mem::replace(&mut *slot, ActorSlot::Closed)
-                {
-                    *slot = ActorSlot::Running(runtime.spawn(actor.run(receiver)));
-                }
+            if let ActorSlot::NotStarted(actor, receiver) =
+                std::mem::replace(&mut *slot, ActorSlot::Closed)
+            {
+                let (stop, stopped) = oneshot::channel();
+                *slot = ActorSlot::Running(runtime.spawn(actor.run(receiver, stopped)), stop);
             }
         }
+        self.started.store(true, Ordering::Release);
     }
 
     /// Turn probing on or off. Turning it off forgets every send and has the
     /// host told to drop every verdict it holds — with no passes running,
     /// nothing would ever clear them — and drops the passes in flight. Either
-    /// way every wallet leaves idle, so turning it back on re-publishes what
-    /// was cleared. Returns at once; the clears follow from the resolver's
-    /// task.
+    /// way every wallet is woken, so turning it back on re-publishes what was
+    /// cleared. Returns at once; the clears follow from the resolver's task.
     pub(crate) fn set_enabled(&self, enabled: bool) {
         self.enabled.store(enabled, Ordering::SeqCst);
         self.send(Command::SetEnabled(enabled));
     }
 
+    /// The last value passed to [`set_enabled`](Self::set_enabled).
     pub(crate) fn is_enabled(&self) -> bool {
         self.enabled.load(Ordering::SeqCst)
     }
@@ -1206,19 +1318,31 @@ impl BroadcastResolver {
         self.send(Command::WalletRemoved(*wallet_id));
     }
 
-    /// Stop the resolver's task, and with it every probe, waiting at most
-    /// `budget` for it to end; after this no host callback comes from the
-    /// resolver. Returns `false` if the task outlived the budget. Idempotent.
+    /// Stop the resolver's task: it aborts every read and probe it started and
+    /// waits for them, all within `budget`; after this no host callback comes
+    /// from the resolver. Returns `false` if that did not finish in time (the
+    /// task is then aborted) or the task had died of a panic. Idempotent.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
+        self.started.store(true, Ordering::Release);
         let slot = std::mem::replace(
-            &mut *self.actor.lock().expect("resolver actor slot poisoned"),
+            &mut *self.actor.lock().unwrap_or_else(PoisonError::into_inner),
             ActorSlot::Closed,
         );
-        let ActorSlot::Running(handle) = slot else {
+        let ActorSlot::Running(mut handle, stop) = slot else {
             return true;
         };
-        handle.abort();
-        tokio::time::timeout(budget, handle).await.is_ok()
+        let _ = stop.send(());
+        match tokio::time::timeout(budget, &mut handle).await {
+            Ok(Ok(())) => true,
+            Ok(Err(error)) => {
+                tracing::error!(%error, "broadcast probe: the resolver task had died");
+                false
+            }
+            Err(_) => {
+                handle.abort();
+                false
+            }
+        }
     }
 }
 
@@ -1263,9 +1387,7 @@ impl EventHandler for BroadcastResolver {
             result: BroadcastResult::Uncertain,
         } = event
         {
-            if self.is_enabled() {
-                self.send(Command::Uncertain(*txid));
-            }
+            self.send(Command::Uncertain(*txid));
         }
     }
 }
@@ -1460,6 +1582,26 @@ mod tests {
         assert!(s.is_due(late + SLOW_INTERVAL));
     }
 
+    /// `next_due` is exactly the first height `is_due` accepts.
+    #[test]
+    fn should_agree_on_the_next_due_height_with_is_due() {
+        let first = 100;
+        let mut schedule = ProbeSchedule::new(first);
+        for probed in [
+            first,
+            first + 5,
+            first + EVERY_BLOCK_WINDOW - 1,
+            first + EVERY_BLOCK_WINDOW + 3,
+        ] {
+            schedule.probed_at(probed);
+            let next = schedule.next_due();
+            assert!(schedule.is_due(next), "due at {next}");
+            for height in probed + 1..next {
+                assert!(!schedule.is_due(height), "not due at {height}");
+            }
+        }
+    }
+
     #[test]
     fn should_treat_only_large_height_steps_as_catch_up() {
         assert!(
@@ -1557,7 +1699,7 @@ mod tests {
     }
 
     /// One pass: begin, probe each due root with no lock held, record.
-    /// Returns whether nothing is left to probe.
+    /// Returns the height the wallet may wait for.
     async fn run(
         state: &Mutex<Harness>,
         probe: &dyn AcceptanceProbe,
@@ -1565,7 +1707,7 @@ mod tests {
         height: u32,
         views: &[OutgoingView],
         forced: &HashSet<Txid>,
-    ) -> bool {
+    ) -> u32 {
         let due = {
             let mut guard = state.lock().expect("state");
             let start = begin_pass(&mut guard.state, wallet_id, height, views, forced);
@@ -1587,7 +1729,7 @@ mod tests {
             guard.push(events);
         }
         let guard = state.lock().expect("state");
-        nothing_to_probe(&guard.state, wallet_id, views)
+        next_pass_height(&guard.state, wallet_id, views)
     }
 
     fn outbox(state: &Mutex<Harness>) -> Vec<ResolverEvent> {
@@ -1815,41 +1957,6 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(1), txid(2)]);
     }
 
-    /// A probe that, while it is out on the network, lets a concurrent pass
-    /// clear the root (it settled): the late verdict must not be published.
-    struct ClearingProbe {
-        state: Arc<Mutex<Harness>>,
-    }
-
-    #[async_trait]
-    impl AcceptanceProbe for ClearingProbe {
-        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
-            self.state.lock().expect("state").forget_wallet(&wallet());
-            ProbeVerdict::Accepted
-        }
-    }
-
-    #[tokio::test]
-    async fn should_not_publish_a_verdict_for_a_root_cleared_during_the_probe() {
-        let state = Arc::new(Mutex::new(Harness::default()));
-        let probe = ClearingProbe {
-            state: Arc::clone(&state),
-        };
-
-        run(
-            &state,
-            &probe,
-            wallet(),
-            100,
-            &[send(1, &[outpoint(90, 0)])],
-            &none(),
-        )
-        .await;
-
-        assert!(outbox(&state).is_empty());
-        assert!(state.lock().expect("state").state.published.is_empty());
-    }
-
     /// A send built on a dead root's change after the root was found dead is
     /// dead too, and hears it without the root being asked again.
     #[tokio::test]
@@ -1897,9 +2004,9 @@ mod tests {
         )
         .await;
 
-        assert!(empty);
-        assert!(dead_only);
-        assert!(!open);
+        assert_eq!(empty, u32::MAX);
+        assert_eq!(dead_only, u32::MAX);
+        assert_eq!(open, 102, "the open root is due next block");
     }
 
     // ---- ResolverState ------------------------------------------------------
@@ -2012,6 +2119,10 @@ mod tests {
 
     #[async_trait]
     impl WalletSource for FakeSource {
+        async fn wallet_ids(&self) -> Vec<WalletId> {
+            self.views.lock().expect("views").keys().copied().collect()
+        }
+
         async fn read(
             &self,
             wallet_id: WalletId,
@@ -2082,10 +2193,8 @@ mod tests {
         }
 
         async fn settle(&mut self) {
-            while let Some(done) = self.actor.jobs.join_next().await {
-                if let Ok(done) = done {
-                    self.actor.job_done(done);
-                }
+            while let Some(joined) = self.actor.jobs.join_next_with_id().await {
+                self.actor.joined(joined);
             }
         }
 
@@ -2272,15 +2381,106 @@ mod tests {
     #[tokio::test]
     async fn should_drop_a_wallet_the_manager_no_longer_holds() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
-        rig.send(Command::Seen {
+
+        rig.height(wallet(), 100).await;
+        rig.actor.handle(Command::Height {
             wallet_id: wallet(),
-            touched: false,
-        })
-        .await;
+            height: 101,
+        });
+        rig.settle().await;
+
+        assert!(!rig.actor.wallets.contains_key(&wallet()));
+    }
+
+    /// An `Uncertain` result right after launch, before any event introduced
+    /// the wallet, still gets its immediate probe.
+    #[tokio::test]
+    async fn should_route_an_uncertain_result_to_a_wallet_no_event_introduced() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
 
         rig.send(Command::Uncertain(txid(1))).await;
 
-        assert!(!rig.actor.wallets.contains_key(&wallet()));
+        assert_eq!(probe.probed(), vec![txid(1)]);
+    }
+
+    /// A probe that panics.
+    struct PanickingProbe;
+
+    #[async_trait]
+    impl AcceptanceProbe for PanickingProbe {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
+            panic!("probe bug");
+        }
+    }
+
+    /// A job that panics ends its run; the wallet's next pass still starts.
+    #[tokio::test]
+    async fn should_not_leave_a_wallet_stuck_behind_a_panicked_job() {
+        let mut rig = enabled(Arc::new(PanickingProbe)).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.follow(wallet(), 100).await;
+        rig.height(wallet(), 102).await;
+
+        assert_eq!(rig.walks(), 2);
+        assert!(rig.actor.wallets[&wallet()].run.is_none());
+    }
+
+    /// After the every-block window a root is due only every SLOW_INTERVAL
+    /// blocks: the heights in between do not walk the wallet's records.
+    #[tokio::test]
+    async fn should_not_read_the_wallet_on_heights_where_no_root_is_due() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
+            txid(1),
+            ProbeVerdict::Accepted,
+        )])))
+        .await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        for height in 102..=101 + EVERY_BLOCK_WINDOW {
+            rig.height(wallet(), height).await;
+        }
+        let walks = rig.walks();
+
+        for height in 102 + EVERY_BLOCK_WINDOW..=101 + EVERY_BLOCK_WINDOW + SLOW_INTERVAL {
+            rig.height(wallet(), height).await;
+        }
+
+        assert_eq!(rig.walks(), walks + 1, "one walk in SLOW_INTERVAL blocks");
+    }
+
+    /// A probe that never answers.
+    struct HangingProbe;
+
+    #[async_trait]
+    impl AcceptanceProbe for HangingProbe {
+        async fn probe(&self, _transaction: &Transaction) -> ProbeVerdict {
+            std::future::pending().await
+        }
+    }
+
+    /// Stopping the task aborts and awaits every job it started, so nothing
+    /// outlives it.
+    #[tokio::test]
+    async fn should_end_with_every_job_when_stopped() {
+        let rig = Rig::new(Arc::new(HangingProbe));
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        let (commands, receiver) = mpsc::unbounded_channel();
+        let (stop, stopped) = oneshot::channel();
+        let task = tokio::spawn(rig.actor.run(receiver, stopped));
+        for command in [Command::SetEnabled(true), Command::Uncertain(txid(1))] {
+            commands.send(command).expect("send");
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        stop.send(()).expect("stop");
+
+        tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("stopped in time")
+            .expect("no panic");
     }
 
     /// A probe that records what the host had been sent by the time it ran.

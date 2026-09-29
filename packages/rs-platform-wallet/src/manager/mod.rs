@@ -74,10 +74,10 @@ pub enum WalletWorker {
     /// tasks; its drain outcome is folded into the report because those
     /// tasks clone the FFI persister and can fire host callbacks.
     DashPayPayments,
-    /// Broadcast-probe passes spawned by `BroadcastResolver` in response to
-    /// SPV events. Not a registry worker: the resolver's own tracker closes
-    /// admission and aborts the passes; its drain outcome is folded into the
-    /// report because a pass publishes through the host's event callbacks.
+    /// The `BroadcastResolver` task and the reads and probes it runs. Not a
+    /// registry worker: shutdown stops the task, which aborts and awaits its
+    /// jobs; the outcome is folded into the report because the task publishes
+    /// through the host's event callbacks.
     BroadcastProbes,
     /// The wallet-event adapter task — the sink coordinator stores feed
     /// into. Not a registry worker: joined by
