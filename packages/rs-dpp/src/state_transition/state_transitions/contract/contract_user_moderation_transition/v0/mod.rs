@@ -102,6 +102,13 @@ pub enum ContractUserModerationAction {
         #[cfg_attr(feature = "serde-conversion", serde(rename = "documentId"))]
         document_id: Identifier,
         /// Each field's new value, by its top-level property name; `null` removes the field.
+        /// Read from an object or JSON in its canonical form
+        /// ([`ContractUserModerationAction::canonical_field_value`]), so a transition built by
+        /// a client and read back signs the same bytes.
+        #[cfg_attr(
+            feature = "serde-conversion",
+            serde(deserialize_with = "deserialize_canonical_fields")
+        )]
         fields: BTreeMap<String, Value>,
         /// Why, checked against a seated team's proposal like every other reason.
         reason: ContractModerationReason,
@@ -117,7 +124,90 @@ impl Default for ContractUserModerationAction {
     }
 }
 
+/// The fields of a change, each value in its canonical form: an object or JSON form does not
+/// say which integer width or which binary variant the transition was built with.
+#[cfg(feature = "serde-conversion")]
+fn deserialize_canonical_fields<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let fields = BTreeMap::<String, Value>::deserialize(deserializer)?;
+    Ok(fields
+        .into_iter()
+        .map(|(name, value)| {
+            (
+                name,
+                ContractUserModerationAction::canonical_field_value(value),
+            )
+        })
+        .collect())
+}
+
 impl ContractUserModerationAction {
+    /// A field value in the one form its content has, the form clients build a change's fields
+    /// in: an integer as a `U64`, or an `I64` when negative (`U128` and `I128` beyond them), 32
+    /// bytes as an `Identifier` and any other binary value as `Bytes`, maps and arrays
+    /// recursively. The signed bytes carry the variant, which an object or JSON form loses (a
+    /// JavaScript bigint reads back as the signed width, an identifier as plain bytes), so the
+    /// fields are read back in this form and built in it.
+    pub fn canonical_field_value(value: Value) -> Value {
+        let integer = match &value {
+            Value::U128(v) => Some(i128::try_from(*v).map_err(|_| *v)),
+            Value::U64(v) => Some(Ok(*v as i128)),
+            Value::U32(v) => Some(Ok(*v as i128)),
+            Value::U16(v) => Some(Ok(*v as i128)),
+            Value::U8(v) => Some(Ok(*v as i128)),
+            Value::I128(v) => Some(Ok(*v)),
+            Value::I64(v) => Some(Ok(*v as i128)),
+            Value::I32(v) => Some(Ok(*v as i128)),
+            Value::I16(v) => Some(Ok(*v as i128)),
+            Value::I8(v) => Some(Ok(*v as i128)),
+            _ => None,
+        };
+        match integer {
+            // Beyond i128, only a U128 holds it
+            Some(Err(beyond)) => return Value::U128(beyond),
+            Some(Ok(integer)) => {
+                return if let Ok(unsigned) = u64::try_from(integer) {
+                    Value::U64(unsigned)
+                } else if let Ok(signed) = i64::try_from(integer) {
+                    Value::I64(signed)
+                } else if let Ok(unsigned) = u128::try_from(integer) {
+                    Value::U128(unsigned)
+                } else {
+                    Value::I128(integer)
+                };
+            }
+            None => {}
+        }
+        match value {
+            Value::Map(entries) => Value::Map(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| {
+                        (
+                            Self::canonical_field_value(key),
+                            Self::canonical_field_value(value),
+                        )
+                    })
+                    .collect(),
+            ),
+            Value::Array(items) => {
+                Value::Array(items.into_iter().map(Self::canonical_field_value).collect())
+            }
+            Value::Identifier(_) => value,
+            value => match value.as_bytes_slice() {
+                Ok(bytes) => match <[u8; 32]>::try_from(bytes) {
+                    Ok(identifier) => Value::Identifier(identifier),
+                    Err(_) => Value::Bytes(bytes.to_vec()),
+                },
+                Err(_) => value,
+            },
+        }
+    }
+
     /// The identity the action targets. `None` for a document deletion: it names a document,
     /// and whose it is is only known once the document is read.
     pub fn identity_id(&self) -> Option<Identifier> {

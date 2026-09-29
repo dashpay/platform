@@ -199,6 +199,39 @@ describe('ContractUserModeration', () => {
       expect(createTransition({ action: 'ban' }).fields).to.equal(undefined);
     });
 
+    it('should leave out a field set to undefined, and remove only one set to null', () => {
+      const transition = createTransition({
+        action: 'changeDocumentFields',
+        fields: { status: 2, resolution: undefined, note: null },
+      });
+
+      expect(transition.fields).to.deep.equal({ status: BigInt(2), note: null });
+    });
+
+    it('should give back a field named __proto__ as a field', () => {
+      const fields = JSON.parse('{"__proto__":{"status":1},"resolution":"done"}');
+      const transition = createTransition({ action: 'changeDocumentFields', fields });
+
+      const returned = transition.fields as Record<string, unknown>;
+      expect(Object.keys(returned)).to.have.members(['__proto__', 'resolution']);
+      expect(Object.getPrototypeOf(returned)).to.equal(Object.prototype);
+    });
+
+    it('should sign the same bytes once read back from its object', () => {
+      const transition = createTransition({
+        action: 'changeDocumentFields',
+        fields: {
+          status: 2,
+          reviewer: new Uint8Array(32).fill(7),
+          attachment: new Uint8Array([1, 2, 3]),
+        },
+      });
+
+      const restored = wasm.ContractUserModeration.fromObject(transition.toObject());
+
+      expect(restored.toBytes()).to.deep.equal(transition.toBytes());
+    });
+
     it('should create a warning and its clearing, which name an identity', () => {
       const warn = createTransition({ action: 'warn', reason: { code: 1, text: 'first strike' } });
 

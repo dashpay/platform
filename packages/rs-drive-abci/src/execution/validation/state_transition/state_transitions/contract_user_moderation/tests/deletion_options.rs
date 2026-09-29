@@ -4,6 +4,8 @@
 
 use super::*;
 use drive::drive::contract::paths::contract_document_removals_path;
+use drive::error::proof::ProofError;
+use drive::error::Error as DriveError;
 use drive::util::grove_operations::DirectQueryType;
 
 /// A contract whose moderators delete posts with `abilities`
@@ -94,6 +96,40 @@ async fn should_delete_without_a_record_and_leave_nothing_to_restore() {
         }
         other => panic!("expected the document gone, got {other:?}"),
     }
+    // Without the contract no record proves it and the absence can not be read: the verifier
+    // says the contract is missing, and passes on a lookup that failed, rather than calling the
+    // proof wrong.
+    let unknown = Drive::verify_state_transition_was_executed_with_proof(
+        &delete,
+        &BlockInfo::default(),
+        &proof,
+        &|_| Ok(None),
+        platform_version,
+    )
+    .expect_err("a deletion of a type without records needs the contract");
+    assert!(
+        matches!(unknown, DriveError::Proof(ProofError::UnknownContract(_))),
+        "expected the contract reported unknown, got {unknown:?}"
+    );
+    let failed = Drive::verify_state_transition_was_executed_with_proof(
+        &delete,
+        &BlockInfo::default(),
+        &proof,
+        &|_| {
+            Err(DriveError::Proof(ProofError::ErrorRetrievingContract(
+                "the provider is offline".to_string(),
+            )))
+        },
+        platform_version,
+    )
+    .expect_err("a failed lookup leaves the absence unread");
+    assert!(
+        matches!(
+            failed,
+            DriveError::Proof(ProofError::ErrorRetrievingContract(_))
+        ),
+        "expected the lookup's failure, got {failed:?}"
+    );
 
     // Without a record there is nothing to restore from.
     let transaction = setup.platform.drive.grove.start_transaction();

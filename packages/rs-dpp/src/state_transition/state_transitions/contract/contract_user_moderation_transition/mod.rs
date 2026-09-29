@@ -277,8 +277,11 @@ pub(crate) mod json_convertible_tests {
     use super::*;
 
     use crate::data_contract::config::moderation::ContractModerationReason;
-    use platform_value::{platform_value, BinaryData, Identifier};
+    use crate::serialization::{JsonConvertible, Signable, ValueConvertible};
+    use crate::state_transition::contract_user_moderation_transition::ContractUserModerationAction;
+    use platform_value::{platform_value, BinaryData, Identifier, Value};
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     pub(crate) fn fixture() -> ContractUserModerationTransition {
         ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
@@ -326,6 +329,63 @@ pub(crate) mod json_convertible_tests {
         );
         let recovered = ContractUserModerationTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+    }
+
+    /// A field change with a value of every kind the canonical form settles
+    fn field_change() -> ContractUserModerationTransition {
+        let ContractUserModerationTransition::V0(base) = fixture();
+        ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
+            action: ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name: "report".to_string(),
+                document_id: Identifier::new([0x77; 32]),
+                fields: BTreeMap::from([
+                    ("status".to_string(), Value::U64(2)),
+                    ("offset".to_string(), Value::I64(-3)),
+                    ("weight".to_string(), Value::Float(1.5)),
+                    ("reviewer".to_string(), Value::Identifier([0x88; 32])),
+                    ("attachment".to_string(), Value::Bytes(vec![1, 2, 3])),
+                    ("resolution".to_string(), Value::Null),
+                ]),
+                reason: ContractModerationReason::from_text("handled"),
+            },
+            ..base
+        })
+    }
+
+    #[test]
+    fn should_read_back_a_field_change_that_signs_the_same_bytes() {
+        let transition = field_change();
+        let signed = transition.signable_bytes().expect("signable");
+
+        // The object form as JavaScript gives it back: a bigint read as the signed width, an
+        // identifier as plain bytes. Read back, the change signs the bytes it was built with.
+        let mut object = transition.to_object().expect("to_object");
+        object
+            .set_value_at_full_path("action.fields.status", Value::I64(2))
+            .expect("the status is in the object");
+        object
+            .set_value_at_full_path("action.fields.reviewer", Value::Bytes(vec![0x88; 32]))
+            .expect("the reviewer is in the object");
+        let read_back = ContractUserModerationTransition::from_object(object).expect("from_object");
+        assert_eq!(read_back, transition);
+        assert_eq!(read_back.signable_bytes().expect("signable"), signed);
+
+        // Through JSON, which writes a binary value as text, a change of numbers and removals
+        // reads back the same.
+        let ContractUserModerationTransition::V0(mut numeric) = transition;
+        if let ContractUserModerationAction::ChangeDocumentFields { fields, .. } =
+            &mut numeric.action
+        {
+            fields.retain(|_, value| value.as_bytes_slice().is_err());
+        }
+        let numeric = ContractUserModerationTransition::V0(numeric);
+        let read_back =
+            ContractUserModerationTransition::from_json(numeric.to_json().expect("to_json"))
+                .expect("from_json");
+        assert_eq!(
+            read_back.signable_bytes().expect("signable"),
+            numeric.signable_bytes().expect("signable")
+        );
     }
 
     #[test]

@@ -68,7 +68,7 @@ A user files a report and can never edit it. A report starts with no `status`: t
 
 ### How it works
 
-- A moderator changes the fields with the contract user moderation transition's `changeDocumentFields` action, naming the document type, the document id, the new value of each field (`null` removes one) and a reason.
+- A moderator changes the fields with the contract user moderation transition's `changeDocumentFields` action, naming the document type, the document id, the new value of each field (`null` removes one; in the JavaScript SDKs a field set to `undefined` is left out, as JSON leaves it out) and a reason.
 - The transition is checked in this order, each refusal paid: the document type exists (`InvalidDocumentTypeError`, 10406); every field named is listed under `changeFields` (41123); the signer is a moderator of the contract (41101), and for a seated team the declaration gives it `changeDocumentFields` on the type (41201) and the reason names a reason document its proposal lists (41203); the document exists (40101) and has not expired (`DocumentExpiredError`, 40140); and the document as changed is still one of its type: its schema (`JsonSchemaError`, 10101), its `propertyConstraints` and its unique indexes (`DuplicateUniqueIndexError`, 40105). A change naming no field, or a system property, is refused before any state is read (10905).
 - Whoever owns the document may have it changed, the contract owner and the moderators included: the fields are the moderators', not the owner's, so the protection that keeps moderators from deleting each other's documents does not apply.
 - The document is updated in place. Every other property stays as its owner wrote it, `$updatedAt` among them, so a change never opens a [`deleteWithin`](deletion.md#moderatorabilitiesdeletewithin) window again. `$revision` goes up by one, so a replace its owner built on the earlier revision is refused (`InvalidDocumentRevisionError`, 40106) rather than writing over the change.
@@ -88,6 +88,7 @@ All refusals below are `InvalidContractStructure` (10231).
 
 - The contract's config must declare `moderation`, as for `delete`. A `moderation` block may then keep no list at all. An elected declaration must give the team `changeDocumentFields` on the type in `moderatedDocumentTypes` (`InvalidContractModerationConfigError`, 10900): once a team is seated only it writes the fields, and without the ability nobody could.
 - Refused on an `indexOnly` type: there is no stored row to change.
+- Refused on a type that requires a `transient` property: a transient value is never stored, and a moderator's change is judged against the schema, which would find it missing on every document.
 - Every entry must name a top-level property the type declares (list the object around a nested one), and that property must be:
   - optional: nobody but a moderator can set it, so it starts absent;
   - stored, so not `transient`;

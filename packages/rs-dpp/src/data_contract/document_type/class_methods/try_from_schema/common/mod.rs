@@ -2353,6 +2353,22 @@ pub(super) fn apply_moderator_abilities(
              change",
         )));
     }
+    // A transient value is dropped before the document is stored, and a moderator's change is
+    // judged against the schema: a required transient property would be missing from every
+    // stored document, and no moderator can supply it.
+    if let Some((path, _)) = document_type
+        .flattened_properties
+        .iter()
+        .find(|(_, property)| {
+            property.transient && (property.required || property.required_since.is_some())
+        })
+    {
+        return Err(structure_error(format!(
+            "document type \"{name}\" requires the transient property \"{path}\" and sets \
+             `{MODERATOR_ABILITIES}.{CHANGE_FIELDS}`: a transient value is never stored, so \
+             every moderator's change, judged against the schema without it, would be refused",
+        )));
+    }
     let read_by_references = properties_read_by_references(DocumentTypeRef::V2(document_type));
     let read_by_generated = document_type
         .generated_from_fields

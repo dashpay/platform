@@ -536,7 +536,16 @@ impl ModerateContractUser for Identity {
             ContractUserModerationAction::ChangeDocumentFields {
                 document_type_name,
                 document_id,
-                fields,
+                // Signed in the form an object or JSON copy of the transition reads back in
+                fields: fields
+                    .into_iter()
+                    .map(|(name, value)| {
+                        (
+                            name,
+                            ContractUserModerationAction::canonical_field_value(value),
+                        )
+                    })
+                    .collect(),
                 reason,
             },
             signing_key_to_use,
