@@ -71,6 +71,11 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "core_state.rs",
         "SELECT length(outpoint), outpoint, value, length(script), script",
     ),
+    // load_state locked-outpoint reader: pre-read length() gate on outpoint.
+    (
+        "core_state.rs",
+        "SELECT length(outpoint), outpoint FROM core_locked_outpoints WHERE wallet_id",
+    ),
     ("core_state.rs", "SELECT DISTINCT script FROM core_utxos"),
     // Pool reader: verbatim used-set with owner columns, a one-shot read-only
     // scan per wallet.

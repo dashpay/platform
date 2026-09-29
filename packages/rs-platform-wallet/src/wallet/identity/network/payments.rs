@@ -7649,4 +7649,112 @@ mod tests {
              type-3 tx at 1 duff/byte when change is emitted"
         );
     }
+
+    /// Broadcaster stub that accepts every transaction and keeps a copy, so a
+    /// send-path test can read the inputs the build selected.
+    struct RecordingBroadcaster {
+        sent: Mutex<Vec<dashcore::Transaction>>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for RecordingBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            self.sent
+                .lock()
+                .expect("recorded transactions")
+                .push(transaction.clone());
+            Ok(transaction.txid())
+        }
+    }
+
+    /// A DashPay payment of 1 DASH from a wallet holding a 1,000 DASH
+    /// masternode collateral and a 5 DASH coin spends the 5 DASH coin, and a
+    /// payment only the collateral could cover is refused. The payment path
+    /// selects largest-first, so without the lock the collateral would be the
+    /// first coin it takes.
+    #[tokio::test]
+    async fn should_pay_a_contact_from_the_spare_coin_and_never_the_masternode_collateral() {
+        use crate::test_support::{masternode_registration, MASTERNODE_COLLATERAL_DUFFS};
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        use dashcore::hashes::Hash;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        const DASH: u64 = 100_000_000;
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        fund_bip44_account_0(&manager, wallet_id, 0xC0, MASTERNODE_COLLATERAL_DUFFS).await;
+        fund_bip44_account_0(&manager, wallet_id, 0xC1, 5 * DASH).await;
+        let collateral = dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([0xC0; 32]),
+            vout: 0,
+        };
+        let spare = dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([0xC1; 32]),
+            vout: 0,
+        };
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let mut wm = wallet.identity().wallet_manager.write().await;
+            wm.check_transaction_in_all_wallets(
+                &masternode_registration(collateral),
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    101,
+                    dashcore::BlockHash::all_zeros(),
+                    1_700_000_000,
+                )),
+                true,
+                true,
+            )
+            .await;
+        }
+
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid mnemonic")
+            .to_seed("");
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        let signer = SeedSigner::new(seed, Network::Testnet);
+        let broadcaster = Arc::new(RecordingBroadcaster {
+            sent: Mutex::new(Vec::new()),
+        });
+        let real = wallet.identity();
+        let iw = crate::wallet::identity::IdentityWallet {
+            sdk: Arc::clone(&real.sdk),
+            wallet_manager: Arc::clone(&real.wallet_manager),
+            wallet_id: real.wallet_id,
+            asset_locks: Arc::clone(&real.asset_locks),
+            persister: real.persister.clone(),
+            broadcaster: Arc::clone(&broadcaster),
+            sdk_writer: Arc::clone(&real.sdk_writer),
+            dpns_operation_gate: Arc::clone(&real.dpns_operation_gate),
+            dpns_sync_progress: Arc::clone(&real.dpns_sync_progress),
+        };
+
+        let err = iw
+            .dashpay()
+            .send_payment(&owner_id, &contact_id, 6 * DASH, None, &signer, &provider)
+            .await
+            .expect_err("6 DASH needs the collateral");
+        assert!(
+            matches!(&err, PlatformWalletError::TransactionBuild(reason)
+                if reason.to_lowercase().contains("insufficient")),
+            "expected a funding shortfall, got {err:?}"
+        );
+
+        iw.dashpay()
+            .send_payment(&owner_id, &contact_id, DASH, None, &signer, &provider)
+            .await
+            .expect("the spare coin covers 1 DASH");
+        let sent = broadcaster.sent.lock().expect("recorded transactions");
+        assert_eq!(sent.len(), 1, "one payment was broadcast");
+        let inputs: Vec<_> = sent[0]
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect();
+        assert_eq!(inputs, vec![spare], "only the spare coin may be spent");
+    }
 }

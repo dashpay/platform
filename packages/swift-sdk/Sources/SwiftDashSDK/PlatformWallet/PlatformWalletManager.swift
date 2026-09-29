@@ -107,6 +107,12 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Rust only honours the declaration when the payments callback is
     /// actually wired.
     public static let dashpayPayments: UInt64 = 1 << 12
+    /// Locked outpoints (masternode collateral, and outpoints locked by
+    /// hand) are persisted and restored across restarts, through the
+    /// persistence extension's outpoint-lock persist / load / free slots.
+    /// Mirrors `PersistenceCapabilities::OUTPOINT_LOCKS`; Rust only honours
+    /// the declaration when all three slots are wired.
+    public static let outpointLocks: UInt64 = 1 << 13
 
     public let version: UInt32
     public let bits: UInt64

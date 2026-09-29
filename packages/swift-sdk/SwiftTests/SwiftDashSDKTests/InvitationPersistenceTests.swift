@@ -67,6 +67,9 @@ final class InvitationPersistenceTests: XCTestCase {
             // `PersistentDashpayPayment` rows, so the sweep's Failed flip
             // may ride this store's rounds — genuinely attested.
             | PlatformWalletPersistenceCapabilities.dashpayPayments
+            // Locked outpoints: the handler wires the persist/load/free trio
+            // onto `PersistentLockedOutpoint`, so locks survive a restart.
+            | PlatformWalletPersistenceCapabilities.outpointLocks
 
         XCTAssertEqual(
             capabilities.version,

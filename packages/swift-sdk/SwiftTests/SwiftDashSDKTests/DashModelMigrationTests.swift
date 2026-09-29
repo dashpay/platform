@@ -447,11 +447,14 @@ final class DashModelMigrationTests: XCTestCase {
         }
     }
 
-    func testV3AddsTrackedMasternodesAndBalanceMetadataToTheBaselineEntitySet() {
+    func testV3AddsTrackedMasternodesBalanceMetadataAndLockedOutpointsToTheBaselineEntitySet() {
         XCTAssertEqual(
             Set(Schema(versionedSchema: DashSchemaV3.self).entities.map(\.name))
                 .subtracting(Schema(versionedSchema: DashSchemaV1.self).entities.map(\.name)),
-            ["PersistentTrackedMasternode", "PersistentIdentityBalanceMetadata"])
+            [
+                "PersistentTrackedMasternode", "PersistentIdentityBalanceMetadata",
+                "PersistentLockedOutpoint",
+            ])
     }
 
     @MainActor

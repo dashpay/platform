@@ -4179,6 +4179,7 @@ mod sweep_tests {
             tracked_asset_locks: BTreeMap::new(),
             observed_input_conflicts: Default::default(),
             dpns_name_states: BTreeMap::new(),
+            pending_outpoint_locks: Default::default(),
         }
     }
 

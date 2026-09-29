@@ -1946,6 +1946,7 @@ mod txo_inventory_tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            pending_outpoint_locks: Default::default(),
             observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);

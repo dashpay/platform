@@ -7,6 +7,7 @@ use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletP
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
+use crate::wallet::outpoint_locks::lock_known_masternode_collaterals;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -157,6 +158,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // `update_state` and `update_balance` are both on: the balance
             // this produces is what `generation.set(..)` mirrors a few lines
             // below, and the UI reads that.
+            // A replayed ProRegTx locks its collateral here, and nothing
+            // persists that lock unless it is queued with the rest: once the
+            // registration confirms it leaves this list and is never replayed
+            // again.
+            let mut replay_locks = Vec::new();
             if !unconfirmed_outgoing_txs.is_empty() {
                 let mut replayed = 0usize;
                 for tx in &unconfirmed_outgoing_txs {
@@ -169,6 +175,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                             true,
                         )
                         .await;
+                    replay_locks.extend(result.locked_outpoints);
                     if result.is_relevant {
                         replayed += 1;
                     }
@@ -229,7 +236,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
+                pending_outpoint_locks: Default::default(),
             };
+            platform_info.queue_outpoint_locks(replay_locks);
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
             // chainlock dispatcher promotion-evicts a restored spender
@@ -476,6 +485,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
             return Err(err);
         }
+
+        // Keep the collateral of every masternode the wallets already know out
+        // of coin selection: registrations restored into their histories
+        // without a transaction check, and tracked masternodes whose
+        // registration has been fetched. New locks are queued for persistence
+        // like the ones a check makes. See `wallet::outpoint_locks`.
+        lock_known_masternode_collaterals(
+            &self.wallet_manager,
+            &self.tracked_masternodes_service().known_collaterals(),
+        )
+        .await;
 
         // Past the rollback point: every registration here is one this load
         // actually committed, so the transactions now have a wallet to belong
@@ -1529,6 +1549,167 @@ mod tests {
             1,
             "dropping the manager must release the persister immediately — an \
              idle adapter holds no strong reference to await"
+        );
+    }
+}
+
+#[cfg(test)]
+mod masternode_collateral_load_tests {
+    //! A load locks the collateral of the masternodes the manager already
+    //! knows, including one whose registration the wallet never processed.
+
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use dashcore::hashes::Hash;
+    use dashcore::{BlockHash, OutPoint, Transaction};
+    use key_wallet::test_utils::TestWalletContext;
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+    use key_wallet::wallet::ManagedWalletInfo;
+    use key_wallet::Wallet;
+
+    use crate::changeset::{
+        ClientStartState, ClientWalletStartState, IdentityManagerStartState, PersistenceError,
+        PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::masternode::{RegistrationDetails, TrackedMasternode, TrackedMasternodeSnapshot};
+    use crate::test_support::{NoopTestEventHandler, MASTERNODE_COLLATERAL_DUFFS};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    const SPARE: u64 = 500_000_000;
+
+    /// Hands back one wallet and one tracked masternode.
+    struct TrackedCollateralPersister {
+        wallet: Wallet,
+        managed: ManagedWalletInfo,
+        tracked: TrackedMasternode,
+    }
+
+    impl PlatformWalletPersistence for TrackedCollateralPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let mut wallets = BTreeMap::new();
+            wallets.insert(
+                self.wallet.compute_wallet_id(),
+                ClientWalletStartState {
+                    wallet: self.wallet.clone(),
+                    wallet_info: self.managed.clone(),
+                    identity_manager: IdentityManagerStartState::default(),
+                    unused_asset_locks: BTreeMap::new(),
+                    unconfirmed_outgoing_txs: Vec::new(),
+                },
+            );
+            Ok(ClientStartState {
+                wallets,
+                ..Default::default()
+            })
+        }
+
+        fn load_tracked_masternodes(
+            &self,
+            _network: dashcore::Network,
+        ) -> Result<Vec<TrackedMasternode>, PersistenceError> {
+            Ok(vec![self.tracked.clone()])
+        }
+    }
+
+    /// The user tracks a masternode whose collateral sits in this wallet but
+    /// whose registration the wallet never processed (funded and signed
+    /// elsewhere). After a load the collateral is locked: it is out of the
+    /// spendable balance and out of every send's coin selection, and the
+    /// lock is queued for persistence.
+    #[tokio::test]
+    async fn should_lock_a_tracked_masternodes_collateral_on_load() {
+        let mut ctx = TestWalletContext::new_random();
+        let funding = Transaction::dummy(
+            &ctx.receive_address,
+            0..1,
+            &[MASTERNODE_COLLATERAL_DUFFS, SPARE],
+        );
+        ctx.check_transaction(
+            &funding,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1,
+                BlockHash::all_zeros(),
+                1_700_000_000,
+            )),
+        )
+        .await;
+        let collateral = OutPoint::new(funding.txid(), 0);
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let tracked = TrackedMasternode {
+            pro_tx_hash: [0x42; 32],
+            label: None,
+            added_at: 0,
+            snapshot: TrackedMasternodeSnapshot {
+                registration: Some(RegistrationDetails {
+                    height: 2,
+                    collateral: (collateral.txid.to_byte_array(), collateral.vout),
+                    owner_key_hash: [0x01; 20],
+                    voting_key_hash: [0x02; 20],
+                    operator_public_key: [0x03; 48],
+                    payout_script: Vec::new(),
+                    service_address: None,
+                    is_evonode: false,
+                    platform_node_id: None,
+                    platform_http_port: None,
+                }),
+                ..Default::default()
+            },
+        };
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(TrackedCollateralPersister {
+                wallet: ctx.wallet,
+                managed: ctx.managed_wallet,
+                tracked,
+            }),
+            Arc::new(NoopTestEventHandler) as _,
+        ));
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("the loaded wallet must be registered");
+        assert_eq!(
+            wallet.locked_outpoints().await.expect("locks"),
+            vec![collateral]
+        );
+        assert_eq!(wallet.balance().locked(), MASTERNODE_COLLATERAL_DUFFS);
+        assert_eq!(
+            wallet
+                .core()
+                .pooled_spendable_balance(&[AccountTypePreference::BIP44][..], 0)
+                .await
+                .expect("pooled balance"),
+            SPARE,
+            "coin selection sees only the spare coin"
+        );
+        let wm = wallet.wallet_manager().read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet");
+        assert_eq!(
+            info.take_queued_outpoint_locks(),
+            std::collections::BTreeSet::from([collateral]),
+            "the lock is queued for persistence"
         );
     }
 }

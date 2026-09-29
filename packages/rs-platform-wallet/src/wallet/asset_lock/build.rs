@@ -3682,4 +3682,61 @@ mod tests {
             "and the row itself is gone, not just reported as removed"
         );
     }
+
+    /// An asset lock from a wallet holding a 1,000 DASH masternode collateral
+    /// and a 5 DASH coin is funded from the 5 DASH coin: a lock only the
+    /// collateral could fund is refused, and draining the account locks the
+    /// spare coin alone.
+    #[tokio::test]
+    async fn should_fund_an_asset_lock_without_the_masternode_collateral() {
+        const DASH: u64 = 100_000_000;
+        let (wallet_manager, wallet_id, _generation, signer, _collateral, spare) =
+            crate::test_support::wallet_manager_with_registered_collateral(
+                StandardAccountType::BIP44Account,
+                5 * DASH,
+            )
+            .await;
+        let (manager, _persistence) = asset_lock_manager_over(
+            wallet_manager,
+            wallet_id,
+            Arc::new(CountingOkBroadcaster::default()),
+        );
+
+        let shortfall = manager
+            .build_asset_lock_transaction(
+                6 * DASH,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                shortfall,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
+            ),
+            "a 6 DASH lock needs the collateral, got {shortfall:?}"
+        );
+
+        let (tx, _path, _token, _accounts) = manager
+            .build_asset_lock_transaction_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: None,
+                },
+                &[AccountTypePreference::BIP44],
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("draining the account locks the spare coin");
+        let inputs: Vec<OutPoint> = tx.input.iter().map(|input| input.previous_output).collect();
+        assert_eq!(
+            inputs,
+            vec![spare],
+            "the drain must leave the collateral alone"
+        );
+    }
 }

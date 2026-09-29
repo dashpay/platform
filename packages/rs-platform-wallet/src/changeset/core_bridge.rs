@@ -1108,8 +1108,32 @@ async fn reconstruct_asset_locks_for_event(
 }
 
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
-/// for atomic persistence.
+/// for atomic persistence, carrying every outpoint lock the wallet's
+/// transaction checks queued since the last one.
+///
+/// No `WalletEvent` carries a lock: a ProRegTx locks its collateral even
+/// when the transaction is otherwise irrelevant and emits nothing. The locks
+/// ride whichever event of the wallet comes next, which for a block is at
+/// the latest the `SyncHeightAdvanced` watermark that certifies it.
 async fn build_core_changeset(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    event: &WalletEvent,
+) -> CoreChangeSet {
+    let mut cs = project_core_event(wallet_manager, event).await;
+    let queued = {
+        let guard = wallet_manager.read().await;
+        guard
+            .get_wallet_info(&event.wallet_id())
+            .map(PlatformWalletInfo::take_queued_outpoint_locks)
+            .unwrap_or_default()
+    };
+    cs.outpoint_locks
+        .extend(queued.into_iter().map(|outpoint| (outpoint, true)));
+    cs
+}
+
+/// The [`CoreChangeSet`] one [`WalletEvent`] describes.
+async fn project_core_event(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
 ) -> CoreChangeSet {
@@ -2170,6 +2194,7 @@ impl CoreChangeSet {
             && self.addresses_marked_used.is_empty()
             && self.account_highest_used.is_empty()
             && self.utxo_credit_verdicts.is_empty()
+            && self.outpoint_locks.is_empty()
     }
 }
 
@@ -3803,6 +3828,7 @@ mod contact_watch_only_projection_tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            pending_outpoint_locks: Default::default(),
             observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
@@ -7203,6 +7229,7 @@ mod utxo_credit_verdict_tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            pending_outpoint_locks: Default::default(),
             observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
@@ -7297,6 +7324,7 @@ mod utxo_credit_verdict_tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            pending_outpoint_locks: Default::default(),
             observed_input_conflicts: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
@@ -7319,6 +7347,74 @@ mod utxo_credit_verdict_tests {
         assert!(
             cs.records.iter().all(|r| r.context.block_info().is_some()),
             "the row is rebuilt from the manager's record, not the stale clone"
+        );
+    }
+}
+
+#[cfg(test)]
+mod outpoint_lock_projection_tests {
+    //! A ProRegTx locks its collateral without emitting any `WalletEvent`,
+    //! so the lock rides the wallet's next projected changeset.
+
+    use super::*;
+    use crate::test_support::{masternode_registration, wallet_manager_with_registered_collateral};
+    use dashcore::hashes::Hash;
+    use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet::transaction_checking::BlockInfo;
+
+    const SPARE: u64 = 500_000_000;
+
+    fn sync_height(wallet_id: WalletId, height: u32) -> WalletEvent {
+        WalletEvent::SyncHeightAdvanced { wallet_id, height }
+    }
+
+    #[tokio::test]
+    async fn should_carry_a_registration_lock_on_the_wallets_next_changeset_once() {
+        let (manager, wallet_id, _generation, _signer, collateral, _spare) =
+            wallet_manager_with_registered_collateral(StandardAccountType::BIP44Account, SPARE)
+                .await;
+
+        let cs = build_core_changeset(&manager, &sync_height(wallet_id, 2)).await;
+        assert_eq!(cs.outpoint_locks, BTreeMap::from([(collateral, true)]));
+        let lock_only = CoreChangeSet {
+            outpoint_locks: cs.outpoint_locks.clone(),
+            ..CoreChangeSet::default()
+        };
+        assert!(
+            !lock_only.is_empty_no_records(),
+            "a changeset carrying only a lock must still reach the persister"
+        );
+
+        let next = build_core_changeset(&manager, &sync_height(wallet_id, 3)).await;
+        assert!(next.outpoint_locks.is_empty(), "a lock is carried once");
+    }
+
+    #[tokio::test]
+    async fn should_not_queue_a_registration_seen_again() {
+        let (manager, wallet_id, _generation, _signer, collateral, _spare) =
+            wallet_manager_with_registered_collateral(StandardAccountType::BIP44Account, SPARE)
+                .await;
+        let _ = build_core_changeset(&manager, &sync_height(wallet_id, 2)).await;
+
+        // The block that confirms it again, or a rescan.
+        manager
+            .write()
+            .await
+            .check_transaction_in_all_wallets(
+                &masternode_registration(collateral),
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    3,
+                    dashcore::BlockHash::all_zeros(),
+                    1_700_000_200,
+                )),
+                true,
+                true,
+            )
+            .await;
+        let cs = build_core_changeset(&manager, &sync_height(wallet_id, 3)).await;
+        assert!(
+            cs.outpoint_locks.is_empty(),
+            "the wallet already holds that lock"
         );
     }
 }

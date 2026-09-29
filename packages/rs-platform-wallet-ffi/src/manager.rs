@@ -8,9 +8,10 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadIdentityBalanceBlockTimeFn,
-    LoadTrackedMasternodesFn, PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn,
-    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
+    FFIPersister, FreeTrackedMasternodesFn, FreeWalletLockedOutpointsFn,
+    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, LoadWalletLockedOutpointsFn,
+    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
+    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetOutpointLocksFn,
     PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
@@ -276,6 +277,18 @@ unsafe fn persistence_extension_callbacks(
         load_identity_balance_block_time: slot!(
             on_load_identity_balance_block_time_fn,
             LoadIdentityBalanceBlockTimeFn
+        ),
+        wallet_changeset_outpoint_locks: slot!(
+            on_persist_wallet_changeset_outpoint_locks_fn,
+            PersistWalletChangesetOutpointLocksFn
+        ),
+        load_wallet_locked_outpoints: slot!(
+            on_load_wallet_locked_outpoints_fn,
+            LoadWalletLockedOutpointsFn
+        ),
+        load_wallet_locked_outpoints_free: slot!(
+            on_load_wallet_locked_outpoints_free_fn,
+            FreeWalletLockedOutpointsFn
         ),
     }
 }

@@ -363,14 +363,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .map(|root| Wallet::compute_wallet_id_from_root_extended_pub_key(&root, None))
             .unwrap_or(wallet.wallet_id);
 
-        let platform_info = PlatformWalletInfo {
+        let mut platform_info = PlatformWalletInfo {
             observed_input_conflicts: Default::default(),
             core_wallet: wallet_info,
             generation: Arc::clone(&generation),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
             dpns_name_states: std::collections::BTreeMap::new(),
+            pending_outpoint_locks: Default::default(),
         };
+        // A tracked masternode's collateral may reach this wallet as it syncs;
+        // lock it now so it arrives locked.
+        platform_info.lock_known_masternode_collaterals(
+            &self.tracked_masternodes_service().known_collaterals(),
+        );
 
         wallet.downgrade_to_external_signable();
 
