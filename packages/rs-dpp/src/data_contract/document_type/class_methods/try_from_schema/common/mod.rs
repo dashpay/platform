@@ -2452,8 +2452,8 @@ pub(super) fn apply_moderator_abilities(
 
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
-/// the referring side of every `propertyAgreement`, lookup key and key id
-/// property, for every leaf of every reference expression, the
+/// the referring side of every `propertyAgreement`, lookup key (a computed
+/// key's params included) and key id property, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -2493,6 +2493,11 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
                     ..
                 } => {
                     read.extend(lookup.referring_properties().map(top_level_property));
+                    // A computed key's params: the key is judged on the create only, so a
+                    // change would leave the document no longer hashing to what it revealed
+                    if let Some((_, key)) = lookup.hash_key() {
+                        read.extend(key.properties_read().map(top_level_property));
+                    }
                     Some(property_agreement)
                 }
                 DocumentPropertyReferenceTarget::ListElement(list_element) => {

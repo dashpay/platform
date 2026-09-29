@@ -1568,7 +1568,18 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `validate_no_immutable_deletable_element_references` otherwise refuses.
 ///     A plain pair `{"$ownerId": "$ownerId"}`
 ///     makes the commitment the writer's own, and `consume` requires it, into
-///     the declaring contract, on a type whose owners may delete.
+///     the declaring contract, on a type whose owners may delete, that declares
+///     no delete token cost or delete action fee and requires no stricter
+///     signature security level than the declaring type; batch advanced
+///     structure 1 refuses a contract-bound key whose bounds leave out a type
+///     the created type may consume (`ContractBoundedKeyOutOfBoundsError`,
+///     20014). The consumed deletes are converted with the create's own
+///     operations pending, so a type may consume its own documents. The plain
+///     pairs beside a function are judged with it, on the create alone, so the
+///     properties they name must be fixed once written or transient; on a
+///     mutable type such a lookup may not be an `anyOf` operand; and no
+///     property a function reads may be listed under
+///     `moderatorAbilities.changeFields` (57).
 ///     `creatorRefersTo` takes a `deletableDocument` target through a function,
 ///     and an `ownerRefersTo` or `creatorRefersTo` lookup may leave the value
 ///     out beside one. The declaration reproduces the DPNS preorder hash of a
