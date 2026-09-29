@@ -466,6 +466,69 @@ fn should_split_the_storage_into_primary_storage_and_each_index() {
 }
 
 #[test]
+fn should_charge_no_layer_to_a_skip_index_that_skips_the_document() {
+    let platform_version = PlatformVersion::latest();
+    let contract = contract_with(platform_value!({ "post": {
+        "type": "object",
+        "documentsMutable": true,
+        "canBeDeleted": true,
+        "properties": {
+            "language": { "type": "string", "maxLength": 8, "position": 0 },
+            "hashtag": { "type": "string", "maxLength": 20, "position": 1 },
+        },
+        "indices": [
+            { "name": "byLanguage", "properties": [{ "language": "asc" }] },
+            {
+                "name": "byLanguageHashtag",
+                "properties": [{ "language": "asc" }, { "hashtag": "asc" }],
+                "skipIfAbsent": ["hashtag"],
+            },
+        ],
+        "required": ["language"],
+        "additionalProperties": false,
+    }}));
+    let post = contract.document_type_for_name("post").expect("post");
+    let mut document = post
+        .random_document(Some(1), platform_version)
+        .expect("expected a random document");
+    document.set_properties(
+        [("language".to_string(), Value::Text("en".to_string()))]
+            .into_iter()
+            .collect(),
+    );
+    let cost = document_create_cost(
+        &contract,
+        post,
+        &document,
+        &CostAssumptions::new(platform_version),
+        platform_version,
+    )
+    .expect("expected a cost");
+
+    // The language's value tree is byLanguage's alone: byLanguageHashtag
+    // skips a post without a hashtag and adds no layer.
+    let shares = |name: &str| {
+        cost.indexes
+            .iter()
+            .find(|index| index.name == name)
+            .map(|index| {
+                (
+                    index.shared_with.clone(),
+                    index.shared_bytes.new_values,
+                    index.own_bytes.new_values,
+                )
+            })
+            .unwrap_or_default()
+    };
+    let (by_language_shared_with, by_language_shared_bytes, by_language_own_bytes) =
+        shares("byLanguage");
+    assert!(by_language_shared_with.is_empty());
+    assert_eq!(by_language_shared_bytes, 0);
+    assert!(by_language_own_bytes > 0);
+    assert_eq!(shares("byLanguageHashtag"), (vec![], 0, 0));
+}
+
+#[test]
 fn should_add_the_contract_charges() {
     let platform_version = PlatformVersion::latest();
     let mut schema = note_schema();

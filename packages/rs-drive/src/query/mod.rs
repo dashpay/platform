@@ -1068,28 +1068,32 @@ impl<'a> SkipIfAbsentBinding<'a> {
     }
 
     /// The binding a where clause makes: equality and `in` exclude missing
-    /// documents unless they name null, a range excludes them when it has a
-    /// non-null lower bound (strict bounds exclude the empty key outright),
-    /// and `startsWith` when its prefix is not empty.
+    /// documents unless they name a value that may encode as missing, a
+    /// range excludes them when its lower bound may not (strict bounds
+    /// exclude the empty key outright), and `startsWith` when its prefix is
+    /// not empty.
     pub fn for_where_clause(clause: &'a WhereClause) -> Self {
-        let lower_bound_is_present = |value: &Value| {
+        let lower_bound_excludes_missing = |value: &Value| {
             value
                 .as_array()
                 .and_then(|bounds| bounds.first())
-                .is_some_and(|lower| !lower.is_null())
+                .is_some_and(|lower| !may_encode_as_missing(lower))
         };
         let excludes_missing = match clause.operator {
-            WhereOperator::Equal => !clause.value.is_null(),
+            WhereOperator::Equal | WhereOperator::GreaterThanOrEquals => {
+                !may_encode_as_missing(&clause.value)
+            }
+            // `in_values` reads every spelling the query layer accepts,
+            // bytes on a U8 property included.
             WhereOperator::In => clause
-                .value
-                .as_array()
-                .is_some_and(|values| values.iter().all(|value| !value.is_null())),
+                .in_values()
+                .data
+                .is_some_and(|values| values.iter().all(|value| !may_encode_as_missing(value))),
             WhereOperator::GreaterThan
             | WhereOperator::BetweenExcludeBounds
             | WhereOperator::BetweenExcludeLeft => true,
-            WhereOperator::GreaterThanOrEquals => !clause.value.is_null(),
             WhereOperator::Between | WhereOperator::BetweenExcludeRight => {
-                lower_bound_is_present(&clause.value)
+                lower_bound_excludes_missing(&clause.value)
             }
             WhereOperator::StartsWith => clause
                 .value
@@ -1106,6 +1110,22 @@ impl<'a> SkipIfAbsentBinding<'a> {
     /// The bindings of `where_clauses`.
     pub fn for_where_clauses(where_clauses: &'a [WhereClause]) -> Vec<Self> {
         where_clauses.iter().map(Self::for_where_clause).collect()
+    }
+}
+
+/// Whether `value` may encode to the empty key a missing value takes on a
+/// stored index: null, or an empty byte array in any spelling a byteArray
+/// property accepts (bytes, an array, base64 text). A string's `""` encodes
+/// apart, but a binding does not know the property's type, so it is read
+/// the cautious way.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn may_encode_as_missing(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::Bytes(bytes) => bytes.is_empty(),
+        Value::Array(values) => values.is_empty(),
+        Value::Text(text) => text.is_empty(),
+        _ => false,
     }
 }
 
@@ -1150,6 +1170,21 @@ pub fn index_admissible_for_skip_if_absent(
             binding.field == skip_property.as_str() && (index_only || binding.excludes_missing)
         })
     })
+}
+
+/// Whether `index` may serve a query at all: the one candidate filter every
+/// index picker applies, so no picker can take one rule and miss the other.
+/// It joins the time-range provenance rule
+/// ([`index_admissible_for_resolved_time_range`]) and the `skipIfAbsent`
+/// rule ([`index_admissible_for_skip_if_absent`]).
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn index_admissible_for_query(
+    index: &Index,
+    resolved_time_ranges: &[ResolvedTimeRange],
+    skip_bindings: &[SkipIfAbsentBinding<'_>],
+) -> bool {
+    index_admissible_for_resolved_time_range(index, resolved_time_ranges)
+        && index_admissible_for_skip_if_absent(index, skip_bindings)
 }
 
 /// Rejects a query whose resolution provenance and clause shapes disagree:
@@ -2723,10 +2758,7 @@ impl<'a> DriveDocumentQuery<'a> {
             range_field,
             in_field,
             order_by_keys.as_slice(),
-            |index| {
-                index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges)
-                    && index_admissible_for_skip_if_absent(index, &skip_bindings)
-            },
+            |index| index_admissible_for_query(index, &self.resolved_time_ranges, &skip_bindings),
             platform_version,
         )?
         else {

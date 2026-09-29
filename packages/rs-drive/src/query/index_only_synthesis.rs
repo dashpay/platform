@@ -39,8 +39,8 @@ use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{
-    index_admissible_for_skip_if_absent, BestIndexOutcome, DriveDocumentQuery, InternalClauses,
-    WhereClause, WhereOperator,
+    index_admissible_for_query, BestIndexOutcome, DriveDocumentQuery, InternalClauses, WhereClause,
+    WhereOperator,
 };
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -189,10 +189,8 @@ impl DriveDocumentQuery<'_> {
         // additionally requires every skip property bound: it is a sparse
         // projection, and an all-unused match inside the difference budget
         // could otherwise slip through (see
-        // [`index_admissible_for_skip_if_absent`]).
-        let admissible = |index: &Index| {
-            index.time_range.is_none() && index_admissible_for_skip_if_absent(index, &skip_bindings)
-        };
+        // [`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)).
+        let admissible = |index: &Index| index_admissible_for_query(index, &[], &skip_bindings);
         let matching = |filter: &dyn Fn(&Index) -> bool| {
             self.document_type
                 .index_for_types_matching_including_terminal(

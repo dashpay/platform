@@ -11,10 +11,7 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::conditions::WhereClause;
 use crate::query::ordering::OrderClause;
-use crate::query::{
-    defaults, index_admissible_for_resolved_time_range, index_admissible_for_skip_if_absent,
-    DriveDocumentQuery,
-};
+use crate::query::{defaults, index_admissible_for_query, DriveDocumentQuery};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{Index, IndexProperty};
@@ -318,12 +315,7 @@ impl<'a> DriveDocumentQuery<'a> {
             // `find_best_index`: a bucketed index only for a query whose
             // resolved equality names its transform source, never for a raw
             // query. See `index_admissible_for_resolved_time_range`.
-            if !index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges) {
-                continue;
-            }
-            // A skip index only for a query binding every skip property. See
-            // `index_admissible_for_skip_if_absent`.
-            if !index_admissible_for_skip_if_absent(index, &skip_bindings) {
+            if !index_admissible_for_query(index, &self.resolved_time_ranges, &skip_bindings) {
                 continue;
             }
             let mut positioned: Vec<(usize, &WhereClause)> = Vec::with_capacity(in_clauses.len());

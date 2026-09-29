@@ -95,9 +95,6 @@ impl Drive {
             if document_takes_part_in_index(
                 &index_type.skip_if_absent_properties,
                 &document_and_contract_info.owned_document_info.document_info,
-                document_type,
-                document_and_contract_info.owned_document_info.owner_id,
-                platform_version,
             )? {
                 self.remove_reference_for_index_level_for_contract_operations(
                     document_and_contract_info,
@@ -124,9 +121,6 @@ impl Drive {
             if !level_reaches_entry(
                 sub_level,
                 &document_and_contract_info.owned_document_info.document_info,
-                document_type,
-                document_and_contract_info.owned_document_info.owner_id,
-                platform_version,
             )? {
                 continue;
             }

@@ -39,7 +39,7 @@ use grovedb::element::reference_path::ReferencePathType::SiblingReference;
 use grovedb::element::IndexAxis;
 use grovedb::Element;
 use grovedb_merk::tree_type::TreeType;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 /// One element an insert writes.
 #[derive(Clone, Debug)]
@@ -155,6 +155,9 @@ struct Context<'a> {
     index_flags: Option<StorageFlags>,
     /// The type whose tree the walk is in, when it is a referring type's.
     referring_type: Option<String>,
+    /// The `skipIfAbsent` indexes that skip the document: they write
+    /// nothing, so no write is theirs.
+    skipped_indexes: BTreeSet<String>,
     writes: Vec<Write>,
     /// Where each recorded write is, to record it once.
     recorded: HashSet<WriteLocation>,
@@ -198,6 +201,17 @@ pub(crate) fn document_writes(
             || contract.config().can_be_deleted()
             || (document_type.index_only() && document_type.documents_can_be_deleted())
     });
+    let skipped_indexes = document_type
+        .indexes()
+        .values()
+        .filter(|index| {
+            !index
+                .skip_if_absent_properties
+                .iter()
+                .all(|property| document.properties().contains_key(property))
+        })
+        .map(|index| index.name.clone())
+        .collect();
     let mut context = Context {
         document_type,
         document,
@@ -206,6 +220,7 @@ pub(crate) fn document_writes(
         document_flags,
         index_flags,
         referring_type: None,
+        skipped_indexes,
         writes: Vec::new(),
         recorded: HashSet::new(),
     };
@@ -304,14 +319,25 @@ impl Context<'_> {
     /// Whether the document takes part in an index whose skip set is
     /// `skip_set` (the walkers' `document_takes_part_in_index`).
     fn takes_part(&self, skip_set: &[String]) -> Result<bool, Error> {
-        takes_part_in_index_by(skip_set, &mut |property| Ok(self.raw(property)?.is_some()))
+        takes_part_in_index_by(skip_set, &mut |property| {
+            Ok(self.document.properties().contains_key(property))
+        })
+    }
+
+    /// The indexes through `names` whose path the document writes: those
+    /// that do not skip it.
+    fn writing_indexes(&self, names: &[String]) -> Vec<String> {
+        indexes_through(&self.index_paths, names)
+            .into_iter()
+            .filter(|index| !self.skipped_indexes.contains(index))
+            .collect()
     }
 
     /// Whether the document writes an entry at or below `level` (the walkers'
     /// `level_reaches_entry`): only then do they build the level.
     fn reaches_entry(&self, level: &IndexLevel) -> Result<bool, Error> {
-        level_reaches_entry_by(level, self.document_type, &mut |property| {
-            Ok(self.raw(property)?.is_some())
+        level_reaches_entry_by(level, &mut |property| {
+            Ok(self.document.properties().contains_key(property))
         })
     }
 
@@ -498,7 +524,7 @@ impl Context<'_> {
                 element: empty_tree(tree_types.value_tree_type, false, flags.as_ref()),
                 parent: tree_types.property_name_tree_type,
                 role: LayoutRole::IndexValue,
-                indexes: indexes_through(&self.index_paths, &names),
+                indexes: self.writing_indexes(&names),
                 if_absent: true,
                 ephemeral,
                 ranking: None,
@@ -508,7 +534,7 @@ impl Context<'_> {
             });
             // The first document under a value leaves it a count of one and
             // its own sum.
-            let indexes = indexes_through(&self.index_paths, &names);
+            let indexes = self.writing_indexes(&names);
             let sum = self.sum_contribution(level)?;
             self.ranking_rows(
                 &path,
@@ -590,7 +616,7 @@ impl Context<'_> {
             .is_some();
             let mut sub_names = names.to_vec();
             sub_names.push(sub_key.clone());
-            let indexes = indexes_through(&self.index_paths, &sub_names);
+            let indexes = self.writing_indexes(&sub_names);
             self.push(Write {
                 path: path.to_vec(),
                 key: sub_key.as_bytes().to_vec(),

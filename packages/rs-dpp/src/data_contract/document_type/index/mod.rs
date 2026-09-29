@@ -1984,7 +1984,11 @@ impl Index {
                 // `parse_indices` resolves the `true` spelling.
                 SKIP_IF_ABSENT if skip_if_absent_allowed => match value_value {
                     Value::Bool(flag) => {
+                        // A repeated key keeps its last value, as the
+                        // meta-schema's JSON view does: the flag and the set
+                        // are replaced together, so they can never disagree.
                         skip_if_absent = *flag;
+                        skip_if_absent_properties.clear();
                     }
                     Value::Array(names) => {
                         if names.is_empty() {

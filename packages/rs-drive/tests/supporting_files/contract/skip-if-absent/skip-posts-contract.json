@@ -57,6 +57,54 @@
       },
       "required": ["text", "$createdAt"],
       "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byOwnerTag",
+          "properties": [{ "$ownerId": "asc" }, { "tag": "asc" }],
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byOwnerTopic",
+          "properties": [{ "$ownerId": "asc" }, { "topic": "asc" }],
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byDayTag",
+          "properties": [{ "$createdAt": "asc" }, { "tag": "asc" }],
+          "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400, "ttl": 604800 },
+          "skipIfAbsent": true
+        },
+        {
+          "name": "byDayTopic",
+          "properties": [{ "$createdAt": "asc" }, { "topic": "asc" }],
+          "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400, "ttl": 604800 },
+          "skipIfAbsent": true
+        }
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 0
+        },
+        "topic": {
+          "type": "string",
+          "maxLength": 32,
+          "position": 1
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 280,
+          "position": 2
+        }
+      },
+      "required": ["text", "$createdAt"],
+      "additionalProperties": false
     }
   }
 }

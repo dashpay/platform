@@ -3,11 +3,11 @@
 mod tests {
     use crate::config::DriveConfig;
     use crate::error::{query::QuerySyntaxError, Error};
-    use crate::query::DriveDocumentQuery;
+    use crate::query::{DriveDocumentQuery, SkipIfAbsentBinding, WhereClause, WhereOperator};
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::DocumentType;
-    use dpp::platform_value::{platform_value, Identifier};
+    use dpp::platform_value::{platform_value, Identifier, Value};
     use dpp::util::cbor_serializer;
     use serde_json::json;
     use std::collections::BTreeMap;
@@ -198,8 +198,6 @@ mod tests {
 
     #[test]
     fn should_classify_which_where_clauses_exclude_missing_values() {
-        use crate::query::{SkipIfAbsentBinding, WhereClause, WhereOperator};
-        use dpp::platform_value::Value;
         let clause = |operator: WhereOperator, value: Value| WhereClause {
             field: "hashtag".to_string(),
             operator,
@@ -251,6 +249,32 @@ mod tests {
             ),
             (clause(WhereOperator::StartsWith, text("da")), true),
             (clause(WhereOperator::StartsWith, text("")), false),
+            // An empty byte array, in any spelling a byteArray property
+            // accepts, encodes to the empty key a missing value takes.
+            (clause(WhereOperator::Equal, Value::Bytes(vec![])), false),
+            (clause(WhereOperator::Equal, Value::Array(vec![])), false),
+            (clause(WhereOperator::Equal, text("")), false),
+            (clause(WhereOperator::Equal, Value::Bytes(vec![1])), true),
+            (
+                clause(WhereOperator::GreaterThanOrEquals, Value::Bytes(vec![])),
+                false,
+            ),
+            (
+                clause(
+                    WhereOperator::In,
+                    Value::Array(vec![Value::Bytes(vec![1]), Value::Bytes(vec![])]),
+                ),
+                false,
+            ),
+            (
+                clause(
+                    WhereOperator::Between,
+                    Value::Array(vec![Value::Bytes(vec![]), Value::Bytes(vec![9])]),
+                ),
+                false,
+            ),
+            // Bytes spell the values of an `in` on a U8 property.
+            (clause(WhereOperator::In, Value::Bytes(vec![1, 2])), true),
         ] {
             assert_eq!(
                 SkipIfAbsentBinding::for_where_clause(&where_clause).excludes_missing,

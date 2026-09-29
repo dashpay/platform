@@ -212,6 +212,13 @@ pub struct IndexLevel {
     /// on PV14+ contracts (the `at` grammar is rejected below meta-schema
     /// v3), so every historical index level derives bit-identically.
     count_exempt_branch: bool,
+    /// Whether an index with a non-empty skip set
+    /// ([`Index::skip_if_absent_properties`]) passes through or ends at this
+    /// level. The walkers only have to ask which indexes a document takes
+    /// part in below a level that is stamped: every other level has an entry
+    /// for every document. Never set on a contract without a skipIfAbsent
+    /// index, so every historical index level derives bit-identically.
+    skip_at_or_below: bool,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -249,6 +256,12 @@ impl IndexLevel {
     /// — see the field docs on [`IndexLevel`].
     pub fn count_exempt_branch(&self) -> bool {
         self.count_exempt_branch
+    }
+
+    /// Whether a skipIfAbsent index passes through or ends at this level —
+    /// see the field docs on [`IndexLevel`].
+    pub fn skip_at_or_below(&self) -> bool {
+        self.skip_at_or_below
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -356,6 +369,7 @@ impl IndexLevel {
             ranked_count_grouping: false,
             count_propagating: false,
             count_exempt_branch: false,
+            skip_at_or_below: false,
             level_identifier: 0,
         };
 
@@ -400,6 +414,7 @@ impl IndexLevel {
                                 ranked_count_grouping: false,
                                 count_propagating: false,
                                 count_exempt_branch: false,
+                                skip_at_or_below: false,
                             }
                         });
                 if flat_level.has_index_with_type.is_some() {
@@ -440,8 +455,13 @@ impl IndexLevel {
                             ranked_count_grouping: false,
                             count_propagating: false,
                             count_exempt_branch: false,
+                            skip_at_or_below: false,
                         }
                     });
+
+                if !index.skip_if_absent_properties.is_empty() {
+                    current_level.skip_at_or_below = true;
+                }
 
                 if position == 0 {
                     if let Some(transform) = &index.time_range {

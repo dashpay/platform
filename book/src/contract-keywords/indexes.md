@@ -171,7 +171,7 @@ A document that leaves out a property of the index's **skip set** writes nothing
 
 An untagged post writes nothing into either index: no entry under `hashtag`, and no day window in `byDayHashtag`, whose ranking of today's hashtags therefore never has to step over an empty hashtag. A tagged post without a language is entered into `byHashtagLanguageTime` under null for `language`, since the array leaves `language` out of the skip set. A replace that adds or drops the hashtag moves the post into or out of both indexes.
 
-A query only uses a skip index when it constrains every skip property, so it cannot silently miss the documents the index skipped. On a stored type the constraint must be one no missing value can meet: an equality or `in` with non-null values, a range with a lower bound, `startsWith` with a non-empty prefix, or ranking by the property. Ordering by the property alone, or a range with only an upper bound, does not count: an index that does not skip would return the documents without the property too (they sort first, under null).
+A query only uses a skip index when it constrains every skip property, so it cannot silently miss the documents the index skipped. On a stored type the constraint must be one no missing value can meet: an equality or `in` with values that are neither null nor empty (an empty byte array is keyed like null), a range with a non-empty lower bound, `startsWith` with a non-empty prefix, or ranking by the property. Ordering by the property alone, or a range with only an upper bound, does not count: an index that does not skip would return the documents without the property too (they sort first, under null).
 
 Rules at registration:
 
@@ -179,7 +179,9 @@ Rules at registration:
 - Each skip property is a top-level property of the type, not a system property, and not listed in `required`.
 - No `rankedCountable` `at` level sits above the index's deepest skip property: it would count only documents carrying that property, and no query could read it without binding the property.
 - The index is not contested, and does not also set `nullSearchable: false` (the skip already leaves out a document with every indexed value missing).
-- On an [index-only type](index-only.md#skipifabsent) the skip set holds every optional property of the index, and each optional property needs a skip index of its own.
+- On a stored type, a skip property that is a byte array sets `minItems` to at least 1: an empty byte array is keyed like a missing value.
+- On a stored type, a ranking at a skip property's level does not share that level with an index that keeps null for the property: that index would create the null value, and the ranking would show it as a group with no documents.
+- On an [index-only type](index-only.md#skipifabsent) the skip set holds every optional property of the index, and each optional property needs a skip index of its own, without a `timeRange` (a window keeps the value only until the window drains).
 
 Respelling `true` as the array of the same properties, or the other way round, is no change on a contract update.
 

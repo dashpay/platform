@@ -2879,6 +2879,9 @@ mod index_only_executed_proof_tests {
 mod skip_if_absent_anywhere_tests {
     use super::index_only_tests::*;
     use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::document::Document;
     use dpp::identifier::Identifier;
     use dpp::prelude::DataContract;
@@ -2896,12 +2899,11 @@ mod skip_if_absent_anywhere_tests {
     const BLOCK_TIME_MS: u64 = 20_000 * 86_400_000 + 5 * 3_600_000;
 
     fn register(
-        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        platform: &TempPlatform<MockCoreRPCLike>,
         owner_id: Identifier,
         path: &str,
         platform_version: &PlatformVersion,
     ) -> DataContract {
-        use dpp::data_contract::accessors::v0::DataContractV0Setters;
         let mut contract = json_document_to_contract(path, true, platform_version)
             .expect("expected to parse the fixture");
         contract.set_owner_id(owner_id);
@@ -2921,7 +2923,7 @@ mod skip_if_absent_anywhere_tests {
 
     /// The document the executed `transition` is proven to have left.
     fn proven_document(
-        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        platform: &TempPlatform<MockCoreRPCLike>,
         transition: &StateTransition,
         block_info: &BlockInfo,
         contract: &DataContract,

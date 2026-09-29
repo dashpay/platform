@@ -315,8 +315,42 @@ impl Drive {
         // diverging from the insert path (consensus break).
         let index_structure = document_type.index_structure();
 
-        // fourth we need to store a reference to the document for each index
+        // `skipIfAbsent`: the index holds an entry for a document only when
+        // the document carries every property of its skip set, so a replace
+        // that adds or drops such a property moves the document into or out
+        // of the index. The old entry is removed only when the old document
+        // took part, and the new one written (with the trees it hangs from)
+        // only when the new document takes part — exactly what the insert
+        // and delete walkers would have done. An index that skips both
+        // versions holds nothing of the document. Every index of a pre-v14
+        // contract has an empty skip set, so both are `true` there.
+        //
+        // An index the document leaves (the old version takes part, the new
+        // one does not) only removes its old entry, and that entry's upward
+        // prune can empty a tree another index enters in this same replace.
+        // So the leaving indexes run last, after every other index has
+        // queued its writes, where their prunes see those writes and stop
+        // below any tree still in use. Without a skip index no index leaves,
+        // and the order is the index map's.
+        let mut participating_indexes = Vec::with_capacity(document_type.indexes().len());
+        let mut leaving_indexes = Vec::new();
         for index in document_type.indexes().values() {
+            let new_takes_part = document_takes_part_in_index(
+                &index.skip_if_absent_properties,
+                &document_and_contract_info.owned_document_info.document_info,
+            )?;
+            let old_takes_part =
+                document_takes_part_in_index(&index.skip_if_absent_properties, &old_document_info)?;
+            if old_takes_part && !new_takes_part {
+                leaving_indexes.push((index, new_takes_part, old_takes_part));
+            } else if new_takes_part {
+                participating_indexes.push((index, new_takes_part, old_takes_part));
+            }
+        }
+        participating_indexes.extend(leaving_indexes);
+
+        // fourth we need to store a reference to the document for each index
+        for (index, new_takes_part, old_takes_part) in participating_indexes {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -387,33 +421,7 @@ impl Drive {
                 document_reference.clone()
             };
 
-            // `skipIfAbsent`: the index holds an entry for a document only
-            // when the document carries every property of its skip set, so a
-            // replace that adds or drops such a property moves the document
-            // into or out of the index. The old entry is removed only when
-            // the old document took part, and the new one written (with the
-            // trees it hangs from) only when the new document takes part —
-            // exactly what the insert and delete walkers would have done. An
-            // index that skips both versions holds nothing of the document.
-            // Every index of a pre-v14 contract has an empty skip set, so both
-            // are `true` there.
-            let new_takes_part = document_takes_part_in_index(
-                &index.skip_if_absent_properties,
-                &document_and_contract_info.owned_document_info.document_info,
-                document_type,
-                owner_id,
-                platform_version,
-            )?;
-            let old_takes_part = document_takes_part_in_index(
-                &index.skip_if_absent_properties,
-                &old_document_info,
-                document_type,
-                None, // We want to use the old owner id
-                platform_version,
-            )?;
-            if !new_takes_part && !old_takes_part {
-                continue;
-            }
+            let leaving = old_takes_part && !new_takes_part;
 
             // Time-range indexes store one entry per overlapping range bucket,
             // so they need a set-diff update rather than the single old→new
@@ -432,12 +440,16 @@ impl Drive {
                 // walkers; see the ttl module's Billing section.
                 let index_is_ephemeral = transform.ttl_seconds.is_some();
                 let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
-                let index_batch_operations: &mut Vec<LowLevelDriveOperation> = if index_is_ephemeral
-                {
-                    &mut ephemeral_local_operations
-                } else {
-                    &mut batch_operations
-                };
+                // A leaving index only prunes, so its operations go straight
+                // into this replace's batch (retagged below): its prune has to
+                // see the writes every other index queued there.
+                let leaving_operations_start = batch_operations.len();
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> =
+                    if index_is_ephemeral && !leaving {
+                        &mut ephemeral_local_operations
+                    } else {
+                        &mut batch_operations
+                    };
                 let index_storage_flags = if index_is_ephemeral {
                     None
                 } else {
@@ -464,8 +476,13 @@ impl Drive {
                     platform_version,
                 )?;
                 if index_is_ephemeral {
-                    batch_operations.extend(
+                    let index_operations = if leaving {
+                        batch_operations.drain(leaving_operations_start..).collect()
+                    } else {
                         ephemeral_local_operations
+                    };
+                    batch_operations.extend(
+                        index_operations
                             .into_iter()
                             .map(LowLevelDriveOperation::retag_ephemeral),
                     );

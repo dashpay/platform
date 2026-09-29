@@ -82,7 +82,7 @@ Rules at registration:
 - The only system properties an index may list are `$ownerId` and `$createdAt`, and an indexed `$createdAt` must be in `required`.
 - At least one index involves no `$createdAt` and does not set `skipIfAbsent`: the proof index.
 - Every property is in `required`, except a skip property of a `skipIfAbsent` index. An object holding an indexed property is required too.
-- Every required property appears in at least one index that does not skip, as a property or a terminal component, except the `entryPayload` properties. Every optional property appears in a skip index whose skip set is that property alone.
+- Every required property appears in at least one index that does not skip, as a property or a terminal component, except the `entryPayload` properties. Every optional property appears in a skip index without a `timeRange` whose skip set is that property alone.
 - The type cannot also set [`ttl`](ttl.md) or `canBeDeletedByModerators`, and a `refersTo` lookup cannot target it.
 
 ## `entryPayload`
@@ -188,7 +188,7 @@ An untagged like still enters the type's other indexes over the same day window,
 What an index-only type adds to the rules of every type:
 
 - An index path has no representation for a missing value, so every index holding an optional property skips on it: the skip set is every optional property of the index, and an array must name them all.
-- Each optional property needs a skip index whose skip set is that property alone. A document carrying one optional property but missing another skips every index holding both, and its value would otherwise be written nowhere.
+- Each optional property needs a skip index without a `timeRange` whose skip set is that property alone. A document carrying one optional property but missing another skips every index holding both, and its value would otherwise be written nowhere; a windowed index keeps it only until its windows drain, where document queries do not read it.
 - An optional property is never a terminal.
 - At least one index that involves no `$createdAt` does not skip: the proof index.
 

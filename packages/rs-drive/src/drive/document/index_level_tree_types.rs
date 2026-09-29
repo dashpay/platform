@@ -86,9 +86,7 @@ use dpp::data_contract::document_type::{
     DocumentTypeRef, IndexCountability, IndexLevel, IndexLevelTypeInfo,
 };
 #[cfg(feature = "server")]
-use dpp::document::document_methods::DocumentMethodsV0;
-#[cfg(feature = "server")]
-use dpp::version::PlatformVersion;
+use dpp::document::DocumentV0Getters;
 #[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
@@ -413,60 +411,40 @@ where
 /// The walkers build a level (its property-name tree and value tree) only
 /// when this holds, so an index that skips a document leaves no tree of its
 /// own behind, while a level it shares with an index the document takes part
-/// in is built as usual. Skip sets only exist on protocol version 14 and
-/// later, so on a document type without a skipping index every level reaches
-/// an entry and this is not evaluated at all.
-pub(crate) fn level_reaches_entry_by<F>(
-    level: &IndexLevel,
-    document_type: DocumentTypeRef,
-    carries: &mut F,
-) -> Result<bool, Error>
+/// in is built as usual. A level no skipIfAbsent index passes through
+/// ([`IndexLevel::skip_at_or_below`]) reaches an entry for every document, so
+/// it is answered without looking at the document; that is every level of a
+/// document type without a skipping index.
+pub(crate) fn level_reaches_entry_by<F>(level: &IndexLevel, carries: &mut F) -> Result<bool, Error>
 where
     F: FnMut(&str) -> Result<bool, Error>,
 {
-    fn reaches<F>(level: &IndexLevel, carries: &mut F) -> Result<bool, Error>
-    where
-        F: FnMut(&str) -> Result<bool, Error>,
-    {
-        if let Some(index_type) = level.has_index_with_type() {
-            if takes_part_in_index_by(&index_type.skip_if_absent_properties, carries)? {
-                return Ok(true);
-            }
-        }
-        for sub_level in level.sub_levels().values() {
-            if reaches(sub_level, carries)? {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-    if !document_type
-        .indexes()
-        .values()
-        .any(|index| index.skip_if_absent)
-    {
+    if !level.skip_at_or_below() {
         return Ok(true);
     }
-    reaches(level, carries)
+    if let Some(index_type) = level.has_index_with_type() {
+        if takes_part_in_index_by(&index_type.skip_if_absent_properties, carries)? {
+            return Ok(true);
+        }
+    }
+    for sub_level in level.sub_levels().values() {
+        if level_reaches_entry_by(sub_level, carries)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
-/// Whether `document_info` carries `property`. A worst-case size carries every
-/// property: estimation then walks every index, which keeps it an upper
-/// bound. A create's dry run reads the real document, so it skips exactly
-/// where the apply does.
+/// Whether `document_info` carries `property`, a skip property: a top-level,
+/// non-system property (the parser refuses any other), so its presence is a
+/// single lookup. A worst-case size carries every property: estimation then
+/// walks every index, which keeps it an upper bound. A create's dry run reads
+/// the real document, so it skips exactly where the apply does.
 #[cfg(feature = "server")]
-fn document_info_carries(
-    document_info: &DocumentInfo,
-    property: &str,
-    document_type: DocumentTypeRef,
-    owner_id: Option<[u8; 32]>,
-    platform_version: &PlatformVersion,
-) -> Result<bool, Error> {
+fn document_info_carries(document_info: &DocumentInfo, property: &str) -> bool {
     match document_info.get_borrowed_document() {
-        Some(document) => Ok(document
-            .get_raw_for_document_type(property, document_type, owner_id, platform_version)?
-            .is_some()),
-        None => Ok(true),
+        Some(document) => document.properties().contains_key(property),
+        None => true,
     }
 }
 
@@ -475,18 +453,9 @@ fn document_info_carries(
 pub(crate) fn document_takes_part_in_index(
     skip_set: &[String],
     document_info: &DocumentInfo,
-    document_type: DocumentTypeRef,
-    owner_id: Option<[u8; 32]>,
-    platform_version: &PlatformVersion,
 ) -> Result<bool, Error> {
     takes_part_in_index_by(skip_set, &mut |property| {
-        document_info_carries(
-            document_info,
-            property,
-            document_type,
-            owner_id,
-            platform_version,
-        )
+        Ok(document_info_carries(document_info, property))
     })
 }
 
@@ -495,18 +464,9 @@ pub(crate) fn document_takes_part_in_index(
 pub(crate) fn level_reaches_entry(
     level: &IndexLevel,
     document_info: &DocumentInfo,
-    document_type: DocumentTypeRef,
-    owner_id: Option<[u8; 32]>,
-    platform_version: &PlatformVersion,
 ) -> Result<bool, Error> {
-    level_reaches_entry_by(level, document_type, &mut |property| {
-        document_info_carries(
-            document_info,
-            property,
-            document_type,
-            owner_id,
-            platform_version,
-        )
+    level_reaches_entry_by(level, &mut |property| {
+        Ok(document_info_carries(document_info, property))
     })
 }
 

@@ -184,9 +184,6 @@ impl Drive {
             if !level_reaches_entry(
                 sub_level,
                 &document_and_contract_info.owned_document_info.document_info,
-                document_type,
-                document_and_contract_info.owned_document_info.owner_id,
-                platform_version,
             )? {
                 continue;
             }

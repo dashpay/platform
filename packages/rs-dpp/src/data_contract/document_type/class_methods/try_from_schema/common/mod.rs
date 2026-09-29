@@ -2685,6 +2685,77 @@ pub(super) fn apply_index_only(
                     index_name, name,
                 )));
             }
+            // An empty byte array is keyed like a missing value, the empty
+            // key, so a stored skip property that could be empty would be
+            // indexed under the key other indexes use for documents without
+            // it.
+            for skip_property in index.skip_if_absent_properties.iter() {
+                if let Some(DocumentPropertyType::ByteArray(sizes)) = document_type
+                    .flattened_properties
+                    .get(skip_property)
+                    .map(|property| &property.property_type)
+                {
+                    if sizes.min_size.unwrap_or_default() == 0 {
+                        return Err(structure_error(format!(
+                            "index \"{}\" on document type \"{}\" skips on byte array \
+                             \"{}\", which may be empty: an empty byte array is indexed \
+                             under the same key as a missing value, so set `minItems` to at \
+                             least 1",
+                            index_name, name, skip_property,
+                        )));
+                    }
+                }
+            }
+            // A ranking at a skip property's level must not share that level
+            // with an index that keeps the null layout for the property: that
+            // index creates the level's null value tree for documents the skip
+            // index leaves out, and the ranking would show it as a group with
+            // zero aggregates and no documents behind it.
+            for (position, skip_property) in
+                index.properties.iter().enumerate().filter(|(_, property)| {
+                    index.skip_if_absent_properties.contains(&property.name)
+                })
+            {
+                let last = position + 1 == index.properties.len();
+                let ranks_here = index.ranked_countable_at.contains(&skip_property.name)
+                    || (last
+                        && (index.ranked_countable
+                            || index.ranked_summable
+                            || index.ranked_averageable));
+                if !ranks_here {
+                    continue;
+                }
+                let prefix: Vec<String> = (0..=position)
+                    .map(|at| index.level_key(at, &index.properties[at].name))
+                    .collect();
+                if let Some((other_name, _)) =
+                    document_type.indices.iter().find(|(other_name, other)| {
+                        *other_name != index_name
+                            && !other
+                                .skip_if_absent_properties
+                                .contains(&skip_property.name)
+                            && other.properties.len() > position
+                            && (0..=position).all(|at| {
+                                other.level_key(at, &other.properties[at].name) == prefix[at]
+                            })
+                    })
+                {
+                    return Err(structure_error(format!(
+                        "index \"{}\" on document type \"{}\" ranks at its skip property \
+                         \"{}\", whose level index \"{}\" shares without skipping on it: \
+                         \"{}\" would create the null group of that level, and the ranking \
+                         would show it with zero aggregates; skip on \"{}\" in \"{}\" too, \
+                         or give the ranking its own prefix",
+                        index_name,
+                        name,
+                        skip_property.name,
+                        other_name,
+                        other_name,
+                        skip_property.name,
+                        other_name,
+                    )));
+                }
+            }
             // A document whose indexed values are all missing lacks the skip
             // properties too, so the skip already leaves it out:
             // `nullSearchable: false` would add nothing.
@@ -3289,18 +3360,22 @@ pub(super) fn apply_index_only(
                     .any(|index_property| index_property.name == *property_name)
         };
         if optional {
+            // A time-windowed index keeps a value only in its windows, which
+            // document queries do not read and a `ttl` drains, so it cannot be
+            // where an optional value is kept.
             let covered = document_type.indices.values().any(|index| {
                 matches!(
                     index.skip_if_absent_properties.as_slice(),
                     [only] if only == property_name
-                ) && holds_property(index)
+                ) && index.time_range.is_none()
+                    && holds_property(index)
             });
             if !covered {
                 return Err(structure_error(format!(
                     "optional property \"{}\" on indexOnly document type \"{}\" needs an \
-                     index whose only skip property it is: every skip index holding it also \
-                     skips on another optional property, so a document carrying \"{}\" but \
-                     missing the other would store it nowhere",
+                     index without a timeRange whose only skip property it is: otherwise a \
+                     document carrying \"{}\" could keep it only in time windows, or in no \
+                     index at all when it misses another skip property of a wider index",
                     property_name, name, property_name,
                 )));
             }

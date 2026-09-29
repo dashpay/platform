@@ -3,7 +3,7 @@
 //! property of its skip set, wherever that property sits, and writes nothing
 //! for it — no entry, and no tree of its own.
 //!
-//! Two fixtures under `tests/supporting_files/contract/skip-if-absent/`:
+//! Three fixtures under `tests/supporting_files/contract/skip-if-absent/`:
 //!
 //! - `skip-likes-contract.json`, an indexOnly `like` whose optional `hashtag`
 //!   sits below a day window (`byDayHashtagPost`, sharing the day grid with
@@ -13,7 +13,11 @@
 //!   skipped on by `byHashtagLanguageTime` (a partial skip array: an absent
 //!   `language` keeps the null key) and by the windowed ranked
 //!   `byDayHashtag`, an optional `slug` under the unique skip index
-//!   `bySlug`, and a plain `byLanguage` keeping the null layout.
+//!   `bySlug`, and a plain `byLanguage` keeping the null layout. Beside it a
+//!   stored `note` whose skip indexes share trees in pairs (the owner value
+//!   tree, and a day window of one ttl grid).
+//! - `skip-memos-contract.json`, a stored `memo` with a `ttl` and three deep
+//!   skip indexes.
 //!
 //! Three things are pinned: what an insert writes (and leaves unbuilt), that
 //! a delete restores the exact prior tree, and that a replace moving a stored
@@ -22,6 +26,7 @@
 
 use super::index_only_e2e_tests::{assert_grovedb_is_consistent, platform_version};
 use crate::drive::{Drive, RootTree};
+use crate::error::Error;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
@@ -40,6 +45,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const LIKES: &str = "tests/supporting_files/contract/skip-if-absent/skip-likes-contract.json";
 const POSTS: &str = "tests/supporting_files/contract/skip-if-absent/skip-posts-contract.json";
+const MEMOS: &str = "tests/supporting_files/contract/skip-if-absent/skip-memos-contract.json";
 
 /// A day, 20000 days after the epoch, plus five hours: inside one day window
 /// and four overlapping 24h/6h windows.
@@ -417,7 +423,27 @@ fn insert_post(
     contract: &DataContract,
     document: &Document,
     apply: bool,
-) -> Result<FeeResult, crate::error::Error> {
+) -> Result<FeeResult, Error> {
+    insert_document(drive, contract, "post", document, apply)
+}
+
+fn replace_post(
+    drive: &Drive,
+    contract: &DataContract,
+    document: &Document,
+    apply: bool,
+) -> FeeResult {
+    replace_document(drive, contract, "post", document, apply)
+        .expect("expected to replace the post")
+}
+
+fn insert_document(
+    drive: &Drive,
+    contract: &DataContract,
+    doctype: &str,
+    document: &Document,
+    apply: bool,
+) -> Result<FeeResult, Error> {
     drive.add_document_for_contract(
         DocumentAndContractInfo {
             owned_document_info: OwnedDocumentInfo {
@@ -426,8 +452,8 @@ fn insert_post(
             },
             contract,
             document_type: contract
-                .document_type_for_name("post")
-                .expect("post doctype exists"),
+                .document_type_for_name(doctype)
+                .expect("doctype exists"),
         },
         false,
         BlockInfo::default(),
@@ -438,28 +464,55 @@ fn insert_post(
     )
 }
 
-fn replace_post(
+fn replace_document(
     drive: &Drive,
     contract: &DataContract,
+    doctype: &str,
     document: &Document,
     apply: bool,
-) -> FeeResult {
-    drive
-        .update_document_for_contract(
-            document,
-            contract,
-            contract
-                .document_type_for_name("post")
-                .expect("post doctype exists"),
-            Some(document.owner_id().to_buffer()),
-            BlockInfo::default(),
-            apply,
-            StorageFlags::optional_default_as_cow(),
-            None,
-            platform_version(),
-            None,
-        )
-        .expect("expected to replace the post")
+) -> Result<FeeResult, Error> {
+    drive.update_document_for_contract(
+        document,
+        contract,
+        contract
+            .document_type_for_name(doctype)
+            .expect("doctype exists"),
+        Some(document.owner_id().to_buffer()),
+        BlockInfo::default(),
+        apply,
+        StorageFlags::optional_default_as_cow(),
+        None,
+        platform_version(),
+        None,
+    )
+}
+
+/// A document of the stored `doctype` carrying `properties`, owned by
+/// `OWNER_1` and created at `CREATED_AT`.
+fn stored_document(
+    contract: &DataContract,
+    doctype: &str,
+    id: [u8; 32],
+    properties: &[(&str, &str)],
+) -> Document {
+    let document_type = contract
+        .document_type_for_name(doctype)
+        .expect("doctype exists");
+    let mut document = document_type
+        .random_document(Some(id[0] as u64), platform_version())
+        .expect("random document");
+    document.set_properties(
+        properties
+            .iter()
+            .map(|(name, value)| (name.to_string(), Value::Text(value.to_string())))
+            .collect(),
+    );
+    document.set_id(Identifier::from(id));
+    document.set_owner_id(Identifier::from(OWNER_1));
+    document.set_created_at(Some(CREATED_AT));
+    document.set_updated_at(None);
+    document.set_revision(Some(1));
+    document
 }
 
 fn delete_post(drive: &Drive, contract: &DataContract, id: [u8; 32]) {
@@ -655,5 +708,88 @@ fn should_leave_the_tree_of_a_fresh_insert_after_each_replace() {
             "{case}: the replace left other index trees than a fresh insert"
         );
         assert_grovedb_is_consistent(&replaced_drive);
+    }
+}
+
+/// A replace moving a note out of one skip index and into another sharing a
+/// tree with it (the owner value tree of `byOwnerTag` and `byOwnerTopic`, and
+/// the day window of the ttl grid `byDayTag` and `byDayTopic` share) applies,
+/// in both directions, and leaves the tree a fresh insert would: the index
+/// the note leaves prunes after the one it enters has written, so the prune
+/// stops below the shared tree.
+#[test]
+fn should_move_a_note_between_skip_indexes_sharing_a_tree() {
+    let tagged: &[(&str, &str)] = &[("tag", "x"), ("text", "a")];
+    let with_topic: &[(&str, &str)] = &[("topic", "y"), ("text", "a")];
+    for (case, old, new) in [
+        ("tag to topic", tagged, with_topic),
+        ("topic to tag", with_topic, tagged),
+    ] {
+        let (replaced_drive, contract) = setup(POSTS);
+        let id = [9; 32];
+        insert_document(
+            &replaced_drive,
+            &contract,
+            "note",
+            &stored_document(&contract, "note", id, old),
+            true,
+        )
+        .expect("insert old");
+        let mut new_note = stored_document(&contract, "note", id, new);
+        new_note.set_revision(Some(2));
+        let estimated = replace_document(&replaced_drive, &contract, "note", &new_note, false)
+            .expect("estimate the replace");
+        let applied = replace_document(&replaced_drive, &contract, "note", &new_note, true)
+            .unwrap_or_else(|error| panic!("{case}: the replace did not apply: {error:?}"));
+        assert!(
+            estimated.total_base_fee() >= applied.total_base_fee(),
+            "{case}: estimated {estimated:?} applied {applied:?}"
+        );
+
+        let (fresh_drive, fresh_contract) = setup(POSTS);
+        insert_document(&fresh_drive, &fresh_contract, "note", &new_note, true)
+            .expect("insert new");
+        assert_eq!(
+            snapshot(&replaced_drive, doctype_path(&contract, "note"), true),
+            snapshot(&fresh_drive, doctype_path(&fresh_contract, "note"), true),
+            "{case}: the replace left other index trees than a fresh insert"
+        );
+        assert_grovedb_is_consistent(&replaced_drive);
+    }
+}
+
+/// On a type with a `ttl` nothing is refunded and elements carry no flags,
+/// so a replace dropping `d` pays for deleting and pruning the entries of
+/// the three deep skip indexes it leaves. Its estimate, an insert of the new
+/// version, still covers what it applies.
+#[test]
+fn should_estimate_at_least_the_applied_fee_when_a_memo_leaves_its_skip_indexes() {
+    let with_d: &[(&str, &str)] = &[("a", "a"), ("b", "b"), ("c", "c"), ("d", "d")];
+    let without_d: &[(&str, &str)] = &[("a", "a"), ("b", "b"), ("c", "c")];
+    for (case, old, new) in [
+        ("d dropped", with_d, without_d),
+        ("d added", without_d, with_d),
+    ] {
+        let (drive, contract) = setup(MEMOS);
+        let id = [5; 32];
+        insert_document(
+            &drive,
+            &contract,
+            "memo",
+            &stored_document(&contract, "memo", id, old),
+            true,
+        )
+        .expect("insert old");
+        let mut new_memo = stored_document(&contract, "memo", id, new);
+        new_memo.set_revision(Some(2));
+        let estimated = replace_document(&drive, &contract, "memo", &new_memo, false)
+            .expect("estimate the replace");
+        let applied = replace_document(&drive, &contract, "memo", &new_memo, true)
+            .expect("apply the replace");
+        assert!(
+            estimated.total_base_fee() >= applied.total_base_fee(),
+            "{case}: estimated {estimated:?} applied {applied:?}"
+        );
+        assert_grovedb_is_consistent(&drive);
     }
 }
