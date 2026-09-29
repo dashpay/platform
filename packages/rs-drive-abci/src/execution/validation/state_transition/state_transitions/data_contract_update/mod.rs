@@ -4617,7 +4617,7 @@ mod tests {
                     )),
                     ..
                 } if message.contains(
-                    "document type \"appeal\" property \"appellantId\" refersTo listElement: \"title\" of \"electedCharter\" is not a typed array of identifiers"
+                    "document type \"appeal\" property \"appellantId\" refersTo inList: \"title\" of \"electedCharter\" is not a typed array of identifiers"
                 )
             );
         }

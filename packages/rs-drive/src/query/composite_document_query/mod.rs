@@ -617,19 +617,19 @@ impl<'a> DriveDocumentQuery<'a> {
                 // proof; a deletableDocument one does not, and a missing
                 // document is then a proven absence (see
                 // `assemble_documents`).
-                // A lookup reference's values are not document ids, so
-                // `document_reference_of` leaves it out; it is named here so
-                // the refusal says why
+                // The values of a reference found by `findBy` are not document
+                // ids, so `document_reference_of` leaves it out; it is named
+                // here so the refusal says why
                 if let Some(DocumentPropertyType::IdentifierWithReference(
                     DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
                     | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. },
                 )) = source_property_type
                 {
                     return Err(label(&format!(
-                        "the source property's refersTo finds its document through the unique \
-                         index \"{}\", so its values are not document ids: a by-id join needs \
-                         a reference whose value is the referenced document's $id",
-                        lookup.index,
+                        "the source property's refersTo finds its document by findBy ({}), so \
+                         its values are not document ids: a by-id join needs a reference whose \
+                         value is the referenced document's $id",
+                        lookup.find_by_names(),
                     )));
                 }
                 // A reference expression names no single type the derived ids

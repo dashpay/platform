@@ -1569,60 +1569,58 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     prices every window an integer-range index writes.
 ///
 /// 61. **A `refersTo` may find its document by a hash the document reveals**:
-///     a `propertyAgreement` pair may be a function, keyed by the referenced
-///     property, `"<referenced property>": { "function": "sys.hash.sha256d",
-///     "params": [...] }` (meta-schema v3 `agreementFunction`, parser
-///     generation 3, `apply_property_reference` 0): the referenced property
-///     holds the SHA-256 of the SHA-256 of the params' bytes joined in order, a
-///     property path of the document (the property carrying the reference
-///     included), `{ "const": text }`, or `"."` for a value without a path (each
-///     element of a typed array, the writer, the creator), a string counting as
-///     its UTF-8, a byte array as its bytes, an identifier as its 32 bytes. That
-///     property must be in the reference's `lookup` index, whose `keys` may then
-///     leave it out: the parser holds the function as the lookup's computed key
+///     a `findBy` entry may be a function, `"<referenced property>": {
+///     "function": "sys.hash.sha256d", "params": [...] }` (meta-schema v3
+///     `findByFunction`, parser generation 3, `apply_property_reference` 0):
+///     the document is found by that property holding the SHA-256 of the
+///     SHA-256 of the params' bytes joined in order, a property path of the
+///     document (the property carrying the reference included),
+///     `{ "const": text }`, or `"."` for a value without a path (each element
+///     of a typed array, the writer, the creator), a string counting as its
+///     UTF-8, a byte array as its bytes, an identifier as its 32 bytes. The
+///     parser holds the function as the lookup's computed key
 ///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
 ///     `sys.hash` namespace beside the string transformations of
 ///     `generatedFrom`, which refuses it. A string or byte array property may
 ///     now carry a `refersTo` whose function reads its value
 ///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`);
 ///     the property keeps its type. The document such a key finds is a
-///     commitment made earlier, so the lookup is judged when the document is
+///     commitment made earlier, so the reference is judged when the document is
 ///     created only: its params may be transient or optional, every stored value
 ///     it reads must be fixed once written, and a replace leaves it alone.
 ///     Document create structure validation 1 refuses a create missing a param,
 ///     repeating a key on the way to one, or whose variable-length param holds
 ///     the one-byte separator that must follow it
-///     (`DocumentReferencePreimageInvalidError`, 10423). Beside such a lookup,
-///     on the `refersTo` (refused inside the lookup), the reference may
-///     declare `minimumAgeBlocks`, judged by document create state
-///     validation 2 against the found document's `$createdAtBlockHeight`
-///     (`ReferencedDocumentRequirementNotMetError`, 40142), and `consume`, which
-///     deletes the found document with the create
+///     (`DocumentReferencePreimageInvalidError`, 10423). Beside a `findBy`
+///     function the reference may declare `minimumAgeBlocks`, judged by
+///     document create state validation 2 against the found document's
+///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
+///     40142), and `consume`, which deletes the found document with the create
 ///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
 ///     it elsewhere refused with 40120). The hash is computed once per key and
 ///     billed as `ValidationOperation::DoubleSha256` by the blocks it hashes,
-///     beside the lookup's document fetch. Such a `deletableDocument` lookup,
-///     judged on the create alone, may sit on an `immutable` property, which
+///     beside the document fetch. Such a `deletableDocument` reference, judged
+///     on the create alone, may sit on an `immutable` property, which
 ///     `validate_no_immutable_deletable_element_references` otherwise refuses.
-///     A plain pair `{"$ownerId": "$ownerId"}`
-///     makes the commitment the writer's own, and `consume` requires it, into
-///     the declaring contract, on a type whose owners may delete, that declares
-///     no delete token cost or delete action fee and requires no stricter
+///     A `where` entry `{"$ownerId": "$ownerId"}` makes the commitment the
+///     writer's own, and `consume` requires it, into the declaring contract,
+///     on a type whose owners may delete, that keeps no history, declares no
+///     delete token cost or delete action fee and requires no stricter
 ///     signature security level than the declaring type; batch advanced
 ///     structure 1 refuses a contract-bound key whose bounds leave out a type
 ///     the created type may consume (`ContractBoundedKeyOutOfBoundsError`,
 ///     20014). The consumed deletes are converted with the create's own
-///     operations pending, so a type may consume its own documents. The plain
-///     pairs beside a function are judged with it, on the create alone, so the
-///     properties they name must be fixed once written or transient; on a
-///     mutable type such a lookup may not be an `anyOf` operand; and no
-///     property a function reads may be listed under
-///     `moderatorAbilities.changeFields` (57).
-///     `creatorRefersTo` takes a `deletableDocument` target through a function,
-///     and an `ownerRefersTo` or `creatorRefersTo` lookup may leave the value
-///     out beside one. The declaration reproduces the DPNS preorder hash of a
-///     name under a parent byte for byte; the DPNS contract and its create
-///     trigger are unchanged. See `book/src/data-model/documents.md`.
+///     operations pending, so a type may consume its own documents. The
+///     `where` entries beside a function are judged with it, on the create
+///     alone, so the properties they read must be fixed once written or
+///     transient; on a mutable type such a reference may not be an `anyOf`
+///     operand; and no property a function reads may be listed under
+///     `moderatorAbilities.changeFields` (57). `creatorRefersTo` takes a
+///     `deletableDocument` target through a function, and the `findBy` of an
+///     `ownerRefersTo` or `creatorRefersTo` may leave the value out beside
+///     one. The declaration reproduces the DPNS preorder hash of a name under
+///     a parent byte for byte; the DPNS contract and its create trigger are
+///     unchanged. See `book/src/data-model/documents.md`.
 ///
 /// 62. **Null flags follow each index's own path**: the v2 index-level
 ///     insert and delete walkers give each sub-level the null flags of its
@@ -1638,6 +1636,33 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     an earlier writer could disagree with the rule, the v2 delete walker
 ///     and update 1 read the stored `[0]`, unbilled, and remove or refresh
 ///     the entry there; a type with a `ttl` skips the read.
+///
+/// 63. **`refersTo` finds its document with `findBy` and checks it with
+///     `where`**: the reference keywords the notes above describe are spelled
+///     anew in meta-schema v3 and parser generation 3 (`apply_property_reference`
+///     0), in place, before this version reaches a network. `lookup: { index,
+///     keys }` is `findBy`, the key parts directly (`{ "<index property>":
+///     <source> }`, a function entry included, see 61), without the index
+///     name: the index is the unique one of the referenced document type whose
+///     properties are exactly those `findBy` names, not bucketing its first
+///     property (`DocumentReferenceLookup::resolve_index`, run at contract
+///     parse or registration and when the document is fetched; a type's
+///     indexes never change after it is registered). A plain `propertyAgreement`
+///     pair `{ "<referring>": "<referenced>" }` is a `where` entry keyed the
+///     other way, `{ "<referenced>": "<referring>" }`, so every map of a
+///     `refersTo` is keyed by the referenced document's property; the parsed
+///     model keeps `property_agreement` keyed by the referring property, and a
+///     referring value may be compared once. `listElement` is a
+///     `permanentDocument` with `inList`, found by `findBy { "$id":
+///     "<property>" }`, the one `findBy` entry that names `$id`. Without
+///     `findBy` the value is the document's `$id`, as before. The parser refuses
+///     `lookup`, `propertyAgreement` and the `listElement` type on every parse,
+///     naming what replaced each, so a contract written with them never loads
+///     with another meaning. `ReferencedDocumentLookupInvalidError` (40137)
+///     carries the properties `findBy` names in place of an index name. The
+///     moderation charters system contract is written in the new keywords;
+///     the parsed declarations, and so validation and execution, are
+///     unchanged.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

@@ -743,7 +743,9 @@ fn should_refuse_a_field_a_reference_agreement_reads() {
                 "refersTo": {
                     "type": "permanentDocument",
                     "documentType": "post",
-                    "propertyAgreement": { "topic": "topic" },
+                    "where": {
+                        "topic": "topic"
+                    }
                 },
             },
         },
@@ -783,10 +785,12 @@ fn should_refuse_a_field_a_computed_lookup_key_hashes() {
                 "refersTo": {
                     "type": "permanentDocument",
                     "documentType": "post",
-                    "lookup": { "index": "byHash" },
-                    "propertyAgreement": {
-                        "hash": { "function": "sys.hash.sha256d", "params": ["salt", "label"] },
-                    },
+                    "findBy": {
+                        "hash": {
+                            "function": "sys.hash.sha256d",
+                            "params": ["salt", "label"]
+                        }
+                    }
                 },
             },
         },

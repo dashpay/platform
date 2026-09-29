@@ -606,9 +606,9 @@ fn parse_generation_3(
         validate_transient_fields(&v2, name)?;
         validate_no_transient_index_properties(&v2, name)?;
     }
-    // The property a `listElement` reads the list's document through; the list
-    // itself is checked where the referenced type is in hand. In every build,
-    // like the lookup sources above: without it a same-contract list check
+    // The property an `inList` reference reads the list's document through; the
+    // list itself is checked where the referenced type is in hand. In every
+    // build, like the findBy sources above: without it a same-contract list check
     // would silently skip a declaration whose property finds no document
     if full_validation {
         validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
@@ -957,9 +957,9 @@ fn validate_no_immutable_contract_owner_requirements(
 /// An `immutable` property may not hold a `deletableDocument` reference the
 /// replace state validation could not clear: a typed array of them, at the
 /// top level or inside an immutable object, a single one inside an immutable
-/// object, or one declared with a lookup, alone or as an operand of an
-/// expression, anywhere, unless a `propertyAgreement` function computes its
-/// key: that lookup is judged when the document is created only. Every
+/// object, or one found by `findBy`, alone or as an operand of an
+/// expression, anywhere, unless a `findBy` function computes its key: that
+/// reference is judged when the document is created only. Every
 /// replace re-validates such a reference, so once a target is deleted the
 /// property would have to change, which an immutable
 /// property cannot: the document could never be replaced again. The one
@@ -975,10 +975,10 @@ fn validate_no_immutable_contract_owner_requirements(
 /// refused here rather than by refusing the clear at write time, since
 /// without the clear a document whose target is deleted could never be
 /// replaced again. Every other `deletableDocument` form is refused on any
-/// immutable property, except a lookup whose key a `propertyAgreement`
-/// function computes, which is judged when the document is created only and
-/// never re-validated; an `immutableAllowSetting` entry is always immutable,
-/// and the referring-side rules refuse such a lookup's carrier there, so no
+/// immutable property, except one whose key a `findBy` function computes,
+/// which is judged when the document is created only and never
+/// re-validated; an `immutableAllowSetting` entry is always immutable, and the
+/// referring-side rules refuse such a reference's carrier there, so no
 /// deletableDocument reference can be set once.
 #[cfg(feature = "validation")]
 fn validate_no_immutable_deletable_element_references(
@@ -992,10 +992,10 @@ fn validate_no_immutable_deletable_element_references(
         let Some(target) = reference.target() else {
             continue;
         };
-        // A deletableDocument found through a lookup, alone or as an operand of
-        // an expression, is re-validated on every replace too, and the clearing
-        // exception reads a document id, which a lookup key is not. A lookup
-        // whose key a propertyAgreement function computes is judged on the
+        // A deletableDocument found by `findBy`, alone or as an operand of an
+        // expression, is re-validated on every replace too, and the clearing
+        // exception reads a document id, which a findBy key is not. One whose
+        // key a `findBy` function computes is judged on the
         // create alone and never re-validated, so it may sit on an immutable
         // property, which it requires
         let deletable_lookup = target.leaves().into_iter().any(|leaf| {
@@ -1034,7 +1034,7 @@ fn validate_no_immutable_deletable_element_references(
         }
         if document_type.immutable_fields.contains(top_level) {
             let held_as = if deletable_lookup {
-                "a deletableDocument reference through a lookup"
+                "a deletableDocument reference found by findBy"
             } else if is_list {
                 "a typed array of deletableDocument references"
             } else {

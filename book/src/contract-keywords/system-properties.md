@@ -1,6 +1,6 @@
 # System Properties
 
-Every document carries a few values the platform manages rather than the writer: its id, its owner, and, on some types, its revision, its creator, the times it was created, updated and transferred, and who last moderated it and when. Their names start with `$`. A document type does not declare them in `properties`. It names them where it wants to use them: in `required`, to have a timestamp recorded, in `indices`, to query by them, and in the keywords that accept one, such as a reference's `propertyAgreement`.
+Every document carries a few values the platform manages rather than the writer: its id, its owner, and, on some types, its revision, its creator, the times it was created, updated and transferred, and who last moderated it and when. Their names start with `$`. A document type does not declare them in `properties`. It names them where it wants to use them: in `required`, to have a timestamp recorded, in `indices`, to query by them, and in the keywords that accept one, such as a reference's `where`.
 
 | Property | Holds | Recorded |
 |---|---|---|
@@ -46,7 +46,7 @@ Every listing records when it was created, last updated and last transferred, be
 
 A document's id is derived from the contract id, the owner's id, the document type's name, entropy chosen by the client and, from protocol version 14, the identity contract nonce of the create transition. Consensus derives it again for every create and refuses a transition that carries another. The id never changes. See [Document ID Generation](../data-model/documents.md#document-id-generation).
 
-Documents are already stored by id, so an index may not name `$id`. A reference's `propertyAgreement` may name it on the referenced side (see [References](refers-to.md)).
+Documents are already stored by id, so an index may not name `$id`. A reference's `where` may name it as a key, the referenced side, and `findBy` names it to find the document holding a list (see [References](refers-to.md)).
 
 ## `$ownerId`
 
@@ -64,7 +64,7 @@ The owner is the identity that created the document, until a transfer or a purch
 
 - [`distinctFrom`](distinct-from.md): `"$ownerId"` makes a property differ from the owner.
 - [`propertyConstraints`](property-constraints.md): a rule may compare an identifier property with `$ownerId`.
-- [References](refers-to.md): a `propertyAgreement` pair, a lookup key and `identityProperty` may name it, and [`ownerRefersTo`](owner-refers-to.md) checks the owner itself.
+- [References](refers-to.md): a `where` entry, a `findBy` source and `identityProperty` may name it, and [`ownerRefersTo`](owner-refers-to.md) checks the owner itself.
 - [`encryptedFor`](encrypted-for.md): `"recipient": "$ownerId"` marks a message the writer encrypts to themself.
 
 ## `$revision`
@@ -132,7 +132,7 @@ On a type whose documents can change hands, `$ownerId` follows the document whil
 `$creatorId` is not written in `required` or `properties`. It may be named:
 
 - in an index;
-- on the referenced side of a reference's `propertyAgreement`, and as a key reference's `identityProperty`;
+- as the key of a reference's `where` entry (the referenced side), and as a key reference's `identityProperty`;
 - by [`creatorRefersTo`](owner-refers-to.md), which checks the creator. A type that does not record creators may not declare it (`InvalidContractStructure`, 10231).
 
 ## `$moderatedAt` and `$moderatedBy`

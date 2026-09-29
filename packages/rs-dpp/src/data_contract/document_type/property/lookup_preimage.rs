@@ -1,10 +1,10 @@
-//! A computed key of a `refersTo` lookup, declared as a `propertyAgreement`
-//! function pair: `"<referenced property>": { "function": "sys.hash.sha256d",
-//! "params": [...] }` says the referenced document's property holds a system
+//! A computed key of a `refersTo` `findBy`, declared as a function entry:
+//! `"<referenced property>": { "function": "sys.hash.sha256d", "params": [...] }`
+//! says the referenced document is found by that property holding a system
 //! hash (`sys.hash`, see [`HashFunction`]) of values the referring document
 //! reveals, the same `function` / `params` shape a `generatedFrom` property
-//! declares. The property is a key of the reference's lookup, so the platform
-//! finds the referenced document by the hash. The document it finds is a
+//! declares. The property belongs to the unique index `findBy` names, so the
+//! platform finds the referenced document by the hash. The document it finds is a
 //! commitment made earlier, so the reference is a commit and reveal: a
 //! document may be created only when a commitment to values it carries
 //! exists.
@@ -15,14 +15,13 @@
 //!   "refersTo": {
 //!     "type": "deletableDocument",
 //!     "documentType": "preorder",
-//!     "lookup": { "index": "saltedHash" },
-//!     "propertyAgreement": {
-//!       "$ownerId": "$ownerId",
+//!     "findBy": {
 //!       "saltedDomainHash": {
 //!         "function": "sys.hash.sha256d",
 //!         "params": ["preorderSalt", "normalizedLabel", { "const": "." }, "parentDomainName"]
 //!       }
 //!     },
+//!     "where": { "$ownerId": "$ownerId" },
 //!     "minimumAgeBlocks": 1,
 //!     "consume": true
 //!   }
@@ -141,7 +140,7 @@ pub struct LookupPreimageError {
 }
 
 impl LookupHashKey {
-    /// Reads a computed key from the value of a lookup key:
+    /// Reads a computed key from the value of a `findBy` entry:
     /// `{ "function": <a sys.hash function>, "params": [...] }`. What the
     /// params' properties resolve to is checked once the document type is
     /// parsed, see [`Self::referring_side_error`].
@@ -152,7 +151,7 @@ impl LookupHashKey {
             .find(|key| !matches!(key.as_str(), LOOKUP_KEY_FUNCTION | LOOKUP_KEY_PARAMS))
         {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "a computed refersTo lookup key takes function and params, not {unknown:?}"
+                "a refersTo findBy function takes function and params, not {unknown:?}"
             )));
         }
         let function_name = map
@@ -160,14 +159,14 @@ impl LookupHashKey {
             .and_then(|value| value.as_text())
             .ok_or_else(|| {
                 DataContractError::InvalidContractStructure(
-                    "a computed refersTo lookup key names its function, a string".to_string(),
+                    "a refersTo findBy function names its function, a string".to_string(),
                 )
             })?;
         let function = match SystemFunction::from_wire_name(function_name) {
             Some(SystemFunction::Hash(function)) => function,
             _ => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "a computed refersTo lookup key's function {function_name:?} is not a hash, \
+                    "a refersTo findBy function {function_name:?} is not a hash, \
                      expected one of {:?}",
                     HashFunction::ALL.map(|function| function.as_str())
                 )))
@@ -178,12 +177,12 @@ impl LookupHashKey {
             .and_then(|value| value.as_array())
             .ok_or_else(|| {
                 DataContractError::InvalidContractStructure(
-                    "a computed refersTo lookup key lists its params".to_string(),
+                    "a refersTo findBy function lists its params".to_string(),
                 )
             })?;
         if values.is_empty() || values.len() > MAX_LOOKUP_KEY_PARAMS {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "a computed refersTo lookup key lists between 1 and {MAX_LOOKUP_KEY_PARAMS} \
+                "a refersTo findBy function lists between 1 and {MAX_LOOKUP_KEY_PARAMS} \
                  params, found {}",
                 values.len()
             )));
@@ -380,7 +379,7 @@ fn parse_param(value: &Value) -> Result<LookupKeyParam, DataContractError> {
         }
         if path.is_empty() || path.len() > MAX_LOOKUP_KEY_PATH_LENGTH || path.starts_with('$') {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "a computed refersTo lookup key param is \".\", {{ \"const\": text }} or the path \
+                "a refersTo findBy function param is \".\", {{ \"const\": text }} or the path \
                  of a schema property of 1 to {MAX_LOOKUP_KEY_PATH_LENGTH} characters, not \
                  {path:?}"
             )));
@@ -389,29 +388,29 @@ fn parse_param(value: &Value) -> Result<LookupKeyParam, DataContractError> {
     }
     let map = value.to_btree_ref_string_map().map_err(|_| {
         DataContractError::InvalidContractStructure(
-            "a computed refersTo lookup key param is \".\", a property path or { \"const\": text }"
+            "a refersTo findBy function param is \".\", a property path or { \"const\": text }"
                 .to_string(),
         )
     })?;
     let mut entries = map.iter();
     let (Some((key, text)), None) = (entries.next(), entries.next()) else {
         return Err(DataContractError::InvalidContractStructure(
-            "a computed refersTo lookup key param object holds exactly one key, const".to_string(),
+            "a refersTo findBy function param object holds exactly one key, const".to_string(),
         ));
     };
     if key.as_str() != LOOKUP_KEY_CONST {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "a computed refersTo lookup key param object takes const, not {key:?}"
+            "a refersTo findBy function param object takes const, not {key:?}"
         )));
     }
     let text = text.as_text().ok_or_else(|| {
         DataContractError::InvalidContractStructure(
-            "a computed refersTo lookup key const must be a string".to_string(),
+            "a refersTo findBy function const must be a string".to_string(),
         )
     })?;
     if text.is_empty() || text.len() > MAX_LOOKUP_KEY_CONST_BYTES {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "a computed refersTo lookup key const holds between 1 and \
+            "a refersTo findBy function const holds between 1 and \
              {MAX_LOOKUP_KEY_CONST_BYTES} bytes"
         )));
     }
@@ -694,13 +693,10 @@ mod tests {
         );
         // The lookup never hashes: its computed key is the hash the caller took
         // and billed, and without one the key has a missing part
-        let lookup = DocumentReferenceLookup::new(
-            "saltedHash".to_string(),
-            BTreeMap::from([(
-                "saltedDomainHash".to_string(),
-                LookupKeySource::Hash(dpns_key()),
-            )]),
-        );
+        let lookup = DocumentReferenceLookup::new(BTreeMap::from([(
+            "saltedDomainHash".to_string(),
+            LookupKeySource::Hash(dpns_key()),
+        )]));
         let owner = Identifier::from([1; 32]);
         assert_eq!(
             lookup.key_values(owner, &document, owner, Some(&hash)),
@@ -743,8 +739,7 @@ mod tests {
                                         "refersTo": {
                                             "type": "deletableDocument",
                                             "documentType": "preorder",
-                                            "lookup": { "index": "saltedHash" },
-                                            "propertyAgreement": {
+                                            "findBy": {
                                                 "saltedDomainHash": {
                                                     "function": "sys.hash.sha256d",
                                                     "params": ["a.b.salt", "label"]
@@ -863,8 +858,8 @@ mod tests {
 
     #[test]
     fn should_serialize_a_computed_key_as_its_function_and_params() {
-        // The shape of an `agreementFunction`; where it sits is the parsed
-        // model's, under the index property it fills (see `LookupKeySource`)
+        // The shape of a `findByFunction`, under the index property it fills,
+        // as `findBy` declares it (see `LookupKeySource`)
         let source = LookupKeySource::Hash(dpns_key());
         assert_eq!(
             serde_json::to_value(&source).expect("the key serializes"),

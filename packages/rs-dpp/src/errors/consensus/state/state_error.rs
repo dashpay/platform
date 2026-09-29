@@ -644,7 +644,7 @@ pub enum StateError {
     #[error(transparent)]
     DocumentModeratorFieldNotWritableError(DocumentModeratorFieldNotWritableError),
 
-    // The commitment a `refersTo` lookup with a computed key found does not meet the lookup's
+    // The commitment a `refersTo` `findBy` function found does not meet the reference's
     // `minimumAgeBlocks` (protocol version 14).
     #[error(transparent)]
     ReferencedDocumentRequirementNotMetError(ReferencedDocumentRequirementNotMetError),
@@ -741,7 +741,6 @@ mod tests {
                 document_type_name: "note".to_string(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
-                    index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
@@ -770,7 +769,6 @@ mod tests {
                 document_type_name: "note".to_string(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
-                    index: "byOwner".to_string(),
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
@@ -1374,7 +1372,7 @@ mod tests {
             )),
             154
         );
-        // A commitment a computed lookup key found that does not meet the lookup's
+        // A commitment a `findBy` function found that does not meet the reference's
         // `minimumAgeSeconds` (protocol version 14): the tail of the enum.
         assert_eq!(
             discriminant_of(StateError::ReferencedDocumentRequirementNotMetError(

@@ -110,8 +110,8 @@ pub const TERMINAL: &str = "terminal";
 /// one (an item insert into existing trees). Only meaningful when the whole
 /// index path is a pure function of the referenced document: every index
 /// property must be either the referring property itself (it equals the
-/// referenced document's `$id`) or a key of that property's `refersTo`
-/// `propertyAgreement` (consensus-enforced equal to a referenced-document
+/// referenced document's `$id`) or a referring value of that property's
+/// `refersTo` `where` (consensus-enforced equal to a referenced-document
 /// property, its `$ownerId` and `$creatorId` included). Only allowed on
 /// indexOnly document types with a same-contract
 /// `permanentDocument` reference; the doc-type-level validation rejects every

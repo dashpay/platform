@@ -534,8 +534,8 @@ pub(super) mod index_only_tests {
     }
 
     /// The yappr fixture's `like.postId` reference declares
-    /// `propertyAgreement: { hashtag: hashtag }` — a like whose hashtag
-    /// disagrees with the referenced post's is refused at write time.
+    /// `where: { hashtag: hashtag }`: a like whose hashtag disagrees with the
+    /// referenced post's is refused at write time.
     /// (The passing direction is exercised by every other test in this
     /// suite: posts and likes share `hashtag: dash`.)
     #[tokio::test]

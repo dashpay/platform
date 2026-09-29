@@ -2332,8 +2332,8 @@ pub(super) fn parse_moderator_abilities_keyword(
 /// - stored, so not transient;
 /// - not listed under `immutable`, which would freeze what the moderators are
 ///   to change;
-/// - neither a reference nor read by one (a `propertyAgreement`, a lookup key,
-///   a key id): a reference is checked when the document is written by its
+/// - neither a reference nor read by one (a `where` value, a `findBy` source
+///   or function param, a key id): a reference is checked when the document is written by its
 ///   owner, and a moderator's change must leave every reference as it was
 ///   checked;
 /// - neither generated (`generatedFrom`) nor read by a generated property,
@@ -2586,8 +2586,8 @@ pub(super) fn apply_moderator_abilities(
 
 /// The top-level properties of `document_type` that a reference declared on it
 /// reads when a document is written: each property holding a reference, and
-/// the referring side of every `propertyAgreement`, lookup key (a computed
-/// key's params included) and key id property, for every leaf of every reference expression, the
+/// the referring side of every `where`, `findBy` source (a function's params
+/// included) and key id property, for every leaf of every reference expression, the
 /// `ownerRefersTo` and `creatorRefersTo` declarations included. System
 /// properties (`$ownerId`) are left out: they are no property a moderator can
 /// name.
@@ -2682,8 +2682,8 @@ fn properties_read_by_references(document_type: DocumentTypeRef<'_>) -> BTreeSet
 ///   its writer fetches the proof of its create, which proves it present.
 ///
 /// What may point at the type follows from `documents_can_disappear`: a `permanentDocument`
-/// or list element reference may not target it; a `deletableDocument` reference may, and so
-/// may a lookup, which names the kind of document it resolves to (`deletableDocument`).
+/// reference, one with `findBy` or `inList` included, may not target it; a `deletableDocument`
+/// reference may, one found by `findBy` included.
 ///
 /// The rules other than the bounds hold for every contract that could be stored (the keyword
 /// arrives with protocol version 14), so they are not skipped when a stored contract is
@@ -3714,8 +3714,8 @@ pub(super) fn apply_index_only(
                  be either a property with a same-contract permanentDocument `refersTo` \
                  declaration (the referring property — its value is the referenced \
                  document's $id; a deletableDocument declaration does not qualify, \
-                 since the trees would outlive a deleted target) or a key of that \
-                 declaration's `propertyAgreement` \
+                 since the trees would outlive a deleted target) or a referring value of \
+                 that declaration's `where` \
                  (consensus-equal to a referenced-document property, which may be the \
                  referenced document's $ownerId or $creatorId). The referring document's \
                  OWN system properties like $ownerId cannot be determined by the \

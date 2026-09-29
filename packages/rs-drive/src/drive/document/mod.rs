@@ -174,7 +174,7 @@ pub(crate) fn index_only_member_key(
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Whether `document`'s value of `referenced_property`, which a
-/// `propertyAgreement` binds to a referring index property of
+/// `where` binds to a referring index property of
 /// `referring_property_type`, is no wider as a tree key than a value of that
 /// property can be. A wider value equals no referring document's value, so no
 /// entry would ever sit under trees keyed by it, and past 255 bytes it is no

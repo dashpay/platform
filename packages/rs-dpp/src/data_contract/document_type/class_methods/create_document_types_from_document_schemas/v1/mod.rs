@@ -157,11 +157,11 @@ impl DocumentType {
         // registration, and a reference naming a document type this contract does not have
         // is left to that validation too, which reports it.
         //
-        // The type's `ownerRefersTo` or `creatorRefersTo` declaration, whose lookup key
+        // The type's `ownerRefersTo` or `creatorRefersTo` declaration, whose `findBy`
         // takes the writer or the creator for `"."`, is checked the same way.
         //
         // Inert for every protocol version before 14 for the same reason as the check above:
-        // a parsed reference carries a `lookup` only where the tables carry
+        // a parsed reference carries a lookup (`findBy`) only where the tables carry
         // `apply_property_reference: Some(_)`, so the loop below finds none there. The same
         // holds for the leaves of a reference expression (`anyOf` / `allOf`), walked through
         // `leaves_with_paths()`, which parse from the same version only (for a single
@@ -221,7 +221,7 @@ impl DocumentType {
                         };
                         return Err(consensus_or_protocol_data_contract_error(
                             DataContractError::InvalidContractStructure(format!(
-                                "document type \"{name}\" {}{at} lookup: {reason}",
+                                "document type \"{name}\" {}{at} findBy: {reason}",
                                 holder.describe()
                             )),
                         ));
@@ -230,19 +230,19 @@ impl DocumentType {
             }
         }
 
-        // Protocol version 14 and later: a `refersTo: listElement` whose list lives in a
+        // Protocol version 14 and later: a `refersTo` with `inList` whose list lives in a
         // document type of this contract must find a list there that holds identifiers and
         // never changes: its documents cannot be deleted, `inList` is a stored typed array of
         // identifiers of it, and the list is fixed once a document is written (see
-        // `ListElementReference::referenced_side_error`). The `$id` pair naming the list's
-        // document was checked by the document type parse under full validation, and the
-        // other agreement pairs are checked at registration as every agreement is; a list in
+        // `ListElementReference::referenced_side_error`). The `findBy` `$id` naming the
+        // list's document was checked by the document type parse under full validation, and
+        // the `where` entries are checked at registration as every agreement is; a list in
         // another contract is checked against that contract's state at registration, and one
         // in a document type this contract does not have is left to the reference validation,
         // which reports it. A leaf of a reference expression is judged as it would be alone.
         //
         // Inert for every protocol version before 14 for the same reason as the checks above:
-        // a parsed reference is a `listElement` only where the tables carry
+        // a parsed reference names a list (`inList`) only where the tables carry
         // `apply_property_reference: Some(_)`, so the loop below finds none there.
         for (name, document_type) in &contract_document_types {
             let declaring = document_type.as_ref();
@@ -277,7 +277,7 @@ impl DocumentType {
                         };
                         return Err(consensus_or_protocol_data_contract_error(
                             DataContractError::InvalidContractStructure(format!(
-                                "document type \"{name}\" {}{at} listElement: {reason}",
+                                "document type \"{name}\" {}{at} inList: {reason}",
                                 holder.describe()
                             )),
                         ));

@@ -66,7 +66,7 @@ pub(crate) trait DocumentReferenceValidation {
     ///
     /// When `changed_fields` is provided (replace transitions), only references on
     /// those fields are validated. A reference also counts as changed when a
-    /// property bound to it changed: a `propertyAgreement` referring property
+    /// property bound to it changed: a `where` referring value
     /// or an `identityPublicKey` key id property. A writer gate, an agreement
     /// keyed by `$ownerId`, is validated on every replace regardless, and so
     /// is a `contract` reference whose `contractRequirements` carry an
@@ -79,8 +79,8 @@ pub(crate) trait DocumentReferenceValidation {
     /// property changed, a writer gate or such an owner requirement applies
     /// or its target is deletable.
     ///
-    /// `owner_id` is the writer, the transition's owner: a `propertyAgreement`
-    /// whose referring side is `$ownerId` compares it, an `identityPublicKey`
+    /// `owner_id` is the writer, the transition's owner: a `where` entry whose
+    /// referring value is `$ownerId` compares it, an `identityPublicKey`
     /// reference on a key id property with `identityProperty: $ownerId` names
     /// its key, and the document type's `ownerRefersTo` declaration is checked
     /// with it as the value (under the replace rules of its target), since it

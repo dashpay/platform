@@ -32,9 +32,9 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "note",
-            "propertyAgreement": {
-              "authorId": "$ownerId",
-              "originalAuthorId": "$creatorId"
+            "where": {
+              "$ownerId": "authorId",
+              "$creatorId": "originalAuthorId"
             }
           }
         },
