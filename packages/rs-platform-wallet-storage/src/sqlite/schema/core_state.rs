@@ -1600,7 +1600,7 @@ mod tests {
     }
 
     #[test]
-    fn should_roll_back_history_migration_on_corrupt_record() {
+    fn should_skip_corrupt_record_during_history_migration() {
         let mut conn = Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         conn.execute_batch("DROP TABLE core_transaction_inputs; DELETE FROM refinery_schema_history WHERE version >= 19;").unwrap();
@@ -1611,15 +1611,8 @@ mod tests {
         )
         .unwrap();
         conn.execute("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)", params![&wallet_id[..], &[0u8;32][..], &[0xffu8][..]]).unwrap();
-        assert!(crate::sqlite::migrations::run(&mut conn).is_err());
-        let tables: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE name = 'core_transaction_inputs'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(tables, 0);
+        crate::sqlite::migrations::run(&mut conn)
+            .expect("one unreadable record must not block opening the database");
         let version: i64 = conn
             .query_row(
                 "SELECT max(version) FROM refinery_schema_history",
@@ -1627,7 +1620,47 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, 18);
+        assert!(version >= 19);
+        let stored: Vec<u8> = conn
+            .query_row(
+                "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1",
+                params![&wallet_id[..]],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, vec![0xff], "the unreadable row is left untouched");
+    }
+
+    #[test]
+    fn should_heal_corrupt_record_when_the_transaction_is_stored_again() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xA9u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let record = transaction_record(Txid::all_zeros(), TransactionContext::Mempool);
+        conn.execute(
+            "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, ?3)",
+            params![&wallet_id[..], AsRef::<[u8]>::as_ref(&record.txid), &[0xffu8][..]],
+        )
+        .unwrap();
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![record.clone()],
+                ..Default::default()
+            },
+        )
+        .expect("a corrupt stored copy must not wedge later writes");
+        let healed = get_tx_record(&tx, &wallet_id, &record.txid, &LoadCtx::strict())
+            .unwrap()
+            .unwrap();
+        assert_eq!(healed.txid, record.txid);
     }
 
     #[test]

@@ -24,15 +24,17 @@ pub(super) fn preserve_known_details(
     incoming: &TransactionRecord,
 ) -> Result<TransactionRecord, WalletStorageError> {
     let mut merged = incoming.clone();
-    let Some(previous) =
-        core_state::get_tx_record(tx, wallet_id, &incoming.txid, &LoadCtx::strict())?
-    else {
+    let Some(previous) = prior_record(tx, wallet_id, &incoming.txid)? else {
         return Ok(merged);
     };
     if previous.transaction != incoming.transaction {
-        return Err(WalletStorageError::blob_decode(
-            "same transaction id has different raw transaction bodies",
-        ));
+        // A txid commits to its body, so the stored copy is corrupt; the
+        // incoming record replaces it rather than wedging every later write.
+        tracing::warn!(
+            txid = %incoming.txid,
+            "stored transaction body disagrees with its txid; replacing it"
+        );
+        return Ok(merged);
     }
     let mut inputs: BTreeMap<_, _> = previous
         .input_details
@@ -59,6 +61,57 @@ pub(super) fn preserve_known_details(
     merged.input_details = inputs.into_values().collect();
     merged.output_details = outputs.into_values().collect();
     Ok(merged)
+}
+
+/// Read a stored record as repair evidence; an unreadable one is no evidence.
+///
+/// History repair is best-effort accounting and must never block opening the
+/// database or storing new state, so undecodable or drifted rows are skipped.
+fn prior_record(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    txid: &Txid,
+) -> Result<Option<TransactionRecord>, WalletStorageError> {
+    match core_state::get_tx_record(conn, wallet_id, txid, &LoadCtx::recovery()) {
+        Err(error) if is_unreadable(&error) => {
+            tracing::warn!(%txid, %error, "skipping unreadable transaction record in history repair");
+            Ok(None)
+        }
+        result => result,
+    }
+}
+
+/// Whether `error` reports stored bytes that cannot be decoded, not a database failure.
+fn is_unreadable(error: &WalletStorageError) -> bool {
+    matches!(
+        error,
+        WalletStorageError::BincodeDecode { .. }
+            | WalletStorageError::BlobDecode { .. }
+            | WalletStorageError::BlobTooLarge { .. }
+            | WalletStorageError::HashDecode { .. }
+            | WalletStorageError::IntegerOverflow { .. }
+    )
+}
+
+/// Run one record's repair atomically; unreadable stored data skips it instead of failing.
+fn repair_best_effort(
+    tx: &Transaction<'_>,
+    txid: &Txid,
+    repair: impl FnOnce() -> Result<(), WalletStorageError>,
+) -> Result<(), WalletStorageError> {
+    tx.execute_batch("SAVEPOINT core_history_repair")?;
+    let result = repair();
+    if result.is_err() {
+        tx.execute_batch("ROLLBACK TO core_history_repair")?;
+    }
+    tx.execute_batch("RELEASE core_history_repair")?;
+    match result {
+        Err(error) if is_unreadable(&error) => {
+            tracing::warn!(%txid, %error, "skipping history repair of unreadable stored data");
+            Ok(())
+        }
+        result => result,
+    }
 }
 
 /// Index raw inputs independently of when their ownership becomes known.
@@ -106,7 +159,7 @@ pub(super) fn apply(
     }
     let network = network(tx, wallet_id)?;
     for txid in affected {
-        repair_record(tx, wallet_id, &txid, network)?;
+        repair_best_effort(tx, &txid, || repair_record(tx, wallet_id, &txid, network))?;
     }
     Ok(())
 }
@@ -165,8 +218,7 @@ fn repair_record(
     txid: &Txid,
     network: dashcore::Network,
 ) -> Result<(), WalletStorageError> {
-    let Some(mut record) = core_state::get_tx_record(tx, wallet_id, txid, &LoadCtx::strict())?
-    else {
+    let Some(mut record) = prior_record(tx, wallet_id, txid)? else {
         return Ok(());
     };
     let original = blob::encode(&record)?;
@@ -295,20 +347,37 @@ fn repair_record(
 
 /// Backfill the input index and correct existing history in the migration transaction.
 pub(crate) fn migrate(tx: &Transaction<'_>) -> Result<(), WalletStorageError> {
-    let mut stmt = tx.prepare_cached("SELECT length(wallet_id), wallet_id, length(txid), txid FROM core_transactions WHERE record_blob IS NOT NULL")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        blob::check_fixed_width(row.get(0)?, 32, "core_transactions.wallet_id")?;
-        let wallet_id: Vec<u8> = row.get(1)?;
-        let wallet_id = super::id32("core_transactions.wallet_id", &wallet_id)?;
-        blob::check_fixed_width(row.get(2)?, 32, "core_transactions.txid")?;
-        let txid: Vec<u8> = row.get(3)?;
-        let txid = Txid::from_slice(&txid)?;
-        if let Some(record) = core_state::get_tx_record(tx, &wallet_id, &txid, &LoadCtx::strict())?
-        {
-            index_record(tx, &wallet_id, &record)?;
-            repair_record(tx, &wallet_id, &txid, network(tx, &wallet_id)?)?;
+    // Keys are collected first: savepoint rollbacks must not race an open cursor.
+    let mut keys = Vec::new();
+    {
+        let mut stmt = tx.prepare_cached("SELECT length(wallet_id), wallet_id, length(txid), txid FROM core_transactions WHERE record_blob IS NOT NULL")?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let key = (|| {
+                blob::check_fixed_width(row.get(0)?, 32, "core_transactions.wallet_id")?;
+                let wallet_id: Vec<u8> = row.get(1)?;
+                let wallet_id = super::id32("core_transactions.wallet_id", &wallet_id)?;
+                blob::check_fixed_width(row.get(2)?, 32, "core_transactions.txid")?;
+                let txid: Vec<u8> = row.get(3)?;
+                Ok::<_, WalletStorageError>((wallet_id, Txid::from_slice(&txid)?))
+            })();
+            match key {
+                Ok(key) => keys.push(key),
+                Err(error) if is_unreadable(&error) => {
+                    tracing::warn!(%error, "skipping unreadable transaction key in history migration");
+                }
+                Err(error) => return Err(error),
+            }
         }
+    }
+    for (wallet_id, txid) in keys {
+        repair_best_effort(tx, &txid, || {
+            let Some(record) = prior_record(tx, &wallet_id, &txid)? else {
+                return Ok(());
+            };
+            index_record(tx, &wallet_id, &record)?;
+            repair_record(tx, &wallet_id, &txid, network(tx, &wallet_id)?)
+        })?;
     }
     Ok(())
 }
