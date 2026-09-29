@@ -26,7 +26,8 @@ RUN_PATH = f"actions/runs/{FIXTURE['publisher_run']['id']}"
 
 class SelectorTests(unittest.TestCase):
     def setUp(self):
-        self.manifest = runner.read_manifest(ROOT / runner.MANIFEST)
+        # Historical publisher fixtures bind the legacy contract, not a future branch default.
+        self.manifest = runner.read_manifest(Path(__file__).parent / "fixtures/legacy-runner-requirements.json")
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.event = Path(self.temp.name) / "event.json"
@@ -311,11 +312,28 @@ class SelectorTests(unittest.TestCase):
         self.assertFalse(any("ANDROID" in name or "NDK" in name for name in values))
 
     def test_shared_rust_toolchain_does_not_drift_between_architectures(self):
-        amd = self.manifest["requirements"]
+        # This checks current contracts; historical publisher tests keep the frozen fixture.
+        amd = runner.read_manifest(ROOT / runner.MANIFEST)["requirements"]
         arm = runner.read_manifest(ROOT / runner.ARM64_MANIFEST)["requirements"]
         self.assertEqual(arm["versions"], {k: v for k, v in amd["versions"].items() if k != "cargo_ndk"})
         for key in ("rust_version", "rust_manifest_sha256", "apt_snapshot", "java_major", "client_codegen"):
             self.assertEqual(amd[key], arm[key], key)
+
+    def test_should_detect_live_amd64_drift_despite_frozen_publisher_fixture(self):
+        manifests = {ROOT / name: runner.read_manifest(ROOT / name)
+                     for name in (runner.MANIFEST, runner.ARM64_MANIFEST)}
+        manifests[ROOT / runner.MANIFEST]["requirements"]["java_major"] += 1
+        with patch.object(runner, "read_manifest", side_effect=manifests.__getitem__):
+            with self.assertRaises(AssertionError):
+                self.test_shared_rust_toolchain_does_not_drift_between_architectures()
+
+    def test_should_allow_matching_live_updates_despite_frozen_publisher_fixture(self):
+        manifests = {ROOT / name: runner.read_manifest(ROOT / name)
+                     for name in (runner.MANIFEST, runner.ARM64_MANIFEST)}
+        for manifest in manifests.values():
+            manifest["requirements"]["java_major"] += 1
+        with patch.object(runner, "read_manifest", side_effect=manifests.__getitem__):
+            self.test_shared_rust_toolchain_does_not_drift_between_architectures()
 
     def test_rejected_image_contract_stops_before_environment_export(self):
         with patch.dict(os.environ, {"RUNNER_OS": "Linux", "RUNNER_ARCH": "ARM64",
