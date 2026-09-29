@@ -39,7 +39,8 @@ pub fn decrypt_enc_to_user_id(key: &[u8; 32], ciphertext: &[u8; 32]) -> [u8; 32]
     out
 }
 
-/// Encrypt a `contactInfo.privateData` plaintext (CBOR bytes) as
+/// Encrypt a `contactInfo.privateData` plaintext (the DIP-15 var-int
+/// encoding, built by the wallet's `encode_private_data`) as
 /// `IV(16) ‖ AES-256-CBC(plaintext)` — the same prepended-IV layout
 /// `encryptedPublicKey` uses (DIP-15 doesn't pin the layout for this
 /// field; we adopt the same convention).

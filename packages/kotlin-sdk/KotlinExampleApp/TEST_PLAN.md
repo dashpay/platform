@@ -121,7 +121,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
-| ID-01 | Create identity (Core-funded asset lock) | Cross | Essential | ✅ | | `CreateIdentityScreen` / `IdentityRegistrationController` → `platform_wallet_register_identity_with_signer`. New identity + credit balance appear. |
+| ID-01 | Create identity (Core-funded asset lock) | Cross | Essential | ✅ | | `CreateIdentityScreen` / `IdentityRegistrationController` → `platform_wallet_register_identity_with_signer`. New identity + credit balance appear. After a fresh six-key registration, fetch the identity and check that keys 4 and 5 are ECDSA ENCRYPTION / DECRYPTION MEDIUM keys bound to the DashPay contract id and `contactRequest` (the `RegistrationKeys` table). A successful Add Contact does not prove the bounds; no unit test can see what the node stored. |
 | ID-02 | Load / discover identity from wallet | Platform | Essential | ✅ | | `LoadIdentityScreen` / `SearchWalletsForIdentitiesScreen` → `platform_wallet_discover_identities`. |
 | ID-03 | View identity (info / balance / revision / keys) | Platform | Essential | ✅ | | `IdentityDetailScreen`, `KeysListScreen`, `KeyDetailScreen`. |
 | ID-04 | Transfer credits identity → identity | Platform | Essential | ✅ | | `IdentityDetailScreen` → **Transfer Credits** (dialog, `TransferCreditsScreen`) → `platform_wallet_transfer_credits_with_signer` (Keystore-signed). Recipient entered via `RecipientPicker` (local identity / paste base58 id / DPNS name). |
@@ -137,6 +137,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID-14 | Credit transfer between two on-device identities (A → B) | Platform | Thorough | ✅ | multiwallet | `IdentityDetailScreen` → **Transfer Credits** (`ID-04`), recipient = wallet B's identity (via `RecipientPicker`). Switch to B; verify credit balance rose. |
 | ID-15 | Same identity restored into two wallets (duplicate seed) | Platform | Uncommon | ✅ | multiwallet | Importing the same mnemonic as a second wallet derives the **same** identity; verify consistency. |
 | ID-16 | Resume identity top-up from a tracked asset lock | Cross | Manual | 🚧 | | Source UI selects the Rust-tracked exact outpoint, excludes locks bound to another identity, and reaches the compiled tracked-lock list/free and existing-lock registration/top-up JNI bridges. Device gate: interrupt after Core broadcast, restart, resume the same Built transaction/outpoint, and verify foreign/untracked/consumed locks return typed failures without creating a replacement funding transaction. |
+| ID-17 | Signing after biometric re-enrollment | Platform | Manual | ✅ | | Physical device with auth-gated Keystore keys. Re-enroll biometrics (add or remove a fingerprint or face), then sign any identity transition: expect `SigningKeyUnavailable` (code 31). Repair the key from the wallet's key-health sheet (`WalletKeyHealthSheet` → `PlatformWalletManager.repairIdentityKey`); the next sign succeeds. The CI emulator cannot re-enroll biometrics, so the invalidation recovery is pinned only through the fake Keystore at the unit tier. |
 
 ### 4.3 Platform Addresses (DIP-17 credit addresses) — `Domain=Address`
 
@@ -333,7 +334,7 @@ Membership of each feature category across **all** sections (primary section mem
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..17`
-- **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded evidence 2026-07-23 in `docs/dashpay/KOTLIN_INVITATIONS_SPEC.md` §7)
+- **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded run 2026-07-23)
 - **System / Diagnostics** — `SYS-01..08`
 
 ### Tag index

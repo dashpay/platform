@@ -262,8 +262,29 @@ impl Drive {
                                         }
                                         _ => {
                                             if let Some(value) = data.get(property.name.as_str()) {
+                                                // A changed integer-range source may keep the
+                                                // document in its window, where the probe then
+                                                // finds the document itself: that is its own
+                                                // slot, not a conflict. Moved to another window,
+                                                // it is not stored there yet, so the probe finds
+                                                // only other documents.
+                                                //
+                                                // Inert before protocol version 14, the first
+                                                // to parse `integerRange` (document meta-schema
+                                                // v3): for every contract protocol versions
+                                                // 10-13 select this generation for,
+                                                // `index.integer_range` is `None`, so the flag
+                                                // below is unchanged. The PV13 tests
+                                                // `validate_uniqueness_of_data_v1_*` pin that.
+                                                let is_integer_range_source = index
+                                                    .integer_range
+                                                    .as_ref()
+                                                    .is_some_and(|transform| {
+                                                        transform.source == property.name
+                                                    });
                                                 // If the property is not none then the uniqueness should exist
                                                 if changed_data_values.get(&property.name).is_some()
+                                                    && !is_integer_range_source
                                                 {
                                                     allow_original = false;
                                                 }
@@ -380,7 +401,48 @@ impl Drive {
                             let bucket_start = *transform.containing_buckets(timestamp).first()?;
                             clause.value = platform_value!(bucket_start);
                             resolved_time_ranges.push(ResolvedTimeRange {
-                                transform: transform.clone(),
+                                transform: transform.clone().into(),
+                            });
+                        }
+                        // A unique integer-range index likewise stores window
+                        // starts: probe the window the candidate's value
+                        // falls in, with the same provenance. Inert before
+                        // protocol version 14, the first to parse
+                        // `integerRange`: `index.integer_range` is `None` for
+                        // every contract an earlier version selects this
+                        // generation for.
+                        if let Some(transform) = &index.integer_range {
+                            let Some(clause) = where_queries.get_mut(transform.source.as_str())
+                            else {
+                                return Some(Err(Error::Drive(
+                                    DriveError::CorruptedCodeExecution(
+                                        "an integer-range index's source must be one of its \
+                                         properties",
+                                    ),
+                                )));
+                            };
+                            let Some(value) = clause.value.as_integer::<i128>() else {
+                                return Some(Err(Error::Drive(
+                                    DriveError::CorruptedCodeExecution(
+                                        "a unique integer-range index's source value must be an \
+                                         integer",
+                                    ),
+                                )));
+                            };
+                            // Overlap factor 1 (validated for a unique index)
+                            // gives every value the key type holds exactly one
+                            // window. A value outside the key type (the
+                            // schema's bounds can admit values the width they
+                            // infer cannot hold) is in no window: the property
+                            // encoder refuses such a candidate before anything
+                            // is written, so there is no slot to probe and the
+                            // index is skipped, as for a null value above.
+                            clause.value = transform
+                                .containing_starts(value)
+                                .first()
+                                .and_then(|start| transform.key_type.value_of(*start))?;
+                            resolved_time_ranges.push(ResolvedTimeRange {
+                                transform: transform.clone().into(),
                             });
                         }
 

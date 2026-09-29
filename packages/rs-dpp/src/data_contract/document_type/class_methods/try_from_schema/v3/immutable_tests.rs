@@ -53,6 +53,17 @@ pub(super) fn parse_dispatched(
     platform_version: &PlatformVersion,
     full_validation: bool,
 ) -> Result<DocumentType, ProtocolError> {
+    parse_dispatched_with_defs(schema, None, platform_version, full_validation)
+}
+
+/// [`parse_dispatched`] with the contract's `$defs`, which a `$ref` in
+/// `schema` resolves against.
+pub(super) fn parse_dispatched_with_defs(
+    schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+    full_validation: bool,
+) -> Result<DocumentType, ProtocolError> {
     let config = DataContractConfig::default_for_version(platform_version)
         .expect("default config available on this platform version");
     DocumentType::try_from_schema(
@@ -61,7 +72,7 @@ pub(super) fn parse_dispatched(
         config.version(),
         "post",
         schema,
-        None,
+        schema_defs,
         &BTreeMap::new(),
         &config,
         full_validation,
@@ -106,16 +117,19 @@ fn names(entries: &[&str]) -> BTreeSet<String> {
     entries.iter().map(|entry| entry.to_string()).collect()
 }
 
-/// The lints surface as `InvalidContractStructure` either directly or, with
-/// the `validation` feature on, wrapped as the basic `ContractError`.
+/// The lints surface as `InvalidContractStructure`, wrapped as the basic
+/// `ContractError` whenever the `validation` feature is on: a bare
+/// `ProtocolError::DataContractError` would refuse the transition unpaid.
 pub(super) fn expect_structure_error<T: std::fmt::Debug>(
     result: Result<T, ProtocolError>,
     needle: &str,
 ) {
     let message = match result {
+        #[cfg(not(feature = "validation"))]
         Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
             message,
         ))) => message,
+        #[cfg(feature = "validation")]
         Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
             ConsensusError::BasicError(BasicError::ContractError(
                 DataContractError::InvalidContractStructure(message),

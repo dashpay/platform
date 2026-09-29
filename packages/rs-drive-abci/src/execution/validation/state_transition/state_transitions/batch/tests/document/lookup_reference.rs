@@ -684,6 +684,7 @@ mod lookup_reference_tests {
                     None,
                     &platform_ref,
                     &BlockInfo::default(),
+                    &mut Vec::new(),
                     None,
                     &mut execution_context,
                     platform_version,

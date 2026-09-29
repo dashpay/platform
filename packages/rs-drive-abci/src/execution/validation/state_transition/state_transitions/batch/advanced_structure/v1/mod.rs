@@ -1,8 +1,10 @@
 use crate::error::Error;
 use dpp::consensus::signature::ContractBoundedKeyOutOfBoundsError;
 use dpp::contract_group::{ContractGroupMember, ContractGroupMembership};
-use dpp::identity::contract_bounds::BatchedTransitionBoundsCheck;
+use dpp::identity::contract_bounds::{BatchedTransitionBoundsCheck, ContractBounds};
 use dpp::identity::Purpose;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::ProtocolError;
 use std::collections::BTreeSet;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
@@ -29,6 +31,8 @@ use crate::execution::validation::state_transition::state_transitions::batch::ac
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_index_only_delete_transition_action::v0::DocumentIndexOnlyDeleteTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
@@ -39,6 +43,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
+use crate::execution::validation::state_transition::common::validate_document_not_expired::validate_document_action_not_expired;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
@@ -195,6 +200,59 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                         }
                     }
                 }
+                // A create may consume documents of other types of its own contract
+                // (`consume`), deleting them with the key that signs it: the key must be
+                // allowed to act on those types as well
+                if !out_of_bounds {
+                    'creates: for transition in action.transitions() {
+                        let BatchedTransitionAction::DocumentAction(
+                            DocumentTransitionAction::CreateAction(create),
+                        ) = transition
+                        else {
+                            continue;
+                        };
+                        let contract = &create.base().data_contract_fetch_info().contract;
+                        let document_type = contract
+                            .document_type_for_name(create.base().document_type_name())
+                            .map_err(ProtocolError::from)?;
+                        for consumed_type in document_type.consumable_document_type_names() {
+                            let allowed = match bounds {
+                                // The create itself is inside the contract
+                                ContractBounds::SingleContract { .. } => true,
+                                ContractBounds::SingleContractDocumentType {
+                                    document_type_name,
+                                    ..
+                                } => document_type_name == consumed_type,
+                                ContractBounds::ContractGroup { id } => {
+                                    let resolved = action
+                                        .contract_group_memberships(&contract.id())
+                                        .ok_or(Error::Execution(
+                                            ExecutionError::CorruptedCodeExecution(
+                                                "the create's own bounds check resolved its contract's group memberships",
+                                            ),
+                                        ))?;
+                                    [
+                                        ContractGroupMember::Contract,
+                                        ContractGroupMember::DocumentType(
+                                            consumed_type.to_string(),
+                                        ),
+                                    ]
+                                    .into_iter()
+                                    .any(|member| {
+                                        resolved.memberships.contains(&ContractGroupMembership {
+                                            contract_group_id: *id,
+                                            member,
+                                        })
+                                    })
+                                }
+                            };
+                            if !allowed {
+                                out_of_bounds = true;
+                                break 'creates;
+                            }
+                        }
+                    }
+                }
                 if out_of_bounds {
                     let first = self.first_transition().ok_or(Error::Execution(
                         ExecutionError::CorruptedCodeExecution("empty validated batch"),
@@ -257,6 +315,30 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                         ],
                     ));
                 }
+            }
+        }
+
+        // A document whose type declares a `ttl` is no longer replaced, transferred, bought or
+        // repriced once that has passed (`DocumentExpiredError`), judged from the document the
+        // action carries and the block time. Here rather than in the state validation, so
+        // check_tx refuses the change too.
+        for transition in action.transitions() {
+            let BatchedTransitionAction::DocumentAction(document_action) = transition else {
+                continue;
+            };
+            let result = validate_document_action_not_expired(document_action, block_info)?;
+            if !result.is_valid() {
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition_action(
+                        document_action.base(),
+                        self.owner_id(),
+                        self.user_fee_increase(),
+                    ),
+                );
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    bump_action,
+                    result.errors,
+                ));
             }
         }
 

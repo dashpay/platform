@@ -272,7 +272,9 @@ where
 
         // Withdrawal transactions pooled in this block (or left over from a backlog) wait for
         // the next block to sign them. Ask Tenderdash for that block right away instead of
-        // after the empty-block interval.
+        // after the empty-block interval. Added in place to this shipped generation: the read
+        // is unbilled and only sets a hint for Tenderdash, so it changes no fee, state or app
+        // hash at any protocol version.
         let propose_next_block_immediately =
             self.has_pending_withdrawal_work(Some(transaction), platform_version)?;
 

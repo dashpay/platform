@@ -1,0 +1,475 @@
+{
+  "$formatVersion": "1",
+  "id": "548jb4wcUtpbNS1TAva8TXJmeXd5QpCCXUzNVogwpzMR",
+  "ownerId": "2b994p95akyNFKtkDnDvBRUotDbkH54MHwGbhQLr5gcU",
+  "version": 1,
+  "documentSchemas": {
+    "preorder": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "saltedDomainHash": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0
+        }
+      },
+      "indices": [
+        {
+          "name": "saltedHash",
+          "properties": [
+            {
+              "saltedDomainHash": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "$createdAtBlockHeight",
+        "saltedDomainHash"
+      ],
+      "additionalProperties": false
+    },
+    "domain": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "transferable": 1,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "normalizedLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 1
+        },
+        "parentDomainName": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 2
+        },
+        "preorderSalt": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 3,
+          "refersTo": {
+            "type": "deletableDocument",
+            "documentType": "preorder",
+            "findBy": {
+              "saltedDomainHash": {
+                "function": "sys.hash.sha256d",
+                "params": [
+                  "preorderSalt",
+                  "normalizedLabel",
+                  {
+                    "const": "."
+                  },
+                  "parentDomainName"
+                ]
+              }
+            },
+            "where": {
+              "$ownerId": "$ownerId"
+            },
+            "minimumAgeBlocks": 1,
+            "consume": true
+          }
+        }
+      },
+      "required": [
+        "label",
+        "normalizedLabel",
+        "preorderSalt"
+      ],
+      "transient": [
+        "preorderSalt"
+      ],
+      "additionalProperties": false
+    },
+    "openClaim": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "preorderSalt": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1
+        }
+      },
+      "required": [
+        "label",
+        "preorderSalt"
+      ],
+      "transient": [
+        "preorderSalt"
+      ],
+      "ownerRefersTo": {
+        "type": "deletableDocument",
+        "documentType": "preorder",
+        "findBy": {
+          "saltedDomainHash": {
+            "function": "sys.hash.sha256d",
+            "params": [
+              "preorderSalt",
+              "label"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "membership": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "note": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 0
+        }
+      },
+      "indices": [
+        {
+          "name": "byOwner",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            }
+          ],
+          "unique": true
+        }
+      ],
+      "required": [
+        "note"
+      ],
+      "additionalProperties": false
+    },
+    "renewal": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "preorderSalt": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 2
+        }
+      },
+      "required": [
+        "label",
+        "preorderSalt"
+      ],
+      "transient": [
+        "preorderSalt"
+      ],
+      "immutable": [
+        "label"
+      ],
+      "ownerRefersTo": {
+        "allOf": [
+          {
+            "type": "deletableDocument",
+            "documentType": "preorder",
+            "findBy": {
+              "saltedDomainHash": {
+                "function": "sys.hash.sha256d",
+                "params": [
+                  "preorderSalt",
+                  "label"
+                ]
+              }
+            },
+            "where": {
+              "$ownerId": "$ownerId"
+            },
+            "consume": true
+          },
+          {
+            "type": "deletableDocument",
+            "documentType": "membership",
+            "findBy": {
+              "$ownerId": "."
+            }
+          }
+        ]
+      },
+      "additionalProperties": false
+    },
+    "fallbackClaim": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "preorderSalt": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1
+        }
+      },
+      "required": [
+        "label",
+        "preorderSalt"
+      ],
+      "transient": [
+        "preorderSalt"
+      ],
+      "ownerRefersTo": {
+        "anyOf": [
+          {
+            "allOf": [
+              {
+                "type": "deletableDocument",
+                "documentType": "preorder",
+                "findBy": {
+                  "saltedDomainHash": {
+                    "function": "sys.hash.sha256d",
+                    "params": [
+                      "preorderSalt",
+                      "label"
+                    ]
+                  }
+                },
+                "where": {
+                  "$ownerId": "$ownerId"
+                },
+                "consume": true
+              },
+              {
+                "type": "deletableDocument",
+                "documentType": "membership",
+                "findBy": {
+                  "$ownerId": "."
+                }
+              }
+            ]
+          },
+          {
+            "type": "identity"
+          }
+        ]
+      },
+      "additionalProperties": false
+    },
+    "saltedNote": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "preorderSalt": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1,
+          "refersTo": {
+            "type": "deletableDocument",
+            "documentType": "preorder",
+            "findBy": {
+              "saltedDomainHash": {
+                "function": "sys.hash.sha256d",
+                "params": [
+                  "preorderSalt",
+                  "label",
+                  {
+                    "const": "/"
+                  },
+                  "secret"
+                ]
+              }
+            },
+            "where": {
+              "$ownerId": "$ownerId"
+            },
+            "consume": true
+          }
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 63,
+          "position": 2
+        },
+        "secret": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 3
+        }
+      },
+      "required": [
+        "label",
+        "preorderSalt"
+      ],
+      "transient": [
+        "preorderSalt",
+        "secret"
+      ],
+      "immutable": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "nestedClaim": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 0
+        },
+        "meta": {
+          "type": "object",
+          "position": 1,
+          "properties": {
+            "salt": {
+              "type": "array",
+              "byteArray": true,
+              "minItems": 32,
+              "maxItems": 32,
+              "position": 0,
+              "refersTo": {
+                "type": "deletableDocument",
+                "documentType": "preorder",
+                "findBy": {
+                  "saltedDomainHash": {
+                    "function": "sys.hash.sha256d",
+                    "params": [
+                      "meta.salt",
+                      "label"
+                    ]
+                  }
+                },
+                "where": {
+                  "$ownerId": "$ownerId"
+                },
+                "consume": true
+              }
+            }
+          },
+          "required": [
+            "salt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "label",
+        "meta"
+      ],
+      "additionalProperties": false
+    },
+    "ticket": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "commitment": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0
+        },
+        "secret": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 1,
+          "refersTo": {
+            "type": "deletableDocument",
+            "documentType": "ticket",
+            "findBy": {
+              "commitment": {
+                "function": "sys.hash.sha256d",
+                "params": [
+                  "secret"
+                ]
+              }
+            },
+            "where": {
+              "$ownerId": "$ownerId"
+            },
+            "consume": true
+          }
+        }
+      },
+      "indices": [
+        {
+          "name": "byCommitment",
+          "properties": [
+            {
+              "commitment": "asc"
+            }
+          ],
+          "unique": true
+        },
+        {
+          "name": "byOwner",
+          "properties": [
+            {
+              "$ownerId": "asc"
+            }
+          ]
+        }
+      ],
+      "required": [
+        "commitment"
+      ],
+      "transient": [
+        "secret"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

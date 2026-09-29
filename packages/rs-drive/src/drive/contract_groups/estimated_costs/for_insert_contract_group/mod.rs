@@ -11,6 +11,17 @@ use std::collections::HashMap;
 impl Drive {
     /// Adds the estimated layer information for registering a contract group: the root tree,
     /// the `ContractGroups` tree, its `Groups` subtree and the new group's own tree.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_group_id`: The id of the group being registered.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
+    /// * `drive_version`: The drive version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the layers are added to the map.
+    /// * `Err(Error)` when the method version is unknown.
     pub(crate) fn add_estimation_costs_for_insert_contract_group(
         contract_group_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

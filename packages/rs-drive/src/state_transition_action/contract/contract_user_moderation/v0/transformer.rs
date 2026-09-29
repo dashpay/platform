@@ -1,6 +1,7 @@
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
-    ContractDocumentDeletionContext, ContractDocumentRestorationContext,
-    ContractUserModerationTransitionActionV0, ContractWarningContext,
+    ContractDocumentChangeContext, ContractDocumentDeletionContext,
+    ContractDocumentRestorationContext, ContractUserModerationTransitionActionV0,
+    ContractWarningContext,
 };
 use dpp::data_contract::config::moderation::ContractModerationStatus;
 use dpp::identity::TimestampMillis;
@@ -38,6 +39,7 @@ impl ContractUserModerationTransitionActionV0 {
             }),
             document_deletion: None,
             document_restoration: None,
+            document_change: None,
             moderation_action_count: None,
             user_fee_increase: *user_fee_increase,
         }
@@ -70,6 +72,21 @@ impl ContractUserModerationTransitionActionV0 {
             0,
         );
         action.document_restoration = Some(document_restoration);
+        action
+    }
+
+    /// The action of a borrowed transition that changes fields of a document, carrying what
+    /// the validation read and built: the contract and the changed document
+    pub fn from_borrowed_transition_with_document_change(
+        value: &ContractUserModerationTransitionV0,
+        document_change: ContractDocumentChangeContext,
+    ) -> Self {
+        let mut action = Self::from_borrowed_transition_with_status(
+            value,
+            &ContractModerationStatus::default(),
+            0,
+        );
+        action.document_change = Some(document_change);
         action
     }
 }

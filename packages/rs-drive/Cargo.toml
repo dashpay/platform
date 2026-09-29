@@ -53,6 +53,11 @@ intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.13", optional = true }
 grovedb = { workspace = true, optional = true }
+# `TreeType` for the tree-type rules shared by the index walkers and
+# `drive::document::layout`. grovedb re-exports it only with its `minimal`
+# feature; the `verify` build reaches it here (grovedb already depends on
+# grovedb-merk in both builds).
+grovedb-merk = { workspace = true, optional = true }
 grovedb-costs = { workspace = true, optional = true }
 grovedb-path = { workspace = true }
 grovedb-query = { workspace = true }
@@ -129,6 +134,7 @@ server = [
   "grovedb/estimated_costs",
   "grovedb-storage",
   "grovedb-costs",
+  "dep:grovedb-merk",
   "itertools",
   "rand",                     #todo: this should be removed eventually
   "enum-map",
@@ -145,6 +151,8 @@ grovedb_operations_logging = []
 shielded_test_data = ["grovedb/unsafe-dump-load"]
 verify = [
   "grovedb/verify",
+  "dep:grovedb-merk",
+  "grovedb-merk/verify",
   "grovedb-costs",
   "dpp/state-transitions",
   "dpp/system_contracts",

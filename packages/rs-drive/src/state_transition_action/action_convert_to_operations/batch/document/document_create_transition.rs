@@ -50,6 +50,13 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
 
                 let document_creation_token_cost = self.base().token_cost();
 
+                // In place in generation 0, which every table selects: only the protocol
+                // version 14 batch state validation sets consumed documents, and only for a
+                // create revealing a commitment through a `refersTo` lookup with a computed key
+                // declaring `consume`, which only that version's parser produces. Every earlier
+                // create has none and converts to exactly the operations it always did
+                let consumed_documents = self.consumed_documents().to_vec();
+
                 let document = Document::try_from_owned_create_transition_action(
                     self,
                     owner_id,
@@ -125,7 +132,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                                 owner_id: Some(owner_id.into_buffer()),
                             },
                             contested_document_resource_vote_poll,
-                            contract_info: DataContractFetchInfo(contract_fetch_info),
+                            contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
                             document_type_info: DocumentTypeInfo::DocumentTypeName(
                                 document_type_name,
                             ),
@@ -133,7 +140,19 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                             also_insert_vote_poll_stored_info,
                         },
                     ));
-                } else {
+                    // The commitments the create revealed and consumes, each in the create's
+                    // own contract. A contested document sits in its contest's own trees, so
+                    // no tree its insert writes into is shared with these deletes
+                    for consumed in consumed_documents {
+                        ops.push(DocumentOperation(DocumentOperationType::DeleteDocument {
+                            document_id: consumed.document_id,
+                            contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
+                            document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                consumed.document_type_name,
+                            ),
+                        }));
+                    }
+                } else if consumed_documents.is_empty() {
                     // Just add the document
                     ops.push(DocumentOperation(DocumentOperationType::AddDocument {
                         owned_document_info: OwnedDocumentInfo {
@@ -143,10 +162,34 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                             )),
                             owner_id: Some(owner_id.into_buffer()),
                         },
-                        contract_info: DataContractFetchInfo(contract_fetch_info),
+                        contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
                         document_type_info: DocumentTypeInfo::DocumentTypeName(document_type_name),
                         override_document: false,
                     }));
+                } else {
+                    // The document and the commitments the create revealed and consumes, each
+                    // in the create's own contract, converted as one so the deletes see the
+                    // insert: a consumed document may share an index bucket or an
+                    // expirations tree with the new one
+                    ops.push(DocumentOperation(
+                        DocumentOperationType::AddDocumentAndDeleteConsumed {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentOwnedInfo((
+                                    document,
+                                    Some(Cow::Owned(storage_flags)),
+                                )),
+                                owner_id: Some(owner_id.into_buffer()),
+                            },
+                            contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
+                            document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                document_type_name,
+                            ),
+                            consumed_documents: consumed_documents
+                                .into_iter()
+                                .map(|consumed| (consumed.document_id, consumed.document_type_name))
+                                .collect(),
+                        },
+                    ));
                 }
 
                 Ok(ops)

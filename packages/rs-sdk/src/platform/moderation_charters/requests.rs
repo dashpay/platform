@@ -248,6 +248,7 @@ mod tests {
     use super::*;
     use crate::platform::encrypted_for::{decrypt_property, EncryptedPropertyEnvelope};
     use dpp::dashcore::secp256k1::{PublicKey, Secp256k1};
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -412,6 +413,7 @@ mod tests {
                 .validate_document_properties(
                     &request.document_type_name,
                     Value::from(properties.clone()),
+                    &DocumentSystemValues::default(),
                     platform_version,
                 )
                 .expect("runs");

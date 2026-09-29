@@ -1,6 +1,8 @@
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use platform_version::version::PlatformVersion;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
@@ -8,7 +10,7 @@ use dpp::state_transition::batch_transition::batched_transition::document_index_
 use crate::drive::contract::DataContractFetchInfo;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
-use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
+use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::batch::batched_transition::document_transition::document_index_only_delete_transition_action::v0::DocumentIndexOnlyDeleteTransitionActionV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
@@ -21,6 +23,7 @@ impl DocumentIndexOnlyDeleteTransitionActionV0 {
         owner_id: Identifier,
         user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
     ) -> Result<
         (
             ConsensusValidationResult<BatchedTransitionAction>,
@@ -61,14 +64,20 @@ impl DocumentIndexOnlyDeleteTransitionActionV0 {
             }
         };
 
+        // Added in place at protocol version 14, inert before it: `fill_generated_properties`
+        // is `None` there and leaves the values as sent. From 14 on, the values name an
+        // entry the way its create stored it: a `generatedFrom` property left out is
+        // generated from its params, as the create generated it. `document_type()` cannot
+        // fail here: building the base action above already resolved the document type
+        // (its deletion token cost is read from it).
+        let mut data = data.clone();
+        base.document_type()?
+            .fill_generated_properties(&mut data, platform_version)?;
+
         Ok((
             BatchedTransitionAction::DocumentAction(
                 DocumentTransitionAction::IndexOnlyDeleteAction(
-                    DocumentIndexOnlyDeleteTransitionActionV0 {
-                        base,
-                        data: data.clone(),
-                    }
-                    .into(),
+                    DocumentIndexOnlyDeleteTransitionActionV0 { base, data }.into(),
                 ),
             )
             .into(),
