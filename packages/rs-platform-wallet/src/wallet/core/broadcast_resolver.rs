@@ -65,8 +65,9 @@ use dashcore::{Transaction, Txid};
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet_manager::{WalletEvent, WalletId, WalletManager};
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, RwLock};
 use tokio::task::{self, AbortHandle, JoinError, JoinHandle, JoinSet};
+use tokio::time::{timeout_at, Instant};
 
 use crate::broadcast_probe::{AcceptanceProbe, ProbeVerdict};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
@@ -511,6 +512,8 @@ pub(crate) fn is_catch_up_step(previous: Option<u32>, height: u32) -> bool {
 pub(crate) struct PassStart {
     pub events: Vec<Outgoing>,
     pub due: VecDeque<(Txid, Transaction)>,
+    /// The txids the wallet still holds unsettled.
+    pub present: HashSet<Txid>,
 }
 
 /// Start a pass over one wallet at `height`: forget what settled or left
@@ -526,6 +529,7 @@ pub(crate) fn begin_pass(
     height: u32,
     views: &[OutgoingView],
     forced: &HashSet<Txid>,
+    already_sent: impl Fn(&Txid, &Txid) -> bool,
 ) -> PassStart {
     let trigger = trigger_of(forced);
     let mut events = Vec::new();
@@ -552,9 +556,16 @@ pub(crate) fn begin_pass(
     let mined = state.mined(&wallet_id);
     let graph = ChainGraph::new(views, &mined);
     let roots = graph.roots();
+    // `already_sent(txid, root)`: the root was sent to the network at this
+    // height after `txid` was reported — forcing it again would only repeat.
     let forced_roots: BTreeSet<Txid> = forced
         .iter()
-        .flat_map(|txid| graph.roots_of(txid))
+        .flat_map(|txid| {
+            graph
+                .roots_of(txid)
+                .into_iter()
+                .filter(|root| !already_sent(txid, root))
+        })
         .collect();
 
     for view in &roots {
@@ -580,7 +591,11 @@ pub(crate) fn begin_pass(
             due.push_back((view.txid, view.transaction.clone()));
         }
     }
-    PassStart { events, due }
+    PassStart {
+        events,
+        due,
+        present,
+    }
 }
 
 /// Record one root's probe result: a final verdict ends its probing, and the
@@ -787,19 +802,37 @@ impl VerdictSink for EventSink {
     }
 }
 
+/// How many times one event is handed to a host handler that panics on it.
+const DELIVERY_ATTEMPTS: u8 = 3;
+
+/// Events a host handler panicked on, with the attempts made so far.
+type Retries = VecDeque<(Outgoing, u8)>;
+
 /// Hand `events` to the host. A handler that panics does not take the
-/// resolver down, but the event it panicked on is lost — it is not sent
-/// again. A panicking handler is a host bug; this only keeps probing alive
-/// where panics unwind (the iOS profiles abort instead).
-fn deliver(sink: &Arc<dyn VerdictSink>, events: Vec<Outgoing>) {
-    for item in &events {
-        if catch_unwind(AssertUnwindSafe(|| sink.deliver(item))).is_err() {
-            tracing::error!(
-                wallet_id = %hex::encode(item.wallet_id),
-                event = ?item.event,
-                "broadcast probe: a host handler panicked; its event is lost"
-            );
-        }
+/// resolver down: the event is queued and handed over again before the
+/// actor's next step, while it still says what the state says, up to
+/// [`DELIVERY_ATTEMPTS`] times. (Where panics abort — the iOS profiles — the
+/// app ends instead.)
+fn deliver(sink: &Arc<dyn VerdictSink>, retries: &mut Retries, events: Vec<Outgoing>) {
+    for item in events {
+        attempt(sink, retries, item, 1);
+    }
+}
+
+fn attempt(sink: &Arc<dyn VerdictSink>, retries: &mut Retries, item: Outgoing, attempts: u8) {
+    if catch_unwind(AssertUnwindSafe(|| sink.deliver(&item))).is_ok() {
+        return;
+    }
+    let giving_up = attempts >= DELIVERY_ATTEMPTS;
+    tracing::error!(
+        wallet_id = %hex::encode(item.wallet_id),
+        event = ?item.event,
+        attempts,
+        giving_up,
+        "broadcast probe: a host handler panicked delivering an event"
+    );
+    if !giving_up {
+        retries.push_back((item, attempts));
     }
 }
 
@@ -835,7 +868,7 @@ enum JobDone {
         wallet_id: WalletId,
         run: u64,
         height: u32,
-        forced_since: Option<u64>,
+        forced: HashMap<Txid, u64>,
         read: Option<Option<WalletRead>>,
     },
     Probed {
@@ -852,9 +885,8 @@ struct PendingPass {
     /// A height advance asked for this pass; otherwise only `Uncertain`
     /// results did.
     by_height: bool,
-    forced: HashSet<Txid>,
-    /// The latest command at which one of `forced` was reported.
-    forced_since: Option<u64>,
+    /// Each txid reported `Uncertain`, with the command it was reported at.
+    forced: HashMap<Txid, u64>,
 }
 
 /// A pass in flight: reading the wallet, then probing its due roots one at
@@ -919,6 +951,9 @@ struct Actor {
     /// pass height. A forced pass skips a root already probed at its height
     /// since the `Uncertain` result arrived.
     probed: HashMap<(WalletId, Txid), (u64, u32)>,
+    /// Events a host handler panicked on, handed over again before the next
+    /// command or job result.
+    retries: Retries,
 }
 
 impl Actor {
@@ -939,6 +974,7 @@ impl Actor {
             job_runs: HashMap::new(),
             tick: 0,
             probed: HashMap::new(),
+            retries: VecDeque::new(),
         }
     }
 
@@ -966,6 +1002,7 @@ impl Actor {
     }
 
     fn joined(&mut self, joined: Result<(task::Id, JobDone), JoinError>) {
+        self.retry_deliveries();
         match joined {
             Ok((id, done)) => {
                 self.job_runs.remove(&id);
@@ -991,9 +1028,8 @@ impl Actor {
                         }
                         if let Some(entry) = self.wallets.get_mut(&wallet_id) {
                             if entry.run.as_ref().is_some_and(|current| current.id == run) {
-                                entry.run = None;
                                 entry.wait_until = None;
-                                self.start(wallet_id);
+                                self.end_run(wallet_id);
                             }
                         }
                     }
@@ -1015,6 +1051,7 @@ impl Actor {
     }
 
     fn handle(&mut self, command: Command) {
+        self.retry_deliveries();
         self.tick += 1;
         match command {
             Command::Height { wallet_id, height } => {
@@ -1080,7 +1117,7 @@ impl Actor {
                 if !enabled {
                     self.probed.clear();
                     let events = self.state.forget_all();
-                    deliver(&self.sink, events);
+                    deliver(&self.sink, &mut self.retries, events);
                 }
             }
             Command::WalletRemoved(wallet_id) => {
@@ -1089,7 +1126,7 @@ impl Actor {
                 }
                 self.probed.retain(|(wallet, _), _| *wallet != wallet_id);
                 let events = self.state.forget_wallet(&wallet_id);
-                deliver(&self.sink, events);
+                deliver(&self.sink, &mut self.retries, events);
             }
         }
     }
@@ -1110,13 +1147,17 @@ impl Actor {
         let source = Arc::clone(&self.source);
         let abort = self.jobs.spawn(async move {
             let read = source
-                .read(wallet_id, pending.by_height, pending.forced)
+                .read(
+                    wallet_id,
+                    pending.by_height,
+                    pending.forced.keys().copied().collect(),
+                )
                 .await;
             JobDone::Read {
                 wallet_id,
                 run,
                 height: pending.height,
-                forced_since: pending.forced_since,
+                forced: pending.forced,
                 read,
             }
         });
@@ -1146,11 +1187,10 @@ impl Actor {
                     let entry = self.entry(wallet_id);
                     let pending = entry.pending.get_or_insert_with(PendingPass::default);
                     pending.height = pending.height.max(entry.height.unwrap_or(0));
-                    pending.forced.insert(txid);
-                    // The latest result: a probe sent before it must not
-                    // stand in for the forced probe it asks for.
-                    pending.forced_since =
-                        Some(pending.forced_since.map_or(since, |s| s.max(since)));
+                    // The latest report of the txid counts: a probe sent
+                    // before it must not stand in for the one it asks for.
+                    let at = pending.forced.entry(txid).or_insert(since);
+                    *at = (*at).max(since);
                     self.start(wallet_id);
                 }
             }
@@ -1158,7 +1198,7 @@ impl Actor {
                 wallet_id,
                 run,
                 height,
-                forced_since,
+                forced: reported,
                 read,
             } => {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
@@ -1170,55 +1210,49 @@ impl Actor {
                 };
                 match read {
                     None => {
-                        // Gone from the wallet manager — not always through
-                        // `wallet_removed` (a failed registration or load is
-                        // rolled back without it) — so forget it here too;
-                        // clearing twice is harmless. Keep the entry if a
-                        // command for a same-id wallet arrived meanwhile.
-                        if run_seq == entry.seq {
+                        // Gone from the wallet manager. Every removal path
+                        // also sends `WalletRemoved`, but that command may
+                        // still be queued, or a lookup may have raced it:
+                        // forget the wallet here too — clearing twice is
+                        // harmless. Keep the entry if a command for a same-id
+                        // wallet arrived meanwhile.
+                        let keep = run_seq != entry.seq;
+                        if !keep {
                             self.wallets.remove(&wallet_id);
-                        } else {
-                            entry.run = None;
                         }
                         self.probed.retain(|(wallet, _), _| *wallet != wallet_id);
                         let events = self.state.forget_wallet(&wallet_id);
-                        deliver(&self.sink, events);
-                        self.start(wallet_id);
+                        deliver(&self.sink, &mut self.retries, events);
+                        if keep {
+                            self.end_run(wallet_id);
+                        }
                     }
-                    Some(None) => {
-                        entry.run = None;
-                        self.start(wallet_id);
-                    }
+                    Some(None) => self.end_run(wallet_id),
                     Some(Some(read)) => {
                         // A request queued before any height was reported
                         // carries 0; the wallet's own synced height is better.
                         let height = height.max(read.synced_height);
-                        let mut start = begin_pass(
+                        let probed = &self.probed;
+                        let start = begin_pass(
                             &mut self.state,
                             wallet_id,
                             height,
                             &read.views,
                             &read.forced,
+                            |txid, root| {
+                                reported.get(txid).is_some_and(|&since| {
+                                    probed.get(&(wallet_id, *root)).is_some_and(
+                                        |&(tick, probed_height)| {
+                                            tick >= since && probed_height == height
+                                        },
+                                    )
+                                })
+                            },
                         );
                         // Forget send times of roots that settled or left.
-                        let present: HashSet<Txid> =
-                            read.views.iter().map(|view| view.txid).collect();
                         self.probed.retain(|(wallet, txid), _| {
-                            *wallet != wallet_id || present.contains(txid)
+                            *wallet != wallet_id || start.present.contains(txid)
                         });
-                        // A root already sent to the network at this height
-                        // after the `Uncertain` result arrived needs no second
-                        // probe — the forced one would only repeat it.
-                        if let Some(since) = forced_since {
-                            let probed = &self.probed;
-                            start.due.retain(|(root, _)| {
-                                !probed.get(&(wallet_id, *root)).is_some_and(
-                                    |&(tick, probed_height)| {
-                                        tick >= since && probed_height == height
-                                    },
-                                )
-                            });
-                        }
                         if let Some(current) = entry.run.as_mut() {
                             current.probing = Some(Probing {
                                 views: read.views,
@@ -1229,7 +1263,7 @@ impl Actor {
                         }
                         // Clears and re-published dead verdicts reach the host
                         // before the pass goes out to the network.
-                        deliver(&self.sink, start.events);
+                        deliver(&self.sink, &mut self.retries, start.events);
                         self.probe_next(wallet_id);
                     }
                 }
@@ -1258,7 +1292,7 @@ impl Actor {
                     root,
                     &verdict,
                 );
-                deliver(&self.sink, events);
+                deliver(&self.sink, &mut self.retries, events);
                 self.probe_next(wallet_id);
             }
         }
@@ -1295,15 +1329,44 @@ impl Actor {
         }
         entry.wait_until =
             (!run.woken).then(|| next_pass_height(&self.state, wallet_id, &probing.views));
+        self.end_run(wallet_id);
+    }
+
+    /// End the wallet's run and start what is queued — except a height
+    /// queued during the run that no root is due at; a forced request always
+    /// runs.
+    fn end_run(&mut self, wallet_id: WalletId) {
+        let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+            return;
+        };
         entry.run = None;
-        // A height queued during the run that no root is due at is dropped;
-        // a forced request never is.
         if let (Some(pending), Some(until)) = (&entry.pending, entry.wait_until) {
             if pending.forced.is_empty() && pending.height < until {
                 entry.pending = None;
             }
         }
         self.start(wallet_id);
+    }
+
+    /// Hand the host again what a panicking handler did not take, while it
+    /// still says what the state says: a verdict still published, a clear of
+    /// a send still unpublished.
+    fn retry_deliveries(&mut self) {
+        for (item, attempts) in std::mem::take(&mut self.retries) {
+            let current = match &item.event {
+                ResolverEvent::Verdict(txid, verdict) => self
+                    .state
+                    .published
+                    .get(&(item.wallet_id, *txid))
+                    .is_some_and(|published| same_for_host(published, verdict)),
+                ResolverEvent::Cleared(txid) => {
+                    !self.state.published.contains_key(&(item.wallet_id, *txid))
+                }
+            };
+            if current {
+                attempt(&self.sink, &mut self.retries, item, attempts + 1);
+            }
+        }
     }
 }
 
@@ -1333,6 +1396,8 @@ pub(crate) struct BroadcastResolver {
     /// needs the slot.
     started: AtomicBool,
     actor: Mutex<ActorSlot>,
+    /// Serialises [`stop_within`](Self::stop_within) calls.
+    stopping: AsyncMutex<()>,
     sink: Arc<EventSink>,
 }
 
@@ -1353,6 +1418,7 @@ impl BroadcastResolver {
             commands,
             started: AtomicBool::new(false),
             actor: Mutex::new(ActorSlot::NotStarted(Box::new(actor), receiver)),
+            stopping: AsyncMutex::new(()),
             sink,
         }
     }
@@ -1409,16 +1475,26 @@ impl BroadcastResolver {
     /// Stop the resolver's task: it aborts every read and probe it started and
     /// waits for them, all within `budget`; after this no host callback comes
     /// from the resolver. `NotRunning` if it never started or was already
-    /// stopped; `Timeout` if it did not end in time (it is then aborted, and
-    /// a later call waits for it again); `Panicked` if it had died.
+    /// stopped; `Timeout` if it did not end in time (a later call waits for
+    /// it again); `Panicked` if it had died. Concurrent calls take turns.
     pub(crate) async fn stop_within(&self, budget: Duration) -> WorkerStatus {
         self.started.store(true, Ordering::Release);
-        stop_slot(&self.actor, budget).await
+        stop_slot(&self.actor, &self.stopping, budget).await
     }
 }
 
 /// See [`BroadcastResolver::stop_within`].
-async fn stop_slot(actor: &Mutex<ActorSlot>, budget: Duration) -> WorkerStatus {
+async fn stop_slot(
+    actor: &Mutex<ActorSlot>,
+    stopping: &AsyncMutex<()>,
+    budget: Duration,
+) -> WorkerStatus {
+    let deadline = Instant::now() + budget;
+    // One stop at a time: a second caller waits for the first instead of
+    // finding the slot emptied and reporting a live task as not running.
+    let Ok(_one_at_a_time) = timeout_at(deadline, stopping.lock()).await else {
+        return WorkerStatus::Timeout;
+    };
     let slot = std::mem::replace(
         &mut *actor.lock().unwrap_or_else(PoisonError::into_inner),
         ActorSlot::Closed,
@@ -1431,14 +1507,14 @@ async fn stop_slot(actor: &Mutex<ActorSlot>, budget: Duration) -> WorkerStatus {
         ActorSlot::Stopping(handle) => handle,
         ActorSlot::NotStarted(..) | ActorSlot::Closed => return WorkerStatus::NotRunning,
     };
-    match tokio::time::timeout(budget, &mut handle).await {
+    match timeout_at(deadline, &mut handle).await {
         Ok(Ok(())) => WorkerStatus::Ok,
         Ok(Err(error)) if error.is_panic() => WorkerStatus::Panicked(error.to_string()),
         Ok(Err(error)) => WorkerStatus::Stopped(Some(error.to_string())),
         Err(_) => {
-            // An abort cannot interrupt a host callback in progress: keep
-            // the handle so a retried stop waits for it again.
-            handle.abort();
+            // Told to stop, still going — likely inside a host callback. Not
+            // aborted: a retried stop waits for it to end on its own and can
+            // then report it clean.
             *actor.lock().unwrap_or_else(PoisonError::into_inner) = ActorSlot::Stopping(handle);
             WorkerStatus::Timeout
         }
@@ -1809,7 +1885,14 @@ mod tests {
     ) -> u32 {
         let due = {
             let mut guard = state.lock().expect("state");
-            let start = begin_pass(&mut guard.state, wallet_id, height, views, forced);
+            let start = begin_pass(
+                &mut guard.state,
+                wallet_id,
+                height,
+                views,
+                forced,
+                |_, _| false,
+            );
             guard.push(start.events);
             start.due
         };
@@ -2576,22 +2659,108 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(1), txid(2), txid(2)]);
     }
 
-    /// A stop that runs out of budget keeps the task: a retried stop waits for
-    /// it again and never reports it gone while it still runs.
+    /// A stop that runs out of budget keeps the task without aborting it: a
+    /// retried stop waits for it to end and reports it clean.
     #[tokio::test]
-    async fn should_not_report_a_task_that_outlived_a_stop_as_not_running() {
+    async fn should_report_a_task_that_outlived_a_stop_clean_on_retry() {
         let (stop, _stopped) = oneshot::channel();
-        // A blocking task stands in for a host callback that abort cannot cut.
-        let handle = tokio::task::spawn_blocking(|| std::thread::sleep(Duration::from_millis(300)));
+        let handle = tokio::spawn(tokio::time::sleep(Duration::from_millis(300)));
         let slot = Mutex::new(ActorSlot::Running(handle, stop));
+        let stopping = AsyncMutex::new(());
 
-        let first = stop_slot(&slot, Duration::from_millis(20)).await;
-        let second = stop_slot(&slot, Duration::from_secs(5)).await;
-        let third = stop_slot(&slot, Duration::from_secs(5)).await;
+        let first = stop_slot(&slot, &stopping, Duration::from_millis(20)).await;
+        let second = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
+        let third = stop_slot(&slot, &stopping, Duration::from_secs(5)).await;
 
         assert_eq!(first, WorkerStatus::Timeout);
         assert_eq!(second, WorkerStatus::Ok);
         assert_eq!(third, WorkerStatus::NotRunning);
+    }
+
+    /// Two stops at once: the second waits for the first and never reports
+    /// the task gone while it still runs.
+    #[tokio::test]
+    async fn should_not_report_a_running_task_as_not_running_to_a_concurrent_stop() {
+        let (stop, _stopped) = oneshot::channel();
+        let handle = tokio::spawn(tokio::time::sleep(Duration::from_millis(200)));
+        let slot = Mutex::new(ActorSlot::Running(handle, stop));
+        let stopping = AsyncMutex::new(());
+        let started = Instant::now();
+
+        let (first, second) = tokio::join!(
+            stop_slot(&slot, &stopping, Duration::from_secs(5)),
+            stop_slot(&slot, &stopping, Duration::from_secs(5)),
+        );
+
+        assert_eq!(first, WorkerStatus::Ok);
+        assert_eq!(second, WorkerStatus::NotRunning);
+        assert!(
+            started.elapsed() >= Duration::from_millis(150),
+            "waited for the task"
+        );
+    }
+
+    /// A host handler that panics on the first delivery only.
+    #[derive(Default)]
+    struct FlakySink {
+        calls: StdMutex<u32>,
+        taken: StdMutex<Vec<ResolverEvent>>,
+    }
+
+    impl VerdictSink for FlakySink {
+        fn deliver(&self, item: &Outgoing) {
+            let first = {
+                let mut calls = self.calls.lock().expect("calls");
+                *calls += 1;
+                *calls == 1
+            };
+            if first {
+                panic!("host handler bug");
+            }
+            self.taken.lock().expect("taken").push(item.event.clone());
+        }
+    }
+
+    /// An event a handler panicked on is handed over again before the next
+    /// step, while it still holds.
+    #[tokio::test]
+    async fn should_hand_over_again_an_event_a_handler_panicked_on() {
+        let sink = Arc::new(FlakySink::default());
+        let source = Arc::new(FakeSource::default());
+        let mut actor = Actor::new(
+            Arc::new(ScriptedProbe::new(&[(txid(1), dead())])),
+            Arc::clone(&source) as Arc<dyn WalletSource>,
+            Arc::clone(&sink) as Arc<dyn VerdictSink>,
+        );
+        source
+            .views
+            .lock()
+            .expect("views")
+            .insert(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        actor.handle(Command::SetEnabled(true));
+        for height in [100, 101] {
+            actor.handle(Command::Height {
+                wallet_id: wallet(),
+                height,
+            });
+            while let Some(joined) = actor.jobs.join_next_with_id().await {
+                actor.joined(joined);
+            }
+        }
+        assert!(
+            sink.taken.lock().expect("taken").is_empty(),
+            "the first try panicked"
+        );
+
+        actor.handle(Command::Seen {
+            wallet_id: wallet(),
+            touched: false,
+        });
+
+        assert_eq!(
+            *sink.taken.lock().expect("taken"),
+            vec![ResolverEvent::Verdict(txid(1), dead())]
+        );
     }
 
     /// A probe that panics.
