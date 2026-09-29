@@ -75,9 +75,10 @@ pub struct SystemLimits {
     /// Max size of a state transition in bytes.
     ///
     /// The cap of every ordinary state transition family, compared with the raw length before
-    /// any decode (`decode_raw_state_transitions` v0 for every family; v1 for every family
-    /// except the contract-code capable ones, which read
-    /// `max_contract_code_state_transition_size` instead).
+    /// any decode. The historical block decoders (`decode_raw_state_transitions` v0 and v1)
+    /// apply it to every family; the family-aware v2 (protocol version 17) applies it to every
+    /// family except the contract-code capable generations, which read
+    /// `max_contract_code_state_transition_size` instead.
     ///
     /// NOTE: The Tenderdash `max-tx-bytes` in the node config must be at least the largest
     /// family cap of the active protocol version, so a transaction Drive would accept is never
@@ -85,10 +86,11 @@ pub struct SystemLimits {
     /// from 17 the contract-code cap is the larger one.
     pub max_state_transition_size: u64,
     /// Max raw size in bytes of a contract create or update transition in a generation that
-    /// can carry a code bundle (`DataContractCreateTransition::V1` and
-    /// `DataContractUpdateTransition::V1`), detected from the wire prefix by
+    /// can carry a code bundle: `DataContractCreateTransition::V2` (the generation after the
+    /// contract-group `V1`, which carries no code and stays on `max_state_transition_size`)
+    /// and `DataContractUpdateTransition::V1`, detected from the wire prefix by
     /// `StateTransition::peek_envelope_kind` before the bytes are decoded. Read by
-    /// `decode_raw_state_transitions` v1, the `getProofs` v1 query and the DAPI broadcast
+    /// `decode_raw_state_transitions` v2, the `getProofs` v1 query and the DAPI broadcast
     /// pre-filter; `None` for the protocol versions that predate those generations, where the
     /// contract families are bounded by `max_state_transition_size` like every other one.
     /// Versioned: see `max_contract_code_state_transition_size` in each `SYSTEM_LIMITS_V*`.
