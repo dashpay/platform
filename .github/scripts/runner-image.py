@@ -15,6 +15,8 @@ import urllib.request
 MANIFEST = ".github/runner-requirements.json"
 ARM64_MANIFEST = ".github/runner-requirements.arm64.json"
 REPO = "dashpay/platform"
+# Only this already-provisioned AMD64 contract may use legacy generic labels.
+LEGACY_AMD64_FINGERPRINT = "d272d01bcf3dfa620bbab1e9f31c3e1987862d33ec876bbad83c80f29de41a58"
 
 
 def require(condition, message):
@@ -107,11 +109,7 @@ def export_environment(manifest, output):
             handle.write(f"{key}={value}\n")
 
 
-def select(manifest, kind, output, wait_seconds, arch=None, validation=False):
-    require(arch in (None, "", "X64", "ARM64"), "Unsupported runner architecture")
-    require(not arch or kind == "rust", "Architecture selection is only supported for Rust")
-    require(not validation or (kind == "rust" and arch == "ARM64"),
-            "The validation-only pool is for explicitly selected ARM64 Rust jobs")
+def ordinary_labels(manifest, kind, arch=None, validation=False):
     # Linux describes the runner process, not the physical host: ARM64 Linux
     # containers on Macs remain in this pool; native macOS stays for Swift.
     fallback = ["self-hosted"] + (["Linux"] if kind == "rust" else [])
@@ -119,6 +117,22 @@ def select(manifest, kind, output, wait_seconds, arch=None, validation=False):
         fallback.append(arch)
     fallback.append("rust-ci-validation" if validation else
                     {"rust": "rust-ci", "kotlin": "kotlin-ci", "npm": "npm-pr"}[kind])
+    if arch != "ARM64" and fingerprint(manifest) != LEGACY_AMD64_FINGERPRINT:
+        # New AMD64 pools must not carry rust-ci/kotlin-ci/npm-pr: old branches
+        # still request those labels and must keep using their exact old image.
+        require(manifest["requirements"]["platform"] == "linux/amd64",
+                "Versioned ordinary pool requires an AMD64 manifest")
+        return ["self-hosted", "Linux", "X64",
+                f"platform-image-manifest-{fingerprint(manifest)}-{kind}"]
+    return fallback
+
+
+def select(manifest, kind, output, wait_seconds, arch=None, validation=False):
+    require(arch in (None, "", "X64", "ARM64"), "Unsupported runner architecture")
+    require(not arch or kind == "rust", "Architecture selection is only supported for Rust")
+    require(not validation or (kind == "rust" and arch == "ARM64"),
+            "The validation-only pool is for explicitly selected ARM64 Rust jobs")
+    fallback = ordinary_labels(manifest, kind, arch, validation)
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     requested = event.get("pull_request")
     labels, changed = fallback, False
@@ -131,7 +145,7 @@ def select(manifest, kind, output, wait_seconds, arch=None, validation=False):
             # Only validation capacity has the new ARM64 image before rollout.
             # Keep this PR's ordinary job on unchanged AMD64 capacity while its
             # separate ARM64 job proves the new manifest on the validation pool.
-            labels = fallback = ["self-hosted", "Linux", "X64", "rust-ci"]
+            labels = fallback = ordinary_labels(manifest, kind, arch="X64")
         if arch == "ARM64":
             # ARM64 is explicitly provisioned from a published immutable image.
             # The AMD64/KVM candidate publisher is not ARM64 validation. The
