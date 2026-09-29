@@ -247,6 +247,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "Failed to register contact account: {e}"
                 ))
             })?;
+        // A filter batch in flight right now was scanned without this
+        // account's scripts: bump the account generation so the pipeline does
+        // not certify it, and the range is rescanned with the account watched.
+        info.rewind_barrier.note_account_registered();
 
         tracing::info!(
             our_identity = %our_identity_id,

@@ -269,11 +269,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             info.rewind_barrier.arm();
         }
         let triggered = to_mark.len();
-        for (owner, contact, _, _) in &to_mark {
-            if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
-                managed.dashpay_rescan_triggered_mut().insert(*contact);
-            }
-        }
         if let Some(floor) = floor {
             tracing::info!(
                 wallet_id = %hex::encode(self.wallet_id),
@@ -296,18 +291,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // - the round carries the floor this pass rewound to, or failing that
         //   a cursor an earlier failed round still owes, so coverage is never
         //   stored beside a durable cursor the in-memory rewind left behind;
-        // - if the store fails, the in-memory record is put back, the pass's
-        //   marks are dropped so the next pass re-attempts, and the cursor
-        //   this round owed is remembered for that retry;
+        // - the pass's record is staged on a copy and installed, with the
+        //   pass's marks, only when the store returns `Ok`. The cursor and
+        //   extent the round owes are recorded on the live record BEFORE the
+        //   store runs, so a store that fails — or panics, which unwinds
+        //   through here and releases the manager and cursor locks — leaves
+        //   the previous coverage plus the debt for the next pass to carry,
+        //   never coverage that did not reach disk;
         // - while the manager's persistence fault is latched the adapter is
         //   holding the durable cursor back at the last fully persisted
         //   height, and a cursor written from here could advance it past rows
         //   that never landed — so nothing is stored at all: the in-memory
         //   rewind still runs the rescan, and the next launch re-runs it,
         //   which is the pre-record behaviour.
-        let previous_record = info.dashpay_backfill.clone();
-        let record = &mut info.dashpay_backfill;
-        record.retain(|owner, contact, account_index| {
+        let mut staged = info.dashpay_backfill.clone();
+        staged.retain(|owner, contact, account_index| {
             receival_accounts
                 .iter()
                 .any(|(o, c, i)| (o, c, *i) == (owner, contact, account_index))
@@ -315,18 +313,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // This pass's extent, widened by one a failed earlier round still owes.
         let extent = match (
             floor.map(|floor| (floor, synced_height)),
-            record.unpersisted_extent.take(),
+            staged.unpersisted_extent.take(),
         ) {
             (Some((f1, r1)), Some((f2, r2))) => Some((f1.min(f2), r1.max(r2))),
             (this_pass, owed) => this_pass.or(owed),
         };
         match extent {
             Some((extent_floor, rewound_from)) => {
-                record.record_pass(rewound_from, Some(extent_floor), to_mark.iter().copied())
+                staged.record_pass(rewound_from, Some(extent_floor), to_mark.iter().copied())
             }
-            None => record.record_pass(synced_height, None, to_mark.iter().copied()),
+            None => staged.record_pass(synced_height, None, to_mark.iter().copied()),
         };
-        let owed = record.unpersisted_cursor.take();
+        let owed = staged.unpersisted_cursor.take();
         let needed_cursor = match (floor, owed) {
             (Some(floor), Some(owed)) => Some(floor.min(owed)),
             (Some(floor), None) => Some(floor),
@@ -339,6 +337,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let cursor_to_write =
             needed_cursor.filter(|cursor| durable.is_none_or(|durable| *cursor < durable));
         let cursor_now = floor.unwrap_or(synced_height);
+        // The debt, recorded before the store so no way out of it loses it.
+        info.dashpay_backfill.unpersisted_cursor =
+            Some(needed_cursor.map_or(cursor_now, |cursor| cursor.min(cursor_now)));
+        info.dashpay_backfill.unpersisted_extent = extent;
         let faulted = self.sync_fault.load(std::sync::atomic::Ordering::Relaxed);
         let stored = if faulted {
             Err(None)
@@ -349,39 +351,34 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     synced_height_is_rewind: true,
                     ..CoreChangeSet::default()
                 }),
-                dashpay_backfill: Some(record.clone()),
+                dashpay_backfill: Some(staged.clone()),
                 ..PlatformWalletChangeSet::default()
             };
             self.persister.store(changeset).map_err(Some)
         };
-        if stored.is_ok() {
-            if let Some(cursor) = cursor_to_write {
-                durable_cursors.insert(self.wallet_id, cursor);
-            }
-        }
-        if let Err(error) = stored {
-            match error {
-                Some(error) => tracing::warn!(
-                    wallet_id = %hex::encode(self.wallet_id),
-                    error = %error,
-                    "DashPay rescan: failed to persist the backfill record; the next pass \
-                     retries and the next launch re-runs this backfill"
-                ),
-                None => tracing::warn!(
-                    wallet_id = %hex::encode(self.wallet_id),
-                    "DashPay rescan: persistence fault latched; not recording backfill coverage \
-                     over a held-back cursor — the next launch re-runs this backfill"
-                ),
-            }
-            info.dashpay_backfill = previous_record;
-            info.dashpay_backfill.unpersisted_cursor =
-                Some(needed_cursor.map_or(cursor_now, |cursor| cursor.min(cursor_now)));
-            info.dashpay_backfill.unpersisted_extent = extent;
-            for (owner, contact, _, _) in &to_mark {
-                if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
-                    managed.dashpay_rescan_triggered_mut().remove(contact);
+        match stored {
+            Ok(()) => {
+                info.dashpay_backfill = staged;
+                if let Some(cursor) = cursor_to_write {
+                    durable_cursors.insert(self.wallet_id, cursor);
+                }
+                for (owner, contact, _, _) in &to_mark {
+                    if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
+                        managed.dashpay_rescan_triggered_mut().insert(*contact);
+                    }
                 }
             }
+            Err(Some(error)) => tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id),
+                error = %error,
+                "DashPay rescan: failed to persist the backfill record; the next pass \
+                 retries and the next launch re-runs this backfill"
+            ),
+            Err(None) => tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id),
+                "DashPay rescan: persistence fault latched; not recording backfill coverage \
+                 over a held-back cursor — the next launch re-runs this backfill"
+            ),
         }
         Ok(floor)
     }
@@ -1865,6 +1862,8 @@ mod tests {
         stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
         /// When set, every `store` is refused (and not recorded).
         fail_stores: Mutex<bool>,
+        /// When set, the next `store` panics — a backend that dies mid-write.
+        panic_next_store: Mutex<bool>,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -1875,6 +1874,9 @@ mod tests {
         ) -> Result<(), PersistenceError> {
             if *self.fail_stores.lock().unwrap() {
                 return Err(PersistenceError::backend("injected store failure"));
+            }
+            if std::mem::take(&mut *self.panic_next_store.lock().unwrap()) {
+                panic!("recording persister: injected store panic");
             }
             self.stores.lock().unwrap().push((wallet_id, changeset));
             Ok(())
@@ -4157,6 +4159,171 @@ mod tests {
         assert_eq!((record.floor, record.rewound_from), (1_226_329, 1_560_731));
         assert!(record.is_pending(1_400_000));
         assert!(record.is_complete(1_560_731));
+    }
+
+    /// key-wallet's account-add API rewinds the cursor to just below wallet
+    /// birth without emitting or persisting anything. That lowering is owed
+    /// to the host like any other in-memory rewind: a later record-only
+    /// round (a contact forward-covered at the lowered cursor) must carry it,
+    /// or the host keeps its high-water beside the new coverage and the next
+    /// launch skips the rescan (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn an_account_add_rewind_is_owed_to_the_next_record_round() {
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        set_synced_height(&manager, wallet_id, 1_000).await;
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.core_wallet.metadata.birth_height = 101;
+            ManagedAccountOperations::add_managed_account_from_xpub(
+                info,
+                AccountType::Standard {
+                    index: 9,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                },
+                test_receiving_xpub(&owner, &Identifier::from([0xEE; 32])),
+            )
+            .expect("add account");
+            assert_eq!(
+                info.core_wallet.metadata.synced_height, 100,
+                "rewound to birth - 1"
+            );
+            assert_eq!(info.dashpay_backfill.unpersisted_cursor, Some(100));
+            assert_eq!(info.rewind_barrier.epoch(), 1, "and the barrier is armed");
+        }
+
+        establish_receival_contact(&manager, &persister, wallet_id, owner, contact, 200, 200).await;
+        persister.stores.lock().unwrap().clear();
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("reconcile"),
+            None,
+            "forward-covered at the lowered cursor"
+        );
+        let stores = persister.stores.lock().unwrap();
+        let round = last_stored_record(&stores).expect("the record is stored");
+        let core = round
+            .core
+            .as_ref()
+            .expect("the owed cursor rides the round");
+        assert_eq!(core.synced_height, Some(100));
+        assert!(core.synced_height_is_rewind);
+    }
+
+    /// Registering a receival account bumps the wallet's account generation,
+    /// which the filter pipeline compares per batch: a batch scanned before
+    /// the registration can no longer certify coverage for the new account
+    /// set, so forward coverage recorded for the account is backed by a scan
+    /// that actually watched it (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn receival_registration_invalidates_in_flight_scans() {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let (manager, _persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let generation = |wm: &key_wallet_manager::WalletManager<
+            crate::wallet::platform_wallet::PlatformWalletInfo,
+        >| {
+            WalletInfoInterface::account_generation(wm.get_wallet_info(&wallet_id).expect("info"))
+        };
+        let before = generation(&*manager.wallet_manager.read().await);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        wallet
+            .identity()
+            .dashpay()
+            .register_contact_account(&owner, &contact, 0, test_receiving_xpub(&owner, &contact))
+            .await
+            .expect("register");
+        let wm = manager.wallet_manager.read().await;
+        assert_ne!(generation(&wm), before);
+        assert_eq!(
+            key_wallet_manager::WalletInterface::wallet_account_generation(&*wm, &wallet_id),
+            generation(&wm),
+            "the engine sees the forwarded generation, not the trait's constant 0"
+        );
+    }
+
+    /// A backend that panics inside the record round's `store()` unwinds
+    /// through the reconcile and releases its locks. The pass's coverage
+    /// was only staged, and the cursor it owed was recorded before the
+    /// store ran, so the next round — a forward-covered contact with no
+    /// cursor of its own — carries that cursor beside both contacts'
+    /// coverage instead of storing coverage over the host's high-water
+    /// (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn a_panicking_record_store_leaves_no_coverage_and_keeps_the_cursor_it_owed() {
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let first = Identifier::from([0xBB; 32]);
+        let later = Identifier::from([0xCC; 32]);
+        establish_receival_contact(&manager, &persister, wallet_id, owner, first, 100, 100).await;
+        set_synced_height(&manager, wallet_id, 1_000).await;
+        persister.stores.lock().unwrap().clear();
+        *persister.panic_next_store.lock().unwrap() = true;
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let panicking = {
+            let wallet = Arc::clone(&wallet);
+            tokio::spawn(
+                async move { wallet.identity().dashpay().reconcile_dashpay_rescan().await },
+            )
+        };
+        assert!(
+            panicking.await.expect_err("the store panicked").is_panic(),
+            "the injected panic propagates"
+        );
+        {
+            let wm = manager.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            assert!(
+                info.dashpay_backfill
+                    .covered_from(&owner, &first, 0)
+                    .is_none(),
+                "staged coverage never reached memory"
+            );
+            assert_eq!(info.dashpay_backfill.unpersisted_cursor, Some(100));
+            assert_eq!(
+                manager
+                    .durable_cursors
+                    .lock()
+                    .await
+                    .get(&wallet_id)
+                    .copied(),
+                Some(1_000),
+                "the host still holds its high-water"
+            );
+        }
+
+        establish_receival_contact(&manager, &persister, wallet_id, owner, later, 200, 200).await;
+        persister.stores.lock().unwrap().clear();
+        wallet
+            .identity()
+            .dashpay()
+            .reconcile_dashpay_rescan()
+            .await
+            .expect("next pass");
+        let stores = persister.stores.lock().unwrap();
+        let round = last_stored_record(&stores).expect("the record is stored");
+        let core = round
+            .core
+            .as_ref()
+            .expect("the owed cursor rides the round");
+        assert_eq!(core.synced_height, Some(100));
+        assert!(core.synced_height_is_rewind);
+        let record = round.dashpay_backfill.as_ref().unwrap();
+        assert_eq!(record.covered_from(&owner, &first, 0), Some(100));
+        assert_eq!(record.covered_from(&owner, &later, 0), Some(200));
     }
 
     /// A record round that fails to store must not leave its coverage

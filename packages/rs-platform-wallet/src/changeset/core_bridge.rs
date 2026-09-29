@@ -329,6 +329,12 @@ pub struct RewindBarrier {
     stale: u64,
     /// Bumped by every rewind.
     epoch: u64,
+    /// Receival accounts platform registered by inserting them directly
+    /// (not through key-wallet's `add_managed_account*`, which bump the
+    /// engine's own counter). Folded into the wallet's `account_generation`
+    /// so the filter pipeline refuses to certify a batch scanned before the
+    /// account's scripts were watched.
+    account_registrations: u64,
 }
 
 impl RewindBarrier {
@@ -359,6 +365,17 @@ impl RewindBarrier {
     /// The current rewind epoch.
     pub(crate) fn epoch(&self) -> u64 {
         self.epoch
+    }
+
+    /// A receival account was inserted outside key-wallet's account-add
+    /// API: invalidate every in-flight scan snapshot of the account set.
+    pub(crate) fn note_account_registered(&mut self) {
+        self.account_registrations = self.account_registrations.wrapping_add(1);
+    }
+
+    /// See [`note_account_registered`](Self::note_account_registered).
+    pub(crate) fn account_registrations(&self) -> u64 {
+        self.account_registrations
     }
 }
 
@@ -724,6 +741,7 @@ async fn run_wallet_event_adapter<P>(
         let sync_fault_for_commit = Arc::clone(&sync_fault);
         let fault_for_commit = Arc::clone(&fault);
         let freeze_for_commit = Arc::clone(&freeze_logged);
+        let wallet_ids_for_commit = batch_wallet_ids.clone();
         let committed = tokio::task::spawn_blocking(move || {
             // The lock is uncontended by construction — this task is the only
             // writer, and one drain commits at a time — so it never blocks;
@@ -738,20 +756,17 @@ async fn run_wallet_event_adapter<P>(
             // `commit_batch` returns is lost when a later store in the same
             // batch panics, and the panic branch would then emit the one-shot
             // marker a second time for a freeze already announced.
-            let diag = commit_batch(
+            let diag = commit_batch_under_writer_lock(
                 &*persister_for_commit,
                 batch,
                 folded,
+                &wallet_ids_for_commit,
                 &mut fault,
                 &sync_fault_for_commit,
                 &freeze_for_commit,
                 &mut settled,
+                &mut cursors,
             );
-            // What each host now holds, for the next writer to measure
-            // against.
-            for (wallet_id, height) in &diag.persisted_by_wallet {
-                cursors.insert(*wallet_id, *height);
-            }
             drop(cursors);
             // Hand the claim back out: the next chunk of a cancellation drain
             // inherits it instead of racing a fresh upgrade against the owner's
@@ -881,6 +896,7 @@ async fn run_wallet_event_adapter<P>(
 ///    means the rows never reached disk — the same condition that makes us
 ///    fault the wallet — so counting it as persisted would make the trace
 ///    contradict itself.
+#[cfg_attr(not(test), allow(dead_code))]
 fn commit_batch<P>(
     persister: &P,
     batch: BTreeMap<WalletId, WalletBatch>,
@@ -905,6 +921,62 @@ where
             freeze_logged,
             settled,
         );
+    }
+    diag
+}
+
+/// [`commit_batch`] as the adapter runs it: holding the [`DurableCursors`]
+/// writer lock, and leaving that lock's state true even when a store panics.
+///
+/// Every cursor a store accepted is recorded before the lock can be
+/// released, and a panic faults the wallets whose outcome it left unknown
+/// before it propagates. Otherwise the unwind would release the lock with
+/// an accepted height unrecorded and the fault latch still clear, and a
+/// reconcile entering in that window would measure a new contact against a
+/// durable cursor lower than the one the host actually holds
+/// (dashpay/platform#4302 review). The panic is re-raised afterwards, so
+/// the adapter's `JoinError` arm still logs it and freezes the same set.
+#[allow(clippy::too_many_arguments)]
+fn commit_batch_under_writer_lock<P>(
+    persister: &P,
+    batch: BTreeMap<WalletId, WalletBatch>,
+    folded: usize,
+    batch_wallet_ids: &[WalletId],
+    fault: &mut AdapterFaultState,
+    sync_fault: &AtomicBool,
+    freeze_logged: &AtomicBool,
+    settled: &mut Vec<WalletId>,
+    cursors: &mut BTreeMap<WalletId, u32>,
+) -> BatchDiagnostics
+where
+    P: PlatformWalletPersistence + ?Sized,
+{
+    let mut diag = BatchDiagnostics::new(folded, batch.len());
+    let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        for (wallet_id, wallet_batch) in batch {
+            commit_wallet(
+                persister,
+                wallet_id,
+                wallet_batch,
+                &mut diag,
+                fault,
+                sync_fault,
+                freeze_logged,
+                settled,
+            );
+        }
+    }));
+    // What each host now holds, for the next writer to measure against.
+    for (wallet_id, height) in &diag.persisted_by_wallet {
+        cursors.insert(*wallet_id, *height);
+    }
+    if let Err(panic) = unwound {
+        for wallet_id in batch_wallet_ids {
+            if !settled.contains(wallet_id) {
+                fault.fault_wallet(*wallet_id, sync_fault);
+            }
+        }
+        std::panic::resume_unwind(panic);
     }
     diag
 }
@@ -5004,6 +5076,63 @@ mod tests {
         let mut next = project(&manager, &mut receiver, 1).await;
         super::drop_watermarks_above_the_live_cursor(&manager, &mut next).await;
         assert_eq!(next[&wallet_id].core.synced_height, Some(1_200));
+    }
+
+    /// A store panicking mid-batch must not release the writer lock with the
+    /// lock's state behind reality: wallet A's accepted cursor is recorded,
+    /// and wallet B — whose outcome the panic left unknown — is faulted,
+    /// both before the panic propagates to the adapter's async `JoinError`
+    /// arm, so the next writer to take the lock already sees them
+    /// (dashpay/platform#4302 review).
+    #[test]
+    fn a_panicking_commit_records_accepted_cursors_and_faults_before_the_lock_is_released() {
+        let (obs_tx, _obs_rx) = tokio::sync::mpsc::unbounded_channel();
+        let persister = ProbePersister::new(obs_tx);
+        let a: WalletId = [1u8; 32];
+        let b: WalletId = [2u8; 32];
+        persister.panic_next(b);
+        let watermark = |height| super::WalletBatch {
+            core: CoreChangeSet {
+                synced_height: Some(height),
+                ..CoreChangeSet::default()
+            },
+            ..Default::default()
+        };
+        let mut batch = BTreeMap::new();
+        batch.insert(a, watermark(1_000));
+        batch.insert(b, watermark(500));
+
+        let mut fault = super::AdapterFaultState::default();
+        let sync_fault = AtomicBool::new(false);
+        let freeze_logged = AtomicBool::new(false);
+        let mut settled = Vec::new();
+        let mut cursors: BTreeMap<WalletId, u32> = BTreeMap::from([(a, 100), (b, 100)]);
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            super::commit_batch_under_writer_lock(
+                &persister,
+                batch,
+                2,
+                &[a, b],
+                &mut fault,
+                &sync_fault,
+                &freeze_logged,
+                &mut settled,
+                &mut cursors,
+            )
+        }));
+        assert!(unwound.is_err(), "the panic still propagates");
+        assert_eq!(
+            cursors.get(&a),
+            Some(&1_000),
+            "A's accepted cursor is recorded"
+        );
+        assert_eq!(cursors.get(&b), Some(&100), "B's store never returned");
+        assert!(
+            fault.is_faulted(&b),
+            "B is faulted before the lock is released"
+        );
+        assert!(!fault.is_faulted(&a), "A settled");
+        assert!(sync_fault.load(Ordering::Relaxed));
     }
 
     /// A batch that holds a pre-rewind advance and then the rescan's first
