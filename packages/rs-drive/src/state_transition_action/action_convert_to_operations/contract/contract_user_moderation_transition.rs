@@ -2,7 +2,8 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::contract::contract_user_moderation::v0::{
-    ContractDocumentDeletionContext, ContractDocumentRestorationContext,
+    ContractDocumentChangeContext, ContractDocumentDeletionContext,
+    ContractDocumentRemovalRecordContext, ContractDocumentRestorationContext,
     ContractUserModerationTransitionActionV0, ContractWarningContext,
 };
 use crate::state_transition_action::contract::contract_user_moderation::ContractUserModerationTransitionAction;
@@ -46,6 +47,7 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         warning,
                         document_deletion,
                         document_restoration,
+                        document_change,
                         moderation_action_count,
                         ..
                     },
@@ -154,9 +156,8 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                         let ContractDocumentDeletionContext {
                             data_contract_fetch_info,
                             document_owner_id,
-                            removed_at,
-                            document_hash,
-                            replaces_restored_record,
+                            record,
+                            refunds_owner,
                         } =
                             document_deletion
                                 .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
@@ -164,8 +165,9 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             )))?;
                         // The deletion of the document, which keeps every index and aggregate
                         // of its type right and does not ask `canBeDeleted` (that is the
-                        // owner's rule, not the moderators'), then its record: a fresh one, or
-                        // in place of the restored one a document deleted before carries. The
+                        // owner's rule, not the moderators'), then its record when the type
+                        // keeps one: a fresh one, or in place of the restored one a document
+                        // deleted before carries. Unless the type refunds the owner, the
                         // marker makes the batch refund nobody: the document's owner forfeits
                         // the storage fee.
                         operations.push(DocumentOperation(
@@ -179,26 +181,35 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                                 ),
                             },
                         ));
-                        operations.push(ContractModerationOperation(
-                            ContractModerationOperationType::AddDocumentRemoval {
-                                contract_id,
-                                document_type_name,
-                                document_id,
-                                removal: ContractDocumentRemoval {
-                                    document_owner_id,
+                        if let Some(ContractDocumentRemovalRecordContext {
+                            removed_at,
+                            document_hash,
+                            replaces_restored_record,
+                        }) = record
+                        {
+                            operations.push(ContractModerationOperation(
+                                ContractModerationOperationType::AddDocumentRemoval {
+                                    contract_id,
+                                    document_type_name,
+                                    document_id,
+                                    removal: ContractDocumentRemoval {
+                                        document_owner_id,
+                                        moderator_id,
+                                        reason,
+                                        removed_at,
+                                        document_hash,
+                                        restoration: None,
+                                    },
+                                    replaces_existing: replaces_restored_record,
                                     moderator_id,
-                                    reason,
-                                    removed_at,
-                                    document_hash,
-                                    restoration: None,
                                 },
-                                replaces_existing: replaces_restored_record,
-                                moderator_id,
-                            },
-                        ));
-                        operations.push(ContractModerationOperation(
-                            ContractModerationOperationType::ForfeitStorageRefunds,
-                        ));
+                            ));
+                        }
+                        if !refunds_owner {
+                            operations.push(ContractModerationOperation(
+                                ContractModerationOperationType::ForfeitStorageRefunds,
+                            ));
+                        }
                     }
                     ContractUserModerationAction::RestoreDocument {
                         document_type_name, ..
@@ -250,6 +261,40 @@ impl DriveHighLevelOperationConverter for ContractUserModerationTransitionAction
                             },
                         ));
                     }
+                    ContractUserModerationAction::ChangeDocumentFields {
+                        document_type_name,
+                        ..
+                    } => {
+                        let ContractDocumentChangeContext {
+                            data_contract_fetch_info,
+                            document,
+                        } = document_change
+                            .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "a document field change action must carry what its validation built",
+                        )))?;
+                        // The document is updated the way a replace updates it, every index and
+                        // aggregate of its type included. Its storage flags name its owner, as a
+                        // replace's do: the moderator pays for the bytes the change adds, and a
+                        // refund of the document's storage stays the owner's, as it always was.
+                        let owner_id = document.owner_id();
+                        let storage_flags =
+                            StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
+                        operations.push(DocumentOperation(DocumentOperationType::UpdateDocument {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentOwnedInfo((
+                                    document,
+                                    Some(Cow::Owned(storage_flags)),
+                                )),
+                                owner_id: Some(owner_id.to_buffer()),
+                            },
+                            contract_info: DataContractInfo::DataContractFetchInfo(
+                                data_contract_fetch_info,
+                            ),
+                            document_type_info: DocumentTypeInfo::DocumentTypeName(
+                                document_type_name,
+                            ),
+                        }));
+                    }
                 }
 
                 // A member of an elected contract's seated team signed an action that counts
@@ -295,6 +340,7 @@ mod tests {
             warning: None,
             document_deletion: None,
             document_restoration: None,
+            document_change: None,
             moderation_action_count: None,
             user_fee_increase: 0,
         })

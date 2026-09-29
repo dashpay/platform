@@ -392,9 +392,7 @@ fn parse_generation_3(
     let entry_payload =
         common::parse_property_name_list_keyword(&schema, name, property_names::ENTRY_PAYLOAD)?;
     let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
-    let can_be_deleted_by_moderators = common::parse_can_be_deleted_by_moderators_keyword(&schema)?;
-    let can_be_deleted_by_moderators_for =
-        common::parse_seconds_keyword(&schema, property_names::CAN_BE_DELETED_BY_MODERATORS_FOR)?;
+    let moderator_abilities = common::parse_moderator_abilities_keyword(&schema, name)?;
     let documents_ttl = common::parse_seconds_keyword(&schema, property_names::TTL)?;
     let immutable_fields =
         common::parse_property_name_list_keyword(&schema, name, property_names::IMMUTABLE)?;
@@ -566,19 +564,11 @@ fn parse_generation_3(
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
 
-    // After `apply_index_only`: the flag is refused on an indexOnly type, so it
-    // has to see that one already applied.
-    common::apply_can_be_deleted_by_moderators(
-        &mut v2,
-        can_be_deleted_by_moderators,
-        data_contact_config,
-        name,
-    )?;
-    common::apply_can_be_deleted_by_moderators_for(
-        &mut v2,
-        can_be_deleted_by_moderators_for,
-        name,
-    )?;
+    // After `apply_index_only`, `apply_immutable_fields` and the parse of the
+    // references and generated properties: each ability is refused on an
+    // indexOnly type, and the fields only moderators write may be neither
+    // immutable, nor read by a reference, nor generated.
+    common::apply_moderator_abilities(&mut v2, moderator_abilities, data_contact_config, name)?;
     // After `apply_index_only`: `ttl` is refused on an indexOnly type.
     common::apply_documents_ttl(
         &mut v2,
@@ -1104,7 +1094,7 @@ mod max_bytes_tests;
 #[cfg(test)]
 mod meta_schema_v0_stray_keyword_tests;
 #[cfg(test)]
-mod moderators_delete_tests;
+mod moderator_abilities_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
 #[cfg(all(test, feature = "validation"))]

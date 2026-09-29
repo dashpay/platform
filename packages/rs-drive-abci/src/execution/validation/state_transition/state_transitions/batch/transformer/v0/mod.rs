@@ -23,9 +23,11 @@
 // fields rather than rename this file.
 
 mod contract_moderation_gate;
-mod property_constraint_aggregates;
+mod moderator_fields;
+pub(crate) mod property_constraint_aggregates;
 
 use contract_moderation_gate::{BatchTransitionContractModerationGate, ContractModerationRefusal};
+use moderator_fields::moderator_field_refusal;
 use property_constraint_aggregates::attach_property_constraint_aggregates;
 use std::borrow::Cow;
 use std::collections::btree_map::Entry;
@@ -816,6 +818,26 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
+                // A field only the contract's moderators write, set by a writer who does not
+                // moderate it
+                if let Some(error) = moderator_field_refusal(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &document_create_action,
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )? {
+                    return Self::failed_per_transition_action(
+                        document_create_transition.base(),
+                        owner_id,
+                        vec![error],
+                        platform_version,
+                    );
+                }
+
                 // The `countOf` and `sumOf` totals the rules judging the write read
                 attach_property_constraint_aggregates(
                     drive,
@@ -900,6 +922,26 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                // A field only the contract's moderators write, changed, added or removed by a
+                // writer who does not moderate it
+                if let Some(error) = moderator_field_refusal(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &document_replace_action,
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )? {
+                    return Self::failed_per_transition_action(
+                        document_replace_transition.base(),
+                        owner_id,
+                        vec![error],
+                        platform_version,
+                    );
+                }
 
                 // The `countOf` and `sumOf` totals the rules judging the write read
                 attach_property_constraint_aggregates(

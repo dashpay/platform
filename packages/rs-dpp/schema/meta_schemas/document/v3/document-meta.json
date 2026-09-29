@@ -2105,15 +2105,41 @@
       "type": "boolean",
       "description": "Syntactic sugar: `rangeAverageable: true` is shorthand for `rangeCountable: true` + `rangeSummable: true`. Requires `documentsAverageable` to be set. Same caveat as `rangeSummable` — rarely useful on the primary key; per-index `rangeAverageable` is what most callers want."
     },
-    "canBeDeletedByModerators": {
-      "type": "boolean",
-      "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract. Independent of `canBeDeleted`, which rules what a document's own owner may do. Requires the contract to declare `moderation` in its config, and is refused on a type that keeps history, is indexOnly, or restricts document creation. Fixed when the document type is created. For references a type carrying it is deletable: a permanentDocument reference refuses it and a deletableDocument reference accepts it. `canBeDeletedByModeratorsFor` limits it to a window after a document's last modification. Available from protocol version 14."
-    },
-    "canBeDeletedByModeratorsFor": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 4294967295,
-      "description": "For how many seconds after a document's last modification the contract's moderators may still delete it. The last modification is the document's `$updatedAt`, or its `$createdAt` on a type that carries no `$updatedAt`. Once block time is later than that plus this many seconds the document is settled: no moderator can delete it any more, the contract owner included. A replace or a price update moves `$updatedAt` and opens the window again; a transfer or a purchase does not. Absent means no limit. Requires `canBeDeletedByModerators: true` and `$updatedAt` in `required`; a type with `documentsMutable: false`, whose documents never change after their creation, may list `$createdAt` instead. Fixed when the document type is created. Says nothing about what a document's own owner may do. Available from protocol version 14."
+    "moderatorAbilities": {
+      "type": "object",
+      "properties": {
+        "delete": {
+          "type": "boolean",
+          "description": "When true, the contract's moderators (its owner and the identities its moderation config appoints, or its seated team) may delete documents of this type with a contract user moderation transition, leaving a removal record under the contract, and restore them. Independent of `canBeDeleted`, which rules what a document's own owner may do. Refused on a type that keeps history, is indexOnly, restricts document creation or has a contested index. For references a type carrying it is deletable: a permanentDocument reference refuses it and a deletableDocument reference accepts it."
+        },
+        "deleteWithin": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "For how many seconds after a document's last modification the moderators may still delete it. The last modification is the document's `$updatedAt`, or its `$createdAt` on a type that carries no `$updatedAt`. Once block time is later than that plus this many seconds the document is settled: no moderator can delete it any more, the contract owner included. A replace or a price update moves `$updatedAt` and opens the window again; a transfer, a purchase or a moderator's field change does not. Absent means no limit. Requires `delete: true` and `$updatedAt` in `required`; a type with `documentsMutable: false`, whose documents never change after their creation, may list `$createdAt` instead. Says nothing about what a document's own owner may do."
+        },
+        "deleteKeepsRecord": {
+          "type": "boolean",
+          "description": "Whether a moderator's deletion leaves a removal record under the contract: whose document it was, the moderator, the reason, the block time and a hash of the document, readable with getContractDocumentRemovals and never deleted. A deleted document can only be restored from its record, so false also means a deletion can not be undone, and the type has no removal records tree. Default true. Requires `delete: true`."
+        },
+        "deleteRefundsOwner": {
+          "type": "boolean",
+          "description": "Whether the owner of a document a moderator deletes is refunded the part of its storage fee not yet paid out to past epochs, as an owner deleting it themselves is. Default false: the owner forfeits it, and the credits stay in the storage pools. A type with a `ttl` refunds nothing either way. Requires `delete: true`."
+        },
+        "changeFields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Top-level properties only the moderators write. A moderator sets or removes them with a contract user moderation transition (changeDocumentFields), which bumps `$revision` and leaves `$updatedAt` and every other property as it was. A document's owner can neither set them in a create nor change or remove them in a replace (DocumentModeratorFieldNotWritableError, code 41124), unless the owner moderates the contract. Every entry must name a declared top-level property that is optional, not transient, not listed under `immutable`, neither a reference nor read by one (a propertyAgreement, a lookup key, a key id), neither generated nor read by a generated property, and in no contested index; refused on an indexOnly type. A type listing any keeps `$revision` on its documents even when `documentsMutable` is false."
+        }
+      },
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "What the contract's moderators may do to documents of this type with a contract user moderation transition: delete them (`delete`, within `deleteWithin` seconds of their last modification when given, leaving a removal record unless `deleteKeepsRecord` is false, refunding the owner when `deleteRefundsOwner` is true), and write the fields only they write (`changeFields`). Requires the contract to declare `moderation` in its config. Fixed when the document type is created: an update may not add, remove or change it. Available from protocol version 14."
     },
     "ttl": {
       "type": "integer",

@@ -3423,7 +3423,7 @@ typedef GPB_ENUM(GetContractDocumentRemovalsRequest_Version_OneOfCase) {
 
 /**
  * The records of the documents a contract's moderators deleted, within one
- * document type whose documents they may delete (`canBeDeletedByModerators`):
+ * document type whose documents they may delete (`moderatorAbilities.delete`):
  * the ones of the document ids named, or one page in document id order.
  **/
 GPB_FINAL @interface GetContractDocumentRemovalsRequest : GPBMessage

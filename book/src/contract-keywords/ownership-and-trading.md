@@ -45,7 +45,7 @@ Who may create documents of the type.
 
 ### Rules at registration
 
-- A type with mode `1` or `2` may not carry `canBeDeletedByModerators` (`InvalidContractStructure`, 10231): its documents belong to the contract owner or the platform, and no moderator may delete those. See [Deletion](deletion.md).
+- A type with mode `1` or `2` may not carry `moderatorAbilities.delete` (`InvalidContractStructure`, 10231): its documents belong to the contract owner or the platform, and no moderator may delete those. See [Deletion](deletion.md).
 
 ## `transferable`
 
@@ -108,7 +108,7 @@ All refusals below are `InvalidContractStructure` (10231).
 - `ownerRefersTo` is refused on a type whose documents can be transferred or traded: a document could end up with an owner the declaration never checked. Such a type uses `creatorRefersTo`, which checks the creator, who never changes. `creatorRefersTo` is only accepted on such a type. See [Writer and Creator References](owner-refers-to.md).
 - An `indexOnly` type can be neither transferable nor tradeable. See [Index-Only Types](index-only.md).
 - On a transferable or tradeable type, an `immutable` property may not hold a `contract` reference with an `owner` requirement. See [Mutability](mutability.md).
-- `creationRestrictionMode` `1` or `2` is refused together with `canBeDeletedByModerators`.
+- `creationRestrictionMode` `1` or `2` is refused together with `moderatorAbilities.delete`.
 
 ## See also
 

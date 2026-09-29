@@ -33,7 +33,9 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::property::reference_lookup::schema_property_is_fixed_once_written;
-use crate::data_contract::document_type::property::{is_transient, DocumentPropertyType};
+use crate::data_contract::document_type::property::{
+    is_transient, top_level_property, DocumentPropertyType,
+};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::property_names::ID;
 use bincode::{Decode, DecodeUntrusted, Encode};
@@ -186,11 +188,26 @@ impl ListElementReference {
             ));
         }
         if !schema_property_is_fixed_once_written(referenced, list) {
-            let top_level = list.split('.').next().unwrap_or(list);
+            let top_level = top_level_property(list);
+            // A field only moderators write is never fixed, whatever the type says
+            let (who, hint) = if referenced.moderator_changeable_fields().contains(top_level) {
+                (
+                    "the contract's moderators",
+                    format!(
+                        "\"{top_level}\" is a field only moderators write, which nothing can \
+                         fix: hold the list in another property"
+                    ),
+                )
+            } else {
+                (
+                    "a replace",
+                    format!("make the type immutable or list \"{top_level}\" under `immutable`"),
+                )
+            };
             return Some(format!(
-                "\"{list}\" of \"{referenced_name}\" can be changed by a replace: the list must \
-                 be fixed once the document is written, so a value accepted as an element stays \
-                 one (make the type immutable or list \"{top_level}\" under `immutable`)"
+                "\"{list}\" of \"{referenced_name}\" can be changed by {who}: the list must be \
+                 fixed once the document is written, so a value accepted as an element stays one \
+                 ({hint})"
             ));
         }
         None

@@ -438,7 +438,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     argument, `setIdForCreation` and the `identityContractNonce`
 ///     constructor option.
 /// 19. **Document deletion by moderators**: a document type of a contract
-///     that declares moderation may set `canBeDeletedByModerators` (meta-schema
+///     that declares moderation may set `moderatorAbilities.delete` (meta-schema
 ///     v3, fixed when the type is created, refused on a type that keeps
 ///     history, is indexOnly or restricts creation; for references such a type
 ///     is deletable, so a permanentDocument reference refuses it and a
@@ -461,7 +461,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     fee is charged.
 ///     The moderation method table, the verify table and the query table gain
 ///     the document removal methods (`getContractDocumentRemovals`).
-///     `canBeDeletedByModeratorsFor` bounds the deletion in time: so many
+///     `moderatorAbilities.deleteWithin` bounds the deletion in time: so many
 ///     seconds after a document's last modification (`$updatedAt`, or
 ///     `$createdAt` on a type whose documents never change; the type must
 ///     require its clock), past which no moderator deletes it, the
@@ -505,7 +505,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     deleted; a restored document deleted again gets a fresh record in place
 ///     of the marked one, which the deletion transform reads to know. Neither
 ///     the type's creation token cost nor its `actionFees` creation fee is
-///     charged, and no fee agreement is asked. `canBeDeletedByModerators` is
+///     charged, and no fee agreement is asked. `moderatorAbilities.delete` is
 ///     now also refused on a type with a contested index, whose deletions
 ///     could never be undone. The record grows on the wire
 ///     (`getContractDocumentRemovals`: `document_hash`, `restoration`).
@@ -1468,7 +1468,47 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     an unindexed string of 64 characters or more can hold, were refused
 ///     (`ReferencedDocumentPropertyMismatchError`, 40127).
 ///
-/// 57. **Integer-range indexes**: an index can declare an `integerRange`
+/// 57. **Moderator abilities, and fields only moderators write**: the two
+///     doctype keywords of moderator deletion (19) become one object,
+///     `moderatorAbilities` (meta-schema v3): `delete` for
+///     `canBeDeletedByModerators`, `deleteWithin` for
+///     `canBeDeletedByModeratorsFor`, and `changeFields`, the top-level
+///     properties only the contract's moderators write. The whole object is
+///     fixed with the type (40212). `deleteKeepsRecord` (default true) says
+///     whether a moderator's deletion leaves its removal record: without one the
+///     type has no records tree, the query refuses it, a restore is refused
+///     (41119) and the deletion is proved by the document's absence, which the
+///     verifier learns from the contract. `deleteRefundsOwner` (default false)
+///     says whether the owner is refunded its storage instead of forfeiting it
+///     (the batch then carries no `ForfeitStorageRefunds`). A listed property must be declared,
+///     optional, stored, not immutable, neither a reference nor read by one,
+///     neither generated nor a generation parameter, and in no contested index,
+///     on a type that is not indexOnly; a type listing any keeps `$revision` even
+///     when `documentsMutable` is false, and a lookup key or a list element's
+///     list may not read such a field of the type it refers to.
+///     `ContractUserModeration` gains the `ChangeDocumentFields` action: a
+///     moderator (for a seated team, holding the new `changeDocumentFields`
+///     ability, appended to `ModerationAbility`, on the type, and citing a
+///     listed reason) sets or removes those fields on any document of the type,
+///     whoever owns it. The changed document is judged as a replace judges one
+///     (schema, `propertyConstraints` with their totals, `distinctFrom`,
+///     `encryptedFor` shapes, unique indexes through
+///     `validate_moderated_document_uniqueness`, the restore's check
+///     generalized and renamed), its references are not checked again, and it
+///     is stored with the replace's update, `$revision` one higher and
+///     `$updatedAt` untouched; the moderator pays, refunds of what the change
+///     frees stay the owner's. A change that changes nothing is refused (10905),
+///     and a seated team's change does not count toward its action share. An
+///     elected declaration must give its team `changeDocumentFields` on every
+///     type that lists fields. The proof
+///     is the document as it now stands. The batch transformer (in place,
+///     inert before 14) refuses a document's owner who sets, changes or removes
+///     such a field without moderating the contract, in the mempool too. New errors:
+///     `InvalidContractModerationDocumentFieldsError` (10905),
+///     `DocumentFieldNotChangeableByModeratorsError` (41123) and
+///     `DocumentModeratorFieldNotWritableError` (41124), appended.
+///
+/// 58. **Integer-range indexes**: an index can declare an `integerRange`
 ///     transform (`on`, `range`, `step`, optional `phase < step`) that
 ///     buckets a required user integer property of at most 64 bits into
 ///     windows starting at `phase + k * step`; a start below the lowest
@@ -1554,7 +1594,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_restored_document_uniqueness (a moderator's document restore); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody unless its type sets `deleteRefundsOwner`; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit

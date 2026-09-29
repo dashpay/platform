@@ -11,7 +11,8 @@
 //! `ContractUserModeration` state transition.
 //!
 //! The same moderators may delete the documents of the document types that say so
-//! (`canBeDeletedByModerators`), with the same transition. Each removal leaves a
+//! (`moderatorAbilities.delete`), and write the fields a document type keeps for them
+//! (`moderatorAbilities.changeFields`), with the same transition. Each removal leaves a
 //! [`ContractDocumentRemoval`] under the contract (key `16` of its other tree).
 //!
 //! A contract may instead declare that its moderators are an [elected team](elected): until
@@ -19,7 +20,9 @@
 //! do, or nobody does and the moderated document types wait.
 
 use crate::consensus::basic::contract_moderation::InvalidContractModerationConfigError;
-use crate::data_contract::document_type::property_names::CAN_BE_DELETED_BY_MODERATORS;
+use crate::data_contract::document_type::property_names::{
+    moderator_abilities, MODERATOR_ABILITIES,
+};
 use crate::data_contract::DocumentName;
 use crate::identity::TimestampMillis;
 #[cfg(feature = "json-conversion")]
@@ -43,13 +46,43 @@ pub use elected::{
 };
 pub use reason::{ContractModerationDocument, ContractModerationReason};
 
-/// Whether a raw document type schema sets `canBeDeletedByModerators: true`.
-pub fn document_schema_lets_moderators_delete(schema: &Value) -> bool {
-    schema
-        .get_optional_bool(CAN_BE_DELETED_BY_MODERATORS)
+/// The `moderatorAbilities` object of a raw document type schema, `None` when it has none
+/// or it is not an object.
+fn document_schema_moderator_abilities(schema: &Value) -> Option<&[(Value, Value)]> {
+    let schema_map = schema.to_map().ok()?;
+    Value::get_optional_from_map(schema_map, MODERATOR_ABILITIES)?
+        .to_map()
         .ok()
+        .map(Vec::as_slice)
+}
+
+/// Whether a raw document type schema lets the contract's moderators delete its documents
+/// (`moderatorAbilities.delete: true`).
+pub fn document_schema_lets_moderators_delete(schema: &Value) -> bool {
+    document_schema_moderator_abilities(schema)
+        .and_then(|abilities| {
+            Value::inner_optional_bool_value(abilities, moderator_abilities::DELETE).ok()
+        })
         .flatten()
         .unwrap_or(false)
+}
+
+/// Whether a raw document type schema lists fields only the contract's moderators write
+/// (a non-empty `moderatorAbilities.changeFields`).
+pub fn document_schema_lets_moderators_change_fields(schema: &Value) -> bool {
+    document_schema_moderator_abilities(schema)
+        .and_then(|abilities| {
+            Value::get_optional_from_map(abilities, moderator_abilities::CHANGE_FIELDS)
+        })
+        .and_then(|fields| fields.as_array())
+        .is_some_and(|fields| !fields.is_empty())
+}
+
+/// Whether a raw document type schema gives the contract's moderators an ability over its
+/// documents: deleting them, or changing their moderator fields.
+pub fn document_schema_grants_moderator_abilities(schema: &Value) -> bool {
+    document_schema_lets_moderators_delete(schema)
+        || document_schema_lets_moderators_change_fields(schema)
 }
 
 /// Who may send a `ContractUserModeration` transition for the contract.
@@ -607,18 +640,18 @@ impl ContractModerationConfig {
         network: Network,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
-        let has_document_type_deletable_by_moderators = document_schemas
+        let has_document_type_with_moderator_abilities = document_schemas
             .values()
-            .any(document_schema_lets_moderators_delete);
+            .any(document_schema_grants_moderator_abilities);
         if !self.banlist
             && !self.suspensions
             && !self.warnings
-            && !has_document_type_deletable_by_moderators
+            && !has_document_type_with_moderator_abilities
         {
             return SimpleConsensusValidationResult::new_with_error(
                 InvalidContractModerationConfigError::new(
                     "moderation declares neither a banlist, a suspension list nor a warning \
-                     list, and no document type can be deleted by moderators"
+                     list, and no document type gives its moderators an ability"
                         .to_string(),
                 )
                 .into(),
@@ -889,7 +922,7 @@ mod tests {
     fn schemas_with_a_deletable_type() -> BTreeMap<DocumentName, Value> {
         BTreeMap::from([(
             "post".to_string(),
-            platform_value!({ "type": "object", "canBeDeletedByModerators": true }),
+            platform_value!({ "type": "object", "moderatorAbilities": { "delete": true } }),
         )])
     }
 
@@ -969,6 +1002,31 @@ mod tests {
             .expect("validate");
         assert!(result.is_valid(), "{:?}", result.errors);
         assert_eq!(config.lists().count(), 0);
+    }
+
+    #[test]
+    fn should_accept_a_config_with_no_list_when_a_document_type_keeps_fields_for_moderators() {
+        let config = ContractModerationConfig {
+            banlist: false,
+            suspensions: false,
+            warnings: false,
+            moderators: ContractModerators::ContractOwner,
+        };
+        let schemas = BTreeMap::from([(
+            "report".to_string(),
+            platform_value!({
+                "type": "object",
+                "moderatorAbilities": { "changeFields": ["status"] },
+            }),
+        )]);
+        let result = config
+            .validate(&schemas, Network::Mainnet, PlatformVersion::latest())
+            .expect("validate");
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert!(document_schema_grants_moderator_abilities(
+            &schemas["report"]
+        ));
+        assert!(!document_schema_lets_moderators_delete(&schemas["report"]));
     }
 
     #[test]
