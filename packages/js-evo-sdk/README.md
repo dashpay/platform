@@ -249,13 +249,23 @@ try {
 import { Document, DocumentCreateTransition, BatchTransition } from '@dashevo/evo-sdk';
 
 const document = new Document({ properties, documentTypeName, dataContractId, ownerId });
-const transition = new DocumentCreateTransition({ document, identityContractNonce: nonce });
+// undefined unless the document enters a contest (a DPNS name, a moderation charter)
+const prefundedVotingBalance = await sdk.documents.contestFundToJoin(document);
+const transition = new DocumentCreateTransition({
+  document,
+  identityContractNonce: nonce,
+  prefundedVotingBalance,
+});
 const batch = BatchTransition.fromBatchedTransitions([transition.toDocumentTransition()], ownerId, 0); // userFeeIncrease
 const stateTransition = batch.toStateTransition();
 // sign, then sdk.stateTransitions.broadcast(stateTransition)
 ```
 
 From protocol version 14 the id of a new document commits to the identity contract nonce of its create transition. `new DocumentCreateTransition(...)` derives that id from the document's entropy and `identityContractNonce`, puts it on the transition and writes it back onto `document`, so `document.id` is final once the transition exists and equals `transition.base.id`. Before that the `Document` carries a placeholder. To know the id earlier, `document.setIdForCreation(nonce)` or `Document.generateId(type, owner, contract, entropy, nonce)`, or pass `identityContractNonce` to the `Document` constructor. Pass `platformVersion` (defaults to latest) to any of them for a network on an earlier protocol version. No app needs to reimplement the hash.
+
+A document whose values fall under a contested index enters a contest, and its create must state the most it pays into the contest's fund: without it, or stating less than the fund to join, Platform refuses the create with error 40114 and still charges its fees. From protocol version 14 that fund doubles once the contest holds 250 contenders and again for every 50 more. `sdk.documents.create` states it itself. For a transition built by hand, `sdk.documents.contestFundToJoin(document)` reads the contest's contenders (one proved query per 100) and returns the `PrefundedVotingBalance` to pass, the contested index's name and the fund to join now, or `undefined` for a document that joins no contest. Without the SDK, pass the document's contract as `dataContract` to `new DocumentCreateTransition(...)`: a contested document then states the contest's fund on its contested index, what joining costs below 250 contenders, and `contestFund` replaces that amount.
+
+From protocol version 14 a create may state more, as headroom for contenders joining before it lands: `new PrefundedVotingBalance({ indexName: prefundedVotingBalance.indexName, credits: 2n * prefundedVotingBalance.credits })`. Platform charges only the fund to join, but the identity must hold what the create states. Before 14 the stated amount must be exactly the contest's fund, and a create stating more is refused.
 
 ## Encrypted properties (`encryptedFor`)
 

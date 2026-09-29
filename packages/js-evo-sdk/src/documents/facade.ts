@@ -114,6 +114,23 @@ export class DocumentsFacade {
     return w.documentCreate(options);
   }
 
+  /**
+   * The prefunded voting balance a create of `document` states to join the
+   * contest it enters (a DPNS name, a moderation charter): the contested index
+   * and the fund to join it now, which from protocol version 14 doubles once
+   * the contest holds 250 contenders and again for every 50 more. Undefined
+   * when the document joins no contest. {@link create} states it itself; a
+   * transition built by hand passes it as `prefundedVotingBalance` to
+   * `new DocumentCreateTransition`. Its `credits` alone is what the Rust SDK's
+   * `contest_fund_to_join` returns; this is its `prefunded_voting_balance_to_join`.
+   */
+  async contestFundToJoin(
+    document: wasm.Document,
+  ): Promise<wasm.PrefundedVotingBalance | undefined> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContestFundToJoin(document);
+  }
+
   async replace(options: wasm.DocumentReplaceOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentReplace(options);
