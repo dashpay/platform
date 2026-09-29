@@ -1507,8 +1507,46 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `InvalidContractModerationDocumentFieldsError` (10905),
 ///     `DocumentFieldNotChangeableByModeratorsError` (41123) and
 ///     `DocumentModeratorFieldNotWritableError` (41124), appended.
+/// 58. **The last moderator's stamp (`$moderatedAt`, `$moderatedBy`)**: two
+///     system properties of a document whose type keeps fields for its
+///     moderators (57), the block time and the identity of the last moderator
+///     to write them. A `changeDocumentFields` sets both, and so does the batch
+///     transformer (in place, inert before 14) for a create or replace whose
+///     signer moderates the contract and writes such a field; a replace that
+///     leaves the fields alone carries them over, and transfers, purchases,
+///     price updates and restores keep them. Document serialization format 3
+///     (this version's) records them behind bits 512 and 1024 of its time
+///     field flags, so a document without them is written as before. Parser
+///     generation 3 lets an index name either on such a type, never in a
+///     unique index (10231); the shipped index key, query value and size
+///     arms for the two names (`get_raw_for_document_type` v0,
+///     `serialize_value_for_key` v0, Drive's estimated key sizes) are reached
+///     only through such an index.
 ///
-/// 58. **Integer-range indexes**: an index can declare an `integerRange`
+/// 59. **`skipIfAbsent` at any position, `true` or an array, on every type**:
+///     document meta-schema v3 and the generation-3 parser take
+///     `skipIfAbsent: true` (skip on every optional property of the index)
+///     or an array naming the skip set, and a skip property may sit at any
+///     position of the index, under a `timeRange` window too. A stored type
+///     may declare it (the array may then leave some optional properties on
+///     the null key), except on a contested index or next to
+///     `nullSearchable: false`; on an indexOnly type the skip set is every
+///     optional property of the index and each optional property needs a
+///     skip index of its own, without a `timeRange`. No `rankedCountable`
+///     `at` level may sit above a skip property; on a stored type a ranking
+///     at a skip property may not share its level with an index keeping the
+///     null layout for it, and a skip property that is a byte array needs
+///     `minItems` of at least 1. The v2 insert and delete walkers write an index's
+///     entry only for a document carrying its skip set and build a level
+///     only when an entry of the document sits at or below it; update 1
+///     moves a replaced document into or out of a skip index; every index
+///     picker (server and verifier) admits a skip index only for a query
+///     binding each skip property, on a stored type with a constraint no
+///     missing value can meet. A contract valid before keeps its layout and
+///     queries: it could only skip on an indexOnly index's first property,
+///     where both rules agree.
+///
+/// 60. **Integer-range indexes**: an index can declare an `integerRange`
 ///     transform (`on`, `range`, `step`, optional `phase < step`) that
 ///     buckets a required user integer property of at most 64 bits into
 ///     windows starting at `phase + k * step`; a start below the lowest

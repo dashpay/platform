@@ -6,12 +6,13 @@
 //! property's integer type is clamped to the type's minimum.
 
 use crate::config::DriveConfig;
+use crate::drive::document::paths::contract_document_type_path_vec;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{
     resolve_integer_range_bucket_clause, DriveDocumentQuery, IntegerRangeGridSpec,
-    ResolvedTimeRange, WhereClause,
+    ResolvedTimeRange, WhereClause, WhereOperator,
 };
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -21,10 +22,13 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContractFactory;
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
+use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
+use grovedb::{PathQuery, Query, SizedQuery};
 use std::collections::BTreeMap;
 
 const OWNER: [u8; 32] = [7; 32];
@@ -169,7 +173,6 @@ fn ids_in_window(drive: &Drive, contract: &DataContract, start: Value) -> Vec<Id
         .0
         .into_iter()
         .map(|serialized| {
-            use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
             Document::from_bytes(&serialized, document_type, PlatformVersion::latest())
                 .expect("document")
                 .id()
@@ -264,6 +267,155 @@ fn should_move_a_document_between_windows_when_its_value_changes() {
             "window {start} still holds the document once"
         );
     }
+}
+
+/// A `listing` type whose `category` is optional and whose
+/// `(integerRange(price, 300, 100), category)` index skips a listing without
+/// one (`skipIfAbsent: true`).
+fn build_skip_listing_contract() -> DataContract {
+    let schemas = platform_value!({
+        "listing": {
+            "type": "object",
+            "properties": {
+                "price": {"type": "integer", "minimum": 0, "maximum": 1_000_000, "position": 0},
+                "category": {"type": "string", "minLength": 1, "maxLength": 63, "position": 1}
+            },
+            "required": ["price"],
+            "indices": [{
+                "name": "byPriceBand",
+                "properties": [{"price": "asc"}, {"category": "asc"}],
+                "integerRange": {"on": "price", "range": 300u64, "step": 100u64},
+                "skipIfAbsent": true
+            }],
+            "additionalProperties": false
+        }
+    });
+    DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(Identifier::from([205u8; 32]), 0, schemas, None, None)
+        .expect("create contract")
+        .data_contract_owned()
+}
+
+/// The keys directly under `path`.
+fn keys_under(drive: &Drive, path: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+    let mut query = Query::new();
+    query.insert_all();
+    let path_query = PathQuery::new(path, SizedQuery::new(query, None, None));
+    let (elements, _) = drive
+        .grove_get_raw_path_query(
+            &path_query,
+            None,
+            QueryKeyElementPairResultType,
+            &mut vec![],
+            &PlatformVersion::latest().drive,
+        )
+        .expect("read a layer");
+    elements
+        .to_key_elements()
+        .into_iter()
+        .map(|(key, _)| key)
+        .collect()
+}
+
+#[test]
+fn should_move_a_listing_into_and_out_of_the_windows_of_a_skip_index() {
+    let contract = build_skip_listing_contract();
+    let drive = setup(&contract);
+    let document_type = contract.document_type_for_name("listing").expect("listing");
+    let mut windows_path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "listing");
+    windows_path.push(b"price#300#100".to_vec());
+    let books_in_window = |start: u64| -> Vec<Identifier> {
+        let mut query = window_query(&contract, document_type, Value::U64(start), None)
+            .expect("the window resolves");
+        query.internal_clauses.equal_clauses.insert(
+            "category".to_string(),
+            WhereClause {
+                field: "category".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("books".to_string()),
+            },
+        );
+        query
+            .execute_raw_results_no_proof(&drive, None, None, PlatformVersion::latest())
+            .expect("query")
+            .0
+            .into_iter()
+            .map(|serialized| {
+                Document::from_bytes(&serialized, document_type, PlatformVersion::latest())
+                    .expect("document")
+                    .id()
+            })
+            .collect()
+    };
+    let update = |document: &Document| {
+        drive
+            .update_document_for_contract(
+                document,
+                &contract,
+                document_type,
+                Some(OWNER),
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                PlatformVersion::latest(),
+                None,
+            )
+            .expect("update document");
+    };
+
+    // Without a category the listing builds no window at all.
+    let mut document = listing(1, Value::U64(750), "books");
+    document.remove("category");
+    insert(&drive, &contract, &document);
+    assert!(keys_under(&drive, windows_path.clone()).is_empty());
+
+    // Adding the category enters the listing into every containing window.
+    document.set("category", Value::Text("books".to_string()));
+    document.set_revision(Some(2));
+    update(&document);
+    assert_eq!(keys_under(&drive, windows_path.clone()).len(), 3);
+    for start in [500u64, 600, 700] {
+        assert_eq!(
+            books_in_window(start),
+            vec![document.id()],
+            "window {start} holds the listing once"
+        );
+    }
+
+    // Dropping it takes the listing out of every window again.
+    document.remove("category");
+    document.set_revision(Some(3));
+    update(&document);
+    for start in [500u64, 600, 700] {
+        assert!(
+            books_in_window(start).is_empty(),
+            "window {start} no longer holds the listing"
+        );
+    }
+    // Nor does it land under a null category: the index skips it.
+    for window in keys_under(&drive, windows_path.clone()) {
+        let mut category_path = windows_path.clone();
+        category_path.extend([window, b"category".to_vec()]);
+        assert!(
+            !keys_under(&drive, category_path).contains(&Vec::new()),
+            "no window keeps the listing under a null category"
+        );
+    }
+
+    drive
+        .delete_document_for_contract(
+            document.id(),
+            &contract,
+            "listing",
+            BlockInfo::default(),
+            true,
+            None,
+            PlatformVersion::latest(),
+            None,
+        )
+        .expect("delete a listing the index skips");
 }
 
 /// A `listing` type with a UNIQUE `(integerRange(price, 100, 100),

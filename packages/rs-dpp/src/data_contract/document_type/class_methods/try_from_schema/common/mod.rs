@@ -51,7 +51,7 @@ use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
-use crate::document::property_names::{CREATED_AT, UPDATED_AT};
+use crate::document::property_names::{CREATED_AT, MODERATED_AT, MODERATED_BY, UPDATED_AT};
 use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
 use crate::nft::TradeMode;
@@ -109,6 +109,10 @@ use std::collections::HashSet;
 
 #[cfg(feature = "validation")]
 use super::NOT_ALLOWED_SYSTEM_PROPERTIES;
+
+/// The system properties a moderator's write of the fields a type keeps for its moderators
+/// stamps on the document: indexable from generation 3, on such a type only.
+const MODERATION_STAMP_PROPERTIES: [&str; 2] = [MODERATED_AT, MODERATED_BY];
 use super::{MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH};
 use crate::consensus::basic::data_contract::{
     InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
@@ -241,6 +245,11 @@ pub(super) struct ParserGeneration {
     /// vote without a Lock choice. Forwarded to [`Index::try_from_value_map`]
     /// exactly like the admissions above.
     pub admit_index_no_locking_resolution: bool,
+    /// Whether an index may name `$moderatedAt` or `$moderatedBy`, the stamp a moderator's
+    /// write of the fields a type keeps for its moderators leaves. Admitted here for every
+    /// type; `apply_moderator_abilities` then refuses it on a type that keeps no such field,
+    /// and in a unique index.
+    pub admit_moderation_stamp_indexes: bool,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -927,6 +936,24 @@ fn parse_indices(
                             })?;
                     }
 
+                    // `skipIfAbsent: true` skips on every optional property of
+                    // the index. Optionality is a document-type fact the index
+                    // parser cannot see, so the set is resolved here, on every
+                    // parse (validating or not), before the index structure is
+                    // built from it. System properties are never in a skip set;
+                    // `apply_index_only` refuses the index when none remains.
+                    if index.skip_if_absent && index.skip_if_absent_properties.is_empty() {
+                        index.skip_if_absent_properties = index
+                            .properties
+                            .iter()
+                            .filter(|property| {
+                                !property.name.starts_with('$')
+                                    && !required_fields.contains(&property.name)
+                            })
+                            .map(|property| property.name.clone())
+                            .collect();
+                    }
+
                     #[cfg(feature = "validation")]
                     if ctx.full_validation {
                         // This check is load-bearing, not defense-in-depth:
@@ -1361,6 +1388,14 @@ fn validate_index_properties(
                 )
                 .into(),
             )));
+        }
+
+        // The moderation stamps, where the generation admits them: whether the type carries
+        // them is `apply_moderator_abilities`'s to judge
+        if ctx.generation.admit_moderation_stamp_indexes
+            && MODERATION_STAMP_PROPERTIES.contains(&index_property.name.as_str())
+        {
+            return Ok(());
         }
 
         // Indexed property must be defined in user schema if it's not a system one
@@ -2330,6 +2365,33 @@ pub(super) fn apply_moderator_abilities(
             message,
         ))
     };
+    // Only a type keeping fields for its moderators has its documents stamped, so only such a
+    // type indexes the stamp. Never in a unique index: the stamp is the moderator's and the
+    // time, and a moderator's change refused because another document holds the same would
+    // make no sense.
+    for (index_name, index) in &document_type.indices {
+        let Some(stamp) = index
+            .properties
+            .iter()
+            .map(|property| property.name.as_str())
+            .find(|property| MODERATION_STAMP_PROPERTIES.contains(property))
+        else {
+            continue;
+        };
+        if change_fields.is_empty() {
+            return Err(structure_error(format!(
+                "index \"{index_name}\" of document type \"{name}\" reads `{stamp}`, which only \
+                 the documents of a type listing `{MODERATOR_ABILITIES}.{CHANGE_FIELDS}` carry",
+            )));
+        }
+        if index.unique {
+            return Err(structure_error(format!(
+                "unique index \"{index_name}\" of document type \"{name}\" reads `{stamp}`: a \
+                 moderator's change would be refused because another document holds the same \
+                 stamp",
+            )));
+        }
+    }
     if !delete
         && delete_within.is_none()
         && delete_keeps_record.is_none()
@@ -2844,6 +2906,93 @@ pub(super) fn apply_immutable_fields(
     Ok(())
 }
 
+/// The `skipIfAbsent` rules every document type shares, for one index that
+/// declares the keyword: the reason it is refused, or `None`.
+///
+/// - The skip set is non-empty: an index none of whose properties is optional
+///   could never skip.
+/// - Every skip property is a top-level (non-dotted) schema property that is
+///   not a system property and not listed in `required`. Its presence is then
+///   a single lookup, the same for every walker, and it can actually be
+///   absent.
+/// - No ranking level sits above the index's deepest skip property. Such a
+///   level would count only the documents carrying the deeper property, but a
+///   query may only read a skip index when it binds every skip property, so
+///   nothing could ever read it.
+fn skip_if_absent_index_error(
+    index_name: &str,
+    index: &Index,
+    document_type_name: &str,
+    required_fields: &BTreeSet<String>,
+) -> Option<String> {
+    if index.skip_if_absent_properties.is_empty() {
+        return Some(format!(
+            "index \"{}\" on document type \"{}\" declares `skipIfAbsent`, but none of its \
+             properties is optional: a required or system property can never be absent, so \
+             the index could never skip — remove the flag, or remove a property from \
+             `required`",
+            index_name, document_type_name,
+        ));
+    }
+    for skip_property in index.skip_if_absent_properties.iter() {
+        if skip_property.starts_with('$') {
+            return Some(format!(
+                "index \"{}\" on document type \"{}\" skips on system property \"{}\": a skip \
+                 property must be an optional schema property, and system properties are \
+                 always present",
+                index_name, document_type_name, skip_property,
+            ));
+        }
+        if skip_property.contains('.') {
+            return Some(format!(
+                "index \"{}\" on document type \"{}\" skips on nested property \"{}\": a skip \
+                 property must be a top-level property, so that presence is a single lookup \
+                 with no partially-present ancestor states",
+                index_name, document_type_name, skip_property,
+            ));
+        }
+        if required_fields.contains(skip_property) {
+            return Some(format!(
+                "index \"{}\" on document type \"{}\" skips on \"{}\", which is listed in \
+                 `required`: a required property can never be absent, so the index could \
+                 never skip on it — remove \"{}\" from `required` or from the skipIfAbsent \
+                 list",
+                index_name, document_type_name, skip_property, skip_property,
+            ));
+        }
+    }
+    let deepest_skip = index
+        .properties
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, property)| index.skip_if_absent_properties.contains(&property.name));
+    if let Some((deepest_skip_position, deepest_skip_property)) = deepest_skip {
+        for ranked_at in index.ranked_countable_at.iter() {
+            let above = index
+                .properties
+                .iter()
+                .position(|property| property.name == *ranked_at)
+                .is_some_and(|position| position < deepest_skip_position);
+            if above {
+                return Some(format!(
+                    "index \"{}\" on document type \"{}\" ranks at \"{}\", above its skip \
+                     property \"{}\": that ranking would count only documents carrying \"{}\", \
+                     and no query can read a skip index without binding every skip property \
+                     — rank at or below \"{}\"",
+                    index_name,
+                    document_type_name,
+                    ranked_at,
+                    deepest_skip_property.name,
+                    deepest_skip_property.name,
+                    deepest_skip_property.name,
+                ));
+            }
+        }
+    }
+    None
+}
+
 /// Write the `indexOnly` flag onto the parsed document type, normalize each
 /// index's `terminal` (an omitted terminal defaults to `$ownerId`), and run
 /// the structural cross-checks the index-only on-disk layout depends on.
@@ -2856,6 +3005,9 @@ pub(super) fn apply_immutable_fields(
 /// `full_validation`: this function sits on the untrusted-contract boundary,
 /// and admitting a malformed indexOnly type through a non-validating parse
 /// would brick the first document insert or make deletes unauthorizable.
+///
+/// On a stored type it refuses the index keywords only an indexOnly type may
+/// use and checks the `skipIfAbsent` rules a stored type follows.
 ///
 /// Must run AFTER [`apply_doctype_aggregates`] — it rejects the doctype-level
 /// aggregate flags, which describe the primary-key tree an indexOnly type
@@ -2931,20 +3083,111 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
-        // Same for `skipIfAbsent`: conditional participation only means
-        // anything when the index entries ARE the storage — a stored type's
-        // optional properties already have the null index layout.
-        if let Some((index_name, _)) = document_type
-            .indices
-            .iter()
-            .find(|(_, index)| index.skip_if_absent)
-        {
-            return Err(structure_error(format!(
-                "index \"{}\" on document type \"{}\" declares `skipIfAbsent`, which is only \
-                 allowed on indexOnly document types (set `indexOnly: true` on the document \
-                 type, or remove the flag)",
-                index_name, name,
-            )));
+        // `skipIfAbsent` on a stored type: a document that omits a property
+        // of the index's skip set writes no reference into the index; the
+        // index's other optional properties keep the null layout.
+        for (index_name, index) in document_type.indices.iter() {
+            if !index.skip_if_absent {
+                continue;
+            }
+            if let Some(message) =
+                skip_if_absent_index_error(index_name, index, name, &document_type.required_fields)
+            {
+                return Err(structure_error(message));
+            }
+            // A contest is decided over the document's full value tuple; a
+            // document the index skipped would have no vote poll to enter.
+            if index.contested_index.is_some() {
+                return Err(structure_error(format!(
+                    "index \"{}\" on document type \"{}\" is contested and declares \
+                     `skipIfAbsent`: a contested index needs every value of every \
+                     document, so it cannot skip",
+                    index_name, name,
+                )));
+            }
+            // An empty byte array is keyed like a missing value, the empty
+            // key, so a stored skip property that could be empty would be
+            // indexed under the key other indexes use for documents without
+            // it.
+            for skip_property in index.skip_if_absent_properties.iter() {
+                if let Some(DocumentPropertyType::ByteArray(sizes)) = document_type
+                    .flattened_properties
+                    .get(skip_property)
+                    .map(|property| &property.property_type)
+                {
+                    if sizes.min_size.unwrap_or_default() == 0 {
+                        return Err(structure_error(format!(
+                            "index \"{}\" on document type \"{}\" skips on byte array \
+                             \"{}\", which may be empty: an empty byte array is indexed \
+                             under the same key as a missing value, so set `minItems` to at \
+                             least 1",
+                            index_name, name, skip_property,
+                        )));
+                    }
+                }
+            }
+            // A ranking at a skip property's level must not share that level
+            // with an index that keeps the null layout for the property: that
+            // index creates the level's null value tree for documents the skip
+            // index leaves out, and the ranking would show it as a group with
+            // zero aggregates and no documents behind it.
+            for (position, skip_property) in
+                index.properties.iter().enumerate().filter(|(_, property)| {
+                    index.skip_if_absent_properties.contains(&property.name)
+                })
+            {
+                let last = position + 1 == index.properties.len();
+                let ranks_here = index.ranked_countable_at.contains(&skip_property.name)
+                    || (last
+                        && (index.ranked_countable
+                            || index.ranked_summable
+                            || index.ranked_averageable));
+                if !ranks_here {
+                    continue;
+                }
+                let prefix: Vec<String> = (0..=position)
+                    .map(|at| index.level_key(at, &index.properties[at].name))
+                    .collect();
+                if let Some((other_name, _)) =
+                    document_type.indices.iter().find(|(other_name, other)| {
+                        *other_name != index_name
+                            && !other
+                                .skip_if_absent_properties
+                                .contains(&skip_property.name)
+                            && other.properties.len() > position
+                            && (0..=position).all(|at| {
+                                other.level_key(at, &other.properties[at].name) == prefix[at]
+                            })
+                    })
+                {
+                    return Err(structure_error(format!(
+                        "index \"{}\" on document type \"{}\" ranks at its skip property \
+                         \"{}\", whose level index \"{}\" shares without skipping on it: \
+                         \"{}\" would create the null group of that level, and the ranking \
+                         would show it with zero aggregates; skip on \"{}\" in \"{}\" too, \
+                         or give the ranking its own prefix",
+                        index_name,
+                        name,
+                        skip_property.name,
+                        other_name,
+                        other_name,
+                        skip_property.name,
+                        other_name,
+                    )));
+                }
+            }
+            // A document whose indexed values are all missing lacks the skip
+            // properties too, so the skip already leaves it out:
+            // `nullSearchable: false` would add nothing.
+            if !index.null_searchable {
+                return Err(structure_error(format!(
+                    "index \"{}\" on document type \"{}\" sets both `skipIfAbsent` and \
+                     `nullSearchable: false`: a document with every indexed value missing \
+                     also misses the skip properties, so the skip already leaves it out — \
+                     remove `nullSearchable`",
+                    index_name, name,
+                )));
+            }
         }
         return Ok(());
     }
@@ -3120,7 +3363,7 @@ pub(super) fn apply_index_only(
             // FLAT index: no prefix levels, the entries live directly under
             // a level keyed by the terminal's component names. There is no
             // prefix level for an aggregate, a ranking, a time grid, a skip
-            // trigger or a preallocation to apply to, so none of those
+            // property or a preallocation to apply to, so none of those
             // keywords is admitted on it.
             if index.countable.is_countable()
                 || index.range_countable
@@ -3163,59 +3406,24 @@ pub(super) fn apply_index_only(
         if !index.null_searchable {
             return Err(structure_error(format!(
                 "index \"{}\" on indexOnly document type \"{}\" cannot set nullSearchable: \
-                 false: an indexOnly property is either required or an absent-skipping \
-                 index's trigger, so no null entries exist to suppress (a skipIfAbsent \
-                 index writes nothing for an absent trigger; nullSearchable suppresses \
-                 stored-type null-layout entries, which indexOnly types never write)",
+                 false: an indexOnly property is either required or a skip property of \
+                 every index holding it, so no null entries exist to suppress (a \
+                 skipIfAbsent index writes nothing for a document it skips; \
+                 nullSearchable suppresses stored-type null-layout entries, which \
+                 indexOnly types never write)",
                 index_name, name,
             )));
         }
-        // `skipIfAbsent`: the index participates only for documents that
-        // carry its FIRST property — the skip trigger. The trigger sits at
-        // position 0 so the whole branch is pruned at the top of the index
-        // walk before any tree is inserted: a deeper skip would leave the
-        // prefix trees above it inserted-but-unterminated (the merged index
-        // structure shares levels across indexes, and upward pruning only
-        // runs from a terminal), silently charging for structure no entry
-        // uses. The trigger must be a top-level schema property so its
-        // presence is a single map lookup shared verbatim by the write
-        // walkers (which derive the skip from `required` membership), the
-        // probes (which read the flag), and the row commitment — rules
-        // below force those three views to agree.
+        // `skipIfAbsent`: the skip set's members, and the levels an
+        // aggregate may sit at, follow the rules every document type shares.
+        // What only an indexOnly type needs (every optional property of an
+        // index is in its skip set, and each has a skip index of its own) is
+        // checked with coverage below.
         if index.skip_if_absent {
-            let trigger = &index
-                .properties
-                .first()
-                .expect("non-empty checked above")
-                .name;
-            if trigger.starts_with('$') {
-                return Err(structure_error(format!(
-                    "index \"{}\" on indexOnly document type \"{}\" declares `skipIfAbsent` \
-                     with system property \"{}\" first: the skip trigger must be an \
-                     optional schema property — system properties are always present \
-                     (or, for $createdAt, forced into `required` when indexed), so the \
-                     index could never skip",
-                    index_name, name, trigger,
-                )));
-            }
-            if trigger.contains('.') {
-                return Err(structure_error(format!(
-                    "index \"{}\" on indexOnly document type \"{}\" declares `skipIfAbsent` \
-                     with nested property \"{}\" first: the skip trigger must be a \
-                     top-level property, so that presence is a single lookup with no \
-                     partially-present ancestor states",
-                    index_name, name, trigger,
-                )));
-            }
-            if document_type.required_fields.contains(trigger.as_str()) {
-                return Err(structure_error(format!(
-                    "index \"{}\" on indexOnly document type \"{}\" declares `skipIfAbsent`, \
-                     but its first property \"{}\" is listed in `required`: a required \
-                     trigger can never be absent, so the index could never skip — remove \
-                     \"{}\" from `required` (making this the property's skip trigger) or \
-                     drop the flag",
-                    index_name, name, trigger, trigger,
-                )));
+            if let Some(message) =
+                skip_if_absent_index_error(index_name, index, name, &document_type.required_fields)
+            {
+                return Err(structure_error(message));
             }
         }
         // `timeRange` is admitted: a bucketed indexOnly index writes one
@@ -3518,7 +3726,7 @@ pub(super) fn apply_index_only(
     // (waitForStateTransitionResult) locate the entry a create or delete
     // produced from the transition's values alone; a client verifier
     // cannot know the block timestamp an entry was keyed with, and a
-    // skipIfAbsent index has no entry at all for trigger-absent documents.
+    // skipIfAbsent index has no entry at all for the documents it skips.
     // If every index were time-keyed or skippable, creates and deletes of
     // the type would work while transition-proof requests failed. (Every
     // index already embeds `$ownerId`, so any `$createdAt`-free non-skip
@@ -3537,7 +3745,7 @@ pub(super) fn apply_index_only(
              involves $createdAt nor sets skipIfAbsent: executed-transition proofs locate \
              entries from the transition's values alone — they cannot reproduce the block \
              timestamp a time-keyed entry was written with, and a skipIfAbsent index has \
-             no entry for documents that omit its trigger",
+             no entry for the documents it skips",
             name,
         )));
     }
@@ -3545,68 +3753,91 @@ pub(super) fn apply_index_only(
     // ---- coverage and requiredness --------------------------------------
     // The index content IS the document: a property in no index would not
     // exist, and an absent value has no representation in an index path.
-    // The one sanctioned hole is a skipIfAbsent index's trigger: it may be
-    // optional because absence removes the whole index entry — there is
-    // genuinely nothing to store. Everything else must be required, and
-    // must be covered by at least one NON-skip index: a skip index carries
-    // no value at all for trigger-absent documents, so a property covered
-    // only by skip indexes would be validated, committed into the row
-    // commitment, and then written nowhere — unrecoverable by any query,
-    // and the document undeletable once the client forgets the value.
-    let skip_triggers: BTreeSet<&str> = document_type
+    // The one sanctioned hole is a skip property: it may be optional because
+    // its absence removes the whole entry of every index that holds it —
+    // there is genuinely nothing to store. Everything else must be required.
+    // A required property must be covered by at least one NON-skip index: a
+    // skip index carries no value at all for documents it skips, so a
+    // property covered only by skip indexes would be validated, committed
+    // into the row commitment, and then written nowhere — unrecoverable by
+    // any query, and the document undeletable once the client forgets the
+    // value. An optional property must be covered by a skip index whose skip
+    // set is that property alone, for the same reason: a document carrying
+    // it but missing another skip property of a wider index would otherwise
+    // store it nowhere.
+    let skip_properties: BTreeSet<&str> = document_type
         .indices
         .values()
-        .filter(|index| index.skip_if_absent)
-        .filter_map(|index| index.properties.first())
-        .map(|property| property.name.as_str())
+        .flat_map(|index| index.skip_if_absent_properties.iter())
+        .map(String::as_str)
         .collect();
     for (property_name, property) in document_type.flattened_properties.iter() {
         if matches!(property.property_type, DocumentPropertyType::Object(_)) {
             // Containers are covered through their flattened leaves.
             continue;
         }
-        let is_trigger = skip_triggers.contains(property_name.as_str());
         if document_type.entry_payload.contains(property_name.as_str()) {
             // Stored in every entry's value: validated above (required,
             // bounded, in no index).
             continue;
         }
-        let covered = document_type.indices.values().any(|index| {
-            // A skip index only counts as coverage for its own trigger.
-            (is_trigger || !index.skip_if_absent)
-                && (index.terminal_contains(property_name)
-                    || index
-                        .properties
-                        .iter()
-                        .any(|index_property| index_property.name == *property_name))
-        });
-        if !covered {
+        let optional = !document_type.required_fields.contains(property_name);
+        if optional && !skip_properties.contains(property_name.as_str()) {
+            return Err(structure_error(format!(
+                "property \"{}\" on indexOnly document type \"{}\" must be listed in \
+                 `required`: the index path is the storage, and an absent value would \
+                 need the null index layout this mode deliberately has no equivalent \
+                 of (only a property a skipIfAbsent index skips on may be optional)",
+                property_name, name,
+            )));
+        }
+        let holds_property = |index: &Index| {
+            index.terminal_contains(property_name)
+                || index
+                    .properties
+                    .iter()
+                    .any(|index_property| index_property.name == *property_name)
+        };
+        if optional {
+            // A time-windowed index keeps a value only in its windows, which
+            // document queries do not read and a `ttl` drains, so it cannot be
+            // where an optional value is kept.
+            let covered = document_type.indices.values().any(|index| {
+                matches!(
+                    index.skip_if_absent_properties.as_slice(),
+                    [only] if only == property_name
+                ) && index.time_range.is_none()
+                    && holds_property(index)
+            });
+            if !covered {
+                return Err(structure_error(format!(
+                    "optional property \"{}\" on indexOnly document type \"{}\" needs an \
+                     index without a timeRange whose only skip property it is: otherwise a \
+                     document carrying \"{}\" could keep it only in time windows, or in no \
+                     index at all when it misses another skip property of a wider index",
+                    property_name, name, property_name,
+                )));
+            }
+        } else if !document_type
+            .indices
+            .values()
+            .any(|index| !index.skip_if_absent && holds_property(index))
+        {
             return Err(structure_error(format!(
                 "property \"{}\" on indexOnly document type \"{}\" does not appear in any \
                  non-skipIfAbsent index (as a property or terminal): on an indexOnly type \
                  only indexed values exist and are recoverable, and a skipIfAbsent index \
-                 holds no value at all for documents that omit its trigger, so the \
-                 property would be silently dropped",
+                 holds no value at all for documents it skips, so the property would be \
+                 silently dropped",
                 property_name, name,
             )));
         }
-        if !document_type.required_fields.contains(property_name) {
-            if !is_trigger {
-                return Err(structure_error(format!(
-                    "property \"{}\" on indexOnly document type \"{}\" must be listed in \
-                     `required`: the index path is the storage, and an absent value would \
-                     need the null index layout this mode deliberately has no equivalent \
-                     of (only the first property of a skipIfAbsent index may be optional)",
-                    property_name, name,
-                )));
-            }
-            // An optional property is exactly a skip trigger, and every
-            // index involving it must be a skipIfAbsent index with the
-            // property FIRST (and never as a terminal). This is the
-            // invariant the write walkers rely on: they skip a top-level
-            // branch keyed by an unrequired property, which is only sound
-            // when no non-skip index (and no deeper level of any index)
-            // reaches through that branch.
+        if optional {
+            // Every index involving an optional property must skip on it,
+            // and it can never be a terminal. This is the invariant the write
+            // walkers rely on: a level keyed by an absent optional property is
+            // only ever reached by indexes that skip the document, so the
+            // walkers build nothing there.
             for (index_name, index) in document_type.indices.iter() {
                 if index.terminal_contains(property_name) {
                     return Err(structure_error(format!(
@@ -3617,35 +3848,25 @@ pub(super) fn apply_index_only(
                         property_name, name, index_name,
                     )));
                 }
-                let position = index
+                let in_index = index
                     .properties
                     .iter()
-                    .position(|index_property| index_property.name == *property_name);
-                match position {
-                    None => {}
-                    Some(0) if index.skip_if_absent => {}
-                    Some(0) => {
-                        return Err(structure_error(format!(
-                            "optional property \"{}\" on indexOnly document type \"{}\" is \
-                             the first property of index \"{}\", which does not set \
-                             `skipIfAbsent`: an index participates for every document \
-                             unless it skips, and an absent value has no index \
-                             representation — set `skipIfAbsent: true` on the index or \
-                             list the property in `required`",
-                            property_name, name, index_name,
-                        )));
-                    }
-                    Some(_) => {
-                        return Err(structure_error(format!(
-                            "optional property \"{}\" on indexOnly document type \"{}\" \
-                             appears in index \"{}\" below its first position: an optional \
-                             property may only be the FIRST property of a skipIfAbsent \
-                             index, where absence prunes the whole branch before any tree \
-                             is written — deeper, absence would strand the prefix levels \
-                             above it",
-                            property_name, name, index_name,
-                        )));
-                    }
+                    .any(|index_property| index_property.name == *property_name);
+                if in_index
+                    && !index
+                        .skip_if_absent_properties
+                        .iter()
+                        .any(|skip_property| skip_property == property_name)
+                {
+                    return Err(structure_error(format!(
+                        "optional property \"{}\" on indexOnly document type \"{}\" appears \
+                         in index \"{}\", which does not skip documents that omit it: an \
+                         index participates for every document unless it skips, and an \
+                         absent value has no index representation — set `skipIfAbsent: \
+                         true` on the index, name the property in its skipIfAbsent list, or \
+                         list the property in `required`",
+                        property_name, name, index_name,
+                    )));
                 }
             }
         }

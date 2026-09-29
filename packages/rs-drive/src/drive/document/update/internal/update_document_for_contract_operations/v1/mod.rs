@@ -3,8 +3,9 @@ use crate::drive::document::expiration::pricing::{
     document_expiration_cleanup_fee_for_bytes, document_remaining_lifetime_ms, document_ttl_pricing,
 };
 use crate::drive::document::index_level_tree_types::{
-    continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
-    level_counts_continuations, IndexLevelTreeTypes,
+    continuation_contributes_zero, document_takes_part_in_index,
+    index_level_tree_types_with_continuation_demotion, level_counts_continuations,
+    IndexLevelTreeTypes,
 };
 use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
 use crate::drive::document::{
@@ -314,8 +315,42 @@ impl Drive {
         // diverging from the insert path (consensus break).
         let index_structure = document_type.index_structure();
 
-        // fourth we need to store a reference to the document for each index
+        // `skipIfAbsent`: the index holds an entry for a document only when
+        // the document carries every property of its skip set, so a replace
+        // that adds or drops such a property moves the document into or out
+        // of the index. The old entry is removed only when the old document
+        // took part, and the new one written (with the trees it hangs from)
+        // only when the new document takes part — exactly what the insert
+        // and delete walkers would have done. An index that skips both
+        // versions holds nothing of the document. Every index of a pre-v14
+        // contract has an empty skip set, so both are `true` there.
+        //
+        // An index the document leaves (the old version takes part, the new
+        // one does not) only removes its old entry, and that entry's upward
+        // prune can empty a tree another index enters in this same replace.
+        // So the leaving indexes run last, after every other index has
+        // queued its writes, where their prunes see those writes and stop
+        // below any tree still in use. Without a skip index no index leaves,
+        // and the order is the index map's.
+        let mut participating_indexes = Vec::with_capacity(document_type.indexes().len());
+        let mut leaving_indexes = Vec::new();
         for index in document_type.indexes().values() {
+            let new_takes_part = document_takes_part_in_index(
+                &index.skip_if_absent_properties,
+                &document_and_contract_info.owned_document_info.document_info,
+            )?;
+            let old_takes_part =
+                document_takes_part_in_index(&index.skip_if_absent_properties, &old_document_info)?;
+            if old_takes_part && !new_takes_part {
+                leaving_indexes.push((index, new_takes_part, old_takes_part));
+            } else if new_takes_part {
+                participating_indexes.push((index, new_takes_part, old_takes_part));
+            }
+        }
+        participating_indexes.extend(leaving_indexes);
+
+        // fourth we need to store a reference to the document for each index
+        for (index, new_takes_part, old_takes_part) in participating_indexes {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -383,6 +418,8 @@ impl Drive {
                 document_reference.clone()
             };
 
+            let leaving = old_takes_part && !new_takes_part;
+
             // Bucketed (time- and integer-range) indexes store one entry per
             // containing window, so they need a set-diff update rather than
             // the single old→new value transition below.
@@ -404,12 +441,16 @@ impl Drive {
                     .time_range()
                     .is_some_and(|transform| transform.ttl_seconds.is_some());
                 let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
-                let index_batch_operations: &mut Vec<LowLevelDriveOperation> = if index_is_ephemeral
-                {
-                    &mut ephemeral_local_operations
-                } else {
-                    &mut batch_operations
-                };
+                // A leaving index only prunes, so its operations go straight
+                // into this replace's batch (retagged below): its prune has to
+                // see the writes every other index queued there.
+                let leaving_operations_start = batch_operations.len();
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> =
+                    if index_is_ephemeral && !leaving {
+                        &mut ephemeral_local_operations
+                    } else {
+                        &mut batch_operations
+                    };
                 let index_storage_flags = if index_is_ephemeral {
                     None
                 } else {
@@ -419,7 +460,9 @@ impl Drive {
                     index,
                     bucketing,
                     document,
+                    new_takes_part,
                     &old_document_info,
+                    old_takes_part,
                     owner_id,
                     document_type,
                     &index_path,
@@ -434,8 +477,13 @@ impl Drive {
                     platform_version,
                 )?;
                 if index_is_ephemeral {
-                    batch_operations.extend(
+                    let index_operations = if leaving {
+                        batch_operations.drain(leaving_operations_start..).collect()
+                    } else {
                         ephemeral_local_operations
+                    };
+                    batch_operations.extend(
+                        index_operations
                             .into_iter()
                             .map(LowLevelDriveOperation::retag_ephemeral),
                     );
@@ -474,6 +522,9 @@ impl Drive {
                     true
                 }
             };
+            // A document moving into or out of a skip index changes its entry
+            // even when the index values read back the same.
+            change_occurred_on_index |= new_takes_part != old_takes_part;
 
             // Post-demotion tree types for the top property's level —
             // the exact types the v2 insert walkers would derive. The
@@ -491,7 +542,7 @@ impl Drive {
             // matching the v2 insert walker's dispatch.
             let mut parent_counts_continuations = level_counts_continuations(current_index_level);
 
-            if change_occurred_on_index {
+            if change_occurred_on_index && new_takes_part {
                 // here we are inserting an empty tree that will have a subtree of all other index properties
                 let mut qualified_path = index_path.clone();
                 qualified_path.push(document_top_field.clone());
@@ -607,7 +658,7 @@ impl Drive {
                     }
                 };
 
-                if change_occurred_on_index {
+                if change_occurred_on_index && new_takes_part {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
 
                     let mut qualified_path = index_path.clone();
@@ -686,7 +737,7 @@ impl Drive {
                 // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
                 // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
-                if change_occurred_on_index {
+                if change_occurred_on_index && new_takes_part {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
 
                     let mut qualified_path = index_path.clone();
@@ -751,9 +802,11 @@ impl Drive {
                 // bare reference at key `[0]` only for a unique index
                 // with no old nulls. Same dispatch as
                 // `remove_reference_for_index_level_for_contract_operations_v0`.
-                if old_all_fields_null && !index.null_searchable {
+                if !old_takes_part || (old_all_fields_null && !index.null_searchable) {
                     // the insert walker wrote no entry for the old
-                    // document — nothing to delete
+                    // document (the index skipped it, or every indexed
+                    // field was null on a `nullSearchable: false` index)
+                    // — nothing to delete
                 } else {
                     let mut key_info_path = KeyInfoPath::from_vec(
                         old_index_path
@@ -801,12 +854,13 @@ impl Drive {
 
                 // unique indexes will be stored under key "0"
                 // non unique indices should have a tree at key "0" that has all elements based off of primary key
-                if all_fields_null && !index.null_searchable {
-                    // The insert walker writes no entry when every
-                    // indexed field is null on a `nullSearchable: false`
-                    // index — write nothing here either, or the update
-                    // would create an entry that insert/delete walkers
-                    // never expect to exist.
+                if !new_takes_part || (all_fields_null && !index.null_searchable) {
+                    // The insert walker writes no entry when the index
+                    // skips the document, or when every indexed field is
+                    // null on a `nullSearchable: false` index — write
+                    // nothing here either, or the update would create an
+                    // entry that insert/delete walkers never expect to
+                    // exist.
                 } else if !index.unique || any_fields_null {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
                     //
@@ -874,6 +928,8 @@ impl Drive {
                 }
             } else {
                 // no change occurred on index, we need to refresh the references
+                // (both versions take part: a change in participation counts
+                // as a change, and an index skipping both was passed by above)
 
                 // We can only trust the reference content has not changed if there are no storage flags
                 let trust_refresh_reference = storage_flags.is_none();
@@ -996,7 +1052,9 @@ impl Drive {
         index: &Index,
         bucketing: &IndexBucketing,
         document: &Document,
+        new_takes_part: bool,
         old_document_info: &DocumentInfo,
+        old_takes_part: bool,
         owner_id: Option<[u8; 32]>,
         document_type: DocumentTypeRef,
         base_index_path: &[Vec<u8>],
@@ -1052,12 +1110,27 @@ impl Drive {
         // NOT filtered: its expired keys flow to the delete loop below,
         // whose per-key removable check skips exactly the buckets the lazy
         // drop already took.
-        let new_entry_keys = bucketing.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default());
-        let new_entry_keys = match ttl_transform {
-            Some(transform) => live_time_range_entry_keys(transform, new_entry_keys, block_time_ms),
-            None => new_entry_keys,
+        // `skipIfAbsent`: a version of the document the index skips has no
+        // entries in it, so its side of the set diff is empty — a document
+        // moving into the index inserts every new entry, one moving out
+        // deletes every old one.
+        let new_entry_keys = if new_takes_part {
+            let new_entry_keys =
+                bucketing.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default());
+            match ttl_transform {
+                Some(transform) => {
+                    live_time_range_entry_keys(transform, new_entry_keys, block_time_ms)
+                }
+                None => new_entry_keys,
+            }
+        } else {
+            Vec::new()
         };
-        let old_entry_keys = bucketing.entry_keys_for_raw(old_raw.as_deref().unwrap_or_default());
+        let old_entry_keys = if old_takes_part {
+            bucketing.entry_keys_for_raw(old_raw.as_deref().unwrap_or_default())
+        } else {
+            Vec::new()
+        };
 
         // Terminator-layout inputs, tracked separately for the new and the old
         // document and accumulated over the suffix properties in the loop

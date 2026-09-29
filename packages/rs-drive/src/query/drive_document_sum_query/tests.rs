@@ -51,6 +51,7 @@ fn summable_index(name: &str, props: &[&str], summable: Option<&str>) -> Index {
         terminal: None,
         preallocated: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
     }
 }
 
@@ -76,6 +77,7 @@ fn range_summable_index(name: &str, props: &[&str], summable: &str) -> Index {
         terminal: None,
         preallocated: false,
         skip_if_absent: false,
+        skip_if_absent_properties: Vec::new(),
     }
 }
 
@@ -376,6 +378,8 @@ mod limit_policy_regression {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));

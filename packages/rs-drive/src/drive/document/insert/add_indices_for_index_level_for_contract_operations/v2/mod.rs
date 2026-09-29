@@ -1,7 +1,8 @@
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
-    level_counts_continuations,
+    continuation_contributes_zero, document_takes_part_in_index,
+    index_level_tree_types_with_continuation_demotion, level_counts_continuations,
+    level_reaches_entry,
 };
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
@@ -104,23 +105,31 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if let Some(index_type) = index_level.has_index_with_type() {
-            self.add_reference_for_index_level_for_contract_operations(
-                document_and_contract_info,
-                index_path_info.clone(),
-                index_type,
-                any_fields_null,
-                all_fields_null,
-                previous_batch_operations,
-                storage_flags,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                batch_operations,
-                platform_version,
-            )?;
-        }
-
         let document_type = document_and_contract_info.document_type;
+
+        // The index ending here writes its entry only for a document it does
+        // not skip (`skipIfAbsent`): one carrying every property of its skip
+        // set. Every other index ending anywhere takes part unconditionally.
+        if let Some(index_type) = index_level.has_index_with_type() {
+            if document_takes_part_in_index(
+                &index_type.skip_if_absent_properties,
+                &document_and_contract_info.owned_document_info.document_info,
+            )? {
+                self.add_reference_for_index_level_for_contract_operations(
+                    document_and_contract_info,
+                    index_path_info.clone(),
+                    index_type,
+                    any_fields_null,
+                    all_fields_null,
+                    previous_batch_operations,
+                    storage_flags,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+            }
+        }
 
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
@@ -167,6 +176,15 @@ impl Drive {
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            // A sub-level under which this document writes no entry is not
+            // built, so an index that skips the document leaves no
+            // property-name or value tree of its own behind.
+            if !level_reaches_entry(
+                sub_level,
+                &document_and_contract_info.owned_document_info.document_info,
+            )? {
+                continue;
+            }
             let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
             let property_name_tree_type = tree_types.property_name_tree_type;
             let ranked_axes = tree_types.ranked_axes.as_slice();

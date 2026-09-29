@@ -418,6 +418,27 @@ pub(crate) enum BestIndexOutcome<'a> {
 }
 
 impl InternalClauses {
+    /// Every constraint these clauses and `order_by_keys` make, for the
+    /// `skipIfAbsent` admissibility gate
+    /// ([`index_admissible_for_skip_if_absent`]).
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn skip_if_absent_bindings<'a>(
+        &'a self,
+        order_by_keys: &[&'a str],
+    ) -> Vec<SkipIfAbsentBinding<'a>> {
+        self.equal_clauses
+            .values()
+            .chain(self.in_clauses.iter())
+            .chain(self.range_clause.iter())
+            .map(SkipIfAbsentBinding::for_where_clause)
+            .chain(
+                order_by_keys
+                    .iter()
+                    .map(|key| SkipIfAbsentBinding::ordering(key)),
+            )
+            .collect()
+    }
+
     /// Classify one field's index roles against `document_type`. The
     /// single derivation site for "is this a prefix property, a terminal,
     /// or `$id`" — consumers must branch on this instead of assuming a
@@ -1208,32 +1229,149 @@ pub fn index_admissible_for_resolved_time_range(
     }
 }
 
-/// Whether a query binding `fields` (its equal/in/range and order-by
-/// fields, as assembled for the index matcher) may be served by `index`
-/// given its `skipIfAbsent` participation.
-///
-/// A `skipIfAbsent` index holds only the documents that carry its trigger
-/// (the first property) — it is a SPARSE projection of the document type.
-/// The generic matcher does not require contiguously bound prefixes: an
-/// unused property, the leading trigger included, merely counts toward the
-/// difference score, so without this gate a query that never mentions the
-/// trigger could route here and silently omit every trigger-absent
-/// document — a result a complete index would have included (and the
-/// positional path lowering would additionally mis-assemble the prefix
-/// gap). Requiring the trigger among the query's fields makes the sparse
-/// semantics opt-in: whoever binds the trigger is asking "among documents
-/// carrying this property", which is exactly what the index holds. The
-/// count pickers and the multiple-`In` route need no such gate — their
-/// exact-cover / contiguous-prefix matching already binds position 0.
+/// How a query constrains one field, as the `skipIfAbsent` gate reads it
+/// ([`index_admissible_for_skip_if_absent`]).
 #[cfg(any(feature = "server", feature = "verify"))]
-pub fn index_admissible_for_skip_if_absent(index: &Index, fields: &[&str]) -> bool {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SkipIfAbsentBinding<'a> {
+    /// The field.
+    pub field: &'a str,
+    /// Whether the constraint can never match a document missing the field.
+    /// On a stored type a missing value is indexed under the empty key,
+    /// which sorts first, so an ordering, a range with no lower bound and a
+    /// null equality all reach it on an index that does not skip.
+    pub excludes_missing: bool,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl<'a> SkipIfAbsentBinding<'a> {
+    /// An order-by on `field`: it reaches documents missing the field on an
+    /// index that does not skip them.
+    pub fn ordering(field: &'a str) -> Self {
+        Self {
+            field,
+            excludes_missing: false,
+        }
+    }
+
+    /// The binding a where clause makes: equality and `in` exclude missing
+    /// documents unless they name a value that may encode as missing, a
+    /// range excludes them when its lower bound may not (strict bounds
+    /// exclude the empty key outright), and `startsWith` when its prefix is
+    /// not empty.
+    pub fn for_where_clause(clause: &'a WhereClause) -> Self {
+        let lower_bound_excludes_missing = |value: &Value| {
+            value
+                .as_array()
+                .and_then(|bounds| bounds.first())
+                .is_some_and(|lower| !may_encode_as_missing(lower))
+        };
+        let excludes_missing = match clause.operator {
+            WhereOperator::Equal | WhereOperator::GreaterThanOrEquals => {
+                !may_encode_as_missing(&clause.value)
+            }
+            // `in_values` reads every spelling the query layer accepts,
+            // bytes on a U8 property included.
+            WhereOperator::In => clause
+                .in_values()
+                .data
+                .is_some_and(|values| values.iter().all(|value| !may_encode_as_missing(value))),
+            WhereOperator::GreaterThan
+            | WhereOperator::BetweenExcludeBounds
+            | WhereOperator::BetweenExcludeLeft => true,
+            WhereOperator::Between | WhereOperator::BetweenExcludeRight => {
+                lower_bound_excludes_missing(&clause.value)
+            }
+            WhereOperator::StartsWith => clause
+                .value
+                .as_text()
+                .is_some_and(|prefix| !prefix.is_empty()),
+            WhereOperator::LessThan | WhereOperator::LessThanOrEquals => false,
+        };
+        Self {
+            field: clause.field.as_str(),
+            excludes_missing,
+        }
+    }
+
+    /// The bindings of `where_clauses`.
+    pub fn for_where_clauses(where_clauses: &'a [WhereClause]) -> Vec<Self> {
+        where_clauses.iter().map(Self::for_where_clause).collect()
+    }
+}
+
+/// Whether `value` may encode to the empty key a missing value takes on a
+/// stored index: null, or an empty byte array in any spelling a byteArray
+/// property accepts (bytes, an array, base64 text). A string's `""` encodes
+/// apart, but a binding does not know the property's type, so it is read
+/// the cautious way.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn may_encode_as_missing(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::Bytes(bytes) => bytes.is_empty(),
+        Value::Array(values) => values.is_empty(),
+        Value::Text(text) => text.is_empty(),
+        _ => false,
+    }
+}
+
+/// Whether a query constraining fields as `bindings` may be served by
+/// `index` given its `skipIfAbsent` participation.
+///
+/// A `skipIfAbsent` index holds only the documents that carry every property
+/// of its skip set — it is a SPARSE projection of the document type. An index
+/// picker must not route a query to it that never binds those properties:
+/// the generic matcher does not require contiguously bound prefixes (an
+/// unused property merely counts toward the difference score), and the
+/// aggregate pickers match a prefix that may stop above a deep skip
+/// property. Without this gate such a query would silently omit every
+/// document the index skipped — a result a complete index would have
+/// included. So every skip property must be bound:
+///
+/// - On an indexOnly type (whose indexes carry a `terminal`) any binding
+///   counts, the order-by included: a missing value has no index
+///   representation anywhere on such a type, so binding the property is
+///   asking "among documents carrying it", which is exactly what the index
+///   holds.
+/// - On a stored type a missing value is indexed under the empty key by
+///   every index that does not skip it, so a skip property counts as bound
+///   only by a constraint that no missing value can meet
+///   ([`SkipIfAbsentBinding::excludes_missing`]).
+///
+/// For every index a contract could declare before skip properties could sit
+/// below the first position, the skip set is the first property, which the
+/// contiguous and exact matchers already bind; the gate then changes no
+/// choice.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn index_admissible_for_skip_if_absent(
+    index: &Index,
+    bindings: &[SkipIfAbsentBinding<'_>],
+) -> bool {
     if !index.skip_if_absent {
         return true;
     }
-    index
-        .properties
-        .first()
-        .is_some_and(|trigger| fields.contains(&trigger.name.as_str()))
+    let index_only = index.terminal.is_some();
+    index.skip_if_absent_properties.iter().all(|skip_property| {
+        bindings.iter().any(|binding| {
+            binding.field == skip_property.as_str() && (index_only || binding.excludes_missing)
+        })
+    })
+}
+
+/// Whether `index` may serve a query at all: the one candidate filter every
+/// index picker applies, so no picker can take one rule and miss the other.
+/// It joins the time-range provenance rule
+/// ([`index_admissible_for_resolved_time_range`]) and the `skipIfAbsent`
+/// rule ([`index_admissible_for_skip_if_absent`]).
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn index_admissible_for_query(
+    index: &Index,
+    resolved_time_ranges: &[ResolvedTimeRange],
+    skip_bindings: &[SkipIfAbsentBinding<'_>],
+) -> bool {
+    index_admissible_for_resolved_time_range(index, resolved_time_ranges)
+        && index_admissible_for_skip_if_absent(index, skip_bindings)
 }
 
 /// Rejects a query whose resolution provenance and clause shapes disagree:
@@ -2796,30 +2934,21 @@ impl<'a> DriveDocumentQuery<'a> {
             .map(|range_clause| range_clause.field.as_str());
         let order_by_keys: Vec<&str> = self.order_by.keys().map(String::as_str).collect();
 
-        // The union of every field the query binds, for the skip-index
+        // Every constraint the query makes, for the skip-index
         // admissibility gate — the by-role slices above are what the
-        // matcher consumes. The contiguous matcher already forces a used
-        // index's position 0 to be bound, but an all-unused match inside
-        // the difference budget could still select a sparse index for a
-        // query that never names its trigger.
-        let mut bound_fields = equal_fields.clone();
-        bound_fields.extend(range_field);
-        bound_fields.extend(in_field);
-        for order_by_key in &order_by_keys {
-            if !bound_fields.contains(order_by_key) {
-                bound_fields.push(order_by_key);
-            }
-        }
+        // matcher consumes. An all-unused match inside the difference
+        // budget could otherwise select a sparse index for a query that
+        // never names its skip properties.
+        let skip_bindings = self
+            .internal_clauses
+            .skip_if_absent_bindings(&order_by_keys);
 
         let Some((index, difference)) = self.document_type.index_for_types_matching(
             equal_fields.as_slice(),
             range_field,
             in_field,
             order_by_keys.as_slice(),
-            |index| {
-                index_admissible_for_resolved_time_range(index, &self.resolved_time_ranges)
-                    && index_admissible_for_skip_if_absent(index, &bound_fields)
-            },
+            |index| index_admissible_for_query(index, &self.resolved_time_ranges, &skip_bindings),
             platform_version,
         )?
         else {
@@ -3146,7 +3275,7 @@ impl<'a> DriveDocumentQuery<'a> {
         // cover EVERY property cannot produce a faithful serialized
         // document: partial projections only travel the proved read surface,
         // where the client synthesizes them itself from the proof. The check
-        // includes optional properties (skipIfAbsent triggers) — the wire
+        // includes optional properties (skipIfAbsent skip properties) — the wire
         // encodes absent-vs-present, and a projection that does not carry an
         // optional property cannot distinguish "absent on the row" from
         // "not in this index", so serializing it would assert an absence the
@@ -4355,6 +4484,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
 

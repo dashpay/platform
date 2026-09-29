@@ -39,8 +39,8 @@ use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{
-    index_admissible_for_skip_if_absent, BestIndexOutcome, DriveDocumentQuery, InternalClauses,
-    WhereClause, WhereOperator,
+    index_admissible_for_query, BestIndexOutcome, DriveDocumentQuery, InternalClauses, WhereClause,
+    WhereOperator,
 };
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -166,9 +166,10 @@ impl DriveDocumentQuery<'_> {
             .map(|in_clause| in_clause.field.as_str());
         let order_by_keys: Vec<&str> = self.order_by.keys().map(String::as_str).collect();
 
-        // The union of every field the query binds, for the skip-index
-        // admissibility gate — the by-role slices above are what the
-        // matcher consumes.
+        // The union of every field the query binds, for the pivot-page
+        // completeness check below, and every constraint the query makes,
+        // for the skip-index admissibility gate — the by-role slices above
+        // are what the matcher consumes.
         let mut bound_fields = equal_fields.clone();
         bound_fields.extend(range_field);
         bound_fields.extend(in_field);
@@ -177,19 +178,19 @@ impl DriveDocumentQuery<'_> {
                 bound_fields.push(order_by_key);
             }
         }
+        let skip_bindings = self
+            .internal_clauses
+            .skip_if_absent_bindings(&order_by_keys);
 
         // Bucketed indexes never serve the terminal route: only resolved
-        // time ranges may bind to bucket keys, and those opted out above,
-        // so a raw query name-matching a bucketed index's properties must
-        // not walk its grid-keyed levels. A skipIfAbsent index
-        // additionally requires its trigger bound: it is a sparse
-        // projection, and while the contiguous matcher already forces
-        // position 0 to be bound whenever any deeper property is used, an
-        // all-unused match inside the difference budget could still slip
-        // through (see [`index_admissible_for_skip_if_absent`]).
-        let admissible = |index: &Index| {
-            !index.is_bucketed() && index_admissible_for_skip_if_absent(index, &bound_fields)
-        };
+        // window selections may bind to bucket keys, and those opted out
+        // above, so a raw query name-matching a bucketed index's properties
+        // must not walk its grid-keyed levels. A skipIfAbsent index
+        // additionally requires every skip property bound: it is a sparse
+        // projection, and an all-unused match inside the difference budget
+        // could otherwise slip through (see
+        // [`index_admissible_for_skip_if_absent`](crate::query::index_admissible_for_skip_if_absent)).
+        let admissible = |index: &Index| index_admissible_for_query(index, &[], &skip_bindings);
         let matching = |filter: &dyn Fn(&Index) -> bool| {
             self.document_type
                 .index_for_types_matching_including_terminal(

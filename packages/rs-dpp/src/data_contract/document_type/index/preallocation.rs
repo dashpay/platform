@@ -258,6 +258,7 @@ mod tests {
             terminal: Some(vec!["$ownerId".to_string()]),
             preallocated: true,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 

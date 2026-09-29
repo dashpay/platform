@@ -121,6 +121,8 @@ impl DocumentTypeV1 {
                 admit_range_countable_implies_countable: false,
                 // NO LOCKING RESOLUTION: a generation-3 value; not in this grammar.
                 admit_index_no_locking_resolution: false,
+                // MODERATION STAMPS: generation-3 system properties; not in this grammar.
+                admit_moderation_stamp_indexes: false,
             },
             platform_version,
         )

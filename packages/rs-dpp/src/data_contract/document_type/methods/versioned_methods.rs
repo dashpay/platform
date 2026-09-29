@@ -193,6 +193,8 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                     updated_at_core_block_height,
                     transferred_at_core_block_height,
                     creator_id,
+                    moderated_at: None,
+                    moderated_by: None,
                 };
 
                 document
@@ -354,6 +356,8 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
                 creator_id,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -730,7 +734,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         value: &Value,
     ) -> Result<Vec<u8>, ProtocolError> {
         match key {
-            "$ownerId" | "$id" | "$creatorId" => {
+            "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => {
                 let bytes = value
                     .to_identifier_bytes()
                     .map_err(ProtocolError::ValueError)?;
@@ -744,7 +748,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                     Ok(bytes)
                 }
             }
-            "$createdAt" | "$updatedAt" | "$transferredAt" => {
+            "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => {
                 Ok(DocumentPropertyType::encode_date_timestamp(
                     value.to_integer().map_err(ProtocolError::ValueError)?,
                 ))
@@ -783,11 +787,11 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         value: &[u8],
     ) -> Result<Value, ProtocolError> {
         match key {
-            "$ownerId" | "$id" | "$creatorId" => {
+            "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => {
                 let bytes = Identifier::from_bytes(value)?;
                 Ok(Value::Identifier(bytes.to_buffer()))
             }
-            "$createdAt" | "$updatedAt" | "$transferredAt" => Ok(Value::U64(
+            "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => Ok(Value::U64(
                 DocumentPropertyType::decode_date_timestamp(value).ok_or(
                     ProtocolError::DataContractError(DataContractError::FieldRequirementUnmet(
                         "value must be 8 bytes long".to_string(),

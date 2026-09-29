@@ -59,6 +59,8 @@
 
 A property that changes value moves the document into the windows of its new value. Several indexes may bucket the same property with different grids; each grid is stored apart from the others.
 
+The bucketed property is required, so it is never a [`skipIfAbsent`](indexes.md#skipifabsent) property, but the index's other properties can be: a document missing one of them writes no entry in any window, and an update that adds or drops it moves the document into or out of all of its windows.
+
 **Queries.** A query selects one window of the index with an `IN_INTEGER_RANGE` clause on the bucketed property, naming the window by its start. The start must be a window start of the grid, or the lowest value of the property's type for a clamped bottom window; any other value is refused rather than rounded. The server and the proof verifier both read the window from the query itself, so no clock is involved. When the property is bucketed by several grids, the query names the grid. A query may select at most one window, of either kind. A window with no documents is a proved empty answer. Counts, sums and rankings declared on the index are then per window: a ranking below the bucketed property is one leaderboard per window.
 
 A plain clause on the bucketed property, such as `price == 700`, never reads an integer-range index: the index holds window starts, not prices. Such a query needs an index that is not bucketed.

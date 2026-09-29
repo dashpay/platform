@@ -134,6 +134,15 @@ pub struct IndexLevelTypeInfo {
     /// defines it instead of inferring it from a path height. `false` on
     /// every pre-PV14 contract and on every prefixed index.
     pub flat: bool,
+    /// The skip set of the terminating index
+    /// ([`Index::skip_if_absent_properties`]): the walkers write this
+    /// level's entry only for a document that carries every one of these
+    /// properties, and build a level only when some entry at or below it is
+    /// written. Carried here for the same reason as `terminal`: the walkers
+    /// only see the merged levels, and indexes with different skip sets can
+    /// share them. Empty on every index that does not skip, which is every
+    /// index of every pre-PV14 contract.
+    pub skip_if_absent_properties: Vec<String>,
 }
 
 impl IndexType {
@@ -204,6 +213,13 @@ pub struct IndexLevel {
     /// on PV14+ contracts (the `at` grammar is rejected below meta-schema
     /// v3), so every historical index level derives bit-identically.
     count_exempt_branch: bool,
+    /// Whether an index with a non-empty skip set
+    /// ([`Index::skip_if_absent_properties`]) passes through or ends at this
+    /// level. The walkers only have to ask which indexes a document takes
+    /// part in below a level that is stamped: every other level has an entry
+    /// for every document. Never set on a contract without a skipIfAbsent
+    /// index, so every historical index level derives bit-identically.
+    skip_at_or_below: bool,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -247,6 +263,12 @@ impl IndexLevel {
     /// — see the field docs on [`IndexLevel`].
     pub fn count_exempt_branch(&self) -> bool {
         self.count_exempt_branch
+    }
+
+    /// Whether a skipIfAbsent index passes through or ends at this level —
+    /// see the field docs on [`IndexLevel`].
+    pub fn skip_at_or_below(&self) -> bool {
+        self.skip_at_or_below
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -354,6 +376,7 @@ impl IndexLevel {
             ranked_count_grouping: false,
             count_propagating: false,
             count_exempt_branch: false,
+            skip_at_or_below: false,
             level_identifier: 0,
         };
 
@@ -398,6 +421,7 @@ impl IndexLevel {
                                 ranked_count_grouping: false,
                                 count_propagating: false,
                                 count_exempt_branch: false,
+                                skip_at_or_below: false,
                             }
                         });
                 if flat_level.has_index_with_type.is_some() {
@@ -438,8 +462,13 @@ impl IndexLevel {
                             ranked_count_grouping: false,
                             count_propagating: false,
                             count_exempt_branch: false,
+                            skip_at_or_below: false,
                         }
                     });
+
+                if !index.skip_if_absent_properties.is_empty() {
+                    current_level.skip_at_or_below = true;
+                }
 
                 if position == 0 {
                     if let Some(bucketing) = index.bucketing() {
@@ -542,6 +571,7 @@ impl IndexLevel {
             // document type: the one layout whose prune boundary is the
             // level's `0` bucket rather than the document type.
             flat: index.is_flat(),
+            skip_if_absent_properties: index.skip_if_absent_properties.clone(),
         }
     }
 
@@ -730,6 +760,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -770,6 +801,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![
@@ -795,6 +827,7 @@ mod tests {
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
             Index {
                 name: "test2".to_string(),
@@ -818,6 +851,7 @@ mod tests {
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
         ];
 
@@ -867,6 +901,7 @@ mod tests {
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
             Index {
                 name: "test2".to_string(),
@@ -890,6 +925,7 @@ mod tests {
                 terminal: None,
                 preallocated: false,
                 skip_if_absent: false,
+                skip_if_absent_properties: Vec::new(),
             },
         ];
 
@@ -915,6 +951,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -962,6 +999,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -992,6 +1030,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1045,6 +1084,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1069,6 +1109,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1116,6 +1157,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1140,6 +1182,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1187,6 +1230,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1211,6 +1255,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1258,6 +1303,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1305,6 +1351,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1329,6 +1376,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1376,6 +1424,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1400,6 +1449,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1453,6 +1503,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1483,6 +1534,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1536,6 +1588,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let new_indices = vec![Index {
@@ -1566,6 +1619,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let old_index_structure =
@@ -1627,6 +1681,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -1694,6 +1749,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -1768,6 +1824,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 
@@ -2168,6 +2225,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         }];
 
         let mut new_indices = old_indices.clone();
@@ -2222,6 +2280,7 @@ mod tests {
             terminal: None,
             preallocated,
             skip_if_absent: false,
+            skip_if_absent_properties: Vec::new(),
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {

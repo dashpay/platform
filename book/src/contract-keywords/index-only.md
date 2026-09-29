@@ -82,8 +82,8 @@ Rules at registration:
 - The only system properties an index may list are `$ownerId` and `$createdAt`, and an indexed `$createdAt` must be in `required`.
 - No index declares [`integerRange`](integer-range.md): rows that differ only in the bucketed integer would claim the same entry in the windows they share.
 - At least one index involves no `$createdAt` and does not set `skipIfAbsent`: the proof index.
-- Every property is in `required`, except the first property of a `skipIfAbsent` index. An object holding an indexed property is required too.
-- Every property appears in at least one index that does not skip, as a property or a terminal component, except the `entryPayload` properties and a skip index's first property.
+- Every property is in `required`, except a skip property of a `skipIfAbsent` index. An object holding an indexed property is required too.
+- Every required property appears in at least one index that does not skip, as a property or a terminal component, except the `entryPayload` properties. Every optional property appears in a skip index without a `timeRange` whose skip set is that property alone.
 - The type cannot also set [`ttl`](ttl.md) or `moderatorAbilities.delete`, and a `refersTo` lookup cannot target it.
 
 ## `entryPayload`
@@ -164,21 +164,34 @@ A referenced document whose agreed value takes more bytes than the referring pro
 
 | | |
 |---|---|
-| **Where** | index of an `indexOnly` type |
-| **Value** | boolean |
+| **Where** | index |
+| **Value** | `true`, or an array of the index's property names |
 | **Default** | `false` |
 | **Since** | protocol version 14 |
 | **On update** | Fixed (10217) |
 
-A document that leaves out the index's first property writes no entry into this index, and its delete looks for none. The index then holds only the documents that carry the property, and its counts and rankings are "among the documents that have it". It is the one way a property of an index-only type can be optional: in the example, a like without a hashtag is not in `byHashtagPost` and pays nothing for it. A present but empty value is not absent and is indexed.
+The keyword is described in [Indexes](indexes.md#skipifabsent): a document that leaves out a property of the index's skip set writes nothing into the index, and its delete looks for nothing there. It is the one way a property of an index-only type can be optional: in the example, a like without a hashtag is not in `byHashtagPost` and pays nothing for it. A skip property may sit below the first position, which is what lets a windowed ranking skip it:
 
-A query only uses a skip index when it constrains or orders by the index's first property, so a query cannot silently miss the documents that lack it.
+```json
+{
+  "name": "byDayHashtagPost",
+  "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }, { "postId": "asc" }],
+  "terminal": "$ownerId",
+  "rangeCountable": true,
+  "rankedCountable": { "at": ["hashtag", "postId"] },
+  "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400, "ttl": 604800 },
+  "skipIfAbsent": true
+}
+```
 
-Rules at registration:
+An untagged like still enters the type's other indexes over the same day window, but writes nothing under `hashtag` in it.
 
-- Only on an `indexOnly` type.
-- The first property is a top-level property of the type, not a system property, and not listed in `required`.
-- Every index that involves an optional property sets `skipIfAbsent` and lists that property first; an optional property is never a terminal.
+What an index-only type adds to the rules of every type:
+
+- An index path has no representation for a missing value, so every index holding an optional property skips on it: the skip set is every optional property of the index, and an array must name them all.
+- Each optional property needs a skip index without a `timeRange` whose skip set is that property alone. A document carrying one optional property but missing another skips every index holding both, and its value would otherwise be written nowhere; a windowed index keeps it only until its windows drain, where document queries do not read it.
+- An optional property is never a terminal.
+- At least one index that involves no `$createdAt` does not skip: the proof index.
 
 ## See also
 

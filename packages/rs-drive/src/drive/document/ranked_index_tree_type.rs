@@ -243,6 +243,7 @@ mod tests {
             terminal: None,
             preallocated: false,
             flat: false,
+            skip_if_absent_properties: Vec::new(),
         }
     }
 

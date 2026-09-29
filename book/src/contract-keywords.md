@@ -285,7 +285,7 @@ Expressions:
 | `integerRange.range`, `.step`, `.phase` | integers, `phase` default 0 | Each window's length, the distance between window starts, and the shift of the window boundaries. | 14 | [The keys](contract-keywords/integer-range.md#the-keys) |
 | `terminal` | property name or list | On an index-only type, what keys each entry in place of the document id. | 14 | [terminal](contract-keywords/index-only.md#terminal) |
 | `preallocated` | boolean | On an index-only type, creates the index's trees with the referenced document. | 14 | [preallocated](contract-keywords/index-only.md#preallocated) · [internals](drive/index-only-document-types.md#preallocated-index-paths) |
-| `skipIfAbsent` | boolean | On an index-only type, a document without the first property writes no entry. | 14 | [skipIfAbsent](contract-keywords/index-only.md#skipifabsent) · [internals](drive/index-only-document-types.md#conditional-participation-skipifabsent) |
+| `skipIfAbsent` | `true` or property names | A document missing a property of the skip set writes no entry into the index. | 14 | [skipIfAbsent](contract-keywords/indexes.md#skipifabsent) · [internals](drive/index-only-document-types.md#conditional-participation-skipifabsent) |
 
 ### System properties
 
@@ -298,6 +298,7 @@ Expressions:
 | `$createdAtBlockHeight`, `$updatedAtBlockHeight`, `$transferredAtBlockHeight` | Platform block heights of the same events. | when listed in `required` | 1 | [Block heights](contract-keywords/system-properties.md#block-heights) |
 | `$createdAtCoreBlockHeight`, `$updatedAtCoreBlockHeight`, `$transferredAtCoreBlockHeight` | Core chain block heights of the same events. | when listed in `required` | 1 | [Block heights](contract-keywords/system-properties.md#block-heights) |
 | `$creatorId` | The identity that created the document. | on transferable or tradeable types of format-1 contracts | 10 | [$creatorId](contract-keywords/system-properties.md#creatorid) |
+| `$moderatedAt`, `$moderatedBy` | Block time and moderator of the last write of the fields only moderators write. | on types listing `moderatorAbilities.changeFields`, once a moderator writes them | 14 | [$moderatedAt and $moderatedBy](contract-keywords/system-properties.md#moderatedat-and-moderatedby) |
 
 ## Limits
 
