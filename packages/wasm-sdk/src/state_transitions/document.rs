@@ -97,8 +97,6 @@ fn try_from_options_optional_token_payment_info(
     Ok(Some(token_payment_info.into()))
 }
 
-/// The creation options `settings` carries, created when there are none: the document
-/// transition builders read the action fee agreement and the contest fund from them.
 fn creation_options_of(settings: &mut Option<PutSettings>) -> &mut StateTransitionCreationOptions {
     settings
         .get_or_insert_with(Default::default)
@@ -106,8 +104,6 @@ fn creation_options_of(settings: &mut Option<PutSettings>) -> &mut StateTransiti
         .get_or_insert_with(Default::default)
 }
 
-/// Reads the `actionFeeAgreement` option, a `DocumentActionFeeAgreement` or the options to
-/// construct one, into the creation options of `settings`. Left out, `settings` is unchanged.
 fn apply_action_fee_agreement_option(
     options: &JsValue,
     settings: &mut Option<PutSettings>,
@@ -124,8 +120,7 @@ fn apply_action_fee_agreement_option(
         }
         match get_class_type(v)?.as_str() {
             "DocumentActionFeeAgreement" => DocumentActionFeeAgreementWasm::try_from(v),
-            // Another class has none of the option fields, and would read as an agreement to
-            // pay nothing
+            // Any other class would parse as an agreement to pay nothing
             "" => DocumentActionFeeAgreementWasm::constructor(
                 v.clone()
                     .unchecked_into::<DocumentActionFeeAgreementOptionsJs>(),
@@ -187,16 +182,9 @@ export interface DocumentCreateOptions {
   contestFund?: bigint;
 
   /**
-   * What the transition agrees to pay in action fees. Required from protocol
-   * version 14 when the document type's `actionFees` charge a fee for this
-   * action: without it Platform refuses the transition (40132). Name the
-   * amounts the document type declares in the contract you showed the user, so
-   * that a fee changed since is refused (40133) instead of paid. For a fee priced
-   * by the fee multiplier, `feeMultiplier` names the multiplier you priced it
-   * with and how far above it the executing epoch's may be (40134 otherwise);
-   * a type that declares no `pricing` is priced by the fee multiplier. Ignored
-   * when the action charges nothing. Refused before any request on an SDK
-   * running a protocol version before 14, which has no place to carry it.
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -274,7 +262,7 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
-        // Extract settings from options, refusing a malformed one before the contract fetch
+        // Extract settings from options
         let mut settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
@@ -429,16 +417,9 @@ export interface DocumentReplaceOptions {
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
-   * What the transition agrees to pay in action fees. Required from protocol
-   * version 14 when the document type's `actionFees` charge a fee for this
-   * action: without it Platform refuses the transition (40132). Name the
-   * amounts the document type declares in the contract you showed the user, so
-   * that a fee changed since is refused (40133) instead of paid. For a fee priced
-   * by the fee multiplier, `feeMultiplier` names the multiplier you priced it
-   * with and how far above it the executing epoch's may be (40134 otherwise);
-   * a type that declares no `pricing` is priced by the fee multiplier. Ignored
-   * when the action charges nothing. Refused before any request on an SDK
-   * running a protocol version before 14, which has no place to carry it.
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -488,7 +469,7 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
-        // Extract settings from options, refusing a malformed one before the contract fetch
+        // Extract settings from options
         let mut settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         apply_action_fee_agreement_option(&options, &mut settings)?;
@@ -563,16 +544,9 @@ export interface DocumentDeleteOptions {
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
-   * What the transition agrees to pay in action fees. Required from protocol
-   * version 14 when the document type's `actionFees` charge a fee for this
-   * action: without it Platform refuses the transition (40132). Name the
-   * amounts the document type declares in the contract you showed the user, so
-   * that a fee changed since is refused (40133) instead of paid. For a fee priced
-   * by the fee multiplier, `feeMultiplier` names the multiplier you priced it
-   * with and how far above it the executing epoch's may be (40134 otherwise);
-   * a type that declares no `pricing` is priced by the fee multiplier. Ignored
-   * when the action charges nothing. Refused before any request on an SDK
-   * running a protocol version before 14, which has no place to carry it.
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -660,7 +634,7 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
-        // Extract settings from options, refusing a malformed one before the contract fetch
+        // Extract settings from options
         let mut settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         apply_action_fee_agreement_option(&options, &mut settings)?;
@@ -689,16 +663,14 @@ impl WasmSdk {
     }
 }
 
-/// Which document a delete removes: its id and owner, and the whole document when the
-/// caller gave one (an indexOnly document is only deleted from its values).
 struct DeleteTarget {
     document_id: Identifier,
     owner_id: Identifier,
     full_document: Option<Document>,
 }
 
-/// The delete transition builder for `target`. A provided document goes through
-/// `from_document` so its values ride along (required for indexOnly document types).
+/// A provided document goes through `from_document` so its values ride along (required
+/// for indexOnly document types).
 fn delete_transition_builder(
     data_contract: DataContract,
     document_type_name: String,
@@ -725,9 +697,7 @@ fn delete_transition_builder(
         None => builder,
     };
 
-    // Unlike the other document builders, the delete builder signs with its own user fee
-    // increase and creation options (the action fee agreement, the signing options), and never
-    // reads the ones in its settings
+    // The delete builder ignores these fields of its settings, so set them on it directly
     let builder = match settings
         .as_ref()
         .and_then(|settings| settings.user_fee_increase)
@@ -789,16 +759,9 @@ export interface DocumentTransferOptions {
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
-   * What the transition agrees to pay in action fees. Required from protocol
-   * version 14 when the document type's `actionFees` charge a fee for this
-   * action: without it Platform refuses the transition (40132). Name the
-   * amounts the document type declares in the contract you showed the user, so
-   * that a fee changed since is refused (40133) instead of paid. For a fee priced
-   * by the fee multiplier, `feeMultiplier` names the multiplier you priced it
-   * with and how far above it the executing epoch's may be (40134 otherwise);
-   * a type that declares no `pricing` is priced by the fee multiplier. Ignored
-   * when the action charges nothing. Refused before any request on an SDK
-   * running a protocol version before 14, which has no place to carry it.
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -859,7 +822,7 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
-        // Extract settings from options, refusing a malformed one before the contract fetch
+        // Extract settings from options
         let mut settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         apply_action_fee_agreement_option(&options, &mut settings)?;
@@ -934,16 +897,9 @@ export interface DocumentPurchaseOptions {
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
-   * What the transition agrees to pay in action fees. Required from protocol
-   * version 14 when the document type's `actionFees` charge a fee for this
-   * action: without it Platform refuses the transition (40132). Name the
-   * amounts the document type declares in the contract you showed the user, so
-   * that a fee changed since is refused (40133) instead of paid. For a fee priced
-   * by the fee multiplier, `feeMultiplier` names the multiplier you priced it
-   * with and how far above it the executing epoch's may be (40134 otherwise);
-   * a type that declares no `pricing` is priced by the fee multiplier. Ignored
-   * when the action charges nothing. Refused before any request on an SDK
-   * running a protocol version before 14, which has no place to carry it.
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -998,7 +954,7 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
-        // Extract settings from options, refusing a malformed one before the contract fetch
+        // Extract settings from options
         let mut settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         apply_action_fee_agreement_option(&options, &mut settings)?;
@@ -1069,16 +1025,9 @@ export interface DocumentSetPriceOptions {
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
 
   /**
-   * What the transition agrees to pay in action fees. Required from protocol
-   * version 14 when the document type's `actionFees` charge a fee for this
-   * action: without it Platform refuses the transition (40132). Name the
-   * amounts the document type declares in the contract you showed the user, so
-   * that a fee changed since is refused (40133) instead of paid. For a fee priced
-   * by the fee multiplier, `feeMultiplier` names the multiplier you priced it
-   * with and how far above it the executing epoch's may be (40134 otherwise);
-   * a type that declares no `pricing` is priced by the fee multiplier. Ignored
-   * when the action charges nothing. Refused before any request on an SDK
-   * running a protocol version before 14, which has no place to carry it.
+   * The action fee the signer agrees to pay, as the contract shown to the user
+   * declares it. Required when the document type's `actionFees` charge for this
+   * action (protocol version 14+).
    */
   actionFeeAgreement?: DocumentActionFeeAgreement | DocumentActionFeeAgreementOptions;
 
@@ -1130,7 +1079,7 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
-        // Extract settings from options, refusing a malformed one before the contract fetch
+        // Extract settings from options
         let mut settings: Option<PutSettings> =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         apply_action_fee_agreement_option(&options, &mut settings)?;
@@ -1212,8 +1161,6 @@ mod tests {
         )
     }
 
-    /// The delete builder signs with its own creation options and never reads the ones in its
-    /// settings, so an agreement left in the settings would be dropped from the transition.
     #[test]
     fn should_hand_the_delete_builder_the_action_fee_agreement_it_signs_with() {
         let mut settings = None;
@@ -1244,8 +1191,6 @@ mod tests {
         assert!(builder.state_transition_creation_options.is_none());
     }
 
-    /// The delete builder signs with its own user fee increase, so the one in its settings
-    /// would be dropped from the transition.
     #[test]
     fn should_hand_the_delete_builder_the_user_fee_increase_it_signs_with() {
         let builder = builder_for(Some(PutSettings {

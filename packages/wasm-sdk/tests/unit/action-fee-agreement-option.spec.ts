@@ -1,10 +1,6 @@
 /**
- * The `actionFeeAgreement` option of the document writes. Broadcasting needs the network, so
- * the unit suite checks what happens before any read: the option is read with the other
- * options, ahead of the contract fetch, so a malformed agreement is refused without a
- * request and without spending an identity contract nonce. The Rust test
- * `should_hand_the_delete_builder_the_action_fee_agreement_it_signs_with` holds the delete,
- * whose builder keeps its own creation options, to carrying it.
+ * Broadcasting needs the network, so these check only that the option is parsed, before any
+ * request is made.
  */
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
@@ -49,7 +45,6 @@ describe('actionFeeAgreement option', () => {
   });
 
   const malformed = { owner: 'eighty million' };
-  // What reading the malformed agreement fails with, before the contract is fetched
   const MALFORMED = /invalid type: string "eighty million", expected u64/;
 
   it('should refuse a malformed agreement on a create before reading anything', async () => {
@@ -130,8 +125,8 @@ describe('actionFeeAgreement option', () => {
   });
 
   it('should read a well-formed agreement, as an instance or as options', async () => {
-    // A replace reads `tokenPaymentInfo` right after the agreement, so reaching its error
-    // shows the agreement was read, still without any request
+    // `tokenPaymentInfo` is parsed after the agreement, so reaching its error means the
+    // agreement was accepted
     const agreements = [
       new sdk.DocumentActionFeeAgreement({ owner: BigInt(80000000), moderators: BigInt(16000000) }),
       {

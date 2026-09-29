@@ -140,7 +140,6 @@ mod tests {
     use dpp::version::PlatformVersion;
     use dpp::ProtocolError;
 
-    /// Signs nothing: the call under test is refused before anything is signed.
     #[derive(Debug)]
     struct UnusedSigner;
 
@@ -171,9 +170,8 @@ mod tests {
         }
     }
 
-    /// The settings of the waiting call must reach the transition it builds. Before protocol
-    /// version 14 no document base carries an action fee agreement, so one is refused before
-    /// any nonce work, which only happens when the settings holding it were passed on.
+    /// Before protocol version 14 an agreement is refused before any nonce work, which only
+    /// happens if the settings reached the transition.
     #[tokio::test]
     async fn should_build_the_transition_with_the_settings_it_waits_with() {
         let platform_version = PlatformVersion::get(13).expect("protocol version 13");
