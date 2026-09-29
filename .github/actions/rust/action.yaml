@@ -43,7 +43,7 @@ runs:
       shell: bash
       run: |
         if [ "$(cat /opt/ci/contract-version 2>/dev/null)" != 1 ]; then
-          echo '::error::This runner needs the versioned dashpay/dash-selfhosted-image (contract 1); see .github/SELF_HOSTED_RUNNER.md.'
+          echo '::error::This runner needs the versioned dashpay/dash-selfhosted-image (contract 1); see .github/runner-requirements.json and .github/workflows/runner-image-candidate.yml.'
           exit 1
         fi
         python3 .github/scripts/runner-image.py verify
