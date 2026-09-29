@@ -68,6 +68,21 @@ fn drive_key_info_is_empty(key_info: &DriveKeyInfo) -> bool {
     }
 }
 
+/// The keys of a stored-values index path, for a read of what is stored
+/// there. `KeySize` never reaches the stateful update path (see
+/// [`drive_key_info_is_empty`]).
+fn known_index_path(path: &[DriveKeyInfo]) -> Result<Vec<Vec<u8>>, Error> {
+    path.iter()
+        .map(|key_info| match key_info {
+            Key(key) => Ok(key.clone()),
+            KeyRef(key_ref) => Ok(key_ref.to_vec()),
+            KeySize(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a stateful update walks known index paths",
+            ))),
+        })
+        .collect()
+}
+
 /// `[0]`-key reference-bucket `TreeType` dispatch for the
 /// terminator level. Mirrors the dispatch in
 /// `add_reference_for_index_level_for_contract_operations_v0` —
@@ -592,6 +607,23 @@ impl Drive {
             // non-unique one, stranding the entry where no query (and
             // no later delete) would look.
             let old_document_top_field_is_empty = drive_key_info_is_empty(&old_document_top_field);
+            // An entry written before protocol version 14 can sit in another
+            // layout than the rule gives (see
+            // `drive::document::stored_index_entry`): a unique index's entry
+            // in the `[0]` tree although none of its own values is missing
+            // (an insert carried a sibling's missing value into this path),
+            // or as the bare reference although one is (update v0), and a
+            // `nullSearchable: false` entry the rule skips. Where one could
+            // disagree, the old entry's layout is read (unbilled). A type
+            // with a `ttl` exists only from version 14, so it holds none of
+            // these; indexOnly and contested indexes are laid out apart.
+            let reads_stored_entries = index.terminal.is_none()
+                && index.contested_index.is_none()
+                && document_type.documents_ttl_seconds().is_none();
+            // Whether a sibling sub-level visited before this index's next
+            // property, on the old document's path, is missing its value:
+            // what the earlier walkers carried into this index.
+            let mut old_sibling_value_missing = false;
             let mut any_fields_null = document_top_field.is_empty();
             let mut all_fields_null = document_top_field.is_empty();
             let mut old_any_fields_null = old_document_top_field_is_empty;
@@ -611,6 +643,28 @@ impl Drive {
                 let index_property = index.properties.get(i).ok_or(Error::Drive(
                     DriveError::CorruptedContractIndexes("invalid contract indices".to_string()),
                 ))?;
+
+                if reads_stored_entries && index.unique && !old_sibling_value_missing {
+                    for sibling in current_index_level
+                        .sub_levels()
+                        .keys()
+                        .take_while(|sibling| sibling.as_str() < index_property.name.as_str())
+                    {
+                        let old_sibling_value = old_document_info
+                            .get_raw_for_document_type(
+                                sibling,
+                                document_type,
+                                None,
+                                None,
+                                platform_version,
+                            )?
+                            .unwrap_or_default();
+                        if drive_key_info_is_empty(&old_sibling_value) {
+                            old_sibling_value_missing = true;
+                            break;
+                        }
+                    }
+                }
 
                 // Descend one step in the doctype's `IndexLevel`
                 // tree, in lockstep with `index.properties`. Failure
@@ -802,12 +856,38 @@ impl Drive {
                 // bare reference at key `[0]` only for a unique index
                 // with no old nulls. Same dispatch as
                 // `remove_reference_for_index_level_for_contract_operations_v0`.
-                if !old_takes_part || (old_all_fields_null && !index.null_searchable) {
-                    // the insert walker wrote no entry for the old
-                    // document (the index skipped it, or every indexed
-                    // field was null on a `nullSearchable: false` index)
-                    // — nothing to delete
+                // `Some(in_tree)` when the old document has an entry here:
+                // `in_tree` for the doc-id-keyed `[0]` tree, else the bare
+                // reference at key `[0]`.
+                let old_entry_layout = if !old_takes_part {
+                    // the index skipped the old document — nothing to delete
+                    None
+                } else if old_all_fields_null && !index.null_searchable {
+                    // the rule gives no entry when every indexed field is
+                    // null on a `nullSearchable: false` index; an earlier
+                    // version may have written one, in the `[0]` tree
+                    (reads_stored_entries
+                        && self.index_entry_in_tree_exists(
+                            &known_index_path(&old_index_path)?,
+                            document.id().as_slice(),
+                            transaction,
+                            drive_version,
+                        )?)
+                    .then_some(true)
+                } else if reads_stored_entries
+                    && index.unique
+                    && (old_any_fields_null || old_sibling_value_missing)
+                {
+                    Some(self.stored_index_entry_is_tree(
+                        &known_index_path(&old_index_path)?,
+                        old_any_fields_null,
+                        transaction,
+                        drive_version,
+                    )?)
                 } else {
+                    Some(!index.unique || old_any_fields_null)
+                };
+                if let Some(old_entry_in_tree) = old_entry_layout {
                     let mut key_info_path = KeyInfoPath::from_vec(
                         old_index_path
                             .into_iter()
@@ -819,7 +899,7 @@ impl Drive {
                             .collect::<Vec<KeyInfo>>(),
                     );
 
-                    if !index.unique || old_any_fields_null {
+                    if old_entry_in_tree {
                         key_info_path.push(KnownKey(vec![0]));
 
                         // here we should return an error if the element already exists
@@ -939,31 +1019,48 @@ impl Drive {
                 //
                 // No change occurred on this index, so the old and new
                 // nullness are identical and the new-document
-                // accumulators describe the stored entry's layout.
+                // accumulators describe the stored entry's layout, save
+                // where an earlier version may have laid it out otherwise
+                // (the stored layout decides, as for the old entry above).
                 if all_fields_null && !index.null_searchable {
                     // nothing is stored for this document under this
                     // index — nothing to refresh
-                } else if !index.unique || any_fields_null {
-                    index_path.push(vec![0]);
-
-                    // here we should return an error if the element already exists
-                    self.batch_refresh_reference(
-                        index_path,
-                        document.id().to_vec(),
-                        index_document_reference.clone(),
-                        trust_refresh_reference,
-                        &mut batch_operations,
-                        drive_version,
-                    )?;
                 } else {
-                    self.batch_refresh_reference(
-                        index_path,
-                        vec![0],
-                        index_document_reference.clone(),
-                        trust_refresh_reference,
-                        &mut batch_operations,
-                        drive_version,
-                    )?;
+                    let entry_in_tree = if reads_stored_entries
+                        && index.unique
+                        && (old_any_fields_null || old_sibling_value_missing)
+                    {
+                        self.stored_index_entry_is_tree(
+                            &index_path,
+                            any_fields_null,
+                            transaction,
+                            drive_version,
+                        )?
+                    } else {
+                        !index.unique || any_fields_null
+                    };
+                    if entry_in_tree {
+                        index_path.push(vec![0]);
+
+                        // here we should return an error if the element already exists
+                        self.batch_refresh_reference(
+                            index_path,
+                            document.id().to_vec(),
+                            index_document_reference.clone(),
+                            trust_refresh_reference,
+                            &mut batch_operations,
+                            drive_version,
+                        )?;
+                    } else {
+                        self.batch_refresh_reference(
+                            index_path,
+                            vec![0],
+                            index_document_reference.clone(),
+                            trust_refresh_reference,
+                            &mut batch_operations,
+                            drive_version,
+                        )?;
+                    }
                 }
             }
         }

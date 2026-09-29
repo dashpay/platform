@@ -993,7 +993,8 @@ impl DocumentTypeLayout {
 mod tests {
     use super::*;
     use crate::drive::document::fixture_contracts::{
-        leave_out_optional_unique_values, leave_out_skip_properties, small_sums, CONTRACTS,
+        leave_out_optional_indexed_values, leave_out_optional_unique_values,
+        leave_out_skip_properties, small_sums, CONTRACTS,
     };
     use crate::drive::{Drive, RootTree};
     use crate::structure::{drive_structure, ElementKind, StructureNode};
@@ -1204,6 +1205,13 @@ mod tests {
                 }
                 if (3..=4).contains(&seed) {
                     leave_out_skip_properties(&mut document, document_type.as_ref());
+                }
+                if (5..=6).contains(&seed) {
+                    leave_out_optional_indexed_values(
+                        &mut document,
+                        document_type.as_ref(),
+                        seed == 6,
+                    );
                 }
                 setup_document(drive, &document, &contract, document_type.as_ref(), None);
             }

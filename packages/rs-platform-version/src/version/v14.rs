@@ -1649,6 +1649,21 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the parsed declarations, and so validation and execution, are
 ///     unchanged.
 ///
+/// 62. **Null flags follow each index's own path**: the v2 index-level
+///     insert and delete walkers give each sub-level the null flags of its
+///     parent and its own value. They carried the flags from one sibling
+///     sub-level into the next, so a unique index could store its entry in
+///     the `[0]` tree meant for a missing value, and a `nullSearchable:
+///     false` index an entry for a document missing all of its values,
+///     because of another index's values; update 1 and the document cost
+///     model already judged each index alone. Entries written before
+///     (by that carrying, or by update 0, which laid out a unique index
+///     with some values missing as the bare reference and never skipped a
+///     `nullSearchable: false` entry) are found where they are stored: where
+///     an earlier writer could disagree with the rule, the v2 delete walker
+///     and update 1 read the stored `[0]`, unbilled, and remove or refresh
+///     the entry there; a type with a `ttl` skips the read.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

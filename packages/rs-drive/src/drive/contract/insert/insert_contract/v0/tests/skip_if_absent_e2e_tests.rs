@@ -39,6 +39,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::tests::json_document::json_document_to_contract;
+use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
 use grovedb::{PathQuery, Query, SizedQuery};
 use std::collections::{BTreeMap, BTreeSet};
@@ -52,11 +53,11 @@ const MEMOS: &str = "tests/supporting_files/contract/skip-if-absent/skip-memos-c
 const CREATED_AT: u64 = 20_000 * 86_400_000 + 5 * 3_600_000;
 
 const POST_A: [u8; 32] = [0xA1; 32];
-const OWNER_1: [u8; 32] = [0x11; 32];
+pub(super) const OWNER_1: [u8; 32] = [0x11; 32];
 const OWNER_2: [u8; 32] = [0x22; 32];
 const OWNER_3: [u8; 32] = [0x33; 32];
 
-fn setup(path: &str) -> (Drive, DataContract) {
+pub(super) fn setup(path: &str) -> (Drive, DataContract) {
     let drive = setup_drive_with_initial_state_structure(None);
     let contract = json_document_to_contract(path, true, platform_version())
         .expect("expected to parse the fixture");
@@ -74,7 +75,7 @@ fn setup(path: &str) -> (Drive, DataContract) {
 }
 
 /// `[DataContractDocuments, contract_id, 1, <doctype>]`.
-fn doctype_path(contract: &DataContract, doctype: &str) -> Vec<Vec<u8>> {
+pub(super) fn doctype_path(contract: &DataContract, doctype: &str) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::DataContractDocuments as u8],
         contract.id().as_bytes().to_vec(),
@@ -88,7 +89,7 @@ fn doctype_path(contract: &DataContract, doctype: &str) -> Vec<Vec<u8>> {
 /// order its keys were inserted in, and storage flags on when.
 type Snapshot = BTreeSet<(Vec<Vec<u8>>, Vec<u8>, String, u64)>;
 
-fn snapshot(drive: &Drive, path: Vec<Vec<u8>>, skip_primary_key: bool) -> Snapshot {
+pub(super) fn snapshot(drive: &Drive, path: Vec<Vec<u8>>, skip_primary_key: bool) -> Snapshot {
     fn walk(drive: &Drive, path: Vec<Vec<u8>>, skip: Option<usize>, out: &mut Snapshot) {
         let mut query = Query::new();
         query.insert_all();
@@ -126,7 +127,7 @@ fn snapshot(drive: &Drive, path: Vec<Vec<u8>>, skip_primary_key: bool) -> Snapsh
 }
 
 /// The keys directly under `path`.
-fn keys_under(drive: &Drive, path: &[Vec<u8>]) -> Vec<Vec<u8>> {
+pub(super) fn keys_under(drive: &Drive, path: &[Vec<u8>]) -> Vec<Vec<u8>> {
     let mut query = Query::new();
     query.insert_all();
     let path_query = PathQuery::new(path.to_vec(), SizedQuery::new(query, None, None));
@@ -146,7 +147,7 @@ fn keys_under(drive: &Drive, path: &[Vec<u8>]) -> Vec<Vec<u8>> {
         .collect()
 }
 
-fn with_key(path: &[Vec<u8>], key: &[u8]) -> Vec<Vec<u8>> {
+pub(super) fn with_key(path: &[Vec<u8>], key: &[u8]) -> Vec<Vec<u8>> {
     let mut path = path.to_vec();
     path.push(key.to_vec());
     path
@@ -424,7 +425,7 @@ fn insert_post(
     document: &Document,
     apply: bool,
 ) -> Result<FeeResult, Error> {
-    insert_document(drive, contract, "post", document, apply)
+    insert_document(drive, contract, "post", document, apply, platform_version())
 }
 
 fn replace_post(
@@ -433,16 +434,17 @@ fn replace_post(
     document: &Document,
     apply: bool,
 ) -> FeeResult {
-    replace_document(drive, contract, "post", document, apply)
+    replace_document(drive, contract, "post", document, apply, platform_version())
         .expect("expected to replace the post")
 }
 
-fn insert_document(
+pub(super) fn insert_document(
     drive: &Drive,
     contract: &DataContract,
     doctype: &str,
     document: &Document,
     apply: bool,
+    platform_version: &PlatformVersion,
 ) -> Result<FeeResult, Error> {
     drive.add_document_for_contract(
         DocumentAndContractInfo {
@@ -459,17 +461,18 @@ fn insert_document(
         BlockInfo::default(),
         apply,
         None,
-        platform_version(),
+        platform_version,
         None,
     )
 }
 
-fn replace_document(
+pub(super) fn replace_document(
     drive: &Drive,
     contract: &DataContract,
     doctype: &str,
     document: &Document,
     apply: bool,
+    platform_version: &PlatformVersion,
 ) -> Result<FeeResult, Error> {
     drive.update_document_for_contract(
         document,
@@ -482,18 +485,39 @@ fn replace_document(
         apply,
         StorageFlags::optional_default_as_cow(),
         None,
-        platform_version(),
+        platform_version,
         None,
     )
 }
 
-/// A document of the stored `doctype` carrying `properties`, owned by
-/// `OWNER_1` and created at `CREATED_AT`.
+/// A document of the stored `doctype` carrying the text `properties`, owned
+/// by `OWNER_1` and created at `CREATED_AT`.
 fn stored_document(
     contract: &DataContract,
     doctype: &str,
     id: [u8; 32],
     properties: &[(&str, &str)],
+) -> Document {
+    stored_document_with(
+        contract,
+        doctype,
+        id,
+        properties
+            .iter()
+            .map(|(name, value)| (*name, Value::Text(value.to_string())))
+            .collect(),
+        Some(CREATED_AT),
+    )
+}
+
+/// A document of the stored `doctype` carrying `properties`, owned by
+/// `OWNER_1` and created at `created_at`.
+pub(super) fn stored_document_with(
+    contract: &DataContract,
+    doctype: &str,
+    id: [u8; 32],
+    properties: Vec<(&str, Value)>,
+    created_at: Option<u64>,
 ) -> Document {
     let document_type = contract
         .document_type_for_name(doctype)
@@ -503,31 +527,31 @@ fn stored_document(
         .expect("random document");
     document.set_properties(
         properties
-            .iter()
-            .map(|(name, value)| (name.to_string(), Value::Text(value.to_string())))
+            .into_iter()
+            .map(|(name, value)| (name.to_string(), value))
             .collect(),
     );
     document.set_id(Identifier::from(id));
     document.set_owner_id(Identifier::from(OWNER_1));
-    document.set_created_at(Some(CREATED_AT));
+    document.set_created_at(created_at);
     document.set_updated_at(None);
     document.set_revision(Some(1));
     document
 }
 
-fn delete_post(drive: &Drive, contract: &DataContract, id: [u8; 32]) {
+pub(super) fn delete_document(drive: &Drive, contract: &DataContract, doctype: &str, id: [u8; 32]) {
     drive
         .delete_document_for_contract(
             Identifier::from(id),
             contract,
-            "post",
+            doctype,
             BlockInfo::default(),
             true,
             None,
             platform_version(),
             None,
         )
-        .expect("expected to delete the post");
+        .expect("expected to delete the document");
 }
 
 #[test]
@@ -636,8 +660,8 @@ fn should_delete_posts_back_to_the_prior_tree() {
         true,
     )
     .expect("insert");
-    delete_post(&drive, &contract, [1; 32]);
-    delete_post(&drive, &contract, [2; 32]);
+    delete_document(&drive, &contract, "post", [1; 32]);
+    delete_document(&drive, &contract, "post", [2; 32]);
     assert_eq!(snapshot(&drive, path, false), before);
     assert_grovedb_is_consistent(&drive);
 }
@@ -733,22 +757,44 @@ fn should_move_a_note_between_skip_indexes_sharing_a_tree() {
             "note",
             &stored_document(&contract, "note", id, old),
             true,
+            platform_version(),
         )
         .expect("insert old");
         let mut new_note = stored_document(&contract, "note", id, new);
         new_note.set_revision(Some(2));
-        let estimated = replace_document(&replaced_drive, &contract, "note", &new_note, false)
-            .expect("estimate the replace");
-        let applied = replace_document(&replaced_drive, &contract, "note", &new_note, true)
-            .unwrap_or_else(|error| panic!("{case}: the replace did not apply: {error:?}"));
+        let estimated = replace_document(
+            &replaced_drive,
+            &contract,
+            "note",
+            &new_note,
+            false,
+            platform_version(),
+        )
+        .expect("estimate the replace");
+        let applied = replace_document(
+            &replaced_drive,
+            &contract,
+            "note",
+            &new_note,
+            true,
+            platform_version(),
+        )
+        .unwrap_or_else(|error| panic!("{case}: the replace did not apply: {error:?}"));
         assert!(
             estimated.total_base_fee() >= applied.total_base_fee(),
             "{case}: estimated {estimated:?} applied {applied:?}"
         );
 
         let (fresh_drive, fresh_contract) = setup(POSTS);
-        insert_document(&fresh_drive, &fresh_contract, "note", &new_note, true)
-            .expect("insert new");
+        insert_document(
+            &fresh_drive,
+            &fresh_contract,
+            "note",
+            &new_note,
+            true,
+            platform_version(),
+        )
+        .expect("insert new");
         assert_eq!(
             snapshot(&replaced_drive, doctype_path(&contract, "note"), true),
             snapshot(&fresh_drive, doctype_path(&fresh_contract, "note"), true),
@@ -778,14 +824,29 @@ fn should_estimate_at_least_the_applied_fee_when_a_memo_leaves_its_skip_indexes(
             "memo",
             &stored_document(&contract, "memo", id, old),
             true,
+            platform_version(),
         )
         .expect("insert old");
         let mut new_memo = stored_document(&contract, "memo", id, new);
         new_memo.set_revision(Some(2));
-        let estimated = replace_document(&drive, &contract, "memo", &new_memo, false)
-            .expect("estimate the replace");
-        let applied = replace_document(&drive, &contract, "memo", &new_memo, true)
-            .expect("apply the replace");
+        let estimated = replace_document(
+            &drive,
+            &contract,
+            "memo",
+            &new_memo,
+            false,
+            platform_version(),
+        )
+        .expect("estimate the replace");
+        let applied = replace_document(
+            &drive,
+            &contract,
+            "memo",
+            &new_memo,
+            true,
+            platform_version(),
+        )
+        .expect("apply the replace");
         assert!(
             estimated.total_base_fee() >= applied.total_base_fee(),
             "{case}: estimated {estimated:?} applied {applied:?}"
