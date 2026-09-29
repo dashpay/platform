@@ -76,9 +76,11 @@ const REFUSED_REASONS: &[&str] = &["txn-mempool-conflict"];
 /// What a single Core node said when handed a signed transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeVerdict {
-    /// The node holds the transaction — it accepted it into its mempool now,
-    /// already had it there, or has it in a block.
+    /// The node holds the transaction in its mempool — it accepted it now or
+    /// already had it.
     Accepted,
+    /// The node has the transaction in a block (`-27`).
+    Mined,
     /// The node proved the transaction can never be mined as it stands.
     Dead { reason: String },
     /// The node refused the transaction without proving it dead.
@@ -90,7 +92,7 @@ pub enum NodeVerdict {
 /// Classify a failed `broadcastTransaction` gRPC response.
 pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdict {
     if code == Code::AlreadyExists {
-        return NodeVerdict::Accepted;
+        return NodeVerdict::Mined;
     }
     let lowered = message.to_ascii_lowercase();
     if DEAD_REASONS.iter().any(|reason| lowered.contains(reason)) {
@@ -114,8 +116,12 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
 /// The answer a probe gives about one transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProbeVerdict {
-    /// A node holds the transaction: it is in a mempool or a block.
+    /// A node holds the transaction in its mempool. Not settlement: it can
+    /// still expire or lose to a conflict, so the resolver keeps asking.
     Accepted,
+    /// A node has the transaction in a block. Final — there is nothing left to
+    /// ask, even if this wallet has not seen that block yet.
+    Mined,
     /// Two different nodes refused it for missing or spent inputs, and two
     /// different nodes do not know its txid: it is not in a block and can
     /// never be mined.
@@ -127,8 +133,8 @@ pub enum ProbeVerdict {
 /// Whether one node knows a txid (DAPI `getTransaction`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LookupAnswer {
-    /// The node has the transaction, in its mempool or in a block.
-    Known,
+    /// The node has the transaction; `mined` when it is in a block.
+    Known { mined: bool },
     /// The node answered and does not have it.
     NotFound,
     /// No answer: transport failure, timeout, anything else.
@@ -193,6 +199,7 @@ pub(crate) async fn probe_with(
         );
         match verdict {
             NodeVerdict::Accepted => return ProbeVerdict::Accepted,
+            NodeVerdict::Mined => return ProbeVerdict::Mined,
             NodeVerdict::Dead { reason } => {
                 // A dead verdict from an unidentified node cannot count
                 // towards the quorum — it might be the node we already heard.
@@ -242,7 +249,8 @@ async fn confirm_dead(submitter: &dyn NodeSubmitter, txid: &Txid, reason: String
             "broadcast probe: txid lookup answered"
         );
         match answer {
-            LookupAnswer::Known => return ProbeVerdict::Accepted,
+            LookupAnswer::Known { mined: true } => return ProbeVerdict::Mined,
+            LookupAnswer::Known { mined: false } => return ProbeVerdict::Accepted,
             LookupAnswer::NotFound => {
                 if let Some(node) = node {
                     not_found.insert(node);
@@ -308,7 +316,13 @@ impl NodeSubmitter for DapiNodeSubmitter {
             id: txid.to_string(),
         };
         match self.sdk.execute(request, single_node()).await {
-            Ok(response) => (Some(response.address.to_string()), LookupAnswer::Known),
+            Ok(response) => {
+                let mined = response.inner.height > 0 || response.inner.confirmations > 0;
+                (
+                    Some(response.address.to_string()),
+                    LookupAnswer::Known { mined },
+                )
+            }
             Err(error) => {
                 let node = error.address.as_ref().map(ToString::to_string);
                 let answer = match &error.inner {
@@ -462,7 +476,7 @@ mod tests {
             (
                 Code::AlreadyExists,
                 "Transaction already in chain: Transaction already in block chain",
-                NodeVerdict::Accepted,
+                NodeVerdict::Mined,
             ),
             // -25, JS dapi.
             (
@@ -615,17 +629,17 @@ mod tests {
 
     /// Core answers `missingorspent` for a mined transaction whose outputs
     /// are all spent (testnet `e758f06a…`, 2026-09-29). A node that still
-    /// knows the txid must turn the dead quorum into Accepted.
+    /// knows the txid in a block must turn the dead quorum into Mined.
     #[tokio::test]
-    async fn should_accept_a_refused_transaction_that_a_node_still_knows() {
+    async fn should_report_mined_for_a_refused_transaction_a_node_has_in_a_block() {
         let nodes = ScriptedNodes::with_lookups(
             vec![(Some("a"), dead()), (Some("b"), dead())],
-            vec![(Some("c"), LookupAnswer::Known)],
+            vec![(Some("c"), LookupAnswer::Known { mined: true })],
         );
 
         assert_eq!(
             probe_with(&nodes, &transaction()).await,
-            ProbeVerdict::Accepted
+            ProbeVerdict::Mined
         );
         assert_eq!(nodes.lookups_made(), 1);
     }
@@ -661,5 +675,20 @@ mod tests {
         probe_with(&nodes, &transaction()).await;
 
         assert_eq!(nodes.lookups_made(), 0);
+    }
+
+    /// Refused for its inputs yet still in a node's mempool (a double-spend
+    /// race the node lost locally): not dead, not mined — keep asking.
+    #[tokio::test]
+    async fn should_accept_a_refused_transaction_a_node_holds_in_its_mempool() {
+        let nodes = ScriptedNodes::with_lookups(
+            vec![(Some("a"), dead()), (Some("b"), dead())],
+            vec![(Some("c"), LookupAnswer::Known { mined: false })],
+        );
+
+        assert_eq!(
+            probe_with(&nodes, &transaction()).await,
+            ProbeVerdict::Accepted
+        );
     }
 }

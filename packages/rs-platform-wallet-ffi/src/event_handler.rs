@@ -315,7 +315,9 @@ impl PlatformEventHandler for FFIEventHandler {
             return;
         };
         let (code, reason) = match verdict {
-            ProbeVerdict::Accepted => (OUTGOING_PROBE_VERDICT_ACCEPTED, None),
+            // The host does not need to tell a mempool from a block: both mean
+            // the payment is going through.
+            ProbeVerdict::Accepted | ProbeVerdict::Mined => (OUTGOING_PROBE_VERDICT_ACCEPTED, None),
             ProbeVerdict::Dead { reason } => (OUTGOING_PROBE_VERDICT_DEAD, Some(reason)),
             ProbeVerdict::Unresolved { reason } => {
                 (OUTGOING_PROBE_VERDICT_UNRESOLVED, Some(reason))

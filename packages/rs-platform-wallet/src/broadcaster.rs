@@ -148,8 +148,10 @@ impl TransactionBroadcaster for DapiBroadcaster {
         {
             Ok(_response) => Ok(transaction.txid()),
             Err(DapiClientError::Transport(TransportError::Grpc(status)))
-                if classify_failed_submission(status.code(), status.message())
-                    == NodeVerdict::Accepted =>
+                if matches!(
+                    classify_failed_submission(status.code(), status.message()),
+                    NodeVerdict::Accepted | NodeVerdict::Mined
+                ) =>
             {
                 Ok(transaction.txid())
             }

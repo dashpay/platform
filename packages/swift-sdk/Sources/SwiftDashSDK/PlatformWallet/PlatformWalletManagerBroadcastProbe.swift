@@ -51,7 +51,9 @@ public struct OutgoingTransactionProbeEvent: Sendable, Equatable {
 /// C trampoline for
 /// `EventHandlerCallbacksExtension.on_outgoing_transaction_probed_fn`. Rust
 /// owns every pointer only for this call, so everything is copied before the
-/// main-actor hop.
+/// hop to the main queue. `DispatchQueue.main` is FIFO, so a verdict and a
+/// later clear for the same send are applied in the order Rust sent them —
+/// separate `Task`s give no such guarantee.
 func outgoingTransactionProbedCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
@@ -68,8 +70,10 @@ func outgoingTransactionProbedCallback(
     let txidWire = Data(bytes: txidPtr, count: 32)
     if verdictCode == UInt8(OUTGOING_PROBE_VERDICT_CLEARED) {
         let key = OutgoingTransactionKey(walletId: walletId, txidWire: txidWire)
-        Task { @MainActor [weak manager = handler.manager] in
-            manager?.handleOutgoingTransactionCleared(key)
+        DispatchQueue.main.async { [weak manager = handler.manager] in
+            MainActor.assumeIsolated {
+                manager?.handleOutgoingTransactionCleared(key)
+            }
         }
         return
     }
@@ -89,8 +93,10 @@ func outgoingTransactionProbedCallback(
         verdict: verdict
     )
 
-    Task { @MainActor [weak manager = handler.manager] in
-        manager?.handleOutgoingTransactionProbed(event)
+    DispatchQueue.main.async { [weak manager = handler.manager] in
+        MainActor.assumeIsolated {
+            manager?.handleOutgoingTransactionProbed(event)
+        }
     }
 }
 
