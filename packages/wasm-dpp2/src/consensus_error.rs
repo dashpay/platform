@@ -467,7 +467,7 @@ mod tests {
     /// The `immutableAfter` window error, built from the real DPP error for
     /// the same reason as the test above.
     #[test]
-    fn edit_window_error_code_mirrors_the_dpp_error() {
+    fn should_mirror_the_dpp_error_in_the_edit_window_error_code() {
         use dpp::consensus::state::document::document_property_edit_window_elapsed_error::DocumentPropertyEditWindowElapsedError;
 
         let error: ConsensusError = StateError::DocumentPropertyEditWindowElapsedError(

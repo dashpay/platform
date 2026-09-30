@@ -2405,7 +2405,6 @@
         "minimum": 1,
         "maximum": 4294967295
       },
-      "minProperties": 1,
       "description": "Top-level properties of a mutable document type that replaces may change only for a while after the document is created, each mapped to that window in seconds. A replace whose block time is later than the document's $createdAt plus the window, and that changes, adds or removes the property, is rejected (DocumentPropertyEditWindowElapsedError, code 40143); at exactly that time it is still accepted. A replace may still remove a refersTo deletableDocument reference whose referenced document has been deleted, as for immutable. Only allowed when documentsMutable is true (the default), and requires $createdAt in required. Every key must name a declared top-level property that is neither transient nor listed under immutable (which freezes it at creation); system properties ($-prefixed) and nested paths are refused, as for immutable. On contract update a property may be added with any window, its window may shorten but never lengthen, and it may leave immutableAfter only for immutable. Available from protocol version 14."
     },
     "ownerRefersTo": {

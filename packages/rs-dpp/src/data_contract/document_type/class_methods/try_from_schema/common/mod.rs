@@ -2825,6 +2825,56 @@ pub(super) fn parse_property_name_list_keyword(
         .collect()
 }
 
+/// The rules every property `immutable` or `immutableAfter` lists must meet,
+/// both keywords freezing it sooner or later: a declared top-level property
+/// (a replace compares top-level values, so a nested path is refused with a
+/// hint to list the containing object, which freezes it whole), not a system
+/// property, which the platform manages, and not transient. A transient
+/// property is never stored, so the stored document always lacks it and any
+/// replace that supplies it counts as setting it: frozen at "absent", it could
+/// never be written, and if it is also required no replace could pass at all.
+/// `listed` words how the keyword lists the property in the errors ("as
+/// immutable"), `frozen` how it names the clash with `transient`.
+fn check_frozen_property_listing(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    property: &str,
+    listed: &str,
+    frozen: &str,
+) -> Result<(), ProtocolError> {
+    let structure_error = |message: String| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            message,
+        ))
+    };
+    if property.starts_with('$') {
+        return Err(structure_error(format!(
+            "document type \"{name}\" lists system property \"{property}\" {listed}: system \
+             properties are managed by the platform and cannot be listed"
+        )));
+    }
+    if !document_type.properties.contains_key(property) {
+        let hint = if property.contains('.') {
+            "; nested paths are not accepted, list the top-level property that contains it to \
+             freeze it whole"
+        } else {
+            ""
+        };
+        return Err(structure_error(format!(
+            "document type \"{name}\" lists \"{property}\" {listed}, but it is not a top-level \
+             property of the document type{hint}"
+        )));
+    }
+    if document_type.transient_fields.contains(property) {
+        return Err(structure_error(format!(
+            "document type \"{name}\" lists \"{property}\" as both transient and {frozen}: a \
+             transient property is never stored, so once it is frozen every replace that supplies \
+             it would be refused; remove it from one of the two"
+        )));
+    }
+    Ok(())
+}
+
 /// Write the `immutable` and `immutableAllowSetting` property lists onto the
 /// parsed document type and, under full validation, check them against the
 /// rest of the type.
@@ -2868,36 +2918,13 @@ pub(super) fn apply_immutable_fields(
         }
 
         for property in &immutable_fields {
-            if property.starts_with('$') {
-                return Err(structure_error(format!(
-                    "document type \"{name}\" lists system property \"{property}\" as immutable: \
-                     system properties are managed by the platform and cannot be listed"
-                )));
-            }
-            if !document_type.properties.contains_key(property) {
-                let hint = if property.contains('.') {
-                    "; nested paths are not accepted, list the top-level property that contains \
-                     it to freeze it whole"
-                } else {
-                    ""
-                };
-                return Err(structure_error(format!(
-                    "document type \"{name}\" lists \"{property}\" as immutable, but it is not a \
-                     top-level property of the document type{hint}"
-                )));
-            }
-            // A transient property is never stored, so the stored document
-            // always lacks it and any replace that supplies it counts as
-            // setting it. Frozen at "absent", it could never be written; if
-            // it is also required, no replace could ever pass at all.
-            if document_type.transient_fields.contains(property) {
-                return Err(structure_error(format!(
-                    "document type \"{name}\" lists \"{property}\" as both transient and \
-                     immutable: a transient property is never stored, so every replace that \
-                     supplies it would be refused as changing an immutable property; remove it \
-                     from one of the two lists"
-                )));
-            }
+            check_frozen_property_listing(
+                document_type,
+                name,
+                property,
+                "as immutable",
+                "immutable",
+            )?;
         }
 
         for property in &immutable_fields_allow_setting {
@@ -3019,33 +3046,13 @@ pub(super) fn apply_immutable_after(
         }
 
         for property in immutable_after_seconds.keys() {
-            if property.starts_with('$') {
-                return Err(structure_error(format!(
-                    "document type \"{name}\" lists system property \"{property}\" under \
-                     `immutableAfter`: system properties are managed by the platform and cannot \
-                     be listed"
-                )));
-            }
-            if !document_type.properties.contains_key(property) {
-                let hint = if property.contains('.') {
-                    "; nested paths are not accepted, list the top-level property that contains \
-                     it to freeze it whole"
-                } else {
-                    ""
-                };
-                return Err(structure_error(format!(
-                    "document type \"{name}\" lists \"{property}\" under `immutableAfter`, but it \
-                     is not a top-level property of the document type{hint}"
-                )));
-            }
-            if document_type.transient_fields.contains(property) {
-                return Err(structure_error(format!(
-                    "document type \"{name}\" lists \"{property}\" as both transient and under \
-                     `immutableAfter`: a transient property is never stored, so once its window \
-                     passed every replace that supplies it would be refused; remove it from one \
-                     of the two"
-                )));
-            }
+            check_frozen_property_listing(
+                document_type,
+                name,
+                property,
+                "under `immutableAfter`",
+                "under `immutableAfter`",
+            )?;
             if document_type.immutable_fields.contains(property) {
                 return Err(structure_error(format!(
                     "document type \"{name}\" lists \"{property}\" both under `immutable`, which \

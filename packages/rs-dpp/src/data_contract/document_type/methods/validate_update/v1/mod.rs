@@ -635,7 +635,8 @@ impl DocumentTypeRef<'_> {
     ///
     /// `immutableAllowSetting` may only shrink, with one exception: a
     /// property that becomes immutable in this very update may arrive with
-    /// the allowance. Dropping an entry is a tightening (a still-absent
+    /// the allowance, unless it was under `immutableAfter`, whose stored
+    /// documents may already hold it frozen. Dropping an entry is a tightening (a still-absent
     /// property can no longer be set). Adding one for a property that was
     /// already immutable would relax a promise the documents were created
     /// under, exactly like removing it from `immutable`.
@@ -665,9 +666,15 @@ impl DocumentTypeRef<'_> {
             }
         }
 
+        // A property under `immutableAfter` counts as already immutable: past
+        // its window a stored document holds it frozen, so allowing a set
+        // while it moves into `immutable` would reopen an absent one
+        let old_immutable_after = self.immutable_after_seconds();
         let old_allow_setting = self.immutable_fields_allow_setting();
         for property in new_document_type.immutable_fields_allow_setting() {
-            if !old_allow_setting.contains(property) && old_immutable.contains(property) {
+            if !old_allow_setting.contains(property)
+                && (old_immutable.contains(property) || old_immutable_after.contains_key(property))
+            {
                 return SimpleConsensusValidationResult::new_with_error(
                     DocumentTypeUpdateError::new(
                         self.data_contract_id(),
@@ -790,6 +797,7 @@ mod tests {
     use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::DocumentType;
+    use crate::validation::SimpleConsensusValidationResult;
     use assert_matches::assert_matches;
     use platform_value::{platform_value, Identifier, Value};
     use platform_version::version::PlatformVersion;
@@ -1449,7 +1457,7 @@ mod tests {
     fn validate_windows_update(
         (old_immutable, old_windows): (Value, Value),
         (new_immutable, new_windows): (Value, Value),
-    ) -> crate::validation::SimpleConsensusValidationResult {
+    ) -> SimpleConsensusValidationResult {
         let platform_version = PlatformVersion::latest();
         let old = doc_type_with_windows(old_immutable, old_windows, platform_version);
         let new = doc_type_with_windows(new_immutable, new_windows, platform_version);
@@ -1521,6 +1529,71 @@ mod tests {
             [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
                 if e.additional_message()
                     == "document type can not remove property 'a' from immutableAfter: it may only move to immutable"
+        );
+    }
+
+    /// A windowed property may move to `immutable`, but not with the
+    /// allowance to be set while absent: past its window a stored document
+    /// holds it frozen absent, and the allowance would reopen it.
+    #[test]
+    fn should_reject_moving_a_windowed_property_to_immutable_allowing_setting() {
+        let platform_version = PlatformVersion::latest();
+        let schema = |immutable: Value, allow_setting: Value, immutable_after: Value| {
+            platform_value!({
+                "type": "object",
+                "documentsMutable": true,
+                "properties": {
+                    "a": {"type": "string", "position": 0, "maxLength": 60_u32},
+                    "b": {"type": "string", "position": 1, "maxLength": 60_u32},
+                },
+                "required": ["$createdAt"],
+                "immutable": immutable,
+                "immutableAllowSetting": allow_setting,
+                "immutableAfter": immutable_after,
+                "additionalProperties": false,
+            })
+        };
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+        let parse = |schema: Value| {
+            DocumentType::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        };
+        let old = parse(schema(
+            platform_value!([]),
+            platform_value!([]),
+            platform_value!({ "a": 60, "b": 60 }),
+        ));
+        let new = parse(schema(
+            platform_value!(["a"]),
+            platform_value!(["a"]),
+            platform_value!({ "b": 60 }),
+        ));
+
+        let result = old
+            .as_ref()
+            .validate_update(new.as_ref(), 2, platform_version)
+            .expect("validate_update should not error");
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::DocumentTypeUpdateError(e))]
+                if e.additional_message().starts_with(
+                    "document type can not allow setting immutable property 'a' once it is \
+                     already immutable"
+                )
         );
     }
 

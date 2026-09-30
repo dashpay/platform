@@ -13,6 +13,7 @@
 //! without hand-parsing the contract's raw JSON schema.
 
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::utils::define_own_property;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use js_sys::{Array, Object, Reflect};
@@ -85,33 +86,6 @@ fn set_field(
     Ok(())
 }
 
-/// `set_field` for a key that is a property name: defined as an own data
-/// property, so a property named like an inherited accessor (`__proto__`) is
-/// a key of the object, not a call to the accessor.
-fn define_field(
-    target: &Object,
-    key: &str,
-    value: &JsValue,
-    document_type_name: &str,
-) -> WasmDppResult<()> {
-    let descriptor = Object::new();
-    for (flag, flag_value) in [
-        ("value", value.clone()),
-        ("writable", JsValue::TRUE),
-        ("enumerable", JsValue::TRUE),
-        ("configurable", JsValue::TRUE),
-    ] {
-        set_field(&descriptor, flag, &flag_value, document_type_name)?;
-    }
-    Reflect::define_property(target, &JsValue::from_str(key), &descriptor).map_err(|_| {
-        WasmDppError::generic(format!(
-            "unable to serialize the `{key}` window of the immutability declarations of document \
-             type '{document_type_name}'"
-        ))
-    })?;
-    Ok(())
-}
-
 fn names_to_array(names: &BTreeSet<String>) -> Array {
     names.iter().map(|name| JsValue::from_str(name)).collect()
 }
@@ -139,12 +113,8 @@ pub(crate) fn immutable_properties_for_document_type(
     )?;
     let windows = Object::new();
     for (property, seconds) in document_type.immutable_after_seconds() {
-        define_field(
-            &windows,
-            property,
-            &JsValue::from(*seconds),
-            document_type_name,
-        )?;
+        // A property named like an inherited accessor (`__proto__`) stays a key
+        define_own_property(&windows, property, JsValue::from(*seconds))?;
     }
     set_field(
         &object,
