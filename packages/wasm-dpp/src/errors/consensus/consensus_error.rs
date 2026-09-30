@@ -80,7 +80,6 @@ use dpp::consensus::state::document::document_contest_document_with_same_id_alre
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use dpp::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
 use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
-use dpp::consensus::state::document::document_property_edit_window_elapsed_error::DocumentPropertyEditWindowElapsedError;
 use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
 use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
@@ -749,9 +748,6 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentRemovedError(e) => {
             generic_consensus_error!(ReferencedDocumentRemovedError, e).into()
-        }
-        StateError::DocumentPropertyEditWindowElapsedError(e) => {
-            generic_consensus_error!(DocumentPropertyEditWindowElapsedError, e).into()
         }
     }
 }

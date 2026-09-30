@@ -46,23 +46,18 @@ pub struct DocumentTypeV2 {
     pub(in crate::data_contract) required_fields: BTreeSet<String>,
     /// The transient fields on the document type
     pub(in crate::data_contract) transient_fields: BTreeSet<String>,
-    /// The top-level properties frozen at document creation on a mutable
-    /// document type (`immutable` keyword, protocol version 14): a replace
-    /// that changes, adds or removes any of them is rejected. Always empty
-    /// when `documents_mutable` is false, where every property is already
-    /// immutable.
+    /// The top-level properties the `immutable` keyword (protocol version 14)
+    /// lists by name on a mutable document type: frozen at document creation,
+    /// so a replace that changes, adds or removes any of them is rejected.
+    /// Always empty when `documents_mutable` is false, where every property is
+    /// already immutable.
     pub(in crate::data_contract) immutable_fields: BTreeSet<String>,
-    /// The subset of `immutable_fields` a replace may still set while the
-    /// stored document has no value for them (`immutableAllowSetting`
-    /// keyword, protocol version 14). Once present they are frozen like the
-    /// rest of the list. Every entry is also in `immutable_fields`.
-    pub(in crate::data_contract) immutable_fields_allow_setting: BTreeSet<String>,
-    /// The top-level properties of a mutable document type that a replace may
-    /// change only for so many seconds after the document's `$createdAt`
-    /// (`immutableAfter` keyword, protocol version 14), each with its window.
-    /// Past it the property is frozen as an `immutable_fields` entry is. No
-    /// entry is also in `immutable_fields`, and the type requires `$createdAt`.
-    pub(in crate::data_contract) immutable_after_seconds: BTreeMap<String, u32>,
+    /// The top-level properties the `immutable` keyword lists with a condition
+    /// (`{ "property": ..., "when": ... }`): a replace may not change, add or
+    /// remove one while its condition holds, judged on the document the
+    /// replace writes, with the stored one read through `$old.`. None is also
+    /// in `immutable_fields`.
+    pub(in crate::data_contract) immutable_field_conditions: BTreeMap<String, PropertyConstraint>,
     /// The dotted paths of the properties that declare `distinctFrom`
     /// (protocol version 14), in schema order, so a document write finds
     /// them without walking every property. Empty on every pre-PV14 contract.
@@ -299,8 +294,7 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
-            immutable_fields_allow_setting: BTreeSet::new(),
-            immutable_after_seconds: BTreeMap::new(),
+            immutable_field_conditions: BTreeMap::new(),
             distinct_from_fields,
             generated_from_fields,
             entry_payload: BTreeSet::new(),
@@ -357,8 +351,7 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             required_fields: value.required_fields,
             transient_fields: value.transient_fields,
             immutable_fields: BTreeSet::new(),
-            immutable_fields_allow_setting: BTreeSet::new(),
-            immutable_after_seconds: BTreeMap::new(),
+            immutable_field_conditions: BTreeMap::new(),
             distinct_from_fields,
             generated_from_fields,
             entry_payload: BTreeSet::new(),

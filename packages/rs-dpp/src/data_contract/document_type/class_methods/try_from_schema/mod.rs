@@ -6,7 +6,7 @@ use crate::data_contract::document_type::class_methods::apply_required_since::ap
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::property_constraints::{
     parse_property_constraints, AffixPosition, AggregateBinding, AggregateKind, ElementKind,
-    EqualityKind, PropertyConstraint, PropertyRead,
+    EqualityKind, PropertyConstraint, PropertyRead, STORED_DOCUMENT_PREFIX,
 };
 use crate::data_contract::document_type::reference_lookup::{
     schema_property_is_fixed_once_written, LOOKUP_REFERENCE_VALUE, MAX_LOOKUP_KEYS,
@@ -2043,8 +2043,7 @@ pub(super) fn validate_reference_lookup_sources(
 ///   replace whichever operand held on the create, and the operands a replace
 ///   asks again would never be asked;
 /// * every `where` entry beside the function reads a referring property that
-///   is transient or fixed once written (and not listed under
-///   `immutableAllowSetting`), since no replace checks the entry
+///   is transient or fixed once written, since no replace checks the entry
 ///   again. `"$ownerId"` is exempt: it names the writer of the create, whose
 ///   own commitment the reveal is.
 fn create_only_leaf_error(
@@ -2072,17 +2071,14 @@ fn create_only_leaf_error(
         .filter(|referring| referring.as_str() != OWNER_ID)
         .find(|referring| {
             !is_transient(document_type, referring)
-                && (!schema_property_is_fixed_once_written(document_type, referring)
-                    || document_type
-                        .immutable_fields_allow_setting()
-                        .contains(referring.split('.').next().unwrap_or(referring)))
+                && !schema_property_is_fixed_once_written(document_type, referring)
         })
         .map(|referring| {
             format!(
                 "where reads \"{referring}\" beside a findBy function, so it is judged when the \
                  document is created only: \"{referring}\" must be fixed once written (make the \
-                 type immutable or list the property under `immutable`, and not under \
-                 `immutableAllowSetting`) or transient"
+                 type immutable or list the property under `immutable` without a condition) or \
+                 transient"
             )
         })
 }
@@ -2664,22 +2660,8 @@ fn apply_property_constraints_v0(
     full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(), DataContractError> {
-    let flattened_properties = &document_type.flattened_properties;
-    let equality_kind = |property_type: &DocumentPropertyType| match property_type {
-        DocumentPropertyType::String(_) => Some(EqualityKind::Text),
-        property_type if property_type.is_identifier() => Some(EqualityKind::Identifier),
-        _ => None,
-    };
-    // A typed array compares as its elements do, in a `contains`; anywhere else
-    // the reads below refuse an array where a string or an identifier belongs
-    let property_kind = |path: &str| match flattened_properties
-        .get(path)
-        .map(|property| &property.property_type)
-    {
-        Some(DocumentPropertyType::TypedArray(array)) => equality_kind(&array.item_type),
-        Some(property_type) => equality_kind(property_type),
-        None => None,
-    };
+    let property_kind =
+        |path: &str| property_equality_kind(&document_type.flattened_properties, path);
     let constraints =
         parse_property_constraints(&document_type.schema, document_type_name, &property_kind)?;
     let structure_error = |message: String| {
@@ -2689,318 +2671,14 @@ fn apply_property_constraints_v0(
     };
 
     for (name, constraint) in &constraints {
-        for (path, read) in constraint.property_reads() {
-            let reads = match read {
-                PropertyRead::Value => "reads",
-                PropertyRead::Presence => "tests the presence of",
-                PropertyRead::Text | PropertyRead::Identifier => "compares",
-                PropertyRead::Length => "measures",
-                PropertyRead::Count => "counts the items of",
-                PropertyRead::Elements(_) => "looks in",
-            };
-            match read {
-                PropertyRead::Value => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    // `is_integer` leaves out the 128-bit types, which the arithmetic holds
-                    // too; a boolean reads as 1 for true and 0 for false
-                    Some(property_type)
-                        if property_type.is_integer()
-                            || matches!(
-                                property_type,
-                                DocumentPropertyType::U128
-                                    | DocumentPropertyType::I128
-                                    | DocumentPropertyType::Boolean
-                            ) => {}
-                    // A string is compared with constants, never read as a number
-                    Some(DocumentPropertyType::String(_)) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" reads \"{path}\", which has type string, not integer \
-                             or boolean: a string property is compared, by equal or notEqual, \
-                             with a {{ \"const\": ... }} or another string property, or with the \
-                             strings an in lists"
-                        )));
-                    }
-                    // An identifier is compared with identifiers, never read as a number
-                    Some(property_type) if property_type.is_identifier() => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" reads \"{path}\", which has type identifier, not \
-                             integer or boolean: an identifier property is compared, by equal or \
-                             notEqual, with a {{ \"const\": base58 }} or another identifier \
-                             property, or with the identifiers an in lists"
-                        )));
-                    }
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" reads \"{path}\", which has type {}, not integer or \
-                             boolean",
-                            other.name()
-                        )));
-                    }
-                    // An object is not in the flattened map either: only its members hold values
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" reads \"{path}\", which is not an integer or boolean \
-                             property of the document type (a nested one is named by its dotted \
-                             path)"
-                        )));
-                    }
-                },
-                PropertyRead::Presence => {
-                    if property_at_path(&document_type.properties, path).is_none() {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" tests the presence of \"{path}\", which is not a \
-                             property of the document type (a nested one is named by its dotted \
-                             path)"
-                        )));
-                    }
-                }
-                PropertyRead::Text => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    Some(DocumentPropertyType::String(_)) => {}
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" compares \"{path}\" with a string, but it has type \
-                             {}, not string",
-                            other.name()
-                        )));
-                    }
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" compares \"{path}\" with a string, but it is not a \
-                             string property of the document type (a nested one is named by its \
-                             dotted path)"
-                        )));
-                    }
-                },
-                PropertyRead::Length => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    Some(DocumentPropertyType::String(_)) => {}
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" measures the length of \"{path}\", which has type {}, \
-                             not string: count gives the items of an array or byte array",
-                            other.name()
-                        )));
-                    }
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" measures the length of \"{path}\", which is not a \
-                             string property of the document type (a nested one is named by its \
-                             dotted path)"
-                        )));
-                    }
-                },
-                PropertyRead::Count => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    Some(
-                        DocumentPropertyType::TypedArray(_)
-                        | DocumentPropertyType::ByteArray(_)
-                        | DocumentPropertyType::Array(_)
-                        | DocumentPropertyType::VariableTypeArray(_),
-                    ) => {}
-                    Some(DocumentPropertyType::String(_)) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" counts the items of \"{path}\", which has type \
-                             string, not array: length or byteLength gives the size of a string"
-                        )));
-                    }
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" counts the items of \"{path}\", which has type {}, \
-                             not array or byteArray",
-                            other.name()
-                        )));
-                    }
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" counts the items of \"{path}\", which is not an array \
-                             or byte array property of the document type (a nested one is named \
-                             by its dotted path)"
-                        )));
-                    }
-                },
-                PropertyRead::Elements(kind) => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    Some(DocumentPropertyType::TypedArray(array)) => {
-                        let element_type = array.item_type.as_ref();
-                        let (holds, kind_name) = match kind {
-                            ElementKind::Integer => (
-                                element_type.is_integer()
-                                    || matches!(
-                                        element_type,
-                                        DocumentPropertyType::U128 | DocumentPropertyType::I128
-                                    ),
-                                "an integer",
-                            ),
-                            ElementKind::Text => (
-                                matches!(element_type, DocumentPropertyType::String(_)),
-                                "a string",
-                            ),
-                            ElementKind::Identifier => {
-                                (element_type.is_identifier(), "an identifier")
-                            }
-                        };
-                        if !holds {
-                            return Err(structure_error(format!(
-                                "rule \"{name}\" looks in \"{path}\" for {kind_name}, but its \
-                                 elements have type {}: contains looks for an integer, a string \
-                                 or an identifier among elements of that type",
-                                element_type.name()
-                            )));
-                        }
-                    }
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" looks in \"{path}\", which has type {}, not an \
-                             array with items",
-                            other.name()
-                        )));
-                    }
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" looks in \"{path}\", which is not an array property \
-                             of the document type (a nested one is named by its dotted path)"
-                        )));
-                    }
-                },
-                PropertyRead::Identifier => match document_type
-                    .flattened_properties
-                    .get(path)
-                    .map(|property| &property.property_type)
-                {
-                    Some(property_type) if property_type.is_identifier() => {}
-                    Some(other) => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" compares \"{path}\" with an identifier, but it has \
-                             type {}, not identifier",
-                            other.name()
-                        )));
-                    }
-                    None => {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" compares \"{path}\" with an identifier, but it is \
-                             not an identifier property of the document type (a nested one is \
-                             named by its dotted path)"
-                        )));
-                    }
-                },
-            }
-            if is_transient(DocumentTypeRef::V2(document_type), path) {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" {reads} \"{path}\", which is transient or inside a \
-                     transient object: a transient value is never stored, so a stored document \
-                     could not be held to the rule"
-                )));
-            }
-        }
-        // An indexOnly type's delete carries its row's values but not its owner, so
-        // a rule reading the owner could not be judged there
-        if document_type.index_only && constraint.reads_owner() {
-            return Err(structure_error(format!(
-                "rule \"{name}\" compares $ownerId, which a delete of an indexOnly document \
-                 does not carry"
-            )));
-        }
-        for system_property in constraint.system_reads() {
-            let system_name = system_property.name();
-            // Nor its times and heights
-            if document_type.index_only {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" reads {system_name}, which a delete of an indexOnly \
-                     document does not carry"
-                )));
-            }
-            // A stored document holds only the times and heights its type requires
-            if !document_type.required_fields.contains(system_name) {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" reads {system_name}, which the document type does not \
-                     record: list it in required"
-                )));
-            }
-        }
-        // Which type an aggregate totals, and by which of its keys, is checked once
-        // every document type of the contract is parsed
-        for read in constraint.aggregate_reads() {
-            let operator = read.wire_name();
-            // Nor a total read from state, which its delete is not given
-            if document_type.index_only {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" reads a {operator}, which a delete of an indexOnly \
-                     document is not given"
-                )));
-            }
-            // The value a key is matched by is always there, so that every write reads
-            // the total of the documents matching it: a property the document could leave
-            // out, or whose enclosing object it could, would match nothing
-            for binding in read.filter.values() {
-                let AggregateBinding::Property { path, .. } = binding else {
-                    continue;
-                };
-                let mut prefix = String::new();
-                for segment in path.split('.') {
-                    if !prefix.is_empty() {
-                        prefix.push('.');
-                    }
-                    prefix.push_str(segment);
-                    if !document_type.required_fields.contains(&prefix) {
-                        return Err(structure_error(format!(
-                            "rule \"{name}\" matches a {operator} by \"{path}\", but the \
-                             document type does not require \"{prefix}\": a value a \
-                             {operator} matches by must always be there, so list it in required"
-                        )));
-                    }
-                }
-            }
-        }
-        // A constant or a default a string property's `enum` does not list is a
-        // typo: the property could never hold it
-        for (path, constant) in constraint.text_constants() {
-            if !enum_admits(&document_type.schema, schema_defs, path, constant)? {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" compares \"{path}\" with \"{constant}\", which is not one of \
-                     its enum values"
-                )));
-            }
-        }
-        // A constant a string property must start or end with, when the property
-        // declares an `enum`, must fit one of its values, or the test never holds
-        for (path, affix, position) in constraint.text_affixes() {
-            if !enum_any(&document_type.schema, schema_defs, path, |member| {
-                position.holds(member, affix)
-            })? {
-                let tests = match position {
-                    AffixPosition::Start => "starts with",
-                    AffixPosition::End => "ends with",
-                };
-                return Err(structure_error(format!(
-                    "rule \"{name}\" tests whether \"{path}\" {tests} \"{affix}\", which none \
-                     of its enum values does"
-                )));
-            }
-        }
-        for (path, default) in constraint.text_defaults() {
-            if !enum_admits(&document_type.schema, schema_defs, path, default)? {
-                return Err(structure_error(format!(
-                    "rule \"{name}\" gives \"{path}\" the default \"{default}\", which is not \
-                     one of its enum values"
-                )));
-            }
-        }
+        validate_property_constraint_reads(
+            document_type,
+            schema_defs,
+            &format!("rule \"{name}\""),
+            constraint,
+            false,
+            &structure_error,
+        )?;
     }
 
     if full_validation {
@@ -3041,6 +2719,383 @@ fn apply_property_constraints_v0(
     }
 
     document_type.property_constraints = constraints;
+    Ok(())
+}
+
+/// How a condition compares the property at the dotted `path` of
+/// `flattened_properties` in an `equal`, `notEqual` or `in`: as a string or as
+/// an identifier, `None` as an integer (or not at all). A typed array compares
+/// as its elements do, in a `contains`; anywhere else the reads refuse an array
+/// where a string or an identifier belongs.
+pub(super) fn property_equality_kind(
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+    path: &str,
+) -> Option<EqualityKind> {
+    let equality_kind = |property_type: &DocumentPropertyType| match property_type {
+        DocumentPropertyType::String(_) => Some(EqualityKind::Text),
+        property_type if property_type.is_identifier() => Some(EqualityKind::Identifier),
+        _ => None,
+    };
+    match flattened_properties
+        .get(path)
+        .map(|property| &property.property_type)
+    {
+        Some(DocumentPropertyType::TypedArray(array)) => equality_kind(&array.item_type),
+        Some(property_type) => equality_kind(property_type),
+        None => None,
+    }
+}
+
+/// A path a condition reads, as the document type names it: `path` itself,
+/// or, with `allow_stored_reads`, what follows the `$old.` a condition of an
+/// `immutable` entry reads the stored document through
+/// ([`STORED_DOCUMENT_PREFIX`]). A rule of `propertyConstraints` judges the
+/// document written, so there is no stored document for it to read.
+fn stored_path<'a>(
+    path: &'a str,
+    subject: &str,
+    allow_stored_reads: bool,
+) -> Result<&'a str, String> {
+    match path.strip_prefix(STORED_DOCUMENT_PREFIX) {
+        Some(stored) if allow_stored_reads => Ok(stored),
+        Some(_) => Err(format!(
+            "{subject} reads \"{path}\", but only a condition of an `immutable` entry reads \
+             the stored document through `{STORED_DOCUMENT_PREFIX}`"
+        )),
+        None => Ok(path),
+    }
+}
+
+/// Checks every property `constraint` reads against `document_type`, as
+/// [`apply_property_constraints`] describes for a rule: each read names a
+/// property of the kind it reads, neither transient nor inside a transient
+/// object, a system time or height the type records, and a constant or a
+/// default its string property's `enum` admits. `subject` names the condition
+/// in the errors (`rule "fee"`), and `structure_error` wraps them. With
+/// `allow_stored_reads` (the condition of an `immutable` entry) a path may read
+/// the stored document through `$old.` and is judged as the path after it.
+pub(super) fn validate_property_constraint_reads(
+    document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    subject: &str,
+    constraint: &PropertyConstraint,
+    allow_stored_reads: bool,
+    structure_error: &dyn Fn(String) -> DataContractError,
+) -> Result<(), DataContractError> {
+    for (path, read) in constraint.property_reads() {
+        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
+        let reads = match read {
+            PropertyRead::Value => "reads",
+            PropertyRead::Presence => "tests the presence of",
+            PropertyRead::Text | PropertyRead::Identifier => "compares",
+            PropertyRead::Length => "measures",
+            PropertyRead::Count => "counts the items of",
+            PropertyRead::Elements(_) => "looks in",
+        };
+        match read {
+            PropertyRead::Value => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                // `is_integer` leaves out the 128-bit types, which the arithmetic holds
+                // too; a boolean reads as 1 for true and 0 for false
+                Some(property_type)
+                    if property_type.is_integer()
+                        || matches!(
+                            property_type,
+                            DocumentPropertyType::U128
+                                | DocumentPropertyType::I128
+                                | DocumentPropertyType::Boolean
+                        ) => {}
+                // A string is compared with constants, never read as a number
+                Some(DocumentPropertyType::String(_)) => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which has type string, not integer \
+                         or boolean: a string property is compared, by equal or notEqual, \
+                         with a {{ \"const\": ... }} or another string property, or with the \
+                         strings an in lists"
+                    )));
+                }
+                // An identifier is compared with identifiers, never read as a number
+                Some(property_type) if property_type.is_identifier() => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which has type identifier, not \
+                         integer or boolean: an identifier property is compared, by equal or \
+                         notEqual, with a {{ \"const\": base58 }} or another identifier \
+                         property, or with the identifiers an in lists"
+                    )));
+                }
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which has type {}, not integer or \
+                         boolean",
+                        other.name()
+                    )));
+                }
+                // An object is not in the flattened map either: only its members hold values
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} reads \"{path}\", which is not an integer or boolean \
+                         property of the document type (a nested one is named by its dotted \
+                         path)"
+                    )));
+                }
+            },
+            PropertyRead::Presence => {
+                if property_at_path(&document_type.properties, lookup).is_none() {
+                    return Err(structure_error(format!(
+                        "{subject} tests the presence of \"{path}\", which is not a \
+                         property of the document type (a nested one is named by its dotted \
+                         path)"
+                    )));
+                }
+            }
+            PropertyRead::Text => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                Some(DocumentPropertyType::String(_)) => {}
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} compares \"{path}\" with a string, but it has type \
+                         {}, not string",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} compares \"{path}\" with a string, but it is not a \
+                         string property of the document type (a nested one is named by its \
+                         dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Length => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                Some(DocumentPropertyType::String(_)) => {}
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} measures the length of \"{path}\", which has type {}, \
+                         not string: count gives the items of an array or byte array",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} measures the length of \"{path}\", which is not a \
+                         string property of the document type (a nested one is named by its \
+                         dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Count => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                Some(
+                    DocumentPropertyType::TypedArray(_)
+                    | DocumentPropertyType::ByteArray(_)
+                    | DocumentPropertyType::Array(_)
+                    | DocumentPropertyType::VariableTypeArray(_),
+                ) => {}
+                Some(DocumentPropertyType::String(_)) => {
+                    return Err(structure_error(format!(
+                        "{subject} counts the items of \"{path}\", which has type \
+                         string, not array: length or byteLength gives the size of a string"
+                    )));
+                }
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} counts the items of \"{path}\", which has type {}, \
+                         not array or byteArray",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} counts the items of \"{path}\", which is not an array \
+                         or byte array property of the document type (a nested one is named \
+                         by its dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Elements(kind) => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                Some(DocumentPropertyType::TypedArray(array)) => {
+                    let element_type = array.item_type.as_ref();
+                    let (holds, kind_name) = match kind {
+                        ElementKind::Integer => (
+                            element_type.is_integer()
+                                || matches!(
+                                    element_type,
+                                    DocumentPropertyType::U128 | DocumentPropertyType::I128
+                                ),
+                            "an integer",
+                        ),
+                        ElementKind::Text => (
+                            matches!(element_type, DocumentPropertyType::String(_)),
+                            "a string",
+                        ),
+                        ElementKind::Identifier => (element_type.is_identifier(), "an identifier"),
+                    };
+                    if !holds {
+                        return Err(structure_error(format!(
+                            "{subject} looks in \"{path}\" for {kind_name}, but its \
+                             elements have type {}: contains looks for an integer, a string \
+                             or an identifier among elements of that type",
+                            element_type.name()
+                        )));
+                    }
+                }
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} looks in \"{path}\", which has type {}, not an \
+                         array with items",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} looks in \"{path}\", which is not an array property \
+                         of the document type (a nested one is named by its dotted path)"
+                    )));
+                }
+            },
+            PropertyRead::Identifier => match document_type
+                .flattened_properties
+                .get(lookup)
+                .map(|property| &property.property_type)
+            {
+                Some(property_type) if property_type.is_identifier() => {}
+                Some(other) => {
+                    return Err(structure_error(format!(
+                        "{subject} compares \"{path}\" with an identifier, but it has \
+                         type {}, not identifier",
+                        other.name()
+                    )));
+                }
+                None => {
+                    return Err(structure_error(format!(
+                        "{subject} compares \"{path}\" with an identifier, but it is \
+                         not an identifier property of the document type (a nested one is \
+                         named by its dotted path)"
+                    )));
+                }
+            },
+        }
+        if is_transient(DocumentTypeRef::V2(document_type), lookup) {
+            return Err(structure_error(format!(
+                "{subject} {reads} \"{path}\", which is transient or inside a \
+                 transient object: a transient value is never stored, so a stored document \
+                 could not be held to the rule"
+            )));
+        }
+    }
+    // An indexOnly type's delete carries its row's values but not its owner, so
+    // a rule reading the owner could not be judged there
+    if document_type.index_only && constraint.reads_owner() {
+        return Err(structure_error(format!(
+            "{subject} compares $ownerId, which a delete of an indexOnly document \
+             does not carry"
+        )));
+    }
+    for system_property in constraint.system_reads() {
+        let system_name = system_property.name();
+        // Nor its times and heights
+        if document_type.index_only {
+            return Err(structure_error(format!(
+                "{subject} reads {system_name}, which a delete of an indexOnly \
+                 document does not carry"
+            )));
+        }
+        // A stored document holds only the times and heights its type requires
+        if !document_type.required_fields.contains(system_name) {
+            return Err(structure_error(format!(
+                "{subject} reads {system_name}, which the document type does not \
+                 record: list it in required"
+            )));
+        }
+    }
+    // Which type an aggregate totals, and by which of its keys, is checked once
+    // every document type of the contract is parsed
+    for read in constraint.aggregate_reads() {
+        let operator = read.wire_name();
+        // Nor a total read from state, which its delete is not given
+        if document_type.index_only {
+            return Err(structure_error(format!(
+                "{subject} reads a {operator}, which a delete of an indexOnly \
+                 document is not given"
+            )));
+        }
+        // The value a key is matched by is always there, so that every write reads
+        // the total of the documents matching it: a property the document could leave
+        // out, or whose enclosing object it could, would match nothing
+        for binding in read.filter.values() {
+            let AggregateBinding::Property { path, .. } = binding else {
+                continue;
+            };
+            let mut prefix = String::new();
+            for segment in path.split('.') {
+                if !prefix.is_empty() {
+                    prefix.push('.');
+                }
+                prefix.push_str(segment);
+                if !document_type.required_fields.contains(&prefix) {
+                    return Err(structure_error(format!(
+                        "{subject} matches a {operator} by \"{path}\", but the \
+                         document type does not require \"{prefix}\": a value a \
+                         {operator} matches by must always be there, so list it in required"
+                    )));
+                }
+            }
+        }
+    }
+    // A constant or a default a string property's `enum` does not list is a
+    // typo: the property could never hold it
+    for (path, constant) in constraint.text_constants() {
+        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
+        if !enum_admits(&document_type.schema, schema_defs, lookup, constant)? {
+            return Err(structure_error(format!(
+                "{subject} compares \"{path}\" with \"{constant}\", which is not one of \
+                 its enum values"
+            )));
+        }
+    }
+    // A constant a string property must start or end with, when the property
+    // declares an `enum`, must fit one of its values, or the test never holds
+    for (path, affix, position) in constraint.text_affixes() {
+        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
+        if !enum_any(&document_type.schema, schema_defs, lookup, |member| {
+            position.holds(member, affix)
+        })? {
+            let tests = match position {
+                AffixPosition::Start => "starts with",
+                AffixPosition::End => "ends with",
+            };
+            return Err(structure_error(format!(
+                "{subject} tests whether \"{path}\" {tests} \"{affix}\", which none \
+                 of its enum values does"
+            )));
+        }
+    }
+    for (path, default) in constraint.text_defaults() {
+        let lookup = stored_path(path, subject, allow_stored_reads).map_err(structure_error)?;
+        if !enum_admits(&document_type.schema, schema_defs, lookup, default)? {
+            return Err(structure_error(format!(
+                "{subject} gives \"{path}\" the default \"{default}\", which is not \
+                 one of its enum values"
+            )));
+        }
+    }
     Ok(())
 }
 

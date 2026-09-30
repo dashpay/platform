@@ -1,21 +1,21 @@
-//! `immutable` / `immutableAllowSetting` / `immutableAfter` declarations: the
-//! per-property immutability a mutable document type carries from protocol
-//! version 14 onward.
+//! `immutable` declarations: the per-property immutability a mutable document
+//! type carries from protocol version 14 onward.
 //!
-//! `immutable` lists the top-level properties frozen at document creation,
-//! `immutableAllowSetting` the subset of them a replace may still set while
-//! the stored document has no value for them (frozen from then on), and
-//! `immutableAfter` the properties a replace may change only for so many
-//! seconds after the document's `$createdAt`. Consensus enforces them on
-//! every replace (codes 40128 and 40146). What this module
-//! adds is the ability to *discover* the declarations, "which properties of
-//! this document type can never change, and which may still be set once?",
-//! without hand-parsing the contract's raw JSON schema.
+//! `immutable` lists top-level properties a replace may not change, add or
+//! remove: by name, frozen at document creation, or as `{ property, when }`,
+//! frozen for any replace its condition holds for (judged on the document the
+//! replace writes, with the stored one read through `$old.`). Consensus
+//! enforces both on every replace (code 40128). What this module adds is the
+//! ability to *discover* the declarations, "which properties of this document
+//! type can never change, and which are frozen under a condition?", without
+//! hand-parsing the contract's raw JSON schema.
 
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::serialization::platform_value_to_object;
 use crate::utils::define_own_property;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::platform_value::Value;
 use js_sys::{Array, Object, Reflect};
 use std::collections::BTreeSet;
 use wasm_bindgen::JsValue;
@@ -26,37 +26,29 @@ const DOCUMENT_TYPE_IMMUTABLE_PROPERTIES_TS: &'static str = r#"
 /**
  * The immutability declarations of one document type.
  *
- * Mirrors the `immutable`, `immutableAllowSetting` and `immutableAfter`
- * keywords of the v3 document meta-schema, which are active from protocol
- * version 14. The field names are the schema keywords' own, so what
- * `contract.toJSON()` shows and what these accessors return line up key for
- * key. All three are sorted by property name and hold top-level property
- * names only: listing an object property freezes it whole, nested values
+ * Mirrors the `immutable` keyword of the v3 document meta-schema, which is
+ * active from protocol version 14: its entries naming a property, and its
+ * `{ property, when }` entries. Both hold top-level property names only,
+ * sorted: listing an object property freezes it whole, nested values
  * included.
  */
 export type DocumentTypeImmutableProperties = {
   /**
    * Top-level properties frozen at document creation. A replace that
    * changes, adds or removes any of them is rejected with consensus code
-   * 40128 (`DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged`),
-   * except for the one transition `immutableAllowSetting` permits.
+   * 40128 (`DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged`).
    */
   immutable: string[];
   /**
-   * The subset of `immutable` a replace may still set while the stored
-   * document has no value for it. Once present the property is frozen like
-   * the rest. Always a subset of `immutable`.
+   * Top-level properties frozen for any replace their condition holds for,
+   * each with the condition as the contract declares it (the grammar of a
+   * `propertyConstraints` rule). It is judged on the document the replace
+   * writes, whose `$updatedAt` is the replace's block time, and reads the
+   * stored document through `$old.` paths: `{ present: "$old.mood" }` lets an
+   * absent `mood` be set once. A replace changing one while its condition
+   * holds is rejected with code 40128 as well. No key is also in `immutable`.
    */
-  immutableAllowSetting: string[];
-  /**
-   * Top-level properties a replace may change only for a while after the
-   * document is created, each mapped to that window in seconds. Once block
-   * time is past the document's `$createdAt` plus the window, a replace that
-   * changes, adds or removes the property is rejected with consensus code
-   * 40146 (`DocumentImmutabilityErrorCode.DocumentPropertyEditWindowElapsed`).
-   * No key is also in `immutable`.
-   */
-  immutableAfter: Record<string, number>;
+  immutableWhen: Record<string, unknown>;
 };
 "#;
 
@@ -90,10 +82,41 @@ fn names_to_array(names: &BTreeSet<String>) -> Array {
     names.iter().map(|name| JsValue::from_str(name)).collect()
 }
 
-/// Build the `{ immutable, immutableAllowSetting, immutableAfter }` object
-/// for one document type. Each comes out in name order, which is the order
-/// the sets and the map keep and the order consensus reports the first
-/// offending property in.
+/// The keyword and the keys of its conditional entries, as the v3 document
+/// meta-schema spells them.
+const IMMUTABLE: &str = "immutable";
+const ENTRY_PROPERTY: &str = "property";
+const ENTRY_WHEN: &str = "when";
+
+/// The `when` of the entry of the `immutable` keyword in `schema` that lists
+/// `property` with a condition, as declared.
+fn declared_condition<'a>(schema: &'a Value, property: &str) -> Option<&'a Value> {
+    let entries = schema
+        .get_optional_value(IMMUTABLE)
+        .ok()
+        .flatten()?
+        .as_array()?;
+    entries.iter().find_map(|entry| {
+        let entry = entry.as_map()?;
+        let listed = entry.iter().any(|(key, value)| {
+            key.as_text() == Some(ENTRY_PROPERTY) && value.as_text() == Some(property)
+        });
+        if !listed {
+            return None;
+        }
+        entry
+            .iter()
+            .find(|(key, _)| key.as_text() == Some(ENTRY_WHEN))
+            .map(|(_, when)| when)
+    })
+}
+
+/// Build the `{ immutable, immutableWhen }` object for one document type.
+/// Both come out in name order, which is the order the parsed declarations
+/// keep and the order consensus reports the first offending property in. A
+/// condition is the one the contract declares, for the properties the parsed
+/// type freezes under a condition: a contract read at a version that predates
+/// the keyword reports none.
 pub(crate) fn immutable_properties_for_document_type(
     document_type: DocumentTypeRef<'_>,
     document_type_name: &str,
@@ -105,21 +128,21 @@ pub(crate) fn immutable_properties_for_document_type(
         &names_to_array(document_type.immutable_fields()).into(),
         document_type_name,
     )?;
-    set_field(
-        &object,
-        "immutableAllowSetting",
-        &names_to_array(document_type.immutable_fields_allow_setting()).into(),
-        document_type_name,
-    )?;
-    let windows = Object::new();
-    for (property, seconds) in document_type.immutable_after_seconds() {
+    let conditions = Object::new();
+    for property in document_type.immutable_field_conditions().keys() {
+        let when = declared_condition(document_type.schema(), property).ok_or_else(|| {
+            WasmDppError::generic(format!(
+                "the condition freezing '{property}' of document type '{document_type_name}' is \
+                 missing from its schema"
+            ))
+        })?;
         // A property named like an inherited accessor (`__proto__`) stays a key
-        define_own_property(&windows, property, JsValue::from(*seconds))?;
+        define_own_property(&conditions, property, platform_value_to_object(when)?)?;
     }
     set_field(
         &object,
-        "immutableAfter",
-        &windows.into(),
+        "immutableWhen",
+        &conditions.into(),
         document_type_name,
     )?;
     Ok(object)

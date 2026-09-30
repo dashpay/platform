@@ -585,7 +585,7 @@ In Rust the parser holds the function entry in the `DocumentReferenceLookup` as 
 
 ## Immutable Properties on Mutable Document Types
 
-A document type either allows replaces (`documentsMutable: true`, the default) or freezes its documents entirely. Protocol version 14 adds a middle ground: the doctype-level `immutable` keyword lists top-level properties that are frozen at creation while the rest of the document stays replaceable.
+A document type either allows replaces (`documentsMutable: true`, the default) or freezes its documents entirely. Protocol version 14 adds a middle ground: the doctype-level `immutable` keyword lists top-level properties a replace may not change while the rest of the document stays replaceable. An entry naming a property freezes it at creation; an entry `{ "property", "when" }` freezes it for any replace its condition holds for.
 
 ```json
 "post": {
@@ -593,47 +593,33 @@ A document type either allows replaces (`documentsMutable: true`, the default) o
   "documentsMutable": true,
   "properties": {
     "author": { "type": "string", "maxLength": 63, "position": 0 },
-    "body": { "type": "string", "maxLength": 500, "position": 1 }
+    "body": { "type": "string", "maxLength": 500, "position": 1 },
+    "mood": { "type": "string", "maxLength": 30, "position": 2 }
   },
-  "required": ["author", "body"],
-  "immutable": ["author"],
+  "required": ["author", "body", "$createdAt", "$updatedAt"],
+  "immutable": [
+    "author",
+    { "property": "body", "when": { "greaterThan": [{ "subtract": ["$updatedAt", "$createdAt"] }, 300000] } },
+    { "property": "mood", "when": { "present": "$old.mood" } }
+  ],
   "additionalProperties": false
 }
 ```
 
-A second list, `immutableAllowSetting`, relaxes the first for optional properties that are not known at creation: a property listed there may still be set by a replace while the stored document has no value for it, and is frozen from then on (it can neither change nor be removed). Every entry must also be in `immutable`.
+`author` is frozen at creation, `body` five minutes after it, and `mood` once the stored post holds one, so an absent `mood` may be set by one replace.
 
-```json
-"immutable": ["author", "mood"],
-"immutableAllowSetting": ["mood"]
-```
+The parser (generation 3, meta-schema v3) reads the list on every parse (`parse_immutable_keyword`, `apply_immutable_fields`):
 
-The parser (generation 3, meta-schema v3) checks both lists when a contract enters the chain:
+- The shape is checked on both paths: every entry is a string or an object with exactly `property` and `when`, and no property is listed twice. `immutableAllowSetting`, the keyword the `present: "$old.<p>"` condition replaces, is refused, naming its replacement, so that no contract written with it loads with another meaning.
+- A condition is parsed with the `propertyConstraints` grammar (`parse_property_constraint_condition`) and what it reads is checked as a rule's reads are (`validate_property_constraint_reads`), on both paths: a stored condition reading an undeclared or transient property could only read it as absent. A path through `$old.` (`STORED_DOCUMENT_PREFIX`) is judged as the path after it, and only a condition of `immutable` may use one. A condition may not read a `countOf` or `sumOf`, so a replace judges it without reading state.
+- Under full validation, when a contract enters the chain: the type is mutable; every listed property is a declared top-level property, neither a system property nor transient (list the containing object to freeze a nested value); a condition stays within a rule's node limit and lists no condition twice. Stored contracts skip these lints, so a later tightening can never make a committed contract unreadable.
+- A `deletableDocument` reference by id may be listed only without a condition. A replace may clear such a reference once its target is deleted (see [References on the Elements](#references-on-the-elements)), and a replace the condition then left free could set it to another document: the frozen reference would be repointed. The clear stays, because every replace re-validates the reference and without the clear the document could never be replaced again, so the condition is refused at registration instead, and on contract update, which parses the whole new contract the same way. Every other `deletableDocument` form is refused on any immutable property.
+- A property listed with a condition is not fixed once written (`schema_property_is_fixed_once_written`): a `findBy` key, an `inList` list and the values read beside a `findBy` function may not rely on it.
+- On contract update the properties listed without a condition may only grow, and a property listed with a condition keeps it as it is or loses it to be listed without one (`validate_immutable_fields_update`, `DocumentTypeUpdateError` otherwise). Whether one condition holds wherever another does cannot be told in general, so a changed condition is refused. The schema compatibility differ strips the key, like `indices` and `required`, so `validate_update` v1 is the single judge.
 
-- Every `immutable` entry names a declared top-level property. System properties (`$`-prefixed) are refused because the platform manages them, and nested paths are refused: list the containing object to freeze it whole, nested values included. A `transient` property is refused too: it is never stored, so once frozen it could never be written, and combined with `required` no replace could pass at all.
-- The replace compares stored and supplied values by underlying data, recursing into objects regardless of member order and into arrays position by position, with integer widths ignored. Storage reorders object members by schema position and narrows integers, so a byte-for-byte comparison would flag an untouched object as changed.
-- The lists are only allowed when `documentsMutable` is true. On an immutable document type every property is already frozen.
-- Every `immutableAllowSetting` entry is also in `immutable`; on its own the allowance means nothing.
-- An `immutableAllowSetting` entry may not be a `deletableDocument` reference by id. A replace may clear such a reference on an immutable property once its target is deleted (see [References on the Elements](#references-on-the-elements)), and the property, absent again, would then accept a first-time set to another document: the frozen reference would be repointed. The clear stays, because every replace re-validates the reference and without the clear the document could never be replaced again, so the pair is refused at registration instead, and on contract update, which parses the whole new contract the same way. Every other `deletableDocument` form is already refused on any immutable property.
-- On contract update `immutable` may gain entries but never lose one, and `immutableAllowSetting` may lose entries but only gain one for a property that becomes immutable in the same update (`DocumentTypeUpdateError` otherwise). Each rule keeps the promise documents were created under: nothing frozen becomes editable, and nothing already frozen starts accepting a late set. The schema compatibility differ strips both keys, like `indices` and `required`, so `validate_update` v1 is the single judge.
+Enforcement lives in the replace action's state validation (generation 1). The action already records which top-level properties differ from the stored document in `changed_data_fields` (the same set that scopes `refersTo` re-validation). A changed property in the type's `immutable_fields()` fails the replace with `DocumentImmutablePropertyChangedError` (state code 40128) unless it is a `deletableDocument` reference by id that the replace removed after its target was deleted. A changed property in `immutable_field_conditions()` fails it with the same error when its condition holds, or faults, judged by `PropertyConstraint::holds` on the written properties with the stored ones under `$old` and the replace's system values (the stored creation and transfer, this block as the update). The stored properties are rebuilt from the written ones and `stored_changed_values`, the stored value of every changed property; a property the stored document did not hold is left out. Conditions are evaluated only for the properties the replace changes. The replace compares stored and supplied values by underlying data, recursing into objects regardless of member order and into arrays position by position, with integer widths ignored, since storage reorders object members by schema position and narrows integers. "Differ" covers a changed value, a property the stored document lacked, and a property the replace dropped. Transfers, price updates and purchases carry no property data and are unaffected.
 
-Enforcement lives in the replace action's state validation (generation 1). The action already records which top-level properties differ from the stored document in `changed_data_fields` (the same set that scopes `refersTo` re-validation), and alongside it which of those the stored document had no value for (`added_data_fields`). A changed property in the type's `immutable_fields()` fails the replace with `DocumentImmutablePropertyChangedError` (state code 40128) unless it is in `immutable_fields_allow_setting()` and was absent before, or it is a `deletableDocument` reference by id that the replace removed after its target was deleted. The registration rule above keeps the two from ever applying to one property. "Differ" covers a changed value, a property the stored document lacked, and a property the replace dropped. Transfers, price updates and purchases carry no property data and are unaffected.
-
-### Properties frozen after a window
-
-A third keyword, `immutableAfter`, freezes a property some time after the document is created instead of at creation: it maps top-level properties to a window in seconds, measured from the document's `$createdAt`, which the type must require.
-
-```json
-"required": ["author", "body", "$createdAt"],
-"immutable": ["author"],
-"immutableAfter": { "body": 300 }
-```
-
-The parser holds it to the rules of `immutable` (a mutable type, declared top-level properties that are neither system properties nor transient, the same reference restrictions) and to three of its own: `$createdAt` is required, no property is under both `immutable` and `immutableAfter`, and no window is 0. On contract update a property may gain a window and a window may shorten, while a longer window, or a property leaving `immutableAfter` for anything but `immutable`, is a `DocumentTypeUpdateError`. The differ strips the key too.
-
-The same replace state validation enforces it, reading the stored `$createdAt` the replace action carries. A changed property with a window fails the replace with `DocumentPropertyEditWindowElapsedError` (state code 40146) when the block time is later than `$createdAt` plus the window, again unless it is a dead `deletableDocument` reference the replace removed. `changed_data_fields` is name-ordered, so a replace touching both an `immutable` property and an `immutableAfter` one past its window reports whichever sorts first.
-
-In Rust the lists are `DocumentTypeV2Getters::immutable_fields()` and `immutable_fields_allow_setting()`, and the windows `immutable_after_seconds()`, property to seconds. Earlier document type generations return empty ones.
+In Rust the properties frozen at creation are `DocumentTypeV2Getters::immutable_fields()` and those frozen under a condition `immutable_field_conditions()`, property to `PropertyConstraint`. Earlier document type generations return empty ones.
 
 ## Transient Properties
 

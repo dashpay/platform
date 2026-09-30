@@ -380,23 +380,34 @@ await sdk.documents.create({ document: resignation, identityKey, signer });
 
 The leader reads either with `sdk.encryptedFor.decrypt`.
 
-## Immutable properties (`immutable`, `immutableAfter`)
+## Immutable properties (`immutable`)
 
-From protocol version 14 a mutable document type can freeze some of its top-level properties at creation with the doctype-level `immutable` list, while the rest of the document stays replaceable. A second list, `immutableAllowSetting`, names the frozen properties a replace may still set while the stored document has no value for them; once present they are frozen too. A third keyword, `immutableAfter`, maps properties to a window in seconds: a replace may change them until the document's `$createdAt` plus the window, and not after (a post's text editable for five minutes is `"immutableAfter": { "text": 300 }`). All three are consensus-enforced on every replace, and a fetched contract can be asked what it declares:
+From protocol version 14 a mutable document type can freeze some of its top-level properties with the doctype-level `immutable` list, while the rest of the document stays replaceable. An entry naming a property freezes it at creation. An entry `{ property, when }` freezes it for any replace its condition holds for: the condition takes the grammar of a `propertyConstraints` rule, is judged on the document the replace writes (whose `$updatedAt` is the replace's block time), and reads the stored document through `$old.` paths.
+
+```json
+"immutable": [
+  "author",
+  { "property": "text", "when": { "greaterThan": [{ "subtract": ["$updatedAt", "$createdAt"] }, 300000] } },
+  { "property": "mood", "when": { "present": "$old.mood" } }
+]
+```
+
+Here `author` never changes, `text` can be edited for five minutes after the document is created, and `mood` can be set once. Both kinds are consensus-enforced on every replace, and a fetched contract can be asked what it declares:
 
 ```ts
 const contract = await sdk.contracts.fetch(contractId);
 
 contract.documentTypeImmutableProperties('post');
-// { immutable: ['author', 'mood'], immutableAllowSetting: ['mood'], immutableAfter: { text: 300 } }
-// All three hold top-level property names, sorted. Listing an object
-// property freezes it whole, nested values included.
+// { immutable: ['author'], immutableWhen: { mood: { present: '$old.mood' }, text: { ... } } }
+// Both hold top-level property names, sorted, and each condition as the
+// contract declares it. Listing an object property freezes it whole,
+// nested values included.
 
 // Every document type that freezes at least one property.
 contract.documentImmutableProperties;
 ```
 
-The lists are only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports empty lists even when its raw schema carries the keywords.
+The keyword is only parsed from protocol version 14 onward; a contract deserialized against an earlier version reports nothing frozen even when its raw schema carries it.
 
 A replace that changes, adds or removes a frozen property is rejected, and the consensus code reaches JS as `error.code`:
 
@@ -408,9 +419,6 @@ try {
 } catch (e) {
   if (e.code === DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged) {
     // the replace touched a property the document type freezes (code 40128)
-  }
-  if (e.code === DocumentImmutabilityErrorCode.DocumentPropertyEditWindowElapsed) {
-    // the replace touched an immutableAfter property past its window (code 40146)
   }
 }
 ```

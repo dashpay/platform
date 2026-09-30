@@ -1,15 +1,15 @@
 /**
- * Verifies the `immutable` / `immutableAllowSetting` / `immutableAfter`
- * metadata surface introduced with protocol version 14.
+ * Verifies the `immutable` metadata surface introduced with protocol
+ * version 14.
  *
- * On a mutable document type, `immutable` lists top-level properties frozen
- * at creation, `immutableAllowSetting` the subset a replace may still set
- * while the stored document has no value for them, and `immutableAfter` the
- * properties a replace may change only for so many seconds after the
- * document's `$createdAt`. Consensus enforces them on every replace (codes
- * 40128 and 40146). What the JS layer offers is *discovery*
- * (which properties are frozen, and which may still be set once) plus a
- * branchable error code for when a replace is rejected.
+ * On a mutable document type, `immutable` lists top-level properties a
+ * replace may not change: by name, frozen at creation, or as
+ * `{ property, when }`, frozen for any replace its condition holds for
+ * (judged on the document the replace writes, with the stored one read
+ * through `$old.`). Consensus enforces both on every replace (code 40128).
+ * What the JS layer offers is *discovery* (which properties are frozen, and
+ * under which condition) plus a branchable error code for when a replace is
+ * rejected.
  */
 import { expect } from './helpers/chai.ts';
 import { initWasm, wasm } from '../../dist/dpp.compressed.js';
@@ -23,10 +23,15 @@ before(async () => {
 
 const ownerId = '11111111111111111111111111111111';
 
+/** Frozen five minutes after creation: `$updatedAt` is the replace's time. */
+const fiveMinutesAfterCreation = {
+  greaterThan: [{ subtract: ['$updatedAt', '$createdAt'] }, 300000],
+};
+
 /**
  * A `post` whose author can never change, whose mood can be set once and
- * whose body can be edited for five minutes, a `note` whose text can be
- * edited for a minute, and a `plain` type declaring nothing.
+ * whose body can be edited for five minutes, a `note` whose text is frozen
+ * once published, and a `plain` type declaring nothing.
  */
 const schemas = {
   post: {
@@ -37,10 +42,12 @@ const schemas = {
       body: { type: 'string', position: 1, maxLength: 500 },
       mood: { type: 'string', position: 2, maxLength: 30 },
     },
-    required: ['author', 'body', '$createdAt'],
-    immutable: ['mood', 'author'],
-    immutableAllowSetting: ['mood'],
-    immutableAfter: { body: 300 },
+    required: ['author', 'body', '$createdAt', '$updatedAt'],
+    immutable: [
+      { property: 'mood', when: { present: '$old.mood' } },
+      'author',
+      { property: 'body', when: fiveMinutesAfterCreation },
+    ],
     additionalProperties: false,
   },
   note: {
@@ -48,9 +55,12 @@ const schemas = {
     documentsMutable: true,
     properties: {
       text: { type: 'string', position: 0, maxLength: 200 },
+      status: { type: 'string', position: 1, enum: ['draft', 'published'] },
     },
-    required: ['text', '$createdAt'],
-    immutableAfter: { text: 60 },
+    required: ['text'],
+    immutable: [
+      { property: 'text', when: { equal: ['$old.status', { const: 'published' }] } },
+    ],
     additionalProperties: false,
   },
   plain: {
@@ -75,34 +85,36 @@ function buildContract(platformVersion: number, fullValidation = true) {
 
 type ImmutableProperties = {
   immutable: string[];
-  immutableAllowSetting: string[];
-  immutableAfter: Record<string, number>;
+  immutableWhen: Record<string, unknown>;
 };
 
 describe('DataContract — immutable properties (v14)', () => {
   describe('documentTypeImmutableProperties()', () => {
-    it('should report the lists sorted by property name, and the windows', () => {
+    it('should report the frozen properties and the conditions, sorted by property name', () => {
       const contract = buildContract(14);
 
+      // Integers of a condition come back as BigInt, as every schema integer
       expect(contract.documentTypeImmutableProperties('post')).to.deep.equal({
-        immutable: ['author', 'mood'],
-        immutableAllowSetting: ['mood'],
-        immutableAfter: { body: 300 },
+        immutable: ['author'],
+        immutableWhen: {
+          body: { greaterThan: [{ subtract: ['$updatedAt', '$createdAt'] }, BigInt(300000)] },
+          mood: { present: '$old.mood' },
+        },
       });
       expect(contract.documentTypeImmutableProperties('note')).to.deep.equal({
         immutable: [],
-        immutableAllowSetting: [],
-        immutableAfter: { text: 60 },
+        immutableWhen: {
+          text: { equal: ['$old.status', { const: 'published' }] },
+        },
       });
     });
 
-    it('should return empty lists for a document type declaring none', () => {
+    it('should return nothing for a document type declaring none', () => {
       const contract = buildContract(14);
 
       expect(contract.documentTypeImmutableProperties('plain')).to.deep.equal({
         immutable: [],
-        immutableAllowSetting: [],
-        immutableAfter: {},
+        immutableWhen: {},
       });
     });
 
@@ -117,67 +129,58 @@ describe('DataContract — immutable properties (v14)', () => {
     });
 
     /**
-     * The keywords are only parsed from protocol version 14 onward. A
+     * The keyword is only parsed from protocol version 14 onward. A
      * contract deserialized against an earlier version reports nothing
-     * frozen even though its raw schema still carries them.
+     * frozen even though its raw schema still carries it.
      */
-    it('should report nothing on a pre-v14 contract, while the raw schema keeps the keywords', () => {
+    it('should report nothing on a pre-v14 contract, while the raw schema keeps the keyword', () => {
       const contract = buildContract(13, false);
 
       expect(contract.documentTypeImmutableProperties('post')).to.deep.equal({
         immutable: [],
-        immutableAllowSetting: [],
-        immutableAfter: {},
+        immutableWhen: {},
       });
 
-      const rawSchemas = contract.schemas as Record<
-        string,
-        {
-          immutable?: string[];
-          immutableAllowSetting?: string[];
-          immutableAfter?: Record<string, bigint>;
-        }
-      >;
-      expect(rawSchemas.post.immutable).to.deep.equal(['mood', 'author']);
-      expect(rawSchemas.post.immutableAllowSetting).to.deep.equal(['mood']);
-      // The raw schema carries integers as BigInt, as every schema integer
-      expect(rawSchemas.post.immutableAfter).to.deep.equal({ body: BigInt(300) });
+      const rawSchemas = contract.schemas as Record<string, { immutable?: unknown[] }>;
+      expect(rawSchemas.post.immutable).to.have.length(3);
     });
 
     /**
-     * The lists are consensus-validated at registration: an
-     * `immutableAllowSetting` entry outside `immutable`, an unknown
-     * property, or a list on a non-mutable type is a contract error, not
-     * something the accessor has to guard against.
+     * The declarations are consensus-validated at registration: a
+     * condition reading a property the type does not declare is a contract
+     * error, not something the accessor has to guard against.
      */
-    it('should refuse a contract whose allow-setting entry is not immutable', () => {
+    it('should refuse a contract whose condition reads an unknown property', () => {
       const build = () => new wasm.DataContract({
         ownerId,
         identityNonce: BigInt(2),
         schemas: {
-          post: { ...schemas.post, immutableAllowSetting: ['body'] },
+          note: {
+            ...schemas.note,
+            immutable: [{ property: 'text', when: { present: '$old.nope' } }],
+          },
         },
         definitions: null,
         fullValidation: true,
         platformVersion: new PlatformVersion(14),
       });
 
-      expect(build).to.throw(/not in `immutable`/);
+      expect(build).to.throw(/tests the presence of "\$old\.nope"/);
     });
 
-    it('should refuse a contract whose windowed type does not require $createdAt', () => {
+    it('should refuse immutableAllowSetting, which a condition replaces', () => {
       const build = () => new wasm.DataContract({
         ownerId,
         identityNonce: BigInt(2),
         schemas: {
-          note: { ...schemas.note, required: ['text'] },
+          post: { ...schemas.plain, documentsMutable: true, immutableAllowSetting: ['message'] },
         },
         definitions: null,
-        fullValidation: true,
+        fullValidation: false,
         platformVersion: new PlatformVersion(14),
       });
 
-      expect(build).to.throw(/does not require `\$createdAt`/);
+      expect(build).to.throw(/is replaced by a conditional `immutable` entry/);
     });
   });
 
@@ -211,16 +214,14 @@ describe('DataContract — immutable properties (v14)', () => {
      * rejected replace. Renumbering it silently breaks every `switch` in
      * the wild.
      */
-    it('should map the immutable-property errors to their consensus codes', () => {
+    it('should map the immutable-property error to its consensus code', () => {
       expect(wasm.DocumentImmutabilityErrorCode.DocumentImmutablePropertyChanged).to.equal(40128);
-      expect(wasm.DocumentImmutabilityErrorCode.DocumentPropertyEditWindowElapsed).to.equal(40146);
     });
 
-    it('should resolve the codes back to their names', () => {
+    it('should resolve the code back to its name', () => {
       const codes = wasm.DocumentImmutabilityErrorCode as unknown as Record<number, string>;
 
       expect(codes[40128]).to.equal('DocumentImmutablePropertyChanged');
-      expect(codes[40146]).to.equal('DocumentPropertyEditWindowElapsed');
     });
   });
 });

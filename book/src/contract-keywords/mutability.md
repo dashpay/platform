@@ -1,8 +1,8 @@
 # Mutability
 
-These four keywords decide what a replace may change once a document exists. A replace is the transition an owner sends to overwrite a document with a new version of it. `documentsMutable` turns replaces on or off for the whole document type. `immutable` freezes chosen properties while the rest of the document stays editable, and `immutableAllowSetting` lets some of those frozen properties be filled in once, later, when they were left empty at creation. `immutableAfter` freezes chosen properties some time after the document is created, so they can be corrected for a while and then stay as they are.
+These two keywords decide what a replace may change once a document exists. A replace is the transition an owner sends to overwrite a document with a new version of it. `documentsMutable` turns replaces on or off for the whole document type. `immutable` freezes chosen properties while the rest of the document stays editable: from the moment the document is created, or only while a condition holds, such as five minutes after creation, once the document is published, or once a value has been filled in.
 
-None of the three governs deletion, transfers or trading: see [Deletion](deletion.md) and [Creation, Transfers and Trading](ownership-and-trading.md).
+Neither governs deletion, transfers or trading: see [Deletion](deletion.md) and [Creation, Transfers and Trading](ownership-and-trading.md).
 
 ## `documentsMutable`
 
@@ -53,111 +53,21 @@ A vote is cast once and stays as cast: no replace is accepted, and with `canBeDe
 
 - A contested index needs a type whose documents cannot be replaced (`ContestedUniqueIndexOnMutableDocumentTypeError`, 10248). See [Contested Indexes](contested.md).
 - An `indexOnly` type must set `documentsMutable: false`. See [Index-Only Types](index-only.md).
-- `immutable`, `immutableAllowSetting` and `immutableAfter` are only accepted when the type's documents are mutable (`InvalidContractStructure`, 10231).
+- `immutable` is only accepted when the type's documents are mutable (`InvalidContractStructure`, 10231).
 - `moderatorAbilities.deleteWithin` on a mutable type needs `$updatedAt` in `required`. See [Deletion](deletion.md).
 
 ## `immutable`
 
-The top-level properties that are frozen when a document is created, on a type whose documents can otherwise be replaced. Reach for it when most of a document is editable but some of it is a commitment: the shop an order was placed with, the author of a post, the item that was ordered.
+The top-level properties a replace may not change, on a type whose documents can otherwise be replaced. Each entry is either a property name, frozen when the document is created, or a property with a condition, frozen for any replace the condition holds for. Reach for the first when part of a document is a commitment: the shop an order was placed with, the author of a post. Reach for the second when a value may change for a while and then must stand: a post's text for five minutes after it is published, an article's body once it is out of draft, a tracking code once it is filled in.
 
 | | |
 |---|---|
 | **Where** | document type, on a type with `documentsMutable: true` |
-| **Value** | array of top-level property names, no repeats |
+| **Value** | array whose entries are a top-level property name, or `{ "property": <name>, "when": <condition> }`; each property listed once |
 | **Default** | empty: every property may change |
 | **Since** | protocol version 14 |
-| **On update** | May gain entries, never lose one (`DocumentTypeUpdateError`, 40212) |
-| **Errors** | `DocumentImmutablePropertyChangedError` (40128) for a replace that changes, adds or removes a listed property |
-
-### Example
-
-```json
-"order": {
-  "type": "object",
-  "documentsMutable": true,
-  "properties": {
-    "shop": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
-      "position": 0
-    },
-    "item": { "type": "string", "maxLength": 100, "position": 1 },
-    "status": { "type": "string", "enum": ["open", "paid", "shipped"], "position": 2 },
-    "trackingCode": { "type": "string", "maxLength": 40, "position": 3 }
-  },
-  "required": ["shop", "item", "status"],
-  "immutable": ["shop", "item", "trackingCode"],
-  "immutableAllowSetting": ["trackingCode"],
-  "additionalProperties": false
-}
-```
-
-The buyer can move `status` along as often as needed, but never change which shop or which item the order is for. `trackingCode` is left out when the order is placed, may be filled in by one later replace, and is frozen from then on.
-
-### How it works
-
-- On every replace, each listed property of the new document is compared with the stored one. A property that differs is refused with `DocumentImmutablePropertyChangedError` (40128). "Differs" covers a changed value, a value the stored document did not have (unless `immutableAllowSetting` allows it, below), and a value the replace leaves out.
-- Values are compared by their data, not their bytes: the order of an object's members and the width an integer is stored in do not count as changes.
-- Freezing an object freezes everything inside it.
-- One change is always allowed: a replace may clear a listed `deletableDocument` reference by id once the document it points to has been deleted. Every replace checks such a reference again, so without this the document could never be replaced again. See [References](refers-to.md).
-- Transfers, price updates and purchases carry no property values, so the list does not affect them.
-
-### Rules at registration
-
-All refusals below are `InvalidContractStructure` (10231).
-
-- Only on a type whose documents are mutable. On a type with `documentsMutable: false` every property is already frozen.
-- Every entry names a declared top-level property. System properties (`$ownerId`, `$createdAt` and the rest) are refused, since the platform manages them. Nested paths such as `meta.author` are refused: list the object that contains them.
-- No entry may be a `transient` property: it is never stored, so every replace that supplies it would count as a change.
-- An immutable property may not hold a `deletableDocument` reference that a replace could not clear once its target is gone: a typed array of them, one inside an object, or one found by `findBy` whose key no function computes. A single reference by id held directly by the property is allowed.
-- On a type whose documents can be transferred or traded, an immutable property may not hold a `contract` reference whose `contractRequirements` has an `owner` requirement: after a change of owner the new owner could neither meet it nor repoint it.
-
-### On update
-
-The list may grow: an update may freeze a property that was editable, and documents already stored keep the values they have. It may never shrink, since documents were written on the promise that those properties would not change. The comparison is of the parsed lists, so reordering them is no change.
-
-## `immutableAllowSetting`
-
-The `immutable` properties that a replace may still set while the stored document has no value for them. It is for optional values that are not known when the document is created, like a tracking code or a closing date, and must not change once they are known.
-
-| | |
-|---|---|
-| **Where** | document type, next to `immutable` |
-| **Value** | array of property names, each also listed in `immutable`, no repeats |
-| **Default** | empty |
-| **Since** | protocol version 14 |
-| **On update** | May lose entries at any time. May gain an entry only for a property that becomes immutable in the same update (`DocumentTypeUpdateError`, 40212). |
-| **Errors** | `DocumentImmutablePropertyChangedError` (40128) for a replace that changes or removes the property once it holds a value |
-
-### How it works
-
-- While the stored document has no value for the property, a replace may set it. That first value is then frozen like the rest of the `immutable` list: it can neither change nor be removed.
-- It only means something for an optional property. A required one always has a value from creation.
-
-### Rules at registration
-
-- Every entry must also be in `immutable` (`InvalidContractStructure`, 10231).
-- An entry may not be a `deletableDocument` reference by id (`InvalidContractStructure`, 10231). Such a reference may be cleared once its target is deleted, and the next replace could then set it again to a different document.
-
-### On update
-
-Dropping an entry tightens the rule and is always allowed. Adding one to a property that was already immutable would let documents change what they were promised to keep, so it is only allowed together with making the property immutable in the same update.
-
-## `immutableAfter`
-
-The top-level properties a replace may change only for a while after the document is created, each with that window in seconds. Past the window the property is frozen as an `immutable` one is. Reach for it when a document should be correctable at first and then stand: a post whose text can be fixed for a few minutes after it is published, a bid that can be adjusted for an hour.
-
-| | |
-|---|---|
-| **Where** | document type, on a type with `documentsMutable: true` that lists `$createdAt` in `required` |
-| **Value** | object mapping top-level property names to seconds, each 1 to 4294967295 |
-| **Default** | empty: no property is frozen after a window |
-| **Since** | protocol version 14 |
-| **On update** | A property may gain a window and a window may shorten. A window may not lengthen, and a property may leave the object only for `immutable` (`DocumentTypeUpdateError`, 40212). |
-| **Errors** | `DocumentPropertyEditWindowElapsedError` (40146) for a replace past the window that changes, adds or removes the property |
+| **On update** | May gain entries, with a condition or without. A property listed with a condition keeps it, or loses it to be listed without one. A property listed without a condition stays, and no property is dropped (`DocumentTypeUpdateError`, 40212) |
+| **Errors** | `DocumentImmutablePropertyChangedError` (40128) for a replace that changes, adds or removes a frozen property |
 
 ### Example
 
@@ -168,43 +78,61 @@ The top-level properties a replace may change only for a while after the documen
   "properties": {
     "author": { "type": "string", "maxLength": 63, "position": 0 },
     "text": { "type": "string", "maxLength": 500, "position": 1 },
-    "language": { "type": "string", "maxLength": 8, "position": 2 },
-    "pinned": { "type": "boolean", "position": 3 }
+    "status": { "type": "string", "enum": ["draft", "published"], "position": 2 },
+    "body": { "type": "string", "maxLength": 5000, "position": 3 },
+    "trackingCode": { "type": "string", "maxLength": 40, "position": 4 },
+    "pinned": { "type": "boolean", "position": 5 }
   },
-  "required": ["author", "text", "$createdAt"],
-  "immutable": ["author"],
-  "immutableAfter": { "text": 300, "language": 300 },
+  "required": ["author", "text", "status", "$createdAt", "$updatedAt"],
+  "immutable": [
+    "author",
+    {
+      "property": "text",
+      "when": { "greaterThan": [{ "subtract": ["$updatedAt", "$createdAt"] }, 300000] }
+    },
+    {
+      "property": "body",
+      "when": { "equal": ["$old.status", { "const": "published" }] }
+    },
+    { "property": "trackingCode", "when": { "present": "$old.trackingCode" } }
+  ],
   "additionalProperties": false
 }
 ```
 
-The author can fix a typo in `text` or change `language` for five minutes after posting. From then on both stay as they were, while `pinned` can still be switched at any time, and `author` never changes at all.
+`author` never changes. `text` can be corrected for five minutes after the post is created: during a replace `$updatedAt` is the replace's block time, so the difference is the post's age in milliseconds. `body` stays editable while the stored post is a draft, including in the replace that publishes it, and is frozen after that. `trackingCode` can be filled in by one replace while the stored post has none, and is frozen once it holds one. `pinned` is not listed, so it can change at any time.
 
 ### How it works
 
-- The window of a property starts at the document's `$createdAt`. A replace whose block time is at most `$createdAt` plus the window may change the property; one later than that which changes, adds or removes it is refused with `DocumentPropertyEditWindowElapsedError` (40146). The error names the property, the document's `$createdAt`, the window and the block time it was judged at.
-- Nothing moves the window: a replace, a transfer or a purchase leaves `$createdAt` as it is, so editing a post does not buy more time to edit it again.
-- "Changes" means what it means for `immutable`: a value that differs by its data, a value the stored document did not have, or one the replace leaves out. Freezing an object freezes everything inside it.
-- As for `immutable`, one change is always allowed: a replace may clear a `deletableDocument` reference by id once the document it points to has been deleted. See [References](refers-to.md).
-- Each property is judged by its own window, and the properties outside `immutable` and `immutableAfter` stay editable for good.
-- A replace judged by `checkTx` shortly before the window closes may still land in a block after it, and is then refused there, paid, like any other state check.
+- On every replace, each property that differs from the stored document is checked against the list. A property listed by name is refused with `DocumentImmutablePropertyChangedError` (40128). A property listed with a condition is refused with the same error when its condition holds for this replace. "Differs" covers a changed value, a value the stored document did not have, and a value the replace leaves out.
+- A condition takes the grammar of a [`propertyConstraints`](property-constraints.md) rule: comparisons, arithmetic, `in`, `present`, `absent`, `anyOf`, `allOf`, `not`, `ifThen`, `ifThenElse`, the system times and heights the type records, and `$ownerId`. It is judged, as a rule judges a replace, on the document the replace writes: its properties as the replace sets them, the stored `$createdAt` and `$transferredAt`, and the replace's block as `$updatedAt`.
+- A path starting with `$old.` reads the stored document instead: `$old.status` is the status before the replace. Only a condition of `immutable` may read it, and only a schema property through it.
+- A property is frozen while its condition holds. If what the condition reads can change back, the property can become editable again: with `body` frozen by `$old.status`, a replace setting `status` back to `draft` makes `body` editable again. For a freeze that lasts, list what the condition reads as well, or use a condition that cannot turn back, as a document's age or a filled-in value cannot.
+- A condition is evaluated only when its property changes. A condition that faults, dividing by zero or overflowing, counts as holding: a fault never frees a property.
+- Values are compared by their data, not their bytes: the order of an object's members and the width an integer is stored in do not count as changes. Freezing an object freezes everything inside it.
+- One change is always allowed: a replace may clear a `deletableDocument` reference by id, listed without a condition, once the document it points to has been deleted. Every replace checks such a reference again, so without this the document could never be replaced again. See [References](refers-to.md).
+- A replace judged by `checkTx` shortly before a time condition starts holding may still land in a block after that, and is then refused there and pays its fee, like any other state check.
+- Transfers, price updates and purchases carry no property values, so the list does not affect them.
 
 ### Rules at registration
 
-All refusals below are `InvalidContractStructure` (10231).
+All refusals below are `InvalidContractStructure` (10231). The shape of the list, and what each condition reads, are checked on every parse. The other rules are checked when a contract is registered or updated.
 
-- Only on a type whose documents are mutable.
-- The type must list `$createdAt` in `required`: the window is measured from it, and a document without one would have nothing to measure from.
-- Every key names a declared top-level property. System properties and nested paths are refused, as for `immutable`.
-- No key may be a `transient` property, nor one listed under `immutable`, which is frozen from creation already.
-- The references `immutable` refuses are refused here too, since past the window the property is as frozen: a `deletableDocument` reference a replace could not clear, and, on a type whose documents can be transferred or traded, a `contract` reference with an `owner` requirement.
-- A key may not be one of the fields only moderators write ([`moderatorAbilities.changeFields`](moderator-abilities.md#changefields)).
-- A window of 0 is refused, on every parse: a property no replace may ever change belongs in `immutable`.
-- `immutableAllowSetting` does not apply: its entries must be in `immutable`.
+- Only on a type whose documents are mutable. On a type with `documentsMutable: false` every property is already frozen.
+- Every entry is a string or an object with exactly `property` and `when`, and no property is listed twice.
+- Every listed property is a declared top-level property. System properties (`$ownerId`, `$createdAt` and the rest) are refused, since the platform manages them. Nested paths such as `meta.author` are refused: list the object that contains them.
+- No listed property may be `transient`: it is never stored, so every replace that supplies it while it is frozen would count as a change.
+- A condition reads what a `propertyConstraints` rule may read of the type: declared properties of the right kind, neither transient nor inside a transient object, and system times and heights the type lists in `required`. It stays within the node limit of a rule, and lists no condition twice.
+- A condition may not read a `countOf` or `sumOf` total: it reads the document alone, so a replace judges it without reading state.
+- `immutableAllowSetting`, which earlier builds used to let a frozen property be filled in once, is refused and names the replacement: `{ "property": "p", "when": { "present": "$old.p" } }`.
+- An immutable property may not hold a `deletableDocument` reference that a replace could not clear: a typed array of them, one inside an object, or one found by `findBy` whose key no function computes. A single reference by id held directly by the property is allowed, but only without a condition: once cleared, a replace the condition leaves free could set it to another document.
+- On a type whose documents can be transferred or traded, an immutable property may not hold a `contract` reference whose `contractRequirements` has an `owner` requirement: after a change of owner the new owner could neither meet it nor repoint it.
+- A listed property, with a condition or without, may not be one of the fields only moderators write ([`moderatorAbilities.changeFields`](moderator-abilities.md#changefields)).
+- A property listed with a condition is not fixed once written, so a `findBy` key, an `inList` list, or a value read beside a `findBy` function may not rely on it. See [References](refers-to.md).
 
 ### On update
 
-The windows may only tighten. A property may gain a window, and documents already stored whose window has passed are frozen at once, as when a property is added to `immutable`. A window may shorten, with the same effect on documents it now ends for. A longer window would reopen documents that had been frozen, so it is refused, and a property may leave `immutableAfter` only by moving to `immutable`. Moving a property the other way, out of `immutable`, is refused by that list's own rule.
+What `immutable` freezes may only tighten. A property may be added, with a condition or without, and documents already stored are held to it from then on. A property listed with a condition may lose it, which freezes it whatever the condition said. A condition cannot change: whether one condition holds wherever another does cannot be told in general. A property listed without a condition stays, and no property is dropped, since documents were written on the promise that those properties would not change. The comparison is of the parsed entries, so reordering them is no change.
 
 ## See also
 
@@ -212,4 +140,5 @@ The windows may only tighten. A property may gain a window, and documents alread
 - [Deletion](deletion.md), [Creation, Transfers and Trading](ownership-and-trading.md) and [History](history.md), the other keywords on what may happen to a document
 - [System Properties](system-properties.md), for `$revision` and `$updatedAt`
 - [transient](transient.md) and [References](refers-to.md), for the properties `immutable` refuses
+- [propertyConstraints](property-constraints.md), for the grammar of a condition
 - [Contract Keywords](../contract-keywords.md#reading-the-chapters), for how the summary tables read

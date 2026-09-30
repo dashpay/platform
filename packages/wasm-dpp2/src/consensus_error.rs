@@ -133,8 +133,7 @@ impl DocumentReferenceErrorCodeWasm {
 }
 
 /// Consensus error codes emitted by the immutable-property check on document
-/// replaces (`immutable` / `immutableAllowSetting` / `immutableAfter`, protocol
-/// version 14+).
+/// replaces (`immutable`, protocol version 14+).
 ///
 /// Branch on an error's `code` against this instead of matching its message:
 ///
@@ -151,13 +150,9 @@ impl DocumentReferenceErrorCodeWasm {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentImmutabilityErrorCodeWasm {
     /// The replace changed, added or removed a property the document type
-    /// lists under `immutable`, and the change was not the one first-time
-    /// set `immutableAllowSetting` permits.
+    /// lists under `immutable`: by name, or with a condition that held for
+    /// the replace.
     DocumentImmutablePropertyChanged = 40128,
-    /// The replace changed, added or removed a property the document type
-    /// lists under `immutableAfter`, and block time was past the document's
-    /// `$createdAt` plus the property's window.
-    DocumentPropertyEditWindowElapsed = 40146,
 }
 
 impl DocumentImmutabilityErrorCodeWasm {
@@ -165,7 +160,6 @@ impl DocumentImmutabilityErrorCodeWasm {
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40128 => Some(Self::DocumentImmutablePropertyChanged),
-            40146 => Some(Self::DocumentPropertyEditWindowElapsed),
             _ => None,
         }
     }
@@ -381,7 +375,7 @@ impl ConsensusErrorWasm {
     }
 
     /// The immutable-property error this is, or `undefined` when it is not
-    /// code 40128 or 40146.
+    /// code 40128.
     #[wasm_bindgen(getter = "documentImmutabilityErrorCode")]
     pub fn document_immutability_error_code(&self) -> Option<DocumentImmutabilityErrorCodeWasm> {
         DocumentImmutabilityErrorCodeWasm::from_code(self.0.code())
@@ -487,34 +481,6 @@ mod tests {
         );
         // A neighbouring code is not claimed.
         assert_eq!(DocumentImmutabilityErrorCodeWasm::from_code(40127), None);
-    }
-
-    /// The `immutableAfter` window error, built from the real DPP error for
-    /// the same reason as the test above.
-    #[test]
-    fn should_mirror_the_dpp_error_in_the_edit_window_error_code() {
-        use dpp::consensus::state::document::document_property_edit_window_elapsed_error::DocumentPropertyEditWindowElapsedError;
-
-        let error: ConsensusError = StateError::DocumentPropertyEditWindowElapsedError(
-            DocumentPropertyEditWindowElapsedError::new(
-                id(),
-                "post".to_string(),
-                "text".to_string(),
-                1_000,
-                300,
-                301_001,
-            ),
-        )
-        .into();
-
-        assert_eq!(
-            DocumentImmutabilityErrorCodeWasm::DocumentPropertyEditWindowElapsed as u32,
-            error.code()
-        );
-        assert_eq!(
-            ConsensusErrorWasm(error).document_immutability_error_code(),
-            Some(DocumentImmutabilityErrorCodeWasm::DocumentPropertyEditWindowElapsed)
-        );
     }
 
     /// Built from the real DPP error, for the same reason as the test above.
