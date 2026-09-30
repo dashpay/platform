@@ -37,12 +37,11 @@
 //! of that transaction's chain), then on each advance of the wallet's synced
 //! height that follows the tip — steps of more than [`CATCH_UP_STEP`] blocks,
 //! steps back (a rescan) and the first step after launch are catch-up and
-//! skipped: passes queued before them probe only what an `Uncertain` result
-//! forced — every block
-//! for [`EVERY_BLOCK_WINDOW`] blocks, counted from the first height-driven
-//! pass that sees the root while the wallet follows the tip (a forced pass
-//! does not start it), and every [`SLOW_INTERVAL`]
-//! blocks after. Each Uncertain report adds one immediate probe.
+//! skipped (passes queued before them probe only what an `Uncertain` result
+//! forced) — a root is probed every block for [`EVERY_BLOCK_WINDOW`] blocks,
+//! counted from the first height-driven pass that sees it while the wallet
+//! follows the tip (a forced pass does not start it), and every
+//! [`SLOW_INTERVAL`] blocks after. Each Uncertain report adds one immediate probe.
 //! Between passes a wallet waits for the height at which its next root is due;
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
@@ -340,8 +339,10 @@ impl ProbeSchedule {
         }
     }
 
+    /// Never moves back: a probe marked at a stale height (a pass that ran
+    /// across a catch-up) must not make the root due again below its last.
     fn probed_at(&mut self, height: u32) {
-        self.last_probe = Some(height);
+        self.last_probe = Some(self.last_probe.map_or(height, |last| last.max(height)));
     }
 
     /// The last probe produced nothing: due again at once.
@@ -422,6 +423,14 @@ pub(crate) struct ResolverState {
     schedules: HashMap<(WalletId, Txid), ProbeSchedule>,
     finished: HashMap<(WalletId, Txid), Final>,
     published: HashMap<(WalletId, Txid), ProbeVerdict>,
+    /// Transactions a wallet event reported settled or gone. Nothing is
+    /// published for them — whatever a pass that read the wallet earlier
+    /// still holds — until a fresh read no longer lists them.
+    settled: HashSet<(WalletId, Txid)>,
+    /// Own sends published Dead because a dead root they are built on is:
+    /// the root each inherited it from. Their Dead is withdrawn once that
+    /// root is no longer known dead (it settled, left, or was forgotten).
+    dead_from: HashMap<(WalletId, Txid), Txid>,
 }
 
 impl ResolverState {
@@ -430,6 +439,7 @@ impl ResolverState {
     fn forget_wallet(&mut self, wallet_id: &WalletId) -> Vec<Outgoing> {
         self.schedules.retain(|(wallet, _), _| wallet != wallet_id);
         self.finished.retain(|(wallet, _), _| wallet != wallet_id);
+        self.settled.retain(|(wallet, _)| wallet != wallet_id);
         self.clear_where(|wallet, _| wallet == wallet_id, None, "removed")
     }
 
@@ -437,7 +447,89 @@ impl ResolverState {
     fn forget_all(&mut self) -> Vec<Outgoing> {
         self.schedules.clear();
         self.finished.clear();
+        self.settled.clear();
         self.clear_where(|_, _| true, None, "disabled")
+    }
+
+    /// A wallet event reported `txids` settled or gone: forget them and clear
+    /// their verdicts — and the Dead any send inherited from one of them.
+    fn settle(&mut self, wallet_id: WalletId, txids: &HashSet<Txid>) -> Vec<Outgoing> {
+        for txid in txids {
+            let key = (wallet_id, *txid);
+            self.settled.insert(key);
+            self.schedules.remove(&key);
+            self.finished.remove(&key);
+        }
+        let mut events = self.clear_where(
+            |wallet, txid| *wallet == wallet_id && txids.contains(txid),
+            None,
+            "settled-or-left",
+        );
+        events.extend(self.clear_orphaned_dead(wallet_id, None, "settled-or-left"));
+        events
+    }
+
+    /// Withdraw every Dead a send of `wallet_id` inherited from a root that is
+    /// no longer known dead.
+    fn clear_orphaned_dead(
+        &mut self,
+        wallet_id: WalletId,
+        height: Option<u32>,
+        trigger: &'static str,
+    ) -> Vec<Outgoing> {
+        let orphans: HashSet<Txid> = self
+            .dead_from
+            .iter()
+            .filter(|((wallet, _), root)| {
+                *wallet == wallet_id
+                    && !matches!(
+                        self.finished.get(&(wallet_id, **root)),
+                        Some(Final::Dead { .. })
+                    )
+            })
+            .map(|((_, send), _)| *send)
+            .collect();
+        if orphans.is_empty() {
+            return Vec::new();
+        }
+        self.dead_from
+            .retain(|(wallet, send), _| *wallet != wallet_id || !orphans.contains(send));
+        let published = &self.published;
+        let dead: HashSet<Txid> = orphans
+            .into_iter()
+            .filter(|send| {
+                matches!(
+                    published.get(&(wallet_id, *send)),
+                    Some(ProbeVerdict::Dead { .. })
+                )
+            })
+            .collect();
+        self.clear_where(
+            |wallet, txid| *wallet == wallet_id && dead.contains(txid),
+            height,
+            trigger,
+        )
+    }
+
+    /// Publish a root's Dead to the own sends in its chain, remembering which
+    /// root each send other than the root itself inherited it from.
+    #[allow(clippy::too_many_arguments)]
+    fn publish_dead(
+        &mut self,
+        wallet_id: WalletId,
+        root: Txid,
+        sends: BTreeSet<Txid>,
+        verdict: &ProbeVerdict,
+        height: u32,
+        trigger: &'static str,
+        out: &mut Vec<Outgoing>,
+    ) {
+        for send in &sends {
+            if *send != root && !self.settled.contains(&(wallet_id, *send)) {
+                self.dead_from.insert((wallet_id, *send), root);
+            }
+        }
+        self.publish_all(wallet_id, sends, verdict, height, trigger, out);
     }
 
     /// Unpublish every send `drop` matches; a clear for each, in a stable order.
@@ -456,6 +548,8 @@ impl ResolverState {
         cleared.sort();
         self.published
             .retain(|(wallet, txid), _| !drop(wallet, txid));
+        self.dead_from
+            .retain(|(wallet, txid), _| !drop(wallet, txid));
         cleared
             .into_iter()
             .map(|(wallet_id, txid)| Outgoing {
@@ -471,6 +565,9 @@ impl ResolverState {
     /// Unresolved never replaces a decided verdict (Accepted, Mined, Dead) —
     /// one probe that only met transport errors says nothing new.
     fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict) -> bool {
+        if self.settled.contains(&key) {
+            return false;
+        }
         let changed = match self.published.get(&key) {
             None => true,
             Some(previous)
@@ -505,6 +602,16 @@ impl ResolverState {
                     height: Some(height),
                     trigger,
                 });
+            }
+        }
+    }
+
+    /// A rewind replays the chain: every root of `wallet_id` starts its
+    /// schedule over (due at once, window from the next following pass).
+    fn restart_schedules(&mut self, wallet_id: &WalletId) {
+        for ((wallet, _), schedule) in self.schedules.iter_mut() {
+            if wallet == wallet_id {
+                *schedule = ProbeSchedule::default();
             }
         }
     }
@@ -568,6 +675,18 @@ pub(crate) fn begin_pass(
     anchor: Option<u32>,
 ) -> PassStart {
     let mut events = Vec::new();
+    // A tombstone lasts until a read no longer lists its txid; while it does
+    // (a read older than the event), the txid is left out of the pass.
+    let listed: HashSet<Txid> = views.iter().map(|view| view.txid).collect();
+    state
+        .settled
+        .retain(|(wallet, txid)| *wallet != wallet_id || listed.contains(txid));
+    let views: Vec<OutgoingView> = views
+        .iter()
+        .filter(|view| !state.settled.contains(&(wallet_id, view.txid)))
+        .cloned()
+        .collect();
+    let views = views.as_slice();
     // What the wallet itself still holds unsettled — what state is kept for.
     let present: HashSet<Txid> = views.iter().map(|view| view.txid).collect();
     let own_present: HashSet<Txid> = views
@@ -589,6 +708,7 @@ pub(crate) fn begin_pass(
         Some(height),
         "settled-or-left",
     ));
+    events.extend(state.clear_orphaned_dead(wallet_id, Some(height), "settled-or-left"));
 
     let mined = state.mined(&wallet_id);
     let graph = ChainGraph::new(views, &mined);
@@ -603,7 +723,15 @@ pub(crate) fn begin_pass(
             let verdict = ProbeVerdict::Dead { reason };
             let sends = graph.own_in_chain(&view.txid);
             let trigger = trigger_of(forced_roots.contains(&view.txid));
-            state.publish_all(wallet_id, sends, &verdict, height, trigger, &mut events);
+            state.publish_dead(
+                wallet_id,
+                view.txid,
+                sends,
+                &verdict,
+                height,
+                trigger,
+                &mut events,
+            );
         }
     }
 
@@ -662,6 +790,10 @@ pub(crate) fn record_probe(
 ) -> Vec<Outgoing> {
     let mut events = Vec::new();
     let key = (wallet_id, root.txid);
+    // Settled or gone while its probe was out: the answer is moot.
+    if state.settled.contains(&key) {
+        return events;
+    }
     match verdict {
         ProbeVerdict::Dead { reason } => {
             state.finished.insert(
@@ -676,21 +808,28 @@ pub(crate) fn record_probe(
         }
         ProbeVerdict::Accepted | ProbeVerdict::Unresolved { .. } => {}
     }
-    let sends: BTreeSet<Txid> = if matches!(verdict, ProbeVerdict::Dead { .. }) {
-        ChainGraph::new(views, &state.mined(&wallet_id)).own_in_chain(&root.txid)
+    let trigger = trigger_of(root.forced);
+    if matches!(verdict, ProbeVerdict::Dead { .. }) {
+        let sends = ChainGraph::new(views, &state.mined(&wallet_id)).own_in_chain(&root.txid);
+        state.publish_dead(
+            wallet_id,
+            root.txid,
+            sends,
+            verdict,
+            height,
+            trigger,
+            &mut events,
+        );
     } else if root.own {
-        BTreeSet::from([root.txid])
-    } else {
-        BTreeSet::new()
-    };
-    state.publish_all(
-        wallet_id,
-        sends,
-        verdict,
-        height,
-        trigger_of(root.forced),
-        &mut events,
-    );
+        state.publish_all(
+            wallet_id,
+            [root.txid],
+            verdict,
+            height,
+            trigger,
+            &mut events,
+        );
+    }
     events
 }
 
@@ -944,12 +1083,6 @@ struct Run {
     /// is held (`anchor_at.is_some()`): shared with the read job, cleared by a
     /// catch-up.
     walk: Arc<AtomicBool>,
-    /// Txids a wallet event settled or removed during the run: the run's
-    /// views are older than that, so it neither probes nor publishes them.
-    settled: HashSet<Txid>,
-    /// A step back (a rewind for a rescan) arrived during the run: it runs at
-    /// this height, not at the one it was queued at.
-    rewound_to: Option<u32>,
     abort: AbortHandle,
     probing: Option<Probing>,
 }
@@ -1103,6 +1236,12 @@ impl Actor {
                 let enabled = self.enabled;
                 let entry = self.entry(wallet_id);
                 let previous = entry.height.replace(height);
+                if previous.is_some_and(|previous| height < previous) {
+                    self.state.restart_schedules(&wallet_id);
+                }
+                let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+                    return;
+                };
                 if is_catch_up_step(previous, height) {
                     // Behind the tip: passes queued or running from before are
                     // confined to what an `Uncertain` result forced — the scan
@@ -1121,15 +1260,8 @@ impl Actor {
                     };
                     run.anchor_at = None;
                     run.walk.store(false, Ordering::SeqCst);
-                    let rewind = previous.is_some_and(|previous| height < previous);
-                    if rewind {
-                        run.rewound_to = Some(height);
-                    }
                     if let Some(probing) = run.probing.as_mut() {
                         probing.due.retain(|root| root.forced);
-                        if rewind {
-                            probing.height = probing.height.min(height);
-                        }
                     }
                     // Still reading, with nothing forced: nothing it could
                     // probe — stop its walk over the records now.
@@ -1153,20 +1285,13 @@ impl Actor {
             }
             Command::Settled { wallet_id, txids } => {
                 let entry = self.entry(wallet_id);
-                // A pass under way read the wallet before this: it must not
-                // probe these again or publish a verdict for them afterwards.
-                if let Some(run) = entry.run.as_mut() {
-                    run.settled.extend(txids.iter().copied());
-                    if let Some(probing) = run.probing.as_mut() {
-                        probing.due.retain(|root| !txids.contains(&root.txid));
-                        probing.views.retain(|view| !txids.contains(&view.txid));
-                    }
+                // A pass under way read the wallet before this: it does not
+                // probe these any more (and publishes nothing for them — the
+                // tombstones `settle` leaves see to that).
+                if let Some(probing) = entry.run.as_mut().and_then(|run| run.probing.as_mut()) {
+                    probing.due.retain(|root| !txids.contains(&root.txid));
                 }
-                let events = self.state.clear_where(
-                    |wallet, txid| *wallet == wallet_id && txids.contains(txid),
-                    None,
-                    "settled-or-left",
-                );
+                let events = self.state.settle(wallet_id, &txids);
                 deliver(&self.sink, events);
             }
             Command::Seen { wallet_id, touched } => {
@@ -1262,8 +1387,6 @@ impl Actor {
             anchor_at,
             has_forced,
             walk,
-            settled: HashSet::new(),
-            rewound_to: None,
             abort,
             probing: None,
         });
@@ -1327,13 +1450,9 @@ impl Actor {
                         let Some(current) = entry.run.as_mut() else {
                             return; // matched by id above
                         };
-                        let height = current
-                            .rewound_to
-                            .unwrap_or_else(|| height.max(read.synced_height));
-                        // What settled since the read is not the pass's any more.
-                        let mut read = read;
-                        read.views
-                            .retain(|view| !current.settled.contains(&view.txid));
+                        // A request queued before any height was reported
+                        // carries 0; the wallet's own synced height is better.
+                        let height = height.max(read.synced_height);
                         // The wallet is not where this pass was queued: far
                         // ahead (a catch-up whose height step has not arrived
                         // yet) or behind (a rewind for a rescan). Either way a
@@ -1396,15 +1515,6 @@ impl Actor {
                         "broadcast probe: a probe result with no root in flight"
                     );
                     self.end_run(wallet_id);
-                    return;
-                };
-                if current.settled.contains(&root.txid) {
-                    // Settled while its probe was out: the event already
-                    // cleared it; the answer is moot.
-                    self.probe_next(wallet_id);
-                    return;
-                }
-                let Some(probing) = current.probing.as_ref() else {
                     return;
                 };
                 let events = record_probe(
@@ -1492,6 +1602,10 @@ enum ActorSlot {
 /// product decision, not something a wallet should start doing on upgrade.
 pub(crate) struct BroadcastResolver {
     enabled: AtomicBool,
+    /// Held while the flag is stored and the switch is queued, so the flag
+    /// and the actor end in the same state under concurrent calls — event
+    /// handlers gate on the flag.
+    switching: Mutex<()>,
     commands: mpsc::UnboundedSender<Command>,
     /// The actor has been started (or the resolver closed): `send` no longer
     /// needs the slot.
@@ -1520,6 +1634,7 @@ impl BroadcastResolver {
             started: AtomicBool::new(false),
             actor: Mutex::new(ActorSlot::NotStarted(Box::new(actor), receiver)),
             stopping: AsyncMutex::new(()),
+            switching: Mutex::new(()),
             sink,
         }
     }
@@ -1557,6 +1672,10 @@ impl BroadcastResolver {
     /// way every wallet is woken, so turning it back on re-publishes what was
     /// cleared. Returns at once; the clears follow from the resolver's task.
     pub(crate) fn set_enabled(&self, enabled: bool) {
+        let _switching = self
+            .switching
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         self.enabled.store(enabled, Ordering::SeqCst);
         self.send(Command::SetEnabled(enabled));
     }
@@ -1659,11 +1778,11 @@ fn settled_or_gone(event: &WalletEvent) -> HashSet<Txid> {
             .filter(|record| is_settled(record))
             .map(|record| record.txid)
             .collect(),
-        WalletEvent::ChainLockProcessed {
-            locked_transactions,
-            ..
-        } => locked_transactions.values().flatten().copied().collect(),
-        WalletEvent::SyncHeightAdvanced { .. } => HashSet::new(),
+        // A chain lock only promotes records already in a block — reported
+        // settled when their block was processed.
+        WalletEvent::ChainLockProcessed { .. } | WalletEvent::SyncHeightAdvanced { .. } => {
+            HashSet::new()
+        }
     }
 }
 
@@ -3328,7 +3447,10 @@ mod tests {
             height: 100,
         };
 
-        assert_eq!(settled_or_gone(&lock), HashSet::from([txid(1)]));
+        assert!(
+            settled_or_gone(&lock).is_empty(),
+            "a chain lock settles nothing new: its block did"
+        );
         assert_eq!(settled_or_gone(&swept), HashSet::from([txid(2)]));
         assert!(settled_or_gone(&height).is_empty());
     }
@@ -3398,34 +3520,83 @@ mod tests {
         assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
     }
 
-    /// A step back while a forced pass is reading runs that pass at the
-    /// replayed height, not at the one it was queued at.
+    /// A step back (a rewind for a rescan) starts every root's schedule over:
+    /// due at once, its window from the next following pass.
     #[tokio::test]
-    async fn should_run_a_reading_pass_at_the_height_of_a_rewind() {
+    async fn should_restart_schedules_on_a_rewind() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[]))).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
-        rig.source.pause(true);
-        rig.actor.handle(Command::Uncertain(txid(1)));
-        let listed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
-        rig.actor.joined(listed); // the forced pass is reading, queued at 101
-
-        rig.source
-            .synced
-            .lock()
-            .expect("synced")
-            .insert(wallet(), 50);
-        rig.actor.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 50,
-        });
-        rig.source.pause(false);
-        rig.settle().await;
-
         assert_eq!(
             rig.actor.state.schedules[&(wallet(), txid(1))].last_probe,
-            Some(50)
+            Some(101)
         );
+
+        rig.height(wallet(), 50).await;
+
+        assert_eq!(
+            rig.actor.state.schedules[&(wallet(), txid(1))],
+            ProbeSchedule::default()
+        );
+    }
+
+    /// A child published Dead because its root was dead loses that Dead when
+    /// the root settles — it is not left showing the worst verdict for a send
+    /// whose parent is confirmed.
+    #[tokio::test]
+    async fn should_withdraw_an_inherited_dead_when_the_dead_root_settles() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
+        );
+        rig.follow(wallet(), 100).await;
+        assert_eq!(
+            rig.sent(),
+            vec![
+                ResolverEvent::Verdict(txid(1), dead()),
+                ResolverEvent::Verdict(txid(2), dead()),
+            ]
+        );
+
+        rig.send(Command::Settled {
+            wallet_id: wallet(),
+            txids: HashSet::from([txid(1)]),
+        })
+        .await;
+
+        assert_eq!(
+            rig.sent(),
+            vec![
+                ResolverEvent::Cleared(txid(1)),
+                ResolverEvent::Cleared(txid(2)),
+            ]
+        );
+    }
+
+    /// The Dead a child inherited goes when the root leaves the wallet in a
+    /// pass's read too, not only on an event.
+    #[tokio::test]
+    async fn should_withdraw_an_inherited_dead_when_a_pass_finds_the_root_gone() {
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), dead())]))).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
+        );
+        rig.follow(wallet(), 100).await;
+        rig.sent();
+
+        rig.views(wallet(), vec![send(2, &[outpoint(1, 1)])]); // root mined
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: true,
+        })
+        .await;
+        rig.height(wallet(), 102).await;
+
+        let sent = rig.sent();
+        assert!(sent.contains(&ResolverEvent::Cleared(txid(1))));
+        assert!(sent.contains(&ResolverEvent::Cleared(txid(2))));
     }
 
     fn record(n: u8, context: TransactionContext) -> TransactionRecord {
