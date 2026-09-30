@@ -41,7 +41,7 @@ mod document_removal;
 pub mod elected;
 mod reason;
 pub use document_removal::{
-    decode_kept_fields, encode_kept_fields, is_kept_path, kept_value_at, ContractDocumentRemoval,
+    decode_kept_fields, encode_kept_fields, kept_value_at, ContractDocumentRemoval,
     ContractDocumentRestoration,
 };
 pub use elected::{

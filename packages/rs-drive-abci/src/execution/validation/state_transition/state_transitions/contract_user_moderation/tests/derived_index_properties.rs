@@ -120,6 +120,77 @@ async fn kept_text_setup() -> Setup {
     .await
 }
 
+/// `schema` with every top-level entry of `extra` in place of the one with its key
+fn with_entries(mut schema: Value, extra: Value) -> Value {
+    if let (Value::Map(schema_map), Value::Map(extra_map)) = (&mut schema, extra) {
+        for (key, value) in extra_map {
+            schema_map.retain(|(existing, _)| existing != &key);
+            schema_map.push((key, value));
+        }
+    }
+    schema
+}
+
+/// Posts nobody changes, only the moderators take down, each removal record keeping the
+/// post's optional topic and its `meta` object whole; replies filed under both, which the
+/// moderators may take down too
+async fn kept_fields_setup() -> Setup {
+    Setup::new_at_with(
+        Some(moderation(false, false, THE_MODERATOR)),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(
+                contract,
+                POST,
+                post_schema_with(platform_value!({
+                    "canBeDeleted": false,
+                    "documentsMutable": false,
+                    "properties": {
+                        "text": { "type": "string", "maxLength": 50, "position": 0 },
+                        "topic": { "type": "string", "maxLength": 20, "position": 1 },
+                        "meta": {
+                            "type": "object",
+                            "properties": {
+                                "tag": { "type": "string", "maxLength": 20, "position": 0 },
+                            },
+                            "additionalProperties": false,
+                            "position": 2,
+                        },
+                    },
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteKeepsFields": ["topic", "meta"],
+                    },
+                })),
+            );
+            add_document_type(
+                contract,
+                REPLY,
+                with_entries(
+                    reply_schema("moderatedDocument", "postId.topic"),
+                    platform_value!({
+                        "indices": [
+                            {
+                                "name": "byTopic",
+                                "properties": [{ "postId.topic": "asc" }, { "$createdAt": "asc" }],
+                            },
+                            {
+                                "name": "byTag",
+                                "properties": [
+                                    { "postId.meta.tag": "asc" },
+                                    { "$createdAt": "asc" },
+                                ],
+                            },
+                        ],
+                        "moderatorAbilities": { "delete": true },
+                    }),
+                ),
+            );
+        },
+    )
+    .await
+}
+
 fn id_value(id: Identifier) -> Value {
     Value::Identifier(id.to_buffer())
 }
@@ -425,6 +496,105 @@ async fn should_read_a_kept_field_of_a_removed_post_from_its_removal_record() {
         vec![other_reply.id()]
     );
     assert!(setup.replies_proved(by_text("goodbye"), None).is_empty());
+}
+
+/// A removed post's kept values key a reply wherever the post did: a member of an object the
+/// record keeps whole, and an optional field the post never held, under null. Two derived
+/// properties read through one reference, and a moderator's removal and restore of a reply
+/// take its entries out and insert them again under the values the record keeps.
+#[tokio::test]
+async fn should_key_a_reply_by_the_kept_values_of_a_removed_post() {
+    let setup = kept_fields_setup().await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (tagged, create_tagged) = setup
+        .create_document_of_type_with(&setup.user, POST, |document| {
+            document.set("text", "hello".into());
+            document.set("topic", "dash".into());
+            document.set("meta", platform_value!({ "tag": "privacy" }));
+        })
+        .await;
+    assert_success(&setup.process(&create_tagged, &transaction));
+    let (bare, create_bare) = setup
+        .create_document_of_type_with(&setup.user, POST, |document| {
+            document.set("text", "no topic".into());
+            // The builder fills every optional field: this post holds neither
+            document.remove("topic");
+            document.remove("meta");
+        })
+        .await;
+    assert_success(&setup.process(&create_bare, &transaction));
+
+    let (mut reply, create_reply) = setup.reply_to(&setup.stranger, tagged.id(), "first").await;
+    assert_success(&setup.process(&create_reply, &transaction));
+    let (spam, create_spam) = setup.reply_to(&setup.stranger, tagged.id(), "spam").await;
+    assert_success(&setup.process(&create_spam, &transaction));
+    let stored_spam = setup
+        .stored_document(REPLY, spam.id(), Some(&transaction))
+        .expect("expected the reply to be stored");
+    let (mut bare_reply, create_bare_reply) = setup
+        .reply_to(&setup.stranger, bare.id(), "to nothing")
+        .await;
+    assert_success(&setup.process(&create_bare_reply, &transaction));
+
+    for post_id in [tagged.id(), bare.id()] {
+        let remove = setup
+            .moderate(&setup.moderator, delete_action(POST, post_id))
+            .await;
+        assert_success(&setup.process(&remove, &transaction));
+    }
+
+    let by_topic = |topic: &str| platform_value!([["postId.topic", "==", topic]]);
+    let by_tag = |tag: &str| platform_value!([["postId.meta.tag", "==", tag]]);
+    let found = |where_clause: Value| {
+        let mut found = setup.replies_found(where_clause, &transaction);
+        found.sort();
+        found
+    };
+    let mut both = vec![reply.id(), spam.id()];
+    both.sort();
+    assert_eq!(found(by_topic("dash")), both);
+    assert_eq!(found(by_tag("privacy")), both);
+
+    // An edit reads both values from the record and moves nothing
+    reply.set("body", "an edit".into());
+    let edit = setup.reply_replacement(&setup.stranger, &mut reply).await;
+    assert_success(&setup.process(&edit, &transaction));
+    assert_eq!(found(by_topic("dash")), both);
+    assert_eq!(found(by_tag("privacy")), both);
+
+    // A moderator's removal of a reply finds its entries under the kept values, and a restore
+    // inserts them there again: a wrong value would file it where no query finds it
+    let remove_spam = setup
+        .moderate(&setup.moderator, delete_action(REPLY, spam.id()))
+        .await;
+    assert_success(&setup.process(&remove_spam, &transaction));
+    assert_eq!(found(by_topic("dash")), vec![reply.id()]);
+    assert_eq!(found(by_tag("privacy")), vec![reply.id()]);
+    let restore_spam = setup
+        .moderate(
+            &setup.moderator,
+            restore_action(REPLY, setup.document_bytes(REPLY, &stored_spam)),
+        )
+        .await;
+    assert_success(&setup.process(&restore_spam, &transaction));
+    assert_eq!(found(by_topic("dash")), both);
+    assert_eq!(found(by_tag("privacy")), both);
+
+    // A reply to a post that held neither is filed under null for both, and the record,
+    // keeping nothing for them, finds its entries there: an edit and a deletion succeed
+    bare_reply.set("body", "still nothing".into());
+    let edit = setup
+        .reply_replacement(&setup.stranger, &mut bare_reply)
+        .await;
+    assert_success(&setup.process(&edit, &transaction));
+    let delete = setup.reply_deletion(&setup.stranger, bare_reply).await;
+    assert_success(&setup.process(&delete, &transaction));
+
+    // A verifier finds the same through a proof
+    setup.commit(transaction);
+    let mut proved = setup.replies_proved(by_tag("privacy"), None);
+    proved.sort();
+    assert_eq!(proved, both);
 }
 
 /// A moderator's removal of a reply takes its entry out, and a restore puts it back, both

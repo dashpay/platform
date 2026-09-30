@@ -225,41 +225,32 @@ fn read_system_property(
     }
 }
 
-/// Whether a path a document type keeps (`kept_paths`, its
-/// `moderatorAbilities.deleteKeepsFields`) covers `property`: the path itself, or an object
-/// around it, kept whole.
-pub fn is_kept_path(kept_paths: &BTreeSet<String>, property: &str) -> bool {
-    kept_paths.iter().any(|kept| {
-        kept == property
-            || property
-                .strip_prefix(kept.as_str())
-                .is_some_and(|rest| rest.starts_with('.'))
-    })
-}
-
-/// The value a removal record keeps at `property`, one [`is_kept_path`] covers, from the
-/// values it keeps (`kept_values`, [`ContractDocumentRemoval::kept_values`]): itself kept or
-/// read inside a kept object, `None` when the document held no value there.
+/// What a removal record says of `property`, from the paths its document type keeps
+/// (`kept_paths`, its `moderatorAbilities.deleteKeepsFields`) and the values the record keeps
+/// (`kept_values`, [`ContractDocumentRemoval::kept_values`]): `None` when the record does not
+/// keep it, neither kept itself nor inside a kept object; otherwise the value, `Some(None)`
+/// when the document held none there. Kept paths never nest, so at most one covers it.
 pub fn kept_value_at(
     kept_paths: &BTreeSet<String>,
     kept_values: &BTreeMap<String, Value>,
     property: &str,
-) -> Option<Value> {
+) -> Option<Option<Value>> {
     if kept_paths.contains(property) {
-        return kept_values.get(property).cloned();
+        return Some(kept_values.get(property).cloned());
     }
-    kept_paths.iter().find_map(|kept| {
+    let (kept, inner) = kept_paths.iter().find_map(|kept| {
         let inner = property.strip_prefix(kept.as_str())?.strip_prefix('.')?;
-        // Down through the kept object, a member it lacks or a step through what is no
-        // object reading as absent, as a document's own path does
+        Some((kept, inner))
+    })?;
+    // Down through the kept object, a member it lacks or a step through what is no object
+    // reading as absent, as a document's own path does
+    Some(
         kept_values
-            .get(kept)?
-            .get_optional_value_at_path(inner)
-            .ok()
-            .flatten()
+            .get(kept)
+            .and_then(|object| object.get_optional_value_at_path(inner).ok().flatten())
             .filter(|value| !value.is_null())
-            .cloned()
-    })
+            .cloned(),
+    )
 }
 
 impl ContractDocumentRemoval {
@@ -288,7 +279,7 @@ mod tests {
     use super::*;
     use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
     use crate::data_contract::config::DataContractConfig;
-    use crate::data_contract::document_type::DocumentType;
+    use crate::data_contract::document_type::{is_path_listed, DocumentType};
     use crate::document::DocumentV0;
     use platform_value::platform_value;
     use platform_version::version::PlatformVersion;
@@ -450,15 +441,6 @@ mod tests {
     fn should_read_a_kept_path_or_a_path_inside_a_kept_object() {
         let document_type = post_type();
         let kept_paths = document_type.moderator_deletion_kept_fields();
-        for kept in ["hashtag", "meta.note", "meta.tags", "extra.count"] {
-            assert!(is_kept_path(kept_paths, kept), "{kept}");
-        }
-        // A member of an object only partly kept, the object itself, a name sharing a
-        // kept path's prefix, and the owner, which every record holds apart
-        for not_kept in ["extra.label", "extra", "hashtagged", "$ownerId"] {
-            assert!(!is_kept_path(kept_paths, not_kept), "{not_kept}");
-        }
-
         let document = post(BTreeMap::from([
             ("hashtag".to_string(), Value::Text("dash".to_string())),
             (
@@ -483,15 +465,32 @@ mod tests {
             .expect("expected to decode");
         // Each as the document holds it, at the path the document holds it
         for path in ["hashtag", "meta.tags", "extra.count"] {
+            let value = document.get(path).cloned();
+            assert!(value.is_some(), "{path}");
             assert_eq!(
                 kept_value_at(kept_paths, &kept_values, path),
-                document.get(path).cloned(),
+                Some(value),
                 "{path}"
             );
         }
-        // Nothing where the document held nothing, inside a kept object or not
-        assert_eq!(kept_value_at(kept_paths, &kept_values, "meta.note"), None);
-        assert_eq!(kept_value_at(kept_paths, &kept_values, "text"), None);
+        // Kept, but nothing where the document held nothing, inside a kept object or not
+        for path in ["meta.note", "text"] {
+            assert_eq!(
+                kept_value_at(kept_paths, &kept_values, path),
+                Some(None),
+                "{path}"
+            );
+        }
+        // Not kept: a member of an object only partly kept, the object itself, a name
+        // sharing a kept path's prefix, and the owner, which every record holds apart
+        for path in ["extra.label", "extra", "hashtagged", "$ownerId"] {
+            assert!(!is_path_listed(kept_paths, path), "{path}");
+            assert_eq!(
+                kept_value_at(kept_paths, &kept_values, path),
+                None,
+                "{path}"
+            );
+        }
     }
 
     #[test]
